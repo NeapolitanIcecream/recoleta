@@ -86,6 +86,10 @@ class PipelineService:
         analyze_result = AnalyzeResult()
         for item in track(items, description="Analyzing items"):
             try:
+                if item.id is None:
+                    analyze_result.failed += 1
+                    log.warning("Analyze skipped: item has no id")
+                    continue
                 analysis_result = self.analyzer.analyze(
                     title=item.title,
                     canonical_url=item.canonical_url,

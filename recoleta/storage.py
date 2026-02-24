@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import desc, func
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from recoleta.models import (
@@ -78,12 +79,14 @@ class Repository:
 
     def list_metrics(self, *, run_id: str) -> list[Metric]:
         with Session(self.engine) as session:
-            statement = select(Metric).where(Metric.run_id == run_id).order_by(Metric.id)
+            statement = (
+                select(Metric).where(Metric.run_id == run_id).order_by(cast(Any, Metric.id))
+            )
             return list(session.exec(statement))
 
     def count_items(self) -> int:
         with Session(self.engine) as session:
-            statement = select(func.count(Item.id))
+            statement = select(func.count(cast(Any, Item.id)))
             return int(session.exec(statement).one())
 
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]:
@@ -137,7 +140,7 @@ class Repository:
             statement = (
                 select(Item)
                 .where(Item.state == ITEM_STATE_INGESTED)
-                .order_by(Item.created_at.desc())
+                .order_by(desc(cast(Any, Item.created_at)))
                 .limit(limit)
             )
             return list(session.exec(statement))
@@ -196,9 +199,9 @@ class Repository:
         with Session(self.engine) as session:
             statement = (
                 select(Item, Analysis)
-                .join(Analysis, Analysis.item_id == Item.id)
+                .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
                 .where(Item.state == ITEM_STATE_ANALYZED, Analysis.relevance_score >= min_relevance_score)
-                .order_by(Analysis.relevance_score.desc())
+                .order_by(desc(cast(Any, Analysis.relevance_score)))
                 .limit(limit)
             )
             return list(session.exec(statement))

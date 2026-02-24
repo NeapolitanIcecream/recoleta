@@ -24,7 +24,7 @@ DELIVERY_STATUS_FAILED = "failed"
 
 
 class Run(SQLModel, table=True):
-    __tablename__ = "runs"
+    __tablename__ = "runs"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
 
     id: str = Field(primary_key=True, max_length=64)
     started_at: datetime = Field(default_factory=utc_now)
@@ -34,7 +34,7 @@ class Run(SQLModel, table=True):
 
 
 class Item(SQLModel, table=True):
-    __tablename__ = "items"
+    __tablename__ = "items"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (
         UniqueConstraint("source", "source_item_id", name="uq_items_source_source_item_id"),
         UniqueConstraint("canonical_url_hash", name="uq_items_canonical_url_hash"),
@@ -55,7 +55,7 @@ class Item(SQLModel, table=True):
 
 
 class Content(SQLModel, table=True):
-    __tablename__ = "contents"
+    __tablename__ = "contents"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
 
     id: int | None = Field(default=None, primary_key=True)
     item_id: int = Field(foreign_key="items.id", index=True)
@@ -67,7 +67,7 @@ class Content(SQLModel, table=True):
 
 
 class Analysis(SQLModel, table=True):
-    __tablename__ = "analyses"
+    __tablename__ = "analyses"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (UniqueConstraint("item_id", name="uq_analyses_item_id"),)
 
     id: int | None = Field(default=None, primary_key=True)
@@ -86,7 +86,7 @@ class Analysis(SQLModel, table=True):
 
 
 class Delivery(SQLModel, table=True):
-    __tablename__ = "deliveries"
+    __tablename__ = "deliveries"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (
         UniqueConstraint("item_id", "channel", "destination", name="uq_deliveries_item_channel_destination"),
     )
@@ -102,7 +102,7 @@ class Delivery(SQLModel, table=True):
 
 
 class Metric(SQLModel, table=True):
-    __tablename__ = "metrics"
+    __tablename__ = "metrics"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
 
     id: int | None = Field(default=None, primary_key=True)
     run_id: str = Field(foreign_key="runs.id", index=True)
@@ -113,7 +113,7 @@ class Metric(SQLModel, table=True):
 
 
 class Artifact(SQLModel, table=True):
-    __tablename__ = "artifacts"
+    __tablename__ = "artifacts"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
 
     id: int | None = Field(default=None, primary_key=True)
     run_id: str = Field(foreign_key="runs.id", index=True)

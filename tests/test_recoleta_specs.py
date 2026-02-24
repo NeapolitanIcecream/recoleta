@@ -67,14 +67,14 @@ def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 
 def _build_runtime() -> tuple[Settings, Repository]:
-    settings = Settings()
+    settings = Settings()  # pyright: ignore[reportCallIssue]
     repository = Repository(db_path=settings.recoleta_db_path)
     repository.init_schema()
     return settings, repository
 
 
 def test_settings_loads_nested_source_configuration(configured_env) -> None:
-    settings = Settings()
+    settings = Settings()  # pyright: ignore[reportCallIssue]
 
     assert settings.sources.hn.rss_urls == ["https://news.ycombinator.com/rss"]
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
