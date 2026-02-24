@@ -242,6 +242,7 @@ class Repository:
         status: str,
         error: str | None = None,
     ) -> Delivery:
+        now = utc_now()
         with Session(self.engine) as session:
             existing = session.exec(
                 select(Delivery).where(
@@ -258,7 +259,7 @@ class Repository:
                     message_id=message_id,
                     status=status,
                     error=error,
-                    sent_at=utc_now(),
+                    sent_at=now if status == DELIVERY_STATUS_SENT else None,
                 )
                 session.add(delivery)
                 session.commit()
@@ -268,7 +269,8 @@ class Repository:
             existing.message_id = message_id
             existing.status = status
             existing.error = error
-            existing.sent_at = utc_now()
+            if status == DELIVERY_STATUS_SENT:
+                existing.sent_at = now
             session.add(existing)
             session.commit()
             session.refresh(existing)
