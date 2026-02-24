@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import respx
@@ -107,7 +108,23 @@ class ExplodingRepository:
     def list_items_for_analysis(self, *, limit: int) -> list[Item]:
         raise NotImplementedError
 
+    def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None:
+        raise NotImplementedError
+
+    def upsert_content(
+        self,
+        *,
+        item_id: int,
+        content_type: str,
+        text: str | None,
+        artifact_path: str | None = None,
+    ) -> Content:
+        raise NotImplementedError
+
     def save_analysis(self, *, item_id: int, result: AnalysisResult):  # type: ignore[no-untyped-def]
+        raise NotImplementedError
+
+    def mark_item_enriched(self, *, item_id: int) -> None:
         raise NotImplementedError
 
     def mark_item_failed(self, *, item_id: int) -> None:
@@ -541,7 +558,7 @@ def test_analyze_writes_llm_request_and_response_artifacts(
             session.exec(
                 select(Artifact)
                 .where(Artifact.run_id == "run-llm-artifacts")
-                .order_by(Artifact.id)
+                .order_by(cast(Any, Artifact.id))
             )
         )
         kinds = {artifact.kind for artifact in artifacts}

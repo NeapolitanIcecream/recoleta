@@ -32,7 +32,6 @@ def extract_html_maintext(html: str) -> str | None:
         include_comments=False,
         include_tables=False,
         include_formatting=False,
-        clean_text=True,
         deduplicate=True,
     )
     if not extracted:
