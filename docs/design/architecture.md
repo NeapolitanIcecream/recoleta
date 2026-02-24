@@ -1,0 +1,151 @@
+# Architecture
+
+This document describes the proposed architecture for Recoleta v0: modules, data flow, scheduling, and operational concerns.
+
+## Runtime shape
+
+Recoleta is a CLI-first application with a small set of commands:
+
+- `recoleta ingest`: pull from sources and update the local index
+- `recoleta analyze`: run LLM analysis and ranking for newly ingested items
+- `recoleta publish`: write Obsidian notes and deliver Telegram messages
+- `recoleta run`: schedule ingest/analyze/publish periodically (optional; can also be done by cron/launchd)
+
+## Module boundaries
+
+Recommended package layout (names are illustrative):
+
+- `recoleta/config/`: typed config, env loading, validation
+- `recoleta/sources/`: source connectors (arXiv, HN RSS, HF papers, OpenReview, newsletter RSS)
+- `recoleta/pipeline/`: pipeline stages + orchestration
+- `recoleta/extract/`: fulltext extraction (HTML/PDF), Markdown conversion
+- `recoleta/llm/`: prompts, schemas, LLM invocation via LiteLLM
+- `recoleta/ranking/`: heuristics + LLM relevance score + dedupe
+- `recoleta/storage/`: SQLite repository + filesystem writers
+- `recoleta/delivery/`: Telegram sender
+- `recoleta/observability/`: logging setup, debug artifacts, metrics writes
+
+## Pipeline stages
+
+### Stage 1: Ingest
+
+Responsibilities:
+- Poll configured sources.
+- Convert each source record into a normalized `ItemDraft`.
+- Compute stable identity keys:
+  - `source` + `source_item_id` (if available)
+  - `canonical_url_hash` (fallback)
+- Upsert into SQLite `items`.
+
+Failure modes:
+- Network errors → retry with exponential backoff.
+- Parse errors → mark item as `failed_ingest` and persist error metadata.
+
+### Stage 2: Normalize
+
+Responsibilities:
+- Normalize fields (title, authors, published_at, url).
+- Create derived metadata (domains, arXiv categories, HN score/comment count if available).
+- Detect obvious duplicates:
+  - exact URL match
+  - near-duplicate title via `rapidfuzz` (threshold configurable)
+
+### Stage 3: Enrich (Fulltext/PDF)
+
+Responsibilities:
+- For HTML: download and extract main text (e.g., `trafilatura`).
+- For PDF: download and extract text/markdown (e.g., `marker-pdf` for arXiv/OpenReview PDFs).
+- Persist extracted content to:
+  - SQLite `contents` (small text blobs) and/or
+  - filesystem artifact store (for larger payloads), with a pointer stored in SQLite.
+
+Operational guidance:
+- Cache downloads by URL hash to avoid repeated fetching.
+- Never store access tokens inside artifacts.
+
+### Stage 4: Analyze (LLM)
+
+Responsibilities:
+- For each enriched item, call LiteLLM to produce structured output:
+  - summary
+  - insight
+  - idea_directions (list)
+  - topics/tags
+  - relevance score against user topics
+  - novelty score (optional)
+- Persist the analysis record and a prompt+response debug artifact (when configured).
+
+LLM interface:
+- Use LiteLLM's OpenAI-compatible API.
+- Prefer **structured output** (JSON schema / response_format) and validate with Pydantic.
+
+### Stage 5: Rank & Filter
+
+Responsibilities:
+- Rank items by a combined score:
+  - LLM relevance score
+  - source-specific signals (HN points/comments; arXiv recency; OpenReview status)
+  - novelty/dedup penalty
+- Apply user rules:
+  - allow/deny tags
+  - minimum score threshold
+  - max items per run/day
+- Decide final `Deliverable` objects.
+
+### Stage 6: Publish
+
+Responsibilities:
+- Write Obsidian notes in Markdown with YAML frontmatter.
+- Send Telegram messages (short mobile-friendly format) with safe rate limiting.
+- Record delivery results and message IDs for idempotency.
+
+## Scheduling and execution model
+
+Two supported modes:
+
+- **External scheduler**: run `recoleta ingest && recoleta analyze && recoleta publish` via cron/launchd.
+- **Internal scheduler**: `recoleta run` uses APScheduler to run jobs on intervals.
+
+For v0, concurrency should be conservative:
+- parallelize network fetches with bounded concurrency
+- serialize SQLite writes per transaction
+- keep LLM calls bounded to avoid cost spikes
+
+## Storage model
+
+Recoleta persists state in two places:
+
+- **SQLite index**: truth source for state machines, dedupe, retries, metrics.
+- **Filesystem outputs**:
+  - Obsidian Vault notes (user-facing artifacts)
+  - optional raw artifacts directory (HTML/PDF/text snapshots, debug JSON)
+
+SQLite enables:
+- incremental runs (process only new/changed items)
+- delivery idempotency
+- auditing and re-processing
+
+## Observability and debugability
+
+Every pipeline stage must emit at least one machine-readable signal:
+
+- **Structured logs** (Loguru): `logger.bind(module="pipeline.ingest", run_id=..., item_id=...)`
+  - do not bind unbounded values (full URLs, long filenames) repeatedly
+  - never log secrets (tokens, chat IDs, API keys)
+- **Metrics in SQLite**:
+  - stage duration per run
+  - LLM call counts and errors by provider/model
+  - delivered item counts
+- **Debug artifacts** (optional):
+  - `{run_id}/{item_id}/llm-request.json`
+  - `{run_id}/{item_id}/llm-response.json`
+  - scrub secrets before writing
+
+## Error handling and retries
+
+- Use `tenacity` for IO retries (HTTP fetches, Telegram transient errors).
+- Classify errors:
+  - transient: retry, then mark `retryable_failed`
+  - permanent: mark `failed` and stop further stages for that item
+- Persist failure context (error type, message, stage) in SQLite for later inspection.
+
