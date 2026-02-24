@@ -130,6 +130,8 @@ class Repository:
             if score > best_score:
                 best_score = score
                 best_item = candidate
+                if best_score >= 100.0:
+                    return candidate, best_score
         if best_item is None:
             return None
         if best_score < self.title_dedup_threshold:

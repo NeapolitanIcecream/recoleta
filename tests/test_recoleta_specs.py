@@ -427,13 +427,21 @@ def test_publish_retries_after_failed_delivery(configured_env) -> None:
 
 
 def test_publish_sanitizes_secrets_in_delivery_error(configured_env) -> None:
+    from urllib.parse import quote
+
     from recoleta.observability import mask_value
 
     settings, repository = _build_runtime()
+    token = settings.telegram_bot_token.get_secret_value()
+    chat = settings.telegram_chat_id.get_secret_value()
+    token_encoded = quote(token, safe="")
+    chat_encoded = quote(chat, safe="")
 
     class ExplodingTelegramSender:
         def send(self, text: str) -> str:  # noqa: ARG002
-            raise RuntimeError(f"token={settings.telegram_bot_token.get_secret_value()} chat={settings.telegram_chat_id.get_secret_value()}")
+            raise RuntimeError(
+                f"token={token} token_encoded={token_encoded} chat={chat} chat_encoded={chat_encoded}"
+            )
 
     service = PipelineService(
         settings=settings,
@@ -458,10 +466,12 @@ def test_publish_sanitizes_secrets_in_delivery_error(configured_env) -> None:
 
     with Session(repository.engine) as session:
         delivery = session.exec(select(Delivery)).one()
-        assert settings.telegram_bot_token.get_secret_value() not in (delivery.error or "")
-        assert settings.telegram_chat_id.get_secret_value() not in (delivery.error or "")
-        assert mask_value(settings.telegram_bot_token.get_secret_value()) in (delivery.error or "")
-        assert mask_value(settings.telegram_chat_id.get_secret_value()) in (delivery.error or "")
+        assert token not in (delivery.error or "")
+        assert token_encoded not in (delivery.error or "")
+        assert chat not in (delivery.error or "")
+        assert chat_encoded not in (delivery.error or "")
+        assert mask_value(token) in (delivery.error or "")
+        assert mask_value(chat) in (delivery.error or "")
 
 
 def test_publish_does_not_crash_when_debug_artifact_write_fails(

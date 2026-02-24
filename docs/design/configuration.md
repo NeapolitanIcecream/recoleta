@@ -35,6 +35,7 @@ Recommended fields:
 - `MIN_RELEVANCE_SCORE`: float (default 0.6)
 - `MAX_DELIVERIES_PER_DAY`: int (default 10)
 - `TITLE_DEDUP_THRESHOLD`: float (default 92.0 for rapidfuzz ratio)
+- `TITLE_DEDUP_MAX_CANDIDATES`: int (default 500)
 
 ## Scheduling
 

@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     min_relevance_score: float = Field(default=0.6, validation_alias="MIN_RELEVANCE_SCORE")
     max_deliveries_per_day: int = Field(default=10, validation_alias="MAX_DELIVERIES_PER_DAY")
     title_dedup_threshold: float = Field(default=92.0, validation_alias="TITLE_DEDUP_THRESHOLD")
+    title_dedup_max_candidates: int = Field(
+        default=500,
+        ge=0,
+        validation_alias="TITLE_DEDUP_MAX_CANDIDATES",
+    )
 
     ingest_interval_minutes: int = Field(default=60, validation_alias="INGEST_INTERVAL_MINUTES")
     analyze_interval_minutes: int = Field(default=120, validation_alias="ANALYZE_INTERVAL_MINUTES")

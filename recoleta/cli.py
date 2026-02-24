@@ -23,6 +23,7 @@ def _build_runtime() -> tuple[Settings, Repository, PipelineService]:
     repository = Repository(
         db_path=settings.recoleta_db_path,
         title_dedup_threshold=settings.title_dedup_threshold,
+        title_dedup_max_candidates=settings.title_dedup_max_candidates,
     )
     repository.init_schema()
     service = PipelineService(settings=settings, repository=repository)

@@ -16,7 +16,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
-from recoleta.observability import mask_value
+from recoleta.observability import mask_value, scrub_secrets
 from recoleta.ports import RepositoryPort
 from recoleta.publish import build_telegram_message, write_obsidian_note
 from recoleta.sources import fetch_rss_drafts
@@ -364,14 +364,10 @@ class PipelineService:
             return None
 
     def _sanitize_error_message(self, message: str) -> str:
-        if not message:
-            return message
-        sanitized = message
-        secrets = (
-            self.settings.telegram_bot_token.get_secret_value(),
-            self.settings.telegram_chat_id.get_secret_value(),
+        return scrub_secrets(
+            message,
+            secrets=(
+                self.settings.telegram_bot_token.get_secret_value(),
+                self.settings.telegram_chat_id.get_secret_value(),
+            ),
         )
-        for secret in secrets:
-            if secret and secret in sanitized:
-                sanitized = sanitized.replace(secret, mask_value(secret))
-        return sanitized
