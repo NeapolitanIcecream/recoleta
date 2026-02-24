@@ -53,6 +53,7 @@ class PipelineService:
                     ingest_result.updated += 1
             except Exception as exc:
                 ingest_result.failed += 1
+                sanitized_error = self._sanitize_error_message(str(exc))
                 artifact_path = self._write_debug_artifact(
                     run_id=run_id,
                     item_id=None,
@@ -60,7 +61,7 @@ class PipelineService:
                     payload={
                         "stage": "ingest",
                         "error_type": type(exc).__name__,
-                        "error_message": str(exc),
+                        "error_message": sanitized_error,
                         "draft": {
                             "source": draft.source,
                             "source_item_id": draft.source_item_id,
@@ -69,13 +70,19 @@ class PipelineService:
                     },
                 )
                 if artifact_path is not None:
-                    self.repository.add_artifact(
-                        run_id=run_id,
-                        item_id=None,
-                        kind="error_context",
-                        path=str(artifact_path),
-                    )
-                log.bind(item_hash=draft.canonical_url_hash).warning("Ingest failed: {}", str(exc))
+                    try:
+                        self.repository.add_artifact(
+                            run_id=run_id,
+                            item_id=None,
+                            kind="error_context",
+                            path=str(artifact_path),
+                        )
+                    except Exception as artifact_exc:
+                        log.warning(
+                            "Ingest debug artifact record failed: {}",
+                            self._sanitize_error_message(str(artifact_exc)),
+                        )
+                log.bind(item_hash=draft.canonical_url_hash).warning("Ingest failed: {}", sanitized_error)
 
         self.repository.record_metric(
             run_id=run_id,
@@ -122,8 +129,15 @@ class PipelineService:
                 analyze_result.processed += 1
             except Exception as exc:
                 analyze_result.failed += 1
+                sanitized_error = self._sanitize_error_message(str(exc))
                 if item.id is not None:
-                    self.repository.mark_item_failed(item_id=item.id)
+                    try:
+                        self.repository.mark_item_failed(item_id=item.id)
+                    except Exception as mark_exc:
+                        log.bind(item_id=item.id).warning(
+                            "Analyze mark_item_failed failed: {}",
+                            self._sanitize_error_message(str(mark_exc)),
+                        )
                 artifact_path = self._write_debug_artifact(
                     run_id=run_id,
                     item_id=item.id,
@@ -131,18 +145,24 @@ class PipelineService:
                     payload={
                         "stage": "analyze",
                         "error_type": type(exc).__name__,
-                        "error_message": str(exc),
+                        "error_message": sanitized_error,
                         "item_id": item.id,
                     },
                 )
                 if artifact_path is not None:
-                    self.repository.add_artifact(
-                        run_id=run_id,
-                        item_id=item.id,
-                        kind="error_context",
-                        path=str(artifact_path),
-                    )
-                log.bind(item_id=item.id).warning("Analyze failed: {}", str(exc))
+                    try:
+                        self.repository.add_artifact(
+                            run_id=run_id,
+                            item_id=item.id,
+                            kind="error_context",
+                            path=str(artifact_path),
+                        )
+                    except Exception as artifact_exc:
+                        log.bind(item_id=item.id).warning(
+                            "Analyze debug artifact record failed: {}",
+                            self._sanitize_error_message(str(artifact_exc)),
+                        )
+                log.bind(item_id=item.id).warning("Analyze failed: {}", sanitized_error)
 
         self.repository.record_metric(
             run_id=run_id,
@@ -310,3 +330,16 @@ class PipelineService:
         path = artifact_dir / file_name
         path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
         return path
+
+    def _sanitize_error_message(self, message: str) -> str:
+        if not message:
+            return message
+        sanitized = message
+        secrets = (
+            self.settings.telegram_bot_token.get_secret_value(),
+            self.settings.telegram_chat_id.get_secret_value(),
+        )
+        for secret in secrets:
+            if secret and secret in sanitized:
+                sanitized = sanitized.replace(secret, mask_value(secret))
+        return sanitized
