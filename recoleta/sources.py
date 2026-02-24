@@ -10,7 +10,8 @@ import feedparser
 import httpx
 from huggingface_hub import HfApi
 from huggingface_hub.errors import HfHubHTTPError
-from huggingface_hub.utils import build_hf_headers, get_session, hf_raise_for_status
+from huggingface_hub.utils._headers import build_hf_headers
+from huggingface_hub.utils._http import get_session, hf_raise_for_status
 import openreview
 import requests
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
@@ -71,7 +72,7 @@ def _should_retry_hf_hub(exc: BaseException) -> bool:
         response = getattr(exc, "response", None)
         status = getattr(response, "status_code", None)
         return status == 429 or (isinstance(status, int) and status >= 500)
-    if isinstance(exc, requests.RequestException):
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
         return True
     return False
 
@@ -99,7 +100,8 @@ def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
         return drafts
 
     hf_api = HfApi()
-    index_url = f"{hf_api.endpoint.rstrip('/')}/papers"
+    base_url = hf_api.endpoint.rstrip("/")
+    index_url = f"{base_url}/papers"
     html = _fetch_hf_html(index_url)
     soup = BeautifulSoup(html, "html.parser")
     anchors = soup.select('a[href^="/papers/"]')
@@ -117,7 +119,7 @@ def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
         if not title:
             continue
 
-        canonical_url = f"{hf_api.endpoint.rstrip('/')}{stripped_href}"
+        canonical_url = f"{base_url}{stripped_href}"
         drafts.append(
             ItemDraft.from_values(
                 source="hf_daily",
