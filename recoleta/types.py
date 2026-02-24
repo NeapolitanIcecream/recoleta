@@ -41,12 +41,15 @@ class ItemDraft:
         normalized_url = canonical_url.strip()
         if not normalized_url:
             raise ValueError("canonical_url must not be empty")
+        normalized_title = title.strip()
+        if not normalized_title:
+            raise ValueError("title must not be empty")
         return cls(
             source=source,
             source_item_id=source_item_id,
             canonical_url=normalized_url,
             canonical_url_hash=sha256_hex(normalized_url),
-            title=title.strip(),
+            title=normalized_title,
             authors=authors or [],
             published_at=published_at,
             raw_metadata=raw_metadata or {},

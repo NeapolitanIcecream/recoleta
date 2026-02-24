@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -15,6 +16,7 @@ from recoleta.models import (
     Item,
     Metric,
     Run,
+    DELIVERY_STATUS_SENT,
     ITEM_STATE_ANALYZED,
     ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
@@ -206,16 +208,31 @@ class Repository:
             )
             return list(session.exec(statement))
 
-    def delivery_exists(self, *, item_id: int, channel: str, destination: str) -> bool:
+    def has_sent_delivery(self, *, item_id: int, channel: str, destination: str) -> bool:
         with Session(self.engine) as session:
             statement = select(Delivery).where(
                 Delivery.item_id == item_id,
                 Delivery.channel == channel,
                 Delivery.destination == destination,
+                Delivery.status == DELIVERY_STATUS_SENT,
             )
             return session.exec(statement).first() is not None
 
-    def add_delivery(
+    def count_sent_deliveries_since(self, *, channel: str, destination: str, since: datetime) -> int:
+        with Session(self.engine) as session:
+            statement = (
+                select(func.count(cast(Any, Delivery.id)))
+                .where(
+                    Delivery.channel == channel,
+                    Delivery.destination == destination,
+                    Delivery.status == DELIVERY_STATUS_SENT,
+                    cast(Any, Delivery.sent_at).is_not(None),
+                    cast(Any, Delivery.sent_at) >= since,
+                )
+            )
+            return int(session.exec(statement).one())
+
+    def upsert_delivery(
         self,
         *,
         item_id: int,
@@ -225,20 +242,37 @@ class Repository:
         status: str,
         error: str | None = None,
     ) -> Delivery:
-        delivery = Delivery(
-            item_id=item_id,
-            channel=channel,
-            destination=destination,
-            message_id=message_id,
-            status=status,
-            error=error,
-            sent_at=utc_now(),
-        )
         with Session(self.engine) as session:
-            session.add(delivery)
+            existing = session.exec(
+                select(Delivery).where(
+                    Delivery.item_id == item_id,
+                    Delivery.channel == channel,
+                    Delivery.destination == destination,
+                )
+            ).first()
+            if existing is None:
+                delivery = Delivery(
+                    item_id=item_id,
+                    channel=channel,
+                    destination=destination,
+                    message_id=message_id,
+                    status=status,
+                    error=error,
+                    sent_at=utc_now(),
+                )
+                session.add(delivery)
+                session.commit()
+                session.refresh(delivery)
+                return delivery
+
+            existing.message_id = message_id
+            existing.status = status
+            existing.error = error
+            existing.sent_at = utc_now()
+            session.add(existing)
             session.commit()
-            session.refresh(delivery)
-            return delivery
+            session.refresh(existing)
+            return existing
 
     def mark_item_published(self, *, item_id: int) -> None:
         with Session(self.engine) as session:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +11,7 @@ def write_obsidian_note(
     *,
     vault_path: Path,
     base_folder: str,
+    item_id: int,
     title: str,
     source: str,
     canonical_url: str,
@@ -28,11 +28,7 @@ def write_obsidian_note(
     note_dir.mkdir(parents=True, exist_ok=True)
     date_prefix = (published_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
     slug = slugify(title, lowercase=True) or "untitled-item"
-    base_name = f"{date_prefix}--{slug}"
-    note_path = note_dir / f"{base_name}.md"
-    if note_path.exists():
-        url_hash = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()[:8]
-        note_path = note_dir / f"{base_name}--{url_hash}.md"
+    note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
 
     frontmatter = {
         "source": source,

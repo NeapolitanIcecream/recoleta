@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,7 @@ from recoleta.observability import mask_value
 from recoleta.publish import build_telegram_message, write_obsidian_note
 from recoleta.sources import fetch_rss_drafts
 from recoleta.storage import Repository
-from recoleta.types import AnalyzeResult, IngestResult, ItemDraft, PublishResult
+from recoleta.types import AnalyzeResult, IngestResult, ItemDraft, PublishResult, utc_now
 
 
 class PipelineService:
@@ -144,14 +145,38 @@ class PipelineService:
         log = logger.bind(module="pipeline.publish", run_id=run_id)
         publish_result = PublishResult()
         destination_hash = mask_value(self.settings.telegram_chat_id.get_secret_value())
+        now = utc_now()
+        midnight_utc = datetime(
+            year=now.year,
+            month=now.month,
+            day=now.day,
+            tzinfo=now.tzinfo,
+        )
+        sent_today = self.repository.count_sent_deliveries_since(
+            channel=DELIVERY_CHANNEL_TELEGRAM,
+            destination=destination_hash,
+            since=midnight_utc,
+        )
+        remaining_today = max(0, self.settings.max_deliveries_per_day - sent_today)
+        if remaining_today <= 0:
+            log.info("Publish skipped: daily delivery cap reached sent_today={} cap={}", sent_today, self.settings.max_deliveries_per_day)
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.publish.daily_cap_remaining",
+                value=0,
+                unit="count",
+            )
+            return publish_result
+
+        effective_limit = min(limit, remaining_today)
         candidates = self.repository.list_items_for_publish(
-            limit=limit,
+            limit=effective_limit,
             min_relevance_score=self.settings.min_relevance_score,
         )
         for item, analysis in track(candidates, description="Publishing items"):
             if item.id is None:
                 continue
-            if self.repository.delivery_exists(
+            if self.repository.has_sent_delivery(
                 item_id=item.id,
                 channel=DELIVERY_CHANNEL_TELEGRAM,
                 destination=destination_hash,
@@ -159,30 +184,31 @@ class PipelineService:
                 publish_result.skipped += 1
                 continue
 
-            note_path = write_obsidian_note(
-                vault_path=self.settings.obsidian_vault_path,
-                base_folder=self.settings.obsidian_base_folder,
-                title=item.title,
-                source=item.source,
-                canonical_url=item.canonical_url,
-                published_at=item.published_at,
-                authors=self.repository.decode_list(item.authors),
-                topics=self.repository.decode_list(analysis.topics_json),
-                relevance_score=analysis.relevance_score,
-                run_id=run_id,
-                summary=analysis.summary,
-                insight=analysis.insight,
-                ideas=self.repository.decode_list(analysis.idea_directions_json),
-            )
-            message_text = build_telegram_message(
-                title=item.title,
-                summary=analysis.summary,
-                insight=analysis.insight,
-                url=item.canonical_url,
-            )
             try:
+                note_path = write_obsidian_note(
+                    vault_path=self.settings.obsidian_vault_path,
+                    base_folder=self.settings.obsidian_base_folder,
+                    item_id=item.id,
+                    title=item.title,
+                    source=item.source,
+                    canonical_url=item.canonical_url,
+                    published_at=item.published_at,
+                    authors=self.repository.decode_list(item.authors),
+                    topics=self.repository.decode_list(analysis.topics_json),
+                    relevance_score=analysis.relevance_score,
+                    run_id=run_id,
+                    summary=analysis.summary,
+                    insight=analysis.insight,
+                    ideas=self.repository.decode_list(analysis.idea_directions_json),
+                )
+                message_text = build_telegram_message(
+                    title=item.title,
+                    summary=analysis.summary,
+                    insight=analysis.insight,
+                    url=item.canonical_url,
+                )
                 message_id = self.telegram_sender.send(message_text)
-                self.repository.add_delivery(
+                self.repository.upsert_delivery(
                     item_id=item.id,
                     channel=DELIVERY_CHANNEL_TELEGRAM,
                     destination=destination_hash,
@@ -193,7 +219,7 @@ class PipelineService:
                 publish_result.sent += 1
                 publish_result.note_paths.append(note_path)
             except Exception as exc:
-                self.repository.add_delivery(
+                self.repository.upsert_delivery(
                     item_id=item.id,
                     channel=DELIVERY_CHANNEL_TELEGRAM,
                     destination=destination_hash,
@@ -220,6 +246,12 @@ class PipelineService:
             run_id=run_id,
             name="pipeline.publish.failed_total",
             value=publish_result.failed,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.publish.daily_cap_remaining",
+            value=max(0, remaining_today - publish_result.sent),
             unit="count",
         )
         log.info(

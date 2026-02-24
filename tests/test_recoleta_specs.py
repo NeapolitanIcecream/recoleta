@@ -4,9 +4,13 @@ import json
 from pathlib import Path
 
 import pytest
+import respx
+from sqlmodel import Session, select
 
 from recoleta.config import Settings
+from recoleta.models import DELIVERY_CHANNEL_TELEGRAM, DELIVERY_STATUS_FAILED, DELIVERY_STATUS_SENT, Delivery
 from recoleta.pipeline import PipelineService
+from recoleta.sources import fetch_rss_drafts
 from recoleta.storage import Repository
 from recoleta.types import AnalysisResult, ItemDraft
 
@@ -38,6 +42,20 @@ class FakeTelegramSender:
         self.messages: list[str] = []
 
     def send(self, text: str) -> str:
+        self.messages.append(text)
+        return f"message-{len(self.messages)}"
+
+
+class FlakyTelegramSender:
+    def __init__(self, *, fail_first: bool = True) -> None:
+        self.fail_first = fail_first
+        self.attempts = 0
+        self.messages: list[str] = []
+
+    def send(self, text: str) -> str:
+        self.attempts += 1
+        if self.fail_first and self.attempts == 1:
+            raise RuntimeError("simulated telegram failure")
         self.messages.append(text)
         return f"message-{len(self.messages)}"
 
@@ -171,3 +189,75 @@ def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> 
     assert second_publish.sent == 0
     assert len(sender.messages) == 1
     assert first_publish.note_paths[0].exists()
+
+
+def test_publish_retries_after_failed_delivery(configured_env) -> None:
+    settings, repository = _build_runtime()
+    sender = FlakyTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-retry-1",
+        canonical_url="https://example.com/publish-retry-case",
+        title="Publish Retry Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-retry", drafts=[draft])
+    service.analyze(run_id="run-publish-retry", limit=10)
+
+    first_publish = service.publish(run_id="run-publish-retry", limit=10)
+    second_publish = service.publish(run_id="run-publish-retry-2", limit=10)
+
+    assert first_publish.sent == 0
+    assert first_publish.failed == 1
+    assert second_publish.sent == 1
+    assert second_publish.failed == 0
+    assert len(sender.messages) == 1
+
+    with Session(repository.engine) as session:
+        deliveries = list(
+            session.exec(
+                select(Delivery).where(
+                    Delivery.channel == DELIVERY_CHANNEL_TELEGRAM,
+                )
+            )
+        )
+        assert len(deliveries) == 1
+        assert deliveries[0].status == DELIVERY_STATUS_SENT
+        assert deliveries[0].message_id is not None
+
+
+@respx.mock
+def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed() -> None:
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Feed</title>
+    <item>
+      <title>Hello World</title>
+      <link>https://example.com/hello</link>
+      <guid>guid-hello</guid>
+      <pubDate>Mon, 20 Jan 2025 10:00:00 GMT</pubDate>
+      <author>Alice</author>
+    </item>
+  </channel>
+</rss>
+"""
+    respx.get("https://example.com/feed.xml").respond(
+        200,
+        text=rss_xml,
+        headers={"Content-Type": "application/rss+xml; charset=utf-8"},
+    )
+    drafts = fetch_rss_drafts(feed_urls=["https://example.com/feed.xml"], source="rss", max_items_per_feed=10)
+    assert len(drafts) == 1
+    assert drafts[0].canonical_url == "https://example.com/hello"
+    assert drafts[0].title == "Hello World"
+    assert drafts[0].source_item_id == "guid-hello"
+    assert drafts[0].raw_metadata["feed_title"] == "Example Feed"
