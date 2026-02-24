@@ -1,7 +1,7 @@
 [project]
 name = "recoleta"
 version = "0.1.0"
-description = "Add your description here"
+description = "Personal research intelligence funnel for ingesting, analyzing, and publishing signals."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -34,6 +34,9 @@ dependencies = [
     "typer>=0.24.1",
 ]
 
+[project.scripts]
+recoleta = "recoleta.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
@@ -41,3 +44,6 @@ dev = [
     "respx>=0.22.0",
     "ruff>=0.15.2",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
