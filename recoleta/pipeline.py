@@ -349,12 +349,19 @@ class PipelineService:
     ) -> Path | None:
         if not self.settings.write_debug_artifacts or self.settings.artifacts_dir is None:
             return None
-        artifact_dir = self.settings.artifacts_dir / run_id
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        file_name = f"{item_id or 'no-item'}-{kind}-debug.json"
-        path = artifact_dir / file_name
-        path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
-        return path
+        try:
+            artifact_dir = self.settings.artifacts_dir / run_id
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            file_name = f"{item_id or 'no-item'}-{kind}-debug.json"
+            path = artifact_dir / file_name
+            path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+            return path
+        except Exception as exc:
+            logger.bind(module="pipeline.artifacts", run_id=run_id, item_id=item_id).warning(
+                "Debug artifact write failed: {}",
+                self._sanitize_error_message(str(exc)),
+            )
+            return None
 
     def _sanitize_error_message(self, message: str) -> str:
         if not message:

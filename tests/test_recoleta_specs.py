@@ -464,6 +464,56 @@ def test_publish_sanitizes_secrets_in_delivery_error(configured_env) -> None:
         assert mask_value(settings.telegram_chat_id.get_secret_value()) in (delivery.error or "")
 
 
+def test_publish_does_not_crash_when_debug_artifact_write_fails(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.observability import mask_value
+
+    tmp_path = configured_env
+    bad_artifacts_dir = tmp_path / "bad-artifacts"
+    bad_artifacts_dir.write_text("not-a-dir", encoding="utf-8")
+
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(bad_artifacts_dir))
+
+    settings, repository = _build_runtime()
+
+    class ExplodingTelegramSender:
+        def send(self, text: str) -> str:  # noqa: ARG002
+            raise RuntimeError(
+                f"token={settings.telegram_bot_token.get_secret_value()} chat={settings.telegram_chat_id.get_secret_value()}"
+            )
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=ExplodingTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-artifact-failure-1",
+        canonical_url="https://example.com/publish-artifact-failure-case",
+        title="Publish Artifact Failure Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-artifact-failure", drafts=[draft])
+    service.analyze(run_id="run-publish-artifact-failure", limit=10)
+    publish_result = service.publish(run_id="run-publish-artifact-failure", limit=10)
+
+    assert publish_result.failed == 1
+
+    with Session(repository.engine) as session:
+        delivery = session.exec(select(Delivery)).one()
+        assert settings.telegram_bot_token.get_secret_value() not in (delivery.error or "")
+        assert settings.telegram_chat_id.get_secret_value() not in (delivery.error or "")
+        assert mask_value(settings.telegram_bot_token.get_secret_value()) in (delivery.error or "")
+        assert mask_value(settings.telegram_chat_id.get_secret_value()) in (delivery.error or "")
+
+
 @respx.mock
 def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed() -> None:
     rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
