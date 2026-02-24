@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy import func
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from recoleta.models import (
@@ -82,8 +83,8 @@ class Repository:
 
     def count_items(self) -> int:
         with Session(self.engine) as session:
-            statement = select(Item)
-            return len(list(session.exec(statement)))
+            statement = select(func.count(Item.id))
+            return int(session.exec(statement).one())
 
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]:
         with Session(self.engine) as session:
