@@ -8,7 +8,14 @@ import respx
 from sqlmodel import Session, select
 
 from recoleta.config import Settings
-from recoleta.models import DELIVERY_CHANNEL_TELEGRAM, DELIVERY_STATUS_FAILED, DELIVERY_STATUS_SENT, Delivery
+from recoleta.models import (
+    DELIVERY_CHANNEL_TELEGRAM,
+    DELIVERY_STATUS_FAILED,
+    DELIVERY_STATUS_SENT,
+    ITEM_STATE_ANALYZED,
+    Delivery,
+    Item,
+)
 from recoleta.pipeline import PipelineService
 from recoleta.sources import fetch_rss_drafts
 from recoleta.storage import Repository
@@ -58,6 +65,63 @@ class FlakyTelegramSender:
             raise RuntimeError("simulated telegram failure")
         self.messages.append(text)
         return f"message-{len(self.messages)}"
+
+
+class ExplodingRepository:
+    def __init__(self) -> None:
+        self.metrics: list[tuple[str, float, str | None]] = []
+        self.artifacts: list[tuple[str, int | None, str, str]] = []
+
+    def upsert_item(self, draft: ItemDraft):  # type: ignore[no-untyped-def]
+        raise RuntimeError("simulated repository failure")
+
+    def record_metric(self, *, run_id: str, name: str, value: float, unit: str | None = None) -> None:
+        self.metrics.append((name, value, unit))
+
+    def add_artifact(self, *, run_id: str, item_id: int | None, kind: str, path: str) -> None:
+        self.artifacts.append((run_id, item_id, kind, path))
+
+    def list_items_for_analysis(self, *, limit: int) -> list[Item]:
+        raise NotImplementedError
+
+    def save_analysis(self, *, item_id: int, result: AnalysisResult):  # type: ignore[no-untyped-def]
+        raise NotImplementedError
+
+    def mark_item_failed(self, *, item_id: int) -> None:
+        raise NotImplementedError
+
+    def list_items_for_publish(self, *, limit: int, min_relevance_score: float):  # type: ignore[no-untyped-def]
+        raise NotImplementedError
+
+    def has_sent_delivery(self, *, item_id: int, channel: str, destination: str) -> bool:
+        raise NotImplementedError
+
+    def count_sent_deliveries_since(self, *, channel: str, destination: str, since):  # type: ignore[no-untyped-def]
+        raise NotImplementedError
+
+    def upsert_delivery(  # type: ignore[no-untyped-def]
+        self,
+        *,
+        item_id: int,
+        channel: str,
+        destination: str,
+        message_id: str | None,
+        status: str,
+        error: str | None = None,
+    ):
+        raise NotImplementedError
+
+    def mark_item_published(self, *, item_id: int) -> None:
+        raise NotImplementedError
+
+    @staticmethod
+    def decode_list(value: str | None) -> list[str]:
+        if not value:
+            return []
+        loaded = json.loads(value)
+        if isinstance(loaded, list):
+            return [str(item) for item in loaded]
+        return []
 
 
 @pytest.fixture()
@@ -131,6 +195,94 @@ def test_ingest_is_idempotent_by_canonical_url_hash(configured_env) -> None:
     assert result.inserted == 1
     assert result.updated == 1
     assert repository.count_items() == 1
+
+
+def test_ingest_does_not_regress_state_for_analyzed_items(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    url = "https://example.com/already-analyzed"
+    draft_a = ItemDraft.from_values(
+        source="rss",
+        source_item_id=None,
+        canonical_url=url,
+        title="Initial Title",
+        authors=["Alice"],
+        raw_metadata={"feed": "example"},
+    )
+    service.ingest(run_id="run-ingest-state", drafts=[draft_a])
+    analyzed = service.analyze(run_id="run-ingest-state", limit=10)
+    assert analyzed.processed == 1
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+        assert item.state == ITEM_STATE_ANALYZED
+
+    draft_b = ItemDraft.from_values(
+        source="rss",
+        source_item_id=None,
+        canonical_url=url,
+        title="Updated Title",
+        authors=["Alice", "Bob"],
+        raw_metadata={"feed": "example"},
+    )
+    service.ingest(run_id="run-ingest-state-2", drafts=[draft_b])
+
+    # The item should not be queued for analysis again just because metadata changed.
+    analyzed_again = service.analyze(run_id="run-ingest-state-3", limit=10)
+    assert analyzed_again.processed == 0
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+        assert item.state == ITEM_STATE_ANALYZED
+
+
+def test_ingest_writes_debug_artifact_on_repository_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+    artifacts_dir = tmp_path / "artifacts"
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("SOURCES", json.dumps({"rss": {"feeds": []}}))
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    repository = ExplodingRepository()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="exploding-1",
+        canonical_url="https://example.com/exploding",
+        title="Exploding Item",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    result = service.ingest(run_id="run-ingest-exploding", drafts=[draft])
+
+    assert result.failed == 1
+    assert len(repository.artifacts) == 1
+    recorded_run_id, recorded_item_id, recorded_kind, recorded_path = repository.artifacts[0]
+    assert recorded_run_id == "run-ingest-exploding"
+    assert recorded_item_id is None
+    assert recorded_kind == "error_context"
+    assert Path(recorded_path).exists()
 
 
 def test_analyze_failure_emits_failure_metric(configured_env) -> None:

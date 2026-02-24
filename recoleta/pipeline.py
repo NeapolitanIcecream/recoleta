@@ -17,9 +17,9 @@ from recoleta.models import (
     DELIVERY_STATUS_SENT,
 )
 from recoleta.observability import mask_value
+from recoleta.ports import RepositoryPort
 from recoleta.publish import build_telegram_message, write_obsidian_note
 from recoleta.sources import fetch_rss_drafts
-from recoleta.storage import Repository
 from recoleta.types import AnalyzeResult, IngestResult, ItemDraft, PublishResult, utc_now
 
 
@@ -28,7 +28,7 @@ class PipelineService:
         self,
         *,
         settings: Settings,
-        repository: Repository,
+        repository: RepositoryPort,
         analyzer: Analyzer | None = None,
         telegram_sender: Any | None = None,
     ) -> None:
@@ -53,6 +53,28 @@ class PipelineService:
                     ingest_result.updated += 1
             except Exception as exc:
                 ingest_result.failed += 1
+                artifact_path = self._write_debug_artifact(
+                    run_id=run_id,
+                    item_id=None,
+                    kind="error_context",
+                    payload={
+                        "stage": "ingest",
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                        "draft": {
+                            "source": draft.source,
+                            "source_item_id": draft.source_item_id,
+                            "canonical_url_hash": draft.canonical_url_hash,
+                        },
+                    },
+                )
+                if artifact_path is not None:
+                    self.repository.add_artifact(
+                        run_id=run_id,
+                        item_id=None,
+                        kind="error_context",
+                        path=str(artifact_path),
+                    )
                 log.bind(item_hash=draft.canonical_url_hash).warning("Ingest failed: {}", str(exc))
 
         self.repository.record_metric(

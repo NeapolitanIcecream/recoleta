@@ -29,7 +29,7 @@ from recoleta.types import AnalysisResult, ItemDraft, utc_now
 
 
 def _to_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
 def _from_json_list(value: str | None) -> list[str]:
@@ -122,13 +122,16 @@ class Repository:
                 session.refresh(created)
                 return created, True
 
+            previous_state = existing.state
             existing.canonical_url = draft.canonical_url
             existing.canonical_url_hash = draft.canonical_url_hash
             existing.title = draft.title
             existing.authors = _to_json(draft.authors)
             existing.published_at = draft.published_at
             existing.raw_metadata_json = _to_json(draft.raw_metadata)
-            existing.state = ITEM_STATE_INGESTED
+            if previous_state == ITEM_STATE_FAILED:
+                # Allow failed items to be retried by re-ingesting.
+                existing.state = ITEM_STATE_INGESTED
             existing.updated_at = utc_now()
             if existing.source_item_id is None and draft.source_item_id is not None:
                 existing.source_item_id = draft.source_item_id
