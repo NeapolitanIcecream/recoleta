@@ -9,11 +9,7 @@ from bs4 import BeautifulSoup
 import feedparser
 import httpx
 from huggingface_hub import HfApi
-from huggingface_hub.errors import HfHubHTTPError
-from huggingface_hub.utils._headers import build_hf_headers
-from huggingface_hub.utils._http import get_session, hf_raise_for_status
 import openreview
-import requests
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from recoleta.types import ItemDraft
@@ -67,33 +63,6 @@ def _first_non_empty_str(*values: object) -> str | None:
     return None
 
 
-def _should_retry_hf_hub(exc: BaseException) -> bool:
-    if isinstance(exc, HfHubHTTPError):
-        response = getattr(exc, "response", None)
-        status = getattr(response, "status_code", None)
-        return status == 429 or (isinstance(status, int) and status >= 500)
-    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
-        return True
-    return False
-
-
-@retry(
-    retry=retry_if_exception(_should_retry_hf_hub),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential_jitter(initial=0.5, max=6.0),
-    reraise=True,
-)
-def _fetch_hf_html(url: str) -> str:
-    headers = build_hf_headers(
-        token=False,
-        library_name="recoleta",
-        user_agent="recoleta/0.1",
-    )
-    response = get_session().get(url, headers=headers, timeout=(5.0, 10.0))
-    hf_raise_for_status(response, endpoint_name="papers.index")
-    return response.text
-
-
 def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
     drafts: list[ItemDraft] = []
     if max_items <= 0:
@@ -102,7 +71,10 @@ def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
     hf_api = HfApi()
     base_url = hf_api.endpoint.rstrip("/")
     index_url = f"{base_url}/papers"
-    html = _fetch_hf_html(index_url)
+    timeout = httpx.Timeout(10.0, connect=5.0)
+    headers = {"User-Agent": "recoleta/0.1"}
+    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+        html = _fetch_feed_text(client, index_url)
     soup = BeautifulSoup(html, "html.parser")
     anchors = soup.select('a[href^="/papers/"]')
     seen: set[str] = set()
