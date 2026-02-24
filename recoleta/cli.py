@@ -20,7 +20,10 @@ console = Console()
 def _build_runtime() -> tuple[Settings, Repository, PipelineService]:
     settings = Settings()  # pyright: ignore[reportCallIssue]
     configure_process_logging(level=settings.log_level, log_json=settings.log_json)
-    repository = Repository(db_path=settings.recoleta_db_path)
+    repository = Repository(
+        db_path=settings.recoleta_db_path,
+        title_dedup_threshold=settings.title_dedup_threshold,
+    )
     repository.init_schema()
     service = PipelineService(settings=settings, repository=repository)
     return settings, repository, service

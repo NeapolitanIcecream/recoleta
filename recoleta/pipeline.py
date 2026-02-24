@@ -261,16 +261,41 @@ class PipelineService:
                 publish_result.sent += 1
                 publish_result.note_paths.append(note_path)
             except Exception as exc:
+                sanitized_error = self._sanitize_error_message(str(exc))
+                artifact_path = self._write_debug_artifact(
+                    run_id=run_id,
+                    item_id=item.id,
+                    kind="error_context",
+                    payload={
+                        "stage": "publish",
+                        "error_type": type(exc).__name__,
+                        "error_message": sanitized_error,
+                        "item_id": item.id,
+                    },
+                )
+                if artifact_path is not None:
+                    try:
+                        self.repository.add_artifact(
+                            run_id=run_id,
+                            item_id=item.id,
+                            kind="error_context",
+                            path=str(artifact_path),
+                        )
+                    except Exception as artifact_exc:
+                        log.bind(item_id=item.id).warning(
+                            "Publish debug artifact record failed: {}",
+                            self._sanitize_error_message(str(artifact_exc)),
+                        )
                 self.repository.upsert_delivery(
                     item_id=item.id,
                     channel=DELIVERY_CHANNEL_TELEGRAM,
                     destination=destination_hash,
                     message_id=None,
                     status=DELIVERY_STATUS_FAILED,
-                    error=str(exc),
+                    error=sanitized_error,
                 )
                 publish_result.failed += 1
-                log.bind(item_id=item.id).warning("Publish failed: {}", str(exc))
+                log.bind(item_id=item.id).warning("Publish failed: {}", sanitized_error)
 
         self.repository.record_metric(
             run_id=run_id,

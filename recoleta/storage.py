@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
+from rapidfuzz import fuzz
 from sqlalchemy import desc, func
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -41,11 +42,29 @@ def _from_json_list(value: str | None) -> list[str]:
     return []
 
 
+def _from_json_object(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        loaded = json.loads(value)
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 class Repository:
-    def __init__(self, *, db_path: Path) -> None:
+    def __init__(
+        self,
+        *,
+        db_path: Path,
+        title_dedup_threshold: float = 92.0,
+        title_dedup_max_candidates: int = 500,
+    ) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
+        self.title_dedup_threshold = float(title_dedup_threshold)
+        self.title_dedup_max_candidates = max(0, int(title_dedup_max_candidates))
 
     def init_schema(self) -> None:
         SQLModel.metadata.create_all(self.engine)
@@ -91,9 +110,37 @@ class Repository:
             statement = select(func.count(cast(Any, Item.id)))
             return int(session.exec(statement).one())
 
+    def _find_near_duplicate_by_title(self, session: Session, *, title: str) -> tuple[Item, float] | None:
+        normalized_title = title.strip()
+        if not normalized_title:
+            return None
+        if self.title_dedup_max_candidates <= 0:
+            return None
+
+        statement = (
+            select(Item)
+            .order_by(desc(cast(Any, Item.created_at)))
+            .limit(self.title_dedup_max_candidates)
+        )
+        candidates = list(session.exec(statement))
+        best_item: Item | None = None
+        best_score = -1.0
+        for candidate in candidates:
+            score = float(fuzz.token_set_ratio(normalized_title, candidate.title))
+            if score > best_score:
+                best_score = score
+                best_item = candidate
+        if best_item is None:
+            return None
+        if best_score < self.title_dedup_threshold:
+            return None
+        return best_item, best_score
+
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]:
         with Session(self.engine) as session:
             existing: Item | None = None
+            matched_by_title = False
+            title_dedup_score: float | None = None
             if draft.source_item_id:
                 statement = select(Item).where(
                     Item.source == draft.source,
@@ -104,6 +151,12 @@ class Repository:
             if existing is None:
                 by_url_hash = select(Item).where(Item.canonical_url_hash == draft.canonical_url_hash)
                 existing = session.exec(by_url_hash).first()
+
+            if existing is None and self.title_dedup_threshold > 0:
+                match = self._find_near_duplicate_by_title(session, title=draft.title)
+                if match is not None:
+                    existing, title_dedup_score = match
+                    matched_by_title = True
 
             if existing is None:
                 created = Item(
@@ -123,17 +176,47 @@ class Repository:
                 return created, True
 
             previous_state = existing.state
-            existing.canonical_url = draft.canonical_url
-            existing.canonical_url_hash = draft.canonical_url_hash
-            existing.title = draft.title
-            existing.authors = _to_json(draft.authors)
-            existing.published_at = draft.published_at
-            existing.raw_metadata_json = _to_json(draft.raw_metadata)
+            if matched_by_title:
+                current_metadata = _from_json_object(existing.raw_metadata_json)
+                alternate_urls = current_metadata.get("alternate_urls")
+                if not isinstance(alternate_urls, list):
+                    alternate_urls = []
+                if draft.canonical_url != existing.canonical_url and draft.canonical_url not in alternate_urls:
+                    alternate_urls.append(draft.canonical_url)
+                current_metadata["alternate_urls"] = alternate_urls
+
+                dedup_events = current_metadata.get("dedup_events")
+                if not isinstance(dedup_events, list):
+                    dedup_events = []
+                dedup_events.append(
+                    {
+                        "source": draft.source,
+                        "source_item_id": draft.source_item_id,
+                        "canonical_url_hash": draft.canonical_url_hash,
+                        "title_similarity": round(float(title_dedup_score or 0.0), 2),
+                    }
+                )
+                current_metadata["dedup_events"] = dedup_events[-20:]
+                existing.raw_metadata_json = _to_json(current_metadata)
+                if existing.published_at is None and draft.published_at is not None:
+                    existing.published_at = draft.published_at
+            else:
+                existing.canonical_url = draft.canonical_url
+                existing.canonical_url_hash = draft.canonical_url_hash
+                existing.title = draft.title
+                existing.authors = _to_json(draft.authors)
+                existing.published_at = draft.published_at
+                existing.raw_metadata_json = _to_json(draft.raw_metadata)
             if previous_state == ITEM_STATE_FAILED:
                 # Allow failed items to be retried by re-ingesting.
                 existing.state = ITEM_STATE_INGESTED
             existing.updated_at = utc_now()
-            if existing.source_item_id is None and draft.source_item_id is not None:
+            if (
+                (not matched_by_title)
+                and existing.source == draft.source
+                and existing.source_item_id is None
+                and draft.source_item_id is not None
+            ):
                 existing.source_item_id = draft.source_item_id
             session.add(existing)
             session.commit()

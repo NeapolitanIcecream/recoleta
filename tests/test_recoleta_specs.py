@@ -196,6 +196,47 @@ def test_ingest_is_idempotent_by_canonical_url_hash(configured_env) -> None:
     assert repository.count_items() == 1
 
 
+def test_ingest_deduplicates_near_duplicate_titles_by_merging_alternate_urls(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft_a = ItemDraft.from_values(
+        source="rss",
+        source_item_id=None,
+        canonical_url="https://example.com/deep-learning-for-agents",
+        title="Deep Learning for Agents",
+        authors=["Alice"],
+        raw_metadata={"feed": "example"},
+    )
+    draft_b = ItemDraft.from_values(
+        source="hn",
+        source_item_id="item-b",
+        canonical_url="https://news.ycombinator.com/item?id=123",
+        title="Deep Learning for Agents survey",
+        authors=["Alice"],
+        raw_metadata={"feed": "hn"},
+    )
+
+    result = service.ingest(run_id="run-ingest-title-dedup", drafts=[draft_a, draft_b])
+
+    assert result.inserted == 1
+    assert result.updated == 1
+    assert repository.count_items() == 1
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+        assert item.source == "rss"
+        assert item.source_item_id is None
+        metadata = json.loads(item.raw_metadata_json)
+        assert "alternate_urls" in metadata
+        assert "https://news.ycombinator.com/item?id=123" in metadata["alternate_urls"]
+
+
 def test_ingest_does_not_regress_state_for_analyzed_items(configured_env) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -383,6 +424,44 @@ def test_publish_retries_after_failed_delivery(configured_env) -> None:
         assert len(deliveries) == 1
         assert deliveries[0].status == DELIVERY_STATUS_SENT
         assert deliveries[0].message_id is not None
+
+
+def test_publish_sanitizes_secrets_in_delivery_error(configured_env) -> None:
+    from recoleta.observability import mask_value
+
+    settings, repository = _build_runtime()
+
+    class ExplodingTelegramSender:
+        def send(self, text: str) -> str:  # noqa: ARG002
+            raise RuntimeError(f"token={settings.telegram_bot_token.get_secret_value()} chat={settings.telegram_chat_id.get_secret_value()}")
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=ExplodingTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-sanitize-1",
+        canonical_url="https://example.com/publish-sanitize-case",
+        title="Publish Sanitize Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-sanitize", drafts=[draft])
+    service.analyze(run_id="run-publish-sanitize", limit=10)
+    publish_result = service.publish(run_id="run-publish-sanitize", limit=10)
+
+    assert publish_result.failed == 1
+
+    with Session(repository.engine) as session:
+        delivery = session.exec(select(Delivery)).one()
+        assert settings.telegram_bot_token.get_secret_value() not in (delivery.error or "")
+        assert settings.telegram_chat_id.get_secret_value() not in (delivery.error or "")
+        assert mask_value(settings.telegram_bot_token.get_secret_value()) in (delivery.error or "")
+        assert mask_value(settings.telegram_chat_id.get_secret_value()) in (delivery.error or "")
 
 
 @respx.mock
