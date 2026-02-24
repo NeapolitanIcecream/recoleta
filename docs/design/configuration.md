@@ -2,6 +2,20 @@
 
 Recoleta uses typed configuration loaded from environment variables (and optionally a config file). Secrets are read from env only and must never be written to disk.
 
+## Optional config file
+
+Recoleta can load non-secret settings from a local YAML/JSON config file pointed to by:
+
+- `RECOLETA_CONFIG_PATH`: absolute or `~`-expanded path to a `.yaml`, `.yml`, or `.json` file.
+
+Precedence:
+
+- Initialization arguments (rare) > environment variables > config file > defaults
+
+Secrets:
+
+- `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are **forbidden** in the config file and must come from environment variables.
+
 ## Required settings
 
 - `OBSIDIAN_VAULT_PATH`: absolute path to the Obsidian Vault root directory.

@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Protocol
+from typing import Any, Protocol
 
 from litellm import completion
 from pydantic import BaseModel, Field
 
-from recoleta.types import AnalysisResult
+from recoleta.types import AnalysisResult, AnalyzeDebug
 
 
 class Analyzer(Protocol):
-    def analyze(self, *, title: str, canonical_url: str, user_topics: list[str]) -> AnalysisResult: ...
+    def analyze(
+        self,
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None = None,
+    ) -> tuple[AnalysisResult, AnalyzeDebug]: ...
 
 
 class _AnalysisPayload(BaseModel):
@@ -27,15 +34,28 @@ class LiteLLMAnalyzer:
     def __init__(self, *, model: str) -> None:
         self.model = model
 
-    def analyze(self, *, title: str, canonical_url: str, user_topics: list[str]) -> AnalysisResult:
-        prompt = self._build_prompt(title=title, canonical_url=canonical_url, user_topics=user_topics)
+    def analyze(
+        self,
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None = None,
+    ) -> tuple[AnalysisResult, AnalyzeDebug]:
+        prompt = self._build_prompt(
+            title=title,
+            canonical_url=canonical_url,
+            user_topics=user_topics,
+            content=content,
+        )
         started = time.perf_counter()
+        messages = [
+            {"role": "system", "content": "You are a research signal analyst. Return strict JSON only."},
+            {"role": "user", "content": prompt},
+        ]
         response = completion(
             model=self.model,
-            messages=[
-                {"role": "system", "content": "You are a research signal analyst. Return strict JSON only."},
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages,
             response_format={"type": "json_object"},
             temperature=0.2,
         )
@@ -43,7 +63,7 @@ class LiteLLMAnalyzer:
         raw_content = _extract_content(response)
         payload = _AnalysisPayload.model_validate(json.loads(raw_content))
         provider = self.model.split("/", 1)[0] if "/" in self.model else "unknown"
-        return AnalysisResult(
+        result = AnalysisResult(
             model=self.model,
             provider=provider,
             summary=payload.summary,
@@ -55,10 +75,25 @@ class LiteLLMAnalyzer:
             cost_usd=None,
             latency_ms=elapsed_ms,
         )
+        request_debug: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        }
+        response_debug: dict[str, Any] = {
+            "elapsed_ms": elapsed_ms,
+            "content": raw_content,
+            "parsed": payload.model_dump(mode="json"),
+        }
+        return result, AnalyzeDebug(request=request_debug, response=response_debug)
 
     @staticmethod
-    def _build_prompt(*, title: str, canonical_url: str, user_topics: list[str]) -> str:
+    def _build_prompt(*, title: str, canonical_url: str, user_topics: list[str], content: str | None) -> str:
         serialized_topics = ", ".join(user_topics) if user_topics else "general technology"
+        trimmed_content = (content or "").strip()
+        if len(trimmed_content) > 5000:
+            trimmed_content = trimmed_content[:5000] + "\n...[truncated]..."
         return (
             "Analyze one research item and return a JSON object with keys: "
             "summary, insight, idea_directions, topics, relevance_score, novelty_score.\n"
@@ -71,6 +106,7 @@ class LiteLLMAnalyzer:
             f"User topics: {serialized_topics}\n"
             f"Title: {title}\n"
             f"URL: {canonical_url}\n"
+            + (f"Content excerpt:\n{trimmed_content}\n" if trimmed_content else "")
         )
 
 

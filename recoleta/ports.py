@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from recoleta.models import Analysis, Delivery, Item
+from recoleta.models import Analysis, Content, Delivery, Item
 from recoleta.types import AnalysisResult, ItemDraft
 
 
@@ -14,7 +14,20 @@ class RepositoryPort(Protocol):
 
     def list_items_for_analysis(self, *, limit: int) -> list[Item]: ...
 
+    def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None: ...
+
+    def upsert_content(
+        self,
+        *,
+        item_id: int,
+        content_type: str,
+        text: str | None,
+        artifact_path: str | None = None,
+    ) -> Content: ...
+
     def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis: ...
+
+    def mark_item_enriched(self, *, item_id: int) -> None: ...
 
     def mark_item_failed(self, *, item_id: int) -> None: ...
 

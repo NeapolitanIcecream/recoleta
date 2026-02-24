@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -13,12 +14,14 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from recoleta.models import (
     Analysis,
     Artifact,
+    Content,
     Delivery,
     Item,
     Metric,
     Run,
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ANALYZED,
+    ITEM_STATE_ENRICHED,
     ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
     ITEM_STATE_PUBLISHED,
@@ -26,7 +29,7 @@ from recoleta.models import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCEEDED,
 )
-from recoleta.types import AnalysisResult, ItemDraft, utc_now
+from recoleta.types import AnalysisResult, ItemDraft, sha256_hex, utc_now
 
 
 def _to_json(value: object) -> str:
@@ -229,11 +232,63 @@ class Repository:
         with Session(self.engine) as session:
             statement = (
                 select(Item)
-                .where(Item.state == ITEM_STATE_INGESTED)
+                .where(cast(Any, Item.state).in_([ITEM_STATE_INGESTED, ITEM_STATE_ENRICHED]))
                 .order_by(desc(cast(Any, Item.created_at)))
                 .limit(limit)
             )
             return list(session.exec(statement))
+
+    def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None:
+        with Session(self.engine) as session:
+            statement = (
+                select(Content)
+                .where(Content.item_id == item_id, Content.content_type == content_type)
+                .order_by(desc(cast(Any, Content.id)))
+            )
+            return session.exec(statement).first()
+
+    def upsert_content(
+        self,
+        *,
+        item_id: int,
+        content_type: str,
+        text: str | None,
+        artifact_path: str | None = None,
+    ) -> Content:
+        if text is None and artifact_path is None:
+            raise ValueError("Either text or artifact_path must be provided")
+        normalized_text = text.strip() if isinstance(text, str) else None
+        if normalized_text == "":
+            raise ValueError("text must not be empty")
+
+        if normalized_text is not None:
+            content_hash = sha256_hex(normalized_text)
+        else:
+            resolved = Path(str(artifact_path)).expanduser().resolve()
+            content_hash = hashlib.sha256(resolved.read_bytes()).hexdigest()
+
+        with Session(self.engine) as session:
+            existing = session.exec(
+                select(Content).where(
+                    Content.item_id == item_id,
+                    Content.content_type == content_type,
+                    Content.content_hash == content_hash,
+                )
+            ).first()
+            if existing is not None:
+                return existing
+
+            content = Content(
+                item_id=item_id,
+                content_type=content_type,
+                text=normalized_text,
+                artifact_path=artifact_path,
+                content_hash=content_hash,
+            )
+            session.add(content)
+            session.commit()
+            session.refresh(content)
+            return content
 
     def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis:
         with Session(self.engine) as session:
@@ -274,6 +329,16 @@ class Repository:
             session.commit()
             session.refresh(analysis)
             return analysis
+
+    def mark_item_enriched(self, *, item_id: int) -> None:
+        with Session(self.engine) as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                return
+            item.state = ITEM_STATE_ENRICHED
+            item.updated_at = utc_now()
+            session.add(item)
+            session.commit()
 
     def mark_item_failed(self, *, item_id: int) -> None:
         with Session(self.engine) as session:

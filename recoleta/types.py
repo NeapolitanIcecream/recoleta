@@ -71,6 +71,12 @@ class AnalysisResult:
 
 
 @dataclass(slots=True)
+class AnalyzeDebug:
+    request: dict[str, Any]
+    response: dict[str, Any]
+
+
+@dataclass(slots=True)
 class IngestResult:
     inserted: int = 0
     updated: int = 0

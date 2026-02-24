@@ -12,24 +12,34 @@ from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ANALYZED,
+    Artifact,
+    Content,
     Delivery,
     Item,
+    Metric,
 )
 from recoleta.pipeline import PipelineService
 from recoleta.sources import fetch_rss_drafts
 from recoleta.storage import Repository
-from recoleta.types import AnalysisResult, ItemDraft
+from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
 
 
 class FakeAnalyzer:
     def __init__(self, should_fail: bool = False) -> None:
         self.should_fail = should_fail
 
-    def analyze(self, *, title: str, canonical_url: str, user_topics: list[str]) -> AnalysisResult:
+    def analyze(
+        self,
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None = None,  # noqa: ARG002
+    ) -> tuple[AnalysisResult, AnalyzeDebug]:
         if self.should_fail:
             raise RuntimeError("simulated analyzer failure")
 
-        return AnalysisResult(
+        result = AnalysisResult(
             model="test/fake-model",
             provider="test",
             summary=f"Summary for {title}",
@@ -41,6 +51,20 @@ class FakeAnalyzer:
             cost_usd=0.0,
             latency_ms=1,
         )
+        debug = AnalyzeDebug(
+            request={
+                "model": result.model,
+                "title": title,
+                "canonical_url": canonical_url,
+                "user_topics": user_topics,
+            },
+            response={
+                "summary": result.summary,
+                "insight": result.insight,
+                "relevance_score": result.relevance_score,
+            },
+        )
+        return result, debug
 
 
 class FakeTelegramSender:
@@ -147,6 +171,19 @@ def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def mock_item_html_enrichment(respx_mock: respx.Router, monkeypatch: pytest.MonkeyPatch) -> None:
+    respx_mock.get(host="example.com", path__regex=r"^/(?!feed\.xml$).*").respond(
+        200,
+        text="<html><body><p>mock html</p></body></html>",
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+
+    import recoleta.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "extract_html_maintext", lambda html: "mock maintext")  # noqa: ARG005
+
+
 def _build_runtime() -> tuple[Settings, Repository]:
     settings = Settings()  # pyright: ignore[reportCallIssue]
     repository = Repository(db_path=settings.recoleta_db_path)
@@ -160,6 +197,88 @@ def test_settings_loads_nested_source_configuration(configured_env) -> None:
     assert settings.sources.hn.rss_urls == ["https://news.ycombinator.com/rss"]
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
     assert settings.topics == ["agents", "ml-systems"]
+
+
+def test_settings_loads_from_config_file_and_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'OBSIDIAN_VAULT_PATH: "{vault_path}"',
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                "TOPICS:",
+                "  - agents",
+                "SOURCES:",
+                "  rss:",
+                "    feeds:",
+                "      - https://example.com/feed.xml",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.obsidian_vault_path == vault_path.resolve()
+    assert settings.recoleta_db_path == (tmp_path / "recoleta.db").resolve()
+    assert settings.llm_model == "openai/gpt-4o-mini"
+    assert settings.topics == ["agents"]
+    assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
+
+
+def test_settings_env_overrides_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+    config_path = tmp_path / "recoleta.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "OBSIDIAN_VAULT_PATH": str(vault_path),
+                "RECOLETA_DB_PATH": str(tmp_path / "recoleta.db"),
+                "LLM_MODEL": "openai/gpt-4o-mini",
+                "OBSIDIAN_BASE_FOLDER": "FromConfig",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("OBSIDIAN_BASE_FOLDER", "FromEnv")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.obsidian_base_folder == "FromEnv"
+
+
+def test_settings_rejects_secrets_in_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'OBSIDIAN_VAULT_PATH: "{vault_path}"',
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                'TELEGRAM_BOT_TOKEN: "do-not-allow"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+    with pytest.raises(ValueError, match="Secrets must come from environment variables only"):
+        Settings()  # pyright: ignore[reportCallIssue]
 
 
 def test_ingest_is_idempotent_by_canonical_url_hash(configured_env) -> None:
@@ -322,7 +441,7 @@ def test_ingest_writes_debug_artifact_on_repository_failure(monkeypatch: pytest.
     assert recorded_run_id == "run-ingest-exploding"
     assert recorded_item_id is None
     assert recorded_kind == "error_context"
-    assert Path(recorded_path).exists()
+    assert (artifacts_dir / recorded_path).exists()
 
 
 def test_analyze_failure_emits_failure_metric(configured_env) -> None:
@@ -351,6 +470,115 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     assert analyze_result.failed == 1
     assert len(failed_metric) == 1
     assert failed_metric[0].value == 1
+
+
+def test_analyze_persists_enriched_content_and_emits_enrich_metrics(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-enrich-1",
+        canonical_url="https://example.com/enrich-case",
+        title="Enrich Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-enrich", drafts=[draft])
+    analyze_result = service.analyze(run_id="run-enrich", limit=10)
+
+    assert analyze_result.processed == 1
+
+    with Session(repository.engine) as session:
+        content = session.exec(select(Content)).one()
+        assert content.content_type == "html_maintext"
+        assert content.text == "mock maintext"
+
+    metrics = repository.list_metrics(run_id="run-enrich")
+    by_name: dict[str, Metric] = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.enrich.processed_total"].value == 1
+    assert by_name["pipeline.enrich.skipped_total"].value == 0
+    assert by_name["pipeline.enrich.failed_total"].value == 0
+
+
+def test_analyze_writes_llm_request_and_response_artifacts(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path = configured_env
+    artifacts_dir = tmp_path / "artifacts"
+
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-llm-artifacts-1",
+        canonical_url="https://example.com/llm-artifacts-case",
+        title="LLM Artifacts Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-llm-artifacts", drafts=[draft])
+    analyze_result = service.analyze(run_id="run-llm-artifacts", limit=10)
+    assert analyze_result.processed == 1
+
+    with Session(repository.engine) as session:
+        artifacts = list(
+            session.exec(
+                select(Artifact)
+                .where(Artifact.run_id == "run-llm-artifacts")
+                .order_by(Artifact.id)
+            )
+        )
+        kinds = {artifact.kind for artifact in artifacts}
+        assert {"llm_request", "llm_response"}.issubset(kinds)
+        for artifact in artifacts:
+            assert not Path(artifact.path).is_absolute()
+            assert (artifacts_dir / artifact.path).exists()
+
+
+def test_pipeline_records_duration_metrics_for_each_stage(configured_env) -> None:
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-durations-1",
+        canonical_url="https://example.com/durations-case",
+        title="Durations Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-durations", drafts=[draft])
+    service.analyze(run_id="run-durations", limit=10)
+    service.publish(run_id="run-durations", limit=10)
+
+    metrics = repository.list_metrics(run_id="run-durations")
+    metric_names = {metric.name for metric in metrics}
+    assert "pipeline.ingest.duration_ms" in metric_names
+    assert "pipeline.enrich.duration_ms" in metric_names
+    assert "pipeline.analyze.duration_ms" in metric_names
+    assert "pipeline.publish.duration_ms" in metric_names
 
 
 def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> None:
@@ -524,8 +752,7 @@ def test_publish_does_not_crash_when_debug_artifact_write_fails(
         assert mask_value(settings.telegram_chat_id.get_secret_value()) in (delivery.error or "")
 
 
-@respx.mock
-def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed() -> None:
+def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(respx_mock: respx.Router) -> None:
     rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -540,7 +767,7 @@ def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed() -> None:
   </channel>
 </rss>
 """
-    respx.get("https://example.com/feed.xml").respond(
+    respx_mock.get("https://example.com/feed.xml").respond(
         200,
         text=rss_xml,
         headers={"Content-Type": "application/rss+xml; charset=utf-8"},

@@ -2,10 +2,105 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+import yaml
+
+
+class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
+    _KEY_MAP: dict[str, str] = {
+        "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
+        "RECOLETA_DB_PATH": "recoleta_db_path",
+        "LLM_MODEL": "llm_model",
+        "SOURCES": "sources",
+        "TOPICS": "topics",
+        "MIN_RELEVANCE_SCORE": "min_relevance_score",
+        "MAX_DELIVERIES_PER_DAY": "max_deliveries_per_day",
+        "TITLE_DEDUP_THRESHOLD": "title_dedup_threshold",
+        "TITLE_DEDUP_MAX_CANDIDATES": "title_dedup_max_candidates",
+        "INGEST_INTERVAL_MINUTES": "ingest_interval_minutes",
+        "ANALYZE_INTERVAL_MINUTES": "analyze_interval_minutes",
+        "PUBLISH_INTERVAL_MINUTES": "publish_interval_minutes",
+        "ARTIFACTS_DIR": "artifacts_dir",
+        "OBSIDIAN_BASE_FOLDER": "obsidian_base_folder",
+        "LOG_LEVEL": "log_level",
+        "LOG_JSON": "log_json",
+        "WRITE_DEBUG_ARTIFACTS": "write_debug_artifacts",
+    }
+    _FORBIDDEN_TOP_LEVEL_KEYS = {
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_CHAT_ID",
+        "telegram_bot_token",
+        "telegram_chat_id",
+    }
+
+    def __init__(self, settings_cls: type[BaseSettings]) -> None:
+        super().__init__(settings_cls)
+        self._data = self._load_config_file()
+
+    def _load_config_file(self) -> dict[str, Any]:
+        raw_path = os.getenv("RECOLETA_CONFIG_PATH", "").strip()
+        if not raw_path:
+            return {}
+
+        config_path = Path(raw_path).expanduser().resolve()
+        if not config_path.exists():
+            raise ValueError(f"RECOLETA_CONFIG_PATH does not exist: {config_path}")
+        if not config_path.is_file():
+            raise ValueError(f"RECOLETA_CONFIG_PATH must be a file: {config_path}")
+
+        suffix = config_path.suffix.lower()
+        if suffix in {".yaml", ".yml"}:
+            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        elif suffix == ".json":
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+        else:
+            raise ValueError(f"Unsupported config file type: {config_path.suffix} (expected .yaml/.yml/.json)")
+
+        if loaded is None:
+            return {}
+        if not isinstance(loaded, dict):
+            raise ValueError("Config file must contain a mapping/object at the top level")
+
+        for key in loaded:
+            if key in self._FORBIDDEN_TOP_LEVEL_KEYS:
+                raise ValueError(f"Secrets must come from environment variables only: {key}")
+
+        mapped: dict[str, Any] = {}
+        for key, value in loaded.items():
+            if not isinstance(key, str):
+                raise ValueError("Config file keys must be strings")
+            mapped_key = self._KEY_MAP.get(key, key)
+            if mapped_key in {"telegram_bot_token", "telegram_chat_id"}:
+                raise ValueError(f"Secrets must come from environment variables only: {key}")
+            mapped[mapped_key] = value
+        return mapped
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:  # noqa: ARG002
+        return self._data.get(field_name), field_name, False
+
+    def prepare_field_value(  # noqa: PLR6301
+        self,
+        field_name: str,
+        field: FieldInfo,
+        value: Any,
+        value_is_complex: bool,  # noqa: ARG002
+    ) -> Any:
+        return value
+
+    def __call__(self) -> dict[str, Any]:
+        collected: dict[str, Any] = {}
+        for field_name, field in self.settings_cls.model_fields.items():
+            field_value, field_key, value_is_complex = self.get_field_value(field, field_name)
+            field_value = self.prepare_field_value(field_name, field, field_value, value_is_complex)
+            if field_value is not None:
+                collected[field_key] = field_value
+        return collected
 
 
 class ArxivSourceConfig(BaseModel):
@@ -39,12 +134,14 @@ class SourcesConfig(BaseModel):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_nested_delimiter="__",
         extra="ignore",
         case_sensitive=False,
+        validate_by_alias=True,
+        validate_by_name=True,
     )
 
+    config_path: Path | None = Field(default=None, validation_alias="RECOLETA_CONFIG_PATH")
     obsidian_vault_path: Path = Field(validation_alias="OBSIDIAN_VAULT_PATH")
     recoleta_db_path: Path = Field(validation_alias="RECOLETA_DB_PATH")
     telegram_bot_token: SecretStr = Field(validation_alias="TELEGRAM_BOT_TOKEN")
@@ -72,6 +169,21 @@ class Settings(BaseSettings):
     log_json: bool = Field(default=False, validation_alias="LOG_JSON")
     write_debug_artifacts: bool = Field(default=False, validation_alias="WRITE_DEBUG_ARTIFACTS")
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            _ConfigFileSettingsSource(settings_cls),
+        )
+
     @field_validator("obsidian_vault_path", mode="before")
     @classmethod
     def _normalize_vault_path(cls, value: str | Path) -> Path:
@@ -88,6 +200,13 @@ class Settings(BaseSettings):
     @field_validator("artifacts_dir", mode="before")
     @classmethod
     def _normalize_optional_path(cls, value: str | Path | None) -> Path | None:
+        if value is None:
+            return None
+        return Path(value).expanduser().resolve()
+
+    @field_validator("config_path", mode="before")
+    @classmethod
+    def _normalize_optional_config_path(cls, value: str | Path | None) -> Path | None:
         if value is None:
             return None
         return Path(value).expanduser().resolve()
