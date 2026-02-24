@@ -19,6 +19,21 @@ jobs:
           python-version: "3.14"
           allow-prereleases: true
 
+      - name: Install system dependencies (Pillow build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libjpeg-dev \
+            zlib1g-dev \
+            libpng-dev \
+            libtiff-dev \
+            libfreetype6-dev \
+            liblcms2-dev \
+            libwebp-dev \
+            libopenjp2-7-dev
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
