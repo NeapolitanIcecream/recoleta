@@ -8,7 +8,11 @@ import arxiv
 from bs4 import BeautifulSoup
 import feedparser
 import httpx
+from huggingface_hub import HfApi
+from huggingface_hub.errors import HfHubHTTPError
+from huggingface_hub.utils import build_hf_headers, get_session, hf_raise_for_status
 import openreview
+import requests
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from recoleta.types import ItemDraft
@@ -62,15 +66,30 @@ def _first_non_empty_str(*values: object) -> str | None:
     return None
 
 
+def _should_retry_hf_hub(exc: BaseException) -> bool:
+    if isinstance(exc, HfHubHTTPError):
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+        return status == 429 or (isinstance(status, int) and status >= 500)
+    if isinstance(exc, requests.RequestException):
+        return True
+    return False
+
+
 @retry(
-    retry=retry_if_exception(_should_retry_httpx),
+    retry=retry_if_exception(_should_retry_hf_hub),
     stop=stop_after_attempt(3),
     wait=wait_exponential_jitter(initial=0.5, max=6.0),
     reraise=True,
 )
-def _fetch_html(client: httpx.Client, url: str) -> str:
-    response = client.get(url)
-    response.raise_for_status()
+def _fetch_hf_html(url: str) -> str:
+    headers = build_hf_headers(
+        token=False,
+        library_name="recoleta",
+        user_agent="recoleta/0.1",
+    )
+    response = get_session().get(url, headers=headers, timeout=(5.0, 10.0))
+    hf_raise_for_status(response, endpoint_name="papers.index")
     return response.text
 
 
@@ -79,43 +98,39 @@ def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
     if max_items <= 0:
         return drafts
 
-    timeout = httpx.Timeout(10.0, connect=5.0)
-    headers = {"User-Agent": "recoleta/0.1"}
-    base_url = "https://huggingface.co"
-    index_url = f"{base_url}/papers"
+    hf_api = HfApi()
+    index_url = f"{hf_api.endpoint.rstrip('/')}/papers"
+    html = _fetch_hf_html(index_url)
+    soup = BeautifulSoup(html, "html.parser")
+    anchors = soup.select('a[href^="/papers/"]')
+    seen: set[str] = set()
+    for anchor in anchors:
+        href = anchor.get("href")
+        if not isinstance(href, str):
+            continue
+        stripped_href = href.strip()
+        if not stripped_href or stripped_href in seen:
+            continue
+        seen.add(stripped_href)
 
-    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
-        html = _fetch_html(client, index_url)
-        soup = BeautifulSoup(html, "html.parser")
-        anchors = soup.select('a[href^="/papers/"]')
-        seen: set[str] = set()
-        for anchor in anchors:
-            href = anchor.get("href")
-            if not isinstance(href, str):
-                continue
-            stripped_href = href.strip()
-            if not stripped_href or stripped_href in seen:
-                continue
-            seen.add(stripped_href)
+        title = anchor.get_text(" ", strip=True)
+        if not title:
+            continue
 
-            title = anchor.get_text(" ", strip=True)
-            if not title:
-                continue
-
-            canonical_url = f"{base_url}{stripped_href}"
-            drafts.append(
-                ItemDraft.from_values(
-                    source="hf_daily",
-                    source_item_id=stripped_href.lstrip("/"),
-                    canonical_url=canonical_url,
-                    title=title,
-                    authors=[],
-                    published_at=None,
-                    raw_metadata={"index_url": index_url},
-                )
+        canonical_url = f"{hf_api.endpoint.rstrip('/')}{stripped_href}"
+        drafts.append(
+            ItemDraft.from_values(
+                source="hf_daily",
+                source_item_id=stripped_href.lstrip("/"),
+                canonical_url=canonical_url,
+                title=title,
+                authors=[],
+                published_at=None,
+                raw_metadata={"index_url": index_url},
             )
-            if len(drafts) >= max_items:
-                break
+        )
+        if len(drafts) >= max_items:
+            break
     return drafts
 
 

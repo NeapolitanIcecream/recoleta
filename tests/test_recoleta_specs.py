@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+import requests
 import respx
 from sqlmodel import Session, select
 
@@ -20,7 +21,7 @@ from recoleta.models import (
     Metric,
 )
 from recoleta.pipeline import PipelineService
-from recoleta.sources import fetch_rss_drafts
+from recoleta.sources import fetch_hf_daily_papers_drafts, fetch_rss_drafts
 from recoleta.storage import Repository
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
 
@@ -942,3 +943,66 @@ def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(respx_mock: respx.Ro
     assert drafts[0].title == "Hello World"
     assert drafts[0].source_item_id == "guid-hello"
     assert drafts[0].raw_metadata["feed_title"] == "Example Feed"
+
+
+def test_fetch_hf_daily_papers_drafts_fetches_index_and_parses_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = """<html><body>
+<a href="/papers/1">Paper One</a>
+<a href="/papers/1">Paper One Duplicate</a>
+<a href="/papers/2"> Paper Two </a>
+<a href="/models/bert-base-uncased">Not a paper</a>
+<a href="/papers/3"></a>
+</body></html>"""
+    response = requests.Response()
+    response.status_code = 200
+    response._content = html.encode("utf-8")
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    response.url = "https://huggingface.co/papers"
+    response.request = requests.Request("GET", response.url).prepare()
+
+    class DummySession:
+        def __init__(self, resp: requests.Response) -> None:
+            self.resp = resp
+            self.calls: list[dict[str, Any]] = []
+
+        def get(self, url: str, headers: dict[str, str] | None = None, timeout: object | None = None) -> requests.Response:
+            self.calls.append({"url": url, "headers": headers or {}, "timeout": timeout})
+            return self.resp
+
+    import recoleta.sources as sources
+
+    dummy = DummySession(response)
+    monkeypatch.setattr(sources, "get_session", lambda: dummy)
+
+    drafts = fetch_hf_daily_papers_drafts(max_items=2)
+    assert len(dummy.calls) == 1
+    assert dummy.calls[0]["url"].endswith("/papers")
+    assert "user-agent" in {k.lower() for k in dummy.calls[0]["headers"].keys()}
+
+    assert [d.source_item_id for d in drafts] == ["papers/1", "papers/2"]
+    assert [d.canonical_url for d in drafts] == [
+        "https://huggingface.co/papers/1",
+        "https://huggingface.co/papers/2",
+    ]
+    assert [d.title for d in drafts] == ["Paper One", "Paper Two"]
+
+
+def test_fetch_hf_daily_papers_drafts_raises_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = requests.Response()
+    response.status_code = 503
+    response._content = b"service unavailable"
+    response.headers["Content-Type"] = "text/plain; charset=utf-8"
+    response.url = "https://huggingface.co/papers"
+    response.request = requests.Request("GET", response.url).prepare()
+
+    class DummySession:
+        def get(self, url: str, headers: dict[str, str] | None = None, timeout: object | None = None) -> requests.Response:  # noqa: ARG002
+            return response
+
+    import recoleta.sources as sources
+    from huggingface_hub.errors import HfHubHTTPError
+
+    monkeypatch.setattr(sources, "get_session", lambda: DummySession())
+
+    with pytest.raises(HfHubHTTPError):
+        fetch_hf_daily_papers_drafts(max_items=10)
