@@ -10,7 +10,6 @@ from sqlmodel import Session, select
 from recoleta.config import Settings
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
-    DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ANALYZED,
     Delivery,
