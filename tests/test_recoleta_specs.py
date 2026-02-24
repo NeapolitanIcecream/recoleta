@@ -253,6 +253,34 @@ def test_settings_loads_from_config_file_and_env(monkeypatch: pytest.MonkeyPatch
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
 
 
+def test_settings_loads_from_config_file_via_init_arg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'OBSIDIAN_VAULT_PATH: "{vault_path}"',
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                "TOPICS:",
+                "  - agents",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("RECOLETA_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+    settings = Settings(config_path=config_path)  # pyright: ignore[reportCallIssue]
+    assert settings.obsidian_vault_path == vault_path.resolve()
+    assert settings.recoleta_db_path == (tmp_path / "recoleta.db").resolve()
+    assert settings.llm_model == "openai/gpt-4o-mini"
+    assert settings.topics == ["agents"]
+
+
 def test_settings_env_overrides_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
@@ -570,6 +598,57 @@ def test_analyze_writes_llm_request_and_response_artifacts(
         for artifact in artifacts:
             assert not Path(artifact.path).is_absolute()
             assert (artifacts_dir / artifact.path).exists()
+
+
+def test_analyze_sanitizes_debug_artifact_paths(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path = configured_env
+    artifacts_dir = tmp_path / "artifacts"
+
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-llm-artifacts-2",
+        canonical_url="https://example.com/llm-artifacts-case-2",
+        title="LLM Artifacts Case 2",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-llm-artifacts-2", drafts=[draft])
+
+    malicious_run_id = "../run-llm-artifacts-2"
+    analyze_result = service.analyze(run_id=malicious_run_id, limit=10)
+    assert analyze_result.processed == 1
+
+    base_dir = artifacts_dir.resolve()
+    with Session(repository.engine) as session:
+        artifacts = list(
+            session.exec(
+                select(Artifact)
+                .where(Artifact.run_id == malicious_run_id)
+                .order_by(cast(Any, Artifact.id))
+            )
+        )
+        assert artifacts
+        for artifact in artifacts:
+            artifact_rel = Path(artifact.path)
+            assert ".." not in artifact_rel.parts
+            assert not artifact_rel.is_absolute()
+            artifact_abs = (artifacts_dir / artifact_rel).resolve()
+            assert artifact_abs.is_relative_to(base_dir)
+            assert artifact_abs.exists()
 
 
 def test_pipeline_records_duration_metrics_for_each_stage(configured_env) -> None:

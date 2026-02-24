@@ -41,14 +41,27 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
 
     def __init__(self, settings_cls: type[BaseSettings]) -> None:
         super().__init__(settings_cls)
-        self._data = self._load_config_file()
+        self._data: dict[str, Any] | None = None
+
+    def _resolve_config_path(self) -> Path | None:
+        candidate = None
+        try:
+            state = self.current_state or {}
+            candidate = state.get("config_path") or state.get("RECOLETA_CONFIG_PATH")
+        except Exception:
+            candidate = None
+        if candidate is None:
+            raw_path = os.getenv("RECOLETA_CONFIG_PATH", "").strip()
+            if not raw_path:
+                return None
+            candidate = raw_path
+        return Path(str(candidate)).expanduser().resolve()
 
     def _load_config_file(self) -> dict[str, Any]:
-        raw_path = os.getenv("RECOLETA_CONFIG_PATH", "").strip()
-        if not raw_path:
+        config_path = self._resolve_config_path()
+        if config_path is None:
             return {}
 
-        config_path = Path(raw_path).expanduser().resolve()
         if not config_path.exists():
             raise ValueError(f"RECOLETA_CONFIG_PATH does not exist: {config_path}")
         if not config_path.is_file():
@@ -82,6 +95,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         return mapped
 
     def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:  # noqa: ARG002
+        if self._data is None:
+            self._data = self._load_config_file()
         return self._data.get(field_name), field_name, False
 
     def prepare_field_value(  # noqa: PLR6301
@@ -94,6 +109,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         return value
 
     def __call__(self) -> dict[str, Any]:
+        if self._data is None:
+            self._data = self._load_config_file()
         collected: dict[str, Any] = {}
         for field_name, field in self.settings_cls.model_fields.items():
             field_value, field_key, value_is_complex = self.get_field_value(field, field_name)
@@ -134,6 +151,7 @@ class SourcesConfig(BaseModel):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
+        env_file=".env",
         env_nested_delimiter="__",
         extra="ignore",
         case_sensitive=False,
@@ -181,7 +199,9 @@ class Settings(BaseSettings):
         return (
             init_settings,
             env_settings,
+            dotenv_settings,
             _ConfigFileSettingsSource(settings_cls),
+            file_secret_settings,
         )
 
     @field_validator("obsidian_vault_path", mode="before")

@@ -576,15 +576,31 @@ class PipelineService:
         if not self.settings.write_debug_artifacts or self.settings.artifacts_dir is None:
             return None
         try:
+            def sanitize_segment(value: str, *, max_len: int = 72, fallback: str = "unknown") -> str:
+                cleaned = value.strip()
+                normalized = "".join(ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned)
+                while "__" in normalized:
+                    normalized = normalized.replace("__", "_")
+                normalized = normalized.strip("_")
+                if not normalized:
+                    return fallback
+                return normalized[:max_len]
+
+            safe_run_id = sanitize_segment(run_id, fallback="run")
+            safe_kind = sanitize_segment(kind, fallback="artifact")
             item_segment = str(item_id) if item_id is not None else "no-item"
             kind_to_name = {
                 "error_context": "error-context.json",
                 "llm_request": "llm-request.json",
                 "llm_response": "llm-response.json",
             }
-            file_name = kind_to_name.get(kind, f"{kind.replace('_', '-')}.json")
-            relative_path = Path(run_id) / item_segment / file_name
-            absolute_path = self.settings.artifacts_dir / relative_path
+            file_name = kind_to_name.get(kind, f"{safe_kind.replace('_', '-')}.json")
+            relative_path = Path(safe_run_id) / item_segment / file_name
+
+            base_dir = self.settings.artifacts_dir.expanduser().resolve()
+            absolute_path = (base_dir / relative_path).resolve()
+            if not absolute_path.is_relative_to(base_dir):
+                raise ValueError("Debug artifact path escapes artifacts_dir")
             absolute_path.parent.mkdir(parents=True, exist_ok=True)
 
             raw_json = orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS)
@@ -596,7 +612,7 @@ class PipelineService:
                 ),
             )
             absolute_path.write_text(scrubbed + "\n", encoding="utf-8")
-            return relative_path
+            return absolute_path.relative_to(base_dir)
         except Exception as exc:
             logger.bind(module="pipeline.artifacts", run_id=run_id, item_id=item_id).warning(
                 "Debug artifact write failed: {}",
