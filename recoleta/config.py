@@ -130,7 +130,7 @@ class HNSourceConfig(BaseModel):
 
 
 class HFDailySourceConfig(BaseModel):
-    enabled: bool = True
+    enabled: bool = False
 
 
 class OpenReviewSourceConfig(BaseModel):

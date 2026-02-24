@@ -330,6 +330,70 @@ def test_settings_rejects_secrets_in_config_file(monkeypatch: pytest.MonkeyPatch
         Settings()  # pyright: ignore[reportCallIssue]
 
 
+def test_ingest_pulls_all_configured_sources_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "hn": {"rss_urls": []},
+                "rss": {"feeds": []},
+                "arxiv": {"queries": ["cat:cs.AI"], "max_results_per_run": 10},
+                "openreview": {"venues": ["NeurIPS.cc/2026/Conference"]},
+                "hf_daily": {"enabled": True},
+            }
+        ),
+    )
+
+    import recoleta.sources as source_connectors
+
+    draft_arxiv = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id="arxiv-1",
+        canonical_url="https://arxiv.org/abs/1605.08386v1",
+        title="Arxiv Item",
+    )
+    draft_openreview = ItemDraft.from_values(
+        source="openreview",
+        source_item_id="openreview-1",
+        canonical_url="https://openreview.net/forum?id=openreview-1",
+        title="OpenReview Item",
+    )
+    draft_hf = ItemDraft.from_values(
+        source="hf_daily",
+        source_item_id="papers/1",
+        canonical_url="https://huggingface.co/papers/1",
+        title="HF Daily Item",
+    )
+
+    monkeypatch.setattr(source_connectors, "fetch_arxiv_drafts", lambda **_: [draft_arxiv])
+    monkeypatch.setattr(source_connectors, "fetch_openreview_drafts", lambda **_: [draft_openreview])
+    monkeypatch.setattr(source_connectors, "fetch_hf_daily_papers_drafts", lambda **_: [draft_hf])
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    result = service.ingest(run_id="run-ingest-sources")
+    assert result.inserted == 3
+    assert repository.count_items() == 3
+
+
 def test_ingest_is_idempotent_by_canonical_url_hash(configured_env) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(

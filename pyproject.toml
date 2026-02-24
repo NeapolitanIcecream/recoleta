@@ -5,7 +5,6 @@ description = "Personal research intelligence funnel for ingesting, analyzing, a
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "aiohttp>=3.13.3",
     "anthropic>=0.46.0",
     "apscheduler>=3.11.2",
     "arxiv>=2.4.0",

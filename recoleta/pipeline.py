@@ -22,7 +22,7 @@ from recoleta.models import (
 from recoleta.observability import mask_value, scrub_secrets
 from recoleta.ports import RepositoryPort
 from recoleta.publish import build_telegram_message, write_obsidian_note
-from recoleta.sources import fetch_rss_drafts
+from recoleta import sources
 from recoleta.types import AnalyzeResult, IngestResult, ItemDraft, PublishResult, utc_now
 
 
@@ -558,11 +558,24 @@ class PipelineService:
     def _pull_source_drafts(self) -> list[ItemDraft]:
         hn_urls = list(dict.fromkeys(self.settings.sources.hn.rss_urls))
         rss_urls = list(dict.fromkeys(self.settings.sources.rss.feeds))
+        arxiv_queries = list(dict.fromkeys(self.settings.sources.arxiv.queries))
+        openreview_venues = list(dict.fromkeys(self.settings.sources.openreview.venues))
         drafts: list[ItemDraft] = []
+        if self.settings.sources.hf_daily.enabled:
+            drafts.extend(sources.fetch_hf_daily_papers_drafts(max_items=50))
         if hn_urls:
-            drafts.extend(fetch_rss_drafts(feed_urls=hn_urls, source="hn"))
+            drafts.extend(sources.fetch_rss_drafts(feed_urls=hn_urls, source="hn"))
         if rss_urls:
-            drafts.extend(fetch_rss_drafts(feed_urls=rss_urls, source="rss"))
+            drafts.extend(sources.fetch_rss_drafts(feed_urls=rss_urls, source="rss"))
+        if arxiv_queries:
+            drafts.extend(
+                sources.fetch_arxiv_drafts(
+                    queries=arxiv_queries,
+                    max_results_per_run=self.settings.sources.arxiv.max_results_per_run,
+                )
+            )
+        if openreview_venues:
+            drafts.extend(sources.fetch_openreview_drafts(venues=openreview_venues, max_results_per_venue=50))
         return drafts
 
     def _write_debug_artifact(
