@@ -133,10 +133,10 @@ class PipelineService:
         analyze_result = AnalyzeResult()
         llm_calls_total = 0
         llm_errors_total = 0
-        llm_calls_by_provider: dict[str, int] = {}
-        llm_errors_by_provider: dict[str, int] = {}
-        llm_calls_by_model: dict[str, int] = {}
-        llm_errors_by_model: dict[str, int] = {}
+        llm_calls_by_provider_token: dict[str, int] = {}
+        llm_errors_by_provider_token: dict[str, int] = {}
+        llm_calls_by_model_token: dict[str, int] = {}
+        llm_errors_by_model_token: dict[str, int] = {}
 
         def metric_token(value: str, *, max_len: int = 48) -> str:
             lowered = value.lower().strip()
@@ -153,7 +153,44 @@ class PipelineService:
         configured_provider = (
             self.settings.llm_model.split("/", 1)[0] if "/" in self.settings.llm_model else "unknown"
         )
+        configured_provider_token = metric_token(configured_provider, max_len=24)
         configured_model_token = metric_token(self.settings.llm_model)
+        include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
+
+        def bucket_provider_token(provider: str) -> str:
+            token = metric_token(provider, max_len=24)
+            if token == configured_provider_token:
+                return token
+            return "other"
+
+        def bucket_model_token(model: str) -> str:
+            token = metric_token(model)
+            if token == configured_model_token:
+                return token
+            return "other"
+
+        def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
+            artifact_path = self._write_debug_artifact(
+                run_id=run_id,
+                item_id=item_id,
+                kind=kind,
+                payload=payload,
+            )
+            if artifact_path is None:
+                return
+            try:
+                self.repository.add_artifact(
+                    run_id=run_id,
+                    item_id=item_id,
+                    kind=kind,
+                    path=str(artifact_path),
+                )
+            except Exception as artifact_exc:
+                log.bind(item_id=item_id).warning(
+                    "Analyze {} artifact record failed: {}",
+                    kind,
+                    self._sanitize_error_message(str(artifact_exc)),
+                )
         enrich_processed = 0
         enrich_failed = 0
         enrich_skipped = 0
@@ -203,8 +240,7 @@ class PipelineService:
                                 "Enrich mark_item_failed failed: {}",
                                 self._sanitize_error_message(str(mark_exc)),
                             )
-                        artifact_path = self._write_debug_artifact(
-                            run_id=run_id,
+                        write_and_record_artifact(
                             item_id=item.id,
                             kind="error_context",
                             payload={
@@ -214,19 +250,6 @@ class PipelineService:
                                 "item_id": item.id,
                             },
                         )
-                        if artifact_path is not None:
-                            try:
-                                self.repository.add_artifact(
-                                    run_id=run_id,
-                                    item_id=item.id,
-                                    kind="error_context",
-                                    path=str(artifact_path),
-                                )
-                            except Exception as artifact_exc:
-                                log.bind(item_id=item.id).warning(
-                                    "Enrich debug artifact record failed: {}",
-                                    self._sanitize_error_message(str(artifact_exc)),
-                                )
                         log.bind(item_id=item.id).warning("Enrich failed: {}", sanitized_error)
                         continue
                     finally:
@@ -238,63 +261,30 @@ class PipelineService:
                         canonical_url=item.canonical_url,
                         user_topics=self.settings.topics,
                         content=content_text,
+                        include_debug=include_debug,
                     )
-                    llm_calls_by_provider[analysis_result.provider] = (
-                        llm_calls_by_provider.get(analysis_result.provider, 0) + 1
-                    )
-                    model_token = metric_token(analysis_result.model)
-                    llm_calls_by_model[model_token] = llm_calls_by_model.get(model_token, 0) + 1
+                    provider_token = bucket_provider_token(analysis_result.provider)
+                    llm_calls_by_provider_token[provider_token] = llm_calls_by_provider_token.get(provider_token, 0) + 1
 
-                    if self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None:
-                        request_path = self._write_debug_artifact(
-                            run_id=run_id,
-                            item_id=item.id,
-                            kind="llm_request",
-                            payload=debug.request,
-                        )
-                        if request_path is not None:
-                            try:
-                                self.repository.add_artifact(
-                                    run_id=run_id,
-                                    item_id=item.id,
-                                    kind="llm_request",
-                                    path=str(request_path),
-                                )
-                            except Exception as artifact_exc:
-                                log.bind(item_id=item.id).warning(
-                                    "Analyze llm_request artifact record failed: {}",
-                                    self._sanitize_error_message(str(artifact_exc)),
-                                )
-                        response_path = self._write_debug_artifact(
-                            run_id=run_id,
-                            item_id=item.id,
-                            kind="llm_response",
-                            payload=debug.response,
-                        )
-                        if response_path is not None:
-                            try:
-                                self.repository.add_artifact(
-                                    run_id=run_id,
-                                    item_id=item.id,
-                                    kind="llm_response",
-                                    path=str(response_path),
-                                )
-                            except Exception as artifact_exc:
-                                log.bind(item_id=item.id).warning(
-                                    "Analyze llm_response artifact record failed: {}",
-                                    self._sanitize_error_message(str(artifact_exc)),
-                                )
+                    model_token = bucket_model_token(analysis_result.model)
+                    llm_calls_by_model_token[model_token] = llm_calls_by_model_token.get(model_token, 0) + 1
+
+                    if include_debug:
+                        if debug is None:
+                            raise RuntimeError("Analyzer did not return debug payload while include_debug is enabled")
+                        write_and_record_artifact(item_id=item.id, kind="llm_request", payload=debug.request)
+                        write_and_record_artifact(item_id=item.id, kind="llm_response", payload=debug.response)
 
                     self.repository.save_analysis(item_id=item.id, result=analysis_result)
                     analyze_result.processed += 1
                 except Exception as exc:
                     analyze_result.failed += 1
                     llm_errors_total += 1
-                    llm_errors_by_provider[configured_provider] = (
-                        llm_errors_by_provider.get(configured_provider, 0) + 1
+                    llm_errors_by_provider_token[configured_provider_token] = (
+                        llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
                     )
-                    llm_errors_by_model[configured_model_token] = (
-                        llm_errors_by_model.get(configured_model_token, 0) + 1
+                    llm_errors_by_model_token[configured_model_token] = (
+                        llm_errors_by_model_token.get(configured_model_token, 0) + 1
                     )
                     sanitized_error = self._sanitize_error_message(str(exc))
                     if item.id is not None:
@@ -305,8 +295,7 @@ class PipelineService:
                                 "Analyze mark_item_failed failed: {}",
                                 self._sanitize_error_message(str(mark_exc)),
                             )
-                    artifact_path = self._write_debug_artifact(
-                        run_id=run_id,
+                    write_and_record_artifact(
                         item_id=item.id,
                         kind="error_context",
                         payload={
@@ -316,19 +305,6 @@ class PipelineService:
                             "item_id": item.id,
                         },
                     )
-                    if artifact_path is not None:
-                        try:
-                            self.repository.add_artifact(
-                                run_id=run_id,
-                                item_id=item.id,
-                                kind="error_context",
-                                path=str(artifact_path),
-                            )
-                        except Exception as artifact_exc:
-                            log.bind(item_id=item.id).warning(
-                                "Analyze debug artifact record failed: {}",
-                                self._sanitize_error_message(str(artifact_exc)),
-                            )
                     log.bind(item_id=item.id).warning("Analyze failed: {}", sanitized_error)
 
         self.repository.record_metric(
@@ -351,7 +327,7 @@ class PipelineService:
         )
         self.repository.record_metric(
             run_id=run_id,
-            name="pipeline.enrich.duration_ms",
+            name="pipeline.enrich.duration_ms_total",
             value=enrich_duration_ms_total,
             unit="ms",
         )
@@ -367,28 +343,28 @@ class PipelineService:
             value=llm_errors_total,
             unit="count",
         )
-        for provider, count in llm_calls_by_provider.items():
+        for provider_token, count in llm_calls_by_provider_token.items():
             self.repository.record_metric(
                 run_id=run_id,
-                name=f"pipeline.analyze.llm_calls.provider.{metric_token(provider, max_len=24)}",
+                name=f"pipeline.analyze.llm_calls.provider.{provider_token}",
                 value=count,
                 unit="count",
             )
-        for provider, count in llm_errors_by_provider.items():
+        for provider_token, count in llm_errors_by_provider_token.items():
             self.repository.record_metric(
                 run_id=run_id,
-                name=f"pipeline.analyze.llm_errors.provider.{metric_token(provider, max_len=24)}",
+                name=f"pipeline.analyze.llm_errors.provider.{provider_token}",
                 value=count,
                 unit="count",
             )
-        for model_token, count in llm_calls_by_model.items():
+        for model_token, count in llm_calls_by_model_token.items():
             self.repository.record_metric(
                 run_id=run_id,
                 name=f"pipeline.analyze.llm_calls.model.{model_token}",
                 value=count,
                 unit="count",
             )
-        for model_token, count in llm_errors_by_model.items():
+        for model_token, count in llm_errors_by_model_token.items():
             self.repository.record_metric(
                 run_id=run_id,
                 name=f"pipeline.analyze.llm_errors.model.{model_token}",

@@ -36,7 +36,8 @@ class FakeAnalyzer:
         canonical_url: str,
         user_topics: list[str],
         content: str | None = None,  # noqa: ARG002
-    ) -> tuple[AnalysisResult, AnalyzeDebug]:
+        include_debug: bool = False,
+    ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
         if self.should_fail:
             raise RuntimeError("simulated analyzer failure")
 
@@ -52,6 +53,9 @@ class FakeAnalyzer:
             cost_usd=0.0,
             latency_ms=1,
         )
+        if not include_debug:
+            return result, None
+
         debug = AnalyzeDebug(
             request={
                 "model": result.model,
@@ -593,7 +597,7 @@ def test_pipeline_records_duration_metrics_for_each_stage(configured_env) -> Non
     metrics = repository.list_metrics(run_id="run-durations")
     metric_names = {metric.name for metric in metrics}
     assert "pipeline.ingest.duration_ms" in metric_names
-    assert "pipeline.enrich.duration_ms" in metric_names
+    assert "pipeline.enrich.duration_ms_total" in metric_names
     assert "pipeline.analyze.duration_ms" in metric_names
     assert "pipeline.publish.duration_ms" in metric_names
 

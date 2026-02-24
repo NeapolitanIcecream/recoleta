@@ -18,7 +18,8 @@ class Analyzer(Protocol):
         canonical_url: str,
         user_topics: list[str],
         content: str | None = None,
-    ) -> tuple[AnalysisResult, AnalyzeDebug]: ...
+        include_debug: bool = False,
+    ) -> tuple[AnalysisResult, AnalyzeDebug | None]: ...
 
 
 class _AnalysisPayload(BaseModel):
@@ -41,7 +42,8 @@ class LiteLLMAnalyzer:
         canonical_url: str,
         user_topics: list[str],
         content: str | None = None,
-    ) -> tuple[AnalysisResult, AnalyzeDebug]:
+        include_debug: bool = False,
+    ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
         prompt = self._build_prompt(
             title=title,
             canonical_url=canonical_url,
@@ -75,6 +77,9 @@ class LiteLLMAnalyzer:
             cost_usd=None,
             latency_ms=elapsed_ms,
         )
+        if not include_debug:
+            return result, None
+
         request_debug: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
