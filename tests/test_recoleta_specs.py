@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 import respx
+from huggingface_hub import HfApi
 from sqlmodel import Session, select
 
 from recoleta.config import Settings
@@ -945,6 +946,8 @@ def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(respx_mock: respx.Ro
 
 
 def test_fetch_hf_daily_papers_drafts_fetches_index_and_parses_items(respx_mock: respx.Router) -> None:
+    base_url = HfApi().endpoint.rstrip("/")
+    index_url = f"{base_url}/papers"
     html = """<html><body>
 <a href="/papers/1">Paper One</a>
 <a href="/papers/1">Paper One Duplicate</a>
@@ -952,7 +955,7 @@ def test_fetch_hf_daily_papers_drafts_fetches_index_and_parses_items(respx_mock:
 <a href="/models/bert-base-uncased">Not a paper</a>
 <a href="/papers/3"></a>
 </body></html>"""
-    route = respx_mock.get("https://huggingface.co/papers").respond(
+    route = respx_mock.get(index_url).respond(
         200,
         text=html,
         headers={"Content-Type": "text/html; charset=utf-8"},
@@ -964,16 +967,18 @@ def test_fetch_hf_daily_papers_drafts_fetches_index_and_parses_items(respx_mock:
 
     assert [d.source_item_id for d in drafts] == ["papers/1", "papers/2"]
     assert [d.canonical_url for d in drafts] == [
-        "https://huggingface.co/papers/1",
-        "https://huggingface.co/papers/2",
+        f"{base_url}/papers/1",
+        f"{base_url}/papers/2",
     ]
     assert [d.title for d in drafts] == ["Paper One", "Paper Two"]
 
 
 def test_fetch_hf_daily_papers_drafts_raises_on_http_error(respx_mock: respx.Router) -> None:
+    base_url = HfApi().endpoint.rstrip("/")
+    index_url = f"{base_url}/papers"
     import httpx
 
-    respx_mock.get("https://huggingface.co/papers").respond(
+    respx_mock.get(index_url).respond(
         503,
         text="service unavailable",
         headers={"Content-Type": "text/plain; charset=utf-8"},
