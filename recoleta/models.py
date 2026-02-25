@@ -15,6 +15,7 @@ ITEM_STATE_INGESTED = "ingested"
 ITEM_STATE_ENRICHED = "enriched"
 ITEM_STATE_ANALYZED = "analyzed"
 ITEM_STATE_PUBLISHED = "published"
+ITEM_STATE_RETRYABLE_FAILED = "retryable_failed"
 ITEM_STATE_FAILED = "failed"
 
 DELIVERY_CHANNEL_TELEGRAM = "telegram"

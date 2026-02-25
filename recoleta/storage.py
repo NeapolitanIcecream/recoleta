@@ -25,6 +25,7 @@ from recoleta.models import (
     ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
     ITEM_STATE_PUBLISHED,
+    ITEM_STATE_RETRYABLE_FAILED,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCEEDED,
@@ -212,7 +213,7 @@ class Repository:
                 existing.authors = _to_json(draft.authors)
                 existing.published_at = draft.published_at
                 existing.raw_metadata_json = _to_json(draft.raw_metadata)
-            if previous_state == ITEM_STATE_FAILED:
+            if previous_state in {ITEM_STATE_FAILED, ITEM_STATE_RETRYABLE_FAILED}:
                 # Allow failed items to be retried by re-ingesting.
                 existing.state = ITEM_STATE_INGESTED
             existing.updated_at = utc_now()
@@ -232,7 +233,15 @@ class Repository:
         with Session(self.engine) as session:
             statement = (
                 select(Item)
-                .where(cast(Any, Item.state).in_([ITEM_STATE_INGESTED, ITEM_STATE_ENRICHED]))
+                .where(
+                    cast(Any, Item.state).in_(
+                        [
+                            ITEM_STATE_INGESTED,
+                            ITEM_STATE_ENRICHED,
+                            ITEM_STATE_RETRYABLE_FAILED,
+                        ]
+                    )
+                )
                 .order_by(desc(cast(Any, Item.created_at)))
                 .limit(limit)
             )
@@ -346,6 +355,16 @@ class Repository:
             if item is None:
                 return
             item.state = ITEM_STATE_FAILED
+            item.updated_at = utc_now()
+            session.add(item)
+            session.commit()
+
+    def mark_item_retryable_failed(self, *, item_id: int) -> None:
+        with Session(self.engine) as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                return
+            item.state = ITEM_STATE_RETRYABLE_FAILED
             item.updated_at = utc_now()
             session.add(item)
             session.commit()

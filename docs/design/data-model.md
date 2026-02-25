@@ -27,7 +27,7 @@ Canonical normalized records for source items.
 - `authors` (text, nullable): serialized list
 - `published_at` (datetime, nullable)
 - `raw_metadata_json` (text): source-specific metadata
-- `state` (text): `ingested|enriched|analyzed|published|failed`
+- `state` (text): `ingested|enriched|analyzed|published|retryable_failed|failed`
 - `created_at` / `updated_at`
 
 Constraints / indexes:

@@ -283,11 +283,15 @@ class PipelineService:
                         enrich_failed += 1
                         analyze_result.failed += 1
                         sanitized_error = self._sanitize_error_message(str(enrich_exc))
+                        classification = self._classify_exception(enrich_exc)
                         try:
-                            self.repository.mark_item_failed(item_id=item.id)
+                            if classification.get("retryable") is True:
+                                self.repository.mark_item_retryable_failed(item_id=item.id)
+                            else:
+                                self.repository.mark_item_failed(item_id=item.id)
                         except Exception as mark_exc:
                             log.bind(item_id=item.id).warning(
-                                "Enrich mark_item_failed failed: {}",
+                                "Enrich mark_item_state failed: {}",
                                 self._sanitize_error_message(str(mark_exc)),
                             )
                         write_and_record_artifact(
@@ -298,7 +302,7 @@ class PipelineService:
                                 "error_type": type(enrich_exc).__name__,
                                 "error_message": sanitized_error,
                                 "item_id": item.id,
-                                **self._classify_exception(enrich_exc),
+                                **classification,
                             },
                         )
                         log.bind(item_id=item.id).warning("Enrich failed: {}", sanitized_error)
@@ -338,12 +342,16 @@ class PipelineService:
                         llm_errors_by_model_token.get(configured_model_token, 0) + 1
                     )
                     sanitized_error = self._sanitize_error_message(str(exc))
+                    classification = self._classify_exception(exc)
                     if item.id is not None:
                         try:
-                            self.repository.mark_item_failed(item_id=item.id)
+                            if classification.get("retryable") is True:
+                                self.repository.mark_item_retryable_failed(item_id=item.id)
+                            else:
+                                self.repository.mark_item_failed(item_id=item.id)
                         except Exception as mark_exc:
                             log.bind(item_id=item.id).warning(
-                                "Analyze mark_item_failed failed: {}",
+                                "Analyze mark_item_state failed: {}",
                                 self._sanitize_error_message(str(mark_exc)),
                             )
                     write_and_record_artifact(
@@ -354,7 +362,7 @@ class PipelineService:
                             "error_type": type(exc).__name__,
                             "error_message": sanitized_error,
                             "item_id": item.id,
-                            **self._classify_exception(exc),
+                            **classification,
                         },
                     )
                     log.bind(item_id=item.id).warning("Analyze failed: {}", sanitized_error)

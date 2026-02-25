@@ -14,6 +14,7 @@ from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ANALYZED,
+    ITEM_STATE_RETRYABLE_FAILED,
     Artifact,
     Content,
     Delivery,
@@ -133,6 +134,9 @@ class ExplodingRepository:
         raise NotImplementedError
 
     def mark_item_failed(self, *, item_id: int) -> None:
+        raise NotImplementedError
+
+    def mark_item_retryable_failed(self, *, item_id: int) -> None:
         raise NotImplementedError
 
     def list_items_for_publish(self, *, limit: int, min_relevance_score: float):  # type: ignore[no-untyped-def]
@@ -617,6 +621,61 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     assert analyze_result.failed == 1
     assert len(failed_metric) == 1
     assert failed_metric[0].value == 1
+
+
+def test_analyze_marks_retryable_enrich_failures_and_allows_retry(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+    import recoleta.pipeline as pipeline
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-retryable-enrich-1",
+        canonical_url="https://example.com/retryable-enrich-case",
+        title="Retryable Enrich Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-retryable-enrich", drafts=[draft])
+
+    calls = 0
+
+    def flaky_fetch_url_html(_client: httpx.Client, url: str) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            request = httpx.Request("GET", url)
+            response = httpx.Response(503, request=request, text="service unavailable")
+            raise httpx.HTTPStatusError("service unavailable", request=request, response=response)
+        return "<html><body><p>mock html</p></body></html>"
+
+    monkeypatch.setattr(pipeline, "fetch_url_html", flaky_fetch_url_html)
+
+    first = service.analyze(run_id="run-retryable-enrich", limit=10)
+    assert first.processed == 0
+    assert first.failed == 1
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+        assert item.state == ITEM_STATE_RETRYABLE_FAILED
+
+    second = service.analyze(run_id="run-retryable-enrich-2", limit=10)
+    assert second.processed == 1
+    assert second.failed == 0
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+        assert item.state == ITEM_STATE_ANALYZED
 
 
 def test_analyze_persists_enriched_content_and_emits_enrich_metrics(configured_env) -> None:
