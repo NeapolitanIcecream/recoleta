@@ -6,11 +6,9 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.14%2B-blue.svg)](#recoleta-installation)
 
-Recoleta is a **CLI-first research intelligence funnel** that ingests noisy sources, runs **structured LLM analysis**, and publishes high-signal outputs to **Obsidian** and **Telegram** — so you can keep up with research without drowning in tabs.
+Recoleta is a **research intelligence funnel** that ingests noisy sources, runs **structured LLM analysis**, and publishes high-signal outputs to **Obsidian** and **Telegram** — so you can keep up with research without drowning in tabs.
 
 ## 📚 Contents
-
-> Tip: these links are stable even with emoji headings.
 
 - [Overview](#recoleta-overview)
 - [Features](#recoleta-features)
