@@ -982,7 +982,15 @@ def test_publish_retries_after_failed_delivery(configured_env) -> None:
     service.analyze(run_id="run-publish-retry", limit=10)
 
     first_publish = service.publish(run_id="run-publish-retry", limit=10)
+    note_dir = settings.obsidian_vault_path / settings.obsidian_base_folder / "Inbox"
+    note_paths_after_first = list(note_dir.glob("*.md"))
+    assert len(note_paths_after_first) == 1
+    first_note_path = note_paths_after_first[0]
+    assert first_note_path.exists()
     second_publish = service.publish(run_id="run-publish-retry-2", limit=10)
+    note_paths_after_second = list(note_dir.glob("*.md"))
+    assert len(note_paths_after_second) == 1
+    assert second_publish.note_paths and second_publish.note_paths[0] == first_note_path
 
     assert first_publish.sent == 0
     assert first_publish.failed == 1

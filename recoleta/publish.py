@@ -2,9 +2,38 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import yaml
 from slugify import slugify
+
+
+def _read_yaml_frontmatter(path: Path) -> dict[str, Any] | None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return None
+
+    if not lines or lines[0].strip() != "---":
+        return None
+
+    end_idx: int | None = None
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            end_idx = idx
+            break
+    if end_idx is None:
+        return None
+
+    raw = "\n".join(lines[1:end_idx]).strip()
+    if not raw:
+        return None
+
+    try:
+        loaded = yaml.safe_load(raw)
+    except Exception:
+        return None
+    return loaded if isinstance(loaded, dict) else None
 
 
 def write_obsidian_note(
@@ -30,7 +59,10 @@ def write_obsidian_note(
     slug = slugify(title, lowercase=True) or "untitled-item"
     note_path = note_dir / f"{date_prefix}--{slug}.md"
     if note_path.exists():
-        note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
+        frontmatter = _read_yaml_frontmatter(note_path) or {}
+        existing_url = str(frontmatter.get("url") or "").strip()
+        if existing_url != canonical_url.strip():
+            note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
 
     frontmatter = {
         "source": source,
