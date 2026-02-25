@@ -246,6 +246,14 @@ def test_settings_loads_topics_from_yaml_env_string(configured_env, monkeypatch:
     assert settings.topics == ["agents", "ml-systems"]
 
 
+def test_settings_loads_allow_and_deny_tags_from_env_strings(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALLOW_TAGS", "agents, ml-systems")
+    monkeypatch.setenv("DENY_TAGS", json.dumps(["crypto"]))
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.allow_tags == ["agents", "ml-systems"]
+    assert settings.deny_tags == ["crypto"]
+
+
 def test_settings_loads_from_config_file_and_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
@@ -645,6 +653,85 @@ def test_analyze_persists_enriched_content_and_emits_enrich_metrics(configured_e
     assert by_name["pipeline.enrich.failed_total"].value == 0
 
 
+def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.pipeline as pipeline
+
+    settings, repository = _build_runtime()
+
+    class CapturingAnalyzer:
+        def __init__(self) -> None:
+            self.contents: list[str | None] = []
+
+        def analyze(
+            self,
+            *,
+            title: str,
+            canonical_url: str,  # noqa: ARG002
+            user_topics: list[str],
+            content: str | None = None,
+            include_debug: bool = False,  # noqa: ARG002
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            self.contents.append(content)
+            return (
+                AnalysisResult(
+                    model="test/fake-model",
+                    provider="test",
+                    summary=f"Summary for {title}",
+                    insight="This matters because it aligns with user interests.",
+                    idea_directions=["Try reproducing the approach."],
+                    topics=user_topics[:2] or ["general"],
+                    relevance_score=0.9,
+                    novelty_score=0.4,
+                    cost_usd=0.0,
+                    latency_ms=1,
+                ),
+                None,
+            )
+
+    analyzer = CapturingAnalyzer()
+
+    expected_pdf_url = "https://arxiv.org/pdf/1605.08386v1.pdf"
+
+    def fake_fetch_url_bytes(_client, url: str) -> bytes:  # noqa: ARG001
+        assert url == expected_pdf_url
+        return b"%PDF-mock"
+
+    def fail_fetch_url_html(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("html fetch should not be used")
+
+    monkeypatch.setattr(pipeline, "fetch_url_bytes", fake_fetch_url_bytes)
+    monkeypatch.setattr(pipeline, "extract_pdf_text", lambda _bytes: "mock pdf text")  # noqa: ARG005
+    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+    draft = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id="1605.08386v1",
+        canonical_url="https://arxiv.org/abs/1605.08386v1",
+        title="Arxiv PDF Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-pdf-enrich", drafts=[draft])
+    analyze_result = service.analyze(run_id="run-pdf-enrich", limit=10)
+    assert analyze_result.processed == 1
+
+    assert analyzer.contents == ["mock pdf text"]
+
+    with Session(repository.engine) as session:
+        contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))
+        assert contents
+        assert any(content.content_type == "pdf_text" and content.text == "mock pdf text" for content in contents)
+
+
 def test_analyze_writes_llm_request_and_response_artifacts(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
@@ -799,6 +886,78 @@ def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> 
     assert second_publish.sent == 0
     assert len(sender.messages) == 1
     assert first_publish.note_paths[0].exists()
+
+
+def test_publish_filters_by_allow_tags_and_records_metric(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ALLOW_TAGS", json.dumps(["non-matching-tag"]))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-filter-allow-1",
+        canonical_url="https://example.com/publish-filter-allow-case",
+        title="Publish Filter Allow Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-filter-allow", drafts=[draft])
+    service.analyze(run_id="run-publish-filter-allow", limit=10)
+    result = service.publish(run_id="run-publish-filter-allow", limit=10)
+
+    assert result.sent == 0
+    assert result.skipped == 1
+    assert len(sender.messages) == 0
+
+    metrics = repository.list_metrics(run_id="run-publish-filter-allow")
+    by_name: dict[str, Metric] = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.publish.filtered_total"].value == 1
+
+
+def test_publish_filters_by_deny_tags_and_records_metric(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DENY_TAGS", json.dumps(["agents"]))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-filter-deny-1",
+        canonical_url="https://example.com/publish-filter-deny-case",
+        title="Publish Filter Deny Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-filter-deny", drafts=[draft])
+    service.analyze(run_id="run-publish-filter-deny", limit=10)
+    result = service.publish(run_id="run-publish-filter-deny", limit=10)
+
+    assert result.sent == 0
+    assert result.skipped == 1
+    assert len(sender.messages) == 0
+
+    metrics = repository.list_metrics(run_id="run-publish-filter-deny")
+    by_name: dict[str, Metric] = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.publish.filtered_total"].value == 1
 
 
 def test_publish_retries_after_failed_delivery(configured_env) -> None:

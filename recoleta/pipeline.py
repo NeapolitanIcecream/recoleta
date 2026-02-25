@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import orjson
@@ -13,7 +14,7 @@ from rich.progress import track
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
 from recoleta.config import Settings
 from recoleta.delivery import TelegramSender
-from recoleta.extract import extract_html_maintext, fetch_url_html
+from recoleta.extract import extract_html_maintext, extract_pdf_text, fetch_url_bytes, fetch_url_html
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_FAILED,
@@ -75,6 +76,7 @@ class PipelineService:
                         "stage": "ingest",
                         "error_type": type(exc).__name__,
                         "error_message": sanitized_error,
+                        **self._classify_exception(exc),
                         "draft": {
                             "source": draft.source,
                             "source_item_id": draft.source_item_id,
@@ -218,26 +220,65 @@ class PipelineService:
                     content_text: str | None = None
                     enrich_item_started = time.perf_counter()
                     try:
-                        existing_content = self.repository.get_latest_content(
-                            item_id=item.id,
-                            content_type="html_maintext",
-                        )
-                        if existing_content is not None and existing_content.text:
-                            content_text = existing_content.text
-                            enrich_skipped += 1
-                        else:
-                            html = fetch_url_html(client, item.canonical_url)
-                            extracted = extract_html_maintext(html)
-                            if extracted is None:
-                                raise RuntimeError("empty html maintext extraction")
-                            self.repository.upsert_content(
+                        stored_new_content = False
+                        if item.source in {"arxiv", "openreview"}:
+                            existing_pdf = self.repository.get_latest_content(
+                                item_id=item.id,
+                                content_type="pdf_text",
+                            )
+                            if existing_pdf is not None and existing_pdf.text:
+                                content_text = existing_pdf.text
+                            else:
+                                pdf_url = self._build_pdf_url(
+                                    source=item.source,
+                                    canonical_url=item.canonical_url,
+                                    source_item_id=item.source_item_id,
+                                )
+                                if pdf_url:
+                                    try:
+                                        pdf_bytes = fetch_url_bytes(client, pdf_url)
+                                        extracted_pdf = extract_pdf_text(pdf_bytes)
+                                        if extracted_pdf is None:
+                                            raise RuntimeError("empty pdf text extraction")
+                                        self.repository.upsert_content(
+                                            item_id=item.id,
+                                            content_type="pdf_text",
+                                            text=extracted_pdf,
+                                        )
+                                        self.repository.mark_item_enriched(item_id=item.id)
+                                        content_text = extracted_pdf
+                                        stored_new_content = True
+                                    except Exception as pdf_exc:
+                                        log.bind(item_id=item.id).warning(
+                                            "PDF enrich failed, falling back to HTML: {}",
+                                            self._sanitize_error_message(str(pdf_exc)),
+                                        )
+
+                        if content_text is None:
+                            existing_html = self.repository.get_latest_content(
                                 item_id=item.id,
                                 content_type="html_maintext",
-                                text=extracted,
                             )
-                            self.repository.mark_item_enriched(item_id=item.id)
-                            content_text = extracted
+                            if existing_html is not None and existing_html.text:
+                                content_text = existing_html.text
+                            else:
+                                html = fetch_url_html(client, item.canonical_url)
+                                extracted = extract_html_maintext(html)
+                                if extracted is None:
+                                    raise RuntimeError("empty html maintext extraction")
+                                self.repository.upsert_content(
+                                    item_id=item.id,
+                                    content_type="html_maintext",
+                                    text=extracted,
+                                )
+                                self.repository.mark_item_enriched(item_id=item.id)
+                                content_text = extracted
+                                stored_new_content = True
+
+                        if stored_new_content:
                             enrich_processed += 1
+                        else:
+                            enrich_skipped += 1
                     except Exception as enrich_exc:
                         enrich_failed += 1
                         analyze_result.failed += 1
@@ -257,6 +298,7 @@ class PipelineService:
                                 "error_type": type(enrich_exc).__name__,
                                 "error_message": sanitized_error,
                                 "item_id": item.id,
+                                **self._classify_exception(enrich_exc),
                             },
                         )
                         log.bind(item_id=item.id).warning("Enrich failed: {}", sanitized_error)
@@ -312,6 +354,7 @@ class PipelineService:
                             "error_type": type(exc).__name__,
                             "error_message": sanitized_error,
                             "item_id": item.id,
+                            **self._classify_exception(exc),
                         },
                     )
                     log.bind(item_id=item.id).warning("Analyze failed: {}", sanitized_error)
@@ -444,6 +487,9 @@ class PipelineService:
             limit=effective_limit,
             min_relevance_score=self.settings.min_relevance_score,
         )
+        allow_tags = {tag.strip().lower() for tag in self.settings.allow_tags if tag.strip()}
+        deny_tags = {tag.strip().lower() for tag in self.settings.deny_tags if tag.strip()}
+        filtered_total = 0
         for item, analysis in track(candidates, description="Publishing items"):
             if item.id is None:
                 continue
@@ -454,6 +500,16 @@ class PipelineService:
             ):
                 publish_result.skipped += 1
                 continue
+            if allow_tags or deny_tags:
+                topics = {tag.strip().lower() for tag in self.repository.decode_list(analysis.topics_json) if tag.strip()}
+                if deny_tags and (topics & deny_tags):
+                    publish_result.skipped += 1
+                    filtered_total += 1
+                    continue
+                if allow_tags and not (topics & allow_tags):
+                    publish_result.skipped += 1
+                    filtered_total += 1
+                    continue
 
             try:
                 note_path = write_obsidian_note(
@@ -500,6 +556,7 @@ class PipelineService:
                         "error_type": type(exc).__name__,
                         "error_message": sanitized_error,
                         "item_id": item.id,
+                        **self._classify_exception(exc),
                     },
                 )
                 if artifact_path is not None:
@@ -536,6 +593,12 @@ class PipelineService:
             run_id=run_id,
             name="pipeline.publish.skipped_total",
             value=publish_result.skipped,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.publish.filtered_total",
+            value=filtered_total,
             unit="count",
         )
         self.repository.record_metric(
@@ -644,3 +707,51 @@ class PipelineService:
             message,
             secrets=self._scrub_secrets,
         )
+
+    @staticmethod
+    def _classify_exception(exc: BaseException) -> dict[str, Any]:
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+            return {
+                "error_category": "http_status",
+                "retryable": status >= 500 or status == 429,
+                "http_status": status,
+            }
+        if isinstance(exc, httpx.RequestError):
+            return {"error_category": "http_request", "retryable": True}
+        if isinstance(exc, ValueError):
+            return {"error_category": "validation", "retryable": False}
+        return {"error_category": "unknown", "retryable": False}
+
+    @staticmethod
+    def _build_pdf_url(*, source: str, canonical_url: str, source_item_id: str | None) -> str | None:
+        normalized_url = canonical_url.strip()
+        if not normalized_url:
+            return None
+
+        if source == "arxiv":
+            if "arxiv.org" not in normalized_url:
+                return None
+            if "/abs/" in normalized_url:
+                base = normalized_url.replace("/abs/", "/pdf/", 1)
+            elif "/pdf/" in normalized_url:
+                base = normalized_url
+            else:
+                return None
+            return base if base.endswith(".pdf") else f"{base}.pdf"
+
+        if source == "openreview":
+            if "openreview.net/pdf" in normalized_url:
+                return normalized_url
+            note_id = (source_item_id or "").strip()
+            if not note_id:
+                try:
+                    parsed = urlparse(normalized_url)
+                    note_id = (parse_qs(parsed.query).get("id") or [""])[0].strip()
+                except Exception:
+                    note_id = ""
+            if not note_id:
+                return None
+            return f"https://openreview.net/pdf?id={note_id}"
+
+        return None

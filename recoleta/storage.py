@@ -356,7 +356,10 @@ class Repository:
                 select(Item, Analysis)
                 .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
                 .where(Item.state == ITEM_STATE_ANALYZED, Analysis.relevance_score >= min_relevance_score)
-                .order_by(desc(cast(Any, Analysis.relevance_score)))
+                .order_by(
+                    desc(cast(Any, Analysis.relevance_score)),
+                    desc(cast(Any, Analysis.novelty_score)),
+                )
                 .limit(limit)
             )
             return list(session.exec(statement))

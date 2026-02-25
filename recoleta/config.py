@@ -23,6 +23,30 @@ def _parse_json_or_yaml(value: str) -> Any:
         return loaded
 
 
+def _parse_str_list(value: str) -> list[str]:
+    stripped = value.strip()
+    if not stripped:
+        return []
+
+    loaded: Any | None = None
+    try:
+        loaded = json.loads(stripped)
+    except Exception:
+        try:
+            loaded = yaml.safe_load(stripped)
+        except Exception:
+            loaded = None
+
+    if isinstance(loaded, list):
+        return [str(item).strip() for item in loaded if str(item).strip()]
+    if isinstance(loaded, str):
+        stripped = loaded.strip()
+
+    if "," in stripped:
+        return [part.strip() for part in stripped.split(",") if part.strip()]
+    return [stripped]
+
+
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
     _KEY_MAP: dict[str, str] = {
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
@@ -30,6 +54,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "LLM_MODEL": "llm_model",
         "SOURCES": "sources",
         "TOPICS": "topics",
+        "ALLOW_TAGS": "allow_tags",
+        "DENY_TAGS": "deny_tags",
         "MIN_RELEVANCE_SCORE": "min_relevance_score",
         "MAX_DELIVERIES_PER_DAY": "max_deliveries_per_day",
         "TITLE_DEDUP_THRESHOLD": "title_dedup_threshold",
@@ -180,6 +206,8 @@ class Settings(BaseSettings):
 
     sources: SourcesConfig = Field(default_factory=SourcesConfig, validation_alias="SOURCES")
     topics: list[str] = Field(default_factory=list, validation_alias="TOPICS")
+    allow_tags: list[str] = Field(default_factory=list, validation_alias="ALLOW_TAGS")
+    deny_tags: list[str] = Field(default_factory=list, validation_alias="DENY_TAGS")
     min_relevance_score: float = Field(default=0.6, validation_alias="MIN_RELEVANCE_SCORE")
     max_deliveries_per_day: int = Field(default=10, validation_alias="MAX_DELIVERIES_PER_DAY")
     title_dedup_threshold: float = Field(default=92.0, validation_alias="TITLE_DEDUP_THRESHOLD")
@@ -230,26 +258,21 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_topics_from_env_string(cls, value: Any) -> Any:
         if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped:
-                return []
-            loaded: Any | None = None
-            try:
-                loaded = json.loads(stripped)
-            except Exception:
-                try:
-                    loaded = yaml.safe_load(stripped)
-                except Exception:
-                    loaded = None
+            return _parse_str_list(value)
+        return value
 
-            if isinstance(loaded, list):
-                return [str(item).strip() for item in loaded if str(item).strip()]
-            if isinstance(loaded, str):
-                stripped = loaded.strip()
+    @field_validator("allow_tags", mode="before")
+    @classmethod
+    def _parse_allow_tags_from_env_string(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return _parse_str_list(value)
+        return value
 
-            if "," in stripped:
-                return [part.strip() for part in stripped.split(",") if part.strip()]
-            return [stripped]
+    @field_validator("deny_tags", mode="before")
+    @classmethod
+    def _parse_deny_tags_from_env_string(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return _parse_str_list(value)
         return value
 
     @field_validator("obsidian_vault_path", mode="before")

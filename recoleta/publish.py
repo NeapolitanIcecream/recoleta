@@ -28,7 +28,9 @@ def write_obsidian_note(
     note_dir.mkdir(parents=True, exist_ok=True)
     date_prefix = (published_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
     slug = slugify(title, lowercase=True) or "untitled-item"
-    note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
+    note_path = note_dir / f"{date_prefix}--{slug}.md"
+    if note_path.exists():
+        note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
 
     frontmatter = {
         "source": source,
