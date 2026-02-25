@@ -49,7 +49,10 @@ class PipelineService:
             )
         )
         self._progress_console = Console(stderr=True)
-        self.analyzer = analyzer or LiteLLMAnalyzer(model=settings.llm_model)
+        self.analyzer = analyzer or LiteLLMAnalyzer(
+            model=settings.llm_model,
+            output_language=settings.llm_output_language,
+        )
         self.telegram_sender = telegram_sender or TelegramSender(
             token=settings.telegram_bot_token.get_secret_value(),
             chat_id=settings.telegram_chat_id.get_secret_value(),

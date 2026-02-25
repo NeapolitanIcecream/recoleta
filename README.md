@@ -88,6 +88,10 @@ recoleta_db_path: "~/.local/share/recoleta/recoleta.db"
 # - anthropic/claude-3-5-sonnet-20241022
 llm_model: "openai/gpt-4o-mini"
 
+# Optional: language for summary/insight/idea text.
+# JSON keys stay in English and topics remain English tags.
+llm_output_language: "Chinese (Simplified)"
+
 topics:
   - agents
   - ml-systems
@@ -182,6 +186,8 @@ Required:
 
 Common optional knobs:
 
+- **LLM output language**:
+  - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary`, `insight`, `idea_directions`; JSON keys and `topics` stay English)
 - **Sources**: `SOURCES` / `sources`
   - `hn.rss_urls`
   - `rss.feeds`
@@ -239,6 +245,7 @@ Recoleta ships a small CLI surface:
 - [`docs/design/system-overview.md`](docs/design/system-overview.md) — goals, non-goals, and the end-to-end workflow
 - [`docs/design/architecture.md`](docs/design/architecture.md) — module boundaries, pipeline stages, storage, and observability
 - [`docs/design/configuration.md`](docs/design/configuration.md) — full configuration reference and rules
+- [`docs/design/llm-output-language.md`](docs/design/llm-output-language.md) — configurable analysis language behavior
 - [`docs/design/data-model.md`](docs/design/data-model.md) — SQLite schema and Obsidian note layout
 - [`docs/adr/`](docs/adr/) — architecture decision records (SQLite, LiteLLM, config file, Telegram delivery)
 

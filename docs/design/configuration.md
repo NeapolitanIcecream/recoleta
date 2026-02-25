@@ -24,6 +24,13 @@ Secrets:
 - `TELEGRAM_CHAT_ID`: chat id or channel username (secret-ish; treat as sensitive).
 - `LLM_MODEL`: default model name (LiteLLM format), e.g. `openai/gpt-4o-mini`.
 
+Optional LLM behavior:
+
+- `LLM_OUTPUT_LANGUAGE`: preferred output language for LLM-generated `summary`, `insight`, and `idea_directions`.
+  - JSON keys remain English.
+  - `topics` remain concise English tags for downstream allow/deny filtering.
+  - Empty value means unset.
+
 ## Source configuration
 
 These can be provided as a JSON/YAML string or a config file.

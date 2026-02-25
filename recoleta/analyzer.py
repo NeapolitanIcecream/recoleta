@@ -32,8 +32,9 @@ class _AnalysisPayload(BaseModel):
 
 
 class LiteLLMAnalyzer:
-    def __init__(self, *, model: str) -> None:
+    def __init__(self, *, model: str, output_language: str | None = None) -> None:
         self.model = model
+        self.output_language = output_language
 
     def analyze(
         self,
@@ -52,7 +53,7 @@ class LiteLLMAnalyzer:
         )
         started = time.perf_counter()
         messages = [
-            {"role": "system", "content": "You are a research signal analyst. Return strict JSON only."},
+            {"role": "system", "content": self._build_system_message()},
             {"role": "user", "content": prompt},
         ]
         response = completion(
@@ -112,6 +113,15 @@ class LiteLLMAnalyzer:
             f"Title: {title}\n"
             f"URL: {canonical_url}\n"
             + (f"Content excerpt:\n{trimmed_content}\n" if trimmed_content else "")
+        )
+
+    def _build_system_message(self) -> str:
+        base_message = "You are a research signal analyst. Return strict JSON only."
+        if not self.output_language:
+            return base_message
+        return (
+            f"{base_message} Use {self.output_language} for summary, insight, and idea_directions values. "
+            "Keep all JSON keys in English and keep topics as concise English tags."
         )
 
 

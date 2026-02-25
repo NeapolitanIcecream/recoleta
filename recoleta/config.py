@@ -52,6 +52,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
         "RECOLETA_DB_PATH": "recoleta_db_path",
         "LLM_MODEL": "llm_model",
+        "LLM_OUTPUT_LANGUAGE": "llm_output_language",
         "SOURCES": "sources",
         "TOPICS": "topics",
         "ALLOW_TAGS": "allow_tags",
@@ -203,6 +204,7 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr = Field(validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: SecretStr = Field(validation_alias="TELEGRAM_CHAT_ID")
     llm_model: str = Field(validation_alias="LLM_MODEL")
+    llm_output_language: str | None = Field(default=None, validation_alias="LLM_OUTPUT_LANGUAGE")
 
     sources: SourcesConfig = Field(default_factory=SourcesConfig, validation_alias="SOURCES")
     topics: list[str] = Field(default_factory=list, validation_alias="TOPICS")
@@ -259,6 +261,20 @@ class Settings(BaseSettings):
                 raise ValueError("SOURCES must be a JSON/YAML object")
             return loaded
         return value
+
+    @field_validator("llm_output_language", mode="before")
+    @classmethod
+    def _normalize_llm_output_language(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("LLM_OUTPUT_LANGUAGE must be a single-line value")
+        if len(normalized) > 64:
+            raise ValueError("LLM_OUTPUT_LANGUAGE must be <= 64 characters")
+        return normalized
 
     @field_validator("topics", mode="before")
     @classmethod

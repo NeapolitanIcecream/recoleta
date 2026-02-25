@@ -258,6 +258,18 @@ def test_settings_loads_allow_and_deny_tags_from_env_strings(configured_env, mon
     assert settings.deny_tags == ["crypto"]
 
 
+def test_settings_loads_llm_output_language_from_env(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "  zh-CN  ")
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.llm_output_language == "zh-CN"
+
+
+def test_settings_rejects_multiline_llm_output_language(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "zh\nCN")
+    with pytest.raises(ValueError, match="single-line"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_settings_loads_from_config_file_and_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
@@ -289,6 +301,33 @@ def test_settings_loads_from_config_file_and_env(monkeypatch: pytest.MonkeyPatch
     assert settings.llm_model == "openai/gpt-4o-mini"
     assert settings.topics == ["agents"]
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
+
+
+def test_settings_loads_llm_output_language_from_config_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'OBSIDIAN_VAULT_PATH: "{vault_path}"',
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                'LLM_OUTPUT_LANGUAGE: "Chinese (Simplified)"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.llm_output_language == "Chinese (Simplified)"
 
 
 def test_settings_loads_from_config_file_via_init_arg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
