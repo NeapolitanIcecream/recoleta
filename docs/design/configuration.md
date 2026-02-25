@@ -63,7 +63,7 @@ Choose one:
 
 ## Outputs
 
-- `ARTIFACTS_DIR` (optional): where to write raw/debug artifacts (outside the Vault is fine).
+- `ARTIFACTS_DIR` (required when `WRITE_DEBUG_ARTIFACTS=true`): where to write raw/debug artifacts (outside the Vault is fine).
 - `OBSIDIAN_BASE_FOLDER` (default `Recoleta`): base folder under the Vault.
 
 ## Logging and diagnostics

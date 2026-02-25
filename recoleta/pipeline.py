@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import orjson
 from loguru import logger
+from rich.console import Console
 from rich.progress import track
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
@@ -47,6 +48,7 @@ class PipelineService:
                 )
             )
         )
+        self._progress_console = Console(stderr=True)
         self.analyzer = analyzer or LiteLLMAnalyzer(model=settings.llm_model)
         self.telegram_sender = telegram_sender or TelegramSender(
             token=settings.telegram_bot_token.get_secret_value(),
@@ -57,8 +59,12 @@ class PipelineService:
         log = logger.bind(module="pipeline.ingest", run_id=run_id)
         started = time.perf_counter()
         ingest_result = IngestResult()
-        source_drafts = drafts if drafts is not None else self._pull_source_drafts()
-        for draft in track(source_drafts, description="Ingesting items"):
+        source_failures_total = 0
+        source_drafts = drafts
+        if source_drafts is None:
+            source_drafts, source_failures_total = self._pull_source_drafts(run_id=run_id, log=log)
+
+        for draft in track(source_drafts, description="Ingesting items", console=self._progress_console):
             try:
                 _, created = self.repository.upsert_item(draft)
                 if created:
@@ -125,15 +131,22 @@ class PipelineService:
         )
         self.repository.record_metric(
             run_id=run_id,
+            name="pipeline.ingest.source_failures_total",
+            value=source_failures_total,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
             name="pipeline.ingest.duration_ms",
             value=int((time.perf_counter() - started) * 1000),
             unit="ms",
         )
         log.info(
-            "Ingest completed with inserted={} updated={} failed={}",
+            "Ingest completed with inserted={} updated={} failed={} source_failures={}",
             ingest_result.inserted,
             ingest_result.updated,
             ingest_result.failed,
+            source_failures_total,
         )
         return ingest_result
 
@@ -210,7 +223,7 @@ class PipelineService:
         timeout = httpx.Timeout(10.0, connect=5.0)
         headers = {"User-Agent": "recoleta/0.1"}
         with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
-            for item in track(items, description="Analyzing items"):
+            for item in track(items, description="Analyzing items", console=self._progress_console):
                 try:
                     if item.id is None:
                         analyze_result.failed += 1
@@ -498,7 +511,7 @@ class PipelineService:
         allow_tags = {tag.strip().lower() for tag in self.settings.allow_tags if tag.strip()}
         deny_tags = {tag.strip().lower() for tag in self.settings.deny_tags if tag.strip()}
         filtered_total = 0
-        for item, analysis in track(candidates, description="Publishing items"):
+        for item, analysis in track(candidates, description="Publishing items", console=self._progress_console):
             if item.id is None:
                 continue
             if self.repository.has_sent_delivery(
@@ -635,28 +648,65 @@ class PipelineService:
         )
         return publish_result
 
-    def _pull_source_drafts(self) -> list[ItemDraft]:
+    def _pull_source_drafts(self, *, run_id: str, log: Any) -> tuple[list[ItemDraft], int]:
         hn_urls = list(dict.fromkeys(self.settings.sources.hn.rss_urls))
         rss_urls = list(dict.fromkeys(self.settings.sources.rss.feeds))
         arxiv_queries = list(dict.fromkeys(self.settings.sources.arxiv.queries))
         openreview_venues = list(dict.fromkeys(self.settings.sources.openreview.venues))
         drafts: list[ItemDraft] = []
+        source_failures_total = 0
+
+        def pull(source_name: str, fn: Any) -> None:
+            nonlocal source_failures_total
+            try:
+                drafts.extend(fn())
+            except Exception as exc:
+                source_failures_total += 1
+                sanitized_error = self._sanitize_error_message(str(exc))
+                artifact_path = self._write_debug_artifact(
+                    run_id=run_id,
+                    item_id=None,
+                    kind="error_context",
+                    payload={
+                        "stage": "ingest",
+                        "source": source_name,
+                        "error_type": type(exc).__name__,
+                        "error_message": sanitized_error,
+                        **self._classify_exception(exc),
+                    },
+                )
+                if artifact_path is not None:
+                    try:
+                        self.repository.add_artifact(
+                            run_id=run_id,
+                            item_id=None,
+                            kind="error_context",
+                            path=str(artifact_path),
+                        )
+                    except Exception as artifact_exc:
+                        log.bind(source=source_name).warning(
+                            "Ingest source debug artifact record failed: {}",
+                            self._sanitize_error_message(str(artifact_exc)),
+                        )
+                log.bind(source=source_name).warning("Source pull failed: {}", sanitized_error)
+
         if self.settings.sources.hf_daily.enabled:
-            drafts.extend(sources.fetch_hf_daily_papers_drafts(max_items=50))
+            pull("hf_daily", lambda: sources.fetch_hf_daily_papers_drafts(max_items=50))
         if hn_urls:
-            drafts.extend(sources.fetch_rss_drafts(feed_urls=hn_urls, source="hn"))
+            pull("hn", lambda: sources.fetch_rss_drafts(feed_urls=hn_urls, source="hn"))
         if rss_urls:
-            drafts.extend(sources.fetch_rss_drafts(feed_urls=rss_urls, source="rss"))
+            pull("rss", lambda: sources.fetch_rss_drafts(feed_urls=rss_urls, source="rss"))
         if arxiv_queries:
-            drafts.extend(
-                sources.fetch_arxiv_drafts(
+            pull(
+                "arxiv",
+                lambda: sources.fetch_arxiv_drafts(
                     queries=arxiv_queries,
                     max_results_per_run=self.settings.sources.arxiv.max_results_per_run,
-                )
+                ),
             )
         if openreview_venues:
-            drafts.extend(sources.fetch_openreview_drafts(venues=openreview_venues, max_results_per_venue=50))
-        return drafts
+            pull("openreview", lambda: sources.fetch_openreview_drafts(venues=openreview_venues, max_results_per_venue=50))
+        return drafts, source_failures_total
 
     def _write_debug_artifact(
         self,

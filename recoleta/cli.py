@@ -14,7 +14,6 @@ from recoleta.pipeline import PipelineService
 from recoleta.storage import Repository
 
 app = typer.Typer(help="Recoleta research intelligence funnel CLI.", no_args_is_help=True)
-console = Console()
 
 
 def _build_runtime() -> tuple[Settings, Repository, PipelineService]:
@@ -34,14 +33,14 @@ def _execute_stage(
     *,
     stage_name: str,
     stage_runner: Callable[[PipelineService, str], Any],
-) -> Any:
+) -> tuple[Settings, Any]:
     settings, repository, service = _build_runtime()
     run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
     stage_log = logger.bind(module=f"cli.{stage_name}", run_id=run.id)
     try:
         result = stage_runner(service, run.id)
         repository.finish_run(run.id, success=True)
-        return result
+        return settings, result
     except Exception:
         repository.finish_run(run.id, success=False)
         stage_log.exception("Stage execution failed")
@@ -52,7 +51,8 @@ def _execute_stage(
 def ingest() -> None:
     """Pull sources and upsert normalized items."""
 
-    result = _execute_stage(stage_name="ingest", stage_runner=lambda service, run_id: service.ingest(run_id=run_id))
+    settings, result = _execute_stage(stage_name="ingest", stage_runner=lambda service, run_id: service.ingest(run_id=run_id))
+    console = Console(stderr=settings.log_json)
     console.print(
         f"[green]ingest completed[/green] inserted={result.inserted} updated={result.updated} failed={result.failed}"
     )
@@ -62,10 +62,11 @@ def ingest() -> None:
 def analyze(limit: int = typer.Option(100, min=1, help="Max number of items analyzed in one run.")) -> None:
     """Run LLM analysis for newly ingested items."""
 
-    result = _execute_stage(
+    settings, result = _execute_stage(
         stage_name="analyze",
         stage_runner=lambda service, run_id: service.analyze(run_id=run_id, limit=limit),
     )
+    console = Console(stderr=settings.log_json)
     console.print(f"[green]analyze completed[/green] processed={result.processed} failed={result.failed}")
 
 
@@ -73,10 +74,11 @@ def analyze(limit: int = typer.Option(100, min=1, help="Max number of items anal
 def publish(limit: int = typer.Option(50, min=1, help="Max number of analyzed items published.")) -> None:
     """Write notes and send Telegram deliverables."""
 
-    result = _execute_stage(
+    settings, result = _execute_stage(
         stage_name="publish",
         stage_runner=lambda service, run_id: service.publish(run_id=run_id, limit=limit),
     )
+    console = Console(stderr=settings.log_json)
     console.print(f"[green]publish completed[/green] sent={result.sent} skipped={result.skipped} failed={result.failed}")
 
 
@@ -85,6 +87,7 @@ def run_scheduler() -> None:
     """Run periodic ingest/analyze/publish jobs with APScheduler."""
 
     settings, _, _ = _build_runtime()
+    console = Console(stderr=settings.log_json)
     scheduler = BlockingScheduler(
         timezone="UTC",
         executors={"default": {"type": "threadpool", "max_workers": 1}},

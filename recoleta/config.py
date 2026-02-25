@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 import yaml
@@ -226,6 +226,12 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     log_json: bool = Field(default=False, validation_alias="LOG_JSON")
     write_debug_artifacts: bool = Field(default=False, validation_alias="WRITE_DEBUG_ARTIFACTS")
+
+    @model_validator(mode="after")
+    def _validate_debug_artifacts_require_artifacts_dir(self) -> "Settings":
+        if self.write_debug_artifacts and self.artifacts_dir is None:
+            raise ValueError("ARTIFACTS_DIR is required when WRITE_DEBUG_ARTIFACTS=true")
+        return self
 
     @classmethod
     def settings_customise_sources(

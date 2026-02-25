@@ -368,6 +368,25 @@ def test_settings_rejects_secrets_in_config_file(monkeypatch: pytest.MonkeyPatch
         Settings()  # pyright: ignore[reportCallIssue]
 
 
+def test_settings_requires_artifacts_dir_when_debug_artifacts_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+    monkeypatch.delenv("ARTIFACTS_DIR", raising=False)
+
+    with pytest.raises(ValueError, match=r"ARTIFACTS_DIR.*WRITE_DEBUG_ARTIFACTS"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_ingest_pulls_all_configured_sources_without_network(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -430,6 +449,41 @@ def test_ingest_pulls_all_configured_sources_without_network(
     result = service.ingest(run_id="run-ingest-sources")
     assert result.inserted == 3
     assert repository.count_items() == 3
+
+
+def test_ingest_does_not_crash_on_source_failure_and_records_metric(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    import recoleta.sources as source_connectors
+
+    settings, repository = _build_runtime()
+
+    draft_rss = ItemDraft.from_values(
+        source="rss",
+        source_item_id="rss-1",
+        canonical_url="https://example.com/source-failure-ok",
+        title="Source Failure Still Ingests",
+    )
+
+    def fake_fetch_rss_drafts(*, feed_urls: list[str], source: str, max_items_per_feed: int = 50) -> list[ItemDraft]:  # noqa: ARG001
+        if source == "hn":
+            raise RuntimeError("simulated HN connector failure")
+        return [draft_rss]
+
+    monkeypatch.setattr(source_connectors, "fetch_rss_drafts", fake_fetch_rss_drafts)
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    result = service.ingest(run_id="run-ingest-source-failure")
+    assert result.inserted == 1
+
+    metrics = repository.list_metrics(run_id="run-ingest-source-failure")
+    source_failures = [metric for metric in metrics if metric.name == "pipeline.ingest.source_failures_total"]
+    assert len(source_failures) == 1
+    assert source_failures[0].value == 1
 
 
 def test_ingest_is_idempotent_by_canonical_url_hash(configured_env) -> None:
