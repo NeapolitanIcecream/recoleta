@@ -85,7 +85,11 @@ def run_scheduler() -> None:
     """Run periodic ingest/analyze/publish jobs with APScheduler."""
 
     settings, _, _ = _build_runtime()
-    scheduler = BlockingScheduler(timezone="UTC")
+    scheduler = BlockingScheduler(
+        timezone="UTC",
+        executors={"default": {"type": "threadpool", "max_workers": 1}},
+        job_defaults={"coalesce": True, "max_instances": 1},
+    )
 
     def run_ingest_job() -> None:
         _execute_stage(stage_name="ingest", stage_runner=lambda service, run_id: service.ingest(run_id=run_id))

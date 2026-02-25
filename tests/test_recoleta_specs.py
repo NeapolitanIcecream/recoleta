@@ -221,6 +221,31 @@ def test_settings_loads_nested_source_configuration(configured_env) -> None:
     assert settings.topics == ["agents", "ml-systems"]
 
 
+def test_settings_loads_sources_from_yaml_env_string(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        "\n".join(
+            [
+                "hn:",
+                "  rss_urls:",
+                "    - https://news.ycombinator.com/rss",
+                "rss:",
+                "  feeds:",
+                "    - https://example.com/feed.xml",
+            ]
+        ),
+    )
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.sources.hn.rss_urls == ["https://news.ycombinator.com/rss"]
+    assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
+
+
+def test_settings_loads_topics_from_yaml_env_string(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TOPICS", "\n".join(["- agents", "- ml-systems"]))
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.topics == ["agents", "ml-systems"]
+
+
 def test_settings_loads_from_config_file_and_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
@@ -819,7 +844,7 @@ def test_publish_retries_after_failed_delivery(configured_env) -> None:
         assert deliveries[0].message_id is not None
 
 
-def test_publish_sanitizes_secrets_in_delivery_error(configured_env) -> None:
+def test_publish_sanitizes_secrets_in_delivery_error(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
     from urllib.parse import quote
 
     from recoleta.observability import mask_value
@@ -829,11 +854,23 @@ def test_publish_sanitizes_secrets_in_delivery_error(configured_env) -> None:
     chat = settings.telegram_chat_id.get_secret_value()
     token_encoded = quote(token, safe="")
     chat_encoded = quote(chat, safe="")
+    openai_key = "sk-test-openai-key"
+    monkeypatch.setenv("OPENAI_API_KEY", openai_key)
+    openai_key_encoded = quote(openai_key, safe="")
 
     class ExplodingTelegramSender:
         def send(self, text: str) -> str:  # noqa: ARG002
             raise RuntimeError(
-                f"token={token} token_encoded={token_encoded} chat={chat} chat_encoded={chat_encoded}"
+                " ".join(
+                    [
+                        f"token={token}",
+                        f"token_encoded={token_encoded}",
+                        f"chat={chat}",
+                        f"chat_encoded={chat_encoded}",
+                        f"openai_key={openai_key}",
+                        f"openai_key_encoded={openai_key_encoded}",
+                    ]
+                )
             )
 
     service = PipelineService(
@@ -863,8 +900,11 @@ def test_publish_sanitizes_secrets_in_delivery_error(configured_env) -> None:
         assert token_encoded not in (delivery.error or "")
         assert chat not in (delivery.error or "")
         assert chat_encoded not in (delivery.error or "")
+        assert openai_key not in (delivery.error or "")
+        assert openai_key_encoded not in (delivery.error or "")
         assert mask_value(token) in (delivery.error or "")
         assert mask_value(chat) in (delivery.error or "")
+        assert mask_value(openai_key) in (delivery.error or "")
 
 
 def test_publish_does_not_crash_when_debug_artifact_write_fails(

@@ -19,7 +19,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
-from recoleta.observability import mask_value, scrub_secrets
+from recoleta.observability import collect_environment_secrets, mask_value, scrub_secrets
 from recoleta.ports import RepositoryPort
 from recoleta.publish import build_telegram_message, write_obsidian_note
 from recoleta import sources
@@ -37,6 +37,15 @@ class PipelineService:
     ) -> None:
         self.settings = settings
         self.repository = repository
+        self._scrub_secrets = tuple(
+            dict.fromkeys(
+                (
+                    settings.telegram_bot_token.get_secret_value(),
+                    settings.telegram_chat_id.get_secret_value(),
+                    *collect_environment_secrets(),
+                )
+            )
+        )
         self.analyzer = analyzer or LiteLLMAnalyzer(model=settings.llm_model)
         self.telegram_sender = telegram_sender or TelegramSender(
             token=settings.telegram_bot_token.get_secret_value(),
@@ -619,10 +628,7 @@ class PipelineService:
             raw_json = orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS)
             scrubbed = scrub_secrets(
                 raw_json.decode("utf-8"),
-                secrets=(
-                    self.settings.telegram_bot_token.get_secret_value(),
-                    self.settings.telegram_chat_id.get_secret_value(),
-                ),
+                secrets=self._scrub_secrets,
             )
             absolute_path.write_text(scrubbed + "\n", encoding="utf-8")
             return absolute_path.relative_to(base_dir)
@@ -636,8 +642,5 @@ class PipelineService:
     def _sanitize_error_message(self, message: str) -> str:
         return scrub_secrets(
             message,
-            secrets=(
-                self.settings.telegram_bot_token.get_secret_value(),
-                self.settings.telegram_chat_id.get_secret_value(),
-            ),
+            secrets=self._scrub_secrets,
         )

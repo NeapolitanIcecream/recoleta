@@ -12,6 +12,17 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 import yaml
 
 
+def _parse_json_or_yaml(value: str) -> Any:
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("Value must not be empty")
+    try:
+        return json.loads(stripped)
+    except Exception:
+        loaded = yaml.safe_load(stripped)
+        return loaded
+
+
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
     _KEY_MAP: dict[str, str] = {
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
@@ -153,6 +164,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_nested_delimiter="__",
+        enable_decoding=False,
         extra="ignore",
         case_sensitive=False,
         validate_by_alias=True,
@@ -203,6 +215,42 @@ class Settings(BaseSettings):
             _ConfigFileSettingsSource(settings_cls),
             file_secret_settings,
         )
+
+    @field_validator("sources", mode="before")
+    @classmethod
+    def _parse_sources_from_env_string(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            loaded = _parse_json_or_yaml(value)
+            if not isinstance(loaded, dict):
+                raise ValueError("SOURCES must be a JSON/YAML object")
+            return loaded
+        return value
+
+    @field_validator("topics", mode="before")
+    @classmethod
+    def _parse_topics_from_env_string(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            loaded: Any | None = None
+            try:
+                loaded = json.loads(stripped)
+            except Exception:
+                try:
+                    loaded = yaml.safe_load(stripped)
+                except Exception:
+                    loaded = None
+
+            if isinstance(loaded, list):
+                return [str(item).strip() for item in loaded if str(item).strip()]
+            if isinstance(loaded, str):
+                stripped = loaded.strip()
+
+            if "," in stripped:
+                return [part.strip() for part in stripped.split(",") if part.strip()]
+            return [stripped]
+        return value
 
     @field_validator("obsidian_vault_path", mode="before")
     @classmethod
