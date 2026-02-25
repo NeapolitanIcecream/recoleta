@@ -28,8 +28,8 @@ Recoleta is local-first and single-user by design: it stores durable state in a 
 ```mermaid
 flowchart LR
   Sources[Sources] --> Ingest[Ingest]
-  Ingest --> Enrich[Enrich (HTML/PDF)]
-  Enrich --> Analyze[Analyze (LLM)]
+  Ingest --> Enrich["Enrich (HTML/PDF)"]
+  Enrich --> Analyze["Analyze (LLM)"]
   Analyze --> Publish[Publish]
   Publish --> Obsidian[Obsidian Markdown notes]
   Publish --> Telegram[Telegram messages]
