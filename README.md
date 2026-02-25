@@ -1,4 +1,6 @@
-# Recoleta
+<p align="center">
+  <img src="./docs/assets/Recoleta-1.png" alt="Project Name Banner"/>
+</p>
 
 <!-- Badges (replace with your links) -->
 <!-- [![CI](...)](...) -->
