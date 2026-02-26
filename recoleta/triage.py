@@ -13,8 +13,8 @@ from rapidfuzz import fuzz
 from recoleta.models import Item
 
 
-_EMBEDDING_BATCH_MAX_INPUTS = 64
-_EMBEDDING_BATCH_MAX_CHARS = 40_000
+_DEFAULT_EMBEDDING_BATCH_MAX_INPUTS = 64
+_DEFAULT_EMBEDDING_BATCH_MAX_CHARS = 40_000
 
 
 def _iter_embedding_batches(
@@ -128,8 +128,16 @@ class LiteLLMEmbedder:
 
 
 class SemanticTriage:
-    def __init__(self, *, embedder: Embedder | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        embedder: Embedder | None = None,
+        embedding_batch_max_inputs: int = _DEFAULT_EMBEDDING_BATCH_MAX_INPUTS,
+        embedding_batch_max_chars: int = _DEFAULT_EMBEDDING_BATCH_MAX_CHARS,
+    ) -> None:
         self.embedder = embedder or LiteLLMEmbedder()
+        self.embedding_batch_max_inputs = max(1, int(embedding_batch_max_inputs))
+        self.embedding_batch_max_chars = max(1, int(embedding_batch_max_chars))
 
     def select(
         self,
@@ -194,8 +202,8 @@ class SemanticTriage:
                 "topics_total": len(normalized_topics),
                 "candidates_total": len(candidates),
                 "batching": {
-                    "max_inputs": _EMBEDDING_BATCH_MAX_INPUTS,
-                    "max_chars": _EMBEDDING_BATCH_MAX_CHARS,
+                    "max_inputs": self.embedding_batch_max_inputs,
+                    "max_chars": self.embedding_batch_max_chars,
                 },
             }
 
@@ -221,8 +229,8 @@ class SemanticTriage:
 
             for batch in _iter_embedding_batches(
                 item_texts,
-                max_batch_inputs=_EMBEDDING_BATCH_MAX_INPUTS,
-                max_batch_chars=_EMBEDDING_BATCH_MAX_CHARS,
+                max_batch_inputs=self.embedding_batch_max_inputs,
+                max_batch_chars=self.embedding_batch_max_chars,
             ):
                 items_batches_total += 1
                 items_batch_inputs_max = max(items_batch_inputs_max, len(batch))
@@ -254,8 +262,8 @@ class SemanticTriage:
                 "inputs_total": len(item_texts),
                 "dimensions": embedding_dimensions,
                 "batching": {
-                    "max_inputs": _EMBEDDING_BATCH_MAX_INPUTS,
-                    "max_chars": _EMBEDDING_BATCH_MAX_CHARS,
+                    "max_inputs": self.embedding_batch_max_inputs,
+                    "max_chars": self.embedding_batch_max_chars,
                 },
                 "batches_total": items_batches_total,
                 "batch_inputs_max": items_batch_inputs_max,

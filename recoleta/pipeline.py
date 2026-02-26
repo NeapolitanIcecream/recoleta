@@ -53,7 +53,10 @@ class PipelineService:
             model=settings.llm_model,
             output_language=settings.llm_output_language,
         )
-        self.triage = triage or SemanticTriage()
+        self.triage = triage or SemanticTriage(
+            embedding_batch_max_inputs=settings.triage_embedding_batch_max_inputs,
+            embedding_batch_max_chars=settings.triage_embedding_batch_max_chars,
+        )
         self.telegram_sender = telegram_sender
         if self.telegram_sender is None and "telegram" in settings.publish_targets:
             if settings.telegram_bot_token is not None and settings.telegram_chat_id is not None:
@@ -231,8 +234,20 @@ class PipelineService:
                 )
 
         if triage_enabled and items:
-            triage_candidates = self._build_triage_candidates(items=items)
+            triage_candidates, content_fetch_failed, content_fetch_error = self._build_triage_candidates(items=items)
             if triage_candidates:
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.content_fetch_failed_total",
+                    value=1 if content_fetch_failed else 0,
+                    unit="count",
+                )
+                if content_fetch_failed and include_debug and content_fetch_error is not None:
+                    write_and_record_artifact(
+                        item_id=None,
+                        kind="error_context",
+                        payload=content_fetch_error,
+                    )
                 triage_started = time.perf_counter()
                 try:
                     triage_output = self.triage.select(
@@ -944,7 +959,7 @@ class PipelineService:
             )
             return None
 
-    def _build_triage_candidates(self, *, items: list[Any]) -> list[TriageCandidate]:
+    def _build_triage_candidates(self, *, items: list[Any]) -> tuple[list[TriageCandidate], bool, dict[str, Any] | None]:
         candidates_items: list[Any] = []
         item_ids: list[int] = []
         pdf_item_ids: list[int] = []
@@ -965,16 +980,29 @@ class PipelineService:
                 pdf_item_ids.append(item_id)
 
         if not candidates_items:
-            return []
+            return [], False, None
 
         max_chars = int(getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200)
         html_by_id: dict[int, Any] = {}
         pdf_by_id: dict[int, Any] = {}
+        content_fetch_failed = False
+        content_fetch_error: dict[str, Any] | None = None
         try:
             html_by_id = self.repository.get_latest_contents(item_ids=item_ids, content_type="html_maintext")
             if pdf_item_ids:
                 pdf_by_id = self.repository.get_latest_contents(item_ids=pdf_item_ids, content_type="pdf_text")
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            content_fetch_failed = True
+            sanitized_error = self._sanitize_error_message(str(exc))
+            content_fetch_error = {
+                "stage": "triage_content_fetch",
+                "error_type": type(exc).__name__,
+                "error_message": sanitized_error,
+                **self._classify_exception(exc),
+                "content_types": ["html_maintext", "pdf_text"],
+                "item_ids_total": len(item_ids),
+                "pdf_item_ids_total": len(pdf_item_ids),
+            }
             html_by_id = {}
             pdf_by_id = {}
 
@@ -1005,7 +1033,7 @@ class PipelineService:
                 combined = combined[:max_chars]
 
             candidates.append(TriageCandidate(item=item, text=combined))
-        return candidates
+        return candidates, content_fetch_failed, content_fetch_error
 
     def _sanitize_error_message(self, message: str) -> str:
         return scrub_secrets(

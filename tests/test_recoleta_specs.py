@@ -987,6 +987,77 @@ def test_analyze_triage_embedding_failure_emits_metric_and_falls_back(
     assert by_name["pipeline.triage.failed_total"].value == 0
 
 
+def test_analyze_triage_content_fetch_failure_emits_metric_and_still_runs(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.triage import SemanticTriage
+
+    monkeypatch.setenv("TRIAGE_ENABLED", "true")
+    monkeypatch.setenv("TRIAGE_MODE", "prioritize")
+    monkeypatch.setenv("TRIAGE_RECENCY_FLOOR", "0")
+    monkeypatch.setenv("TRIAGE_EXPLORATION_RATE", "0")
+
+    settings, repository = _build_runtime()
+
+    class KeywordEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            assert model
+            assert dimensions is None or dimensions > 0
+            self.calls += 1
+            if self.calls == 1:
+                return [[1.0, 0.0, 0.0]], {"kind": "query"}
+            vectors: list[list[float]] = []
+            for text in inputs:
+                if "agents" in text.lower():
+                    vectors.append([1.0, 0.0, 0.0])
+                else:
+                    vectors.append([0.0, 1.0, 0.0])
+            return vectors, {"kind": "items"}
+
+    def explode_latest_contents(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(repository, "get_latest_contents", explode_latest_contents)
+
+    triage = SemanticTriage(embedder=KeywordEmbedder())
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        triage=triage,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft_relevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-content-fetch-relevant",
+        canonical_url="https://example.com/triage-content-fetch-relevant",
+        title="Agents for Good",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    draft_irrelevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-content-fetch-irrelevant",
+        canonical_url="https://example.com/triage-content-fetch-irrelevant",
+        title="Gardening Tips",
+        authors=["Bob"],
+        raw_metadata={"source": "test"},
+    )
+
+    service.ingest(run_id="run-triage-content-fetch-ingest", drafts=[draft_relevant, draft_irrelevant])
+    result = service.analyze(run_id="run-triage-content-fetch-analyze", limit=1)
+    assert result.processed == 1
+
+    metrics = repository.list_metrics(run_id="run-triage-content-fetch-analyze")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.triage.content_fetch_failed_total"].value == 1
+
+
 def test_analyze_triage_dimension_mismatch_falls_back_to_rapidfuzz(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,

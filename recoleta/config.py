@@ -73,6 +73,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRIAGE_MODE": "triage_mode",
         "TRIAGE_EMBEDDING_MODEL": "triage_embedding_model",
         "TRIAGE_EMBEDDING_DIMENSIONS": "triage_embedding_dimensions",
+        "TRIAGE_EMBEDDING_BATCH_MAX_INPUTS": "triage_embedding_batch_max_inputs",
+        "TRIAGE_EMBEDDING_BATCH_MAX_CHARS": "triage_embedding_batch_max_chars",
         "TRIAGE_QUERY_MODE": "triage_query_mode",
         "TRIAGE_CANDIDATE_FACTOR": "triage_candidate_factor",
         "TRIAGE_MAX_CANDIDATES": "triage_max_candidates",
@@ -245,6 +247,16 @@ class Settings(BaseSettings):
     triage_mode: str = Field(default="prioritize", validation_alias="TRIAGE_MODE")
     triage_embedding_model: str = Field(default="text-embedding-3-small", validation_alias="TRIAGE_EMBEDDING_MODEL")
     triage_embedding_dimensions: int | None = Field(default=None, validation_alias="TRIAGE_EMBEDDING_DIMENSIONS")
+    triage_embedding_batch_max_inputs: int = Field(
+        default=64,
+        ge=1,
+        validation_alias="TRIAGE_EMBEDDING_BATCH_MAX_INPUTS",
+    )
+    triage_embedding_batch_max_chars: int = Field(
+        default=40_000,
+        ge=1,
+        validation_alias="TRIAGE_EMBEDDING_BATCH_MAX_CHARS",
+    )
     triage_query_mode: str = Field(default="joined", validation_alias="TRIAGE_QUERY_MODE")
     triage_candidate_factor: int = Field(default=5, ge=1, validation_alias="TRIAGE_CANDIDATE_FACTOR")
     triage_max_candidates: int = Field(default=500, ge=1, validation_alias="TRIAGE_MAX_CANDIDATES")
@@ -407,6 +419,42 @@ class Settings(BaseSettings):
             raise ValueError("TRIAGE_EMBEDDING_DIMENSIONS must be an integer") from exc
         if parsed <= 0:
             raise ValueError("TRIAGE_EMBEDDING_DIMENSIONS must be a positive integer")
+        return parsed
+
+    @field_validator("triage_embedding_batch_max_inputs", mode="before")
+    @classmethod
+    def _normalize_triage_embedding_batch_max_inputs(cls, value: Any) -> int:
+        if value is None:
+            return 64
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return 64
+            value = stripped
+        try:
+            parsed = int(value)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_INPUTS must be an integer") from exc
+        if parsed <= 0:
+            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_INPUTS must be a positive integer")
+        return parsed
+
+    @field_validator("triage_embedding_batch_max_chars", mode="before")
+    @classmethod
+    def _normalize_triage_embedding_batch_max_chars(cls, value: Any) -> int:
+        if value is None:
+            return 40_000
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return 40_000
+            value = stripped
+        try:
+            parsed = int(value)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_CHARS must be an integer") from exc
+        if parsed <= 0:
+            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_CHARS must be a positive integer")
         return parsed
 
     @field_validator("obsidian_vault_path", mode="before")
