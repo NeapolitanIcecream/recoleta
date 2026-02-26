@@ -1102,6 +1102,57 @@ def test_publish_writes_local_markdown_notes_without_obsidian_or_telegram(
     with Session(repository.engine) as session:
         assert session.exec(select(Delivery)).first() is None
 
+
+def test_publish_writes_markdown_index_when_telegram_daily_cap_reached(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+
+    markdown_dir = tmp_path / "markdown-output"
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(markdown_dir))
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown,telegram")
+    monkeypatch.setenv("MAX_DELIVERIES_PER_DAY", "0")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-cap-1",
+        canonical_url="https://example.com/publish-cap-case",
+        title="Publish Cap Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-cap", drafts=[draft])
+    service.analyze(run_id="run-publish-cap", limit=10)
+
+    result = service.publish(run_id="run-publish-cap", limit=10)
+    assert result.sent == 0
+    assert result.failed == 0
+    assert len(sender.messages) == 0
+    assert (markdown_dir / "latest.md").exists()
+
+    latest = (markdown_dir / "latest.md").read_text(encoding="utf-8")
+    assert "run-publish-cap" in latest
+    assert "No items published in this run" in latest
+
+    with Session(repository.engine) as session:
+        assert session.exec(select(Item).where(Item.state == ITEM_STATE_ANALYZED)).first() is not None
+        assert session.exec(select(Delivery)).first() is None
+
+
 def test_publish_filters_by_allow_tags_and_records_metric(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
@@ -1196,6 +1247,7 @@ def test_publish_retries_after_failed_delivery(configured_env) -> None:
     service.analyze(run_id="run-publish-retry", limit=10)
 
     first_publish = service.publish(run_id="run-publish-retry", limit=10)
+    assert settings.obsidian_vault_path is not None
     note_dir = settings.obsidian_vault_path / settings.obsidian_base_folder / "Inbox"
     note_paths_after_first = list(note_dir.glob("*.md"))
     assert len(note_paths_after_first) == 1
@@ -1231,6 +1283,8 @@ def test_publish_sanitizes_secrets_in_delivery_error(configured_env, monkeypatch
     from recoleta.observability import mask_value
 
     settings, repository = _build_runtime()
+    assert settings.telegram_bot_token is not None
+    assert settings.telegram_chat_id is not None
     token = settings.telegram_bot_token.get_secret_value()
     chat = settings.telegram_chat_id.get_secret_value()
     token_encoded = quote(token, safe="")
@@ -1302,11 +1356,15 @@ def test_publish_does_not_crash_when_debug_artifact_write_fails(
     monkeypatch.setenv("ARTIFACTS_DIR", str(bad_artifacts_dir))
 
     settings, repository = _build_runtime()
+    assert settings.telegram_bot_token is not None
+    assert settings.telegram_chat_id is not None
+    token = settings.telegram_bot_token.get_secret_value()
+    chat = settings.telegram_chat_id.get_secret_value()
 
     class ExplodingTelegramSender:
         def send(self, text: str) -> str:  # noqa: ARG002
             raise RuntimeError(
-                f"token={settings.telegram_bot_token.get_secret_value()} chat={settings.telegram_chat_id.get_secret_value()}"
+                f"token={token} chat={chat}"
             )
 
     service = PipelineService(
@@ -1332,10 +1390,10 @@ def test_publish_does_not_crash_when_debug_artifact_write_fails(
 
     with Session(repository.engine) as session:
         delivery = session.exec(select(Delivery)).one()
-        assert settings.telegram_bot_token.get_secret_value() not in (delivery.error or "")
-        assert settings.telegram_chat_id.get_secret_value() not in (delivery.error or "")
-        assert mask_value(settings.telegram_bot_token.get_secret_value()) in (delivery.error or "")
-        assert mask_value(settings.telegram_chat_id.get_secret_value()) in (delivery.error or "")
+        assert token not in (delivery.error or "")
+        assert chat not in (delivery.error or "")
+        assert mask_value(token) in (delivery.error or "")
+        assert mask_value(chat) in (delivery.error or "")
 
 
 def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(respx_mock: respx.Router) -> None:

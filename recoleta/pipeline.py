@@ -517,19 +517,6 @@ class PipelineService:
                     sent_today,
                     self.settings.max_deliveries_per_day,
                 )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.publish.daily_cap_remaining",
-                    value=0,
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.publish.duration_ms",
-                    value=int((time.perf_counter() - started) * 1000),
-                    unit="ms",
-                )
-                return publish_result
 
         effective_limit = min(limit, remaining_today) if remaining_today is not None else limit
         candidates = self.repository.list_items_for_publish(
