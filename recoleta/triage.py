@@ -139,6 +139,17 @@ class SemanticTriage:
         embedding_errors_total = 0
         method = "embedding_cosine"
 
+        embedding_request: dict[str, Any] | None = None
+        if include_debug:
+            embedding_request = {
+                "run_id_fingerprint": _fingerprint(run_id),
+                "model": embedding_model,
+                "dimensions": embedding_dimensions,
+                "query_mode": query_mode,
+                "topics_total": len(normalized_topics),
+                "candidates_total": len(candidates),
+            }
+
         embedding_debug: dict[str, Any] | None = None
         try:
             embedding_calls_total += 1
@@ -167,21 +178,18 @@ class SemanticTriage:
             method = "fuzz_title"
             scored = self._score_with_rapidfuzz(candidates=candidates, topics=normalized_topics)
             if include_debug:
-                artifacts["embedding_response"] = {
+                payload: dict[str, Any] = {
                     "error_type": type(exc).__name__,
                     "error_message": str(exc),
                 }
+                if embedding_debug is not None:
+                    payload["debug"] = embedding_debug
+                artifacts["embedding_response"] = payload
 
-        if include_debug and embedding_debug is not None:
-            artifacts["embedding_request"] = {
-                "run_id_fingerprint": _fingerprint(run_id),
-                "model": embedding_model,
-                "dimensions": embedding_dimensions,
-                "query_mode": query_mode,
-                "topics_total": len(normalized_topics),
-                "candidates_total": len(candidates),
-            }
-            artifacts["embedding_response"] = embedding_debug
+        if include_debug and embedding_request is not None:
+            artifacts.setdefault("embedding_request", embedding_request)
+            if embedding_debug is not None:
+                artifacts.setdefault("embedding_response", embedding_debug)
 
         selected, skipped_total = self._select_from_scored(
             run_id=run_id,
@@ -335,7 +343,7 @@ def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     dot = 0.0
     norm_a = 0.0
     norm_b = 0.0
-    for x, y in zip(a, b, strict=False):
+    for x, y in zip(a, b, strict=True):
         fx = float(x)
         fy = float(y)
         dot += fx * fy

@@ -119,6 +119,9 @@ class ExplodingRepository:
     def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None:
         raise NotImplementedError
 
+    def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]:
+        raise NotImplementedError
+
     def upsert_content(
         self,
         *,
@@ -981,6 +984,100 @@ def test_analyze_triage_embedding_failure_emits_metric_and_falls_back(
     metrics = repository.list_metrics(run_id="run-triage-fallback-analyze")
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.triage.embedding_errors_total"].value == 1
+    assert by_name["pipeline.triage.failed_total"].value == 0
+
+
+def test_analyze_triage_dimension_mismatch_falls_back_to_rapidfuzz(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.triage import SemanticTriage
+
+    monkeypatch.setenv("TRIAGE_ENABLED", "true")
+    monkeypatch.setenv("TRIAGE_MODE", "prioritize")
+    monkeypatch.setenv("TRIAGE_RECENCY_FLOOR", "0")
+    monkeypatch.setenv("TRIAGE_EXPLORATION_RATE", "0")
+
+    settings, repository = _build_runtime()
+
+    class CapturingAnalyzer:
+        def __init__(self) -> None:
+            self.titles: list[str] = []
+
+        def analyze(
+            self,
+            *,
+            title: str,
+            canonical_url: str,  # noqa: ARG002
+            user_topics: list[str],
+            content: str | None = None,  # noqa: ARG002
+            include_debug: bool = False,  # noqa: ARG002
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            self.titles.append(title)
+            return (
+                AnalysisResult(
+                    model="test/fake-model",
+                    provider="test",
+                    summary=f"Summary for {title}",
+                    insight="Matters because it matches user topics.",
+                    idea_directions=["Try it."],
+                    topics=user_topics[:2] or ["general"],
+                    relevance_score=0.9,
+                    novelty_score=0.4,
+                    cost_usd=0.0,
+                    latency_ms=1,
+                ),
+                None,
+            )
+
+    class MismatchedDimsEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            assert model
+            assert dimensions is None or dimensions > 0
+            self.calls += 1
+            if self.calls == 1:
+                return [[1.0, 0.0, 0.0]], {"kind": "query"}
+            return [[1.0, 0.0] for _ in inputs], {"kind": "items"}
+
+    analyzer = CapturingAnalyzer()
+    triage = SemanticTriage(embedder=MismatchedDimsEmbedder())
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        triage=triage,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft_relevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-dim-mismatch-relevant",
+        canonical_url="https://example.com/triage-dim-mismatch-relevant",
+        title="Agents for Good",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    draft_irrelevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-dim-mismatch-irrelevant",
+        canonical_url="https://example.com/triage-dim-mismatch-irrelevant",
+        title="Gardening Tips",
+        authors=["Bob"],
+        raw_metadata={"source": "test"},
+    )
+
+    service.ingest(run_id="run-triage-dim-mismatch-ingest", drafts=[draft_relevant, draft_irrelevant])
+    result = service.analyze(run_id="run-triage-dim-mismatch-analyze", limit=1)
+    assert result.processed == 1
+    assert analyzer.titles == ["Agents for Good"]
+
+    metrics = repository.list_metrics(run_id="run-triage-dim-mismatch-analyze")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.triage.embedding_errors_total"].value == 1
+    assert by_name["pipeline.triage.failed_total"].value == 0
 
 
 def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
