@@ -72,7 +72,7 @@ def analyze(limit: int = typer.Option(100, min=1, help="Max number of items anal
 
 @app.command()
 def publish(limit: int = typer.Option(50, min=1, help="Max number of analyzed items published.")) -> None:
-    """Write notes and send Telegram deliverables."""
+    """Publish outputs to configured targets (markdown/obsidian/telegram)."""
 
     settings, result = _execute_stage(
         stage_name="publish",
@@ -80,6 +80,13 @@ def publish(limit: int = typer.Option(50, min=1, help="Max number of analyzed it
     )
     console = Console(stderr=settings.log_json)
     console.print(f"[green]publish completed[/green] sent={result.sent} skipped={result.skipped} failed={result.failed}")
+    if "markdown" in settings.publish_targets:
+        console.print(f"[cyan]markdown output[/cyan] {settings.markdown_output_dir}")
+        console.print(f"[cyan]latest index[/cyan] {settings.markdown_output_dir / 'latest.md'}")
+    if "obsidian" in settings.publish_targets and settings.obsidian_vault_path is not None:
+        console.print(
+            f"[cyan]obsidian notes[/cyan] {settings.obsidian_vault_path / settings.obsidian_base_folder / 'Inbox'}"
+        )
 
 
 @app.command("run")

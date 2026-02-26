@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from platformdirs import user_data_dir
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
@@ -47,6 +48,13 @@ def _parse_str_list(value: str) -> list[str]:
     return [stripped]
 
 
+def _default_markdown_output_dir() -> Path:
+    return (Path(user_data_dir("recoleta")) / "outputs").expanduser().resolve()
+
+
+_ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
+
+
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
     _KEY_MAP: dict[str, str] = {
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
@@ -66,6 +74,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "PUBLISH_INTERVAL_MINUTES": "publish_interval_minutes",
         "ARTIFACTS_DIR": "artifacts_dir",
         "OBSIDIAN_BASE_FOLDER": "obsidian_base_folder",
+        "PUBLISH_TARGETS": "publish_targets",
+        "MARKDOWN_OUTPUT_DIR": "markdown_output_dir",
         "LOG_LEVEL": "log_level",
         "LOG_JSON": "log_json",
         "WRITE_DEBUG_ARTIFACTS": "write_debug_artifacts",
@@ -199,12 +209,13 @@ class Settings(BaseSettings):
     )
 
     config_path: Path | None = Field(default=None, validation_alias="RECOLETA_CONFIG_PATH")
-    obsidian_vault_path: Path = Field(validation_alias="OBSIDIAN_VAULT_PATH")
     recoleta_db_path: Path = Field(validation_alias="RECOLETA_DB_PATH")
-    telegram_bot_token: SecretStr = Field(validation_alias="TELEGRAM_BOT_TOKEN")
-    telegram_chat_id: SecretStr = Field(validation_alias="TELEGRAM_CHAT_ID")
     llm_model: str = Field(validation_alias="LLM_MODEL")
     llm_output_language: str | None = Field(default=None, validation_alias="LLM_OUTPUT_LANGUAGE")
+
+    obsidian_vault_path: Path | None = Field(default=None, validation_alias="OBSIDIAN_VAULT_PATH")
+    telegram_bot_token: SecretStr | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: SecretStr | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
 
     sources: SourcesConfig = Field(default_factory=SourcesConfig, validation_alias="SOURCES")
     topics: list[str] = Field(default_factory=list, validation_alias="TOPICS")
@@ -225,6 +236,8 @@ class Settings(BaseSettings):
 
     artifacts_dir: Path | None = Field(default=None, validation_alias="ARTIFACTS_DIR")
     obsidian_base_folder: str = Field(default="Recoleta", validation_alias="OBSIDIAN_BASE_FOLDER")
+    publish_targets: list[str] = Field(default_factory=lambda: ["markdown"], validation_alias="PUBLISH_TARGETS")
+    markdown_output_dir: Path = Field(default_factory=_default_markdown_output_dir, validation_alias="MARKDOWN_OUTPUT_DIR")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     log_json: bool = Field(default=False, validation_alias="LOG_JSON")
     write_debug_artifacts: bool = Field(default=False, validation_alias="WRITE_DEBUG_ARTIFACTS")
@@ -260,6 +273,15 @@ class Settings(BaseSettings):
             if not isinstance(loaded, dict):
                 raise ValueError("SOURCES must be a JSON/YAML object")
             return loaded
+        return value
+
+    @field_validator("publish_targets", mode="before")
+    @classmethod
+    def _parse_publish_targets_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return _parse_str_list(value)
         return value
 
     @field_validator("llm_output_language", mode="before")
@@ -299,7 +321,9 @@ class Settings(BaseSettings):
 
     @field_validator("obsidian_vault_path", mode="before")
     @classmethod
-    def _normalize_vault_path(cls, value: str | Path) -> Path:
+    def _normalize_vault_path(cls, value: str | Path | None) -> Path | None:
+        if value is None:
+            return None
         path = Path(value).expanduser().resolve()
         if not path.is_absolute():
             raise ValueError("OBSIDIAN_VAULT_PATH must be an absolute path")
@@ -317,12 +341,42 @@ class Settings(BaseSettings):
             return None
         return Path(value).expanduser().resolve()
 
+    @field_validator("markdown_output_dir", mode="before")
+    @classmethod
+    def _normalize_markdown_output_dir(cls, value: str | Path | None) -> Path:
+        if value is None:
+            return _default_markdown_output_dir()
+        return Path(value).expanduser().resolve()
+
     @field_validator("config_path", mode="before")
     @classmethod
     def _normalize_optional_config_path(cls, value: str | Path | None) -> Path | None:
         if value is None:
             return None
         return Path(value).expanduser().resolve()
+
+    @model_validator(mode="after")
+    def _validate_publish_targets(self) -> "Settings":
+        normalized: list[str] = []
+        for raw in self.publish_targets:
+            if not isinstance(raw, str):
+                continue
+            token = raw.strip().lower()
+            if not token:
+                continue
+            normalized.append(token)
+        normalized = list(dict.fromkeys(normalized))
+        if not normalized:
+            raise ValueError("PUBLISH_TARGETS must include at least one target: markdown, obsidian, telegram")
+        unknown = sorted({token for token in normalized if token not in _ALLOWED_PUBLISH_TARGETS})
+        if unknown:
+            raise ValueError(
+                "Unsupported PUBLISH_TARGETS value(s): "
+                + ", ".join(unknown)
+                + " (allowed: markdown, obsidian, telegram)"
+            )
+        self.publish_targets = normalized
+        return self
 
     def safe_fingerprint(self) -> str:
         payload = self.model_dump(mode="json")

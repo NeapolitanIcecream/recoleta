@@ -8,7 +8,7 @@ Recoleta is a CLI-first application with a small set of commands:
 
 - `recoleta ingest`: pull from sources and update the local index
 - `recoleta analyze`: run LLM analysis and ranking for newly ingested items
-- `recoleta publish`: write Obsidian notes and deliver Telegram messages
+- `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram)
 - `recoleta run`: schedule ingest/analyze/publish periodically (optional; can also be done by cron/launchd)
 
 ## Module boundaries
@@ -95,8 +95,9 @@ Responsibilities:
 ### Stage 6: Publish
 
 Responsibilities:
-- Write Obsidian notes in Markdown with YAML frontmatter.
-- Send Telegram messages (short mobile-friendly format) with safe rate limiting.
+- Write local Markdown notes and a per-run index (`latest.md`) by default.
+- Optionally write Obsidian notes in Markdown with YAML frontmatter.
+- Optionally send Telegram messages (short mobile-friendly format) with safe rate limiting.
 - Record delivery results and message IDs for idempotency.
 
 ## Scheduling and execution model
@@ -117,6 +118,7 @@ Recoleta persists state in two places:
 
 - **SQLite index**: truth source for state machines, dedupe, retries, metrics.
 - **Filesystem outputs**:
+  - Local Markdown output directory (default, user-facing artifacts)
   - Obsidian Vault notes (user-facing artifacts)
   - optional raw artifacts directory (HTML/PDF/text snapshots, debug JSON)
 

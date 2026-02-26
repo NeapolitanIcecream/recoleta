@@ -18,11 +18,16 @@ Secrets:
 
 ## Required settings
 
-- `OBSIDIAN_VAULT_PATH`: absolute path to the Obsidian Vault root directory.
 - `RECOLETA_DB_PATH`: path to the SQLite file (e.g. `~/.local/share/recoleta/recoleta.db`).
-- `TELEGRAM_BOT_TOKEN`: Telegram bot token (secret).
-- `TELEGRAM_CHAT_ID`: chat id or channel username (secret-ish; treat as sensitive).
 - `LLM_MODEL`: default model name (LiteLLM format), e.g. `openai/gpt-4o-mini`.
+- `PUBLISH_TARGETS` (default `["markdown"]`): publish targets, allowed values: `markdown|obsidian|telegram`.
+- `MARKDOWN_OUTPUT_DIR` (default: platform-specific user data dir + `/outputs`): local Markdown output directory.
+
+## Conditionally required settings
+
+- `OBSIDIAN_VAULT_PATH`: required when `PUBLISH_TARGETS` includes `obsidian`.
+- `TELEGRAM_BOT_TOKEN`: required when `PUBLISH_TARGETS` includes `telegram` (env-only).
+- `TELEGRAM_CHAT_ID`: required when `PUBLISH_TARGETS` includes `telegram` (env-only).
 
 Optional LLM behavior:
 
@@ -72,6 +77,8 @@ Choose one:
 
 - `ARTIFACTS_DIR` (required when `WRITE_DEBUG_ARTIFACTS=true`): where to write raw/debug artifacts (outside the Vault is fine).
 - `OBSIDIAN_BASE_FOLDER` (default `Recoleta`): base folder under the Vault.
+- `PUBLISH_TARGETS` (default `["markdown"]`): which publish integrations are enabled.
+- `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`).
 
 ## Logging and diagnostics
 

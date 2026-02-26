@@ -1,6 +1,6 @@
 # Recoleta System Overview
 
-Recoleta is a personal research intelligence funnel. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw/normalized records, uses an LLM to extract trends and produce high-signal summaries/insights/idea directions, then distributes selected insights to the user via Telegram and writes all processed artifacts into an Obsidian Vault.
+Recoleta is a personal research intelligence funnel. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw/normalized records, uses an LLM to extract trends and produce high-signal summaries/insights/idea directions, then publishes the selected outputs to **local Markdown by default** (with optional Obsidian and Telegram integrations).
 
 ## Goals
 
@@ -11,25 +11,28 @@ Recoleta is a personal research intelligence funnel. It pulls items from multipl
   - short insight (why it matters)
   - idea directions (what to try next)
   - topic tags and a relevance score against user-defined interests
-- Deliver the best insights to Telegram for mobile reading.
-- Persist everything into:
+- Publish the best insights to one or more user-facing targets:
+  - local Markdown output (default)
+  - Obsidian Vault (optional)
+  - Telegram (optional, mobile digest)
+- Persist durable state into:
   - a local **SQLite index** (dedupe, state, retry, trend stats)
-  - user-specified filesystem paths (raw artifacts + Obsidian Markdown notes)
+  - user-specified filesystem paths (raw artifacts + Markdown notes)
 - Make failures observable and debuggable (structured logs + debug artifacts).
 
 ## Non-goals (for v0)
 
 - Multi-user tenancy and account management.
 - Real-time streaming ingestion.
-- Full-text search UI (Obsidian is the primary UI).
+- Full-text search UI (filesystem Markdown and Obsidian are the primary UIs).
 - Long-term distributed storage (single-machine is enough).
 
 ## Primary user workflow
 
-1. Configure sources, topics, output paths, LLM model, Telegram destination.
+1. Configure sources, topics, output paths, LLM model, and publish targets.
 2. Run scheduled or manual pipeline.
-3. Receive a small batch of curated insights on Telegram.
-4. Browse/annotate notes in Obsidian Vault.
+3. Read the local Markdown output (e.g. `latest.md` + `Inbox/`).
+4. Optionally receive a small curated batch on Telegram and/or browse notes in an Obsidian Vault.
 
 ## High-level dataflow
 
@@ -41,8 +44,9 @@ flowchart TD
   Enrich --> Index[SQLite_Index]
   Enrich --> Analyze[LLM_Analyze]
   Analyze --> Rank[Rank_Filter]
-  Rank --> Obsidian[Write_Obsidian_Markdown]
-  Rank --> Telegram[Send_Telegram]
+  Rank --> Markdown[Write_Local_Markdown]
+  Rank --> Obsidian[Write_Obsidian_Markdown_optional]
+  Rank --> Telegram[Send_Telegram_optional]
   Obsidian --> Index
   Telegram --> Index
 ```

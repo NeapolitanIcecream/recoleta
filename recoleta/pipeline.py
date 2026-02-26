@@ -23,7 +23,7 @@ from recoleta.models import (
 )
 from recoleta.observability import collect_environment_secrets, mask_value, scrub_secrets
 from recoleta.ports import RepositoryPort
-from recoleta.publish import build_telegram_message, write_obsidian_note
+from recoleta.publish import build_telegram_message, write_markdown_note, write_markdown_run_index, write_obsidian_note
 from recoleta import sources
 from recoleta.types import AnalyzeResult, IngestResult, ItemDraft, PublishResult, utc_now
 
@@ -39,24 +39,25 @@ class PipelineService:
     ) -> None:
         self.settings = settings
         self.repository = repository
-        self._scrub_secrets = tuple(
-            dict.fromkeys(
-                (
-                    settings.telegram_bot_token.get_secret_value(),
-                    settings.telegram_chat_id.get_secret_value(),
-                    *collect_environment_secrets(),
-                )
-            )
-        )
+        scrub_candidates: list[str] = []
+        if settings.telegram_bot_token is not None:
+            scrub_candidates.append(settings.telegram_bot_token.get_secret_value())
+        if settings.telegram_chat_id is not None:
+            scrub_candidates.append(settings.telegram_chat_id.get_secret_value())
+        scrub_candidates.extend(collect_environment_secrets())
+        self._scrub_secrets = tuple(dict.fromkeys(scrub_candidates))
         self._progress_console = Console(stderr=True)
         self.analyzer = analyzer or LiteLLMAnalyzer(
             model=settings.llm_model,
             output_language=settings.llm_output_language,
         )
-        self.telegram_sender = telegram_sender or TelegramSender(
-            token=settings.telegram_bot_token.get_secret_value(),
-            chat_id=settings.telegram_chat_id.get_secret_value(),
-        )
+        self.telegram_sender = telegram_sender
+        if self.telegram_sender is None and "telegram" in settings.publish_targets:
+            if settings.telegram_bot_token is not None and settings.telegram_chat_id is not None:
+                self.telegram_sender = TelegramSender(
+                    token=settings.telegram_bot_token.get_secret_value(),
+                    chat_id=settings.telegram_chat_id.get_secret_value(),
+                )
 
     def ingest(self, *, run_id: str, drafts: list[ItemDraft] | None = None) -> IngestResult:
         log = logger.bind(module="pipeline.ingest", run_id=run_id)
@@ -476,37 +477,61 @@ class PipelineService:
         log = logger.bind(module="pipeline.publish", run_id=run_id)
         started = time.perf_counter()
         publish_result = PublishResult()
-        destination_hash = mask_value(self.settings.telegram_chat_id.get_secret_value())
-        now = utc_now()
-        midnight_utc = datetime(
-            year=now.year,
-            month=now.month,
-            day=now.day,
-            tzinfo=now.tzinfo,
-        )
-        sent_today = self.repository.count_sent_deliveries_since(
-            channel=DELIVERY_CHANNEL_TELEGRAM,
-            destination=destination_hash,
-            since=midnight_utc,
-        )
-        remaining_today = max(0, self.settings.max_deliveries_per_day - sent_today)
-        if remaining_today <= 0:
-            log.info("Publish skipped: daily delivery cap reached sent_today={} cap={}", sent_today, self.settings.max_deliveries_per_day)
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.publish.daily_cap_remaining",
-                value=0,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.publish.duration_ms",
-                value=int((time.perf_counter() - started) * 1000),
-                unit="ms",
-            )
-            return publish_result
+        targets = set(self.settings.publish_targets)
+        enable_markdown = "markdown" in targets
+        enable_obsidian = "obsidian" in targets
+        enable_telegram = "telegram" in targets
 
-        effective_limit = min(limit, remaining_today)
+        markdown_notes: list[tuple[str, Path]] = []
+
+        if enable_obsidian and self.settings.obsidian_vault_path is None:
+            raise ValueError("OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'")
+
+        destination_hash: str | None = None
+        remaining_today: int | None = None
+        if enable_telegram:
+            if self.settings.telegram_bot_token is None or self.settings.telegram_chat_id is None:
+                raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'")
+            if self.telegram_sender is None:
+                self.telegram_sender = TelegramSender(
+                    token=self.settings.telegram_bot_token.get_secret_value(),
+                    chat_id=self.settings.telegram_chat_id.get_secret_value(),
+                )
+            destination_hash = mask_value(self.settings.telegram_chat_id.get_secret_value())
+            now = utc_now()
+            midnight_utc = datetime(
+                year=now.year,
+                month=now.month,
+                day=now.day,
+                tzinfo=now.tzinfo,
+            )
+            sent_today = self.repository.count_sent_deliveries_since(
+                channel=DELIVERY_CHANNEL_TELEGRAM,
+                destination=destination_hash,
+                since=midnight_utc,
+            )
+            remaining_today = max(0, self.settings.max_deliveries_per_day - sent_today)
+            if remaining_today <= 0:
+                log.info(
+                    "Publish skipped: daily delivery cap reached sent_today={} cap={}",
+                    sent_today,
+                    self.settings.max_deliveries_per_day,
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.publish.daily_cap_remaining",
+                    value=0,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.publish.duration_ms",
+                    value=int((time.perf_counter() - started) * 1000),
+                    unit="ms",
+                )
+                return publish_result
+
+        effective_limit = min(limit, remaining_today) if remaining_today is not None else limit
         candidates = self.repository.list_items_for_publish(
             limit=effective_limit,
             min_relevance_score=self.settings.min_relevance_score,
@@ -517,13 +542,14 @@ class PipelineService:
         for item, analysis in track(candidates, description="Publishing items", console=self._progress_console):
             if item.id is None:
                 continue
-            if self.repository.has_sent_delivery(
-                item_id=item.id,
-                channel=DELIVERY_CHANNEL_TELEGRAM,
-                destination=destination_hash,
-            ):
-                publish_result.skipped += 1
-                continue
+            if enable_telegram and destination_hash is not None:
+                if self.repository.has_sent_delivery(
+                    item_id=item.id,
+                    channel=DELIVERY_CHANNEL_TELEGRAM,
+                    destination=destination_hash,
+                ):
+                    publish_result.skipped += 1
+                    continue
             if allow_tags or deny_tags:
                 topics = {tag.strip().lower() for tag in self.repository.decode_list(analysis.topics_json) if tag.strip()}
                 if deny_tags and (topics & deny_tags):
@@ -536,39 +562,67 @@ class PipelineService:
                     continue
 
             try:
-                note_path = write_obsidian_note(
-                    vault_path=self.settings.obsidian_vault_path,
-                    base_folder=self.settings.obsidian_base_folder,
-                    item_id=item.id,
-                    title=item.title,
-                    source=item.source,
-                    canonical_url=item.canonical_url,
-                    published_at=item.published_at,
-                    authors=self.repository.decode_list(item.authors),
-                    topics=self.repository.decode_list(analysis.topics_json),
-                    relevance_score=analysis.relevance_score,
-                    run_id=run_id,
-                    summary=analysis.summary,
-                    insight=analysis.insight,
-                    ideas=self.repository.decode_list(analysis.idea_directions_json),
-                )
-                message_text = build_telegram_message(
-                    title=item.title,
-                    summary=analysis.summary,
-                    insight=analysis.insight,
-                    url=item.canonical_url,
-                )
-                message_id = self.telegram_sender.send(message_text)
-                self.repository.upsert_delivery(
-                    item_id=item.id,
-                    channel=DELIVERY_CHANNEL_TELEGRAM,
-                    destination=destination_hash,
-                    message_id=message_id,
-                    status=DELIVERY_STATUS_SENT,
-                )
+                note_paths: list[Path] = []
+                if enable_obsidian:
+                    vault_path = self.settings.obsidian_vault_path
+                    if vault_path is None:
+                        raise RuntimeError("obsidian vault path is not configured")
+                    note_paths.append(
+                        write_obsidian_note(
+                            vault_path=vault_path,
+                            base_folder=self.settings.obsidian_base_folder,
+                            item_id=item.id,
+                            title=item.title,
+                            source=item.source,
+                            canonical_url=item.canonical_url,
+                            published_at=item.published_at,
+                            authors=self.repository.decode_list(item.authors),
+                            topics=self.repository.decode_list(analysis.topics_json),
+                            relevance_score=analysis.relevance_score,
+                            run_id=run_id,
+                            summary=analysis.summary,
+                            insight=analysis.insight,
+                            ideas=self.repository.decode_list(analysis.idea_directions_json),
+                        )
+                    )
+                if enable_markdown:
+                    md_note_path = write_markdown_note(
+                        output_dir=self.settings.markdown_output_dir,
+                        item_id=item.id,
+                        title=item.title,
+                        source=item.source,
+                        canonical_url=item.canonical_url,
+                        published_at=item.published_at,
+                        authors=self.repository.decode_list(item.authors),
+                        topics=self.repository.decode_list(analysis.topics_json),
+                        relevance_score=analysis.relevance_score,
+                        run_id=run_id,
+                        summary=analysis.summary,
+                        insight=analysis.insight,
+                        ideas=self.repository.decode_list(analysis.idea_directions_json),
+                    )
+                    markdown_notes.append((item.title, md_note_path))
+                    note_paths.append(md_note_path)
+                if enable_telegram and destination_hash is not None:
+                    message_text = build_telegram_message(
+                        title=item.title,
+                        summary=analysis.summary,
+                        insight=analysis.insight,
+                        url=item.canonical_url,
+                    )
+                    if self.telegram_sender is None:
+                        raise RuntimeError("telegram sender is not configured")
+                    message_id = self.telegram_sender.send(message_text)
+                    self.repository.upsert_delivery(
+                        item_id=item.id,
+                        channel=DELIVERY_CHANNEL_TELEGRAM,
+                        destination=destination_hash,
+                        message_id=message_id,
+                        status=DELIVERY_STATUS_SENT,
+                    )
                 self.repository.mark_item_published(item_id=item.id)
                 publish_result.sent += 1
-                publish_result.note_paths.append(note_path)
+                publish_result.note_paths.extend(note_paths)
             except Exception as exc:
                 sanitized_error = self._sanitize_error_message(str(exc))
                 artifact_path = self._write_debug_artifact(
@@ -596,16 +650,31 @@ class PipelineService:
                             "Publish debug artifact record failed: {}",
                             self._sanitize_error_message(str(artifact_exc)),
                         )
-                self.repository.upsert_delivery(
-                    item_id=item.id,
-                    channel=DELIVERY_CHANNEL_TELEGRAM,
-                    destination=destination_hash,
-                    message_id=None,
-                    status=DELIVERY_STATUS_FAILED,
-                    error=sanitized_error,
-                )
+                if enable_telegram and destination_hash is not None:
+                    self.repository.upsert_delivery(
+                        item_id=item.id,
+                        channel=DELIVERY_CHANNEL_TELEGRAM,
+                        destination=destination_hash,
+                        message_id=None,
+                        status=DELIVERY_STATUS_FAILED,
+                        error=sanitized_error,
+                    )
                 publish_result.failed += 1
                 log.bind(item_id=item.id).warning("Publish failed: {}", sanitized_error)
+
+        if enable_markdown:
+            try:
+                write_markdown_run_index(
+                    output_dir=self.settings.markdown_output_dir,
+                    run_id=run_id,
+                    generated_at=utc_now(),
+                    notes=markdown_notes,
+                )
+            except Exception as exc:
+                log.bind(module="pipeline.publish.markdown_index").warning(
+                    "Markdown index write failed: {}",
+                    self._sanitize_error_message(str(exc)),
+                )
 
         self.repository.record_metric(
             run_id=run_id,
@@ -631,12 +700,13 @@ class PipelineService:
             value=publish_result.failed,
             unit="count",
         )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.publish.daily_cap_remaining",
-            value=max(0, remaining_today - publish_result.sent),
-            unit="count",
-        )
+        if remaining_today is not None:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.publish.daily_cap_remaining",
+                value=max(0, remaining_today - publish_result.sent),
+                unit="count",
+            )
         self.repository.record_metric(
             run_id=run_id,
             name="pipeline.publish.duration_ms",

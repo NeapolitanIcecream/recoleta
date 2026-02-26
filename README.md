@@ -8,7 +8,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.14%2B-blue.svg)](#recoleta-installation)
 
-Recoleta is a **research intelligence funnel** that ingests noisy sources, runs **structured LLM analysis**, and publishes high-signal outputs to **Obsidian** and **Telegram** — so you can keep up with research without drowning in tabs.
+Recoleta is a **research intelligence funnel** that ingests noisy sources, runs **structured LLM analysis**, and publishes high-signal outputs to **local Markdown by default** (with optional **Obsidian** and **Telegram** integrations) — so you can keep up with research without drowning in tabs.
 
 ## 📚 Contents
 
@@ -31,8 +31,9 @@ flowchart LR
   Ingest --> Enrich["Enrich (HTML/PDF)"]
   Enrich --> Analyze["Analyze (LLM)"]
   Analyze --> Publish[Publish]
-  Publish --> Obsidian[Obsidian Markdown notes]
-  Publish --> Telegram[Telegram messages]
+  Publish --> Markdown[Local Markdown output]
+  Publish --> Obsidian[Obsidian Markdown notes (optional)]
+  Publish --> Telegram[Telegram messages (optional)]
   Ingest --> SQLite[(SQLite index)]
   Analyze --> SQLite
   Publish --> SQLite
@@ -44,7 +45,7 @@ flowchart LR
 - **Multi-source ingestion**: arXiv, Hacker News RSS, Hugging Face Daily Papers, OpenReview, and custom RSS feeds.
 - **Incremental & idempotent pipeline**: SQLite-backed state machine prevents duplicates and re-sends.
 - **Structured LLM outputs**: JSON-only analysis validated by Pydantic (summary/insight/ideas/tags/scores).
-- **Outputs where you read**: Obsidian notes (with YAML frontmatter) + a small curated Telegram digest.
+- **Outputs where you read**: local Markdown output (default) + optional Obsidian notes + optional curated Telegram digest.
 - **Operationally friendly**: structured logs, per-run metrics in SQLite, optional scrubbed debug artifacts.
 
 <a id="recoleta-installation"></a>
@@ -54,10 +55,10 @@ flowchart LR
 
 - **Python**: >= 3.14
 - **Package manager**: [`uv`](https://docs.astral.sh/uv/) (recommended)
-- **Integrations**:
-  - An Obsidian Vault on your machine
-  - A Telegram bot token + destination chat ID
-  - An LLM provider supported by LiteLLM (e.g. OpenAI / Anthropic)
+- **LLM provider** supported by LiteLLM (e.g. OpenAI / Anthropic)
+- **Optional integrations**:
+  - Obsidian Vault (for writing notes directly into Obsidian)
+  - Telegram Bot token + destination chat ID (for mobile digest)
 
 ### Install (from source)
 
@@ -79,7 +80,6 @@ Create a non-secret config file.
 cat <<'YAML' > recoleta.yaml
 # NOTE: This file must NOT contain secrets. Keep tokens/API keys in env only.
 
-obsidian_vault_path: "/ABS/PATH/TO/YOUR/Obsidian Vault"
 recoleta_db_path: "~/.local/share/recoleta/recoleta.db"
 
 # LiteLLM model naming: <provider>/<model-identifier>
@@ -87,6 +87,14 @@ recoleta_db_path: "~/.local/share/recoleta/recoleta.db"
 # - openai/gpt-4o-mini
 # - anthropic/claude-3-5-sonnet-20241022
 llm_model: "openai/gpt-4o-mini"
+
+# Publish targets (default: ["markdown"])
+# Allowed: markdown, obsidian, telegram
+publish_targets:
+  - markdown
+
+# Local Markdown output directory (default: platform-specific user data dir + /outputs)
+markdown_output_dir: "~/.local/share/recoleta/outputs"
 
 # Optional: language for summary/insight/idea text.
 # JSON keys stay in English and topics remain English tags.
@@ -107,7 +115,6 @@ sources:
 # Optional knobs
 min_relevance_score: 0.6
 max_deliveries_per_day: 10
-obsidian_base_folder: "Recoleta"
 write_debug_artifacts: false
 YAML
 ```
@@ -118,12 +125,12 @@ Create a `.env` file for secrets and the config pointer.
 cat <<'ENV' > .env
 RECOLETA_CONFIG_PATH="./recoleta.yaml"
 
-# Required secrets (env-only)
-TELEGRAM_BOT_TOKEN="123456789:replace-me"
-TELEGRAM_CHAT_ID="@replace_me"
-
 # LLM provider credentials (depends on your llm_model)
 OPENAI_API_KEY="sk-replace-me"
+
+# Optional: Telegram publishing (env-only)
+# TELEGRAM_BOT_TOKEN="123456789:replace-me"
+# TELEGRAM_CHAT_ID="@replace_me"
 ENV
 ```
 
@@ -137,8 +144,9 @@ uv run recoleta publish --limit 20
 
 Where to look next:
 
-- **Obsidian notes**: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
-- **Telegram**: messages are sent to `TELEGRAM_CHAT_ID`
+- **Local Markdown**: `MARKDOWN_OUTPUT_DIR/latest.md` and `MARKDOWN_OUTPUT_DIR/Inbox/`
+- **Obsidian notes (optional)**: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
+- **Telegram (optional)**: messages are sent to `TELEGRAM_CHAT_ID`
 - **SQLite index**: `RECOLETA_DB_PATH` (safe to re-run; deliveries are idempotent)
 
 ### 🗓️ Run continuously (built-in scheduler)
@@ -178,11 +186,16 @@ Recoleta loads typed settings from:
 
 Required:
 
-- `OBSIDIAN_VAULT_PATH` / `obsidian_vault_path` (absolute path)
 - `RECOLETA_DB_PATH` / `recoleta_db_path` (SQLite file path)
 - `LLM_MODEL` / `llm_model` (LiteLLM model, format: `<provider>/<model>`)
-- `TELEGRAM_BOT_TOKEN` (env-only)
-- `TELEGRAM_CHAT_ID` (env-only)
+- `PUBLISH_TARGETS` / `publish_targets` (default: `["markdown"]`)
+- `MARKDOWN_OUTPUT_DIR` / `markdown_output_dir` (default: platform-specific data dir + `/outputs`)
+
+Conditionally required:
+
+- `OBSIDIAN_VAULT_PATH` / `obsidian_vault_path` (required when `PUBLISH_TARGETS` includes `obsidian`)
+- `TELEGRAM_BOT_TOKEN` (env-only, required when `PUBLISH_TARGETS` includes `telegram`)
+- `TELEGRAM_CHAT_ID` (env-only, required when `PUBLISH_TARGETS` includes `telegram`)
 
 Common optional knobs:
 
@@ -204,6 +217,8 @@ Common optional knobs:
   - `TITLE_DEDUP_THRESHOLD` / `title_dedup_threshold`
   - `TITLE_DEDUP_MAX_CANDIDATES` / `title_dedup_max_candidates`
 - **Outputs**:
+  - `PUBLISH_TARGETS` / `publish_targets`
+  - `MARKDOWN_OUTPUT_DIR` / `markdown_output_dir`
   - `OBSIDIAN_BASE_FOLDER` / `obsidian_base_folder`
   - `ARTIFACTS_DIR` / `artifacts_dir` (required if `WRITE_DEBUG_ARTIFACTS=true`)
 - **Scheduling**:
@@ -245,6 +260,7 @@ Recoleta ships a small CLI surface:
 - [`docs/design/system-overview.md`](docs/design/system-overview.md) — goals, non-goals, and the end-to-end workflow
 - [`docs/design/architecture.md`](docs/design/architecture.md) — module boundaries, pipeline stages, storage, and observability
 - [`docs/design/configuration.md`](docs/design/configuration.md) — full configuration reference and rules
+- [`docs/design/outputs.md`](docs/design/outputs.md) — publish targets and local Markdown layout
 - [`docs/design/llm-output-language.md`](docs/design/llm-output-language.md) — configurable analysis language behavior
 - [`docs/design/data-model.md`](docs/design/data-model.md) — SQLite schema and Obsidian note layout
 - [`docs/adr/`](docs/adr/) — architecture decision records (SQLite, LiteLLM, config file, Telegram delivery)

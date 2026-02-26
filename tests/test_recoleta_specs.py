@@ -183,6 +183,7 @@ def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("PUBLISH_TARGETS", json.dumps(["obsidian", "telegram"]))
     monkeypatch.setenv("TOPICS", json.dumps(["agents", "ml-systems"]))
     monkeypatch.setenv(
         "SOURCES",
@@ -195,6 +196,22 @@ def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     )
 
     return tmp_path
+
+
+def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.obsidian_vault_path is None
+    assert settings.telegram_bot_token is None
+    assert settings.telegram_chat_id is None
+    assert settings.publish_targets == ["markdown"]
 
 
 @pytest.fixture(autouse=True)
@@ -1039,6 +1056,51 @@ def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> 
     assert len(sender.messages) == 1
     assert first_publish.note_paths[0].exists()
 
+
+def test_publish_writes_local_markdown_notes_without_obsidian_or_telegram(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    markdown_dir = tmp_path / "markdown-output"
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(markdown_dir))
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-markdown-1",
+        canonical_url="https://example.com/publish-markdown-case",
+        title="Publish Markdown Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-markdown", drafts=[draft])
+    service.analyze(run_id="run-publish-markdown", limit=10)
+
+    result = service.publish(run_id="run-publish-markdown", limit=10)
+    assert result.sent == 1
+    assert result.failed == 0
+    assert result.note_paths and result.note_paths[0].exists()
+    assert (markdown_dir / "latest.md").exists()
+
+    latest = (markdown_dir / "latest.md").read_text(encoding="utf-8")
+    assert "run-publish-markdown" in latest
+    assert "Inbox/" in latest
+
+    with Session(repository.engine) as session:
+        assert session.exec(select(Delivery)).first() is None
 
 def test_publish_filters_by_allow_tags_and_records_metric(
     configured_env,

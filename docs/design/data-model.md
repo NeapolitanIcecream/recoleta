@@ -141,3 +141,13 @@ Body sections (recommended):
 - `## Ideas`
 - `## Links` (canonical + PDF + related threads)
 
+## Local Markdown output layout
+
+Recoleta can also write user-facing Markdown notes to a normal filesystem directory (no Obsidian required).
+
+Default layout under `MARKDOWN_OUTPUT_DIR`:
+
+- `latest.md` (entry point for the most recent publish run)
+- `Runs/<run_id>.md` (per-run index)
+- `Inbox/` (one note per item, Markdown + YAML frontmatter)
+
