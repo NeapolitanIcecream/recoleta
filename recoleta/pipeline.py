@@ -25,6 +25,7 @@ from recoleta.observability import collect_environment_secrets, mask_value, scru
 from recoleta.ports import RepositoryPort
 from recoleta.publish import build_telegram_message, write_markdown_note, write_markdown_run_index, write_obsidian_note
 from recoleta import sources
+from recoleta.triage import SemanticTriage, TriageCandidate
 from recoleta.types import AnalyzeResult, IngestResult, ItemDraft, PublishResult, utc_now
 
 
@@ -35,6 +36,7 @@ class PipelineService:
         settings: Settings,
         repository: RepositoryPort,
         analyzer: Analyzer | None = None,
+        triage: SemanticTriage | None = None,
         telegram_sender: Any | None = None,
     ) -> None:
         self.settings = settings
@@ -51,6 +53,7 @@ class PipelineService:
             model=settings.llm_model,
             output_language=settings.llm_output_language,
         )
+        self.triage = triage or SemanticTriage()
         self.telegram_sender = telegram_sender
         if self.telegram_sender is None and "telegram" in settings.publish_targets:
             if settings.telegram_bot_token is not None and settings.telegram_chat_id is not None:
@@ -157,7 +160,14 @@ class PipelineService:
     def analyze(self, *, run_id: str, limit: int = 100) -> AnalyzeResult:
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
         started = time.perf_counter()
-        items = self.repository.list_items_for_analysis(limit=limit)
+        candidate_limit = limit
+        triage_enabled = bool(self.settings.triage_enabled) and bool(self.settings.topics)
+        if triage_enabled:
+            candidate_limit = min(
+                int(self.settings.triage_max_candidates),
+                int(limit) * int(self.settings.triage_candidate_factor),
+            )
+        items = self.repository.list_items_for_analysis(limit=candidate_limit)
         analyze_result = AnalyzeResult()
         llm_calls_total = 0
         llm_errors_total = 0
@@ -219,6 +229,100 @@ class PipelineService:
                     kind,
                     self._sanitize_error_message(str(artifact_exc)),
                 )
+
+        if triage_enabled and items:
+            triage_candidates: list[TriageCandidate] = []
+            for item in items:
+                if item.id is None:
+                    continue
+                triage_candidates.append(TriageCandidate(item=item, text=self._build_triage_text(item=item)))
+            try:
+                triage_output = self.triage.select(
+                    run_id=run_id,
+                    candidates=triage_candidates,
+                    topics=self.settings.topics,
+                    limit=limit,
+                    mode=self.settings.triage_mode,
+                    query_mode=self.settings.triage_query_mode,
+                    embedding_model=self.settings.triage_embedding_model,
+                    embedding_dimensions=self.settings.triage_embedding_dimensions,
+                    min_similarity=self.settings.triage_min_similarity,
+                    exploration_rate=self.settings.triage_exploration_rate,
+                    recency_floor=self.settings.triage_recency_floor,
+                    include_debug=include_debug,
+                )
+                stats = triage_output.stats
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.candidates_total",
+                    value=stats.candidates_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.scored_total",
+                    value=stats.scored_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.selected_total",
+                    value=stats.selected_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.skipped_total",
+                    value=stats.skipped_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.embedding_calls_total",
+                    value=stats.embedding_calls_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.embedding_errors_total",
+                    value=stats.embedding_errors_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.duration_ms",
+                    value=stats.duration_ms,
+                    unit="ms",
+                )
+                for kind, payload in triage_output.artifacts.items():
+                    write_and_record_artifact(item_id=None, kind=kind, payload=payload)
+                items = [entry.candidate.item for entry in triage_output.selected]
+                log.info(
+                    "Triage selected {} of {} candidates mode={} method={}",
+                    len(items),
+                    stats.candidates_total,
+                    self.settings.triage_mode,
+                    stats.method,
+                )
+            except Exception as triage_exc:
+                sanitized_error = self._sanitize_error_message(str(triage_exc))
+                write_and_record_artifact(
+                    item_id=None,
+                    kind="error_context",
+                    payload={
+                        "stage": "triage",
+                        "error_type": type(triage_exc).__name__,
+                        "error_message": sanitized_error,
+                        **self._classify_exception(triage_exc),
+                    },
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.embedding_errors_total",
+                    value=1,
+                    unit="count",
+                )
+                log.warning("Triage failed, falling back to recency: {}", sanitized_error)
         enrich_processed = 0
         enrich_failed = 0
         enrich_skipped = 0
@@ -796,6 +900,9 @@ class PipelineService:
                 "error_context": "error-context.json",
                 "llm_request": "llm-request.json",
                 "llm_response": "llm-response.json",
+                "embedding_request": "embedding-request.json",
+                "embedding_response": "embedding-response.json",
+                "triage_summary": "triage-summary.json",
             }
             file_name = kind_to_name.get(kind, f"{safe_kind.replace('_', '-')}.json")
             relative_path = Path(safe_run_id) / item_segment / file_name
@@ -819,6 +926,35 @@ class PipelineService:
                 self._sanitize_error_message(str(exc)),
             )
             return None
+
+    def _build_triage_text(self, *, item: Any) -> str:
+        title = str(getattr(item, "title", "") or "").strip()
+        item_id = getattr(item, "id", None)
+        excerpt: str | None = None
+        try:
+            if item_id is not None:
+                source = str(getattr(item, "source", "") or "").strip().lower()
+                if source in {"arxiv", "openreview"}:
+                    existing_pdf = self.repository.get_latest_content(item_id=item_id, content_type="pdf_text")
+                    if existing_pdf is not None and existing_pdf.text:
+                        excerpt = existing_pdf.text
+                if excerpt is None:
+                    existing_html = self.repository.get_latest_content(item_id=item_id, content_type="html_maintext")
+                    if existing_html is not None and existing_html.text:
+                        excerpt = existing_html.text
+        except Exception:
+            excerpt = None
+
+        combined = title
+        if excerpt:
+            trimmed_excerpt = excerpt.strip()
+            if trimmed_excerpt:
+                combined = f"{title}\n\n{trimmed_excerpt}"
+
+        max_chars = int(getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200)
+        if max_chars > 0 and len(combined) > max_chars:
+            combined = combined[:max_chars]
+        return combined
 
     def _sanitize_error_message(self, message: str) -> str:
         return scrub_secrets(

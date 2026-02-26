@@ -66,6 +66,23 @@ LLM outputs (validated structured payload).
 - `latency_ms` (integer, nullable)
 - `created_at`
 
+### `triage_scores` (optional)
+
+Optional cache for semantic pre-ranking (triage) scores computed before Stage 4.
+
+- `id` (PK, integer)
+- `item_id` (FK -> items.id)
+- `topics_hash` (text): sha256 of normalized topics list and embedding model
+- `model` (text): embedding model string (e.g., `text-embedding-3-small`)
+- `method` (text): `embedding_cosine|fuzz_title|...`
+- `item_text_hash` (text): sha256 of the text embedded for this item
+- `score` (real): typically 0..1 for cosine-like scores (implementation-defined)
+- `created_at`
+
+Constraints / indexes:
+
+- unique `(item_id, topics_hash, model)`
+
 ### `deliveries`
 
 Records outbound deliveries for idempotency and audit.
@@ -96,6 +113,13 @@ Machine-readable operational metrics (lightweight for v0).
 Guideline:
 - Avoid high-cardinality metrics (do not encode item_id/url as metric name/labels).
 
+Common metric names (non-exhaustive):
+
+- `pipeline.triage.candidates_total`
+- `pipeline.triage.selected_total`
+- `pipeline.triage.embedding_calls_total`
+- `pipeline.triage.duration_ms`
+
 ### `artifacts`
 
 Optional debug artifacts (mainly for failures and LLM calls).
@@ -103,7 +127,7 @@ Optional debug artifacts (mainly for failures and LLM calls).
 - `id` (PK, integer)
 - `run_id` (FK -> runs.id)
 - `item_id` (FK -> items.id, nullable)
-- `kind` (text): `llm_request|llm_response|error_context|raw_html|raw_pdf`
+- `kind` (text): `error_context|llm_request|llm_response|embedding_request|embedding_response|triage_summary|raw_html|raw_pdf`
 - `path` (text): relative path under artifact root
 - `created_at`
 

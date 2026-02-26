@@ -54,6 +54,16 @@ Note on `aiohttp`:
 - `litellm`: unified model calling across providers using an OpenAI-compatible interface; supports structured output (`response_format`).
 - `openai` + `anthropic`: official SDKs (useful for provider-specific features and compatibility).
 
+### Embeddings (optional)
+
+Semantic pre-ranking (triage) can reuse existing dependencies:
+
+- `litellm`: call `litellm.embedding()` with an embedding model such as `text-embedding-3-small` (OpenAI) or a provider-specific embedding model.
+
+Optional alternatives (not required for v0):
+
+- `sentence-transformers`: fully local embeddings and cross-encoder reranking (higher footprint; commonly depends on `torch`).
+
 ### Local index (SQLite)
 
 - `sqlmodel`: combines Pydantic + SQLAlchemy for a simple SQLite-based state store.

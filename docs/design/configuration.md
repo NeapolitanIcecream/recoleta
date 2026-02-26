@@ -63,6 +63,22 @@ Recommended fields:
 - `TITLE_DEDUP_THRESHOLD`: float (default 92.0 for rapidfuzz ratio)
 - `TITLE_DEDUP_MAX_CANDIDATES`: int (default 500)
 
+### Semantic triage (pre-ranking before LLM) (optional)
+
+These settings control an optional semantic pre-ranking stage that runs before Stage 4 (Analyze/LLM). See `docs/design/semantic-pre-ranking.md`.
+
+- `TRIAGE_ENABLED`: bool (default false)
+- `TRIAGE_MODE`: `prioritize|filter` (default `prioritize`)
+- `TRIAGE_EMBEDDING_MODEL`: string (default `text-embedding-3-small`)
+- `TRIAGE_EMBEDDING_DIMENSIONS`: int (optional; only for supported embedding models)
+- `TRIAGE_QUERY_MODE`: `joined|max_per_topic` (default `joined`)
+- `TRIAGE_CANDIDATE_FACTOR`: int (default 5)
+- `TRIAGE_MAX_CANDIDATES`: int (default 500)
+- `TRIAGE_ITEM_TEXT_MAX_CHARS`: int (default 1200)
+- `TRIAGE_MIN_SIMILARITY`: float (default 0.0; only used in `filter` mode)
+- `TRIAGE_EXPLORATION_RATE`: float (default 0.05)
+- `TRIAGE_RECENCY_FLOOR`: int (default 5)
+
 ## Scheduling
 
 Choose one:

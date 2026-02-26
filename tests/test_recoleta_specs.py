@@ -13,6 +13,7 @@ from recoleta.config import Settings
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_SENT,
+    ITEM_STATE_INGESTED,
     ITEM_STATE_ANALYZED,
     ITEM_STATE_PUBLISHED,
     ITEM_STATE_RETRYABLE_FAILED,
@@ -821,6 +822,165 @@ def test_analyze_persists_enriched_content_and_emits_enrich_metrics(configured_e
     assert by_name["pipeline.enrich.processed_total"].value == 1
     assert by_name["pipeline.enrich.skipped_total"].value == 0
     assert by_name["pipeline.enrich.failed_total"].value == 0
+
+
+def test_analyze_with_semantic_triage_prioritizes_high_similarity_items(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.triage import SemanticTriage
+
+    monkeypatch.setenv("TRIAGE_ENABLED", "true")
+    monkeypatch.setenv("TRIAGE_MODE", "prioritize")
+    monkeypatch.setenv("TRIAGE_RECENCY_FLOOR", "0")
+    monkeypatch.setenv("TRIAGE_EXPLORATION_RATE", "0")
+
+    settings, repository = _build_runtime()
+
+    class CapturingAnalyzer:
+        def __init__(self) -> None:
+            self.titles: list[str] = []
+
+        def analyze(
+            self,
+            *,
+            title: str,
+            canonical_url: str,  # noqa: ARG002
+            user_topics: list[str],
+            content: str | None = None,  # noqa: ARG002
+            include_debug: bool = False,  # noqa: ARG002
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            self.titles.append(title)
+            return (
+                AnalysisResult(
+                    model="test/fake-model",
+                    provider="test",
+                    summary=f"Summary for {title}",
+                    insight="Matters because it matches user topics.",
+                    idea_directions=["Try it."],
+                    topics=user_topics[:2] or ["general"],
+                    relevance_score=0.9,
+                    novelty_score=0.4,
+                    cost_usd=0.0,
+                    latency_ms=1,
+                ),
+                None,
+            )
+
+    class KeywordEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            assert model
+            assert dimensions is None or dimensions > 0
+            self.calls += 1
+            if self.calls == 1:
+                return [[1.0, 0.0, 0.0]], {"kind": "query"}
+            vectors: list[list[float]] = []
+            for text in inputs:
+                if "agents" in text.lower():
+                    vectors.append([1.0, 0.0, 0.0])
+                else:
+                    vectors.append([0.0, 1.0, 0.0])
+            return vectors, {"kind": "items"}
+
+    analyzer = CapturingAnalyzer()
+    triage = SemanticTriage(embedder=KeywordEmbedder())
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        triage=triage,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft_relevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-relevant",
+        canonical_url="https://example.com/triage-relevant",
+        title="Agents for Good",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    draft_irrelevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-irrelevant",
+        canonical_url="https://example.com/triage-irrelevant",
+        title="Gardening Tips",
+        authors=["Bob"],
+        raw_metadata={"source": "test"},
+    )
+
+    service.ingest(run_id="run-triage-ingest", drafts=[draft_relevant, draft_irrelevant])
+    result = service.analyze(run_id="run-triage-analyze", limit=1)
+    assert result.processed == 1
+    assert analyzer.titles == ["Agents for Good"]
+
+    with Session(repository.engine) as session:
+        items = list(session.exec(select(Item).order_by(cast(Any, Item.id))))
+        assert len(items) == 2
+        by_title = {item.title: item for item in items}
+        assert by_title["Agents for Good"].state == ITEM_STATE_ANALYZED
+        assert by_title["Gardening Tips"].state == ITEM_STATE_INGESTED
+
+    metrics = repository.list_metrics(run_id="run-triage-analyze")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.triage.candidates_total"].value == 2
+    assert by_name["pipeline.triage.selected_total"].value == 1
+
+
+def test_analyze_triage_embedding_failure_emits_metric_and_falls_back(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.triage import SemanticTriage
+
+    monkeypatch.setenv("TRIAGE_ENABLED", "true")
+    monkeypatch.setenv("TRIAGE_MODE", "prioritize")
+    monkeypatch.setenv("TRIAGE_RECENCY_FLOOR", "0")
+    monkeypatch.setenv("TRIAGE_EXPLORATION_RATE", "0")
+
+    settings, repository = _build_runtime()
+
+    class ExplodingEmbedder:
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            raise RuntimeError("boom")
+
+    analyzer = FakeAnalyzer()
+    triage = SemanticTriage(embedder=ExplodingEmbedder())
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        triage=triage,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft_relevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-fallback-relevant",
+        canonical_url="https://example.com/triage-fallback-relevant",
+        title="Agents are great",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    draft_irrelevant = ItemDraft.from_values(
+        source="rss",
+        source_item_id="triage-fallback-irrelevant",
+        canonical_url="https://example.com/triage-fallback-irrelevant",
+        title="Cooking recipes",
+        authors=["Bob"],
+        raw_metadata={"source": "test"},
+    )
+
+    service.ingest(run_id="run-triage-fallback-ingest", drafts=[draft_relevant, draft_irrelevant])
+    result = service.analyze(run_id="run-triage-fallback-analyze", limit=1)
+    assert result.processed == 1
+
+    metrics = repository.list_metrics(run_id="run-triage-fallback-analyze")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.triage.embedding_errors_total"].value == 1
 
 
 def test_analyze_prefers_pdf_enrichment_for_arxiv_items(

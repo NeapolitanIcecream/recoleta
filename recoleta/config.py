@@ -69,6 +69,17 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "MAX_DELIVERIES_PER_DAY": "max_deliveries_per_day",
         "TITLE_DEDUP_THRESHOLD": "title_dedup_threshold",
         "TITLE_DEDUP_MAX_CANDIDATES": "title_dedup_max_candidates",
+        "TRIAGE_ENABLED": "triage_enabled",
+        "TRIAGE_MODE": "triage_mode",
+        "TRIAGE_EMBEDDING_MODEL": "triage_embedding_model",
+        "TRIAGE_EMBEDDING_DIMENSIONS": "triage_embedding_dimensions",
+        "TRIAGE_QUERY_MODE": "triage_query_mode",
+        "TRIAGE_CANDIDATE_FACTOR": "triage_candidate_factor",
+        "TRIAGE_MAX_CANDIDATES": "triage_max_candidates",
+        "TRIAGE_ITEM_TEXT_MAX_CHARS": "triage_item_text_max_chars",
+        "TRIAGE_MIN_SIMILARITY": "triage_min_similarity",
+        "TRIAGE_EXPLORATION_RATE": "triage_exploration_rate",
+        "TRIAGE_RECENCY_FLOOR": "triage_recency_floor",
         "INGEST_INTERVAL_MINUTES": "ingest_interval_minutes",
         "ANALYZE_INTERVAL_MINUTES": "analyze_interval_minutes",
         "PUBLISH_INTERVAL_MINUTES": "publish_interval_minutes",
@@ -230,6 +241,23 @@ class Settings(BaseSettings):
         validation_alias="TITLE_DEDUP_MAX_CANDIDATES",
     )
 
+    triage_enabled: bool = Field(default=False, validation_alias="TRIAGE_ENABLED")
+    triage_mode: str = Field(default="prioritize", validation_alias="TRIAGE_MODE")
+    triage_embedding_model: str = Field(default="text-embedding-3-small", validation_alias="TRIAGE_EMBEDDING_MODEL")
+    triage_embedding_dimensions: int | None = Field(default=None, validation_alias="TRIAGE_EMBEDDING_DIMENSIONS")
+    triage_query_mode: str = Field(default="joined", validation_alias="TRIAGE_QUERY_MODE")
+    triage_candidate_factor: int = Field(default=5, ge=1, validation_alias="TRIAGE_CANDIDATE_FACTOR")
+    triage_max_candidates: int = Field(default=500, ge=1, validation_alias="TRIAGE_MAX_CANDIDATES")
+    triage_item_text_max_chars: int = Field(default=1200, ge=1, validation_alias="TRIAGE_ITEM_TEXT_MAX_CHARS")
+    triage_min_similarity: float = Field(default=0.0, ge=0.0, le=1.0, validation_alias="TRIAGE_MIN_SIMILARITY")
+    triage_exploration_rate: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=1.0,
+        validation_alias="TRIAGE_EXPLORATION_RATE",
+    )
+    triage_recency_floor: int = Field(default=5, ge=0, validation_alias="TRIAGE_RECENCY_FLOOR")
+
     ingest_interval_minutes: int = Field(default=60, validation_alias="INGEST_INTERVAL_MINUTES")
     analyze_interval_minutes: int = Field(default=120, validation_alias="ANALYZE_INTERVAL_MINUTES")
     publish_interval_minutes: int = Field(default=120, validation_alias="PUBLISH_INTERVAL_MINUTES")
@@ -318,6 +346,56 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return _parse_str_list(value)
         return value
+
+    @field_validator("triage_mode", mode="before")
+    @classmethod
+    def _normalize_triage_mode(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "prioritize"
+        if normalized not in {"prioritize", "filter"}:
+            raise ValueError("TRIAGE_MODE must be one of: prioritize, filter")
+        return normalized
+
+    @field_validator("triage_query_mode", mode="before")
+    @classmethod
+    def _normalize_triage_query_mode(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "joined"
+        if normalized not in {"joined", "max_per_topic"}:
+            raise ValueError("TRIAGE_QUERY_MODE must be one of: joined, max_per_topic")
+        return normalized
+
+    @field_validator("triage_embedding_model", mode="before")
+    @classmethod
+    def _normalize_triage_embedding_model(cls, value: Any) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return "text-embedding-3-small"
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("TRIAGE_EMBEDDING_MODEL must be a single-line value")
+        if len(normalized) > 128:
+            raise ValueError("TRIAGE_EMBEDDING_MODEL must be <= 128 characters")
+        return normalized
+
+    @field_validator("triage_embedding_dimensions", mode="before")
+    @classmethod
+    def _normalize_triage_embedding_dimensions(cls, value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            value = stripped
+        try:
+            parsed = int(value)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("TRIAGE_EMBEDDING_DIMENSIONS must be an integer") from exc
+        if parsed <= 0:
+            raise ValueError("TRIAGE_EMBEDDING_DIMENSIONS must be a positive integer")
+        return parsed
 
     @field_validator("obsidian_vault_path", mode="before")
     @classmethod

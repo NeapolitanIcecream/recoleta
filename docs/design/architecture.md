@@ -7,7 +7,7 @@ This document describes the proposed architecture for Recoleta v0: modules, data
 Recoleta is a CLI-first application with a small set of commands:
 
 - `recoleta ingest`: pull from sources and update the local index
-- `recoleta analyze`: run LLM analysis and ranking for newly ingested items
+- `recoleta analyze`: run semantic triage (optional) and LLM analysis for newly ingested items
 - `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram)
 - `recoleta run`: schedule ingest/analyze/publish periodically (optional; can also be done by cron/launchd)
 
@@ -20,12 +20,25 @@ Recommended package layout (names are illustrative):
 - `recoleta/pipeline/`: pipeline stages + orchestration
 - `recoleta/extract/`: fulltext extraction (HTML/PDF), Markdown conversion
 - `recoleta/llm/`: prompts, schemas, LLM invocation via LiteLLM
+- `recoleta/triage/`: semantic scoring and pre-ranking before LLM (optional)
 - `recoleta/ranking/`: heuristics + LLM relevance score + dedupe
 - `recoleta/storage/`: SQLite repository + filesystem writers
 - `recoleta/delivery/`: Telegram sender
 - `recoleta/observability/`: logging setup, debug artifacts, metrics writes
 
 ## Pipeline stages
+
+Stage flow:
+
+```mermaid
+flowchart TD
+  Ingest[Stage1_Ingest] --> Normalize[Stage2_Normalize]
+  Normalize --> Enrich[Stage3_Enrich]
+  Enrich --> Triage[Stage3_5_Triage_optional]
+  Triage --> Analyze[Stage4_Analyze_LLM]
+  Analyze --> RankFilter[Stage5_Rank_Filter]
+  RankFilter --> Publish[Stage6_Publish]
+```
 
 ### Stage 1: Ingest
 
@@ -62,6 +75,24 @@ Responsibilities:
 Operational guidance:
 - Cache downloads by URL hash to avoid repeated fetching.
 - Never store access tokens inside artifacts.
+
+### Stage 3.5: Triage (Semantic Pre-Ranking) (optional)
+
+Responsibilities:
+- Build a candidate pool larger than the Stage 4 limit.
+- Score candidates against user-defined `TOPICS` using semantic similarity:
+  - embeddings + cosine similarity (recommended)
+  - lexical fallback (e.g., `rapidfuzz`) when embeddings are unavailable
+- Select items for Stage 4:
+  - prioritize mode: rank by similarity and take top-K
+  - filter mode (optional): apply a minimum similarity threshold to reduce LLM calls
+- Preserve exploration: reserve a small slice of Stage 4 capacity for randomly sampled candidates.
+- Fail open: if triage fails, fall back to recency ordering.
+
+Operational guidance:
+- Batch embedding calls (`input=[...]`) to control latency and rate limits.
+- Keep the candidate factor bounded to avoid excessive enrichment/embedding work.
+- See `docs/design/semantic-pre-ranking.md` for scoring and cost-control details.
 
 ### Stage 4: Analyze (LLM)
 
@@ -111,6 +142,7 @@ For v0, concurrency should be conservative:
 - parallelize network fetches with bounded concurrency
 - serialize SQLite writes per transaction
 - keep LLM calls bounded to avoid cost spikes
+- prefer pre-ranking (Stage 3.5) to keep LLM calls high-signal when backlog exists
 
 ## Storage model
 
@@ -141,6 +173,7 @@ Every pipeline stage must emit at least one machine-readable signal:
 - **Debug artifacts** (optional):
   - `{run_id}/{item_id}/llm-request.json`
   - `{run_id}/{item_id}/llm-response.json`
+  - optional triage artifacts (when enabled): `embedding-request.json`, `embedding-response.json`, `triage-summary.json`
   - scrub secrets before writing
 
 ## Error handling and retries
