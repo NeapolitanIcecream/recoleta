@@ -61,6 +61,23 @@ def collect_environment_secrets(*, extra_keys: Iterable[str] = ()) -> tuple[str,
     return tuple(dict.fromkeys(collected))
 
 
+def _stream_supports_ansi(stream: object) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    if not callable(isatty) or not isatty():
+        return False
+
+    fileno = getattr(stream, "fileno", None)
+    if not callable(fileno):
+        return False
+
+    try:
+        fileno()
+    except Exception:
+        return False
+
+    return True
+
+
 def configure_process_logging(*, level: str = "INFO", log_json: bool = False) -> None:
     logger.remove()
     normalized_level = level.upper()
@@ -74,7 +91,8 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
         )
         return
 
-    console = Console(stderr=True)
+    enable_ansi = _stream_supports_ansi(sys.stderr)
+    console = Console(file=sys.stderr, stderr=True, no_color=not enable_ansi)
 
     def rich_sink(message: object) -> None:
         message_text = str(message)
@@ -90,7 +108,7 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
             "<cyan>{extra}</cyan> | "
             "<level>{message}</level>\n"
         ),
-        colorize=True,
+        colorize=enable_ansi,
         backtrace=False,
         diagnose=False,
     )
