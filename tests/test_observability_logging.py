@@ -21,11 +21,16 @@ def test_configure_process_logging_strips_raw_ansi_sequences_from_sink_output(
     monkeypatch.setattr(sys, "stderr", stream)
 
     configure_process_logging(level="INFO", log_json=False)
-    logger.bind(module="pipeline.ingest", run_id="run-observability-test").info("Ingest completed")
+    try:
+        logger.bind(module="pipeline.ingest", run_id="run-observability-test").info(
+            "Ingest completed"
+        )
 
-    output = stream.getvalue()
-    assert "Ingest" in output
-    assert "completed" in output
-    assert "\x1b[" not in output
-    assert "[32m" not in output
-    assert "[0m" not in output
+        output = stream.getvalue()
+        assert "Ingest" in output
+        assert "completed" in output
+        assert "\x1b[" not in output
+        assert "[32m" not in output
+        assert "[0m" not in output
+    finally:
+        logger.remove()

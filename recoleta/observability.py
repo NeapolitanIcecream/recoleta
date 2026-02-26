@@ -76,7 +76,7 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
 
     console = Console(stderr=True)
 
-    def rich_sink(message: str) -> None:
+    def rich_sink(message: object) -> None:
         message_text = str(message)
         renderable = Text.from_ansi(message_text)
         console.print(renderable, end="")
