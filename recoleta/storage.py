@@ -256,6 +256,30 @@ class Repository:
             )
             return session.exec(statement).first()
 
+    def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]:
+        normalized_ids = [int(item_id) for item_id in item_ids if int(item_id) > 0]
+        normalized_ids = list(dict.fromkeys(normalized_ids))
+        normalized_type = str(content_type or "").strip()
+        if not normalized_ids or not normalized_type:
+            return {}
+
+        with Session(self.engine) as session:
+            latest_ids = (
+                select(
+                    cast(Any, Content.item_id),
+                    func.max(cast(Any, Content.id)).label("max_id"),
+                )
+                .where(
+                    cast(Any, Content.item_id).in_(normalized_ids),
+                    Content.content_type == normalized_type,
+                )
+                .group_by(cast(Any, Content.item_id))
+                .subquery()
+            )
+            statement = select(Content).join(latest_ids, cast(Any, Content.id) == latest_ids.c.max_id)
+            contents = list(session.exec(statement))
+            return {content.item_id: content for content in contents}
+
     def upsert_content(
         self,
         *,

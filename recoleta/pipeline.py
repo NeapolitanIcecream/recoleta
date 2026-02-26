@@ -231,98 +231,115 @@ class PipelineService:
                 )
 
         if triage_enabled and items:
-            triage_candidates: list[TriageCandidate] = []
-            for item in items:
-                if item.id is None:
-                    continue
-                triage_candidates.append(TriageCandidate(item=item, text=self._build_triage_text(item=item)))
-            try:
-                triage_output = self.triage.select(
-                    run_id=run_id,
-                    candidates=triage_candidates,
-                    topics=self.settings.topics,
-                    limit=limit,
-                    mode=self.settings.triage_mode,
-                    query_mode=self.settings.triage_query_mode,
-                    embedding_model=self.settings.triage_embedding_model,
-                    embedding_dimensions=self.settings.triage_embedding_dimensions,
-                    min_similarity=self.settings.triage_min_similarity,
-                    exploration_rate=self.settings.triage_exploration_rate,
-                    recency_floor=self.settings.triage_recency_floor,
-                    include_debug=include_debug,
-                )
-                stats = triage_output.stats
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.candidates_total",
-                    value=stats.candidates_total,
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.scored_total",
-                    value=stats.scored_total,
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.selected_total",
-                    value=stats.selected_total,
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.skipped_total",
-                    value=stats.skipped_total,
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.embedding_calls_total",
-                    value=stats.embedding_calls_total,
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.embedding_errors_total",
-                    value=stats.embedding_errors_total,
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.duration_ms",
-                    value=stats.duration_ms,
-                    unit="ms",
-                )
-                for kind, payload in triage_output.artifacts.items():
-                    write_and_record_artifact(item_id=None, kind=kind, payload=payload)
-                items = [entry.candidate.item for entry in triage_output.selected]
-                log.info(
-                    "Triage selected {} of {} candidates mode={} method={}",
-                    len(items),
-                    stats.candidates_total,
-                    self.settings.triage_mode,
-                    stats.method,
-                )
-            except Exception as triage_exc:
-                sanitized_error = self._sanitize_error_message(str(triage_exc))
-                write_and_record_artifact(
-                    item_id=None,
-                    kind="error_context",
-                    payload={
-                        "stage": "triage",
-                        "error_type": type(triage_exc).__name__,
-                        "error_message": sanitized_error,
-                        **self._classify_exception(triage_exc),
-                    },
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.embedding_errors_total",
-                    value=1,
-                    unit="count",
-                )
-                log.warning("Triage failed, falling back to recency: {}", sanitized_error)
+            triage_candidates = self._build_triage_candidates(items=items)
+            if triage_candidates:
+                triage_started = time.perf_counter()
+                try:
+                    triage_output = self.triage.select(
+                        run_id=run_id,
+                        candidates=triage_candidates,
+                        topics=self.settings.topics,
+                        limit=limit,
+                        mode=self.settings.triage_mode,
+                        query_mode=self.settings.triage_query_mode,
+                        embedding_model=self.settings.triage_embedding_model,
+                        embedding_dimensions=self.settings.triage_embedding_dimensions,
+                        min_similarity=self.settings.triage_min_similarity,
+                        exploration_rate=self.settings.triage_exploration_rate,
+                        recency_floor=self.settings.triage_recency_floor,
+                        include_debug=include_debug,
+                    )
+                    stats = triage_output.stats
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.candidates_total",
+                        value=stats.candidates_total,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.scored_total",
+                        value=stats.scored_total,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.selected_total",
+                        value=stats.selected_total,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.skipped_total",
+                        value=stats.skipped_total,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.embedding_calls_total",
+                        value=stats.embedding_calls_total,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.embedding_errors_total",
+                        value=stats.embedding_errors_total,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.failed_total",
+                        value=0,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.duration_ms",
+                        value=stats.duration_ms,
+                        unit="ms",
+                    )
+                    for kind, payload in triage_output.artifacts.items():
+                        write_and_record_artifact(item_id=None, kind=kind, payload=payload)
+                    items = [entry.candidate.item for entry in triage_output.selected]
+                    log.info(
+                        "Triage selected {} of {} candidates mode={} method={}",
+                        len(items),
+                        stats.candidates_total,
+                        self.settings.triage_mode,
+                        stats.method,
+                    )
+                except Exception as triage_exc:
+                    triage_duration_ms = int((time.perf_counter() - triage_started) * 1000)
+                    sanitized_error = self._sanitize_error_message(str(triage_exc))
+                    write_and_record_artifact(
+                        item_id=None,
+                        kind="error_context",
+                        payload={
+                            "stage": "triage",
+                            "error_type": type(triage_exc).__name__,
+                            "error_message": sanitized_error,
+                            **self._classify_exception(triage_exc),
+                        },
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.failed_total",
+                        value=1,
+                        unit="count",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.duration_ms",
+                        value=triage_duration_ms,
+                        unit="ms",
+                    )
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name="pipeline.triage.candidates_total",
+                        value=len(triage_candidates),
+                        unit="count",
+                    )
+                    log.warning("Triage failed, falling back to recency: {}", sanitized_error)
         enrich_processed = 0
         enrich_failed = 0
         enrich_skipped = 0
@@ -927,6 +944,69 @@ class PipelineService:
             )
             return None
 
+    def _build_triage_candidates(self, *, items: list[Any]) -> list[TriageCandidate]:
+        candidates_items: list[Any] = []
+        item_ids: list[int] = []
+        pdf_item_ids: list[int] = []
+        for item in items:
+            raw_item_id = getattr(item, "id", None)
+            if raw_item_id is None:
+                continue
+            try:
+                item_id = int(raw_item_id)
+            except Exception:
+                continue
+            if item_id <= 0:
+                continue
+            candidates_items.append(item)
+            item_ids.append(item_id)
+            source = str(getattr(item, "source", "") or "").strip().lower()
+            if source in {"arxiv", "openreview"}:
+                pdf_item_ids.append(item_id)
+
+        if not candidates_items:
+            return []
+
+        max_chars = int(getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200)
+        html_by_id: dict[int, Any] = {}
+        pdf_by_id: dict[int, Any] = {}
+        try:
+            html_by_id = self.repository.get_latest_contents(item_ids=item_ids, content_type="html_maintext")
+            if pdf_item_ids:
+                pdf_by_id = self.repository.get_latest_contents(item_ids=pdf_item_ids, content_type="pdf_text")
+        except Exception:
+            html_by_id = {}
+            pdf_by_id = {}
+
+        candidates: list[TriageCandidate] = []
+        for item in candidates_items:
+            title = str(getattr(item, "title", "") or "").strip()
+            item_id = int(getattr(item, "id"))
+            excerpt: str | None = None
+
+            source = str(getattr(item, "source", "") or "").strip().lower()
+            if source in {"arxiv", "openreview"}:
+                existing_pdf = pdf_by_id.get(item_id)
+                if existing_pdf is not None and getattr(existing_pdf, "text", None):
+                    excerpt = str(getattr(existing_pdf, "text") or "")
+
+            if excerpt is None:
+                existing_html = html_by_id.get(item_id)
+                if existing_html is not None and getattr(existing_html, "text", None):
+                    excerpt = str(getattr(existing_html, "text") or "")
+
+            combined = title
+            if excerpt:
+                trimmed_excerpt = excerpt.strip()
+                if trimmed_excerpt:
+                    combined = f"{title}\n\n{trimmed_excerpt}" if title else trimmed_excerpt
+
+            if max_chars > 0 and len(combined) > max_chars:
+                combined = combined[:max_chars]
+
+            candidates.append(TriageCandidate(item=item, text=combined))
+        return candidates
+
     def _build_triage_text(self, *, item: Any) -> str:
         title = str(getattr(item, "title", "") or "").strip()
         item_id = getattr(item, "id", None)
@@ -949,7 +1029,7 @@ class PipelineService:
         if excerpt:
             trimmed_excerpt = excerpt.strip()
             if trimmed_excerpt:
-                combined = f"{title}\n\n{trimmed_excerpt}"
+                combined = f"{title}\n\n{trimmed_excerpt}" if title else trimmed_excerpt
 
         max_chars = int(getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200)
         if max_chars > 0 and len(combined) > max_chars:

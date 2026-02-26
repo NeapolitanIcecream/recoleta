@@ -118,6 +118,7 @@ Common metric names (non-exhaustive):
 - `pipeline.triage.candidates_total`
 - `pipeline.triage.selected_total`
 - `pipeline.triage.embedding_calls_total`
+- `pipeline.triage.failed_total`
 - `pipeline.triage.duration_ms`
 
 ### `artifacts`

@@ -16,6 +16,8 @@ class RepositoryPort(Protocol):
 
     def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None: ...
 
+    def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]: ...
+
     def upsert_content(
         self,
         *,

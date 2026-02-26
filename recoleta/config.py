@@ -329,22 +329,34 @@ class Settings(BaseSettings):
     @field_validator("topics", mode="before")
     @classmethod
     def _parse_topics_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return []
         if isinstance(value, str):
             return _parse_str_list(value)
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
         return value
 
     @field_validator("allow_tags", mode="before")
     @classmethod
     def _parse_allow_tags_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return []
         if isinstance(value, str):
             return _parse_str_list(value)
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
         return value
 
     @field_validator("deny_tags", mode="before")
     @classmethod
     def _parse_deny_tags_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return []
         if isinstance(value, str):
             return _parse_str_list(value)
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
         return value
 
     @field_validator("triage_mode", mode="before")

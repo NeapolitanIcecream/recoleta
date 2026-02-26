@@ -161,6 +161,7 @@ Add low-cardinality metrics (no item IDs/URLs):
 - `pipeline.triage.skipped_total` (filter mode)
 - `pipeline.triage.embedding_calls_total`
 - `pipeline.triage.embedding_errors_total`
+- `pipeline.triage.failed_total`
 - `pipeline.triage.duration_ms`
 
 ### Debug artifacts (optional, scrubbed)
@@ -180,8 +181,11 @@ Suggested artifact kinds:
 
 - **Fail open**: if triage cannot produce a ranking (provider down, quota, unexpected response), the pipeline should fall back to the existing recency ordering.
 - Record the failure via:
-  - `pipeline.triage.embedding_errors_total += 1`
+  - `pipeline.triage.failed_total += 1`
   - an `error_context` artifact (and optionally an `embedding_request`/`embedding_response` artifact when enabled)
+- If embeddings fail but triage falls back to lexical scoring, record:
+  - `pipeline.triage.embedding_errors_total` (from triage stats)
+  - `method=fuzz_title` (from triage stats)
 
 ## Privacy considerations
 
@@ -230,14 +234,11 @@ Optional alternatives:
 - `sentence-transformers` for fully local embeddings (higher install/runtime footprint, often pulls in `torch`).
 - Vector DBs (FAISS/Chroma/etc.) are explicitly out of scope for v0 triage.
 
-## Implementation notes (for a future PR)
+## Implementation (current)
 
-- Extend `PipelineService.analyze()` to:
-  1. Fetch a larger candidate pool.
-  2. Run triage scoring.
-  3. Process selected items with enrich + LLM.
-- Provide a `Triage` interface (similar to `Analyzer`) to enable test doubles.
-- Add tests as executable specs:
-  - triage enabled → low-score items do not trigger analyzer calls
-  - triage failure → pipeline falls back to recency ordering
-  - triage metrics are emitted
+- `PipelineService.analyze()` (`recoleta/pipeline.py`) optionally runs semantic triage before LLM analysis when `TRIAGE_ENABLED=true` and `TOPICS` is non-empty.
+- Semantic scoring and selection live in `SemanticTriage` (`recoleta/triage.py`):
+  - default: LiteLLM embeddings + cosine similarity
+  - fallback: `rapidfuzz` title similarity when embeddings fail
+- Triage text is built from local state only (title + stored `pdf_text`/`html_maintext` excerpts when available) and truncated by `TRIAGE_ITEM_TEXT_MAX_CHARS`.
+- Metrics and optional scrubbed artifacts are recorded under the `pipeline.triage.*` namespace.

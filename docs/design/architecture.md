@@ -13,18 +13,18 @@ Recoleta is a CLI-first application with a small set of commands:
 
 ## Module boundaries
 
-Recommended package layout (names are illustrative):
+Current module layout:
 
-- `recoleta/config/`: typed config, env loading, validation
-- `recoleta/sources/`: source connectors (arXiv, HN RSS, HF papers, OpenReview, newsletter RSS)
-- `recoleta/pipeline/`: pipeline stages + orchestration
-- `recoleta/extract/`: fulltext extraction (HTML/PDF), Markdown conversion
-- `recoleta/llm/`: prompts, schemas, LLM invocation via LiteLLM
-- `recoleta/triage/`: semantic scoring and pre-ranking before LLM (optional)
-- `recoleta/ranking/`: heuristics + LLM relevance score + dedupe
-- `recoleta/storage/`: SQLite repository + filesystem writers
-- `recoleta/delivery/`: Telegram sender
-- `recoleta/observability/`: logging setup, debug artifacts, metrics writes
+- `recoleta/config.py`: typed config, env loading, validation
+- `recoleta/sources.py`: source connectors (arXiv, HN RSS, HF papers, OpenReview, newsletter RSS)
+- `recoleta/pipeline.py`: pipeline stages + orchestration
+- `recoleta/extract.py`: fulltext extraction (HTML/PDF), Markdown conversion
+- `recoleta/analyzer.py`: LLM invocation via LiteLLM
+- `recoleta/triage.py`: semantic scoring and pre-ranking before LLM (optional)
+- `recoleta/storage.py`: SQLite repository + filesystem writers
+- `recoleta/publish.py`: Markdown/Obsidian note writers and Telegram message builder
+- `recoleta/delivery.py`: Telegram sender
+- `recoleta/observability.py`: logging setup, debug artifacts, metrics helpers
 
 ## Pipeline stages
 
