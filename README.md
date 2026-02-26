@@ -45,6 +45,7 @@ flowchart LR
 - **Multi-source ingestion**: arXiv, Hacker News RSS, Hugging Face Daily Papers, OpenReview, and custom RSS feeds.
 - **Incremental & idempotent pipeline**: SQLite-backed state machine prevents duplicates and re-sends.
 - **Structured LLM outputs**: JSON-only analysis validated by Pydantic (summary/insight/ideas/tags/scores).
+- **Semantic triage before LLM (optional)**: pre-rank (and optionally filter) candidates by topic similarity to improve LLM ROI under backlog.
 - **Outputs where you read**: local Markdown output (default) + optional Obsidian notes + optional curated Telegram digest.
 - **Operationally friendly**: structured logs, per-run metrics in SQLite, optional scrubbed debug artifacts.
 
@@ -213,6 +214,20 @@ Common optional knobs:
   - `DENY_TAGS` / `deny_tags`
   - `MIN_RELEVANCE_SCORE` / `min_relevance_score`
   - `MAX_DELIVERIES_PER_DAY` / `max_deliveries_per_day`
+- **Semantic triage (pre-ranking before LLM)** (runs only when `TRIAGE_ENABLED=true` and `TOPICS` is non-empty):
+  - `TRIAGE_ENABLED` / `triage_enabled`
+  - `TRIAGE_MODE` / `triage_mode` (`prioritize|filter`)
+  - `TRIAGE_EMBEDDING_MODEL` / `triage_embedding_model`
+  - `TRIAGE_EMBEDDING_DIMENSIONS` / `triage_embedding_dimensions`
+  - `TRIAGE_EMBEDDING_BATCH_MAX_INPUTS` / `triage_embedding_batch_max_inputs`
+  - `TRIAGE_EMBEDDING_BATCH_MAX_CHARS` / `triage_embedding_batch_max_chars`
+  - `TRIAGE_QUERY_MODE` / `triage_query_mode` (`joined|max_per_topic`)
+  - `TRIAGE_CANDIDATE_FACTOR` / `triage_candidate_factor`
+  - `TRIAGE_MAX_CANDIDATES` / `triage_max_candidates`
+  - `TRIAGE_ITEM_TEXT_MAX_CHARS` / `triage_item_text_max_chars`
+  - `TRIAGE_MIN_SIMILARITY` / `triage_min_similarity` (filter mode only)
+  - `TRIAGE_EXPLORATION_RATE` / `triage_exploration_rate`
+  - `TRIAGE_RECENCY_FLOOR` / `triage_recency_floor`
 - **Dedup**:
   - `TITLE_DEDUP_THRESHOLD` / `title_dedup_threshold`
   - `TITLE_DEDUP_MAX_CANDIDATES` / `title_dedup_max_candidates`
@@ -260,6 +275,7 @@ Recoleta ships a small CLI surface:
 - [`docs/design/system-overview.md`](docs/design/system-overview.md) — goals, non-goals, and the end-to-end workflow
 - [`docs/design/architecture.md`](docs/design/architecture.md) — module boundaries, pipeline stages, storage, and observability
 - [`docs/design/configuration.md`](docs/design/configuration.md) — full configuration reference and rules
+- [`docs/design/semantic-pre-ranking.md`](docs/design/semantic-pre-ranking.md) — semantic triage before LLM (pre-ranking and optional filtering)
 - [`docs/design/outputs.md`](docs/design/outputs.md) — publish targets and local Markdown layout
 - [`docs/design/llm-output-language.md`](docs/design/llm-output-language.md) — configurable analysis language behavior
 - [`docs/design/data-model.md`](docs/design/data-model.md) — SQLite schema and Obsidian note layout

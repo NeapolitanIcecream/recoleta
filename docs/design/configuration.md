@@ -71,6 +71,8 @@ These settings control an optional semantic pre-ranking stage that runs before S
 - `TRIAGE_MODE`: `prioritize|filter` (default `prioritize`)
 - `TRIAGE_EMBEDDING_MODEL`: string (default `text-embedding-3-small`)
 - `TRIAGE_EMBEDDING_DIMENSIONS`: int (optional; only for supported embedding models)
+- `TRIAGE_EMBEDDING_BATCH_MAX_INPUTS`: int (default 64)
+- `TRIAGE_EMBEDDING_BATCH_MAX_CHARS`: int (default 40000)
 - `TRIAGE_QUERY_MODE`: `joined|max_per_topic` (default `joined`)
 - `TRIAGE_CANDIDATE_FACTOR`: int (default 5)
 - `TRIAGE_MAX_CANDIDATES`: int (default 500)
