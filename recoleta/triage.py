@@ -13,6 +13,51 @@ from rapidfuzz import fuzz
 from recoleta.models import Item
 
 
+_EMBEDDING_BATCH_MAX_INPUTS = 64
+_EMBEDDING_BATCH_MAX_CHARS = 40_000
+
+
+def _iter_embedding_batches(
+    inputs: list[str],
+    *,
+    max_batch_inputs: int,
+    max_batch_chars: int,
+):
+    normalized_max_inputs = max(1, int(max_batch_inputs))
+    normalized_max_chars = max(1, int(max_batch_chars))
+
+    batch: list[str] = []
+    batch_chars = 0
+    for text in inputs:
+        text_chars = len(text)
+        if not batch:
+            batch = [text]
+            batch_chars = text_chars
+            continue
+
+        would_exceed_inputs = len(batch) >= normalized_max_inputs
+        would_exceed_chars = (batch_chars + text_chars) > normalized_max_chars
+        if would_exceed_inputs or would_exceed_chars:
+            yield batch
+            batch = [text]
+            batch_chars = text_chars
+            continue
+
+        batch.append(text)
+        batch_chars += text_chars
+
+    if batch:
+        yield batch
+
+
+def _merge_usage_totals(totals: dict[str, float], usage: Any) -> None:
+    if not isinstance(usage, dict):
+        return
+    for key, value in usage.items():
+        if isinstance(value, (int, float)):
+            totals[str(key)] = float(totals.get(str(key), 0.0)) + float(value)
+
+
 @dataclass(slots=True)
 class TriageCandidate:
     item: Item
@@ -148,6 +193,10 @@ class SemanticTriage:
                 "query_mode": query_mode,
                 "topics_total": len(normalized_topics),
                 "candidates_total": len(candidates),
+                "batching": {
+                    "max_inputs": _EMBEDDING_BATCH_MAX_INPUTS,
+                    "max_chars": _EMBEDDING_BATCH_MAX_CHARS,
+                },
             }
 
         embedding_debug: dict[str, Any] | None = None
@@ -159,15 +208,63 @@ class SemanticTriage:
                 model=embedding_model,
                 dimensions=embedding_dimensions,
             )
-            embedding_calls_total += 1
-            item_vectors, items_debug = self.embedder.embed(
-                model=embedding_model,
-                inputs=[candidate.text for candidate in candidates],
-                dimensions=embedding_dimensions,
-            )
-            embedding_debug = {"query": query_debug, "items": items_debug}
+            embedding_debug = {"query": query_debug}
+
+            item_texts = [candidate.text for candidate in candidates]
+            item_vectors: list[list[float]] = []
+            items_usage_totals: dict[str, float] = {}
+            items_elapsed_ms_total = 0
+            items_batches_total = 0
+            items_batch_inputs_max = 0
+            items_batch_chars_max = 0
+            items_sample_head: list[float] = []
+
+            for batch in _iter_embedding_batches(
+                item_texts,
+                max_batch_inputs=_EMBEDDING_BATCH_MAX_INPUTS,
+                max_batch_chars=_EMBEDDING_BATCH_MAX_CHARS,
+            ):
+                items_batches_total += 1
+                items_batch_inputs_max = max(items_batch_inputs_max, len(batch))
+                items_batch_chars_max = max(items_batch_chars_max, sum(len(text) for text in batch))
+
+                embedding_calls_total += 1
+                batch_vectors, batch_debug = self.embedder.embed(
+                    model=embedding_model,
+                    inputs=batch,
+                    dimensions=embedding_dimensions,
+                )
+                if len(batch_vectors) != len(batch):
+                    raise ValueError("embedding output size mismatch")
+                item_vectors.extend(batch_vectors)
+
+                if not items_sample_head and batch_vectors and batch_vectors[0]:
+                    items_sample_head = [float(value) for value in batch_vectors[0][:8]]
+                if isinstance(batch_debug, dict):
+                    raw_elapsed_ms = batch_debug.get("elapsed_ms")
+                    if isinstance(raw_elapsed_ms, (int, float)):
+                        items_elapsed_ms_total += int(raw_elapsed_ms)
+                    _merge_usage_totals(items_usage_totals, batch_debug.get("usage"))
+
             if len(item_vectors) != len(candidates):
                 raise ValueError("embedding output size mismatch")
+
+            items_debug: dict[str, Any] = {
+                "model": embedding_model,
+                "inputs_total": len(item_texts),
+                "dimensions": embedding_dimensions,
+                "batching": {
+                    "max_inputs": _EMBEDDING_BATCH_MAX_INPUTS,
+                    "max_chars": _EMBEDDING_BATCH_MAX_CHARS,
+                },
+                "batches_total": items_batches_total,
+                "batch_inputs_max": items_batch_inputs_max,
+                "batch_chars_max": items_batch_chars_max,
+                "elapsed_ms_total": items_elapsed_ms_total,
+                "usage_total": items_usage_totals or None,
+                "sample_embedding_head": items_sample_head,
+            }
+            embedding_debug["items"] = items_debug
             scored = self._score_with_vectors(
                 candidates=candidates,
                 query_vectors=query_vectors,

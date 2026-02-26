@@ -1080,6 +1080,65 @@ def test_analyze_triage_dimension_mismatch_falls_back_to_rapidfuzz(
     assert by_name["pipeline.triage.failed_total"].value == 0
 
 
+def test_semantic_triage_batches_item_embeddings_for_large_candidate_pool() -> None:
+    from recoleta.triage import SemanticTriage, TriageCandidate
+    from recoleta.types import sha256_hex
+
+    class CountingEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.batch_sizes: list[int] = []
+
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            assert model
+            assert dimensions is None or dimensions > 0
+            self.calls += 1
+            self.batch_sizes.append(len(inputs))
+            vectors = [[1.0, 0.0, 0.0] for _ in inputs]
+            return vectors, {}
+
+    embedder = CountingEmbedder()
+    triage = SemanticTriage(embedder=embedder)
+
+    candidates: list[TriageCandidate] = []
+    for i in range(200):
+        url = f"https://example.com/triage-batch-{i}"
+        item = Item(
+            id=i + 1,
+            source="rss",
+            source_item_id=f"triage-batch-{i}",
+            canonical_url=url,
+            canonical_url_hash=sha256_hex(url),
+            title=f"Item {i}",
+        )
+        candidates.append(TriageCandidate(item=item, text="Agents\n\n" + ("x" * 1200)))
+
+    output = triage.select(
+        run_id="run-triage-batch",
+        candidates=candidates,
+        topics=["agents"],
+        limit=10,
+        mode="prioritize",
+        query_mode="joined",
+        embedding_model="test/embedding-model",
+        embedding_dimensions=None,
+        min_similarity=0.0,
+        exploration_rate=0.0,
+        recency_floor=0,
+        include_debug=False,
+    )
+
+    assert output.stats.method == "embedding_cosine"
+    assert output.stats.embedding_errors_total == 0
+    assert output.stats.candidates_total == 200
+    assert output.stats.scored_total == 200
+    assert output.stats.selected_total == 10
+    assert output.stats.embedding_calls_total == embedder.calls
+    assert embedder.calls >= 3
+    assert embedder.batch_sizes[0] == 1
+    assert max(embedder.batch_sizes[1:]) < len(candidates)
+
+
 def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,

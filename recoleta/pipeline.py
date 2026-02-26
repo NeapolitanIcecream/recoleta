@@ -1007,35 +1007,6 @@ class PipelineService:
             candidates.append(TriageCandidate(item=item, text=combined))
         return candidates
 
-    def _build_triage_text(self, *, item: Any) -> str:
-        title = str(getattr(item, "title", "") or "").strip()
-        item_id = getattr(item, "id", None)
-        excerpt: str | None = None
-        try:
-            if item_id is not None:
-                source = str(getattr(item, "source", "") or "").strip().lower()
-                if source in {"arxiv", "openreview"}:
-                    existing_pdf = self.repository.get_latest_content(item_id=item_id, content_type="pdf_text")
-                    if existing_pdf is not None and existing_pdf.text:
-                        excerpt = existing_pdf.text
-                if excerpt is None:
-                    existing_html = self.repository.get_latest_content(item_id=item_id, content_type="html_maintext")
-                    if existing_html is not None and existing_html.text:
-                        excerpt = existing_html.text
-        except Exception:
-            excerpt = None
-
-        combined = title
-        if excerpt:
-            trimmed_excerpt = excerpt.strip()
-            if trimmed_excerpt:
-                combined = f"{title}\n\n{trimmed_excerpt}" if title else trimmed_excerpt
-
-        max_chars = int(getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200)
-        if max_chars > 0 and len(combined) > max_chars:
-            combined = combined[:max_chars]
-        return combined
-
     def _sanitize_error_message(self, message: str) -> str:
         return scrub_secrets(
             message,
