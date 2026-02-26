@@ -529,14 +529,13 @@ class PipelineService:
         for item, analysis in track(candidates, description="Publishing items", console=self._progress_console):
             if item.id is None:
                 continue
+            telegram_already_sent = False
             if enable_telegram and destination_hash is not None:
-                if self.repository.has_sent_delivery(
+                telegram_already_sent = self.repository.has_sent_delivery(
                     item_id=item.id,
                     channel=DELIVERY_CHANNEL_TELEGRAM,
                     destination=destination_hash,
-                ):
-                    publish_result.skipped += 1
-                    continue
+                )
             if allow_tags or deny_tags:
                 topics = {tag.strip().lower() for tag in self.repository.decode_list(analysis.topics_json) if tag.strip()}
                 if deny_tags and (topics & deny_tags):
@@ -590,7 +589,7 @@ class PipelineService:
                     )
                     markdown_notes.append((item.title, md_note_path))
                     note_paths.append(md_note_path)
-                if enable_telegram and destination_hash is not None:
+                if enable_telegram and destination_hash is not None and not telegram_already_sent:
                     message_text = build_telegram_message(
                         title=item.title,
                         summary=analysis.summary,
@@ -637,7 +636,7 @@ class PipelineService:
                             "Publish debug artifact record failed: {}",
                             self._sanitize_error_message(str(artifact_exc)),
                         )
-                if enable_telegram and destination_hash is not None:
+                if enable_telegram and destination_hash is not None and not telegram_already_sent:
                     self.repository.upsert_delivery(
                         item_id=item.id,
                         channel=DELIVERY_CHANNEL_TELEGRAM,

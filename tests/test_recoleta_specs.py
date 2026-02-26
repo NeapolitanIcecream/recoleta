@@ -14,6 +14,7 @@ from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ANALYZED,
+    ITEM_STATE_PUBLISHED,
     ITEM_STATE_RETRYABLE_FAILED,
     Artifact,
     Content,
@@ -1055,6 +1056,76 @@ def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> 
     assert second_publish.sent == 0
     assert len(sender.messages) == 1
     assert first_publish.note_paths[0].exists()
+
+
+def test_publish_does_not_skip_markdown_when_telegram_delivery_already_sent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: telegram idempotency must not short-circuit other publish targets."""
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+
+    markdown_dir = tmp_path / "markdown-output"
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(markdown_dir))
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown,telegram")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-telegram-already-sent-1",
+        canonical_url="https://example.com/publish-telegram-already-sent-case",
+        title="Publish Telegram Already Sent",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-telegram-already-sent", drafts=[draft])
+    service.analyze(run_id="run-publish-telegram-already-sent", limit=10)
+
+    from recoleta.observability import mask_value
+    from recoleta.types import utc_now
+
+    assert settings.telegram_chat_id is not None
+    destination_hash = mask_value(settings.telegram_chat_id.get_secret_value())
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-telegram-already-sent-1")).one()
+        assert item.id is not None
+        session.add(
+            Delivery(
+                item_id=item.id,
+                channel=DELIVERY_CHANNEL_TELEGRAM,
+                destination=destination_hash,
+                message_id="existing-message",
+                status=DELIVERY_STATUS_SENT,
+                sent_at=utc_now(),
+            )
+        )
+        session.commit()
+        session.refresh(item)
+        assert item.state == ITEM_STATE_ANALYZED
+
+    result = service.publish(run_id="run-publish-telegram-already-sent", limit=10)
+
+    assert result.sent == 1
+    assert result.failed == 0
+    assert len(sender.messages) == 0
+    assert result.note_paths and result.note_paths[0].exists()
+    assert (markdown_dir / "latest.md").exists()
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-telegram-already-sent-1")).one()
+        assert item.state == ITEM_STATE_PUBLISHED
 
 
 def test_publish_writes_local_markdown_notes_without_obsidian_or_telegram(
