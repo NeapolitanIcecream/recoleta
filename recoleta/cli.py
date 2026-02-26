@@ -1,39 +1,68 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import importlib
 from typing import Any
 
-import typer
-from apscheduler.schedulers.blocking import BlockingScheduler
-from loguru import logger
-from rich.console import Console
+def _import_symbol(module_name: str, *, attr_name: str | None = None) -> Any:
+    module = importlib.import_module(module_name)
+    if attr_name is None:
+        return module
+    return getattr(module, attr_name)
 
-from recoleta.config import Settings
-from recoleta.observability import configure_process_logging
-from recoleta.pipeline import PipelineService
-from recoleta.storage import Repository
+
+typer = _import_symbol("typer")
+_RUNTIME_SYMBOLS: dict[str, Any] | None = None
 
 app = typer.Typer(help="Recoleta research intelligence funnel CLI.", no_args_is_help=True)
 
 
-def _build_runtime() -> tuple[Settings, Repository, PipelineService]:
-    settings = Settings()  # pyright: ignore[reportCallIssue]
+def _runtime_symbols() -> dict[str, Any]:
+    global _RUNTIME_SYMBOLS
+    if _RUNTIME_SYMBOLS is not None:
+        return _RUNTIME_SYMBOLS
+
+    _RUNTIME_SYMBOLS = {
+        "logger": _import_symbol("loguru", attr_name="logger"),
+        "Console": _import_symbol("rich.console", attr_name="Console"),
+        "Settings": _import_symbol("recoleta.config", attr_name="Settings"),
+        "configure_process_logging": _import_symbol(
+            "recoleta.observability",
+            attr_name="configure_process_logging",
+        ),
+        "PipelineService": _import_symbol("recoleta.pipeline", attr_name="PipelineService"),
+        "Repository": _import_symbol("recoleta.storage", attr_name="Repository"),
+    }
+    return _RUNTIME_SYMBOLS
+
+
+def _build_runtime() -> tuple[Any, Any, Any]:
+    symbols = _runtime_symbols()
+    settings_cls = symbols["Settings"]
+    configure_process_logging = symbols["configure_process_logging"]
+    repository_cls = symbols["Repository"]
+    pipeline_service_cls = symbols["PipelineService"]
+
+    settings = settings_cls()  # pyright: ignore[reportCallIssue]
     configure_process_logging(level=settings.log_level, log_json=settings.log_json)
-    repository = Repository(
+    repository = repository_cls(
         db_path=settings.recoleta_db_path,
         title_dedup_threshold=settings.title_dedup_threshold,
         title_dedup_max_candidates=settings.title_dedup_max_candidates,
     )
     repository.init_schema()
-    service = PipelineService(settings=settings, repository=repository)
+    service = pipeline_service_cls(settings=settings, repository=repository)
     return settings, repository, service
 
 
 def _execute_stage(
     *,
     stage_name: str,
-    stage_runner: Callable[[PipelineService, str], Any],
-) -> tuple[Settings, Any]:
+    stage_runner: Callable[[Any, str], Any],
+) -> tuple[Any, Any]:
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+
     settings, repository, service = _build_runtime()
     run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
     stage_log = logger.bind(module=f"cli.{stage_name}", run_id=run.id)
@@ -51,8 +80,11 @@ def _execute_stage(
 def ingest() -> None:
     """Pull sources and upsert normalized items."""
 
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+
     settings, result = _execute_stage(stage_name="ingest", stage_runner=lambda service, run_id: service.ingest(run_id=run_id))
-    console = Console(stderr=settings.log_json)
+    console = console_cls(stderr=settings.log_json)
     console.print(
         f"[green]ingest completed[/green] inserted={result.inserted} updated={result.updated} failed={result.failed}"
     )
@@ -62,11 +94,14 @@ def ingest() -> None:
 def analyze(limit: int = typer.Option(100, min=1, help="Max number of items analyzed in one run.")) -> None:
     """Run LLM analysis for newly ingested items."""
 
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+
     settings, result = _execute_stage(
         stage_name="analyze",
         stage_runner=lambda service, run_id: service.analyze(run_id=run_id, limit=limit),
     )
-    console = Console(stderr=settings.log_json)
+    console = console_cls(stderr=settings.log_json)
     console.print(f"[green]analyze completed[/green] processed={result.processed} failed={result.failed}")
 
 
@@ -74,11 +109,14 @@ def analyze(limit: int = typer.Option(100, min=1, help="Max number of items anal
 def publish(limit: int = typer.Option(50, min=1, help="Max number of analyzed items published.")) -> None:
     """Publish outputs to configured targets (markdown/obsidian/telegram)."""
 
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+
     settings, result = _execute_stage(
         stage_name="publish",
         stage_runner=lambda service, run_id: service.publish(run_id=run_id, limit=limit),
     )
-    console = Console(stderr=settings.log_json)
+    console = console_cls(stderr=settings.log_json)
     console.print(f"[green]publish completed[/green] sent={result.sent} skipped={result.skipped} failed={result.failed}")
     if "markdown" in settings.publish_targets:
         console.print(f"[cyan]markdown output[/cyan] {settings.markdown_output_dir}")
@@ -93,9 +131,16 @@ def publish(limit: int = typer.Option(50, min=1, help="Max number of analyzed it
 def run_scheduler() -> None:
     """Run periodic ingest/analyze/publish jobs with APScheduler."""
 
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    blocking_scheduler_cls = _import_symbol(
+        "apscheduler.schedulers.blocking",
+        attr_name="BlockingScheduler",
+    )
+
     settings, _, _ = _build_runtime()
-    console = Console(stderr=settings.log_json)
-    scheduler = BlockingScheduler(
+    console = console_cls(stderr=settings.log_json)
+    scheduler = blocking_scheduler_cls(
         timezone="UTC",
         executors={"default": {"type": "threadpool", "max_workers": 1}},
         job_defaults={"coalesce": True, "max_instances": 1},

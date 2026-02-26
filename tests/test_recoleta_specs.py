@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
+import sys
 from typing import Any, cast
 
 import pytest
@@ -1996,3 +1998,23 @@ def test_fetch_hf_daily_papers_drafts_raises_on_http_error(respx_mock: respx.Rou
     )
     with pytest.raises(httpx.HTTPStatusError):
         fetch_hf_daily_papers_drafts(max_items=10)
+
+
+def test_cli_import_does_not_eager_load_runtime_modules() -> None:
+    """Regression: CLI import path should stay light for `--help` startup latency."""
+
+    probe = "\n".join(
+        [
+            "import sys",
+            "import recoleta.cli  # noqa: F401",
+            "targets = ('recoleta.pipeline', 'recoleta.storage', 'recoleta.config')",
+            "print(' '.join('1' if name in sys.modules else '0' for name in targets))",
+        ]
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.stdout.strip() == "0 0 0"
