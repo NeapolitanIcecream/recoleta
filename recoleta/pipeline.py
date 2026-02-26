@@ -10,7 +10,7 @@ import httpx
 import orjson
 from loguru import logger
 from rich.console import Console
-from rich.progress import track
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn, track
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
 from recoleta.config import Settings
@@ -71,49 +71,62 @@ class PipelineService:
         ingest_result = IngestResult()
         source_failures_total = 0
         source_drafts = drafts
-        if source_drafts is None:
-            source_drafts, source_failures_total = self._pull_source_drafts(run_id=run_id, log=log)
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=self._progress_console,
+        ) as progress:
+            progress_task_id = progress.add_task("Ingesting items", total=None)
 
-        for draft in track(source_drafts, description="Ingesting items", console=self._progress_console):
-            try:
-                _, created = self.repository.upsert_item(draft)
-                if created:
-                    ingest_result.inserted += 1
-                else:
-                    ingest_result.updated += 1
-            except Exception as exc:
-                ingest_result.failed += 1
-                sanitized_error = self._sanitize_error_message(str(exc))
-                artifact_path = self._write_debug_artifact(
-                    run_id=run_id,
-                    item_id=None,
-                    kind="error_context",
-                    payload={
-                        "stage": "ingest",
-                        "error_type": type(exc).__name__,
-                        "error_message": sanitized_error,
-                        **self._classify_exception(exc),
-                        "draft": {
-                            "source": draft.source,
-                            "source_item_id": draft.source_item_id,
-                            "canonical_url_hash": draft.canonical_url_hash,
+            if source_drafts is None:
+                source_drafts, source_failures_total = self._pull_source_drafts(run_id=run_id, log=log)
+
+            source_drafts = source_drafts or []
+            progress.update(progress_task_id, total=len(source_drafts), completed=0)
+            for draft in source_drafts:
+                try:
+                    _, created = self.repository.upsert_item(draft)
+                    if created:
+                        ingest_result.inserted += 1
+                    else:
+                        ingest_result.updated += 1
+                except Exception as exc:
+                    ingest_result.failed += 1
+                    sanitized_error = self._sanitize_error_message(str(exc))
+                    artifact_path = self._write_debug_artifact(
+                        run_id=run_id,
+                        item_id=None,
+                        kind="error_context",
+                        payload={
+                            "stage": "ingest",
+                            "error_type": type(exc).__name__,
+                            "error_message": sanitized_error,
+                            **self._classify_exception(exc),
+                            "draft": {
+                                "source": draft.source,
+                                "source_item_id": draft.source_item_id,
+                                "canonical_url_hash": draft.canonical_url_hash,
+                            },
                         },
-                    },
-                )
-                if artifact_path is not None:
-                    try:
-                        self.repository.add_artifact(
-                            run_id=run_id,
-                            item_id=None,
-                            kind="error_context",
-                            path=str(artifact_path),
-                        )
-                    except Exception as artifact_exc:
-                        log.warning(
-                            "Ingest debug artifact record failed: {}",
-                            self._sanitize_error_message(str(artifact_exc)),
-                        )
-                log.bind(item_hash=draft.canonical_url_hash).warning("Ingest failed: {}", sanitized_error)
+                    )
+                    if artifact_path is not None:
+                        try:
+                            self.repository.add_artifact(
+                                run_id=run_id,
+                                item_id=None,
+                                kind="error_context",
+                                path=str(artifact_path),
+                            )
+                        except Exception as artifact_exc:
+                            log.warning(
+                                "Ingest debug artifact record failed: {}",
+                                self._sanitize_error_message(str(artifact_exc)),
+                            )
+                    log.bind(item_hash=draft.canonical_url_hash).warning("Ingest failed: {}", sanitized_error)
+                finally:
+                    progress.advance(progress_task_id, advance=1)
 
         self.repository.record_metric(
             run_id=run_id,

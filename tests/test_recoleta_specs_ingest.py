@@ -111,6 +111,78 @@ def test_ingest_does_not_crash_on_source_failure_and_records_metric(configured_e
     assert source_failures[0].value == 1
 
 
+def test_ingest_progress_starts_before_source_pull_and_sets_total(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    import recoleta.pipeline as pipeline_module
+    import recoleta.sources as source_connectors
+
+    timeline: list[str] = []
+    progress_updates: list[dict[str, object]] = []
+    progress_columns: list[str] = []
+
+    class FakeProgress:
+        def __init__(self, *columns, **kwargs) -> None:  # noqa: ANN002, ANN003
+            timeline.append("progress_init")
+            progress_columns.extend(type(column).__name__ for column in columns)
+
+        def __enter__(self) -> "FakeProgress":
+            timeline.append("progress_enter")
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001, ANN201
+            timeline.append("progress_exit")
+
+        def add_task(self, description: str, total: int | None = None, **kwargs) -> int:  # noqa: ANN003
+            timeline.append("progress_add_task")
+            progress_updates.append({"description": description, "total": total})
+            return 1
+
+        def update(self, task_id: int, **kwargs) -> None:  # noqa: ANN003
+            timeline.append("progress_update")
+            update_payload: dict[str, object] = {"task_id": task_id}
+            update_payload.update(kwargs)
+            progress_updates.append(update_payload)
+
+        def advance(self, task_id: int, advance: int = 1) -> None:
+            timeline.append("progress_advance")
+            progress_updates.append({"task_id": task_id, "advance": advance})
+
+    monkeypatch.setattr(pipeline_module, "Progress", FakeProgress, raising=False)
+
+    def fake_fetch_rss_drafts(*, feed_urls: list[str], source: str, max_items_per_feed: int = 50) -> list[ItemDraft]:  # noqa: ARG001
+        timeline.append(f"source_pull_{source}")
+        return [
+            ItemDraft.from_values(
+                source=source,
+                source_item_id=f"{source}-1",
+                canonical_url=f"https://example.com/{source}-1",
+                title=f"{source} item",
+            )
+        ]
+
+    monkeypatch.setattr(source_connectors, "fetch_rss_drafts", fake_fetch_rss_drafts)
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    result = service.ingest(run_id="run-ingest-progress-source-pull")
+
+    assert result.inserted == 2
+    assert "progress_add_task" in timeline
+    first_source_pull_index = min(index for index, marker in enumerate(timeline) if marker.startswith("source_pull_"))
+    assert timeline.index("progress_add_task") < first_source_pull_index
+    assert "TimeElapsedColumn" in progress_columns
+    assert {"description": "Ingesting items", "total": None} in progress_updates
+    assert any(
+        update.get("total") == 2 and update.get("completed") == 0
+        for update in progress_updates
+        if "total" in update
+    )
+
+
 def test_ingest_is_idempotent_by_canonical_url_hash(configured_env) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
