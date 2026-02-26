@@ -32,8 +32,8 @@ flowchart LR
   Enrich --> Analyze["Analyze (LLM)"]
   Analyze --> Publish[Publish]
   Publish --> Markdown[Local Markdown output]
-  Publish --> Obsidian[Obsidian Markdown notes (optional)]
-  Publish --> Telegram[Telegram messages (optional)]
+  Publish --> Obsidian["Obsidian Markdown notes (optional)"]
+  Publish --> Telegram["Telegram messages (optional)"]
   Ingest --> SQLite[(SQLite index)]
   Analyze --> SQLite
   Publish --> SQLite
