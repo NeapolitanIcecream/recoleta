@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from loguru import logger
 from rich.console import Console
+from rich.text import Text
 
 
 _DEFAULT_SECRET_ENV_KEYS = (
@@ -76,7 +77,9 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
     console = Console(stderr=True)
 
     def rich_sink(message: str) -> None:
-        console.print(message, end="")
+        message_text = str(message)
+        renderable = Text.from_ansi(message_text)
+        console.print(renderable, end="")
 
     logger.add(
         rich_sink,
