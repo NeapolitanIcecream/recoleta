@@ -1128,6 +1128,80 @@ def test_publish_does_not_skip_markdown_when_telegram_delivery_already_sent(
         assert item.state == ITEM_STATE_PUBLISHED
 
 
+def test_publish_does_not_downgrade_sent_telegram_delivery_when_mark_item_published_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: never downgrade a SENT Telegram delivery due to a later publish error."""
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-publish-no-downgrade-1",
+        canonical_url="https://example.com/publish-no-downgrade-case",
+        title="Publish No Downgrade Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-publish-no-downgrade", drafts=[draft])
+    service.analyze(run_id="run-publish-no-downgrade", limit=10)
+
+    original_mark_item_published = repository.mark_item_published
+    calls = {"count": 0}
+
+    def flaky_mark_item_published(*, item_id: int) -> None:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("simulated mark_item_published failure")
+        original_mark_item_published(item_id=item_id)
+
+    monkeypatch.setattr(repository, "mark_item_published", flaky_mark_item_published)
+
+    first_publish = service.publish(run_id="run-publish-no-downgrade", limit=10)
+    assert first_publish.sent == 0
+    assert first_publish.failed == 1
+    assert len(sender.messages) == 1
+
+    with Session(repository.engine) as session:
+        deliveries = list(
+            session.exec(
+                select(Delivery).where(
+                    Delivery.channel == DELIVERY_CHANNEL_TELEGRAM,
+                )
+            )
+        )
+        assert len(deliveries) == 1
+        assert deliveries[0].status == DELIVERY_STATUS_SENT
+        assert deliveries[0].message_id is not None
+
+        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-no-downgrade-1")).one()
+        assert item.state == ITEM_STATE_ANALYZED
+
+    second_publish = service.publish(run_id="run-publish-no-downgrade-2", limit=10)
+    assert second_publish.sent == 1
+    assert second_publish.failed == 0
+    assert len(sender.messages) == 1
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-no-downgrade-1")).one()
+        assert item.state == ITEM_STATE_PUBLISHED
+
+
 def test_publish_writes_local_markdown_notes_without_obsidian_or_telegram(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

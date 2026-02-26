@@ -606,6 +606,7 @@ class PipelineService:
                         message_id=message_id,
                         status=DELIVERY_STATUS_SENT,
                     )
+                    telegram_already_sent = True
                 self.repository.mark_item_published(item_id=item.id)
                 publish_result.sent += 1
                 publish_result.note_paths.extend(note_paths)
