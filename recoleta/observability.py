@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sys
 from collections.abc import Iterable
@@ -78,9 +79,54 @@ def _stream_supports_ansi(stream: object) -> bool:
     return True
 
 
+_RICH_CONSOLE: Console | None = None
+
+
+def get_rich_console() -> Console:
+    """Return a shared Console used for both logs and progress rendering."""
+
+    global _RICH_CONSOLE
+    if _RICH_CONSOLE is not None:
+        return _RICH_CONSOLE
+
+    enable_ansi = _stream_supports_ansi(sys.stderr)
+    _RICH_CONSOLE = Console(
+        file=sys.stderr,
+        stderr=True,
+        no_color=not enable_ansi,
+        force_terminal=enable_ansi,
+    )
+    return _RICH_CONSOLE
+
+
+class _InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except Exception:
+            level = record.levelno
+
+        logger.bind(logger_name=record.name).opt(
+            exception=record.exc_info,
+            depth=6,
+        ).log(level, record.getMessage())
+
+
 def configure_process_logging(*, level: str = "INFO", log_json: bool = False) -> None:
     logger.remove()
     normalized_level = level.upper()
+
+    # Route stdlib logging (e.g. surya) through loguru.
+    logging.captureWarnings(True)
+    root_logger = logging.getLogger()
+    root_logger.handlers = [_InterceptHandler()]
+    stdlib_level = getattr(logging, normalized_level, logging.INFO)
+    root_logger.setLevel(stdlib_level)
+    for candidate in logging.root.manager.loggerDict.values():
+        if isinstance(candidate, logging.Logger):
+            candidate.handlers = []
+            candidate.propagate = True
+
     if log_json:
         logger.add(
             sys.stdout,
@@ -91,8 +137,7 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
         )
         return
 
-    enable_ansi = _stream_supports_ansi(sys.stderr)
-    console = Console(file=sys.stderr, stderr=True, no_color=not enable_ansi)
+    console = get_rich_console()
 
     def rich_sink(message: object) -> None:
         message_text = str(message)
@@ -108,7 +153,7 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
             "<cyan>{extra}</cyan> | "
             "<level>{message}</level>\n"
         ),
-        colorize=enable_ansi,
+        colorize=not console.no_color,
         backtrace=False,
         diagnose=False,
     )

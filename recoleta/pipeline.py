@@ -9,8 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import orjson
 from loguru import logger
-from rich.console import Console
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn, track
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
 from recoleta.config import Settings
@@ -21,7 +20,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
-from recoleta.observability import collect_environment_secrets, mask_value, scrub_secrets
+from recoleta.observability import collect_environment_secrets, get_rich_console, mask_value, scrub_secrets
 from recoleta.ports import RepositoryPort
 from recoleta.publish import build_telegram_message, write_markdown_note, write_markdown_run_index, write_obsidian_note
 from recoleta import sources
@@ -48,7 +47,7 @@ class PipelineService:
             scrub_candidates.append(settings.telegram_chat_id.get_secret_value())
         scrub_candidates.extend(collect_environment_secrets())
         self._scrub_secrets = tuple(dict.fromkeys(scrub_candidates))
-        self._progress_console = Console(stderr=True)
+        self._progress_console = get_rich_console()
         self.analyzer = analyzer or LiteLLMAnalyzer(
             model=settings.llm_model,
             output_language=settings.llm_output_language,
@@ -376,162 +375,173 @@ class PipelineService:
         timeout = httpx.Timeout(10.0, connect=5.0)
         headers = {"User-Agent": "recoleta/0.1"}
         with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
-            for item in track(items, description="Analyzing items", console=self._progress_console):
-                try:
-                    if item.id is None:
-                        analyze_result.failed += 1
-                        log.warning("Analyze skipped: item has no id")
-                        continue
-
-                    content_text: str | None = None
-                    enrich_item_started = time.perf_counter()
+            with Progress(
+                TextColumn("{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=self._progress_console,
+            ) as progress:
+                for item in progress.track(items, description="Analyzing items"):
                     try:
-                        stored_new_content = False
-                        if item.source in {"arxiv", "openreview"}:
-                            existing_pdf = self.repository.get_latest_content(
-                                item_id=item.id,
-                                content_type="pdf_text",
-                            )
-                            if existing_pdf is not None and existing_pdf.text:
-                                content_text = existing_pdf.text
-                            else:
-                                pdf_url = self._build_pdf_url(
-                                    source=item.source,
-                                    canonical_url=item.canonical_url,
-                                    source_item_id=item.source_item_id,
-                                )
-                                if pdf_url:
-                                    try:
-                                        pdf_bytes = fetch_url_bytes(client, pdf_url)
-                                        extracted_pdf = extract_pdf_text(pdf_bytes)
-                                        if extracted_pdf is None:
-                                            raise RuntimeError("empty pdf text extraction")
-                                        self.repository.upsert_content(
-                                            item_id=item.id,
-                                            content_type="pdf_text",
-                                            text=extracted_pdf,
-                                        )
-                                        self.repository.mark_item_enriched(item_id=item.id)
-                                        content_text = extracted_pdf
-                                        stored_new_content = True
-                                    except Exception as pdf_exc:
-                                        log.bind(item_id=item.id).warning(
-                                            "PDF enrich failed, falling back to HTML: {}",
-                                            self._sanitize_error_message(str(pdf_exc)),
-                                        )
+                        if item.id is None:
+                            analyze_result.failed += 1
+                            log.warning("Analyze skipped: item has no id")
+                            continue
 
-                        if content_text is None:
-                            existing_html = self.repository.get_latest_content(
-                                item_id=item.id,
-                                content_type="html_maintext",
-                            )
-                            if existing_html is not None and existing_html.text:
-                                content_text = existing_html.text
-                            else:
-                                html = fetch_url_html(client, item.canonical_url)
-                                extracted = extract_html_maintext(html)
-                                if extracted is None:
-                                    raise RuntimeError("empty html maintext extraction")
-                                self.repository.upsert_content(
+                        content_text: str | None = None
+                        enrich_item_started = time.perf_counter()
+                        try:
+                            stored_new_content = False
+                            if item.source in {"arxiv", "openreview"}:
+                                existing_pdf = self.repository.get_latest_content(
+                                    item_id=item.id,
+                                    content_type="pdf_text",
+                                )
+                                if existing_pdf is not None and existing_pdf.text:
+                                    content_text = existing_pdf.text
+                                else:
+                                    pdf_url = self._build_pdf_url(
+                                        source=item.source,
+                                        canonical_url=item.canonical_url,
+                                        source_item_id=item.source_item_id,
+                                    )
+                                    if pdf_url:
+                                        try:
+                                            pdf_bytes = fetch_url_bytes(client, pdf_url)
+                                            extracted_pdf = extract_pdf_text(pdf_bytes)
+                                            if extracted_pdf is None:
+                                                raise RuntimeError("empty pdf text extraction")
+                                            self.repository.upsert_content(
+                                                item_id=item.id,
+                                                content_type="pdf_text",
+                                                text=extracted_pdf,
+                                            )
+                                            self.repository.mark_item_enriched(item_id=item.id)
+                                            content_text = extracted_pdf
+                                            stored_new_content = True
+                                        except Exception as pdf_exc:
+                                            log.bind(item_id=item.id).warning(
+                                                "PDF enrich failed, falling back to HTML: {}",
+                                                self._sanitize_error_message(str(pdf_exc)),
+                                            )
+
+                            if content_text is None:
+                                existing_html = self.repository.get_latest_content(
                                     item_id=item.id,
                                     content_type="html_maintext",
-                                    text=extracted,
                                 )
-                                self.repository.mark_item_enriched(item_id=item.id)
-                                content_text = extracted
-                                stored_new_content = True
+                                if existing_html is not None and existing_html.text:
+                                    content_text = existing_html.text
+                                else:
+                                    html = fetch_url_html(client, item.canonical_url)
+                                    extracted = extract_html_maintext(html)
+                                    if extracted is None:
+                                        raise RuntimeError("empty html maintext extraction")
+                                    self.repository.upsert_content(
+                                        item_id=item.id,
+                                        content_type="html_maintext",
+                                        text=extracted,
+                                    )
+                                    self.repository.mark_item_enriched(item_id=item.id)
+                                    content_text = extracted
+                                    stored_new_content = True
 
-                        if stored_new_content:
-                            enrich_processed += 1
-                        else:
-                            enrich_skipped += 1
-                    except Exception as enrich_exc:
-                        enrich_failed += 1
-                        analyze_result.failed += 1
-                        sanitized_error = self._sanitize_error_message(str(enrich_exc))
-                        classification = self._classify_exception(enrich_exc)
-                        try:
-                            if classification.get("retryable") is True:
-                                self.repository.mark_item_retryable_failed(item_id=item.id)
+                            if stored_new_content:
+                                enrich_processed += 1
                             else:
-                                self.repository.mark_item_failed(item_id=item.id)
-                        except Exception as mark_exc:
-                            log.bind(item_id=item.id).warning(
-                                "Enrich mark_item_state failed: {}",
-                                self._sanitize_error_message(str(mark_exc)),
+                                enrich_skipped += 1
+                        except Exception as enrich_exc:
+                            enrich_failed += 1
+                            analyze_result.failed += 1
+                            sanitized_error = self._sanitize_error_message(str(enrich_exc))
+                            classification = self._classify_exception(enrich_exc)
+                            try:
+                                if classification.get("retryable") is True:
+                                    self.repository.mark_item_retryable_failed(item_id=item.id)
+                                else:
+                                    self.repository.mark_item_failed(item_id=item.id)
+                            except Exception as mark_exc:
+                                log.bind(item_id=item.id).warning(
+                                    "Enrich mark_item_state failed: {}",
+                                    self._sanitize_error_message(str(mark_exc)),
+                                )
+                            write_and_record_artifact(
+                                item_id=item.id,
+                                kind="error_context",
+                                payload={
+                                    "stage": "enrich",
+                                    "error_type": type(enrich_exc).__name__,
+                                    "error_message": sanitized_error,
+                                    "item_id": item.id,
+                                    **classification,
+                                },
                             )
+                            log.bind(item_id=item.id).warning("Enrich failed: {}", sanitized_error)
+                            continue
+                        finally:
+                            enrich_duration_ms_total += int((time.perf_counter() - enrich_item_started) * 1000)
+
+                        llm_calls_total += 1
+                        analysis_result, debug = self.analyzer.analyze(
+                            title=item.title,
+                            canonical_url=item.canonical_url,
+                            user_topics=self.settings.topics,
+                            content=content_text,
+                            include_debug=include_debug,
+                        )
+                        provider_token = bucket_provider_token(analysis_result.provider)
+                        llm_calls_by_provider_token[provider_token] = (
+                            llm_calls_by_provider_token.get(provider_token, 0) + 1
+                        )
+
+                        model_token = bucket_model_token(analysis_result.model)
+                        llm_calls_by_model_token[model_token] = llm_calls_by_model_token.get(model_token, 0) + 1
+
+                        if include_debug:
+                            if debug is None:
+                                raise RuntimeError(
+                                    "Analyzer did not return debug payload while include_debug is enabled"
+                                )
+                            write_and_record_artifact(item_id=item.id, kind="llm_request", payload=debug.request)
+                            write_and_record_artifact(item_id=item.id, kind="llm_response", payload=debug.response)
+
+                        self.repository.save_analysis(item_id=item.id, result=analysis_result)
+                        analyze_result.processed += 1
+                    except Exception as exc:
+                        analyze_result.failed += 1
+                        llm_errors_total += 1
+                        llm_errors_by_provider_token[configured_provider_token] = (
+                            llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
+                        )
+                        llm_errors_by_model_token[configured_model_token] = (
+                            llm_errors_by_model_token.get(configured_model_token, 0) + 1
+                        )
+                        sanitized_error = self._sanitize_error_message(str(exc))
+                        classification = self._classify_exception(exc)
+                        if item.id is not None:
+                            try:
+                                if classification.get("retryable") is True:
+                                    self.repository.mark_item_retryable_failed(item_id=item.id)
+                                else:
+                                    self.repository.mark_item_failed(item_id=item.id)
+                            except Exception as mark_exc:
+                                log.bind(item_id=item.id).warning(
+                                    "Analyze mark_item_state failed: {}",
+                                    self._sanitize_error_message(str(mark_exc)),
+                                )
                         write_and_record_artifact(
                             item_id=item.id,
                             kind="error_context",
                             payload={
-                                "stage": "enrich",
-                                "error_type": type(enrich_exc).__name__,
+                                "stage": "analyze",
+                                "error_type": type(exc).__name__,
                                 "error_message": sanitized_error,
                                 "item_id": item.id,
                                 **classification,
                             },
                         )
-                        log.bind(item_id=item.id).warning("Enrich failed: {}", sanitized_error)
-                        continue
-                    finally:
-                        enrich_duration_ms_total += int((time.perf_counter() - enrich_item_started) * 1000)
-
-                    llm_calls_total += 1
-                    analysis_result, debug = self.analyzer.analyze(
-                        title=item.title,
-                        canonical_url=item.canonical_url,
-                        user_topics=self.settings.topics,
-                        content=content_text,
-                        include_debug=include_debug,
-                    )
-                    provider_token = bucket_provider_token(analysis_result.provider)
-                    llm_calls_by_provider_token[provider_token] = llm_calls_by_provider_token.get(provider_token, 0) + 1
-
-                    model_token = bucket_model_token(analysis_result.model)
-                    llm_calls_by_model_token[model_token] = llm_calls_by_model_token.get(model_token, 0) + 1
-
-                    if include_debug:
-                        if debug is None:
-                            raise RuntimeError("Analyzer did not return debug payload while include_debug is enabled")
-                        write_and_record_artifact(item_id=item.id, kind="llm_request", payload=debug.request)
-                        write_and_record_artifact(item_id=item.id, kind="llm_response", payload=debug.response)
-
-                    self.repository.save_analysis(item_id=item.id, result=analysis_result)
-                    analyze_result.processed += 1
-                except Exception as exc:
-                    analyze_result.failed += 1
-                    llm_errors_total += 1
-                    llm_errors_by_provider_token[configured_provider_token] = (
-                        llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
-                    )
-                    llm_errors_by_model_token[configured_model_token] = (
-                        llm_errors_by_model_token.get(configured_model_token, 0) + 1
-                    )
-                    sanitized_error = self._sanitize_error_message(str(exc))
-                    classification = self._classify_exception(exc)
-                    if item.id is not None:
-                        try:
-                            if classification.get("retryable") is True:
-                                self.repository.mark_item_retryable_failed(item_id=item.id)
-                            else:
-                                self.repository.mark_item_failed(item_id=item.id)
-                        except Exception as mark_exc:
-                            log.bind(item_id=item.id).warning(
-                                "Analyze mark_item_state failed: {}",
-                                self._sanitize_error_message(str(mark_exc)),
-                            )
-                    write_and_record_artifact(
-                        item_id=item.id,
-                        kind="error_context",
-                        payload={
-                            "stage": "analyze",
-                            "error_type": type(exc).__name__,
-                            "error_message": sanitized_error,
-                            "item_id": item.id,
-                            **classification,
-                        },
-                    )
-                    log.bind(item_id=item.id).warning("Analyze failed: {}", sanitized_error)
+                        log.bind(item_id=item.id).warning("Analyze failed: {}", sanitized_error)
 
         self.repository.record_metric(
             run_id=run_id,
@@ -675,37 +685,65 @@ class PipelineService:
         allow_tags = {tag.strip().lower() for tag in self.settings.allow_tags if tag.strip()}
         deny_tags = {tag.strip().lower() for tag in self.settings.deny_tags if tag.strip()}
         filtered_total = 0
-        for item, analysis in track(candidates, description="Publishing items", console=self._progress_console):
-            if item.id is None:
-                continue
-            telegram_already_sent = False
-            if enable_telegram and destination_hash is not None:
-                telegram_already_sent = self.repository.has_sent_delivery(
-                    item_id=item.id,
-                    channel=DELIVERY_CHANNEL_TELEGRAM,
-                    destination=destination_hash,
-                )
-            if allow_tags or deny_tags:
-                topics = {tag.strip().lower() for tag in self.repository.decode_list(analysis.topics_json) if tag.strip()}
-                if deny_tags and (topics & deny_tags):
-                    publish_result.skipped += 1
-                    filtered_total += 1
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=self._progress_console,
+        ) as progress:
+            for item, analysis in progress.track(candidates, description="Publishing items"):
+                if item.id is None:
                     continue
-                if allow_tags and not (topics & allow_tags):
-                    publish_result.skipped += 1
-                    filtered_total += 1
-                    continue
+                telegram_already_sent = False
+                if enable_telegram and destination_hash is not None:
+                    telegram_already_sent = self.repository.has_sent_delivery(
+                        item_id=item.id,
+                        channel=DELIVERY_CHANNEL_TELEGRAM,
+                        destination=destination_hash,
+                    )
+                if allow_tags or deny_tags:
+                    topics = {
+                        tag.strip().lower()
+                        for tag in self.repository.decode_list(analysis.topics_json)
+                        if tag.strip()
+                    }
+                    if deny_tags and (topics & deny_tags):
+                        publish_result.skipped += 1
+                        filtered_total += 1
+                        continue
+                    if allow_tags and not (topics & allow_tags):
+                        publish_result.skipped += 1
+                        filtered_total += 1
+                        continue
 
-            try:
-                note_paths: list[Path] = []
-                if enable_obsidian:
-                    vault_path = self.settings.obsidian_vault_path
-                    if vault_path is None:
-                        raise RuntimeError("obsidian vault path is not configured")
-                    note_paths.append(
-                        write_obsidian_note(
-                            vault_path=vault_path,
-                            base_folder=self.settings.obsidian_base_folder,
+                try:
+                    note_paths: list[Path] = []
+                    if enable_obsidian:
+                        vault_path = self.settings.obsidian_vault_path
+                        if vault_path is None:
+                            raise RuntimeError("obsidian vault path is not configured")
+                        note_paths.append(
+                            write_obsidian_note(
+                                vault_path=vault_path,
+                                base_folder=self.settings.obsidian_base_folder,
+                                item_id=item.id,
+                                title=item.title,
+                                source=item.source,
+                                canonical_url=item.canonical_url,
+                                published_at=item.published_at,
+                                authors=self.repository.decode_list(item.authors),
+                                topics=self.repository.decode_list(analysis.topics_json),
+                                relevance_score=analysis.relevance_score,
+                                run_id=run_id,
+                                summary=analysis.summary,
+                                insight=analysis.insight,
+                                ideas=self.repository.decode_list(analysis.idea_directions_json),
+                            )
+                        )
+                    if enable_markdown:
+                        md_note_path = write_markdown_note(
+                            output_dir=self.settings.markdown_output_dir,
                             item_id=item.id,
                             title=item.title,
                             source=item.source,
@@ -719,84 +757,67 @@ class PipelineService:
                             insight=analysis.insight,
                             ideas=self.repository.decode_list(analysis.idea_directions_json),
                         )
-                    )
-                if enable_markdown:
-                    md_note_path = write_markdown_note(
-                        output_dir=self.settings.markdown_output_dir,
-                        item_id=item.id,
-                        title=item.title,
-                        source=item.source,
-                        canonical_url=item.canonical_url,
-                        published_at=item.published_at,
-                        authors=self.repository.decode_list(item.authors),
-                        topics=self.repository.decode_list(analysis.topics_json),
-                        relevance_score=analysis.relevance_score,
-                        run_id=run_id,
-                        summary=analysis.summary,
-                        insight=analysis.insight,
-                        ideas=self.repository.decode_list(analysis.idea_directions_json),
-                    )
-                    markdown_notes.append((item.title, md_note_path))
-                    note_paths.append(md_note_path)
-                if enable_telegram and destination_hash is not None and not telegram_already_sent:
-                    message_text = build_telegram_message(
-                        title=item.title,
-                        summary=analysis.summary,
-                        insight=analysis.insight,
-                        url=item.canonical_url,
-                    )
-                    if self.telegram_sender is None:
-                        raise RuntimeError("telegram sender is not configured")
-                    message_id = self.telegram_sender.send(message_text)
-                    self.repository.upsert_delivery(
-                        item_id=item.id,
-                        channel=DELIVERY_CHANNEL_TELEGRAM,
-                        destination=destination_hash,
-                        message_id=message_id,
-                        status=DELIVERY_STATUS_SENT,
-                    )
-                    telegram_already_sent = True
-                self.repository.mark_item_published(item_id=item.id)
-                publish_result.sent += 1
-                publish_result.note_paths.extend(note_paths)
-            except Exception as exc:
-                sanitized_error = self._sanitize_error_message(str(exc))
-                artifact_path = self._write_debug_artifact(
-                    run_id=run_id,
-                    item_id=item.id,
-                    kind="error_context",
-                    payload={
-                        "stage": "publish",
-                        "error_type": type(exc).__name__,
-                        "error_message": sanitized_error,
-                        "item_id": item.id,
-                        **self._classify_exception(exc),
-                    },
-                )
-                if artifact_path is not None:
-                    try:
-                        self.repository.add_artifact(
-                            run_id=run_id,
+                        markdown_notes.append((item.title, md_note_path))
+                        note_paths.append(md_note_path)
+                    if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                        message_text = build_telegram_message(
+                            title=item.title,
+                            summary=analysis.summary,
+                            insight=analysis.insight,
+                            url=item.canonical_url,
+                        )
+                        if self.telegram_sender is None:
+                            raise RuntimeError("telegram sender is not configured")
+                        message_id = self.telegram_sender.send(message_text)
+                        self.repository.upsert_delivery(
                             item_id=item.id,
-                            kind="error_context",
-                            path=str(artifact_path),
+                            channel=DELIVERY_CHANNEL_TELEGRAM,
+                            destination=destination_hash,
+                            message_id=message_id,
+                            status=DELIVERY_STATUS_SENT,
                         )
-                    except Exception as artifact_exc:
-                        log.bind(item_id=item.id).warning(
-                            "Publish debug artifact record failed: {}",
-                            self._sanitize_error_message(str(artifact_exc)),
-                        )
-                if enable_telegram and destination_hash is not None and not telegram_already_sent:
-                    self.repository.upsert_delivery(
+                        telegram_already_sent = True
+                    self.repository.mark_item_published(item_id=item.id)
+                    publish_result.sent += 1
+                    publish_result.note_paths.extend(note_paths)
+                except Exception as exc:
+                    sanitized_error = self._sanitize_error_message(str(exc))
+                    artifact_path = self._write_debug_artifact(
+                        run_id=run_id,
                         item_id=item.id,
-                        channel=DELIVERY_CHANNEL_TELEGRAM,
-                        destination=destination_hash,
-                        message_id=None,
-                        status=DELIVERY_STATUS_FAILED,
-                        error=sanitized_error,
+                        kind="error_context",
+                        payload={
+                            "stage": "publish",
+                            "error_type": type(exc).__name__,
+                            "error_message": sanitized_error,
+                            "item_id": item.id,
+                            **self._classify_exception(exc),
+                        },
                     )
-                publish_result.failed += 1
-                log.bind(item_id=item.id).warning("Publish failed: {}", sanitized_error)
+                    if artifact_path is not None:
+                        try:
+                            self.repository.add_artifact(
+                                run_id=run_id,
+                                item_id=item.id,
+                                kind="error_context",
+                                path=str(artifact_path),
+                            )
+                        except Exception as artifact_exc:
+                            log.bind(item_id=item.id).warning(
+                                "Publish debug artifact record failed: {}",
+                                self._sanitize_error_message(str(artifact_exc)),
+                            )
+                    if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                        self.repository.upsert_delivery(
+                            item_id=item.id,
+                            channel=DELIVERY_CHANNEL_TELEGRAM,
+                            destination=destination_hash,
+                            message_id=None,
+                            status=DELIVERY_STATUS_FAILED,
+                            error=sanitized_error,
+                        )
+                    publish_result.failed += 1
+                    log.bind(item_id=item.id).warning("Publish failed: {}", sanitized_error)
 
         if enable_markdown:
             try:
