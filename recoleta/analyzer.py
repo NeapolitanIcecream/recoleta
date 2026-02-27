@@ -60,7 +60,6 @@ class LiteLLMAnalyzer:
             model=self.model,
             messages=messages,
             response_format={"type": "json_object"},
-            temperature=0.2,
         )
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         raw_content = _extract_content(response)
@@ -85,7 +84,6 @@ class LiteLLMAnalyzer:
             "model": self.model,
             "messages": messages,
             "response_format": {"type": "json_object"},
-            "temperature": 0.2,
         }
         response_debug: dict[str, Any] = {
             "elapsed_ms": elapsed_ms,
