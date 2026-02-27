@@ -36,3 +36,30 @@ def test_external_progress_disabled_forces_tqdm_disable(monkeypatch) -> None:
         bar_explicit_false = tqdm(range(1), disable=False)
         assert getattr(bar_explicit_false, "disable", None) is True
 
+
+def test_external_progress_disabled_restores_huggingface_state(monkeypatch) -> None:
+    monkeypatch.delenv("HF_HUB_DISABLE_PROGRESS_BARS", raising=False)
+    try:
+        import huggingface_hub.utils as hf_utils
+    except Exception:
+        return
+
+    are_disabled = getattr(hf_utils, "are_progress_bars_disabled", None)
+    disable = getattr(hf_utils, "disable_progress_bars", None)
+    enable = getattr(hf_utils, "enable_progress_bars", None)
+    if not callable(are_disabled) or not callable(disable) or not callable(enable):
+        return
+
+    previous = bool(are_disabled())
+    try:
+        enable()
+        assert are_disabled() is False
+
+        with _external_progress_disabled():
+            assert are_disabled() is True
+    finally:
+        if previous:
+            disable()
+        else:
+            enable()
+

@@ -28,11 +28,17 @@ def _external_progress_disabled() -> Any:
     previous: dict[str, str | None] = {key: os.environ.get(key) for key in _EXTERNAL_PROGRESS_ENV}
     os.environ.update(_EXTERNAL_PROGRESS_ENV)
     tqdm_patches: list[tuple[object, str, object]] = []
+    hf_prev_disabled: bool | None = None
     try:
         try:
-            from huggingface_hub.utils.tqdm import disable_progress_bars
+            import huggingface_hub.utils as hf_utils
 
-            disable_progress_bars()
+            are_disabled = getattr(hf_utils, "are_progress_bars_disabled", None)
+            disable = getattr(hf_utils, "disable_progress_bars", None)
+            if callable(are_disabled):
+                hf_prev_disabled = bool(are_disabled())
+            if callable(disable):
+                disable()
         except Exception:
             pass
 
@@ -76,6 +82,15 @@ def _external_progress_disabled() -> Any:
 
         yield
     finally:
+        if hf_prev_disabled is False:
+            try:
+                import huggingface_hub.utils as hf_utils
+
+                enable = getattr(hf_utils, "enable_progress_bars", None)
+                if callable(enable):
+                    enable()
+            except Exception:
+                pass
         for target, attr, value in reversed(tqdm_patches):
             try:
                 setattr(target, attr, value)
