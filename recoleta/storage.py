@@ -243,7 +243,7 @@ class Repository:
                         ]
                     )
                 )
-                .order_by(desc(cast(Any, Item.created_at)))
+                .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
                 .limit(limit)
             )
             return list(session.exec(statement))
@@ -259,7 +259,7 @@ class Repository:
             statement = (
                 select(Item)
                 .where(cast(Any, Item.state).in_(states))
-                .order_by(desc(cast(Any, Item.created_at)))
+                .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
                 .limit(limit)
             )
             return list(session.exec(statement))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -9,7 +10,9 @@ from sqlmodel import Session, select
 from recoleta.models import (
     ITEM_STATE_ANALYZED,
     ITEM_STATE_ENRICHED,
+    ITEM_STATE_INGESTED,
     ITEM_STATE_RETRYABLE_FAILED,
+    ITEM_STATE_TRIAGED,
     Artifact,
     Content,
     Item,
@@ -134,6 +137,140 @@ def test_analyze_persists_enriched_content_and_emits_enrich_metrics(configured_e
     assert by_name["pipeline.enrich.processed_total"].value == 1
     assert by_name["pipeline.enrich.skipped_total"].value == 0
     assert by_name["pipeline.enrich.failed_total"].value == 0
+
+
+def test_triage_skips_candidates_without_stored_content(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.triage import SemanticTriage
+
+    monkeypatch.setenv("TRIAGE_ENABLED", "true")
+    monkeypatch.setenv("TRIAGE_MODE", "prioritize")
+    monkeypatch.setenv("TRIAGE_RECENCY_FLOOR", "0")
+    monkeypatch.setenv("TRIAGE_EXPLORATION_RATE", "0")
+
+    settings, repository = _build_runtime()
+
+    class KeywordEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            assert model
+            assert dimensions is None or dimensions > 0
+            self.calls += 1
+            if self.calls == 1:
+                return [[1.0, 0.0, 0.0]], {"kind": "query"}
+            vectors: list[list[float]] = []
+            for text in inputs:
+                if "agents" in text.lower():
+                    vectors.append([1.0, 0.0, 0.0])
+                else:
+                    vectors.append([0.0, 1.0, 0.0])
+            return vectors, {"kind": "items"}
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        triage=SemanticTriage(embedder=KeywordEmbedder()),
+        telegram_sender=FakeTelegramSender(),
+    )
+    service.ingest(
+        run_id="run-triage-content-required",
+        drafts=[
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="triage-has-content",
+                canonical_url="https://example.com/triage-has-content",
+                title="Gardening Digest",
+                authors=["Alice"],
+                raw_metadata={"source": "test"},
+            ),
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="triage-no-content",
+                canonical_url="https://example.com/triage-no-content",
+                title="Agents Breakthrough",
+                authors=["Bob"],
+                raw_metadata={"source": "test"},
+            ),
+        ],
+    )
+
+    with Session(repository.engine) as session:
+        items = list(session.exec(select(Item)))
+    by_source_item_id = {item.source_item_id: item for item in items}
+    has_content = by_source_item_id["triage-has-content"]
+    assert has_content.id is not None
+
+    repository.upsert_content(
+        item_id=has_content.id,
+        content_type="html_maintext",
+        text="gardening details",
+    )
+    repository.mark_item_enriched(item_id=has_content.id)
+
+    service.triage(run_id="run-triage-content-required", limit=1, candidate_limit=10)
+
+    with Session(repository.engine) as session:
+        refreshed = list(session.exec(select(Item)))
+    refreshed_by_source_item_id = {item.source_item_id: item for item in refreshed}
+    assert refreshed_by_source_item_id["triage-has-content"].state == ITEM_STATE_TRIAGED
+    assert refreshed_by_source_item_id["triage-no-content"].state == ITEM_STATE_INGESTED
+
+
+def test_repository_analysis_selection_prioritizes_recently_updated_retryables(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    service.ingest(
+        run_id="run-selection-order",
+        drafts=[
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="order-older",
+                canonical_url="https://example.com/order-older",
+                title="Older by Created At",
+                authors=["Alice"],
+                raw_metadata={"source": "test"},
+            ),
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="order-newer",
+                canonical_url="https://example.com/order-newer",
+                title="Newer by Created At",
+                authors=["Bob"],
+                raw_metadata={"source": "test"},
+            ),
+        ],
+    )
+
+    with Session(repository.engine) as session:
+        items = list(session.exec(select(Item)))
+        by_source_item_id = {item.source_item_id: item for item in items}
+        older = by_source_item_id["order-older"]
+        newer = by_source_item_id["order-newer"]
+        older.state = ITEM_STATE_RETRYABLE_FAILED
+        newer.state = ITEM_STATE_RETRYABLE_FAILED
+        older.created_at = datetime(2024, 1, 1, tzinfo=UTC)
+        older.updated_at = datetime(2024, 1, 3, tzinfo=UTC)
+        newer.created_at = datetime(2024, 1, 2, tzinfo=UTC)
+        newer.updated_at = datetime(2024, 1, 2, tzinfo=UTC)
+        session.add(older)
+        session.add(newer)
+        session.commit()
+
+    selection = repository.list_items_for_analysis(limit=1)
+    llm_selection = repository.list_items_for_llm_analysis(limit=1, triage_required=False)
+    assert selection[0].source_item_id == "order-older"
+    assert llm_selection[0].source_item_id == "order-older"
 
 
 def test_analyze_with_semantic_triage_prioritizes_high_similarity_items(
@@ -723,6 +860,7 @@ def test_pipeline_records_duration_metrics_for_each_stage(configured_env) -> Non
     metrics = repository.list_metrics(run_id="run-durations")
     metric_names = {metric.name for metric in metrics}
     assert "pipeline.ingest.duration_ms" in metric_names
-    assert "pipeline.enrich.duration_ms_total" in metric_names
+    assert "pipeline.enrich.item_duration_ms_total" in metric_names
+    assert "pipeline.enrich.duration_ms" in metric_names
     assert "pipeline.analyze.duration_ms" in metric_names
     assert "pipeline.publish.duration_ms" in metric_names

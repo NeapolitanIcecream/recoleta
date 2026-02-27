@@ -182,6 +182,7 @@ class PipelineService:
 
     def enrich(self, *, run_id: str, limit: int) -> None:
         log = logger.bind(module="pipeline.enrich", run_id=run_id)
+        enrich_started = time.perf_counter()
         include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
         items = self.repository.list_items_for_analysis(limit=limit)
         enrich_processed = 0
@@ -287,8 +288,14 @@ class PipelineService:
         )
         self.repository.record_metric(
             run_id=run_id,
-            name="pipeline.enrich.duration_ms_total",
+            name="pipeline.enrich.item_duration_ms_total",
             value=enrich_duration_ms_total,
+            unit="ms",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.enrich.duration_ms",
+            value=int((time.perf_counter() - enrich_started) * 1000),
             unit="ms",
         )
         log.info(
@@ -307,7 +314,10 @@ class PipelineService:
         normalized_candidate_limit = candidate_limit or self._resolve_triage_candidate_limit(limit=normalized_limit)
         include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
         log = logger.bind(module="pipeline.triage", run_id=run_id)
-        items = self.repository.list_items_for_analysis(limit=normalized_candidate_limit)
+        items = self.repository.list_items_for_llm_analysis(
+            limit=normalized_candidate_limit,
+            triage_required=False,
+        )
 
         def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
             artifact_path = self._write_debug_artifact(
