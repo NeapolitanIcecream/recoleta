@@ -13,6 +13,7 @@ RUN_STATUS_FAILED = "failed"
 
 ITEM_STATE_INGESTED = "ingested"
 ITEM_STATE_ENRICHED = "enriched"
+ITEM_STATE_TRIAGED = "triaged"
 ITEM_STATE_ANALYZED = "analyzed"
 ITEM_STATE_PUBLISHED = "published"
 ITEM_STATE_RETRYABLE_FAILED = "retryable_failed"

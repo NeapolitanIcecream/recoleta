@@ -37,7 +37,7 @@ def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> 
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish", drafts=[draft])
+    service.prepare(run_id="run-publish", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish", limit=10)
 
     first_publish = service.publish(run_id="run-publish", limit=10)
@@ -81,7 +81,7 @@ def test_publish_does_not_skip_markdown_when_telegram_delivery_already_sent(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-telegram-already-sent", drafts=[draft])
+    service.prepare(run_id="run-publish-telegram-already-sent", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-telegram-already-sent", limit=10)
 
     from recoleta.observability import mask_value
@@ -149,7 +149,7 @@ def test_publish_does_not_downgrade_sent_telegram_delivery_when_mark_item_publis
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-no-downgrade", drafts=[draft])
+    service.prepare(run_id="run-publish-no-downgrade", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-no-downgrade", limit=10)
 
     original_mark_item_published = repository.mark_item_published
@@ -222,7 +222,7 @@ def test_publish_writes_local_markdown_notes_without_obsidian_or_telegram(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-markdown", drafts=[draft])
+    service.prepare(run_id="run-publish-markdown", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-markdown", limit=10)
 
     result = service.publish(run_id="run-publish-markdown", limit=10)
@@ -271,7 +271,7 @@ def test_publish_writes_markdown_index_when_telegram_daily_cap_reached(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-cap", drafts=[draft])
+    service.prepare(run_id="run-publish-cap", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-cap", limit=10)
 
     result = service.publish(run_id="run-publish-cap", limit=10)
@@ -312,7 +312,7 @@ def test_publish_filters_by_allow_tags_and_records_metric(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-filter-allow", drafts=[draft])
+    service.prepare(run_id="run-publish-filter-allow", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-filter-allow", limit=10)
     result = service.publish(run_id="run-publish-filter-allow", limit=10)
 
@@ -348,7 +348,7 @@ def test_publish_filters_by_deny_tags_and_records_metric(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-filter-deny", drafts=[draft])
+    service.prepare(run_id="run-publish-filter-deny", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-filter-deny", limit=10)
     result = service.publish(run_id="run-publish-filter-deny", limit=10)
 
@@ -379,7 +379,7 @@ def test_publish_retries_after_failed_delivery(configured_env) -> None:
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-retry", drafts=[draft])
+    service.prepare(run_id="run-publish-retry", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-retry", limit=10)
 
     first_publish = service.publish(run_id="run-publish-retry", limit=10)
@@ -459,7 +459,7 @@ def test_publish_sanitizes_secrets_in_delivery_error(configured_env, monkeypatch
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-sanitize", drafts=[draft])
+    service.prepare(run_id="run-publish-sanitize", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-sanitize", limit=10)
     publish_result = service.publish(run_id="run-publish-sanitize", limit=10)
 
@@ -518,7 +518,7 @@ def test_publish_does_not_crash_when_debug_artifact_write_fails(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-publish-artifact-failure", drafts=[draft])
+    service.prepare(run_id="run-publish-artifact-failure", drafts=[draft], limit=10)
     service.analyze(run_id="run-publish-artifact-failure", limit=10)
     publish_result = service.publish(run_id="run-publish-artifact-failure", limit=10)
 

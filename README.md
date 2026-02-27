@@ -27,14 +27,13 @@ Recoleta is local-first and single-user by design: it stores durable state in a 
 
 ```mermaid
 flowchart LR
-  Sources[Sources] --> Ingest[Ingest]
-  Ingest --> Enrich["Enrich (HTML/PDF)"]
-  Enrich --> Analyze["Analyze (LLM)"]
+  Sources[Sources] --> Prepare["Prepare (recoleta ingest)"]
+  Prepare --> Analyze["Analyze (LLM, recoleta analyze)"]
   Analyze --> Publish[Publish]
   Publish --> Markdown[Local Markdown output]
   Publish --> Obsidian["Obsidian Markdown notes (optional)"]
   Publish --> Telegram["Telegram messages (optional)"]
-  Ingest --> SQLite[(SQLite index)]
+  Prepare --> SQLite[(SQLite index)]
   Analyze --> SQLite
   Publish --> SQLite
 ```
@@ -143,6 +142,11 @@ uv run recoleta analyze --limit 50
 uv run recoleta publish --limit 20
 ```
 
+Command intent:
+- `recoleta ingest`: prepare backlog (ingest + enrich + optional semantic triage)
+- `recoleta analyze`: Stage 4 only (LLM on prepared items)
+- `recoleta publish`: deliver analyzed items
+
 Where to look next:
 
 - **Local Markdown**: `MARKDOWN_OUTPUT_DIR/latest.md` and `MARKDOWN_OUTPUT_DIR/Inbox/`
@@ -228,6 +232,8 @@ Common optional knobs:
   - `TRIAGE_MIN_SIMILARITY` / `triage_min_similarity` (filter mode only)
   - `TRIAGE_EXPLORATION_RATE` / `triage_exploration_rate`
   - `TRIAGE_RECENCY_FLOOR` / `triage_recency_floor`
+- **Execution limits**:
+  - `ANALYZE_LIMIT` / `analyze_limit` (default Stage 4 batch size; also used as Stage 3.5 selection limit)
 - **Dedup**:
   - `TITLE_DEDUP_THRESHOLD` / `title_dedup_threshold`
   - `TITLE_DEDUP_MAX_CANDIDATES` / `title_dedup_max_candidates`
@@ -265,8 +271,8 @@ Recoleta also records lightweight, machine-readable **metrics** into the SQLite 
 
 Recoleta ships a small CLI surface:
 
-- `recoleta ingest`: pull sources and upsert normalized items
-- `recoleta analyze --limit 100`: run structured LLM analysis for newly ingested items
+- `recoleta ingest`: prepare items for LLM (ingest + enrich + optional triage)
+- `recoleta analyze --limit 100`: run structured LLM analysis for prepared items only
 - `recoleta publish --limit 50`: write Obsidian notes and send Telegram deliverables
 - `recoleta run`: schedule ingest/analyze/publish periodically
 

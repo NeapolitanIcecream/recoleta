@@ -26,6 +26,7 @@ from recoleta.models import (
     ITEM_STATE_INGESTED,
     ITEM_STATE_PUBLISHED,
     ITEM_STATE_RETRYABLE_FAILED,
+    ITEM_STATE_TRIAGED,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCEEDED,
@@ -247,6 +248,22 @@ class Repository:
             )
             return list(session.exec(statement))
 
+    def list_items_for_llm_analysis(self, *, limit: int, triage_required: bool) -> list[Item]:
+        states = [ITEM_STATE_RETRYABLE_FAILED]
+        if triage_required:
+            states.append(ITEM_STATE_TRIAGED)
+        else:
+            states.append(ITEM_STATE_ENRICHED)
+
+        with Session(self.engine) as session:
+            statement = (
+                select(Item)
+                .where(cast(Any, Item.state).in_(states))
+                .order_by(desc(cast(Any, Item.created_at)))
+                .limit(limit)
+            )
+            return list(session.exec(statement))
+
     def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None:
         with Session(self.engine) as session:
             statement = (
@@ -378,6 +395,16 @@ class Repository:
             if item is None:
                 return
             item.state = ITEM_STATE_ENRICHED
+            item.updated_at = utc_now()
+            session.add(item)
+            session.commit()
+
+    def mark_item_triaged(self, *, item_id: int) -> None:
+        with Session(self.engine) as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                return
+            item.state = ITEM_STATE_TRIAGED
             item.updated_at = utc_now()
             session.add(item)
             session.commit()

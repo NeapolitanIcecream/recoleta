@@ -78,12 +78,15 @@ def _execute_stage(
 
 @app.command()
 def ingest() -> None:
-    """Pull sources and upsert normalized items."""
+    """Pull sources, enrich content, and optionally pre-rank candidates."""
 
     symbols = _runtime_symbols()
     console_cls = symbols["Console"]
 
-    settings, result = _execute_stage(stage_name="ingest", stage_runner=lambda service, run_id: service.ingest(run_id=run_id))
+    settings, result = _execute_stage(
+        stage_name="ingest",
+        stage_runner=lambda service, run_id: service.prepare(run_id=run_id),
+    )
     console = console_cls(stderr=settings.log_json)
     console.print(
         f"[green]ingest completed[/green] inserted={result.inserted} updated={result.updated} failed={result.failed}"
@@ -91,8 +94,14 @@ def ingest() -> None:
 
 
 @app.command()
-def analyze(limit: int = typer.Option(100, min=1, help="Max number of items analyzed in one run.")) -> None:
-    """Run LLM analysis for newly ingested items."""
+def analyze(
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Max number of items analyzed in one run. Defaults to ANALYZE_LIMIT.",
+    )
+) -> None:
+    """Run LLM analysis for prepared items."""
 
     symbols = _runtime_symbols()
     console_cls = symbols["Console"]
@@ -147,7 +156,7 @@ def run_scheduler() -> None:
     )
 
     def run_ingest_job() -> None:
-        _execute_stage(stage_name="ingest", stage_runner=lambda service, run_id: service.ingest(run_id=run_id))
+        _execute_stage(stage_name="ingest", stage_runner=lambda service, run_id: service.prepare(run_id=run_id))
 
     def run_analyze_job() -> None:
         _execute_stage(

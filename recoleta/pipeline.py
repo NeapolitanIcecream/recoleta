@@ -52,7 +52,7 @@ class PipelineService:
             model=settings.llm_model,
             output_language=settings.llm_output_language,
         )
-        self.triage = triage or SemanticTriage(
+        self.semantic_triage = triage or SemanticTriage(
             embedding_batch_max_inputs=settings.triage_embedding_batch_max_inputs,
             embedding_batch_max_chars=settings.triage_embedding_batch_max_chars,
         )
@@ -172,20 +172,386 @@ class PipelineService:
         )
         return ingest_result
 
-    def analyze(self, *, run_id: str, limit: int = 100) -> AnalyzeResult:
+    def prepare(self, *, run_id: str, drafts: list[ItemDraft] | None = None, limit: int | None = None) -> IngestResult:
+        effective_limit = self._resolve_analysis_limit(limit=limit)
+        candidate_limit = self._resolve_triage_candidate_limit(limit=effective_limit)
+        ingest_result = self.ingest(run_id=run_id, drafts=drafts)
+        self.enrich(run_id=run_id, limit=candidate_limit)
+        self.triage(run_id=run_id, limit=effective_limit, candidate_limit=candidate_limit)
+        return ingest_result
+
+    def enrich(self, *, run_id: str, limit: int) -> None:
+        log = logger.bind(module="pipeline.enrich", run_id=run_id)
+        include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
+        items = self.repository.list_items_for_analysis(limit=limit)
+        enrich_processed = 0
+        enrich_failed = 0
+        enrich_skipped = 0
+        enrich_duration_ms_total = 0
+
+        def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
+            artifact_path = self._write_debug_artifact(
+                run_id=run_id,
+                item_id=item_id,
+                kind=kind,
+                payload=payload,
+            )
+            if artifact_path is None:
+                return
+            try:
+                self.repository.add_artifact(
+                    run_id=run_id,
+                    item_id=item_id,
+                    kind=kind,
+                    path=str(artifact_path),
+                )
+            except Exception as artifact_exc:
+                log.bind(item_id=item_id).warning(
+                    "Enrich {} artifact record failed: {}",
+                    kind,
+                    self._sanitize_error_message(str(artifact_exc)),
+                )
+
+        timeout = httpx.Timeout(10.0, connect=5.0)
+        headers = {"User-Agent": "recoleta/0.1"}
+        with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+            with Progress(
+                TextColumn("{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=self._progress_console,
+            ) as progress:
+                for item in progress.track(items, description="Enriching items"):
+                    raw_item_id = getattr(item, "id", None)
+                    if raw_item_id is None:
+                        enrich_failed += 1
+                        log.warning("Enrich skipped: item has no id")
+                        continue
+                    item_id = int(raw_item_id)
+                    enrich_item_started = time.perf_counter()
+                    try:
+                        _, stored_new_content = self._ensure_item_content(client=client, item=item, log=log)
+                        self.repository.mark_item_enriched(item_id=item_id)
+                        if stored_new_content:
+                            enrich_processed += 1
+                        else:
+                            enrich_skipped += 1
+                    except Exception as enrich_exc:
+                        enrich_failed += 1
+                        sanitized_error = self._sanitize_error_message(str(enrich_exc))
+                        classification = self._classify_exception(enrich_exc)
+                        try:
+                            if classification.get("retryable") is True:
+                                self.repository.mark_item_retryable_failed(item_id=item_id)
+                            else:
+                                self.repository.mark_item_failed(item_id=item_id)
+                        except Exception as mark_exc:
+                            log.bind(item_id=item_id).warning(
+                                "Enrich mark_item_state failed: {}",
+                                self._sanitize_error_message(str(mark_exc)),
+                            )
+                        if include_debug:
+                            write_and_record_artifact(
+                                item_id=item_id,
+                                kind="error_context",
+                                payload={
+                                    "stage": "enrich",
+                                    "error_type": type(enrich_exc).__name__,
+                                    "error_message": sanitized_error,
+                                    "item_id": item_id,
+                                    **classification,
+                                },
+                            )
+                        log.bind(item_id=item_id).warning("Enrich failed: {}", sanitized_error)
+                    finally:
+                        enrich_duration_ms_total += int((time.perf_counter() - enrich_item_started) * 1000)
+
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.enrich.processed_total",
+            value=enrich_processed,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.enrich.skipped_total",
+            value=enrich_skipped,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.enrich.failed_total",
+            value=enrich_failed,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.enrich.duration_ms_total",
+            value=enrich_duration_ms_total,
+            unit="ms",
+        )
+        log.info(
+            "Enrich completed with processed={} skipped={} failed={}",
+            enrich_processed,
+            enrich_skipped,
+            enrich_failed,
+        )
+
+    def triage(self, *, run_id: str, limit: int, candidate_limit: int | None = None) -> None:
+        triage_enabled = bool(self.settings.triage_enabled) and bool(self.settings.topics)
+        if not triage_enabled:
+            return
+
+        normalized_limit = self._resolve_analysis_limit(limit=limit)
+        normalized_candidate_limit = candidate_limit or self._resolve_triage_candidate_limit(limit=normalized_limit)
+        include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
+        log = logger.bind(module="pipeline.triage", run_id=run_id)
+        items = self.repository.list_items_for_analysis(limit=normalized_candidate_limit)
+
+        def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
+            artifact_path = self._write_debug_artifact(
+                run_id=run_id,
+                item_id=item_id,
+                kind=kind,
+                payload=payload,
+            )
+            if artifact_path is None:
+                return
+            try:
+                self.repository.add_artifact(
+                    run_id=run_id,
+                    item_id=item_id,
+                    kind=kind,
+                    path=str(artifact_path),
+                )
+            except Exception as artifact_exc:
+                log.bind(item_id=item_id).warning(
+                    "Triage {} artifact record failed: {}",
+                    kind,
+                    self._sanitize_error_message(str(artifact_exc)),
+                )
+
+        triage_candidates, content_fetch_failed, content_fetch_error = self._build_triage_candidates(items=items)
+        if not triage_candidates:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.candidates_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.scored_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.selected_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.skipped_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.embedding_calls_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.embedding_errors_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.content_fetch_failed_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.failed_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.duration_ms",
+                value=0,
+                unit="ms",
+            )
+            log.info("Triage skipped: no candidates")
+            return
+
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.triage.content_fetch_failed_total",
+            value=1 if content_fetch_failed else 0,
+            unit="count",
+        )
+        if content_fetch_failed and include_debug and content_fetch_error is not None:
+            write_and_record_artifact(
+                item_id=None,
+                kind="error_context",
+                payload=content_fetch_error,
+            )
+
+        triage_started = time.perf_counter()
+        try:
+            triage_output = self.semantic_triage.select(
+                run_id=run_id,
+                candidates=triage_candidates,
+                topics=self.settings.topics,
+                limit=normalized_limit,
+                mode=self.settings.triage_mode,
+                query_mode=self.settings.triage_query_mode,
+                embedding_model=self.settings.triage_embedding_model,
+                embedding_dimensions=self.settings.triage_embedding_dimensions,
+                min_similarity=self.settings.triage_min_similarity,
+                exploration_rate=self.settings.triage_exploration_rate,
+                recency_floor=self.settings.triage_recency_floor,
+                include_debug=include_debug,
+            )
+            stats = triage_output.stats
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.candidates_total",
+                value=stats.candidates_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.scored_total",
+                value=stats.scored_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.selected_total",
+                value=stats.selected_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.skipped_total",
+                value=stats.skipped_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.embedding_calls_total",
+                value=stats.embedding_calls_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.embedding_errors_total",
+                value=stats.embedding_errors_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.failed_total",
+                value=0,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.duration_ms",
+                value=stats.duration_ms,
+                unit="ms",
+            )
+            for kind, payload in triage_output.artifacts.items():
+                write_and_record_artifact(item_id=None, kind=kind, payload=payload)
+
+            selected_total = 0
+            for entry in triage_output.selected:
+                selected_item_id = getattr(entry.candidate.item, "id", None)
+                if selected_item_id is None:
+                    continue
+                try:
+                    self.repository.mark_item_triaged(item_id=int(selected_item_id))
+                    selected_total += 1
+                except Exception as mark_exc:
+                    log.bind(item_id=selected_item_id).warning(
+                        "Triage mark_item_triaged failed: {}",
+                        self._sanitize_error_message(str(mark_exc)),
+                    )
+            log.info(
+                "Triage selected {} of {} candidates mode={} method={}",
+                selected_total,
+                stats.candidates_total,
+                self.settings.triage_mode,
+                stats.method,
+            )
+        except Exception as triage_exc:
+            triage_duration_ms = int((time.perf_counter() - triage_started) * 1000)
+            sanitized_error = self._sanitize_error_message(str(triage_exc))
+            write_and_record_artifact(
+                item_id=None,
+                kind="error_context",
+                payload={
+                    "stage": "triage",
+                    "error_type": type(triage_exc).__name__,
+                    "error_message": sanitized_error,
+                    **self._classify_exception(triage_exc),
+                },
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.failed_total",
+                value=1,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.duration_ms",
+                value=triage_duration_ms,
+                unit="ms",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.triage.candidates_total",
+                value=len(triage_candidates),
+                unit="count",
+            )
+            fallback_marked_total = 0
+            for item in items[:normalized_limit]:
+                fallback_item_id = getattr(item, "id", None)
+                if fallback_item_id is None:
+                    continue
+                try:
+                    self.repository.mark_item_triaged(item_id=int(fallback_item_id))
+                    fallback_marked_total += 1
+                except Exception as mark_exc:
+                    log.bind(item_id=fallback_item_id).warning(
+                        "Triage fallback mark_item_triaged failed: {}",
+                        self._sanitize_error_message(str(mark_exc)),
+                    )
+            log.warning(
+                "Triage failed, falling back to recency marked={} error={}",
+                fallback_marked_total,
+                sanitized_error,
+            )
+
+    def analyze(self, *, run_id: str, limit: int | None = None) -> AnalyzeResult:
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
         started = time.perf_counter()
-        candidate_limit = limit
-        triage_enabled = bool(self.settings.triage_enabled) and bool(self.settings.topics)
-        if triage_enabled:
-            candidate_limit = min(
-                int(self.settings.triage_max_candidates),
-                int(limit) * int(self.settings.triage_candidate_factor),
-            )
-        items = self.repository.list_items_for_analysis(limit=candidate_limit)
+        triage_required = bool(self.settings.triage_enabled) and bool(self.settings.topics)
+        effective_limit = self._resolve_analysis_limit(limit=limit)
+        items = self.repository.list_items_for_llm_analysis(limit=effective_limit, triage_required=triage_required)
         analyze_result = AnalyzeResult()
         llm_calls_total = 0
         llm_errors_total = 0
+        missing_content_total = 0
         llm_calls_by_provider_token: dict[str, int] = {}
         llm_errors_by_provider_token: dict[str, int] = {}
         llm_calls_by_model_token: dict[str, int] = {}
@@ -245,328 +611,107 @@ class PipelineService:
                     self._sanitize_error_message(str(artifact_exc)),
                 )
 
-        if triage_enabled and items:
-            triage_candidates, content_fetch_failed, content_fetch_error = self._build_triage_candidates(items=items)
-            if triage_candidates:
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.triage.content_fetch_failed_total",
-                    value=1 if content_fetch_failed else 0,
-                    unit="count",
-                )
-                if content_fetch_failed and include_debug and content_fetch_error is not None:
-                    write_and_record_artifact(
-                        item_id=None,
-                        kind="error_context",
-                        payload=content_fetch_error,
-                    )
-                triage_started = time.perf_counter()
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=self._progress_console,
+        ) as progress:
+            for item in progress.track(items, description="Analyzing items"):
+                raw_item_id = getattr(item, "id", None)
+                if raw_item_id is None:
+                    analyze_result.failed += 1
+                    log.warning("Analyze skipped: item has no id")
+                    continue
+                item_id = int(raw_item_id)
                 try:
-                    triage_output = self.triage.select(
-                        run_id=run_id,
-                        candidates=triage_candidates,
-                        topics=self.settings.topics,
-                        limit=limit,
-                        mode=self.settings.triage_mode,
-                        query_mode=self.settings.triage_query_mode,
-                        embedding_model=self.settings.triage_embedding_model,
-                        embedding_dimensions=self.settings.triage_embedding_dimensions,
-                        min_similarity=self.settings.triage_min_similarity,
-                        exploration_rate=self.settings.triage_exploration_rate,
-                        recency_floor=self.settings.triage_recency_floor,
-                        include_debug=include_debug,
-                    )
-                    stats = triage_output.stats
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.candidates_total",
-                        value=stats.candidates_total,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.scored_total",
-                        value=stats.scored_total,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.selected_total",
-                        value=stats.selected_total,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.skipped_total",
-                        value=stats.skipped_total,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.embedding_calls_total",
-                        value=stats.embedding_calls_total,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.embedding_errors_total",
-                        value=stats.embedding_errors_total,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.failed_total",
-                        value=0,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.duration_ms",
-                        value=stats.duration_ms,
-                        unit="ms",
-                    )
-                    for kind, payload in triage_output.artifacts.items():
-                        write_and_record_artifact(item_id=None, kind=kind, payload=payload)
-                    items = [entry.candidate.item for entry in triage_output.selected]
-                    log.info(
-                        "Triage selected {} of {} candidates mode={} method={}",
-                        len(items),
-                        stats.candidates_total,
-                        self.settings.triage_mode,
-                        stats.method,
-                    )
-                except Exception as triage_exc:
-                    triage_duration_ms = int((time.perf_counter() - triage_started) * 1000)
-                    sanitized_error = self._sanitize_error_message(str(triage_exc))
-                    write_and_record_artifact(
-                        item_id=None,
-                        kind="error_context",
-                        payload={
-                            "stage": "triage",
-                            "error_type": type(triage_exc).__name__,
-                            "error_message": sanitized_error,
-                            **self._classify_exception(triage_exc),
-                        },
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.failed_total",
-                        value=1,
-                        unit="count",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.duration_ms",
-                        value=triage_duration_ms,
-                        unit="ms",
-                    )
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name="pipeline.triage.candidates_total",
-                        value=len(triage_candidates),
-                        unit="count",
-                    )
-                    log.warning("Triage failed, falling back to recency: {}", sanitized_error)
-        enrich_processed = 0
-        enrich_failed = 0
-        enrich_skipped = 0
-        enrich_duration_ms_total = 0
-
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        headers = {"User-Agent": "recoleta/0.1"}
-        with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
-            with Progress(
-                TextColumn("{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                console=self._progress_console,
-            ) as progress:
-                for item in progress.track(items, description="Analyzing items"):
-                    try:
-                        if item.id is None:
-                            analyze_result.failed += 1
-                            log.warning("Analyze skipped: item has no id")
-                            continue
-
-                        content_text: str | None = None
-                        enrich_item_started = time.perf_counter()
+                    content_text = self._load_stored_content_for_analysis(item=item)
+                    if not content_text:
+                        missing_content_total += 1
+                        analyze_result.failed += 1
                         try:
-                            stored_new_content = False
-                            if item.source in {"arxiv", "openreview"}:
-                                existing_pdf = self.repository.get_latest_content(
-                                    item_id=item.id,
-                                    content_type="pdf_text",
-                                )
-                                if existing_pdf is not None and existing_pdf.text:
-                                    content_text = existing_pdf.text
-                                else:
-                                    pdf_url = self._build_pdf_url(
-                                        source=item.source,
-                                        canonical_url=item.canonical_url,
-                                        source_item_id=item.source_item_id,
-                                    )
-                                    if pdf_url:
-                                        try:
-                                            pdf_bytes = fetch_url_bytes(client, pdf_url)
-                                            extracted_pdf = extract_pdf_text(pdf_bytes)
-                                            if extracted_pdf is None:
-                                                raise RuntimeError("empty pdf text extraction")
-                                            self.repository.upsert_content(
-                                                item_id=item.id,
-                                                content_type="pdf_text",
-                                                text=extracted_pdf,
-                                            )
-                                            self.repository.mark_item_enriched(item_id=item.id)
-                                            content_text = extracted_pdf
-                                            stored_new_content = True
-                                        except Exception as pdf_exc:
-                                            log.bind(item_id=item.id).warning(
-                                                "PDF enrich failed, falling back to HTML: {}",
-                                                self._sanitize_error_message(str(pdf_exc)),
-                                            )
-
-                            if content_text is None:
-                                existing_html = self.repository.get_latest_content(
-                                    item_id=item.id,
-                                    content_type="html_maintext",
-                                )
-                                if existing_html is not None and existing_html.text:
-                                    content_text = existing_html.text
-                                else:
-                                    html = fetch_url_html(client, item.canonical_url)
-                                    extracted = extract_html_maintext(html)
-                                    if extracted is None:
-                                        raise RuntimeError("empty html maintext extraction")
-                                    self.repository.upsert_content(
-                                        item_id=item.id,
-                                        content_type="html_maintext",
-                                        text=extracted,
-                                    )
-                                    self.repository.mark_item_enriched(item_id=item.id)
-                                    content_text = extracted
-                                    stored_new_content = True
-
-                            if stored_new_content:
-                                enrich_processed += 1
-                            else:
-                                enrich_skipped += 1
-                        except Exception as enrich_exc:
-                            enrich_failed += 1
-                            analyze_result.failed += 1
-                            sanitized_error = self._sanitize_error_message(str(enrich_exc))
-                            classification = self._classify_exception(enrich_exc)
-                            try:
-                                if classification.get("retryable") is True:
-                                    self.repository.mark_item_retryable_failed(item_id=item.id)
-                                else:
-                                    self.repository.mark_item_failed(item_id=item.id)
-                            except Exception as mark_exc:
-                                log.bind(item_id=item.id).warning(
-                                    "Enrich mark_item_state failed: {}",
-                                    self._sanitize_error_message(str(mark_exc)),
-                                )
+                            self.repository.mark_item_retryable_failed(item_id=item_id)
+                        except Exception as mark_exc:
+                            log.bind(item_id=item_id).warning(
+                                "Analyze missing content mark_item_state failed: {}",
+                                self._sanitize_error_message(str(mark_exc)),
+                            )
+                        if include_debug:
                             write_and_record_artifact(
-                                item_id=item.id,
+                                item_id=item_id,
                                 kind="error_context",
                                 payload={
-                                    "stage": "enrich",
-                                    "error_type": type(enrich_exc).__name__,
-                                    "error_message": sanitized_error,
-                                    "item_id": item.id,
-                                    **classification,
+                                    "stage": "analyze",
+                                    "error_type": "MissingContent",
+                                    "error_message": "missing stored content before LLM analysis",
+                                    "item_id": item_id,
+                                    "error_category": "ordering",
+                                    "retryable": True,
                                 },
                             )
-                            log.bind(item_id=item.id).warning("Enrich failed: {}", sanitized_error)
-                            continue
-                        finally:
-                            enrich_duration_ms_total += int((time.perf_counter() - enrich_item_started) * 1000)
+                        log.bind(item_id=item_id).warning("Analyze failed: missing stored content")
+                        continue
 
-                        llm_calls_total += 1
-                        analysis_result, debug = self.analyzer.analyze(
-                            title=item.title,
-                            canonical_url=item.canonical_url,
-                            user_topics=self.settings.topics,
-                            content=content_text,
-                            include_debug=include_debug,
-                        )
-                        provider_token = bucket_provider_token(analysis_result.provider)
-                        llm_calls_by_provider_token[provider_token] = (
-                            llm_calls_by_provider_token.get(provider_token, 0) + 1
-                        )
+                    llm_calls_total += 1
+                    analysis_result, debug = self.analyzer.analyze(
+                        title=item.title,
+                        canonical_url=item.canonical_url,
+                        user_topics=self.settings.topics,
+                        content=content_text,
+                        include_debug=include_debug,
+                    )
+                    provider_token = bucket_provider_token(analysis_result.provider)
+                    llm_calls_by_provider_token[provider_token] = (
+                        llm_calls_by_provider_token.get(provider_token, 0) + 1
+                    )
+                    model_token = bucket_model_token(analysis_result.model)
+                    llm_calls_by_model_token[model_token] = llm_calls_by_model_token.get(model_token, 0) + 1
 
-                        model_token = bucket_model_token(analysis_result.model)
-                        llm_calls_by_model_token[model_token] = llm_calls_by_model_token.get(model_token, 0) + 1
+                    if include_debug:
+                        if debug is None:
+                            raise RuntimeError(
+                                "Analyzer did not return debug payload while include_debug is enabled"
+                            )
+                        write_and_record_artifact(item_id=item_id, kind="llm_request", payload=debug.request)
+                        write_and_record_artifact(item_id=item_id, kind="llm_response", payload=debug.response)
 
-                        if include_debug:
-                            if debug is None:
-                                raise RuntimeError(
-                                    "Analyzer did not return debug payload while include_debug is enabled"
-                                )
-                            write_and_record_artifact(item_id=item.id, kind="llm_request", payload=debug.request)
-                            write_and_record_artifact(item_id=item.id, kind="llm_response", payload=debug.response)
+                    self.repository.save_analysis(item_id=item_id, result=analysis_result)
+                    analyze_result.processed += 1
+                except Exception as exc:
+                    analyze_result.failed += 1
+                    llm_errors_total += 1
+                    llm_errors_by_provider_token[configured_provider_token] = (
+                        llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
+                    )
+                    llm_errors_by_model_token[configured_model_token] = (
+                        llm_errors_by_model_token.get(configured_model_token, 0) + 1
+                    )
+                    sanitized_error = self._sanitize_error_message(str(exc))
+                    classification = self._classify_exception(exc)
+                    try:
+                        if classification.get("retryable") is True:
+                            self.repository.mark_item_retryable_failed(item_id=item_id)
+                        else:
+                            self.repository.mark_item_failed(item_id=item_id)
+                    except Exception as mark_exc:
+                        log.bind(item_id=item_id).warning(
+                            "Analyze mark_item_state failed: {}",
+                            self._sanitize_error_message(str(mark_exc)),
+                        )
+                    write_and_record_artifact(
+                        item_id=item_id,
+                        kind="error_context",
+                        payload={
+                            "stage": "analyze",
+                            "error_type": type(exc).__name__,
+                            "error_message": sanitized_error,
+                            "item_id": item_id,
+                            **classification,
+                        },
+                    )
+                    log.bind(item_id=item_id).warning("Analyze failed: {}", sanitized_error)
 
-                        self.repository.save_analysis(item_id=item.id, result=analysis_result)
-                        analyze_result.processed += 1
-                    except Exception as exc:
-                        analyze_result.failed += 1
-                        llm_errors_total += 1
-                        llm_errors_by_provider_token[configured_provider_token] = (
-                            llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
-                        )
-                        llm_errors_by_model_token[configured_model_token] = (
-                            llm_errors_by_model_token.get(configured_model_token, 0) + 1
-                        )
-                        sanitized_error = self._sanitize_error_message(str(exc))
-                        classification = self._classify_exception(exc)
-                        if item.id is not None:
-                            try:
-                                if classification.get("retryable") is True:
-                                    self.repository.mark_item_retryable_failed(item_id=item.id)
-                                else:
-                                    self.repository.mark_item_failed(item_id=item.id)
-                            except Exception as mark_exc:
-                                log.bind(item_id=item.id).warning(
-                                    "Analyze mark_item_state failed: {}",
-                                    self._sanitize_error_message(str(mark_exc)),
-                                )
-                        write_and_record_artifact(
-                            item_id=item.id,
-                            kind="error_context",
-                            payload={
-                                "stage": "analyze",
-                                "error_type": type(exc).__name__,
-                                "error_message": sanitized_error,
-                                "item_id": item.id,
-                                **classification,
-                            },
-                        )
-                        log.bind(item_id=item.id).warning("Analyze failed: {}", sanitized_error)
-
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.processed_total",
-            value=enrich_processed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.skipped_total",
-            value=enrich_skipped,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.failed_total",
-            value=enrich_failed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.duration_ms_total",
-            value=enrich_duration_ms_total,
-            unit="ms",
-        )
         self.repository.record_metric(
             run_id=run_id,
             name="pipeline.analyze.llm_calls_total",
@@ -577,6 +722,12 @@ class PipelineService:
             run_id=run_id,
             name="pipeline.analyze.llm_errors_total",
             value=llm_errors_total,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.missing_content_total",
+            value=missing_content_total,
             unit="count",
         )
         for provider_token, count in llm_calls_by_provider_token.items():
@@ -626,11 +777,115 @@ class PipelineService:
             unit="ms",
         )
         log.info(
-            "Analyze completed with processed={} failed={}",
+            "Analyze completed with processed={} failed={} missing_content={}",
             analyze_result.processed,
             analyze_result.failed,
+            missing_content_total,
         )
         return analyze_result
+
+    def _resolve_analysis_limit(self, *, limit: int | None) -> int:
+        resolved = int(self.settings.analyze_limit if limit is None else limit)
+        if resolved <= 0:
+            raise ValueError("limit must be > 0")
+        return resolved
+
+    def _resolve_triage_candidate_limit(self, *, limit: int) -> int:
+        triage_enabled = bool(self.settings.triage_enabled) and bool(self.settings.topics)
+        if not triage_enabled:
+            return limit
+        return min(
+            int(self.settings.triage_max_candidates),
+            int(limit) * int(self.settings.triage_candidate_factor),
+        )
+
+    def _load_stored_content_for_analysis(self, *, item: Any) -> str | None:
+        item_id = getattr(item, "id", None)
+        if item_id is None:
+            return None
+        normalized_item_id = int(item_id)
+        source = str(getattr(item, "source", "") or "").strip().lower()
+        if source in {"arxiv", "openreview"}:
+            existing_pdf = self.repository.get_latest_content(
+                item_id=normalized_item_id,
+                content_type="pdf_text",
+            )
+            if existing_pdf is not None and existing_pdf.text:
+                return existing_pdf.text
+        existing_html = self.repository.get_latest_content(
+            item_id=normalized_item_id,
+            content_type="html_maintext",
+        )
+        if existing_html is not None and existing_html.text:
+            return existing_html.text
+        return None
+
+    def _ensure_item_content(self, *, client: httpx.Client, item: Any, log: Any) -> tuple[str, bool]:
+        raw_item_id = getattr(item, "id", None)
+        if raw_item_id is None:
+            raise ValueError("item id is required for enrichment")
+        item_id = int(raw_item_id)
+        content_text: str | None = None
+        stored_new_content = False
+        source = str(getattr(item, "source", "") or "").strip().lower()
+        canonical_url = str(getattr(item, "canonical_url", "") or "")
+        source_item_id = getattr(item, "source_item_id", None)
+
+        if source in {"arxiv", "openreview"}:
+            existing_pdf = self.repository.get_latest_content(
+                item_id=item_id,
+                content_type="pdf_text",
+            )
+            if existing_pdf is not None and existing_pdf.text:
+                content_text = existing_pdf.text
+            else:
+                pdf_url = self._build_pdf_url(
+                    source=source,
+                    canonical_url=canonical_url,
+                    source_item_id=source_item_id,
+                )
+                if pdf_url:
+                    try:
+                        pdf_bytes = fetch_url_bytes(client, pdf_url)
+                        extracted_pdf = extract_pdf_text(pdf_bytes)
+                        if extracted_pdf is None:
+                            raise RuntimeError("empty pdf text extraction")
+                        self.repository.upsert_content(
+                            item_id=item_id,
+                            content_type="pdf_text",
+                            text=extracted_pdf,
+                        )
+                        content_text = extracted_pdf
+                        stored_new_content = True
+                    except Exception as pdf_exc:
+                        log.bind(item_id=item_id).warning(
+                            "PDF enrich failed, falling back to HTML: {}",
+                            self._sanitize_error_message(str(pdf_exc)),
+                        )
+
+        if content_text is None:
+            existing_html = self.repository.get_latest_content(
+                item_id=item_id,
+                content_type="html_maintext",
+            )
+            if existing_html is not None and existing_html.text:
+                content_text = existing_html.text
+            else:
+                html = fetch_url_html(client, canonical_url)
+                extracted = extract_html_maintext(html)
+                if extracted is None:
+                    raise RuntimeError("empty html maintext extraction")
+                self.repository.upsert_content(
+                    item_id=item_id,
+                    content_type="html_maintext",
+                    text=extracted,
+                )
+                content_text = extracted
+                stored_new_content = True
+
+        if content_text is None or not content_text.strip():
+            raise RuntimeError("empty enriched content")
+        return content_text, stored_new_content
 
     def publish(self, *, run_id: str, limit: int = 50) -> PublishResult:
         log = logger.bind(module="pipeline.publish", run_id=run_id)

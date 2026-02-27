@@ -7,8 +7,8 @@ import pytest
 from sqlmodel import Session, select
 
 from recoleta.models import (
-    ITEM_STATE_INGESTED,
     ITEM_STATE_ANALYZED,
+    ITEM_STATE_ENRICHED,
     ITEM_STATE_RETRYABLE_FAILED,
     Artifact,
     Content,
@@ -36,7 +36,7 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-analyze-failure", drafts=[draft])
+    service.prepare(run_id="run-analyze-failure", drafts=[draft], limit=10)
     analyze_result = service.analyze(run_id="run-analyze-failure", limit=10)
 
     metrics = repository.list_metrics(run_id="run-analyze-failure")
@@ -47,7 +47,7 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     assert failed_metric[0].value == 1
 
 
-def test_analyze_marks_retryable_enrich_failures_and_allows_retry(
+def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -85,14 +85,14 @@ def test_analyze_marks_retryable_enrich_failures_and_allows_retry(
 
     monkeypatch.setattr(pipeline, "fetch_url_html", flaky_fetch_url_html)
 
-    first = service.analyze(run_id="run-retryable-enrich", limit=10)
-    assert first.processed == 0
-    assert first.failed == 1
+    service.enrich(run_id="run-retryable-enrich", limit=10)
 
     with Session(repository.engine) as session:
         item = session.exec(select(Item)).one()
         assert item.state == ITEM_STATE_RETRYABLE_FAILED
 
+    service.enrich(run_id="run-retryable-enrich-2", limit=10)
+    service.triage(run_id="run-retryable-enrich-2", limit=10)
     second = service.analyze(run_id="run-retryable-enrich-2", limit=10)
     assert second.processed == 1
     assert second.failed == 0
@@ -119,7 +119,7 @@ def test_analyze_persists_enriched_content_and_emits_enrich_metrics(configured_e
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-enrich", drafts=[draft])
+    service.prepare(run_id="run-enrich", drafts=[draft], limit=10)
     analyze_result = service.analyze(run_id="run-enrich", limit=10)
 
     assert analyze_result.processed == 1
@@ -224,8 +224,9 @@ def test_analyze_with_semantic_triage_prioritizes_high_similarity_items(
         raw_metadata={"source": "test"},
     )
 
-    service.ingest(run_id="run-triage-ingest", drafts=[draft_relevant, draft_irrelevant])
-    result = service.analyze(run_id="run-triage-analyze", limit=1)
+    run_id = "run-triage"
+    service.prepare(run_id=run_id, drafts=[draft_relevant, draft_irrelevant], limit=1)
+    result = service.analyze(run_id=run_id, limit=1)
     assert result.processed == 1
     assert analyzer.titles == ["Agents for Good"]
 
@@ -234,9 +235,9 @@ def test_analyze_with_semantic_triage_prioritizes_high_similarity_items(
         assert len(items) == 2
         by_title = {item.title: item for item in items}
         assert by_title["Agents for Good"].state == ITEM_STATE_ANALYZED
-        assert by_title["Gardening Tips"].state == ITEM_STATE_INGESTED
+        assert by_title["Gardening Tips"].state == ITEM_STATE_ENRICHED
 
-    metrics = repository.list_metrics(run_id="run-triage-analyze")
+    metrics = repository.list_metrics(run_id=run_id)
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.triage.candidates_total"].value == 2
     assert by_name["pipeline.triage.selected_total"].value == 1
@@ -286,11 +287,12 @@ def test_analyze_triage_embedding_failure_emits_metric_and_falls_back(
         raw_metadata={"source": "test"},
     )
 
-    service.ingest(run_id="run-triage-fallback-ingest", drafts=[draft_relevant, draft_irrelevant])
-    result = service.analyze(run_id="run-triage-fallback-analyze", limit=1)
+    run_id = "run-triage-fallback"
+    service.prepare(run_id=run_id, drafts=[draft_relevant, draft_irrelevant], limit=1)
+    result = service.analyze(run_id=run_id, limit=1)
     assert result.processed == 1
 
-    metrics = repository.list_metrics(run_id="run-triage-fallback-analyze")
+    metrics = repository.list_metrics(run_id=run_id)
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.triage.embedding_errors_total"].value == 1
     assert by_name["pipeline.triage.failed_total"].value == 0
@@ -358,11 +360,12 @@ def test_analyze_triage_content_fetch_failure_emits_metric_and_still_runs(
         raw_metadata={"source": "test"},
     )
 
-    service.ingest(run_id="run-triage-content-fetch-ingest", drafts=[draft_relevant, draft_irrelevant])
-    result = service.analyze(run_id="run-triage-content-fetch-analyze", limit=1)
+    run_id = "run-triage-content-fetch"
+    service.prepare(run_id=run_id, drafts=[draft_relevant, draft_irrelevant], limit=1)
+    result = service.analyze(run_id=run_id, limit=1)
     assert result.processed == 1
 
-    metrics = repository.list_metrics(run_id="run-triage-content-fetch-analyze")
+    metrics = repository.list_metrics(run_id=run_id)
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.triage.content_fetch_failed_total"].value == 1
 
@@ -449,12 +452,13 @@ def test_analyze_triage_dimension_mismatch_falls_back_to_rapidfuzz(
         raw_metadata={"source": "test"},
     )
 
-    service.ingest(run_id="run-triage-dim-mismatch-ingest", drafts=[draft_relevant, draft_irrelevant])
-    result = service.analyze(run_id="run-triage-dim-mismatch-analyze", limit=1)
+    run_id = "run-triage-dim-mismatch"
+    service.prepare(run_id=run_id, drafts=[draft_relevant, draft_irrelevant], limit=1)
+    result = service.analyze(run_id=run_id, limit=1)
     assert result.processed == 1
     assert analyzer.titles == ["Agents for Good"]
 
-    metrics = repository.list_metrics(run_id="run-triage-dim-mismatch-analyze")
+    metrics = repository.list_metrics(run_id=run_id)
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.triage.embedding_errors_total"].value == 1
     assert by_name["pipeline.triage.failed_total"].value == 0
@@ -586,7 +590,7 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-pdf-enrich", drafts=[draft])
+    service.prepare(run_id="run-pdf-enrich", drafts=[draft], limit=10)
     analyze_result = service.analyze(run_id="run-pdf-enrich", limit=10)
     assert analyze_result.processed == 1
 
@@ -624,7 +628,7 @@ def test_analyze_writes_llm_request_and_response_artifacts(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-llm-artifacts", drafts=[draft])
+    service.prepare(run_id="run-llm-artifacts", drafts=[draft], limit=10)
     analyze_result = service.analyze(run_id="run-llm-artifacts", limit=10)
     assert analyze_result.processed == 1
 
@@ -669,7 +673,7 @@ def test_analyze_sanitizes_debug_artifact_paths(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-llm-artifacts-2", drafts=[draft])
+    service.prepare(run_id="run-llm-artifacts-2", drafts=[draft], limit=10)
 
     malicious_run_id = "../run-llm-artifacts-2"
     analyze_result = service.analyze(run_id=malicious_run_id, limit=10)
@@ -712,7 +716,7 @@ def test_pipeline_records_duration_metrics_for_each_stage(configured_env) -> Non
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.ingest(run_id="run-durations", drafts=[draft])
+    service.prepare(run_id="run-durations", drafts=[draft], limit=10)
     service.analyze(run_id="run-durations", limit=10)
     service.publish(run_id="run-durations", limit=10)
 

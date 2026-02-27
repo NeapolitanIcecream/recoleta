@@ -276,7 +276,7 @@ def test_ingest_does_not_regress_state_for_analyzed_items(configured_env) -> Non
         authors=["Alice"],
         raw_metadata={"feed": "example"},
     )
-    service.ingest(run_id="run-ingest-state", drafts=[draft_a])
+    service.prepare(run_id="run-ingest-state", drafts=[draft_a], limit=10)
     analyzed = service.analyze(run_id="run-ingest-state", limit=10)
     assert analyzed.processed == 1
 

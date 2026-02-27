@@ -6,10 +6,10 @@ This document describes the proposed architecture for Recoleta v0: modules, data
 
 Recoleta is a CLI-first application with a small set of commands:
 
-- `recoleta ingest`: pull from sources and update the local index
-- `recoleta analyze`: run semantic triage (optional) and LLM analysis for newly ingested items
-- `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram)
-- `recoleta run`: schedule ingest/analyze/publish periodically (optional; can also be done by cron/launchd)
+- `recoleta ingest`: run **prepare** work (ingest + enrich + optional triage) and persist a Stage 4-ready backlog.
+- `recoleta analyze`: run **Stage 4 only** (LLM analysis on prepared items); no network enrichment or triage in this command.
+- `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram).
+- `recoleta run`: schedule ingest/analyze/publish periodically (optional; can also be done by cron/launchd).
 
 ## Module boundaries
 
@@ -86,6 +86,7 @@ Responsibilities:
 - Select items for Stage 4:
   - prioritize mode: rank by similarity and take top-K
   - filter mode (optional): apply a minimum similarity threshold to reduce LLM calls
+- Persist Stage 3.5 output by marking selected items as `triaged`, creating a durable handoff into Stage 4.
 - Preserve exploration: reserve a small slice of Stage 4 capacity for randomly sampled candidates.
 - Fail open: if triage fails, fall back to recency ordering.
 
@@ -97,7 +98,8 @@ Operational guidance:
 ### Stage 4: Analyze (LLM)
 
 Responsibilities:
-- For each enriched item, call LiteLLM to produce structured output:
+- For each prepared item, load **already stored** content (prefer `pdf_text`, then `html_maintext`).
+- Call LiteLLM to produce structured output:
   - summary
   - insight
   - idea_directions (list)
@@ -105,6 +107,10 @@ Responsibilities:
   - relevance score against user topics
   - novelty score (optional)
 - Persist the analysis record and a prompt+response debug artifact (when configured).
+
+Operational guidance:
+- Stage 4 is compute-only. Do not fetch URLs or run extraction in this stage.
+- If content is missing, fail fast, mark retryable, and emit machine-readable diagnostics.
 
 LLM interface:
 - Use LiteLLM's OpenAI-compatible API.
@@ -131,12 +137,19 @@ Responsibilities:
 - Optionally send Telegram messages (short mobile-friendly format) with safe rate limiting.
 - Record delivery results and message IDs for idempotency.
 
+## Durable pre-ranking boundary
+
+When triage is enabled, Stage 4 consumes `triaged` items (plus `retryable_failed` retries).  
+When triage is disabled, Stage 4 consumes `enriched` items (plus `retryable_failed`).  
+This keeps Stage 3/3.5 cache-friendly and makes Stage 4 a clean, lazy compute boundary.
+
 ## Scheduling and execution model
 
 Two supported modes:
 
-- **External scheduler**: run `recoleta ingest && recoleta analyze && recoleta publish` via cron/launchd.
-- **Internal scheduler**: `recoleta run` uses APScheduler to run jobs on intervals.
+- **External scheduler**: run `recoleta ingest && recoleta analyze && recoleta publish` via cron/launchd.  
+  (`ingest` now means prepare: Stage 1 + Stage 3 + Stage 3.5)
+- **Internal scheduler**: `recoleta run` uses APScheduler to run jobs on intervals with the same stage mapping.
 
 For v0, concurrency should be conservative:
 - parallelize network fetches with bounded concurrency
