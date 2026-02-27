@@ -221,6 +221,83 @@ def test_triage_skips_candidates_without_stored_content(
     assert refreshed_by_source_item_id["triage-no-content"].state == ITEM_STATE_INGESTED
 
 
+def test_triage_does_not_override_retryable_failed_state(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.triage import SemanticTriage
+
+    monkeypatch.setenv("TRIAGE_ENABLED", "true")
+    monkeypatch.setenv("TRIAGE_MODE", "prioritize")
+    monkeypatch.setenv("TRIAGE_RECENCY_FLOOR", "0")
+    monkeypatch.setenv("TRIAGE_EXPLORATION_RATE", "0")
+
+    settings, repository = _build_runtime()
+
+    class ConstantEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            assert model
+            assert dimensions is None or dimensions > 0
+            self.calls += 1
+            vectors = [[1.0, 0.0, 0.0] for _ in inputs]
+            return vectors, {"kind": "test"}
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        triage=SemanticTriage(embedder=ConstantEmbedder()),
+        telegram_sender=FakeTelegramSender(),
+    )
+    service.ingest(
+        run_id="run-triage-preserve-retryable",
+        drafts=[
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="triage-enriched",
+                canonical_url="https://example.com/triage-enriched",
+                title="Enriched Candidate",
+                authors=["Alice"],
+                raw_metadata={"source": "test"},
+            ),
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="triage-retryable",
+                canonical_url="https://example.com/triage-retryable",
+                title="Retryable Candidate",
+                authors=["Bob"],
+                raw_metadata={"source": "test"},
+            ),
+        ],
+    )
+
+    with Session(repository.engine) as session:
+        items = list(session.exec(select(Item)))
+    by_source_item_id = {item.source_item_id: item for item in items}
+    enriched = by_source_item_id["triage-enriched"]
+    retryable = by_source_item_id["triage-retryable"]
+    assert enriched.id is not None
+    assert retryable.id is not None
+
+    repository.upsert_content(item_id=enriched.id, content_type="html_maintext", text="enriched details")
+    repository.mark_item_enriched(item_id=enriched.id)
+
+    repository.upsert_content(item_id=retryable.id, content_type="html_maintext", text="retryable details")
+    repository.mark_item_enriched(item_id=retryable.id)
+    repository.mark_item_retryable_failed(item_id=retryable.id)
+
+    service.triage(run_id="run-triage-preserve-retryable", limit=1, candidate_limit=10)
+
+    with Session(repository.engine) as session:
+        refreshed = list(session.exec(select(Item)))
+    refreshed_by_source_item_id = {item.source_item_id: item for item in refreshed}
+    assert refreshed_by_source_item_id["triage-enriched"].state == ITEM_STATE_TRIAGED
+    assert refreshed_by_source_item_id["triage-retryable"].state == ITEM_STATE_RETRYABLE_FAILED
+
+
 def test_repository_analysis_selection_prioritizes_recently_updated_retryables(configured_env) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(

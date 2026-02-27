@@ -19,6 +19,7 @@ from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
+    ITEM_STATE_ENRICHED,
 )
 from recoleta.observability import collect_environment_secrets, get_rich_console, mask_value, scrub_secrets
 from recoleta.ports import RepositoryPort
@@ -318,6 +319,7 @@ class PipelineService:
             limit=normalized_candidate_limit,
             triage_required=False,
         )
+        triage_items = [item for item in items if getattr(item, "state", None) == ITEM_STATE_ENRICHED]
 
         def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
             artifact_path = self._write_debug_artifact(
@@ -342,7 +344,9 @@ class PipelineService:
                     self._sanitize_error_message(str(artifact_exc)),
                 )
 
-        triage_candidates, content_fetch_failed, content_fetch_error = self._build_triage_candidates(items=items)
+        triage_candidates, content_fetch_failed, content_fetch_error = self._build_triage_candidates(
+            items=triage_items
+        )
         if not triage_candidates:
             self.repository.record_metric(
                 run_id=run_id,
@@ -534,7 +538,7 @@ class PipelineService:
                 unit="count",
             )
             fallback_marked_total = 0
-            for item in items[:normalized_limit]:
+            for item in triage_items[:normalized_limit]:
                 fallback_item_id = getattr(item, "id", None)
                 if fallback_item_id is None:
                     continue
