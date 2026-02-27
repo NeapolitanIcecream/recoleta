@@ -98,7 +98,7 @@ Operational guidance:
 ### Stage 4: Analyze (LLM)
 
 Responsibilities:
-- For each prepared item, load **already stored** content (prefer `pdf_text`, then `html_maintext`).
+- For each prepared item, load **already stored** content (for arXiv, follow the configured enrich method; otherwise prefer `pdf_text`, then `html_maintext`).
 - Call LiteLLM to produce structured output:
   - summary
   - insight

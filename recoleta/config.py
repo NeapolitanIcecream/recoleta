@@ -53,6 +53,8 @@ def _default_markdown_output_dir() -> Path:
 
 
 _ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
+_ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
+_ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
 
 
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
@@ -185,6 +187,28 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
 class ArxivSourceConfig(BaseModel):
     queries: list[str] = Field(default_factory=list)
     max_results_per_run: int = 50
+    enrich_method: str = Field(default="pdf_text")
+    enrich_failure_mode: str = Field(default="fallback")
+
+    @field_validator("enrich_method", mode="before")
+    @classmethod
+    def _normalize_enrich_method(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "pdf_text"
+        if normalized not in _ALLOWED_ARXIV_ENRICH_METHODS:
+            raise ValueError("SOURCES.arxiv.enrich_method must be one of: pdf_text, latex_source, html_document")
+        return normalized
+
+    @field_validator("enrich_failure_mode", mode="before")
+    @classmethod
+    def _normalize_enrich_failure_mode(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "fallback"
+        if normalized not in _ALLOWED_ARXIV_ENRICH_FAILURE_MODES:
+            raise ValueError("SOURCES.arxiv.enrich_failure_mode must be one of: fallback, strict")
+        return normalized
 
 
 class HNSourceConfig(BaseModel):

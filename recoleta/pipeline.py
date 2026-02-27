@@ -14,7 +14,14 @@ from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, T
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
 from recoleta.config import Settings
 from recoleta.delivery import TelegramSender
-from recoleta.extract import extract_html_maintext, extract_pdf_text, fetch_url_bytes, fetch_url_html
+from recoleta.extract import (
+    extract_arxiv_latex_source,
+    extract_html_document_cleaned,
+    extract_html_maintext,
+    extract_pdf_text,
+    fetch_url_bytes,
+    fetch_url_html,
+)
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_FAILED,
@@ -190,6 +197,16 @@ class PipelineService:
         enrich_failed = 0
         enrich_skipped = 0
         enrich_duration_ms_total = 0
+        arxiv_items_by_method: dict[str, int] = {
+            "pdf_text": 0,
+            "latex_source": 0,
+            "html_document": 0,
+        }
+        arxiv_failed_by_method: dict[str, int] = {
+            "pdf_text": 0,
+            "latex_source": 0,
+            "html_document": 0,
+        }
 
         def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
             artifact_path = self._write_debug_artifact(
@@ -231,6 +248,11 @@ class PipelineService:
                         log.warning("Enrich skipped: item has no id")
                         continue
                     item_id = int(raw_item_id)
+                    source = str(getattr(item, "source", "") or "").strip().lower()
+                    arxiv_method: str | None = None
+                    if source == "arxiv":
+                        arxiv_method = self.settings.sources.arxiv.enrich_method
+                        arxiv_items_by_method[arxiv_method] = arxiv_items_by_method.get(arxiv_method, 0) + 1
                     enrich_item_started = time.perf_counter()
                     try:
                         _, stored_new_content = self._ensure_item_content(client=client, item=item, log=log)
@@ -241,6 +263,8 @@ class PipelineService:
                             enrich_skipped += 1
                     except Exception as enrich_exc:
                         enrich_failed += 1
+                        if arxiv_method is not None:
+                            arxiv_failed_by_method[arxiv_method] = arxiv_failed_by_method.get(arxiv_method, 0) + 1
                         sanitized_error = self._sanitize_error_message(str(enrich_exc))
                         classification = self._classify_exception(enrich_exc)
                         try:
@@ -299,6 +323,19 @@ class PipelineService:
             value=int((time.perf_counter() - enrich_started) * 1000),
             unit="ms",
         )
+        for method in ("pdf_text", "latex_source", "html_document"):
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.enrich.arxiv.method_selected.{method}_total",
+                value=arxiv_items_by_method.get(method, 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.enrich.arxiv.method_failed.{method}_total",
+                value=arxiv_failed_by_method.get(method, 0),
+                unit="count",
+            )
         log.info(
             "Enrich completed with processed={} skipped={} failed={}",
             enrich_processed,
@@ -819,19 +856,43 @@ class PipelineService:
             return None
         normalized_item_id = int(item_id)
         source = str(getattr(item, "source", "") or "").strip().lower()
-        if source in {"arxiv", "openreview"}:
-            existing_pdf = self.repository.get_latest_content(
+        if source == "arxiv":
+            return self._load_arxiv_content_for_analysis(item_id=normalized_item_id)
+        if source == "openreview":
+            existing_pdf = self._get_latest_content_text(
                 item_id=normalized_item_id,
                 content_type="pdf_text",
             )
-            if existing_pdf is not None and existing_pdf.text:
-                return existing_pdf.text
-        existing_html = self.repository.get_latest_content(
+            if existing_pdf is not None:
+                return existing_pdf
+        return self._get_latest_content_text(
             item_id=normalized_item_id,
             content_type="html_maintext",
         )
-        if existing_html is not None and existing_html.text:
-            return existing_html.text
+
+    def _get_latest_content_text(self, *, item_id: int, content_type: str) -> str | None:
+        existing_content = self.repository.get_latest_content(item_id=item_id, content_type=content_type)
+        if existing_content is None or not existing_content.text:
+            return None
+        return existing_content.text
+
+    def _load_arxiv_content_for_analysis(self, *, item_id: int) -> str | None:
+        method = self.settings.sources.arxiv.enrich_method
+        failure_mode = self.settings.sources.arxiv.enrich_failure_mode
+        primary_by_method = {
+            "pdf_text": "pdf_text",
+            "latex_source": "latex_source",
+            "html_document": "html_document",
+        }
+        content_types: list[str] = [primary_by_method.get(method, "pdf_text")]
+        if failure_mode == "fallback":
+            for candidate_type in ("pdf_text", "html_maintext", "html_document", "latex_source"):
+                if candidate_type not in content_types:
+                    content_types.append(candidate_type)
+        for content_type in content_types:
+            loaded = self._get_latest_content_text(item_id=item_id, content_type=content_type)
+            if loaded is not None:
+                return loaded
         return None
 
     def _ensure_item_content(self, *, client: httpx.Client, item: Any, log: Any) -> tuple[str, bool]:
@@ -839,67 +900,243 @@ class PipelineService:
         if raw_item_id is None:
             raise ValueError("item id is required for enrichment")
         item_id = int(raw_item_id)
-        content_text: str | None = None
-        stored_new_content = False
         source = str(getattr(item, "source", "") or "").strip().lower()
         canonical_url = str(getattr(item, "canonical_url", "") or "")
         source_item_id = getattr(item, "source_item_id", None)
 
-        if source in {"arxiv", "openreview"}:
-            existing_pdf = self.repository.get_latest_content(
+        if source == "arxiv":
+            content_text, stored_new_content = self._ensure_arxiv_content(
+                client=client,
                 item_id=item_id,
-                content_type="pdf_text",
+                canonical_url=canonical_url,
+                source_item_id=source_item_id,
+                log=log,
             )
-            if existing_pdf is not None and existing_pdf.text:
-                content_text = existing_pdf.text
-            else:
-                pdf_url = self._build_pdf_url(
-                    source=source,
+        elif source == "openreview":
+            content_text, stored_new_content = self._ensure_pdf_content_with_optional_html_fallback(
+                client=client,
+                source=source,
+                item_id=item_id,
+                canonical_url=canonical_url,
+                source_item_id=source_item_id,
+                allow_html_fallback=True,
+                log=log,
+            )
+        else:
+            content_text, stored_new_content = self._ensure_html_maintext_content(
+                client=client,
+                item_id=item_id,
+                canonical_url=canonical_url,
+            )
+
+        if not content_text.strip():
+            raise RuntimeError("empty enriched content")
+        return content_text, stored_new_content
+
+    def _ensure_arxiv_content(
+        self,
+        *,
+        client: httpx.Client,
+        item_id: int,
+        canonical_url: str,
+        source_item_id: str | None,
+        log: Any,
+    ) -> tuple[str, bool]:
+        method = self.settings.sources.arxiv.enrich_method
+        failure_mode = self.settings.sources.arxiv.enrich_failure_mode
+        if method == "pdf_text":
+            return self._ensure_pdf_content_with_optional_html_fallback(
+                client=client,
+                source="arxiv",
+                item_id=item_id,
+                canonical_url=canonical_url,
+                source_item_id=source_item_id,
+                allow_html_fallback=failure_mode == "fallback",
+                log=log,
+            )
+
+        if method == "latex_source":
+            try:
+                return self._ensure_arxiv_latex_source_content(
+                    client=client,
+                    item_id=item_id,
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
                 )
-                if pdf_url:
-                    try:
-                        pdf_bytes = fetch_url_bytes(client, pdf_url)
-                        extracted_pdf = extract_pdf_text(pdf_bytes)
-                        if extracted_pdf is None:
-                            raise RuntimeError("empty pdf text extraction")
-                        self.repository.upsert_content(
-                            item_id=item_id,
-                            content_type="pdf_text",
-                            text=extracted_pdf,
-                        )
-                        content_text = extracted_pdf
-                        stored_new_content = True
-                    except Exception as pdf_exc:
-                        log.bind(item_id=item_id).warning(
-                            "PDF enrich failed, falling back to HTML: {}",
-                            self._sanitize_error_message(str(pdf_exc)),
-                        )
+            except Exception as method_exc:
+                if failure_mode == "strict":
+                    raise
+                log.bind(item_id=item_id).warning(
+                    "arXiv enrich_method={} failed, falling back to pdf/html path: {}",
+                    method,
+                    self._sanitize_error_message(str(method_exc)),
+                )
+                return self._ensure_pdf_content_with_optional_html_fallback(
+                    client=client,
+                    source="arxiv",
+                    item_id=item_id,
+                    canonical_url=canonical_url,
+                    source_item_id=source_item_id,
+                    allow_html_fallback=True,
+                    log=log,
+                )
 
-        if content_text is None:
-            existing_html = self.repository.get_latest_content(
+        if method == "html_document":
+            try:
+                return self._ensure_arxiv_html_document_content(
+                    client=client,
+                    item_id=item_id,
+                    canonical_url=canonical_url,
+                    source_item_id=source_item_id,
+                )
+            except Exception as method_exc:
+                if failure_mode == "strict":
+                    raise
+                log.bind(item_id=item_id).warning(
+                    "arXiv enrich_method={} failed, falling back to pdf/html path: {}",
+                    method,
+                    self._sanitize_error_message(str(method_exc)),
+                )
+                return self._ensure_pdf_content_with_optional_html_fallback(
+                    client=client,
+                    source="arxiv",
+                    item_id=item_id,
+                    canonical_url=canonical_url,
+                    source_item_id=source_item_id,
+                    allow_html_fallback=True,
+                    log=log,
+                )
+
+        raise ValueError(f"Unsupported arXiv enrich_method: {method}")
+
+    def _ensure_arxiv_latex_source_content(
+        self,
+        *,
+        client: httpx.Client,
+        item_id: int,
+        canonical_url: str,
+        source_item_id: str | None,
+    ) -> tuple[str, bool]:
+        existing_latex = self._get_latest_content_text(item_id=item_id, content_type="latex_source")
+        if existing_latex is not None:
+            return existing_latex, False
+        source_url = self._build_arxiv_source_url(
+            canonical_url=canonical_url,
+            source_item_id=source_item_id,
+        )
+        if not source_url:
+            raise ValueError("missing arXiv source url")
+        source_bytes = fetch_url_bytes(client, source_url)
+        extracted_source = extract_arxiv_latex_source(source_bytes)
+        if extracted_source is None:
+            raise RuntimeError("empty arXiv latex source extraction")
+        self.repository.upsert_content(
+            item_id=item_id,
+            content_type="latex_source",
+            text=extracted_source,
+        )
+        return extracted_source, True
+
+    def _ensure_arxiv_html_document_content(
+        self,
+        *,
+        client: httpx.Client,
+        item_id: int,
+        canonical_url: str,
+        source_item_id: str | None,
+    ) -> tuple[str, bool]:
+        existing_document = self._get_latest_content_text(item_id=item_id, content_type="html_document")
+        if existing_document is not None:
+            return existing_document, False
+        html_url = self._build_arxiv_html_url(
+            canonical_url=canonical_url,
+            source_item_id=source_item_id,
+        )
+        if not html_url:
+            raise ValueError("missing arXiv html url")
+        html = fetch_url_html(client, html_url)
+        cleaned_document = extract_html_document_cleaned(html)
+        if cleaned_document is None:
+            raise RuntimeError("empty arXiv html document extraction")
+        self.repository.upsert_content(
+            item_id=item_id,
+            content_type="html_document",
+            text=cleaned_document,
+        )
+        extracted_maintext = extract_html_maintext(html)
+        if extracted_maintext is not None:
+            self.repository.upsert_content(
                 item_id=item_id,
                 content_type="html_maintext",
+                text=extracted_maintext,
             )
-            if existing_html is not None and existing_html.text:
-                content_text = existing_html.text
-            else:
-                html = fetch_url_html(client, canonical_url)
-                extracted = extract_html_maintext(html)
-                if extracted is None:
-                    raise RuntimeError("empty html maintext extraction")
-                self.repository.upsert_content(
-                    item_id=item_id,
-                    content_type="html_maintext",
-                    text=extracted,
-                )
-                content_text = extracted
-                stored_new_content = True
+        return cleaned_document, True
 
-        if content_text is None or not content_text.strip():
-            raise RuntimeError("empty enriched content")
-        return content_text, stored_new_content
+    def _ensure_pdf_content_with_optional_html_fallback(
+        self,
+        *,
+        client: httpx.Client,
+        source: str,
+        item_id: int,
+        canonical_url: str,
+        source_item_id: str | None,
+        allow_html_fallback: bool,
+        log: Any,
+    ) -> tuple[str, bool]:
+        existing_pdf = self._get_latest_content_text(item_id=item_id, content_type="pdf_text")
+        if existing_pdf is not None:
+            return existing_pdf, False
+        try:
+            pdf_url = self._build_pdf_url(
+                source=source,
+                canonical_url=canonical_url,
+                source_item_id=source_item_id,
+            )
+            if not pdf_url:
+                raise ValueError("missing pdf url")
+            pdf_bytes = fetch_url_bytes(client, pdf_url)
+            extracted_pdf = extract_pdf_text(pdf_bytes)
+            if extracted_pdf is None:
+                raise RuntimeError("empty pdf text extraction")
+            self.repository.upsert_content(
+                item_id=item_id,
+                content_type="pdf_text",
+                text=extracted_pdf,
+            )
+            return extracted_pdf, True
+        except Exception as pdf_exc:
+            if not allow_html_fallback:
+                raise
+            log.bind(item_id=item_id).warning(
+                "PDF enrich failed, falling back to HTML: {}",
+                self._sanitize_error_message(str(pdf_exc)),
+            )
+            return self._ensure_html_maintext_content(
+                client=client,
+                item_id=item_id,
+                canonical_url=canonical_url,
+            )
+
+    def _ensure_html_maintext_content(
+        self,
+        *,
+        client: httpx.Client,
+        item_id: int,
+        canonical_url: str,
+    ) -> tuple[str, bool]:
+        existing_html = self._get_latest_content_text(item_id=item_id, content_type="html_maintext")
+        if existing_html is not None:
+            return existing_html, False
+        html = fetch_url_html(client, canonical_url)
+        extracted = extract_html_maintext(html)
+        if extracted is None:
+            raise RuntimeError("empty html maintext extraction")
+        self.repository.upsert_content(
+            item_id=item_id,
+            content_type="html_maintext",
+            text=extracted,
+        )
+        return extracted, True
 
     def publish(self, *, run_id: str, limit: int = 50) -> PublishResult:
         log = logger.bind(module="pipeline.publish", run_id=run_id)
@@ -1266,6 +1503,7 @@ class PipelineService:
         candidates_items: list[Any] = []
         item_ids: list[int] = []
         pdf_item_ids: list[int] = []
+        arxiv_item_ids: list[int] = []
         for item in items:
             raw_item_id = getattr(item, "id", None)
             if raw_item_id is None:
@@ -1281,6 +1519,8 @@ class PipelineService:
             source = str(getattr(item, "source", "") or "").strip().lower()
             if source in {"arxiv", "openreview"}:
                 pdf_item_ids.append(item_id)
+            if source == "arxiv":
+                arxiv_item_ids.append(item_id)
 
         if not candidates_items:
             return [], False, None
@@ -1288,12 +1528,23 @@ class PipelineService:
         max_chars = int(getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200)
         html_by_id: dict[int, Any] = {}
         pdf_by_id: dict[int, Any] = {}
+        html_document_by_id: dict[int, Any] = {}
+        latex_by_id: dict[int, Any] = {}
         content_fetch_failed = False
         content_fetch_error: dict[str, Any] | None = None
         try:
             html_by_id = self.repository.get_latest_contents(item_ids=item_ids, content_type="html_maintext")
             if pdf_item_ids:
                 pdf_by_id = self.repository.get_latest_contents(item_ids=pdf_item_ids, content_type="pdf_text")
+            if arxiv_item_ids:
+                html_document_by_id = self.repository.get_latest_contents(
+                    item_ids=arxiv_item_ids,
+                    content_type="html_document",
+                )
+                latex_by_id = self.repository.get_latest_contents(
+                    item_ids=arxiv_item_ids,
+                    content_type="latex_source",
+                )
         except Exception as exc:  # noqa: BLE001
             content_fetch_failed = True
             sanitized_error = self._sanitize_error_message(str(exc))
@@ -1302,12 +1553,15 @@ class PipelineService:
                 "error_type": type(exc).__name__,
                 "error_message": sanitized_error,
                 **self._classify_exception(exc),
-                "content_types": ["html_maintext", "pdf_text"],
+                "content_types": ["html_maintext", "pdf_text", "html_document", "latex_source"],
                 "item_ids_total": len(item_ids),
                 "pdf_item_ids_total": len(pdf_item_ids),
+                "arxiv_item_ids_total": len(arxiv_item_ids),
             }
             html_by_id = {}
             pdf_by_id = {}
+            html_document_by_id = {}
+            latex_by_id = {}
 
         candidates: list[TriageCandidate] = []
         for item in candidates_items:
@@ -1325,6 +1579,14 @@ class PipelineService:
                 existing_html = html_by_id.get(item_id)
                 if existing_html is not None and getattr(existing_html, "text", None):
                     excerpt = str(getattr(existing_html, "text") or "")
+            if excerpt is None and source == "arxiv":
+                existing_html_document = html_document_by_id.get(item_id)
+                if existing_html_document is not None and getattr(existing_html_document, "text", None):
+                    excerpt = str(getattr(existing_html_document, "text") or "")
+            if excerpt is None and source == "arxiv":
+                existing_latex = latex_by_id.get(item_id)
+                if existing_latex is not None and getattr(existing_latex, "text", None):
+                    excerpt = str(getattr(existing_latex, "text") or "")
 
             combined = title
             if excerpt:
@@ -1361,22 +1623,16 @@ class PipelineService:
 
     @staticmethod
     def _build_pdf_url(*, source: str, canonical_url: str, source_item_id: str | None) -> str | None:
-        normalized_url = canonical_url.strip()
-        if not normalized_url:
-            return None
-
         if source == "arxiv":
-            if "arxiv.org" not in normalized_url:
-                return None
-            if "/abs/" in normalized_url:
-                base = normalized_url.replace("/abs/", "/pdf/", 1)
-            elif "/pdf/" in normalized_url:
-                base = normalized_url
-            else:
-                return None
-            return base if base.endswith(".pdf") else f"{base}.pdf"
+            return PipelineService._build_arxiv_pdf_url(
+                canonical_url=canonical_url,
+                source_item_id=source_item_id,
+            )
 
         if source == "openreview":
+            normalized_url = canonical_url.strip()
+            if not normalized_url:
+                return None
             if "openreview.net/pdf" in normalized_url:
                 return normalized_url
             note_id = (source_item_id or "").strip()
@@ -1391,3 +1647,66 @@ class PipelineService:
             return f"https://openreview.net/pdf?id={note_id}"
 
         return None
+
+    @staticmethod
+    def _build_arxiv_pdf_url(*, canonical_url: str, source_item_id: str | None) -> str | None:
+        arxiv_id = PipelineService._extract_arxiv_identifier(
+            canonical_url=canonical_url,
+            source_item_id=source_item_id,
+        )
+        if arxiv_id is None:
+            return None
+        return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+
+    @staticmethod
+    def _build_arxiv_source_url(*, canonical_url: str, source_item_id: str | None) -> str | None:
+        arxiv_id = PipelineService._extract_arxiv_identifier(
+            canonical_url=canonical_url,
+            source_item_id=source_item_id,
+        )
+        if arxiv_id is None:
+            return None
+        return f"https://arxiv.org/e-print/{arxiv_id}"
+
+    @staticmethod
+    def _build_arxiv_html_url(*, canonical_url: str, source_item_id: str | None) -> str | None:
+        arxiv_id = PipelineService._extract_arxiv_identifier(
+            canonical_url=canonical_url,
+            source_item_id=source_item_id,
+        )
+        if arxiv_id is None:
+            return None
+        return f"https://arxiv.org/html/{arxiv_id}"
+
+    @staticmethod
+    def _extract_arxiv_identifier(*, canonical_url: str, source_item_id: str | None) -> str | None:
+        for raw_value in (source_item_id or "", canonical_url or ""):
+            normalized = PipelineService._normalize_arxiv_identifier(raw_value)
+            if normalized is not None:
+                return normalized
+        return None
+
+    @staticmethod
+    def _normalize_arxiv_identifier(raw_value: str) -> str | None:
+        candidate = str(raw_value or "").strip()
+        if not candidate:
+            return None
+        if "://" in candidate:
+            try:
+                parsed = urlparse(candidate)
+                candidate = parsed.path.strip("/")
+            except Exception:
+                return None
+        for prefix in ("abs/", "pdf/", "html/", "e-print/", "src/", "format/"):
+            if candidate.startswith(prefix):
+                candidate = candidate[len(prefix):]
+                break
+        candidate = candidate.replace("arXiv:", "").replace("arxiv:", "").strip().strip("/")
+        if candidate.endswith(".pdf"):
+            candidate = candidate[:-4]
+        candidate = candidate.strip()
+        if not candidate:
+            return None
+        if any(ch.isspace() for ch in candidate):
+            return None
+        return candidate

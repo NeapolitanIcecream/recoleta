@@ -42,7 +42,7 @@ Stores extracted content and links to large artifacts.
 
 - `id` (PK, integer)
 - `item_id` (FK -> items.id)
-- `content_type` (text): `html_maintext|pdf_text|markdown`
+- `content_type` (text): `html_maintext|pdf_text|latex_source|html_document|markdown`
 - `text` (text, nullable): short/medium content
 - `artifact_path` (text, nullable): filesystem path for large blobs
 - `content_hash` (text): sha256(text or file bytes)

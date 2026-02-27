@@ -221,6 +221,78 @@ def test_triage_skips_candidates_without_stored_content(
     assert refreshed_by_source_item_id["triage-no-content"].state == ITEM_STATE_INGESTED
 
 
+def test_triage_uses_latex_source_excerpt_for_arxiv_items(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from recoleta.triage import SemanticTriage
+
+    monkeypatch.setenv("TRIAGE_ENABLED", "true")
+    monkeypatch.setenv("TRIAGE_MODE", "filter")
+    monkeypatch.setenv("TRIAGE_MIN_SIMILARITY", "0.5")
+    monkeypatch.setenv("TRIAGE_RECENCY_FLOOR", "0")
+    monkeypatch.setenv("TRIAGE_EXPLORATION_RATE", "0")
+
+    settings, repository = _build_runtime()
+
+    class KeywordEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+            assert model
+            assert dimensions is None or dimensions > 0
+            self.calls += 1
+            if self.calls == 1:
+                return [[1.0, 0.0, 0.0]], {"kind": "query"}
+            vectors: list[list[float]] = []
+            for text in inputs:
+                if "agents" in text.lower():
+                    vectors.append([1.0, 0.0, 0.0])
+                else:
+                    vectors.append([0.0, 1.0, 0.0])
+            return vectors, {"kind": "items"}
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        triage=SemanticTriage(embedder=KeywordEmbedder()),
+        telegram_sender=FakeTelegramSender(),
+    )
+    service.ingest(
+        run_id="run-triage-latex-source",
+        drafts=[
+            ItemDraft.from_values(
+                source="arxiv",
+                source_item_id="1605.08386v1",
+                canonical_url="https://arxiv.org/abs/1605.08386v1",
+                title="Paper Without Keyword",
+                authors=["Alice"],
+                raw_metadata={"source": "test"},
+            )
+        ],
+    )
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+        assert item.id is not None
+        item_id = item.id
+
+    repository.upsert_content(
+        item_id=item_id,
+        content_type="latex_source",
+        text="\\section{Intro}\nThis paper studies agents in production systems.",
+    )
+    repository.mark_item_enriched(item_id=item_id)
+
+    service.triage(run_id="run-triage-latex-source", limit=1, candidate_limit=10)
+
+    with Session(repository.engine) as session:
+        refreshed = session.exec(select(Item)).one()
+        assert refreshed.state == ITEM_STATE_TRIAGED
+
+
 def test_triage_does_not_override_retryable_failed_state(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
@@ -814,6 +886,238 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
         contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))
         assert contents
         assert any(content.content_type == "pdf_text" and content.text == "mock pdf text" for content in contents)
+
+
+def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.pipeline as pipeline
+
+    monkeypatch.setenv(
+        "SOURCES",
+        '{"arxiv":{"queries":["cat:cs.AI"],"enrich_method":"latex_source","enrich_failure_mode":"strict"}}',
+    )
+    settings, repository = _build_runtime()
+
+    class CapturingAnalyzer:
+        def __init__(self) -> None:
+            self.contents: list[str | None] = []
+
+        def analyze(
+            self,
+            *,
+            title: str,
+            canonical_url: str,  # noqa: ARG002
+            user_topics: list[str],
+            content: str | None = None,
+            include_debug: bool = False,  # noqa: ARG002
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            self.contents.append(content)
+            return (
+                AnalysisResult(
+                    model="test/fake-model",
+                    provider="test",
+                    summary=f"Summary for {title}",
+                    insight="This matters because it aligns with user interests.",
+                    idea_directions=["Try reproducing the approach."],
+                    topics=user_topics[:2] or ["general"],
+                    relevance_score=0.9,
+                    novelty_score=0.4,
+                    cost_usd=0.0,
+                    latency_ms=1,
+                ),
+                None,
+            )
+
+    analyzer = CapturingAnalyzer()
+
+    expected_source_url = "https://arxiv.org/e-print/1605.08386v1"
+
+    def fake_fetch_url_bytes(_client, url: str) -> bytes:  # noqa: ARG001
+        assert url == expected_source_url
+        return b"mock source archive"
+
+    def fail_fetch_url_html(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("html fetch should not be used")
+
+    monkeypatch.setattr(pipeline, "fetch_url_bytes", fake_fetch_url_bytes)
+    monkeypatch.setattr(
+        pipeline,
+        "extract_arxiv_latex_source",
+        lambda _bytes: "\\section{Intro}\nAgents are useful.",  # noqa: ARG005
+    )
+    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+    draft = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id="1605.08386v1",
+        canonical_url="https://arxiv.org/abs/1605.08386v1",
+        title="Arxiv LaTeX Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-latex-enrich", drafts=[draft], limit=10)
+    analyze_result = service.analyze(run_id="run-latex-enrich", limit=10)
+    assert analyze_result.processed == 1
+
+    assert analyzer.contents == ["\\section{Intro}\nAgents are useful."]
+
+    with Session(repository.engine) as session:
+        contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))
+        assert contents
+        assert any(
+            content.content_type == "latex_source" and content.text == "\\section{Intro}\nAgents are useful."
+            for content in contents
+        )
+
+
+def test_analyze_uses_html_document_enrichment_for_arxiv_items(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.pipeline as pipeline
+
+    monkeypatch.setenv(
+        "SOURCES",
+        '{"arxiv":{"queries":["cat:cs.AI"],"enrich_method":"html_document","enrich_failure_mode":"strict"}}',
+    )
+    settings, repository = _build_runtime()
+
+    class CapturingAnalyzer:
+        def __init__(self) -> None:
+            self.contents: list[str | None] = []
+
+        def analyze(
+            self,
+            *,
+            title: str,
+            canonical_url: str,  # noqa: ARG002
+            user_topics: list[str],
+            content: str | None = None,
+            include_debug: bool = False,  # noqa: ARG002
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            self.contents.append(content)
+            return (
+                AnalysisResult(
+                    model="test/fake-model",
+                    provider="test",
+                    summary=f"Summary for {title}",
+                    insight="This matters because it aligns with user interests.",
+                    idea_directions=["Try reproducing the approach."],
+                    topics=user_topics[:2] or ["general"],
+                    relevance_score=0.9,
+                    novelty_score=0.4,
+                    cost_usd=0.0,
+                    latency_ms=1,
+                ),
+                None,
+            )
+
+    analyzer = CapturingAnalyzer()
+
+    expected_html_url = "https://arxiv.org/html/1605.08386v1"
+
+    def fake_fetch_url_html(_client, url: str) -> str:  # noqa: ARG001
+        assert url == expected_html_url
+        return "<html><body><main><p>raw html body</p></main></body></html>"
+
+    def fail_fetch_url_bytes(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("binary fetch should not be used")
+
+    monkeypatch.setattr(pipeline, "fetch_url_html", fake_fetch_url_html)
+    monkeypatch.setattr(pipeline, "fetch_url_bytes", fail_fetch_url_bytes)
+    monkeypatch.setattr(
+        pipeline,
+        "extract_html_document_cleaned",
+        lambda _html: "<main><p>clean html body</p></main>",  # noqa: ARG005
+    )
+    monkeypatch.setattr(pipeline, "extract_html_maintext", lambda _html: "clean text body")  # noqa: ARG005
+
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+    draft = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id="1605.08386v1",
+        canonical_url="https://arxiv.org/abs/1605.08386v1",
+        title="Arxiv HTML Case",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-html-document-enrich", drafts=[draft], limit=10)
+    analyze_result = service.analyze(run_id="run-html-document-enrich", limit=10)
+    assert analyze_result.processed == 1
+
+    assert analyzer.contents == ["<main><p>clean html body</p></main>"]
+
+    with Session(repository.engine) as session:
+        contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))
+        assert any(
+            content.content_type == "html_document" and content.text == "<main><p>clean html body</p></main>"
+            for content in contents
+        )
+        assert any(content.content_type == "html_maintext" and content.text == "clean text body" for content in contents)
+
+
+def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+    import recoleta.pipeline as pipeline
+
+    monkeypatch.setenv(
+        "SOURCES",
+        '{"arxiv":{"queries":["cat:cs.AI"],"enrich_method":"html_document","enrich_failure_mode":"strict"}}',
+    )
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    draft = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id="1605.08386v1",
+        canonical_url="https://arxiv.org/abs/1605.08386v1",
+        title="Arxiv Strict Failure",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.ingest(run_id="run-arxiv-strict-failure", drafts=[draft])
+
+    def fail_fetch_url_html(_client, url: str) -> str:  # noqa: ARG001
+        request = httpx.Request("GET", url)
+        response = httpx.Response(503, request=request, text="service unavailable")
+        raise httpx.HTTPStatusError("service unavailable", request=request, response=response)
+
+    def fail_if_binary_fetch_used(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("strict mode must not fallback to binary/pdf fetch")
+
+    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(pipeline, "fetch_url_bytes", fail_if_binary_fetch_used)
+
+    service.enrich(run_id="run-arxiv-strict-failure", limit=10)
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+        assert item.state == ITEM_STATE_RETRYABLE_FAILED
+
+    metrics = repository.list_metrics(run_id="run-arxiv-strict-failure")
+    by_name: dict[str, Metric] = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.enrich.failed_total"].value == 1
+    assert by_name["pipeline.enrich.arxiv.method_failed.html_document_total"].value == 1
 
 
 def test_analyze_writes_llm_request_and_response_artifacts(

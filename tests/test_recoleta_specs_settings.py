@@ -31,6 +31,41 @@ def test_settings_loads_nested_source_configuration(configured_env) -> None:
     assert settings.topics == ["agents", "ml-systems"]
 
 
+def test_settings_loads_arxiv_enrich_configuration(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "queries": ["cat:cs.AI"],
+                    "enrich_method": "latex_source",
+                    "enrich_failure_mode": "strict",
+                }
+            }
+        ),
+    )
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.sources.arxiv.queries == ["cat:cs.AI"]
+    assert settings.sources.arxiv.enrich_method == "latex_source"
+    assert settings.sources.arxiv.enrich_failure_mode == "strict"
+
+
+def test_settings_rejects_invalid_arxiv_enrich_configuration(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "queries": ["cat:cs.AI"],
+                    "enrich_method": "unknown",
+                }
+            }
+        ),
+    )
+    with pytest.raises(ValueError, match="enrich_method"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_settings_loads_sources_from_yaml_env_string(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "SOURCES",

@@ -240,5 +240,5 @@ Optional alternatives:
 - Semantic scoring and selection live in `SemanticTriage` (`recoleta/triage.py`):
   - default: LiteLLM embeddings + cosine similarity
   - fallback: `rapidfuzz` title similarity when embeddings fail
-- Triage text is built from local state only (title + stored `pdf_text`/`html_maintext` excerpts when available) and truncated by `TRIAGE_ITEM_TEXT_MAX_CHARS`.
+- Triage text is built from local state only (title + stored content excerpts, preferring `pdf_text`, then `html_maintext`, and for arXiv falling back to `html_document`/`latex_source` when needed) and truncated by `TRIAGE_ITEM_TEXT_MAX_CHARS`.
 - Metrics and optional scrubbed artifacts are recorded under the `pipeline.triage.*` namespace.

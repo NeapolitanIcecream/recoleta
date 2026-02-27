@@ -46,6 +46,8 @@ Recommended fields:
   - `arxiv`:
     - `queries`: list of arXiv query strings
     - `max_results_per_run`
+    - `enrich_method`: `pdf_text|latex_source|html_document` (default `pdf_text`)
+    - `enrich_failure_mode`: `fallback|strict` (default `fallback`)
   - `hn`:
     - `rss_urls`: list (e.g. `https://news.ycombinator.com/rss`)
   - `hf_daily`:
@@ -54,6 +56,21 @@ Recommended fields:
     - `venues`: list (conference ids)
   - `rss`:
     - `feeds`: list of newsletter RSS URLs
+
+Example:
+
+```yaml
+SOURCES:
+  arxiv:
+    queries:
+      - cat:cs.AI
+    max_results_per_run: 50
+    enrich_method: latex_source
+    enrich_failure_mode: strict
+  rss:
+    feeds:
+      - https://example.com/feed.xml
+```
 
 ## Topic and ranking configuration
 
