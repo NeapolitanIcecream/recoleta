@@ -84,7 +84,7 @@ class ExplodingRepository:
     engine: Any
 
     def __init__(self) -> None:
-        self.engine: Any = None
+        self.engine = None
         self.metrics: list[tuple[str, float, str | None]] = []
         self.artifacts: list[tuple[str, int | None, str, str]] = []
 
