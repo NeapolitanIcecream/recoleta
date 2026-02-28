@@ -302,7 +302,7 @@ class Settings(BaseSettings):
     )
     triage_recency_floor: int = Field(default=5, ge=0, validation_alias="TRIAGE_RECENCY_FLOOR")
     analyze_limit: int = Field(default=100, ge=1, validation_alias="ANALYZE_LIMIT")
-    analyze_content_max_chars: int = Field(default=5000, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS")
+    analyze_content_max_chars: int = Field(default=32_768, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS")
 
     ingest_interval_minutes: int = Field(default=60, validation_alias="INGEST_INTERVAL_MINUTES")
     analyze_interval_minutes: int = Field(default=120, validation_alias="ANALYZE_INTERVAL_MINUTES")

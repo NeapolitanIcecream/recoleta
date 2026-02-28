@@ -223,7 +223,7 @@ Common optional knobs:
   - `MIN_RELEVANCE_SCORE` / `min_relevance_score`
   - `MAX_DELIVERIES_PER_DAY` / `max_deliveries_per_day`
 - **Analysis content truncation**:
-  - `ANALYZE_CONTENT_MAX_CHARS` / `analyze_content_max_chars` (default: `5000`, set to `0` to disable truncation)
+  - `ANALYZE_CONTENT_MAX_CHARS` / `analyze_content_max_chars` (default: `32768`, set to `0` to disable truncation)
 - **Semantic triage (pre-ranking before LLM)** (runs only when `TRIAGE_ENABLED=true` and `TOPICS` is non-empty):
   - `TRIAGE_ENABLED` / `triage_enabled`
   - `TRIAGE_MODE` / `triage_mode` (`prioritize|filter`)
