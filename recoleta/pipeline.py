@@ -287,13 +287,22 @@ class PipelineService:
 
             def _process_one(*, client: httpx.Client, item: Any) -> dict[str, Any]:
                 raw_item_id = getattr(item, "id", None)
-                if raw_item_id is None:
-                    return {"status": "skipped", "reason": "missing_item_id"}
-                item_id = int(raw_item_id)
                 source = str(getattr(item, "source", "") or "").strip().lower()
                 arxiv_method: str | None = None
                 if source == "arxiv":
                     arxiv_method = self.settings.sources.arxiv.enrich_method
+                if raw_item_id is None:
+                    return {
+                        "status": "failed",
+                        "item_id": None,
+                        "source": source,
+                        "arxiv_method": arxiv_method,
+                        "error_type": "ValueError",
+                        "error_message": "missing item id",
+                        "classification": {"retryable": False},
+                        "diag": {},
+                    }
+                item_id = int(raw_item_id)
                 diag: dict[str, int] = {}
                 try:
                     _, stored_new_content = self._ensure_item_content(
@@ -357,10 +366,7 @@ class PipelineService:
                     nonlocal html_document_db_read_ms_sum, html_document_db_write_ms_sum
 
                     status = result.get("status")
-                    if status == "skipped":
-                        enrich_failed += 1
-                        log.warning("Enrich skipped: {}", result.get("reason") or "unknown")
-                    elif status == "ok":
+                    if status == "ok":
                         if result.get("stored_new"):
                             enrich_processed += 1
                         else:
@@ -409,6 +415,21 @@ class PipelineService:
                             result = _process_one(client=client, item=item)
                             _consume_result(result, item_elapsed_ms=int((time.perf_counter() - item_started) * 1000))
                 else:
+                    parallel_items: list[Any] = []
+                    serial_items: list[Any] = []
+                    for item in items:
+                        source = str(getattr(item, "source", "") or "").strip().lower()
+                        if source == "arxiv" and self.settings.sources.arxiv.enrich_method == "html_document":
+                            parallel_items.append(item)
+                        else:
+                            serial_items.append(item)
+
+                    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as serial_client:
+                        for item in serial_items:
+                            item_started = time.perf_counter()
+                            result = _process_one(client=serial_client, item=item)
+                            _consume_result(result, item_elapsed_ms=int((time.perf_counter() - item_started) * 1000))
+
                     local = threading.local()
                     created_clients: list[httpx.Client] = []
                     created_lock = threading.Lock()
@@ -432,7 +453,7 @@ class PipelineService:
 
                     try:
                         with ThreadPoolExecutor(max_workers=html_document_max_concurrency) as executor:
-                            futures = {executor.submit(_worker, item): item for item in items}
+                            futures = {executor.submit(_worker, item): item for item in parallel_items}
                             for fut in as_completed(futures):
                                 try:
                                     result = fut.result()
