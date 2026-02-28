@@ -85,6 +85,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRIAGE_EXPLORATION_RATE": "triage_exploration_rate",
         "TRIAGE_RECENCY_FLOOR": "triage_recency_floor",
         "ANALYZE_LIMIT": "analyze_limit",
+        "ANALYZE_CONTENT_MAX_CHARS": "analyze_content_max_chars",
         "INGEST_INTERVAL_MINUTES": "ingest_interval_minutes",
         "ANALYZE_INTERVAL_MINUTES": "analyze_interval_minutes",
         "PUBLISH_INTERVAL_MINUTES": "publish_interval_minutes",
@@ -295,6 +296,7 @@ class Settings(BaseSettings):
     )
     triage_recency_floor: int = Field(default=5, ge=0, validation_alias="TRIAGE_RECENCY_FLOOR")
     analyze_limit: int = Field(default=100, ge=1, validation_alias="ANALYZE_LIMIT")
+    analyze_content_max_chars: int = Field(default=5000, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS")
 
     ingest_interval_minutes: int = Field(default=60, validation_alias="INGEST_INTERVAL_MINUTES")
     analyze_interval_minutes: int = Field(default=120, validation_alias="ANALYZE_INTERVAL_MINUTES")

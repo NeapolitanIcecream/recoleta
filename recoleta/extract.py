@@ -5,10 +5,12 @@ from io import BytesIO
 import os
 import tarfile
 import tempfile
+import time
 from contextlib import contextmanager
 from typing import Any
 
 from bs4 import BeautifulSoup
+from bs4.element import Tag
 import httpx
 import trafilatura
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
@@ -17,6 +19,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 _MARKER_PDF_CONVERTER: Any | None = None
 _ARXIV_LATEX_MAX_CHARS = 200_000
 _HTML_DOCUMENT_MAX_CHARS = 200_000
+_HTML_REFERENCES_MAX_CHARS = 120_000
 _LATEX_TEXT_SUFFIXES = (".tex", ".bib", ".bbl", ".txt", ".cls", ".sty")
 
 
@@ -287,9 +290,25 @@ def extract_arxiv_latex_source(archive_bytes: bytes, *, max_chars: int = _ARXIV_
 
 
 def extract_html_document_cleaned(html: str, *, max_chars: int = _HTML_DOCUMENT_MAX_CHARS) -> str | None:
+    cleaned, _, _ = extract_html_document_cleaned_with_references(html, max_chars=max_chars)
+    return cleaned
+
+
+def extract_html_document_cleaned_with_references(
+    html: str,
+    *,
+    max_chars: int = _HTML_DOCUMENT_MAX_CHARS,
+    references_max_chars: int = _HTML_REFERENCES_MAX_CHARS,
+) -> tuple[str | None, str | None, dict[str, Any]]:
+    """Extract a cleaned HTML document and split off References/Bibliography blocks.
+
+    Returns (cleaned_html, references_html, stats).
+    """
+
     stripped = html.strip()
     if not stripped:
-        return None
+        return None, None, {"error": "empty_input"}
+
     soup = BeautifulSoup(stripped, "html.parser")
     for tag in soup(["script", "style", "noscript", "iframe"]):
         tag.decompose()
@@ -304,10 +323,225 @@ def extract_html_document_cleaned(html: str, *, max_chars: int = _HTML_DOCUMENT_
         main_container = soup.body if soup.body is not None else soup
 
     if not main_container.get_text(" ", strip=True):
-        return None
-    normalized_lines = [line.strip() for line in str(main_container).splitlines() if line.strip()]
-    cleaned_html = "\n".join(normalized_lines).strip()
-    if max_chars > 0 and len(cleaned_html) > max_chars:
-        cleaned_html = cleaned_html[:max_chars].rstrip()
-    return cleaned_html or None
+        return None, None, {"error": "empty_main_container"}
+
+    def _has_semantic_payload(tag: Tag) -> bool:
+        # Keep wrappers that contain valuable structured content.
+        if tag.find(["math", "table", "pre", "code", "svg", "img"]):
+            return True
+        class_attr = tag.get("class")
+        classes = [str(c) for c in class_attr] if isinstance(class_attr, list) else [str(class_attr)] if class_attr else []
+        class_blob = " ".join(classes).lower()
+        # arXiv/LaTeXML math/table/code wrappers often include these markers.
+        keep_markers = (
+            "math",
+            "equation",
+            "eqn",
+            "align",
+            "matrix",
+            "tabular",
+            "table",
+            "listing",
+            "verbatim",
+            "code",
+            "algorithm",
+            "figure",
+            "caption",
+        )
+        return any(marker in class_blob for marker in keep_markers)
+
+    def _simplify_arxiv_html(container: Tag) -> dict[str, int]:
+        removed_metadata = 0
+        unwrapped = 0
+        removed_attrs = 0
+
+        # Remove common author/contact/metadata blocks (keeps abstract and body).
+        metadata_selectors = [
+            ".ltx_authors",
+            ".ltx_author_notes",
+            ".ltx_affiliation",
+            ".ltx_contact",
+            ".ltx_role_orcid",
+            ".ltx_role_email",
+            ".ltx_role_author",
+            ".ltx_creator",
+            ".ltx_date",
+        ]
+        for selector in metadata_selectors:
+            for tag in list(container.select(selector)):
+                tag.decompose()
+                removed_metadata += 1
+
+        # Drop mailto/orcid links while keeping visible text (avoid raw href noise).
+        for a in list(container.find_all("a")):
+            href = a.get("href")
+            href_str = str(href or "")
+            if "mailto:" in href_str or "orcid.org" in href_str:
+                a.unwrap()
+
+        # Strip most attributes to reduce pandoc emitting raw HTML. Preserve a small allowlist.
+        allowed_attrs = {"colspan", "rowspan", "href", "src", "alt"}
+        for tag in container.find_all(True):
+            attrs = dict(getattr(tag, "attrs", {}) or {})
+            if not attrs:
+                continue
+            new_attrs: dict[str, Any] = {}
+            for key, value in attrs.items():
+                if key in allowed_attrs:
+                    new_attrs[key] = value
+            if new_attrs != attrs:
+                removed_attrs += len(attrs) - len(new_attrs)
+                tag.attrs = new_attrs
+
+        # Unwrap stylistic span/div wrappers that don't carry semantic payload.
+        for tag_name in ("span", "div"):
+            for tag in list(container.find_all(tag_name)):
+                if _has_semantic_payload(tag):
+                    continue
+                # Avoid unwrapping section/article containers (structural boundaries).
+                if tag.name in {"section", "article"}:
+                    continue
+                try:
+                    tag.unwrap()
+                    unwrapped += 1
+                except Exception:
+                    continue
+
+        return {
+            "removed_metadata_blocks": removed_metadata,
+            "unwrapped_wrappers": unwrapped,
+            "removed_attrs_total": removed_attrs,
+        }
+
+    # Remove obvious non-body blocks that often duplicate navigation/TOC/metadata.
+    removed_non_body = 0
+    non_body_selectors = [
+        '[role="navigation"]',
+        '[aria-label="navigation"]',
+        ".toc",
+        ".ltx_toc",
+        ".ltx_role_toc",
+        ".ltx_page_header",
+        ".ltx_page_footer",
+        ".ltx_sidebar",
+        ".sidebar",
+    ]
+    for selector in non_body_selectors:
+        for tag in list(main_container.select(selector)):
+            tag.decompose()
+            removed_non_body += 1
+
+    # Split References/Bibliography blocks out of the main container.
+    references_blocks: list[str] = []
+    removed_references = 0
+
+    def is_reference_heading(text: str) -> bool:
+        normalized = " ".join(text.strip().lower().split())
+        return normalized in {"references", "bibliography"}
+
+    # 1) Prefer explicit bibliography containers/classes (arXiv HTML often uses these).
+    for tag in list(
+        main_container.select(
+            ".ltx_bibliography, .ltx_biblist, .ltx_references, #references, #bibliography, .references, .bibliography"
+        )
+    ):
+        references_blocks.append(str(tag))
+        tag.decompose()
+        removed_references += 1
+
+    # 2) Fallback: heading-based split (remove heading + following siblings until next heading of same/higher level).
+    for heading in list(main_container.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])):
+        heading_text = heading.get_text(" ", strip=True)
+        if not heading_text or not is_reference_heading(heading_text):
+            continue
+        level = int(heading.name[1])
+        parent = heading.parent
+        if parent is None:
+            continue
+        # If the heading is inside a section-like container, extract that container.
+        if parent.name in {"section", "div"} and parent.get_text(" ", strip=True):
+            references_blocks.append(str(parent))
+            parent.decompose()
+            removed_references += 1
+            continue
+        # Otherwise remove the heading and a best-effort contiguous block after it.
+        collected: list[str] = [str(heading)]
+        current = heading.next_sibling
+        while current is not None:
+            next_node = getattr(current, "next_sibling", None)
+            if getattr(current, "name", None) in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                try:
+                    next_level = int(str(getattr(current, "name"))[1])
+                except Exception:
+                    next_level = 6
+                if next_level <= level:
+                    break
+            try:
+                collected.append(str(current))
+                current.extract()
+            except Exception:
+                pass
+            current = next_node
+        try:
+            heading.decompose()
+        except Exception:
+            pass
+        references_blocks.append("\n".join(collected))
+        removed_references += 1
+
+    simplify_stats = _simplify_arxiv_html(main_container)
+
+    def normalize_html_fragment(fragment: str, *, limit: int) -> str | None:
+        normalized_lines = [line.strip() for line in fragment.splitlines() if line.strip()]
+        combined = "\n".join(normalized_lines).strip()
+        if not combined:
+            return None
+        if limit > 0 and len(combined) > limit:
+            combined = combined[:limit].rstrip()
+        return combined or None
+
+    cleaned_html = normalize_html_fragment(str(main_container), limit=max_chars)
+    references_html: str | None = None
+    if references_blocks:
+        references_html = normalize_html_fragment("\n\n".join(references_blocks), limit=references_max_chars)
+
+    stats: dict[str, Any] = {
+        "removed_non_body_blocks": removed_non_body,
+        "removed_references_blocks": removed_references,
+        "references_blocks_collected": len(references_blocks),
+        "cleaned_chars": len(cleaned_html or ""),
+        "references_chars": len(references_html or ""),
+        **simplify_stats,
+    }
+    return cleaned_html, references_html, stats
+
+
+def convert_html_document_to_markdown(
+    html: str,
+    *,
+    max_chars: int = _HTML_DOCUMENT_MAX_CHARS,
+) -> tuple[str | None, int, str | None]:
+    """Convert HTML to GitHub-flavored Markdown via Pandoc (pypandoc)."""
+
+    started = time.perf_counter()
+    try:
+        import pypandoc  # type: ignore[import-not-found]
+
+        markdown = pypandoc.convert_text(
+            html,
+            to="gfm",
+            format="html",
+            extra_args=["--wrap=none"],
+        )
+    except Exception as exc:  # noqa: BLE001
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        return None, elapsed_ms, f"{type(exc).__name__}: {exc}"
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    normalized = str(markdown or "").strip()
+    if not normalized:
+        return None, elapsed_ms, "empty_markdown"
+    if max_chars > 0 and len(normalized) > max_chars:
+        normalized = normalized[:max_chars].rstrip()
+    return normalized or None, elapsed_ms, None
 

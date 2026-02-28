@@ -1035,10 +1035,15 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
     monkeypatch.setattr(pipeline, "fetch_url_bytes", fail_fetch_url_bytes)
     monkeypatch.setattr(
         pipeline,
-        "extract_html_document_cleaned",
-        lambda _html: "<main><p>clean html body</p></main>",  # noqa: ARG005
+        "extract_html_document_cleaned_with_references",
+        lambda _html, **_: ("<main><p>clean html body</p></main>", None, {}),  # noqa: ARG005
     )
     monkeypatch.setattr(pipeline, "extract_html_maintext", lambda _html: "clean text body")  # noqa: ARG005
+    monkeypatch.setattr(
+        pipeline,
+        "convert_html_document_to_markdown",
+        lambda _html, **_: ("clean html body", 3, None),  # noqa: ARG005
+    )
 
     service = PipelineService(
         settings=settings,
@@ -1058,7 +1063,7 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
     analyze_result = service.analyze(run_id="run-html-document-enrich", limit=10)
     assert analyze_result.processed == 1
 
-    assert analyzer.contents == ["<main><p>clean html body</p></main>"]
+    assert analyzer.contents == ["clean html body"]
 
     with Session(repository.engine) as session:
         contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))

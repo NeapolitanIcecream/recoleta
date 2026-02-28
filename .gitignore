@@ -207,3 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 .cursor/
+
+# Bench artifacts (local experiments)
+bench-out*/
+recoleta-bench-*.db

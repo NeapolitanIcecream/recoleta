@@ -16,7 +16,8 @@ from recoleta.config import Settings
 from recoleta.delivery import TelegramSender
 from recoleta.extract import (
     extract_arxiv_latex_source,
-    extract_html_document_cleaned,
+    convert_html_document_to_markdown,
+    extract_html_document_cleaned_with_references,
     extract_html_maintext,
     extract_pdf_text,
     fetch_url_bytes,
@@ -59,6 +60,7 @@ class PipelineService:
         self.analyzer = analyzer or LiteLLMAnalyzer(
             model=settings.llm_model,
             output_language=settings.llm_output_language,
+            content_max_chars=settings.analyze_content_max_chars,
         )
         self.semantic_triage = triage or SemanticTriage(
             embedding_batch_max_inputs=settings.triage_embedding_batch_max_inputs,
@@ -882,11 +884,11 @@ class PipelineService:
         primary_by_method = {
             "pdf_text": "pdf_text",
             "latex_source": "latex_source",
-            "html_document": "html_document",
+            "html_document": "html_document_md",
         }
         content_types: list[str] = [primary_by_method.get(method, "pdf_text")]
         if failure_mode == "fallback":
-            for candidate_type in ("pdf_text", "html_maintext", "html_document", "latex_source"):
+            for candidate_type in ("pdf_text", "html_maintext", "html_document_md", "html_document", "latex_source"):
                 if candidate_type not in content_types:
                     content_types.append(candidate_type)
         for content_type in content_types:
@@ -988,6 +990,7 @@ class PipelineService:
                     item_id=item_id,
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
+                    log=log,
                 )
             except Exception as method_exc:
                 if failure_mode == "strict":
@@ -1044,10 +1047,57 @@ class PipelineService:
         item_id: int,
         canonical_url: str,
         source_item_id: str | None,
+        log: Any,
     ) -> tuple[str, bool]:
         existing_document = self._get_latest_content_text(item_id=item_id, content_type="html_document")
+        existing_md = self._get_latest_content_text(item_id=item_id, content_type="html_document_md")
+        existing_refs = self._get_latest_content_text(item_id=item_id, content_type="html_references")
+        stored_new = False
         if existing_document is not None:
-            return existing_document, False
+            cleaned_document, references_html, stats = extract_html_document_cleaned_with_references(existing_document)
+            if cleaned_document is not None and cleaned_document != existing_document:
+                self.repository.upsert_content(
+                    item_id=item_id,
+                    content_type="html_document",
+                    text=cleaned_document,
+                )
+                stored_new = True
+                existing_document = cleaned_document
+            if existing_refs is None and references_html is not None:
+                self.repository.upsert_content(
+                    item_id=item_id,
+                    content_type="html_references",
+                    text=references_html,
+                )
+                stored_new = True
+            if existing_md is None and existing_document is not None:
+                markdown, elapsed_ms, error = convert_html_document_to_markdown(existing_document)
+                if markdown is not None:
+                    self.repository.upsert_content(
+                        item_id=item_id,
+                        content_type="html_document_md",
+                        text=markdown,
+                    )
+                    stored_new = True
+                    log.bind(item_id=item_id).info(
+                        "html_document_md created from existing html_document elapsed_ms={} chars_in={} chars_out={}",
+                        elapsed_ms,
+                        len(existing_document),
+                        len(markdown),
+                    )
+                else:
+                    log.bind(item_id=item_id).warning(
+                        "html_document_md conversion skipped elapsed_ms={} error={}",
+                        elapsed_ms,
+                        error,
+                    )
+            log.bind(item_id=item_id).info(
+                "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",
+                stats.get("removed_non_body_blocks"),
+                stats.get("removed_references_blocks"),
+                stats.get("references_chars"),
+            )
+            return existing_document, stored_new
         html_url = self._build_arxiv_html_url(
             canonical_url=canonical_url,
             source_item_id=source_item_id,
@@ -1055,13 +1105,44 @@ class PipelineService:
         if not html_url:
             raise ValueError("missing arXiv html url")
         html = fetch_url_html(client, html_url)
-        cleaned_document = extract_html_document_cleaned(html)
+        cleaned_document, references_html, stats = extract_html_document_cleaned_with_references(html)
         if cleaned_document is None:
             raise RuntimeError("empty arXiv html document extraction")
         self.repository.upsert_content(
             item_id=item_id,
             content_type="html_document",
             text=cleaned_document,
+        )
+        if references_html is not None:
+            self.repository.upsert_content(
+                item_id=item_id,
+                content_type="html_references",
+                text=references_html,
+            )
+        markdown, elapsed_ms, error = convert_html_document_to_markdown(cleaned_document)
+        if markdown is not None:
+            self.repository.upsert_content(
+                item_id=item_id,
+                content_type="html_document_md",
+                text=markdown,
+            )
+            log.bind(item_id=item_id).info(
+                "html_document_md created elapsed_ms={} chars_in={} chars_out={}",
+                elapsed_ms,
+                len(cleaned_document),
+                len(markdown),
+            )
+        else:
+            log.bind(item_id=item_id).warning(
+                "html_document_md conversion skipped elapsed_ms={} error={}",
+                elapsed_ms,
+                error,
+            )
+        log.bind(item_id=item_id).info(
+            "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",
+            stats.get("removed_non_body_blocks"),
+            stats.get("removed_references_blocks"),
+            stats.get("references_chars"),
         )
         extracted_maintext = extract_html_maintext(html)
         if extracted_maintext is not None:
@@ -1529,6 +1610,7 @@ class PipelineService:
         html_by_id: dict[int, Any] = {}
         pdf_by_id: dict[int, Any] = {}
         html_document_by_id: dict[int, Any] = {}
+        html_document_md_by_id: dict[int, Any] = {}
         latex_by_id: dict[int, Any] = {}
         content_fetch_failed = False
         content_fetch_error: dict[str, Any] | None = None
@@ -1537,6 +1619,10 @@ class PipelineService:
             if pdf_item_ids:
                 pdf_by_id = self.repository.get_latest_contents(item_ids=pdf_item_ids, content_type="pdf_text")
             if arxiv_item_ids:
+                html_document_md_by_id = self.repository.get_latest_contents(
+                    item_ids=arxiv_item_ids,
+                    content_type="html_document_md",
+                )
                 html_document_by_id = self.repository.get_latest_contents(
                     item_ids=arxiv_item_ids,
                     content_type="html_document",
@@ -1553,7 +1639,7 @@ class PipelineService:
                 "error_type": type(exc).__name__,
                 "error_message": sanitized_error,
                 **self._classify_exception(exc),
-                "content_types": ["html_maintext", "pdf_text", "html_document", "latex_source"],
+                "content_types": ["html_maintext", "pdf_text", "html_document_md", "html_document", "latex_source"],
                 "item_ids_total": len(item_ids),
                 "pdf_item_ids_total": len(pdf_item_ids),
                 "arxiv_item_ids_total": len(arxiv_item_ids),
@@ -1561,6 +1647,7 @@ class PipelineService:
             html_by_id = {}
             pdf_by_id = {}
             html_document_by_id = {}
+            html_document_md_by_id = {}
             latex_by_id = {}
 
         candidates: list[TriageCandidate] = []
@@ -1579,6 +1666,10 @@ class PipelineService:
                 existing_html = html_by_id.get(item_id)
                 if existing_html is not None and getattr(existing_html, "text", None):
                     excerpt = str(getattr(existing_html, "text") or "")
+            if excerpt is None and source == "arxiv":
+                existing_html_document_md = html_document_md_by_id.get(item_id)
+                if existing_html_document_md is not None and getattr(existing_html_document_md, "text", None):
+                    excerpt = str(getattr(existing_html_document_md, "text") or "")
             if excerpt is None and source == "arxiv":
                 existing_html_document = html_document_by_id.get(item_id)
                 if existing_html_document is not None and getattr(existing_html_document, "text", None):

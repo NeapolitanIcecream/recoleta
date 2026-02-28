@@ -32,9 +32,16 @@ class _AnalysisPayload(BaseModel):
 
 
 class LiteLLMAnalyzer:
-    def __init__(self, *, model: str, output_language: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        model: str,
+        output_language: str | None = None,
+        content_max_chars: int = 5000,
+    ) -> None:
         self.model = model
         self.output_language = output_language
+        self.content_max_chars = max(0, int(content_max_chars))
 
     def analyze(
         self,
@@ -50,6 +57,7 @@ class LiteLLMAnalyzer:
             canonical_url=canonical_url,
             user_topics=user_topics,
             content=content,
+            content_max_chars=self.content_max_chars,
         )
         started = time.perf_counter()
         messages = [
@@ -93,11 +101,19 @@ class LiteLLMAnalyzer:
         return result, AnalyzeDebug(request=request_debug, response=response_debug)
 
     @staticmethod
-    def _build_prompt(*, title: str, canonical_url: str, user_topics: list[str], content: str | None) -> str:
+    def _build_prompt(
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None,
+        content_max_chars: int = 5000,
+    ) -> str:
         serialized_topics = ", ".join(user_topics) if user_topics else "general technology"
         trimmed_content = (content or "").strip()
-        if len(trimmed_content) > 5000:
-            trimmed_content = trimmed_content[:5000] + "\n...[truncated]..."
+        max_chars = max(0, int(content_max_chars))
+        if max_chars > 0 and len(trimmed_content) > max_chars:
+            trimmed_content = trimmed_content[:max_chars] + "\n...[truncated]..."
         return (
             "Analyze one research item and return a JSON object with keys: "
             "summary, insight, idea_directions, topics, relevance_score, novelty_score.\n"
