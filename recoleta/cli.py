@@ -70,6 +70,13 @@ def _execute_stage(
         result = stage_runner(service, run.id)
         repository.finish_run(run.id, success=True)
         return settings, result
+    except KeyboardInterrupt:
+        try:
+            repository.finish_run(run.id, success=False)
+        except Exception:
+            stage_log.exception("Run finish failed during interrupt")
+        stage_log.warning("Stage interrupted")
+        raise typer.Exit(code=130) from None
     except Exception:
         repository.finish_run(run.id, success=False)
         stage_log.exception("Stage execution failed")

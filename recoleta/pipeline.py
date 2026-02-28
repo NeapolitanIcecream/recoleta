@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -474,29 +474,67 @@ class PipelineService:
                         result["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
                         return result
 
+                    executor = ThreadPoolExecutor(max_workers=html_document_max_concurrency)
+                    futures = {executor.submit(_worker, item): item for item in parallel_items}
+                    interrupted = False
                     try:
-                        with ThreadPoolExecutor(max_workers=html_document_max_concurrency) as executor:
-                            futures = {executor.submit(_worker, item): item for item in parallel_items}
-                            for fut in as_completed(futures):
-                                try:
-                                    result = fut.result()
-                                except Exception as exc:  # noqa: BLE001
-                                    result = {
-                                        "status": "failed",
-                                        "error_type": type(exc).__name__,
-                                        "error_message": self._sanitize_error_message(str(exc)),
-                                        "classification": self._classify_exception(exc),
-                                        "elapsed_ms": 0,
-                                    }
-                                _consume_result(result, item_elapsed_ms=int(result.get("elapsed_ms") or 0))
-                    finally:
-                        with created_lock:
-                            to_close = list(created_clients)
-                        for c in to_close:
+                        for fut in as_completed(futures):
                             try:
-                                c.close()
-                            except Exception:
-                                pass
+                                result = fut.result()
+                            except Exception as exc:  # noqa: BLE001
+                                result = {
+                                    "status": "failed",
+                                    "error_type": type(exc).__name__,
+                                    "error_message": self._sanitize_error_message(str(exc)),
+                                    "classification": self._classify_exception(exc),
+                                    "elapsed_ms": 0,
+                                }
+                            _consume_result(result, item_elapsed_ms=int(result.get("elapsed_ms") or 0))
+                    except KeyboardInterrupt:
+                        interrupted = True
+                        log.warning("Interrupt received; cancelling pending enrich workers and draining in-flight tasks.")
+                        for fut in futures:
+                            fut.cancel()
+                        try:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                        except TypeError:
+                            executor.shutdown(wait=False)
+
+                        # Drain in-flight work without letting Ctrl-C interrupt cleanup again.
+                        deadline = time.monotonic() + 10.0
+                        while True:
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                break
+                            try:
+                                _, not_done = wait(futures, timeout=min(0.25, remaining))
+                            except KeyboardInterrupt:
+                                continue
+                            if not not_done:
+                                break
+                        raise
+                    finally:
+                        try:
+                            executor.shutdown(wait=True, cancel_futures=True)
+                        except TypeError:
+                            executor.shutdown(wait=True)
+                        except KeyboardInterrupt:
+                            # Best-effort: keep shutdown from spewing a traceback on repeated Ctrl-C.
+                            pass
+
+                        all_done = all(fut.done() for fut in futures) if futures else True
+                        if interrupted and not all_done:
+                            log.warning(
+                                "Interrupted before workers finished; skipping http client close to avoid mid-request failures."
+                            )
+                        else:
+                            with created_lock:
+                                to_close = list(created_clients)
+                            for c in to_close:
+                                try:
+                                    c.close()
+                                except Exception:
+                                    pass
 
             self.repository.record_metric(
                 run_id=run_id,
