@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 
+from datetime import datetime
+from typing import Any
+
 from recoleta.config import Settings
-from recoleta.models import Content, Item
+from recoleta.models import Analysis, Content, Delivery, Item
 from recoleta.storage import Repository
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
 
@@ -78,11 +81,17 @@ class FlakyTelegramSender:
 
 
 class ExplodingRepository:
+    engine: Any
+
     def __init__(self) -> None:
+        self.engine: Any = None
         self.metrics: list[tuple[str, float, str | None]] = []
         self.artifacts: list[tuple[str, int | None, str, str]] = []
 
-    def upsert_item(self, draft: ItemDraft):  # type: ignore[no-untyped-def]
+    def sql_diagnostics(self) -> Any:
+        return {}
+
+    def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]:
         raise RuntimeError("simulated repository failure")
 
     def record_metric(self, *, run_id: str, name: str, value: float, unit: str | None = None) -> None:
@@ -94,10 +103,19 @@ class ExplodingRepository:
     def list_items_for_analysis(self, *, limit: int) -> list[Item]:
         raise NotImplementedError
 
+    def list_items_for_llm_analysis(self, *, limit: int, triage_required: bool) -> list[Item]:
+        raise NotImplementedError
+
     def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None:
         raise NotImplementedError
 
+    def get_latest_content_texts(self, *, item_id: int, content_types: list[str]) -> dict[str, str | None]:
+        raise NotImplementedError
+
     def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]:
+        raise NotImplementedError
+
+    def upsert_contents_texts(self, *, item_id: int, texts_by_type: dict[str, str]) -> int:
         raise NotImplementedError
 
     def upsert_content(
@@ -110,10 +128,23 @@ class ExplodingRepository:
     ) -> Content:
         raise NotImplementedError
 
-    def save_analysis(self, *, item_id: int, result: AnalysisResult):  # type: ignore[no-untyped-def]
+    def upsert_content_with_inserted(
+        self,
+        *,
+        item_id: int,
+        content_type: str,
+        text: str | None,
+        artifact_path: str | None = None,
+    ) -> tuple[Content, bool]:
+        raise NotImplementedError
+
+    def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis:
         raise NotImplementedError
 
     def mark_item_enriched(self, *, item_id: int) -> None:
+        raise NotImplementedError
+
+    def mark_item_triaged(self, *, item_id: int) -> None:
         raise NotImplementedError
 
     def mark_item_failed(self, *, item_id: int) -> None:
@@ -122,16 +153,16 @@ class ExplodingRepository:
     def mark_item_retryable_failed(self, *, item_id: int) -> None:
         raise NotImplementedError
 
-    def list_items_for_publish(self, *, limit: int, min_relevance_score: float):  # type: ignore[no-untyped-def]
+    def list_items_for_publish(self, *, limit: int, min_relevance_score: float) -> list[tuple[Item, Analysis]]:
         raise NotImplementedError
 
     def has_sent_delivery(self, *, item_id: int, channel: str, destination: str) -> bool:
         raise NotImplementedError
 
-    def count_sent_deliveries_since(self, *, channel: str, destination: str, since):  # type: ignore[no-untyped-def]
+    def count_sent_deliveries_since(self, *, channel: str, destination: str, since: datetime) -> int:
         raise NotImplementedError
 
-    def upsert_delivery(  # type: ignore[no-untyped-def]
+    def upsert_delivery(
         self,
         *,
         item_id: int,
@@ -140,7 +171,7 @@ class ExplodingRepository:
         message_id: str | None,
         status: str,
         error: str | None = None,
-    ):
+    ) -> Delivery:
         raise NotImplementedError
 
     def mark_item_published(self, *, item_id: int) -> None:
