@@ -194,6 +194,8 @@ class ArxivSourceConfig(BaseModel):
     html_document_enable_parallel: bool = True
     html_document_skip_cleanup_when_complete: bool = True
     html_document_use_batched_db_writes: bool = True
+    html_document_requests_per_second: float = Field(default=2.0, gt=0.0, le=20.0)
+    html_document_log_sample_rate: float = Field(default=0.05, ge=0.0, le=1.0)
 
     @field_validator("enrich_method", mode="before")
     @classmethod

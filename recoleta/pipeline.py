@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -284,6 +287,27 @@ class PipelineService:
                 and bool(self.settings.sources.arxiv.html_document_enable_parallel)
                 and html_document_max_concurrency > 1
             )
+            arxiv_rps = float(self.settings.sources.arxiv.html_document_requests_per_second or 0.0)
+
+            class _RateLimiter:
+                def __init__(self, *, requests_per_second: float) -> None:
+                    self._interval_s = 1.0 / max(0.0001, float(requests_per_second))
+                    self._lock = threading.Lock()
+                    self._next_at = time.monotonic()
+
+                def acquire(self) -> None:
+                    with self._lock:
+                        now = time.monotonic()
+                        scheduled = self._next_at if self._next_at > now else now
+                        self._next_at = scheduled + self._interval_s
+                        wait_s = scheduled - now
+                    if wait_s > 0:
+                        time.sleep(wait_s)
+
+            arxiv_html_throttle: Callable[[], None] | None = None
+            if arxiv_rps > 0:
+                limiter = _RateLimiter(requests_per_second=arxiv_rps)
+                arxiv_html_throttle = limiter.acquire
 
             def _process_one(*, client: httpx.Client, item: Any) -> dict[str, Any]:
                 raw_item_id = getattr(item, "id", None)
@@ -310,6 +334,7 @@ class PipelineService:
                         item=item,
                         log=log,
                         diag=diag,
+                        arxiv_html_throttle=arxiv_html_throttle,
                     )
                     db_mark_started = time.perf_counter()
                     self.repository.mark_item_enriched(item_id=item_id)
@@ -1132,6 +1157,7 @@ class PipelineService:
         item: Any,
         log: Any,
         diag: dict[str, int] | None = None,
+        arxiv_html_throttle: Callable[[], None] | None = None,
     ) -> tuple[str, bool]:
         raw_item_id = getattr(item, "id", None)
         if raw_item_id is None:
@@ -1149,6 +1175,7 @@ class PipelineService:
                 source_item_id=source_item_id,
                 log=log,
                 diag=diag,
+                arxiv_html_throttle=arxiv_html_throttle,
             )
         elif source == "openreview":
             content_text, stored_new_content = self._ensure_pdf_content_with_optional_html_fallback(
@@ -1180,6 +1207,7 @@ class PipelineService:
         source_item_id: str | None,
         log: Any,
         diag: dict[str, int] | None = None,
+        arxiv_html_throttle: Callable[[], None] | None = None,
     ) -> tuple[str, bool]:
         method = self.settings.sources.arxiv.enrich_method
         failure_mode = self.settings.sources.arxiv.enrich_failure_mode
@@ -1229,6 +1257,7 @@ class PipelineService:
                     source_item_id=source_item_id,
                     log=log,
                     diag=diag,
+                    arxiv_html_throttle=arxiv_html_throttle,
                 )
             except Exception as method_exc:
                 if failure_mode == "strict":
@@ -1287,7 +1316,86 @@ class PipelineService:
         source_item_id: str | None,
         log: Any,
         diag: dict[str, int] | None = None,
+        arxiv_html_throttle: Callable[[], None] | None = None,
     ) -> tuple[str, bool]:
+        parallel_mode = (
+            bool(self.settings.sources.arxiv.enrich_method == "html_document")
+            and bool(self.settings.sources.arxiv.html_document_enable_parallel)
+            and int(self.settings.sources.arxiv.html_document_max_concurrency or 1) > 1
+        )
+        sample_rate = float(self.settings.sources.arxiv.html_document_log_sample_rate or 0.0)
+        bound_log = log.bind(item_id=item_id)
+
+        def _should_log_info() -> bool:
+            if not parallel_mode:
+                return True
+            if sample_rate >= 1.0:
+                return True
+            if sample_rate <= 0.0:
+                return False
+            digest = hashlib.sha256(str(item_id).encode("utf-8")).digest()
+            bucket = int.from_bytes(digest[:4], "big") / (2**32)
+            return bucket < sample_rate
+
+        def _log_info_or_debug(message: str, *args: Any) -> None:
+            if _should_log_info():
+                bound_log.info(message, *args)
+            else:
+                bound_log.debug(message, *args)
+
+        def _parse_retry_after_seconds(response: httpx.Response) -> float | None:
+            value = response.headers.get("Retry-After")
+            if not value:
+                return None
+            stripped = str(value).strip()
+            if not stripped:
+                return None
+            try:
+                return float(int(stripped))
+            except Exception:
+                pass
+            try:
+                dt = parsedate_to_datetime(stripped)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                seconds = (dt - datetime.now(timezone.utc)).total_seconds()
+                return max(0.0, float(seconds))
+            except Exception:
+                return None
+
+        def _fetch_arxiv_html_polite(url: str) -> str:
+            max_attempts = 4
+            base_sleep_s = 0.6
+            max_sleep_s = 20.0
+            jitter_s = 0.25
+
+            for attempt in range(1, max_attempts + 1):
+                if callable(arxiv_html_throttle):
+                    arxiv_html_throttle()
+                try:
+                    response = client.get(url)
+                except httpx.RequestError:
+                    if attempt >= max_attempts:
+                        raise
+                    sleep_s = min(max_sleep_s, base_sleep_s * (2 ** (attempt - 1))) + (random.random() * jitter_s)
+                    time.sleep(sleep_s)
+                    continue
+
+                status = int(getattr(response, "status_code", 0) or 0)
+                if status == 429 or status >= 500:
+                    if attempt >= max_attempts:
+                        response.raise_for_status()
+                    retry_after_s = _parse_retry_after_seconds(response) if status == 429 else None
+                    backoff_s = min(max_sleep_s, base_sleep_s * (2 ** (attempt - 1)))
+                    sleep_s = max(float(retry_after_s or 0.0), float(backoff_s)) + (random.random() * jitter_s)
+                    time.sleep(sleep_s)
+                    continue
+
+                response.raise_for_status()
+                return response.text
+
+            raise RuntimeError("unreachable: arXiv HTML fetch retry loop")
+
         db_read_started = time.perf_counter()
         existing = self.repository.get_latest_content_texts(
             item_id=item_id,
@@ -1325,7 +1433,7 @@ class PipelineService:
                     diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
                 if markdown is not None:
                     pending_upserts["html_document_md"] = markdown
-                    log.bind(item_id=item_id).info(
+                    _log_info_or_debug(
                         "html_document_md created from existing html_document elapsed_ms={} chars_in={} chars_out={}",
                         elapsed_ms,
                         len(existing_document),
@@ -1338,7 +1446,7 @@ class PipelineService:
                         elapsed_ms=elapsed_ms,
                         error=error,
                     )
-            log.bind(item_id=item_id).info(
+            _log_info_or_debug(
                 "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",
                 stats.get("removed_non_body_blocks"),
                 stats.get("removed_references_blocks"),
@@ -1365,7 +1473,7 @@ class PipelineService:
         if not html_url:
             raise ValueError("missing arXiv html url")
         fetch_started = time.perf_counter()
-        html = fetch_url_html(client, html_url)
+        html = _fetch_arxiv_html_polite(html_url)
         if diag is not None:
             diag["fetch_ms"] = diag.get("fetch_ms", 0) + int((time.perf_counter() - fetch_started) * 1000)
         cleanup_started = time.perf_counter()
@@ -1382,7 +1490,7 @@ class PipelineService:
             diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
         if markdown is not None:
             pending_upserts_new["html_document_md"] = markdown
-            log.bind(item_id=item_id).info(
+            _log_info_or_debug(
                 "html_document_md created elapsed_ms={} chars_in={} chars_out={}",
                 elapsed_ms,
                 len(cleaned_document),
@@ -1395,7 +1503,7 @@ class PipelineService:
                 elapsed_ms=elapsed_ms,
                 error=error,
             )
-        log.bind(item_id=item_id).info(
+        _log_info_or_debug(
             "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",
             stats.get("removed_non_body_blocks"),
             stats.get("removed_references_blocks"),
