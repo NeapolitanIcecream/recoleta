@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
@@ -1343,58 +1341,10 @@ class PipelineService:
             else:
                 bound_log.debug(message, *args)
 
-        def _parse_retry_after_seconds(response: httpx.Response) -> float | None:
-            value = response.headers.get("Retry-After")
-            if not value:
-                return None
-            stripped = str(value).strip()
-            if not stripped:
-                return None
-            try:
-                return float(int(stripped))
-            except Exception:
-                pass
-            try:
-                dt = parsedate_to_datetime(stripped)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                seconds = (dt - datetime.now(timezone.utc)).total_seconds()
-                return max(0.0, float(seconds))
-            except Exception:
-                return None
-
         def _fetch_arxiv_html_polite(url: str) -> str:
-            max_attempts = 4
-            base_sleep_s = 0.6
-            max_sleep_s = 20.0
-            jitter_s = 0.25
-
-            for attempt in range(1, max_attempts + 1):
-                if callable(arxiv_html_throttle):
-                    arxiv_html_throttle()
-                try:
-                    response = client.get(url)
-                except httpx.RequestError:
-                    if attempt >= max_attempts:
-                        raise
-                    sleep_s = min(max_sleep_s, base_sleep_s * (2 ** (attempt - 1))) + (random.random() * jitter_s)
-                    time.sleep(sleep_s)
-                    continue
-
-                status = int(getattr(response, "status_code", 0) or 0)
-                if status == 429 or status >= 500:
-                    if attempt >= max_attempts:
-                        response.raise_for_status()
-                    retry_after_s = _parse_retry_after_seconds(response) if status == 429 else None
-                    backoff_s = min(max_sleep_s, base_sleep_s * (2 ** (attempt - 1)))
-                    sleep_s = max(float(retry_after_s or 0.0), float(backoff_s)) + (random.random() * jitter_s)
-                    time.sleep(sleep_s)
-                    continue
-
-                response.raise_for_status()
-                return response.text
-
-            raise RuntimeError("unreachable: arXiv HTML fetch retry loop")
+            if callable(arxiv_html_throttle):
+                arxiv_html_throttle()
+            return fetch_url_html(client, url)
 
         db_read_started = time.perf_counter()
         existing = self.repository.get_latest_content_texts(
