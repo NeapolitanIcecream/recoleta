@@ -67,12 +67,46 @@ class PipelineService:
             embedding_batch_max_chars=settings.triage_embedding_batch_max_chars,
         )
         self.telegram_sender = telegram_sender
+        self._pandoc_unavailable_warned = False
         if self.telegram_sender is None and "telegram" in settings.publish_targets:
             if settings.telegram_bot_token is not None and settings.telegram_chat_id is not None:
                 self.telegram_sender = TelegramSender(
                     token=settings.telegram_bot_token.get_secret_value(),
                     chat_id=settings.telegram_chat_id.get_secret_value(),
                 )
+
+    def _log_html_document_md_conversion_skipped(
+        self,
+        *,
+        log: Any,
+        item_id: int,
+        elapsed_ms: int,
+        error: str | None,
+    ) -> None:
+        error_text = str(error or "").strip()
+        is_unavailable = error_text.startswith("pandoc_unavailable") or error_text.startswith("pypandoc_import_failed")
+        if is_unavailable:
+            # Avoid spamming logs when pandoc isn't installed in the environment.
+            if not self._pandoc_unavailable_warned:
+                self._pandoc_unavailable_warned = True
+                log.bind(item_id=item_id).warning(
+                    "html_document_md conversion skipped (pandoc unavailable) elapsed_ms={} error={}",
+                    elapsed_ms,
+                    error_text or None,
+                )
+            else:
+                log.bind(item_id=item_id).debug(
+                    "html_document_md conversion skipped (pandoc unavailable) elapsed_ms={} error={}",
+                    elapsed_ms,
+                    error_text or None,
+                )
+            return
+
+        log.bind(item_id=item_id).warning(
+            "html_document_md conversion skipped elapsed_ms={} error={}",
+            elapsed_ms,
+            error_text or None,
+        )
 
     def ingest(self, *, run_id: str, drafts: list[ItemDraft] | None = None) -> IngestResult:
         log = logger.bind(module="pipeline.ingest", run_id=run_id)
@@ -1086,10 +1120,11 @@ class PipelineService:
                         len(markdown),
                     )
                 else:
-                    log.bind(item_id=item_id).warning(
-                        "html_document_md conversion skipped elapsed_ms={} error={}",
-                        elapsed_ms,
-                        error,
+                    self._log_html_document_md_conversion_skipped(
+                        log=log,
+                        item_id=item_id,
+                        elapsed_ms=elapsed_ms,
+                        error=error,
                     )
             log.bind(item_id=item_id).info(
                 "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",
@@ -1133,10 +1168,11 @@ class PipelineService:
                 len(markdown),
             )
         else:
-            log.bind(item_id=item_id).warning(
-                "html_document_md conversion skipped elapsed_ms={} error={}",
-                elapsed_ms,
-                error,
+            self._log_html_document_md_conversion_skipped(
+                log=log,
+                item_id=item_id,
+                elapsed_ms=elapsed_ms,
+                error=error,
             )
         log.bind(item_id=item_id).info(
             "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",

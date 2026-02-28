@@ -22,6 +22,42 @@ _HTML_DOCUMENT_MAX_CHARS = 200_000
 _HTML_REFERENCES_MAX_CHARS = 120_000
 _LATEX_TEXT_SUFFIXES = (".tex", ".bib", ".bbl", ".txt", ".cls", ".sty")
 
+# Pandoc availability is environment-dependent. Cache the check so we don't
+# repeatedly raise and log the same error on hot paths.
+_PYPANDOC: Any | None = None
+_PANDOC_READY: bool | None = None
+_PANDOC_READY_ERROR: str | None = None
+
+
+def _ensure_pandoc_ready() -> tuple[bool, str | None, Any | None]:
+    global _PYPANDOC, _PANDOC_READY, _PANDOC_READY_ERROR  # noqa: PLW0603
+    if _PANDOC_READY is not None:
+        return _PANDOC_READY, _PANDOC_READY_ERROR, _PYPANDOC
+
+    started = time.perf_counter()
+    try:
+        import pypandoc  # type: ignore[import-not-found]
+
+        _PYPANDOC = pypandoc
+    except Exception as exc:  # noqa: BLE001
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        _PANDOC_READY = False
+        _PANDOC_READY_ERROR = f"pypandoc_import_failed elapsed_ms={elapsed_ms} error={type(exc).__name__}: {exc}"
+        return _PANDOC_READY, _PANDOC_READY_ERROR, _PYPANDOC
+
+    try:
+        # This will raise when the pandoc binary isn't installed.
+        _ = _PYPANDOC.get_pandoc_version()  # type: ignore[union-attr]
+    except Exception as exc:  # noqa: BLE001
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        _PANDOC_READY = False
+        _PANDOC_READY_ERROR = f"pandoc_unavailable elapsed_ms={elapsed_ms} error={type(exc).__name__}: {exc}"
+        return _PANDOC_READY, _PANDOC_READY_ERROR, _PYPANDOC
+
+    _PANDOC_READY = True
+    _PANDOC_READY_ERROR = None
+    return _PANDOC_READY, _PANDOC_READY_ERROR, _PYPANDOC
+
 
 _EXTERNAL_PROGRESS_ENV: dict[str, str] = {
     # HuggingFace Hub tqdm progress bars (used by many model download paths).
@@ -524,9 +560,10 @@ def convert_html_document_to_markdown(
     """Convert HTML to GitHub-flavored Markdown via Pandoc (pypandoc)."""
 
     started = time.perf_counter()
+    ready, ready_error, pypandoc = _ensure_pandoc_ready()
+    if (not ready) or pypandoc is None:
+        return None, 0, ready_error or "pandoc_unavailable"
     try:
-        import pypandoc  # type: ignore[import-not-found]
-
         markdown = pypandoc.convert_text(
             html,
             to="gfm",
@@ -535,7 +572,7 @@ def convert_html_document_to_markdown(
         )
     except Exception as exc:  # noqa: BLE001
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        return None, elapsed_ms, f"{type(exc).__name__}: {exc}"
+        return None, elapsed_ms, f"pandoc_convert_failed error={type(exc).__name__}: {exc}"
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     normalized = str(markdown or "").strip()
