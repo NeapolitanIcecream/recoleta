@@ -188,7 +188,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
 class ArxivSourceConfig(BaseModel):
     queries: list[str] = Field(default_factory=list)
     max_results_per_run: int = 50
-    enrich_method: str = Field(default="pdf_text")
+    enrich_method: str = Field(default="html_document")
     enrich_failure_mode: str = Field(default="fallback")
 
     @field_validator("enrich_method", mode="before")
@@ -196,7 +196,7 @@ class ArxivSourceConfig(BaseModel):
     def _normalize_enrich_method(cls, value: Any) -> str:
         normalized = str(value or "").strip().lower()
         if not normalized:
-            return "pdf_text"
+            return "html_document"
         if normalized not in _ALLOWED_ARXIV_ENRICH_METHODS:
             raise ValueError("SOURCES.arxiv.enrich_method must be one of: pdf_text, latex_source, html_document")
         return normalized

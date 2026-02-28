@@ -21,6 +21,8 @@ def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(monkeypa
     assert settings.telegram_bot_token is None
     assert settings.telegram_chat_id is None
     assert settings.publish_targets == ["markdown"]
+    assert settings.sources.arxiv.enrich_method == "html_document"
+    assert settings.sources.arxiv.enrich_failure_mode == "fallback"
 
 
 def test_settings_loads_nested_source_configuration(configured_env) -> None:

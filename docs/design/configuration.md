@@ -46,7 +46,7 @@ Recommended fields:
   - `arxiv`:
     - `queries`: list of arXiv query strings
     - `max_results_per_run`
-    - `enrich_method`: `pdf_text|latex_source|html_document` (default `pdf_text`)
+    - `enrich_method`: `pdf_text|latex_source|html_document` (default `html_document`)
     - `enrich_failure_mode`: `fallback|strict` (default `fallback`)
   - `hn`:
     - `rss_urls`: list (e.g. `https://news.ycombinator.com/rss`)
