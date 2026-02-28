@@ -4,7 +4,7 @@ import threading
 import time
 from contextlib import contextmanager
 from types import SimpleNamespace
-from typing import Any, Iterator, Iterable
+from typing import Any, Iterable, Iterator, cast
 
 import pytest
 
@@ -47,7 +47,7 @@ class _FakeRepository:
 class _InterruptingExecutor(pipeline.ThreadPoolExecutor):
     """Simulate a KeyboardInterrupt that prevents executor __exit__ from waiting."""
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:  # noqa: ANN401
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:  # noqa: ANN401
         if exc_type is KeyboardInterrupt:
             try:
                 self.shutdown(wait=False, cancel_futures=True)
@@ -127,7 +127,12 @@ def test_parallel_enrich_does_not_close_http_clients_while_workers_running() -> 
     monkeypatch.setattr(pipeline, "as_completed", _as_completed_interrupt, raising=True)
     monkeypatch.setattr(pipeline.httpx, "Client", _FakeHttpClient, raising=True)
     try:
-        service = PipelineService(settings=settings, repository=repo, analyzer=object(), triage=object())
+        service = PipelineService(
+            settings=cast(Any, settings),
+            repository=cast(Any, repo),
+            analyzer=None,
+            triage=None,
+        )
         with pytest.raises(KeyboardInterrupt):
             service.enrich(run_id="run-1", limit=1)
     finally:
