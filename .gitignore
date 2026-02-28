@@ -211,3 +211,4 @@ __marimo__/
 # Bench artifacts (local experiments)
 bench-out*/
 recoleta-bench-*.db
+bench-perf*/
