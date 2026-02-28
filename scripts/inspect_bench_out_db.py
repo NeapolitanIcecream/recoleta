@@ -8,7 +8,7 @@ import sqlite3
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import typer
 from litellm.utils import token_counter

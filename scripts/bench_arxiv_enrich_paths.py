@@ -14,7 +14,6 @@ from typing import Any, cast
 
 import httpx
 from litellm.utils import token_counter
-from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
