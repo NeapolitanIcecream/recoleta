@@ -1,0 +1,137 @@
+# Recoleta example configuration (non-secret).
+#
+# Copy this file to `recoleta.yaml`, then set:
+#   RECOLETA_CONFIG_PATH="./recoleta.yaml"
+#
+# IMPORTANT: Do NOT put secrets (API keys, Telegram tokens) in this file.
+# Secrets must come from environment variables only.
+
+## Required
+
+# Path to the SQLite DB file.
+recoleta_db_path: "~/.local/share/recoleta/recoleta.db"
+
+# LiteLLM model naming: <provider>/<model-identifier>
+# Examples:
+# - openai/gpt-4o-mini
+# - anthropic/claude-3-5-sonnet-20241022
+llm_model: "openai/gpt-4o-mini"
+
+## Outputs (defaults shown)
+
+# Publish targets (default: ["markdown"])
+# Allowed: markdown, obsidian, telegram
+publish_targets:
+  - markdown
+
+# Local Markdown output directory (default: platform-specific user data dir + /outputs)
+# markdown_output_dir: "~/.local/share/recoleta/outputs"
+
+# Obsidian integration (required only when publish_targets includes "obsidian")
+# obsidian_vault_path: "/absolute/path/to/your/ObsidianVault"
+# obsidian_base_folder: "Recoleta"  # Default: "Recoleta"
+
+## LLM behavior
+
+# Optional language hint for LLM-generated text fields (summary/insight/idea_directions).
+# JSON keys remain English and topics remain concise English tags.
+# llm_output_language: null  # Default: null
+
+## Topic and ranking configuration
+
+# Topics are used for relevance scoring and optional semantic triage.
+topics:
+  - agents
+  - ml-systems
+
+# min_relevance_score: 0.6  # Default: 0.6
+# max_deliveries_per_day: 10  # Default: 10
+
+# Title dedup (RapidFuzz ratio)
+# title_dedup_threshold: 92.0  # Default: 92.0
+# title_dedup_max_candidates: 500  # Default: 500
+
+# Tag filters (applied at publish time)
+# allow_tags: []  # Default: []
+# deny_tags: []  # Default: []
+
+## Sources
+#
+# All sources are disabled by default. You must explicitly enable each source you want.
+# If you configure a source block (e.g. set queries/feeds) without setting enabled=true,
+# Recoleta fails fast to avoid silent "configured but not running" confusion.
+
+sources:
+  hn:
+    enabled: true  # Default: false
+    # Default rss_urls: ["https://news.ycombinator.com/rss"]
+    rss_urls:
+      - "https://news.ycombinator.com/rss"
+
+  rss:
+    enabled: false  # Default: false
+    # feeds: []  # Required when enabled=true
+    # feeds:
+    #   - "https://example.com/feed.xml"
+
+  arxiv:
+    enabled: false  # Default: false
+    # queries: []  # Required when enabled=true
+    # queries:
+    #   - "cat:cs.AI"
+    # max_results_per_run: 50  # Default: 50
+    # enrich_method: "html_document"  # Default: "html_document" (pdf_text|latex_source|html_document)
+    # enrich_failure_mode: "fallback"  # Default: "fallback" (fallback|strict)
+    # html_document_max_concurrency: 4  # Default: 4
+    # html_document_enable_parallel: true  # Default: true
+    # html_document_skip_cleanup_when_complete: true  # Default: true
+    # html_document_use_batched_db_writes: true  # Default: true
+    # html_document_requests_per_second: 2.0  # Default: 2.0 (global throttle)
+    # html_document_log_sample_rate: 0.05  # Default: 0.05 (sample per-item info logs in parallel mode)
+
+  openreview:
+    enabled: false  # Default: false
+    # venues: []  # Required when enabled=true
+    # venues:
+    #   - "NeurIPS.cc/2026/Conference"
+
+  hf_daily:
+    enabled: false  # Default: false
+
+## Semantic triage (optional)
+#
+# triage runs only when triage_enabled=true AND topics is non-empty.
+# triage_enabled: false  # Default: false
+# triage_mode: "prioritize"  # Default: "prioritize" (prioritize|filter)
+# triage_embedding_model: "text-embedding-3-small"  # Default: "text-embedding-3-small"
+# triage_embedding_dimensions: null  # Default: null
+# triage_embedding_batch_max_inputs: 64  # Default: 64
+# triage_embedding_batch_max_chars: 40000  # Default: 40000
+# triage_query_mode: "joined"  # Default: "joined" (joined|max_per_topic)
+# triage_candidate_factor: 5  # Default: 5
+# triage_max_candidates: 500  # Default: 500
+# triage_item_text_max_chars: 1200  # Default: 1200
+# triage_min_similarity: 0.0  # Default: 0.0 (used only in filter mode)
+# triage_exploration_rate: 0.05  # Default: 0.05
+# triage_recency_floor: 5  # Default: 5
+
+## Analysis limits
+
+# analyze_limit: 100  # Default: 100
+# analyze_content_max_chars: 32768  # Default: 32768 (set 0 to disable truncation)
+
+## Scheduling (used only by `recoleta run`)
+
+# ingest_interval_minutes: 60  # Default: 60
+# analyze_interval_minutes: 120  # Default: 120
+# publish_interval_minutes: 120  # Default: 120
+
+## Logging and diagnostics
+
+# log_level: "INFO"  # Default: "INFO"
+# log_json: false  # Default: false
+
+# If true, write scrubbed debug artifacts for failures and LLM calls.
+# When enabled, artifacts_dir becomes required.
+# write_debug_artifacts: false  # Default: false
+# artifacts_dir: "/absolute/path/to/artifacts"  # Required when write_debug_artifacts=true

@@ -28,12 +28,30 @@ def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(
     assert settings.publish_targets == ["markdown"]
     assert settings.sources.arxiv.enrich_method == "html_document"
     assert settings.sources.arxiv.enrich_failure_mode == "fallback"
+    assert settings.sources.hn.enabled is False
+    assert settings.sources.rss.enabled is False
+    assert settings.sources.arxiv.enabled is False
+    assert settings.sources.openreview.enabled is False
+    assert settings.sources.hf_daily.enabled is False
+
+
+def test_settings_rejects_configured_source_without_enabled(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps({"rss": {"feeds": ["https://example.com/feed.xml"]}}),
+    )
+    with pytest.raises(ValueError, match=r"configured but disabled"):
+        Settings()  # pyright: ignore[reportCallIssue]
 
 
 def test_settings_loads_nested_source_configuration(configured_env) -> None:
     settings = Settings()  # pyright: ignore[reportCallIssue]
 
+    assert settings.sources.hn.enabled is True
     assert settings.sources.hn.rss_urls == ["https://news.ycombinator.com/rss"]
+    assert settings.sources.rss.enabled is True
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
     assert settings.topics == ["agents", "ml-systems"]
 
@@ -46,6 +64,7 @@ def test_settings_loads_arxiv_enrich_configuration(
         json.dumps(
             {
                 "arxiv": {
+                    "enabled": True,
                     "queries": ["cat:cs.AI"],
                     "enrich_method": "latex_source",
                     "enrich_failure_mode": "strict",
@@ -67,6 +86,7 @@ def test_settings_rejects_invalid_arxiv_enrich_configuration(
         json.dumps(
             {
                 "arxiv": {
+                    "enabled": True,
                     "queries": ["cat:cs.AI"],
                     "enrich_method": "unknown",
                 }
@@ -85,9 +105,11 @@ def test_settings_loads_sources_from_yaml_env_string(
         "\n".join(
             [
                 "hn:",
+                "  enabled: true",
                 "  rss_urls:",
                 "    - https://news.ycombinator.com/rss",
                 "rss:",
+                "  enabled: true",
                 "  feeds:",
                 "    - https://example.com/feed.xml",
             ]
@@ -148,6 +170,7 @@ def test_settings_loads_from_config_file_and_env(
                 "  - agents",
                 "SOURCES:",
                 "  rss:",
+                "    enabled: true",
                 "    feeds:",
                 "      - https://example.com/feed.xml",
             ]

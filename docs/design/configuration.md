@@ -44,6 +44,7 @@ Recommended fields:
 
 - `SOURCES`:
   - `arxiv`:
+    - `enabled`: bool (default `false`). All sources are disabled by default and must be explicitly enabled.
     - `queries`: list of arXiv query strings
     - `max_results_per_run`
     - `enrich_method`: `pdf_text|latex_source|html_document` (default `html_document`)
@@ -55,12 +56,15 @@ Recommended fields:
     - `html_document_skip_cleanup_when_complete`: skip cleanup/conversion when `html_document_md` is already present (default `true`)
     - `html_document_use_batched_db_writes`: batch content upserts into fewer commits to reduce SQLite lock contention (default `true`)
   - `hn`:
+    - `enabled`: bool (default `false`)
     - `rss_urls`: list (e.g. `https://news.ycombinator.com/rss`)
   - `hf_daily`:
     - `enabled`: bool
   - `openreview`:
+    - `enabled`: bool (default `false`)
     - `venues`: list (conference ids)
   - `rss`:
+    - `enabled`: bool (default `false`)
     - `feeds`: list of newsletter RSS URLs
 
 Notes:
@@ -72,12 +76,14 @@ Example:
 ```yaml
 SOURCES:
   arxiv:
+    enabled: true
     queries:
       - cat:cs.AI
     max_results_per_run: 50
     enrich_method: latex_source
     enrich_failure_mode: strict
   rss:
+    enabled: true
     feeds:
       - https://example.com/feed.xml
 ```

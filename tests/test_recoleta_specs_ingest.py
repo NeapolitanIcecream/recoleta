@@ -35,10 +35,15 @@ def test_ingest_pulls_all_configured_sources_without_network(
         "SOURCES",
         json.dumps(
             {
-                "hn": {"rss_urls": []},
-                "rss": {"feeds": []},
-                "arxiv": {"queries": ["cat:cs.AI"], "max_results_per_run": 10},
-                "openreview": {"venues": ["NeurIPS.cc/2026/Conference"]},
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                    "max_results_per_run": 10,
+                },
+                "openreview": {
+                    "enabled": True,
+                    "venues": ["NeurIPS.cc/2026/Conference"],
+                },
                 "hf_daily": {"enabled": True},
             }
         ),
@@ -346,7 +351,6 @@ def test_ingest_writes_debug_artifact_on_repository_failure(
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
     monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
-    monkeypatch.setenv("SOURCES", json.dumps({"rss": {"feeds": []}}))
     monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
     monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
 

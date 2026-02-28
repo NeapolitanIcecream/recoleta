@@ -86,6 +86,9 @@ def test_parallel_enrich_does_not_close_http_clients_while_workers_running() -> 
     settings = SimpleNamespace(
         telegram_bot_token=None,
         telegram_chat_id=None,
+        llm_model="test/fake-model",
+        llm_output_language=None,
+        analyze_content_max_chars=32768,
         publish_targets=[],
         write_debug_artifacts=False,
         artifacts_dir=None,
@@ -135,11 +138,12 @@ def test_parallel_enrich_does_not_close_http_clients_while_workers_running() -> 
     monkeypatch.setattr(pipeline, "as_completed", _as_completed_interrupt, raising=True)
     monkeypatch.setattr(pipeline.httpx, "Client", _FakeHttpClient, raising=True)
     try:
+        dummy_triage = SimpleNamespace()
         service = PipelineService(
             settings=cast(Any, settings),
             repository=cast(Any, repo),
             analyzer=None,
-            triage=None,
+            triage=cast(Any, dummy_triage),
         )
         with pytest.raises(KeyboardInterrupt):
             service.enrich(run_id="run-1", limit=1)

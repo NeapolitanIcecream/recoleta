@@ -933,7 +933,7 @@ def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
 
     monkeypatch.setenv(
         "SOURCES",
-        '{"arxiv":{"queries":["cat:cs.AI"],"enrich_method":"latex_source","enrich_failure_mode":"strict"}}',
+        '{"arxiv":{"enabled":true,"queries":["cat:cs.AI"],"enrich_method":"latex_source","enrich_failure_mode":"strict"}}',
     )
     settings, repository = _build_runtime()
 
@@ -1024,7 +1024,7 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
 
     monkeypatch.setenv(
         "SOURCES",
-        '{"arxiv":{"queries":["cat:cs.AI"],"enrich_method":"html_document","enrich_failure_mode":"strict"}}',
+        '{"arxiv":{"enabled":true,"queries":["cat:cs.AI"],"enrich_method":"html_document","enrich_failure_mode":"strict"}}',
     )
     settings, repository = _build_runtime()
 
@@ -1128,7 +1128,7 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
 
     monkeypatch.setenv(
         "SOURCES",
-        '{"arxiv":{"queries":["cat:cs.AI"],"enrich_method":"html_document","enrich_failure_mode":"strict"}}',
+        '{"arxiv":{"enabled":true,"queries":["cat:cs.AI"],"enrich_method":"html_document","enrich_failure_mode":"strict"}}',
     )
     settings, repository = _build_runtime()
     service = PipelineService(

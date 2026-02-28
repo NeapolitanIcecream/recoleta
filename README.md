@@ -75,9 +75,13 @@ uv run recoleta --help
 
 ### 🚀 Quick Start
 
-Create a non-secret config file.
+Create a non-secret config file (all sources are disabled by default and must be explicitly enabled).
 
 ```bash
+# Option A: copy the full example config and edit it
+cp recoleta.example.yaml recoleta.yaml
+
+# Option B: create a minimal config from scratch
 cat <<'YAML' > recoleta.yaml
 # NOTE: This file must NOT contain secrets. Keep tokens/API keys in env only.
 
@@ -107,9 +111,11 @@ topics:
 
 sources:
   hn:
+    enabled: true
     rss_urls:
       - "https://news.ycombinator.com/rss"
   rss:
+    enabled: true
     feeds:
       - "https://example.com/feed.xml"
 
@@ -208,13 +214,13 @@ Common optional knobs:
 - **LLM output language**:
   - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary`, `insight`, `idea_directions`; JSON keys and `topics` stay English)
 - **Sources**: `SOURCES` / `sources`
-  - `hn.rss_urls`
-  - `rss.feeds`
-  - `arxiv.queries`, `arxiv.max_results_per_run`
+  - `hn.enabled`, `hn.rss_urls`
+  - `rss.enabled`, `rss.feeds`
+  - `arxiv.enabled`, `arxiv.queries`, `arxiv.max_results_per_run`
   - `arxiv.enrich_method`, `arxiv.enrich_failure_mode`
   - `arxiv.html_document_max_concurrency`, `arxiv.html_document_requests_per_second`
   - `arxiv.html_document_log_sample_rate`
-  - `openreview.venues`
+  - `openreview.enabled`, `openreview.venues`
   - `hf_daily.enabled`
 - **Relevance & filtering**:
   - `TOPICS` / `topics`

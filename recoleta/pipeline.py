@@ -2074,10 +2074,26 @@ class PipelineService:
     def _pull_source_drafts(
         self, *, run_id: str, log: Any
     ) -> tuple[list[ItemDraft], int]:
-        hn_urls = list(dict.fromkeys(self.settings.sources.hn.rss_urls))
-        rss_urls = list(dict.fromkeys(self.settings.sources.rss.feeds))
-        arxiv_queries = list(dict.fromkeys(self.settings.sources.arxiv.queries))
-        openreview_venues = list(dict.fromkeys(self.settings.sources.openreview.venues))
+        hn_urls = (
+            list(dict.fromkeys(self.settings.sources.hn.rss_urls))
+            if bool(self.settings.sources.hn.enabled)
+            else []
+        )
+        rss_urls = (
+            list(dict.fromkeys(self.settings.sources.rss.feeds))
+            if bool(self.settings.sources.rss.enabled)
+            else []
+        )
+        arxiv_queries = (
+            list(dict.fromkeys(self.settings.sources.arxiv.queries))
+            if bool(self.settings.sources.arxiv.enabled)
+            else []
+        )
+        openreview_venues = (
+            list(dict.fromkeys(self.settings.sources.openreview.venues))
+            if bool(self.settings.sources.openreview.enabled)
+            else []
+        )
         drafts: list[ItemDraft] = []
         source_failures_total = 0
 

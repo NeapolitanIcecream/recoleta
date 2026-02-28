@@ -7,8 +7,18 @@ import pytest
 import respx
 
 
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SOURCES", raising=False)
+    monkeypatch.delenv("RECOLETA_CONFIG_PATH", raising=False)
+
+
 @pytest.fixture()
-def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def configured_env(
+    clean_env,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,  # noqa: ARG001
+):
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
 
@@ -23,8 +33,11 @@ def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         "SOURCES",
         json.dumps(
             {
-                "hn": {"rss_urls": ["https://news.ycombinator.com/rss"]},
-                "rss": {"feeds": ["https://example.com/feed.xml"]},
+                "hn": {
+                    "enabled": True,
+                    "rss_urls": ["https://news.ycombinator.com/rss"],
+                },
+                "rss": {"enabled": True, "feeds": ["https://example.com/feed.xml"]},
             }
         ),
     )

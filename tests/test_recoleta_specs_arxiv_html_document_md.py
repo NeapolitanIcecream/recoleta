@@ -36,6 +36,7 @@ def test_enrich_arxiv_html_document_writes_html_document_md(
         json.dumps(
             {
                 "arxiv": {
+                    "enabled": True,
                     "queries": ["cat:cs.AI"],
                     "enrich_method": "html_document",
                     "enrich_failure_mode": "strict",
@@ -100,6 +101,7 @@ def test_load_arxiv_content_prefers_html_document_md_for_analysis(
         json.dumps(
             {
                 "arxiv": {
+                    "enabled": True,
                     "queries": ["cat:cs.AI"],
                     "enrich_method": "html_document",
                     "enrich_failure_mode": "fallback",

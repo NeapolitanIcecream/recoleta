@@ -204,6 +204,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
 
 
 class ArxivSourceConfig(BaseModel):
+    enabled: bool = False
     queries: list[str] = Field(default_factory=list)
     max_results_per_run: int = 50
     enrich_method: str = Field(default="html_document")
@@ -239,11 +240,46 @@ class ArxivSourceConfig(BaseModel):
             )
         return normalized
 
+    @model_validator(mode="after")
+    def _validate_enabled_requires_queries(self) -> "ArxivSourceConfig":
+        fields_set = set(getattr(self, "model_fields_set", set()) or set())
+        configured_without_enable = bool(fields_set - {"enabled"}) and not bool(
+            self.enabled
+        )
+        if configured_without_enable:
+            raise ValueError(
+                "SOURCES.arxiv is configured but disabled; set SOURCES.arxiv.enabled=true (or remove the arxiv block)."
+            )
+        if self.enabled and not [q for q in self.queries if str(q).strip()]:
+            raise ValueError(
+                "SOURCES.arxiv.queries is required when SOURCES.arxiv.enabled=true"
+            )
+        self.queries = [str(q).strip() for q in self.queries if str(q).strip()]
+        return self
+
 
 class HNSourceConfig(BaseModel):
+    enabled: bool = False
     rss_urls: list[str] = Field(
         default_factory=lambda: ["https://news.ycombinator.com/rss"]
     )
+
+    @model_validator(mode="after")
+    def _validate_enabled_requires_urls(self) -> "HNSourceConfig":
+        fields_set = set(getattr(self, "model_fields_set", set()) or set())
+        configured_without_enable = bool(fields_set - {"enabled"}) and not bool(
+            self.enabled
+        )
+        if configured_without_enable:
+            raise ValueError(
+                "SOURCES.hn is configured but disabled; set SOURCES.hn.enabled=true (or remove the hn block)."
+            )
+        if self.enabled and not [u for u in self.rss_urls if str(u).strip()]:
+            raise ValueError(
+                "SOURCES.hn.rss_urls must be non-empty when SOURCES.hn.enabled=true"
+            )
+        self.rss_urls = [str(u).strip() for u in self.rss_urls if str(u).strip()]
+        return self
 
 
 class HFDailySourceConfig(BaseModel):
@@ -251,11 +287,47 @@ class HFDailySourceConfig(BaseModel):
 
 
 class OpenReviewSourceConfig(BaseModel):
+    enabled: bool = False
     venues: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_enabled_requires_venues(self) -> "OpenReviewSourceConfig":
+        fields_set = set(getattr(self, "model_fields_set", set()) or set())
+        configured_without_enable = bool(fields_set - {"enabled"}) and not bool(
+            self.enabled
+        )
+        if configured_without_enable:
+            raise ValueError(
+                "SOURCES.openreview is configured but disabled; set SOURCES.openreview.enabled=true (or remove the openreview block)."
+            )
+        if self.enabled and not [v for v in self.venues if str(v).strip()]:
+            raise ValueError(
+                "SOURCES.openreview.venues is required when SOURCES.openreview.enabled=true"
+            )
+        self.venues = [str(v).strip() for v in self.venues if str(v).strip()]
+        return self
 
 
 class RSSSourceConfig(BaseModel):
+    enabled: bool = False
     feeds: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_enabled_requires_feeds(self) -> "RSSSourceConfig":
+        fields_set = set(getattr(self, "model_fields_set", set()) or set())
+        configured_without_enable = bool(fields_set - {"enabled"}) and not bool(
+            self.enabled
+        )
+        if configured_without_enable:
+            raise ValueError(
+                "SOURCES.rss is configured but disabled; set SOURCES.rss.enabled=true (or remove the rss block)."
+            )
+        if self.enabled and not [f for f in self.feeds if str(f).strip()]:
+            raise ValueError(
+                "SOURCES.rss.feeds is required when SOURCES.rss.enabled=true"
+            )
+        self.feeds = [str(f).strip() for f in self.feeds if str(f).strip()]
+        return self
 
 
 class SourcesConfig(BaseModel):
