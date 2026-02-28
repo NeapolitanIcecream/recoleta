@@ -38,7 +38,9 @@ class Run(SQLModel, table=True):
 class Item(SQLModel, table=True):
     __tablename__ = "items"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (
-        UniqueConstraint("source", "source_item_id", name="uq_items_source_source_item_id"),
+        UniqueConstraint(
+            "source", "source_item_id", name="uq_items_source_source_item_id"
+        ),
         UniqueConstraint("canonical_url_hash", name="uq_items_canonical_url_hash"),
     )
 
@@ -90,7 +92,12 @@ class Analysis(SQLModel, table=True):
 class Delivery(SQLModel, table=True):
     __tablename__ = "deliveries"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (
-        UniqueConstraint("item_id", "channel", "destination", name="uq_deliveries_item_channel_destination"),
+        UniqueConstraint(
+            "item_id",
+            "channel",
+            "destination",
+            name="uq_deliveries_item_channel_destination",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)

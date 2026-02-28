@@ -9,7 +9,10 @@ from huggingface_hub import HfApi
 
 from recoleta.sources import fetch_hf_daily_papers_drafts, fetch_rss_drafts
 
-def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(respx_mock: respx.Router) -> None:
+
+def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(
+    respx_mock: respx.Router,
+) -> None:
     rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -29,7 +32,9 @@ def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(respx_mock: respx.Ro
         text=rss_xml,
         headers={"Content-Type": "application/rss+xml; charset=utf-8"},
     )
-    drafts = fetch_rss_drafts(feed_urls=["https://example.com/feed.xml"], source="rss", max_items_per_feed=10)
+    drafts = fetch_rss_drafts(
+        feed_urls=["https://example.com/feed.xml"], source="rss", max_items_per_feed=10
+    )
     assert len(drafts) == 1
     assert drafts[0].canonical_url == "https://example.com/hello"
     assert drafts[0].title == "Hello World"
@@ -37,7 +42,9 @@ def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(respx_mock: respx.Ro
     assert drafts[0].raw_metadata["feed_title"] == "Example Feed"
 
 
-def test_fetch_hf_daily_papers_drafts_fetches_index_and_parses_items(respx_mock: respx.Router) -> None:
+def test_fetch_hf_daily_papers_drafts_fetches_index_and_parses_items(
+    respx_mock: respx.Router,
+) -> None:
     base_url = HfApi().endpoint.rstrip("/")
     index_url = f"{base_url}/papers"
     html = """<html><body>
@@ -65,7 +72,9 @@ def test_fetch_hf_daily_papers_drafts_fetches_index_and_parses_items(respx_mock:
     assert [d.title for d in drafts] == ["Paper One", "Paper Two"]
 
 
-def test_fetch_hf_daily_papers_drafts_raises_on_http_error(respx_mock: respx.Router) -> None:
+def test_fetch_hf_daily_papers_drafts_raises_on_http_error(
+    respx_mock: respx.Router,
+) -> None:
     base_url = HfApi().endpoint.rstrip("/")
     index_url = f"{base_url}/papers"
     import httpx

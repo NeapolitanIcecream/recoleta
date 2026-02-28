@@ -79,10 +79,14 @@ def test_enrich_arxiv_html_document_writes_html_document_md(
         item = session.exec(select(Item).where(Item.source_item_id == arxiv_id)).first()
         assert item is not None
         assert item.id is not None
-        md = repository.get_latest_content(item_id=int(item.id), content_type="html_document_md")
+        md = repository.get_latest_content(
+            item_id=int(item.id), content_type="html_document_md"
+        )
         assert md is not None
         assert (md.text or "").strip() == "# Title\n\nHello world."
-        refs = repository.get_latest_content(item_id=int(item.id), content_type="html_references")
+        refs = repository.get_latest_content(
+            item_id=int(item.id), content_type="html_references"
+        )
         assert refs is not None
         assert "Ref A" in (refs.text or "")
 
@@ -114,9 +118,14 @@ def test_load_arxiv_content_prefers_html_document_md_for_analysis(
     )
     item, _ = repository.upsert_item(draft)
     assert item.id is not None
-    repository.upsert_content(item_id=int(item.id), content_type="html_document", text="<main><p>html</p></main>")
-    repository.upsert_content(item_id=int(item.id), content_type="html_document_md", text="# md preferred")
+    repository.upsert_content(
+        item_id=int(item.id),
+        content_type="html_document",
+        text="<main><p>html</p></main>",
+    )
+    repository.upsert_content(
+        item_id=int(item.id), content_type="html_document_md", text="# md preferred"
+    )
 
     loaded = service._load_arxiv_content_for_analysis(item_id=int(item.id))  # noqa: SLF001
     assert loaded == "# md preferred"
-

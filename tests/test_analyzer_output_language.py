@@ -21,7 +21,9 @@ def _mock_response_content() -> str:
     )
 
 
-def test_analyzer_system_message_includes_output_language(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyzer_system_message_includes_output_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured_messages: list[dict[str, str]] = []
 
     def fake_completion(**kwargs: Any) -> dict[str, Any]:
@@ -30,7 +32,9 @@ def test_analyzer_system_message_includes_output_language(monkeypatch: pytest.Mo
         return {"choices": [{"message": {"content": _mock_response_content()}}]}
 
     monkeypatch.setattr("recoleta.analyzer.completion", fake_completion)
-    analyzer = LiteLLMAnalyzer(model="openai/gpt-4o-mini", output_language="Chinese (Simplified)")
+    analyzer = LiteLLMAnalyzer(
+        model="openai/gpt-4o-mini", output_language="Chinese (Simplified)"
+    )
 
     result, debug = analyzer.analyze(
         title="Sample title",
@@ -43,11 +47,19 @@ def test_analyzer_system_message_includes_output_language(monkeypatch: pytest.Mo
     assert result.summary == "Short summary"
     assert debug is not None
     system_message = captured_messages[0]["content"]
-    assert "Use Chinese (Simplified) for summary, insight, and idea_directions values." in system_message
-    assert "Keep all JSON keys in English and keep topics as concise English tags." in system_message
+    assert (
+        "Use Chinese (Simplified) for summary, insight, and idea_directions values."
+        in system_message
+    )
+    assert (
+        "Keep all JSON keys in English and keep topics as concise English tags."
+        in system_message
+    )
 
 
-def test_analyzer_system_message_defaults_when_output_language_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyzer_system_message_defaults_when_output_language_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured_messages: list[dict[str, str]] = []
 
     def fake_completion(**kwargs: Any) -> dict[str, Any]:
@@ -66,10 +78,15 @@ def test_analyzer_system_message_defaults_when_output_language_missing(monkeypat
     )
 
     assert result.summary == "Short summary"
-    assert captured_messages[0]["content"] == "You are a research signal analyst. Return strict JSON only."
+    assert (
+        captured_messages[0]["content"]
+        == "You are a research signal analyst. Return strict JSON only."
+    )
 
 
-def test_analyzer_uses_model_default_temperature_gh_gpt52(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyzer_uses_model_default_temperature_gh_gpt52(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Regression: LiteLLM gpt-5.2 rejects explicit temperature params."""
 
     captured_kwargs: dict[str, Any] = {}

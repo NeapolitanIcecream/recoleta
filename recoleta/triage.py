@@ -7,10 +7,20 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 
-from litellm import embedding
 from rapidfuzz import fuzz
 
 from recoleta.models import Item
+
+embedding: Any | None = None
+
+
+def _get_embedding() -> Any:
+    global embedding  # noqa: PLW0603
+    if embedding is None:
+        from litellm import embedding as _embedding
+
+        embedding = _embedding
+    return embedding
 
 
 _DEFAULT_EMBEDDING_BATCH_MAX_INPUTS = 64
@@ -111,7 +121,7 @@ class LiteLLMEmbedder:
         kwargs: dict[str, Any] = {"model": model, "input": inputs}
         if dimensions is not None:
             kwargs["dimensions"] = dimensions
-        response = embedding(**kwargs)
+        response = _get_embedding()(**kwargs)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         vectors = _extract_embeddings(response)
         usage = _extract_usage(response)
@@ -172,10 +182,15 @@ class SemanticTriage:
             )
             return TriageOutput(selected=[], stats=stats, artifacts={})
 
-        normalized_topics = [str(topic).strip() for topic in topics if str(topic).strip()]
+        normalized_topics = [
+            str(topic).strip() for topic in topics if str(topic).strip()
+        ]
         if not normalized_topics:
             duration_ms = int((time.perf_counter() - started) * 1000)
-            selected = [TriageScoredCandidate(candidate=candidate, score=0.0) for candidate in candidates[:limit]]
+            selected = [
+                TriageScoredCandidate(candidate=candidate, score=0.0)
+                for candidate in candidates[:limit]
+            ]
             stats = TriageStats(
                 candidates_total=len(candidates),
                 scored_total=0,
@@ -234,7 +249,9 @@ class SemanticTriage:
             ):
                 items_batches_total += 1
                 items_batch_inputs_max = max(items_batch_inputs_max, len(batch))
-                items_batch_chars_max = max(items_batch_chars_max, sum(len(text) for text in batch))
+                items_batch_chars_max = max(
+                    items_batch_chars_max, sum(len(text) for text in batch)
+                )
 
                 embedding_calls_total += 1
                 batch_vectors, batch_debug = self.embedder.embed(
@@ -281,7 +298,9 @@ class SemanticTriage:
         except Exception as exc:  # noqa: BLE001
             embedding_errors_total += 1
             method = "fuzz_title"
-            scored = self._score_with_rapidfuzz(candidates=candidates, topics=normalized_topics)
+            scored = self._score_with_rapidfuzz(
+                candidates=candidates, topics=normalized_topics
+            )
             if include_debug:
                 payload: dict[str, Any] = {
                     "error_type": type(exc).__name__,
@@ -343,12 +362,16 @@ class SemanticTriage:
     ) -> tuple[list[list[float]], dict[str, Any]]:
         if query_mode == "joined":
             query = "User topics: " + ", ".join(topics)
-            vectors, debug = self.embedder.embed(model=model, inputs=[query], dimensions=dimensions)
+            vectors, debug = self.embedder.embed(
+                model=model, inputs=[query], dimensions=dimensions
+            )
             if len(vectors) != 1:
                 raise ValueError("query embedding output size mismatch")
             return vectors, debug
         if query_mode == "max_per_topic":
-            vectors, debug = self.embedder.embed(model=model, inputs=topics, dimensions=dimensions)
+            vectors, debug = self.embedder.embed(
+                model=model, inputs=topics, dimensions=dimensions
+            )
             if len(vectors) != len(topics):
                 raise ValueError("topic embeddings output size mismatch")
             return vectors, debug
@@ -370,13 +393,21 @@ class SemanticTriage:
         return scored
 
     @staticmethod
-    def _score_with_rapidfuzz(*, candidates: list[TriageCandidate], topics: list[str]) -> list[TriageScoredCandidate]:
+    def _score_with_rapidfuzz(
+        *, candidates: list[TriageCandidate], topics: list[str]
+    ) -> list[TriageScoredCandidate]:
         query = ", ".join(topics)
         scored: list[TriageScoredCandidate] = []
         for candidate in candidates:
             title = str(getattr(candidate.item, "title", "") or "").strip()
-            ratio = float(fuzz.token_set_ratio(title, query)) if title and query else 0.0
-            scored.append(TriageScoredCandidate(candidate=candidate, score=max(0.0, min(1.0, ratio / 100.0))))
+            ratio = (
+                float(fuzz.token_set_ratio(title, query)) if title and query else 0.0
+            )
+            scored.append(
+                TriageScoredCandidate(
+                    candidate=candidate, score=max(0.0, min(1.0, ratio / 100.0))
+                )
+            )
         return scored
 
     @staticmethod
@@ -399,9 +430,15 @@ class SemanticTriage:
 
         recency_n = max(0, min(int(recency_floor), limit, len(scored)))
         recency_items = scored[:recency_n]
-        recency_ids = {item.candidate.item.id for item in recency_items if item.candidate.item.id is not None}
+        recency_ids = {
+            item.candidate.item.id
+            for item in recency_items
+            if item.candidate.item.id is not None
+        }
 
-        remaining = [entry for entry in scored if entry.candidate.item.id not in recency_ids]
+        remaining = [
+            entry for entry in scored if entry.candidate.item.id not in recency_ids
+        ]
 
         eligible = remaining
         skipped_total = 0
@@ -420,17 +457,33 @@ class SemanticTriage:
         eligible_sorted = sorted(eligible, key=sort_key, reverse=True)
 
         remaining_slots = max(0, limit - len(recency_items))
-        exploration_slots = max(0, min(remaining_slots, int(math.floor(limit * max(0.0, float(exploration_rate))))))
+        exploration_slots = max(
+            0,
+            min(
+                remaining_slots,
+                int(math.floor(limit * max(0.0, float(exploration_rate)))),
+            ),
+        )
         exploitation_slots = max(0, remaining_slots - exploration_slots)
 
         exploitation = eligible_sorted[:exploitation_slots]
-        selected_ids = {entry.candidate.item.id for entry in recency_items + exploitation if entry.candidate.item.id is not None}
+        selected_ids = {
+            entry.candidate.item.id
+            for entry in recency_items + exploitation
+            if entry.candidate.item.id is not None
+        }
 
-        exploration_pool = [entry for entry in eligible_sorted[exploitation_slots:] if entry.candidate.item.id not in selected_ids]
+        exploration_pool = [
+            entry
+            for entry in eligible_sorted[exploitation_slots:]
+            if entry.candidate.item.id not in selected_ids
+        ]
         exploration: list[TriageScoredCandidate] = []
         if exploration_slots > 0 and exploration_pool:
             rng = random.Random(_stable_seed(run_id))
-            exploration = rng.sample(exploration_pool, k=min(exploration_slots, len(exploration_pool)))
+            exploration = rng.sample(
+                exploration_pool, k=min(exploration_slots, len(exploration_pool))
+            )
 
         selected = recency_items + exploitation + exploration
         selected = sorted(selected, key=sort_key, reverse=True)
@@ -511,7 +564,9 @@ def _build_triage_summary(
     scored: list[TriageScoredCandidate],
     selected: list[TriageScoredCandidate],
 ) -> dict[str, Any]:
-    def preview(entries: list[TriageScoredCandidate], *, limit: int) -> list[dict[str, Any]]:
+    def preview(
+        entries: list[TriageScoredCandidate], *, limit: int
+    ) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for entry in entries[:limit]:
             item = entry.candidate.item
@@ -548,4 +603,3 @@ def _build_triage_summary(
         "selected_preview": preview(selected, limit=20),
         "top_scores_preview": preview(scored_sorted, limit=20),
     }
-

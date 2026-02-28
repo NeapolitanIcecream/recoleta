@@ -4,10 +4,20 @@ import json
 import time
 from typing import Any, Protocol
 
-from litellm import completion
 from pydantic import BaseModel, Field
 
 from recoleta.types import AnalysisResult, AnalyzeDebug
+
+completion: Any | None = None
+
+
+def _get_completion() -> Any:
+    global completion  # noqa: PLW0603
+    if completion is None:
+        from litellm import completion as _completion
+
+        completion = _completion
+    return completion
 
 
 class Analyzer(Protocol):
@@ -64,7 +74,7 @@ class LiteLLMAnalyzer:
             {"role": "system", "content": self._build_system_message()},
             {"role": "user", "content": prompt},
         ]
-        response = completion(
+        response = _get_completion()(
             model=self.model,
             messages=messages,
             response_format={"type": "json_object"},
@@ -109,7 +119,9 @@ class LiteLLMAnalyzer:
         content: str | None,
         content_max_chars: int = 5000,
     ) -> str:
-        serialized_topics = ", ".join(user_topics) if user_topics else "general technology"
+        serialized_topics = (
+            ", ".join(user_topics) if user_topics else "general technology"
+        )
         trimmed_content = (content or "").strip()
         max_chars = max(0, int(content_max_chars))
         if max_chars > 0 and len(trimmed_content) > max_chars:

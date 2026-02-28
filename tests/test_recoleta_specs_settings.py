@@ -7,7 +7,10 @@ import pytest
 
 from recoleta.config import Settings
 
-def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+
+def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("RECOLETA_CONFIG_PATH", raising=False)
     monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
@@ -35,7 +38,9 @@ def test_settings_loads_nested_source_configuration(configured_env) -> None:
     assert settings.topics == ["agents", "ml-systems"]
 
 
-def test_settings_loads_arxiv_enrich_configuration(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_loads_arxiv_enrich_configuration(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(
         "SOURCES",
         json.dumps(
@@ -54,7 +59,9 @@ def test_settings_loads_arxiv_enrich_configuration(configured_env, monkeypatch: 
     assert settings.sources.arxiv.enrich_failure_mode == "strict"
 
 
-def test_settings_rejects_invalid_arxiv_enrich_configuration(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_rejects_invalid_arxiv_enrich_configuration(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(
         "SOURCES",
         json.dumps(
@@ -70,7 +77,9 @@ def test_settings_rejects_invalid_arxiv_enrich_configuration(configured_env, mon
         Settings()  # pyright: ignore[reportCallIssue]
 
 
-def test_settings_loads_sources_from_yaml_env_string(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_loads_sources_from_yaml_env_string(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv(
         "SOURCES",
         "\n".join(
@@ -89,13 +98,17 @@ def test_settings_loads_sources_from_yaml_env_string(configured_env, monkeypatch
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
 
 
-def test_settings_loads_topics_from_yaml_env_string(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_loads_topics_from_yaml_env_string(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("TOPICS", "\n".join(["- agents", "- ml-systems"]))
     settings = Settings()  # pyright: ignore[reportCallIssue]
     assert settings.topics == ["agents", "ml-systems"]
 
 
-def test_settings_loads_allow_and_deny_tags_from_env_strings(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_loads_allow_and_deny_tags_from_env_strings(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("ALLOW_TAGS", "agents, ml-systems")
     monkeypatch.setenv("DENY_TAGS", json.dumps(["crypto"]))
     settings = Settings()  # pyright: ignore[reportCallIssue]
@@ -103,19 +116,25 @@ def test_settings_loads_allow_and_deny_tags_from_env_strings(configured_env, mon
     assert settings.deny_tags == ["crypto"]
 
 
-def test_settings_loads_llm_output_language_from_env(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_loads_llm_output_language_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "  zh-CN  ")
     settings = Settings()  # pyright: ignore[reportCallIssue]
     assert settings.llm_output_language == "zh-CN"
 
 
-def test_settings_rejects_multiline_llm_output_language(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_settings_rejects_multiline_llm_output_language(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "zh\nCN")
     with pytest.raises(ValueError, match="single-line"):
         Settings()  # pyright: ignore[reportCallIssue]
 
 
-def test_settings_loads_from_config_file_and_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_settings_loads_from_config_file_and_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
     config_path = tmp_path / "recoleta.yaml"
@@ -175,7 +194,9 @@ def test_settings_loads_llm_output_language_from_config_file(
     assert settings.llm_output_language == "Chinese (Simplified)"
 
 
-def test_settings_loads_from_config_file_via_init_arg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_settings_loads_from_config_file_via_init_arg(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
     config_path = tmp_path / "recoleta.yaml"
@@ -203,7 +224,9 @@ def test_settings_loads_from_config_file_via_init_arg(monkeypatch: pytest.Monkey
     assert settings.topics == ["agents"]
 
 
-def test_settings_env_overrides_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_settings_env_overrides_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
     config_path = tmp_path / "recoleta.json"
@@ -228,7 +251,9 @@ def test_settings_env_overrides_config_file(monkeypatch: pytest.MonkeyPatch, tmp
     assert settings.obsidian_base_folder == "FromEnv"
 
 
-def test_settings_rejects_secrets_in_config_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_settings_rejects_secrets_in_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
     config_path = tmp_path / "recoleta.yaml"
@@ -248,7 +273,9 @@ def test_settings_rejects_secrets_in_config_file(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
 
-    with pytest.raises(ValueError, match="Secrets must come from environment variables only"):
+    with pytest.raises(
+        ValueError, match="Secrets must come from environment variables only"
+    ):
         Settings()  # pyright: ignore[reportCallIssue]
 
 

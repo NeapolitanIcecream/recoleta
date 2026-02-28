@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import respx
 
+
 @pytest.fixture()
 def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     vault_path = tmp_path / "vault"
@@ -30,8 +31,11 @@ def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     return tmp_path
 
+
 @pytest.fixture(autouse=True)
-def mock_item_html_enrichment(respx_mock: respx.Router, monkeypatch: pytest.MonkeyPatch) -> None:
+def mock_item_html_enrichment(
+    respx_mock: respx.Router, monkeypatch: pytest.MonkeyPatch
+) -> None:
     respx_mock.get(host="example.com", path__regex=r"^/(?!feed\.xml$).*").respond(
         200,
         text="<html><body><p>mock html</p></body></html>",

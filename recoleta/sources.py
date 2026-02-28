@@ -10,7 +10,12 @@ import feedparser
 import httpx
 from huggingface_hub import HfApi
 import openreview
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from recoleta.types import ItemDraft
 
@@ -73,7 +78,9 @@ def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
     index_url = f"{base_url}/papers"
     timeout = httpx.Timeout(10.0, connect=5.0)
     headers = {"User-Agent": "recoleta/0.1"}
-    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    with httpx.Client(
+        timeout=timeout, headers=headers, follow_redirects=True
+    ) as client:
         html = _fetch_feed_text(client, index_url)
     soup = BeautifulSoup(html, "html.parser")
     anchors = soup.select('a[href^="/papers/"]')
@@ -108,7 +115,9 @@ def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
     return drafts
 
 
-def fetch_arxiv_drafts(*, queries: list[str], max_results_per_run: int = 50) -> list[ItemDraft]:
+def fetch_arxiv_drafts(
+    *, queries: list[str], max_results_per_run: int = 50
+) -> list[ItemDraft]:
     if max_results_per_run <= 0:
         return []
 
@@ -140,7 +149,11 @@ def fetch_arxiv_drafts(*, queries: list[str], max_results_per_run: int = 50) -> 
                     authors.append(name.strip())
 
             published_at = getattr(result, "published", None)
-            if published_at is not None and isinstance(published_at, datetime) and published_at.tzinfo is None:
+            if (
+                published_at is not None
+                and isinstance(published_at, datetime)
+                and published_at.tzinfo is None
+            ):
                 published_at = published_at.replace(tzinfo=timezone.utc)
 
             source_item_id: str | None = None
@@ -167,14 +180,18 @@ def fetch_arxiv_drafts(*, queries: list[str], max_results_per_run: int = 50) -> 
                     canonical_url=entry_id,
                     title=title,
                     authors=authors,
-                    published_at=published_at if isinstance(published_at, datetime) else None,
+                    published_at=published_at
+                    if isinstance(published_at, datetime)
+                    else None,
                     raw_metadata=raw_metadata,
                 )
             )
     return drafts
 
 
-def fetch_openreview_drafts(*, venues: list[str], max_results_per_venue: int = 50) -> list[ItemDraft]:
+def fetch_openreview_drafts(
+    *, venues: list[str], max_results_per_venue: int = 50
+) -> list[ItemDraft]:
     drafts: list[ItemDraft] = []
     if max_results_per_venue <= 0:
         return drafts
@@ -185,7 +202,9 @@ def fetch_openreview_drafts(*, venues: list[str], max_results_per_venue: int = 5
             continue
         invitation = venue if "/-/" in venue else f"{venue}/-/Blind_Submission"
         try:
-            notes = client.get_notes(invitation=invitation, limit=max_results_per_venue, sort="tcdate:desc")
+            notes = client.get_notes(
+                invitation=invitation, limit=max_results_per_venue, sort="tcdate:desc"
+            )
         except Exception:
             notes = client.get_notes(invitation=invitation, limit=max_results_per_venue)
 
@@ -208,13 +227,17 @@ def fetch_openreview_drafts(*, venues: list[str], max_results_per_venue: int = 5
                 continue
 
             authors: list[str] = []
-            authors_value = content.get("authors") if isinstance(content, Mapping) else None
+            authors_value = (
+                content.get("authors") if isinstance(content, Mapping) else None
+            )
             if isinstance(authors_value, Mapping):
                 raw_authors = authors_value.get("value")
             else:
                 raw_authors = authors_value
             if isinstance(raw_authors, list):
-                authors = [str(author).strip() for author in raw_authors if str(author).strip()]
+                authors = [
+                    str(author).strip() for author in raw_authors if str(author).strip()
+                ]
 
             tcdate = getattr(note, "tcdate", None)
             published_at: datetime | None = None
@@ -245,12 +268,16 @@ def fetch_rss_drafts(
     drafts: list[ItemDraft] = []
     timeout = httpx.Timeout(10.0, connect=5.0)
     headers = {"User-Agent": "recoleta/0.1"}
-    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    with httpx.Client(
+        timeout=timeout, headers=headers, follow_redirects=True
+    ) as client:
         for feed_url in feed_urls:
             feed_text = _fetch_feed_text(client, feed_url)
             parsed = cast(Any, feedparser.parse(feed_text))
             feed = cast(Mapping[str, Any], getattr(parsed, "feed", {}) or {})
-            entries = cast(list[Mapping[str, Any]], getattr(parsed, "entries", []) or [])
+            entries = cast(
+                list[Mapping[str, Any]], getattr(parsed, "entries", []) or []
+            )
             feed_title = _get_str(feed, "title")
             for entry in entries[:max_items_per_feed]:
                 link = _get_str(entry, "link")
@@ -271,7 +298,9 @@ def fetch_rss_drafts(
                     single_author = _get_str(entry, "author")
                     if single_author:
                         authors = [single_author]
-                source_item_id = _first_non_empty_str(entry.get("id"), entry.get("guid"), link)
+                source_item_id = _first_non_empty_str(
+                    entry.get("id"), entry.get("guid"), link
+                )
                 drafts.append(
                     ItemDraft.from_values(
                         source=source,

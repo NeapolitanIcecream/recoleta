@@ -149,7 +149,9 @@ class Repository:
             session.add(run)
             self._commit(session)
 
-    def record_metric(self, *, run_id: str, name: str, value: float, unit: str | None = None) -> None:
+    def record_metric(
+        self, *, run_id: str, name: str, value: float, unit: str | None = None
+    ) -> None:
         metric = Metric(run_id=run_id, name=name, value=value, unit=unit)
         with Session(self.engine) as session:
             session.add(metric)
@@ -158,7 +160,9 @@ class Repository:
     def list_metrics(self, *, run_id: str) -> list[Metric]:
         with Session(self.engine) as session:
             statement = (
-                select(Metric).where(Metric.run_id == run_id).order_by(cast(Any, Metric.id))
+                select(Metric)
+                .where(Metric.run_id == run_id)
+                .order_by(cast(Any, Metric.id))
             )
             return list(session.exec(statement))
 
@@ -167,7 +171,9 @@ class Repository:
             statement = select(func.count(cast(Any, Item.id)))
             return int(session.exec(statement).one())
 
-    def _find_near_duplicate_by_title(self, session: Session, *, title: str) -> tuple[Item, float] | None:
+    def _find_near_duplicate_by_title(
+        self, session: Session, *, title: str
+    ) -> tuple[Item, float] | None:
         normalized_title = title.strip()
         if not normalized_title:
             return None
@@ -208,7 +214,9 @@ class Repository:
                 existing = session.exec(statement).first()
 
             if existing is None:
-                by_url_hash = select(Item).where(Item.canonical_url_hash == draft.canonical_url_hash)
+                by_url_hash = select(Item).where(
+                    Item.canonical_url_hash == draft.canonical_url_hash
+                )
                 existing = session.exec(by_url_hash).first()
 
             if existing is None and self.title_dedup_threshold > 0:
@@ -240,7 +248,10 @@ class Repository:
                 alternate_urls = current_metadata.get("alternate_urls")
                 if not isinstance(alternate_urls, list):
                     alternate_urls = []
-                if draft.canonical_url != existing.canonical_url and draft.canonical_url not in alternate_urls:
+                if (
+                    draft.canonical_url != existing.canonical_url
+                    and draft.canonical_url not in alternate_urls
+                ):
                     alternate_urls.append(draft.canonical_url)
                 current_metadata["alternate_urls"] = alternate_urls
 
@@ -295,12 +306,16 @@ class Repository:
                         ]
                     )
                 )
-                .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
+                .order_by(
+                    desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at))
+                )
                 .limit(limit)
             )
             return list(session.exec(statement))
 
-    def list_items_for_llm_analysis(self, *, limit: int, triage_required: bool) -> list[Item]:
+    def list_items_for_llm_analysis(
+        self, *, limit: int, triage_required: bool
+    ) -> list[Item]:
         states = [ITEM_STATE_RETRYABLE_FAILED]
         if triage_required:
             states.append(ITEM_STATE_TRIAGED)
@@ -311,7 +326,9 @@ class Repository:
             statement = (
                 select(Item)
                 .where(cast(Any, Item.state).in_(states))
-                .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
+                .order_by(
+                    desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at))
+                )
                 .limit(limit)
             )
             return list(session.exec(statement))
@@ -325,7 +342,9 @@ class Repository:
             )
             return session.exec(statement).first()
 
-    def get_latest_content_texts(self, *, item_id: int, content_types: list[str]) -> dict[str, str | None]:
+    def get_latest_content_texts(
+        self, *, item_id: int, content_types: list[str]
+    ) -> dict[str, str | None]:
         """Fetch latest text for multiple content_types of a single item in one query."""
 
         normalized_item_id = int(item_id)
@@ -339,20 +358,27 @@ class Repository:
         with Session(self.engine) as session:
             statement = (
                 select(Content)
-                .where(Content.item_id == normalized_item_id, cast(Any, Content.content_type).in_(types))
+                .where(
+                    Content.item_id == normalized_item_id,
+                    cast(Any, Content.content_type).in_(types),
+                )
                 .order_by(desc(cast(Any, Content.id)))
             )
             for content in session.exec(statement):
                 ctype = str(getattr(content, "content_type", "") or "").strip()
                 if ctype in wanted and out.get(ctype) is None:
                     text = getattr(content, "text", None)
-                    out[ctype] = text if isinstance(text, str) and text.strip() else None
+                    out[ctype] = (
+                        text if isinstance(text, str) and text.strip() else None
+                    )
                     wanted.discard(ctype)
                     if not wanted:
                         break
         return out
 
-    def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]:
+    def get_latest_contents(
+        self, *, item_ids: list[int], content_type: str
+    ) -> dict[int, Content]:
         normalized_ids: list[int] = []
         seen: set[int] = set()
         for raw_item_id in item_ids:
@@ -381,11 +407,15 @@ class Repository:
                 .group_by(cast(Any, Content.item_id))
                 .subquery()
             )
-            statement = select(Content).join(latest_ids, cast(Any, Content.id) == latest_ids.c.max_id)
+            statement = select(Content).join(
+                latest_ids, cast(Any, Content.id) == latest_ids.c.max_id
+            )
             contents = list(session.exec(statement))
             return {content.item_id: content for content in contents}
 
-    def upsert_contents_texts(self, *, item_id: int, texts_by_type: dict[str, str]) -> int:
+    def upsert_contents_texts(
+        self, *, item_id: int, texts_by_type: dict[str, str]
+    ) -> int:
         """Upsert multiple text contents for a single item with one commit."""
 
         normalized_item_id = int(item_id)
@@ -408,7 +438,9 @@ class Repository:
         if not normalized:
             return 0
 
-        hashes_by_type: dict[str, str] = {ctype: sha256_hex(text) for ctype, text in normalized.items()}
+        hashes_by_type: dict[str, str] = {
+            ctype: sha256_hex(text) for ctype, text in normalized.items()
+        }
         target_types = list(hashes_by_type.keys())
         target_hashes = list(set(hashes_by_type.values()))
 
@@ -532,7 +564,9 @@ class Repository:
 
     def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis:
         with Session(self.engine) as session:
-            analysis = session.exec(select(Analysis).where(Analysis.item_id == item_id)).first()
+            analysis = session.exec(
+                select(Analysis).where(Analysis.item_id == item_id)
+            ).first()
             if analysis is None:
                 analysis = Analysis(
                     item_id=item_id,
@@ -610,12 +644,17 @@ class Repository:
             session.add(item)
             self._commit(session)
 
-    def list_items_for_publish(self, *, limit: int, min_relevance_score: float) -> list[tuple[Item, Analysis]]:
+    def list_items_for_publish(
+        self, *, limit: int, min_relevance_score: float
+    ) -> list[tuple[Item, Analysis]]:
         with Session(self.engine) as session:
             statement = (
                 select(Item, Analysis)
                 .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
-                .where(Item.state == ITEM_STATE_ANALYZED, Analysis.relevance_score >= min_relevance_score)
+                .where(
+                    Item.state == ITEM_STATE_ANALYZED,
+                    Analysis.relevance_score >= min_relevance_score,
+                )
                 .order_by(
                     desc(cast(Any, Analysis.relevance_score)),
                     desc(cast(Any, Analysis.novelty_score)),
@@ -624,7 +663,9 @@ class Repository:
             )
             return list(session.exec(statement))
 
-    def has_sent_delivery(self, *, item_id: int, channel: str, destination: str) -> bool:
+    def has_sent_delivery(
+        self, *, item_id: int, channel: str, destination: str
+    ) -> bool:
         with Session(self.engine) as session:
             statement = select(Delivery).where(
                 Delivery.item_id == item_id,
@@ -634,17 +675,16 @@ class Repository:
             )
             return session.exec(statement).first() is not None
 
-    def count_sent_deliveries_since(self, *, channel: str, destination: str, since: datetime) -> int:
+    def count_sent_deliveries_since(
+        self, *, channel: str, destination: str, since: datetime
+    ) -> int:
         with Session(self.engine) as session:
-            statement = (
-                select(func.count(cast(Any, Delivery.id)))
-                .where(
-                    Delivery.channel == channel,
-                    Delivery.destination == destination,
-                    Delivery.status == DELIVERY_STATUS_SENT,
-                    cast(Any, Delivery.sent_at).is_not(None),
-                    cast(Any, Delivery.sent_at) >= since,
-                )
+            statement = select(func.count(cast(Any, Delivery.id))).where(
+                Delivery.channel == channel,
+                Delivery.destination == destination,
+                Delivery.status == DELIVERY_STATUS_SENT,
+                cast(Any, Delivery.sent_at).is_not(None),
+                cast(Any, Delivery.sent_at) >= since,
             )
             return int(session.exec(statement).one())
 
@@ -702,7 +742,9 @@ class Repository:
             session.add(item)
             self._commit(session)
 
-    def add_artifact(self, *, run_id: str, item_id: int | None, kind: str, path: str) -> None:
+    def add_artifact(
+        self, *, run_id: str, item_id: int | None, kind: str, path: str
+    ) -> None:
         artifact = Artifact(run_id=run_id, item_id=item_id, kind=kind, path=path)
         with Session(self.engine) as session:
             session.add(artifact)

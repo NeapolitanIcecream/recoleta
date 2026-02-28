@@ -178,9 +178,13 @@ def write_markdown_run_index(
         raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    def sanitize_segment(value: str, *, max_len: int = 72, fallback: str = "unknown") -> str:
+    def sanitize_segment(
+        value: str, *, max_len: int = 72, fallback: str = "unknown"
+    ) -> str:
         cleaned = str(value).strip()
-        normalized = "".join(ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned)
+        normalized = "".join(
+            ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned
+        )
         while "__" in normalized:
             normalized = normalized.replace("__", "_")
         normalized = normalized.strip("_")

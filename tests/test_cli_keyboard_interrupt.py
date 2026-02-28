@@ -25,14 +25,18 @@ class _FakeRepository:
         self.finished.append((run_id, success))
 
 
-def test_execute_stage_marks_run_failed_on_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_stage_marks_run_failed_on_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Regression: Ctrl-C should finish the run and exit cleanly."""
 
     settings = SimpleNamespace(safe_fingerprint=lambda: "fp")  # noqa: E731
     repo = _FakeRepository()
     service = object()
 
-    monkeypatch.setattr(cli, "_build_runtime", lambda: (settings, repo, service), raising=True)
+    monkeypatch.setattr(
+        cli, "_build_runtime", lambda: (settings, repo, service), raising=True
+    )
 
     def _runner(_: Any, __: str) -> Any:  # noqa: ANN401
         raise KeyboardInterrupt
@@ -42,4 +46,3 @@ def test_execute_stage_marks_run_failed_on_keyboard_interrupt(monkeypatch: pytes
 
     assert exc.value.exit_code == 130
     assert repo.finished == [("run-1", False)]
-

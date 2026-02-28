@@ -10,6 +10,7 @@ from recoleta.models import Analysis, Content, Delivery, Item
 from recoleta.storage import Repository
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
 
+
 class FakeAnalyzer:
     def __init__(self, should_fail: bool = False) -> None:
         self.should_fail = should_fail
@@ -31,7 +32,10 @@ class FakeAnalyzer:
             provider="test",
             summary=f"Summary for {title}",
             insight="This matters because it aligns with user interests.",
-            idea_directions=["Try reproducing the approach.", "Benchmark against a baseline."],
+            idea_directions=[
+                "Try reproducing the approach.",
+                "Benchmark against a baseline.",
+            ],
             topics=user_topics[:2] or ["general"],
             relevance_score=0.92,
             novelty_score=0.55,
@@ -94,28 +98,40 @@ class ExplodingRepository:
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]:
         raise RuntimeError("simulated repository failure")
 
-    def record_metric(self, *, run_id: str, name: str, value: float, unit: str | None = None) -> None:
+    def record_metric(
+        self, *, run_id: str, name: str, value: float, unit: str | None = None
+    ) -> None:
         self.metrics.append((name, value, unit))
 
-    def add_artifact(self, *, run_id: str, item_id: int | None, kind: str, path: str) -> None:
+    def add_artifact(
+        self, *, run_id: str, item_id: int | None, kind: str, path: str
+    ) -> None:
         self.artifacts.append((run_id, item_id, kind, path))
 
     def list_items_for_analysis(self, *, limit: int) -> list[Item]:
         raise NotImplementedError
 
-    def list_items_for_llm_analysis(self, *, limit: int, triage_required: bool) -> list[Item]:
+    def list_items_for_llm_analysis(
+        self, *, limit: int, triage_required: bool
+    ) -> list[Item]:
         raise NotImplementedError
 
     def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None:
         raise NotImplementedError
 
-    def get_latest_content_texts(self, *, item_id: int, content_types: list[str]) -> dict[str, str | None]:
+    def get_latest_content_texts(
+        self, *, item_id: int, content_types: list[str]
+    ) -> dict[str, str | None]:
         raise NotImplementedError
 
-    def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]:
+    def get_latest_contents(
+        self, *, item_ids: list[int], content_type: str
+    ) -> dict[int, Content]:
         raise NotImplementedError
 
-    def upsert_contents_texts(self, *, item_id: int, texts_by_type: dict[str, str]) -> int:
+    def upsert_contents_texts(
+        self, *, item_id: int, texts_by_type: dict[str, str]
+    ) -> int:
         raise NotImplementedError
 
     def upsert_content(
@@ -153,13 +169,19 @@ class ExplodingRepository:
     def mark_item_retryable_failed(self, *, item_id: int) -> None:
         raise NotImplementedError
 
-    def list_items_for_publish(self, *, limit: int, min_relevance_score: float) -> list[tuple[Item, Analysis]]:
+    def list_items_for_publish(
+        self, *, limit: int, min_relevance_score: float
+    ) -> list[tuple[Item, Analysis]]:
         raise NotImplementedError
 
-    def has_sent_delivery(self, *, item_id: int, channel: str, destination: str) -> bool:
+    def has_sent_delivery(
+        self, *, item_id: int, channel: str, destination: str
+    ) -> bool:
         raise NotImplementedError
 
-    def count_sent_deliveries_since(self, *, channel: str, destination: str, since: datetime) -> int:
+    def count_sent_deliveries_since(
+        self, *, channel: str, destination: str, since: datetime
+    ) -> int:
         raise NotImplementedError
 
     def upsert_delivery(
@@ -185,6 +207,7 @@ class ExplodingRepository:
         if isinstance(loaded, list):
             return [str(item) for item in loaded]
         return []
+
 
 def _build_runtime() -> tuple[Settings, Repository]:
     settings = Settings()  # pyright: ignore[reportCallIssue]

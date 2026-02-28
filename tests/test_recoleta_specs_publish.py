@@ -17,7 +17,13 @@ from recoleta.models import (
 )
 from recoleta.pipeline import PipelineService
 from recoleta.types import ItemDraft
-from tests.spec_support import FakeAnalyzer, FakeTelegramSender, FlakyTelegramSender, _build_runtime
+from tests.spec_support import (
+    FakeAnalyzer,
+    FakeTelegramSender,
+    FlakyTelegramSender,
+    _build_runtime,
+)
+
 
 def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> None:
     settings, repository = _build_runtime()
@@ -81,7 +87,9 @@ def test_publish_does_not_skip_markdown_when_telegram_delivery_already_sent(
         authors=["Alice"],
         raw_metadata={"source": "test"},
     )
-    service.prepare(run_id="run-publish-telegram-already-sent", drafts=[draft], limit=10)
+    service.prepare(
+        run_id="run-publish-telegram-already-sent", drafts=[draft], limit=10
+    )
     service.analyze(run_id="run-publish-telegram-already-sent", limit=10)
 
     from recoleta.observability import mask_value
@@ -90,7 +98,11 @@ def test_publish_does_not_skip_markdown_when_telegram_delivery_already_sent(
     assert settings.telegram_chat_id is not None
     destination_hash = mask_value(settings.telegram_chat_id.get_secret_value())
     with Session(repository.engine) as session:
-        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-telegram-already-sent-1")).one()
+        item = session.exec(
+            select(Item).where(
+                Item.source_item_id == "item-publish-telegram-already-sent-1"
+            )
+        ).one()
         assert item.id is not None
         session.add(
             Delivery(
@@ -115,7 +127,11 @@ def test_publish_does_not_skip_markdown_when_telegram_delivery_already_sent(
     assert (markdown_dir / "latest.md").exists()
 
     with Session(repository.engine) as session:
-        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-telegram-already-sent-1")).one()
+        item = session.exec(
+            select(Item).where(
+                Item.source_item_id == "item-publish-telegram-already-sent-1"
+            )
+        ).one()
         assert item.state == ITEM_STATE_PUBLISHED
 
 
@@ -180,7 +196,9 @@ def test_publish_does_not_downgrade_sent_telegram_delivery_when_mark_item_publis
         assert deliveries[0].status == DELIVERY_STATUS_SENT
         assert deliveries[0].message_id is not None
 
-        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-no-downgrade-1")).one()
+        item = session.exec(
+            select(Item).where(Item.source_item_id == "item-publish-no-downgrade-1")
+        ).one()
         assert item.state == ITEM_STATE_ANALYZED
 
     second_publish = service.publish(run_id="run-publish-no-downgrade-2", limit=10)
@@ -189,7 +207,9 @@ def test_publish_does_not_downgrade_sent_telegram_delivery_when_mark_item_publis
     assert len(sender.messages) == 1
 
     with Session(repository.engine) as session:
-        item = session.exec(select(Item).where(Item.source_item_id == "item-publish-no-downgrade-1")).one()
+        item = session.exec(
+            select(Item).where(Item.source_item_id == "item-publish-no-downgrade-1")
+        ).one()
         assert item.state == ITEM_STATE_PUBLISHED
 
 
@@ -285,7 +305,10 @@ def test_publish_writes_markdown_index_when_telegram_daily_cap_reached(
     assert "No items published in this run" in latest
 
     with Session(repository.engine) as session:
-        assert session.exec(select(Item).where(Item.state == ITEM_STATE_ANALYZED)).first() is not None
+        assert (
+            session.exec(select(Item).where(Item.state == ITEM_STATE_ANALYZED)).first()
+            is not None
+        )
         assert session.exec(select(Delivery)).first() is None
 
 
@@ -413,7 +436,9 @@ def test_publish_retries_after_failed_delivery(configured_env) -> None:
         assert deliveries[0].message_id is not None
 
 
-def test_publish_sanitizes_secrets_in_delivery_error(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_publish_sanitizes_secrets_in_delivery_error(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from urllib.parse import quote
 
     from recoleta.observability import mask_value
@@ -499,9 +524,7 @@ def test_publish_does_not_crash_when_debug_artifact_write_fails(
 
     class ExplodingTelegramSender:
         def send(self, text: str) -> str:  # noqa: ARG002
-            raise RuntimeError(
-                f"token={token} chat={chat}"
-            )
+            raise RuntimeError(f"token={token} chat={chat}")
 
     service = PipelineService(
         settings=settings,

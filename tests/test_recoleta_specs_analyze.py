@@ -22,6 +22,7 @@ from recoleta.pipeline import PipelineService
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
+
 def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -43,7 +44,9 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     analyze_result = service.analyze(run_id="run-analyze-failure", limit=10)
 
     metrics = repository.list_metrics(run_id="run-analyze-failure")
-    failed_metric = [metric for metric in metrics if metric.name == "pipeline.analyze.failed_total"]
+    failed_metric = [
+        metric for metric in metrics if metric.name == "pipeline.analyze.failed_total"
+    ]
 
     assert analyze_result.failed == 1
     assert len(failed_metric) == 1
@@ -83,7 +86,9 @@ def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
         if calls == 1:
             request = httpx.Request("GET", url)
             response = httpx.Response(503, request=request, text="service unavailable")
-            raise httpx.HTTPStatusError("service unavailable", request=request, response=response)
+            raise httpx.HTTPStatusError(
+                "service unavailable", request=request, response=response
+            )
         return "<html><body><p>mock html</p></body></html>"
 
     monkeypatch.setattr(pipeline, "fetch_url_html", flaky_fetch_url_html)
@@ -105,7 +110,9 @@ def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
         assert item.state == ITEM_STATE_ANALYZED
 
 
-def test_analyze_persists_enriched_content_and_emits_enrich_metrics(configured_env) -> None:
+def test_analyze_persists_enriched_content_and_emits_enrich_metrics(
+    configured_env,
+) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
         settings=settings,
@@ -156,7 +163,9 @@ def test_triage_skips_candidates_without_stored_content(
         def __init__(self) -> None:
             self.calls = 0
 
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             assert model
             assert dimensions is None or dimensions > 0
             self.calls += 1
@@ -239,7 +248,9 @@ def test_triage_uses_latex_source_excerpt_for_arxiv_items(
         def __init__(self) -> None:
             self.calls = 0
 
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             assert model
             assert dimensions is None or dimensions > 0
             self.calls += 1
@@ -310,7 +321,9 @@ def test_triage_does_not_override_retryable_failed_state(
         def __init__(self) -> None:
             self.calls = 0
 
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             assert model
             assert dimensions is None or dimensions > 0
             self.calls += 1
@@ -354,10 +367,14 @@ def test_triage_does_not_override_retryable_failed_state(
     assert enriched.id is not None
     assert retryable.id is not None
 
-    repository.upsert_content(item_id=enriched.id, content_type="html_maintext", text="enriched details")
+    repository.upsert_content(
+        item_id=enriched.id, content_type="html_maintext", text="enriched details"
+    )
     repository.mark_item_enriched(item_id=enriched.id)
 
-    repository.upsert_content(item_id=retryable.id, content_type="html_maintext", text="retryable details")
+    repository.upsert_content(
+        item_id=retryable.id, content_type="html_maintext", text="retryable details"
+    )
     repository.mark_item_enriched(item_id=retryable.id)
     repository.mark_item_retryable_failed(item_id=retryable.id)
 
@@ -367,10 +384,15 @@ def test_triage_does_not_override_retryable_failed_state(
         refreshed = list(session.exec(select(Item)))
     refreshed_by_source_item_id = {item.source_item_id: item for item in refreshed}
     assert refreshed_by_source_item_id["triage-enriched"].state == ITEM_STATE_TRIAGED
-    assert refreshed_by_source_item_id["triage-retryable"].state == ITEM_STATE_RETRYABLE_FAILED
+    assert (
+        refreshed_by_source_item_id["triage-retryable"].state
+        == ITEM_STATE_RETRYABLE_FAILED
+    )
 
 
-def test_repository_analysis_selection_prioritizes_recently_updated_retryables(configured_env) -> None:
+def test_repository_analysis_selection_prioritizes_recently_updated_retryables(
+    configured_env,
+) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
         settings=settings,
@@ -417,7 +439,9 @@ def test_repository_analysis_selection_prioritizes_recently_updated_retryables(c
         session.commit()
 
     selection = repository.list_items_for_analysis(limit=1)
-    llm_selection = repository.list_items_for_llm_analysis(limit=1, triage_required=False)
+    llm_selection = repository.list_items_for_llm_analysis(
+        limit=1, triage_required=False
+    )
     assert selection[0].source_item_id == "order-older"
     assert llm_selection[0].source_item_id == "order-older"
 
@@ -469,7 +493,9 @@ def test_analyze_with_semantic_triage_prioritizes_high_similarity_items(
         def __init__(self) -> None:
             self.calls = 0
 
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             assert model
             assert dimensions is None or dimensions > 0
             self.calls += 1
@@ -543,7 +569,9 @@ def test_analyze_triage_embedding_failure_emits_metric_and_falls_back(
     settings, repository = _build_runtime()
 
     class ExplodingEmbedder:
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             raise RuntimeError("boom")
 
     analyzer = FakeAnalyzer()
@@ -601,7 +629,9 @@ def test_analyze_triage_content_fetch_failure_emits_metric_and_still_runs(
         def __init__(self) -> None:
             self.calls = 0
 
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             assert model
             assert dimensions is None or dimensions > 0
             self.calls += 1
@@ -703,7 +733,9 @@ def test_analyze_triage_dimension_mismatch_falls_back_to_rapidfuzz(
         def __init__(self) -> None:
             self.calls = 0
 
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             assert model
             assert dimensions is None or dimensions > 0
             self.calls += 1
@@ -759,7 +791,9 @@ def test_semantic_triage_batches_item_embeddings_for_large_candidate_pool() -> N
             self.calls = 0
             self.batch_sizes: list[int] = []
 
-        def embed(self, *, model: str, inputs: list[str], dimensions: int | None = None):  # type: ignore[no-untyped-def]
+        def embed(
+            self, *, model: str, inputs: list[str], dimensions: int | None = None
+        ):  # type: ignore[no-untyped-def]
             assert model
             assert dimensions is None or dimensions > 0
             self.calls += 1
@@ -885,7 +919,10 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
     with Session(repository.engine) as session:
         contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))
         assert contents
-        assert any(content.content_type == "pdf_text" and content.text == "mock pdf text" for content in contents)
+        assert any(
+            content.content_type == "pdf_text" and content.text == "mock pdf text"
+            for content in contents
+        )
 
 
 def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
@@ -973,7 +1010,8 @@ def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
         contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))
         assert contents
         assert any(
-            content.content_type == "latex_source" and content.text == "\\section{Intro}\nAgents are useful."
+            content.content_type == "latex_source"
+            and content.text == "\\section{Intro}\nAgents are useful."
             for content in contents
         )
 
@@ -1038,7 +1076,9 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
         "extract_html_document_cleaned_with_references",
         lambda _html, **_: ("<main><p>clean html body</p></main>", None, {}),  # noqa: ARG005
     )
-    monkeypatch.setattr(pipeline, "extract_html_maintext", lambda _html: "clean text body")  # noqa: ARG005
+    monkeypatch.setattr(
+        pipeline, "extract_html_maintext", lambda _html: "clean text body"
+    )  # noqa: ARG005
     monkeypatch.setattr(
         pipeline,
         "convert_html_document_to_markdown",
@@ -1068,10 +1108,15 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
     with Session(repository.engine) as session:
         contents = list(session.exec(select(Content).order_by(cast(Any, Content.id))))
         assert any(
-            content.content_type == "html_document" and content.text == "<main><p>clean html body</p></main>"
+            content.content_type == "html_document"
+            and content.text == "<main><p>clean html body</p></main>"
             for content in contents
         )
-        assert any(content.content_type == "html_maintext" and content.text == "clean text body" for content in contents)
+        assert any(
+            content.content_type == "html_maintext"
+            and content.text == "clean text body"
+            for content in contents
+        )
 
 
 def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
@@ -1105,7 +1150,9 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
     def fail_fetch_url_html(_client, url: str) -> str:  # noqa: ARG001
         request = httpx.Request("GET", url)
         response = httpx.Response(503, request=request, text="service unavailable")
-        raise httpx.HTTPStatusError("service unavailable", request=request, response=response)
+        raise httpx.HTTPStatusError(
+            "service unavailable", request=request, response=response
+        )
 
     def fail_if_binary_fetch_used(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("strict mode must not fallback to binary/pdf fetch")

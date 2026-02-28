@@ -7,7 +7,13 @@ from threading import Thread
 
 from telegram import Bot
 from telegram.error import NetworkError, RetryAfter, TimedOut
-from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 from tenacity.wait import wait_base
 
 

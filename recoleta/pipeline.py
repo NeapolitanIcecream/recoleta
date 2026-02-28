@@ -12,7 +12,13 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import orjson
 from loguru import logger
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
 from recoleta.config import Settings
@@ -32,12 +38,28 @@ from recoleta.models import (
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ENRICHED,
 )
-from recoleta.observability import collect_environment_secrets, get_rich_console, mask_value, scrub_secrets
+from recoleta.observability import (
+    collect_environment_secrets,
+    get_rich_console,
+    mask_value,
+    scrub_secrets,
+)
 from recoleta.ports import RepositoryPort
-from recoleta.publish import build_telegram_message, write_markdown_note, write_markdown_run_index, write_obsidian_note
+from recoleta.publish import (
+    build_telegram_message,
+    write_markdown_note,
+    write_markdown_run_index,
+    write_obsidian_note,
+)
 from recoleta import sources
 from recoleta.triage import SemanticTriage, TriageCandidate
-from recoleta.types import AnalyzeResult, IngestResult, ItemDraft, PublishResult, utc_now
+from recoleta.types import (
+    AnalyzeResult,
+    IngestResult,
+    ItemDraft,
+    PublishResult,
+    utc_now,
+)
 
 
 class PipelineService:
@@ -72,7 +94,10 @@ class PipelineService:
         self.telegram_sender = telegram_sender
         self._pandoc_unavailable_warned = False
         if self.telegram_sender is None and "telegram" in settings.publish_targets:
-            if settings.telegram_bot_token is not None and settings.telegram_chat_id is not None:
+            if (
+                settings.telegram_bot_token is not None
+                and settings.telegram_chat_id is not None
+            ):
                 self.telegram_sender = TelegramSender(
                     token=settings.telegram_bot_token.get_secret_value(),
                     chat_id=settings.telegram_chat_id.get_secret_value(),
@@ -87,7 +112,9 @@ class PipelineService:
         error: str | None,
     ) -> None:
         error_text = str(error or "").strip()
-        is_unavailable = error_text.startswith("pandoc_unavailable") or error_text.startswith("pypandoc_import_failed")
+        is_unavailable = error_text.startswith(
+            "pandoc_unavailable"
+        ) or error_text.startswith("pypandoc_import_failed")
         if is_unavailable:
             # Avoid spamming logs when pandoc isn't installed in the environment.
             if not self._pandoc_unavailable_warned:
@@ -111,7 +138,9 @@ class PipelineService:
             error_text or None,
         )
 
-    def ingest(self, *, run_id: str, drafts: list[ItemDraft] | None = None) -> IngestResult:
+    def ingest(
+        self, *, run_id: str, drafts: list[ItemDraft] | None = None
+    ) -> IngestResult:
         log = logger.bind(module="pipeline.ingest", run_id=run_id)
         started = time.perf_counter()
         ingest_result = IngestResult()
@@ -127,7 +156,9 @@ class PipelineService:
             progress_task_id = progress.add_task("Ingesting items", total=None)
 
             if source_drafts is None:
-                source_drafts, source_failures_total = self._pull_source_drafts(run_id=run_id, log=log)
+                source_drafts, source_failures_total = self._pull_source_drafts(
+                    run_id=run_id, log=log
+                )
 
             source_drafts = source_drafts or []
             progress.update(progress_task_id, total=len(source_drafts), completed=0)
@@ -170,7 +201,9 @@ class PipelineService:
                                 "Ingest debug artifact record failed: {}",
                                 self._sanitize_error_message(str(artifact_exc)),
                             )
-                    log.bind(item_hash=draft.canonical_url_hash).warning("Ingest failed: {}", sanitized_error)
+                    log.bind(item_hash=draft.canonical_url_hash).warning(
+                        "Ingest failed: {}", sanitized_error
+                    )
                 finally:
                     progress.advance(progress_task_id, advance=1)
 
@@ -219,18 +252,29 @@ class PipelineService:
         )
         return ingest_result
 
-    def prepare(self, *, run_id: str, drafts: list[ItemDraft] | None = None, limit: int | None = None) -> IngestResult:
+    def prepare(
+        self,
+        *,
+        run_id: str,
+        drafts: list[ItemDraft] | None = None,
+        limit: int | None = None,
+    ) -> IngestResult:
         effective_limit = self._resolve_analysis_limit(limit=limit)
         candidate_limit = self._resolve_triage_candidate_limit(limit=effective_limit)
         ingest_result = self.ingest(run_id=run_id, drafts=drafts)
         self.enrich(run_id=run_id, limit=candidate_limit)
-        self.triage(run_id=run_id, limit=effective_limit, candidate_limit=candidate_limit)
+        self.triage(
+            run_id=run_id, limit=effective_limit, candidate_limit=candidate_limit
+        )
         return ingest_result
 
     def enrich(self, *, run_id: str, limit: int) -> None:
         log = logger.bind(module="pipeline.enrich", run_id=run_id)
         enrich_started = time.perf_counter()
-        include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
+        include_debug = (
+            self.settings.write_debug_artifacts
+            and self.settings.artifacts_dir is not None
+        )
         with self.repository.sql_diagnostics() as sql_diag:
             items = self.repository.list_items_for_analysis(limit=limit)
             enrich_processed = 0
@@ -254,7 +298,9 @@ class PipelineService:
             html_document_db_read_ms_sum = 0
             html_document_db_write_ms_sum = 0
 
-            def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
+            def write_and_record_artifact(
+                *, item_id: int | None, kind: str, payload: dict[str, Any]
+            ) -> None:
                 artifact_path = self._write_debug_artifact(
                     run_id=run_id,
                     item_id=item_id,
@@ -279,13 +325,17 @@ class PipelineService:
 
             timeout = httpx.Timeout(10.0, connect=5.0)
             headers = {"User-Agent": "recoleta/0.1"}
-            html_document_max_concurrency = int(self.settings.sources.arxiv.html_document_max_concurrency or 1)
+            html_document_max_concurrency = int(
+                self.settings.sources.arxiv.html_document_max_concurrency or 1
+            )
             enable_parallel = (
                 bool(self.settings.sources.arxiv.enrich_method == "html_document")
                 and bool(self.settings.sources.arxiv.html_document_enable_parallel)
                 and html_document_max_concurrency > 1
             )
-            arxiv_rps = float(self.settings.sources.arxiv.html_document_requests_per_second or 0.0)
+            arxiv_rps = float(
+                self.settings.sources.arxiv.html_document_requests_per_second or 0.0
+            )
 
             class _RateLimiter:
                 def __init__(self, *, requests_per_second: float) -> None:
@@ -336,7 +386,9 @@ class PipelineService:
                     )
                     db_mark_started = time.perf_counter()
                     self.repository.mark_item_enriched(item_id=item_id)
-                    diag["db_write_ms"] = diag.get("db_write_ms", 0) + int((time.perf_counter() - db_mark_started) * 1000)
+                    diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+                        (time.perf_counter() - db_mark_started) * 1000
+                    )
                     return {
                         "status": "ok",
                         "item_id": item_id,
@@ -382,10 +434,19 @@ class PipelineService:
             ) as progress:
                 task_id = progress.add_task("Enriching items", total=len(items))
 
-                def _consume_result(result: dict[str, Any], *, item_elapsed_ms: int) -> None:
-                    nonlocal enrich_processed, enrich_failed, enrich_skipped, enrich_duration_ms_total
+                def _consume_result(
+                    result: dict[str, Any], *, item_elapsed_ms: int
+                ) -> None:
+                    nonlocal \
+                        enrich_processed, \
+                        enrich_failed, \
+                        enrich_skipped, \
+                        enrich_duration_ms_total
                     nonlocal html_document_items_total
-                    nonlocal html_document_fetch_ms_sum, html_document_cleanup_ms_sum, html_document_pandoc_ms_sum
+                    nonlocal \
+                        html_document_fetch_ms_sum, \
+                        html_document_cleanup_ms_sum, \
+                        html_document_pandoc_ms_sum
                     nonlocal html_document_db_read_ms_sum, html_document_db_write_ms_sum
 
                     status = result.get("status")
@@ -399,7 +460,9 @@ class PipelineService:
                         item_id = result.get("item_id")
                         arxiv_method = result.get("arxiv_method")
                         if isinstance(arxiv_method, str) and arxiv_method:
-                            arxiv_failed_by_method[arxiv_method] = arxiv_failed_by_method.get(arxiv_method, 0) + 1
+                            arxiv_failed_by_method[arxiv_method] = (
+                                arxiv_failed_by_method.get(arxiv_method, 0) + 1
+                            )
                         classification = result.get("classification") or {}
                         if include_debug:
                             write_and_record_artifact(
@@ -407,51 +470,86 @@ class PipelineService:
                                 kind="error_context",
                                 payload={
                                     "stage": "enrich",
-                                    "error_type": result.get("error_type") or "Exception",
-                                    "error_message": result.get("error_message") or "unknown",
+                                    "error_type": result.get("error_type")
+                                    or "Exception",
+                                    "error_message": result.get("error_message")
+                                    or "unknown",
                                     "item_id": item_id,
-                                    **(classification if isinstance(classification, dict) else {}),
+                                    **(
+                                        classification
+                                        if isinstance(classification, dict)
+                                        else {}
+                                    ),
                                 },
                             )
-                        log.bind(item_id=item_id).warning("Enrich failed: {}", result.get("error_message") or "unknown")
+                        log.bind(item_id=item_id).warning(
+                            "Enrich failed: {}",
+                            result.get("error_message") or "unknown",
+                        )
 
                     diag = result.get("diag") or {}
                     source = str(result.get("source") or "").strip().lower()
                     arxiv_method = result.get("arxiv_method")
-                    if source == "arxiv" and isinstance(arxiv_method, str) and arxiv_method:
-                        arxiv_items_by_method[arxiv_method] = arxiv_items_by_method.get(arxiv_method, 0) + 1
+                    if (
+                        source == "arxiv"
+                        and isinstance(arxiv_method, str)
+                        and arxiv_method
+                    ):
+                        arxiv_items_by_method[arxiv_method] = (
+                            arxiv_items_by_method.get(arxiv_method, 0) + 1
+                        )
                     if source == "arxiv" and arxiv_method == "html_document":
                         html_document_items_total += 1
                         html_document_fetch_ms_sum += int(diag.get("fetch_ms") or 0)
                         html_document_cleanup_ms_sum += int(diag.get("cleanup_ms") or 0)
                         html_document_pandoc_ms_sum += int(diag.get("pandoc_ms") or 0)
                         html_document_db_read_ms_sum += int(diag.get("db_read_ms") or 0)
-                        html_document_db_write_ms_sum += int(diag.get("db_write_ms") or 0)
+                        html_document_db_write_ms_sum += int(
+                            diag.get("db_write_ms") or 0
+                        )
 
                     enrich_duration_ms_total += int(item_elapsed_ms)
                     progress.advance(task_id, 1)
 
                 if not enable_parallel:
-                    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+                    with httpx.Client(
+                        timeout=timeout, headers=headers, follow_redirects=True
+                    ) as client:
                         for item in items:
                             item_started = time.perf_counter()
                             result = _process_one(client=client, item=item)
-                            _consume_result(result, item_elapsed_ms=int((time.perf_counter() - item_started) * 1000))
+                            _consume_result(
+                                result,
+                                item_elapsed_ms=int(
+                                    (time.perf_counter() - item_started) * 1000
+                                ),
+                            )
                 else:
                     parallel_items: list[Any] = []
                     serial_items: list[Any] = []
                     for item in items:
                         source = str(getattr(item, "source", "") or "").strip().lower()
-                        if source == "arxiv" and self.settings.sources.arxiv.enrich_method == "html_document":
+                        if (
+                            source == "arxiv"
+                            and self.settings.sources.arxiv.enrich_method
+                            == "html_document"
+                        ):
                             parallel_items.append(item)
                         else:
                             serial_items.append(item)
 
-                    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as serial_client:
+                    with httpx.Client(
+                        timeout=timeout, headers=headers, follow_redirects=True
+                    ) as serial_client:
                         for item in serial_items:
                             item_started = time.perf_counter()
                             result = _process_one(client=serial_client, item=item)
-                            _consume_result(result, item_elapsed_ms=int((time.perf_counter() - item_started) * 1000))
+                            _consume_result(
+                                result,
+                                item_elapsed_ms=int(
+                                    (time.perf_counter() - item_started) * 1000
+                                ),
+                            )
 
                     local = threading.local()
                     created_clients: list[httpx.Client] = []
@@ -461,7 +559,9 @@ class PipelineService:
                         existing = getattr(local, "client", None)
                         if isinstance(existing, httpx.Client):
                             return existing
-                        client = httpx.Client(timeout=timeout, headers=headers, follow_redirects=True)
+                        client = httpx.Client(
+                            timeout=timeout, headers=headers, follow_redirects=True
+                        )
                         local.client = client
                         with created_lock:
                             created_clients.append(client)
@@ -471,11 +571,17 @@ class PipelineService:
                         started = time.perf_counter()
                         client = _get_thread_client()
                         result = _process_one(client=client, item=item)
-                        result["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+                        result["elapsed_ms"] = int(
+                            (time.perf_counter() - started) * 1000
+                        )
                         return result
 
-                    executor = ThreadPoolExecutor(max_workers=html_document_max_concurrency)
-                    futures = {executor.submit(_worker, item): item for item in parallel_items}
+                    executor = ThreadPoolExecutor(
+                        max_workers=html_document_max_concurrency
+                    )
+                    futures = {
+                        executor.submit(_worker, item): item for item in parallel_items
+                    }
                     interrupted = False
                     try:
                         for fut in as_completed(futures):
@@ -485,14 +591,21 @@ class PipelineService:
                                 result = {
                                     "status": "failed",
                                     "error_type": type(exc).__name__,
-                                    "error_message": self._sanitize_error_message(str(exc)),
+                                    "error_message": self._sanitize_error_message(
+                                        str(exc)
+                                    ),
                                     "classification": self._classify_exception(exc),
                                     "elapsed_ms": 0,
                                 }
-                            _consume_result(result, item_elapsed_ms=int(result.get("elapsed_ms") or 0))
+                            _consume_result(
+                                result,
+                                item_elapsed_ms=int(result.get("elapsed_ms") or 0),
+                            )
                     except KeyboardInterrupt:
                         interrupted = True
-                        log.warning("Interrupt received; cancelling pending enrich workers and draining in-flight tasks.")
+                        log.warning(
+                            "Interrupt received; cancelling pending enrich workers and draining in-flight tasks."
+                        )
                         for fut in futures:
                             fut.cancel()
                         try:
@@ -507,7 +620,9 @@ class PipelineService:
                             if remaining <= 0:
                                 break
                             try:
-                                _, not_done = wait(futures, timeout=min(0.25, remaining))
+                                _, not_done = wait(
+                                    futures, timeout=min(0.25, remaining)
+                                )
                             except KeyboardInterrupt:
                                 continue
                             if not not_done:
@@ -522,7 +637,9 @@ class PipelineService:
                             # Best-effort: keep shutdown from spewing a traceback on repeated Ctrl-C.
                             pass
 
-                        all_done = all(fut.done() for fut in futures) if futures else True
+                        all_done = (
+                            all(fut.done() for fut in futures) if futures else True
+                        )
                         if interrupted and not all_done:
                             log.warning(
                                 "Interrupted before workers finished; skipping http client close to avoid mid-request failures."
@@ -634,22 +751,38 @@ class PipelineService:
                 enrich_failed,
             )
 
-    def triage(self, *, run_id: str, limit: int, candidate_limit: int | None = None) -> None:
-        triage_enabled = bool(self.settings.triage_enabled) and bool(self.settings.topics)
+    def triage(
+        self, *, run_id: str, limit: int, candidate_limit: int | None = None
+    ) -> None:
+        triage_enabled = bool(self.settings.triage_enabled) and bool(
+            self.settings.topics
+        )
         if not triage_enabled:
             return
 
         normalized_limit = self._resolve_analysis_limit(limit=limit)
-        normalized_candidate_limit = candidate_limit or self._resolve_triage_candidate_limit(limit=normalized_limit)
-        include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
+        normalized_candidate_limit = (
+            candidate_limit
+            or self._resolve_triage_candidate_limit(limit=normalized_limit)
+        )
+        include_debug = (
+            self.settings.write_debug_artifacts
+            and self.settings.artifacts_dir is not None
+        )
         log = logger.bind(module="pipeline.triage", run_id=run_id)
         items = self.repository.list_items_for_llm_analysis(
             limit=normalized_candidate_limit,
             triage_required=False,
         )
-        triage_items = [item for item in items if getattr(item, "state", None) == ITEM_STATE_ENRICHED]
+        triage_items = [
+            item
+            for item in items
+            if getattr(item, "state", None) == ITEM_STATE_ENRICHED
+        ]
 
-        def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
+        def write_and_record_artifact(
+            *, item_id: int | None, kind: str, payload: dict[str, Any]
+        ) -> None:
             artifact_path = self._write_debug_artifact(
                 run_id=run_id,
                 item_id=item_id,
@@ -672,8 +805,8 @@ class PipelineService:
                     self._sanitize_error_message(str(artifact_exc)),
                 )
 
-        triage_candidates, content_fetch_failed, content_fetch_error = self._build_triage_candidates(
-            items=triage_items
+        triage_candidates, content_fetch_failed, content_fetch_error = (
+            self._build_triage_candidates(items=triage_items)
         )
         if not triage_candidates:
             self.repository.record_metric(
@@ -887,9 +1020,13 @@ class PipelineService:
     def analyze(self, *, run_id: str, limit: int | None = None) -> AnalyzeResult:
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
         started = time.perf_counter()
-        triage_required = bool(self.settings.triage_enabled) and bool(self.settings.topics)
+        triage_required = bool(self.settings.triage_enabled) and bool(
+            self.settings.topics
+        )
         effective_limit = self._resolve_analysis_limit(limit=limit)
-        items = self.repository.list_items_for_llm_analysis(limit=effective_limit, triage_required=triage_required)
+        items = self.repository.list_items_for_llm_analysis(
+            limit=effective_limit, triage_required=triage_required
+        )
         analyze_result = AnalyzeResult()
         llm_calls_total = 0
         llm_errors_total = 0
@@ -912,11 +1049,16 @@ class PipelineService:
             return normalized[:max_len]
 
         configured_provider = (
-            self.settings.llm_model.split("/", 1)[0] if "/" in self.settings.llm_model else "unknown"
+            self.settings.llm_model.split("/", 1)[0]
+            if "/" in self.settings.llm_model
+            else "unknown"
         )
         configured_provider_token = metric_token(configured_provider, max_len=24)
         configured_model_token = metric_token(self.settings.llm_model)
-        include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
+        include_debug = (
+            self.settings.write_debug_artifacts
+            and self.settings.artifacts_dir is not None
+        )
 
         def bucket_provider_token(provider: str) -> str:
             token = metric_token(provider, max_len=24)
@@ -930,7 +1072,9 @@ class PipelineService:
                 return token
             return "other"
 
-        def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
+        def write_and_record_artifact(
+            *, item_id: int | None, kind: str, payload: dict[str, Any]
+        ) -> None:
             artifact_path = self._write_debug_artifact(
                 run_id=run_id,
                 item_id=item_id,
@@ -992,7 +1136,9 @@ class PipelineService:
                                     "retryable": True,
                                 },
                             )
-                        log.bind(item_id=item_id).warning("Analyze failed: missing stored content")
+                        log.bind(item_id=item_id).warning(
+                            "Analyze failed: missing stored content"
+                        )
                         continue
 
                     llm_calls_total += 1
@@ -1008,23 +1154,32 @@ class PipelineService:
                         llm_calls_by_provider_token.get(provider_token, 0) + 1
                     )
                     model_token = bucket_model_token(analysis_result.model)
-                    llm_calls_by_model_token[model_token] = llm_calls_by_model_token.get(model_token, 0) + 1
+                    llm_calls_by_model_token[model_token] = (
+                        llm_calls_by_model_token.get(model_token, 0) + 1
+                    )
 
                     if include_debug:
                         if debug is None:
                             raise RuntimeError(
                                 "Analyzer did not return debug payload while include_debug is enabled"
                             )
-                        write_and_record_artifact(item_id=item_id, kind="llm_request", payload=debug.request)
-                        write_and_record_artifact(item_id=item_id, kind="llm_response", payload=debug.response)
+                        write_and_record_artifact(
+                            item_id=item_id, kind="llm_request", payload=debug.request
+                        )
+                        write_and_record_artifact(
+                            item_id=item_id, kind="llm_response", payload=debug.response
+                        )
 
-                    self.repository.save_analysis(item_id=item_id, result=analysis_result)
+                    self.repository.save_analysis(
+                        item_id=item_id, result=analysis_result
+                    )
                     analyze_result.processed += 1
                 except Exception as exc:
                     analyze_result.failed += 1
                     llm_errors_total += 1
                     llm_errors_by_provider_token[configured_provider_token] = (
-                        llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
+                        llm_errors_by_provider_token.get(configured_provider_token, 0)
+                        + 1
                     )
                     llm_errors_by_model_token[configured_model_token] = (
                         llm_errors_by_model_token.get(configured_model_token, 0) + 1
@@ -1052,7 +1207,9 @@ class PipelineService:
                             **classification,
                         },
                     )
-                    log.bind(item_id=item_id).warning("Analyze failed: {}", sanitized_error)
+                    log.bind(item_id=item_id).warning(
+                        "Analyze failed: {}", sanitized_error
+                    )
 
         self.repository.record_metric(
             run_id=run_id,
@@ -1133,7 +1290,9 @@ class PipelineService:
         return resolved
 
     def _resolve_triage_candidate_limit(self, *, limit: int) -> int:
-        triage_enabled = bool(self.settings.triage_enabled) and bool(self.settings.topics)
+        triage_enabled = bool(self.settings.triage_enabled) and bool(
+            self.settings.topics
+        )
         if not triage_enabled:
             return limit
         return min(
@@ -1161,8 +1320,12 @@ class PipelineService:
             content_type="html_maintext",
         )
 
-    def _get_latest_content_text(self, *, item_id: int, content_type: str) -> str | None:
-        existing_content = self.repository.get_latest_content(item_id=item_id, content_type=content_type)
+    def _get_latest_content_text(
+        self, *, item_id: int, content_type: str
+    ) -> str | None:
+        existing_content = self.repository.get_latest_content(
+            item_id=item_id, content_type=content_type
+        )
         if existing_content is None or not existing_content.text:
             return None
         return existing_content.text
@@ -1177,11 +1340,19 @@ class PipelineService:
         }
         content_types: list[str] = [primary_by_method.get(method, "pdf_text")]
         if failure_mode == "fallback":
-            for candidate_type in ("pdf_text", "html_maintext", "html_document_md", "html_document", "latex_source"):
+            for candidate_type in (
+                "pdf_text",
+                "html_maintext",
+                "html_document_md",
+                "html_document",
+                "latex_source",
+            ):
                 if candidate_type not in content_types:
                     content_types.append(candidate_type)
         for content_type in content_types:
-            loaded = self._get_latest_content_text(item_id=item_id, content_type=content_type)
+            loaded = self._get_latest_content_text(
+                item_id=item_id, content_type=content_type
+            )
             if loaded is not None:
                 return loaded
         return None
@@ -1214,14 +1385,16 @@ class PipelineService:
                 arxiv_html_throttle=arxiv_html_throttle,
             )
         elif source == "openreview":
-            content_text, stored_new_content = self._ensure_pdf_content_with_optional_html_fallback(
-                client=client,
-                source=source,
-                item_id=item_id,
-                canonical_url=canonical_url,
-                source_item_id=source_item_id,
-                allow_html_fallback=True,
-                log=log,
+            content_text, stored_new_content = (
+                self._ensure_pdf_content_with_optional_html_fallback(
+                    client=client,
+                    source=source,
+                    item_id=item_id,
+                    canonical_url=canonical_url,
+                    source_item_id=source_item_id,
+                    allow_html_fallback=True,
+                    log=log,
+                )
             )
         else:
             content_text, stored_new_content = self._ensure_html_maintext_content(
@@ -1323,7 +1496,9 @@ class PipelineService:
         canonical_url: str,
         source_item_id: str | None,
     ) -> tuple[str, bool]:
-        existing_latex = self._get_latest_content_text(item_id=item_id, content_type="latex_source")
+        existing_latex = self._get_latest_content_text(
+            item_id=item_id, content_type="latex_source"
+        )
         if existing_latex is not None:
             return existing_latex, False
         source_url = self._build_arxiv_source_url(
@@ -1359,7 +1534,9 @@ class PipelineService:
             and bool(self.settings.sources.arxiv.html_document_enable_parallel)
             and int(self.settings.sources.arxiv.html_document_max_concurrency or 1) > 1
         )
-        sample_rate = float(self.settings.sources.arxiv.html_document_log_sample_rate or 0.0)
+        sample_rate = float(
+            self.settings.sources.arxiv.html_document_log_sample_rate or 0.0
+        )
         bound_log = log.bind(item_id=item_id)
 
         def _should_log_info() -> bool:
@@ -1393,7 +1570,9 @@ class PipelineService:
         existing_md = existing.get("html_document_md")
         existing_refs = existing.get("html_references")
         if diag is not None:
-            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int((time.perf_counter() - db_read_started) * 1000)
+            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int(
+                (time.perf_counter() - db_read_started) * 1000
+            )
         if (
             bool(self.settings.sources.arxiv.html_document_skip_cleanup_when_complete)
             and existing_document is not None
@@ -1404,7 +1583,9 @@ class PipelineService:
         stored_new = False
         if existing_document is not None:
             cleanup_started = time.perf_counter()
-            cleaned_document, references_html, stats = extract_html_document_cleaned_with_references(existing_document)
+            cleaned_document, references_html, stats = (
+                extract_html_document_cleaned_with_references(existing_document)
+            )
             if diag is not None:
                 diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + int(
                     (time.perf_counter() - cleanup_started) * 1000
@@ -1416,7 +1597,9 @@ class PipelineService:
             if existing_refs is None and references_html is not None:
                 pending_upserts["html_references"] = references_html
             if existing_md is None and existing_document is not None:
-                markdown, elapsed_ms, error = convert_html_document_to_markdown(existing_document)
+                markdown, elapsed_ms, error = convert_html_document_to_markdown(
+                    existing_document
+                )
                 if diag is not None:
                     diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
                 if markdown is not None:
@@ -1442,8 +1625,12 @@ class PipelineService:
             )
             if pending_upserts:
                 db_write_started = time.perf_counter()
-                if bool(self.settings.sources.arxiv.html_document_use_batched_db_writes):
-                    inserted = self.repository.upsert_contents_texts(item_id=item_id, texts_by_type=pending_upserts)
+                if bool(
+                    self.settings.sources.arxiv.html_document_use_batched_db_writes
+                ):
+                    inserted = self.repository.upsert_contents_texts(
+                        item_id=item_id, texts_by_type=pending_upserts
+                    )
                 else:
                     inserted = 0
                     for ctype, text in pending_upserts.items():
@@ -1468,17 +1655,25 @@ class PipelineService:
         fetch_started = time.perf_counter()
         html = _fetch_arxiv_html_polite(html_url)
         if diag is not None:
-            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int((time.perf_counter() - fetch_started) * 1000)
+            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
+                (time.perf_counter() - fetch_started) * 1000
+            )
         cleanup_started = time.perf_counter()
-        cleaned_document, references_html, stats = extract_html_document_cleaned_with_references(html)
+        cleaned_document, references_html, stats = (
+            extract_html_document_cleaned_with_references(html)
+        )
         if diag is not None:
-            diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + int((time.perf_counter() - cleanup_started) * 1000)
+            diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + int(
+                (time.perf_counter() - cleanup_started) * 1000
+            )
         if cleaned_document is None:
             raise RuntimeError("empty arXiv html document extraction")
         pending_upserts_new: dict[str, str] = {"html_document": cleaned_document}
         if references_html is not None:
             pending_upserts_new["html_references"] = references_html
-        markdown, elapsed_ms, error = convert_html_document_to_markdown(cleaned_document)
+        markdown, elapsed_ms, error = convert_html_document_to_markdown(
+            cleaned_document
+        )
         if diag is not None:
             diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
         if markdown is not None:
@@ -1508,7 +1703,9 @@ class PipelineService:
         if pending_upserts_new:
             db_write_started = time.perf_counter()
             if bool(self.settings.sources.arxiv.html_document_use_batched_db_writes):
-                inserted = self.repository.upsert_contents_texts(item_id=item_id, texts_by_type=pending_upserts_new)
+                inserted = self.repository.upsert_contents_texts(
+                    item_id=item_id, texts_by_type=pending_upserts_new
+                )
             else:
                 inserted = 0
                 for ctype, text in pending_upserts_new.items():
@@ -1536,7 +1733,9 @@ class PipelineService:
         allow_html_fallback: bool,
         log: Any,
     ) -> tuple[str, bool]:
-        existing_pdf = self._get_latest_content_text(item_id=item_id, content_type="pdf_text")
+        existing_pdf = self._get_latest_content_text(
+            item_id=item_id, content_type="pdf_text"
+        )
         if existing_pdf is not None:
             return existing_pdf, False
         try:
@@ -1577,7 +1776,9 @@ class PipelineService:
         item_id: int,
         canonical_url: str,
     ) -> tuple[str, bool]:
-        existing_html = self._get_latest_content_text(item_id=item_id, content_type="html_maintext")
+        existing_html = self._get_latest_content_text(
+            item_id=item_id, content_type="html_maintext"
+        )
         if existing_html is not None:
             return existing_html, False
         html = fetch_url_html(client, canonical_url)
@@ -1603,19 +1804,28 @@ class PipelineService:
         markdown_notes: list[tuple[str, Path]] = []
 
         if enable_obsidian and self.settings.obsidian_vault_path is None:
-            raise ValueError("OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'")
+            raise ValueError(
+                "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
+            )
 
         destination_hash: str | None = None
         remaining_today: int | None = None
         if enable_telegram:
-            if self.settings.telegram_bot_token is None or self.settings.telegram_chat_id is None:
-                raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'")
+            if (
+                self.settings.telegram_bot_token is None
+                or self.settings.telegram_chat_id is None
+            ):
+                raise ValueError(
+                    "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'"
+                )
             if self.telegram_sender is None:
                 self.telegram_sender = TelegramSender(
                     token=self.settings.telegram_bot_token.get_secret_value(),
                     chat_id=self.settings.telegram_chat_id.get_secret_value(),
                 )
-            destination_hash = mask_value(self.settings.telegram_chat_id.get_secret_value())
+            destination_hash = mask_value(
+                self.settings.telegram_chat_id.get_secret_value()
+            )
             now = utc_now()
             midnight_utc = datetime(
                 year=now.year,
@@ -1636,13 +1846,19 @@ class PipelineService:
                     self.settings.max_deliveries_per_day,
                 )
 
-        effective_limit = min(limit, remaining_today) if remaining_today is not None else limit
+        effective_limit = (
+            min(limit, remaining_today) if remaining_today is not None else limit
+        )
         candidates = self.repository.list_items_for_publish(
             limit=effective_limit,
             min_relevance_score=self.settings.min_relevance_score,
         )
-        allow_tags = {tag.strip().lower() for tag in self.settings.allow_tags if tag.strip()}
-        deny_tags = {tag.strip().lower() for tag in self.settings.deny_tags if tag.strip()}
+        allow_tags = {
+            tag.strip().lower() for tag in self.settings.allow_tags if tag.strip()
+        }
+        deny_tags = {
+            tag.strip().lower() for tag in self.settings.deny_tags if tag.strip()
+        }
         filtered_total = 0
         with Progress(
             TextColumn("{task.description}"),
@@ -1651,7 +1867,9 @@ class PipelineService:
             TimeElapsedColumn(),
             console=self._progress_console,
         ) as progress:
-            for item, analysis in progress.track(candidates, description="Publishing items"):
+            for item, analysis in progress.track(
+                candidates, description="Publishing items"
+            ):
                 if item.id is None:
                     continue
                 telegram_already_sent = False
@@ -1692,12 +1910,16 @@ class PipelineService:
                                 canonical_url=item.canonical_url,
                                 published_at=item.published_at,
                                 authors=self.repository.decode_list(item.authors),
-                                topics=self.repository.decode_list(analysis.topics_json),
+                                topics=self.repository.decode_list(
+                                    analysis.topics_json
+                                ),
                                 relevance_score=analysis.relevance_score,
                                 run_id=run_id,
                                 summary=analysis.summary,
                                 insight=analysis.insight,
-                                ideas=self.repository.decode_list(analysis.idea_directions_json),
+                                ideas=self.repository.decode_list(
+                                    analysis.idea_directions_json
+                                ),
                             )
                         )
                     if enable_markdown:
@@ -1714,11 +1936,17 @@ class PipelineService:
                             run_id=run_id,
                             summary=analysis.summary,
                             insight=analysis.insight,
-                            ideas=self.repository.decode_list(analysis.idea_directions_json),
+                            ideas=self.repository.decode_list(
+                                analysis.idea_directions_json
+                            ),
                         )
                         markdown_notes.append((item.title, md_note_path))
                         note_paths.append(md_note_path)
-                    if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                    if (
+                        enable_telegram
+                        and destination_hash is not None
+                        and not telegram_already_sent
+                    ):
                         message_text = build_telegram_message(
                             title=item.title,
                             summary=analysis.summary,
@@ -1766,7 +1994,11 @@ class PipelineService:
                                 "Publish debug artifact record failed: {}",
                                 self._sanitize_error_message(str(artifact_exc)),
                             )
-                    if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                    if (
+                        enable_telegram
+                        and destination_hash is not None
+                        and not telegram_already_sent
+                    ):
                         self.repository.upsert_delivery(
                             item_id=item.id,
                             channel=DELIVERY_CHANNEL_TELEGRAM,
@@ -1776,7 +2008,9 @@ class PipelineService:
                             error=sanitized_error,
                         )
                     publish_result.failed += 1
-                    log.bind(item_id=item.id).warning("Publish failed: {}", sanitized_error)
+                    log.bind(item_id=item.id).warning(
+                        "Publish failed: {}", sanitized_error
+                    )
 
         if enable_markdown:
             try:
@@ -1837,7 +2071,9 @@ class PipelineService:
         )
         return publish_result
 
-    def _pull_source_drafts(self, *, run_id: str, log: Any) -> tuple[list[ItemDraft], int]:
+    def _pull_source_drafts(
+        self, *, run_id: str, log: Any
+    ) -> tuple[list[ItemDraft], int]:
         hn_urls = list(dict.fromkeys(self.settings.sources.hn.rss_urls))
         rss_urls = list(dict.fromkeys(self.settings.sources.rss.feeds))
         arxiv_queries = list(dict.fromkeys(self.settings.sources.arxiv.queries))
@@ -1877,14 +2113,19 @@ class PipelineService:
                             "Ingest source debug artifact record failed: {}",
                             self._sanitize_error_message(str(artifact_exc)),
                         )
-                log.bind(source=source_name).warning("Source pull failed: {}", sanitized_error)
+                log.bind(source=source_name).warning(
+                    "Source pull failed: {}", sanitized_error
+                )
 
         if self.settings.sources.hf_daily.enabled:
             pull("hf_daily", lambda: sources.fetch_hf_daily_papers_drafts(max_items=50))
         if hn_urls:
             pull("hn", lambda: sources.fetch_rss_drafts(feed_urls=hn_urls, source="hn"))
         if rss_urls:
-            pull("rss", lambda: sources.fetch_rss_drafts(feed_urls=rss_urls, source="rss"))
+            pull(
+                "rss",
+                lambda: sources.fetch_rss_drafts(feed_urls=rss_urls, source="rss"),
+            )
         if arxiv_queries:
             pull(
                 "arxiv",
@@ -1894,7 +2135,12 @@ class PipelineService:
                 ),
             )
         if openreview_venues:
-            pull("openreview", lambda: sources.fetch_openreview_drafts(venues=openreview_venues, max_results_per_venue=50))
+            pull(
+                "openreview",
+                lambda: sources.fetch_openreview_drafts(
+                    venues=openreview_venues, max_results_per_venue=50
+                ),
+            )
         return drafts, source_failures_total
 
     def _write_debug_artifact(
@@ -1905,12 +2151,20 @@ class PipelineService:
         kind: str,
         payload: dict[str, Any],
     ) -> Path | None:
-        if not self.settings.write_debug_artifacts or self.settings.artifacts_dir is None:
+        if (
+            not self.settings.write_debug_artifacts
+            or self.settings.artifacts_dir is None
+        ):
             return None
         try:
-            def sanitize_segment(value: str, *, max_len: int = 72, fallback: str = "unknown") -> str:
+
+            def sanitize_segment(
+                value: str, *, max_len: int = 72, fallback: str = "unknown"
+            ) -> str:
                 cleaned = value.strip()
-                normalized = "".join(ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned)
+                normalized = "".join(
+                    ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned
+                )
                 while "__" in normalized:
                     normalized = normalized.replace("__", "_")
                 normalized = normalized.strip("_")
@@ -1938,7 +2192,9 @@ class PipelineService:
                 raise ValueError("Debug artifact path escapes artifacts_dir")
             absolute_path.parent.mkdir(parents=True, exist_ok=True)
 
-            raw_json = orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS)
+            raw_json = orjson.dumps(
+                payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS
+            )
             scrubbed = scrub_secrets(
                 raw_json.decode("utf-8"),
                 secrets=self._scrub_secrets,
@@ -1946,13 +2202,17 @@ class PipelineService:
             absolute_path.write_text(scrubbed + "\n", encoding="utf-8")
             return absolute_path.relative_to(base_dir)
         except Exception as exc:
-            logger.bind(module="pipeline.artifacts", run_id=run_id, item_id=item_id).warning(
+            logger.bind(
+                module="pipeline.artifacts", run_id=run_id, item_id=item_id
+            ).warning(
                 "Debug artifact write failed: {}",
                 self._sanitize_error_message(str(exc)),
             )
             return None
 
-    def _build_triage_candidates(self, *, items: list[Any]) -> tuple[list[TriageCandidate], bool, dict[str, Any] | None]:
+    def _build_triage_candidates(
+        self, *, items: list[Any]
+    ) -> tuple[list[TriageCandidate], bool, dict[str, Any] | None]:
         candidates_items: list[Any] = []
         item_ids: list[int] = []
         pdf_item_ids: list[int] = []
@@ -1978,7 +2238,9 @@ class PipelineService:
         if not candidates_items:
             return [], False, None
 
-        max_chars = int(getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200)
+        max_chars = int(
+            getattr(self.settings, "triage_item_text_max_chars", 1200) or 1200
+        )
         html_by_id: dict[int, Any] = {}
         pdf_by_id: dict[int, Any] = {}
         html_document_by_id: dict[int, Any] = {}
@@ -1987,9 +2249,13 @@ class PipelineService:
         content_fetch_failed = False
         content_fetch_error: dict[str, Any] | None = None
         try:
-            html_by_id = self.repository.get_latest_contents(item_ids=item_ids, content_type="html_maintext")
+            html_by_id = self.repository.get_latest_contents(
+                item_ids=item_ids, content_type="html_maintext"
+            )
             if pdf_item_ids:
-                pdf_by_id = self.repository.get_latest_contents(item_ids=pdf_item_ids, content_type="pdf_text")
+                pdf_by_id = self.repository.get_latest_contents(
+                    item_ids=pdf_item_ids, content_type="pdf_text"
+                )
             if arxiv_item_ids:
                 html_document_md_by_id = self.repository.get_latest_contents(
                     item_ids=arxiv_item_ids,
@@ -2011,7 +2277,13 @@ class PipelineService:
                 "error_type": type(exc).__name__,
                 "error_message": sanitized_error,
                 **self._classify_exception(exc),
-                "content_types": ["html_maintext", "pdf_text", "html_document_md", "html_document", "latex_source"],
+                "content_types": [
+                    "html_maintext",
+                    "pdf_text",
+                    "html_document_md",
+                    "html_document",
+                    "latex_source",
+                ],
                 "item_ids_total": len(item_ids),
                 "pdf_item_ids_total": len(pdf_item_ids),
                 "arxiv_item_ids_total": len(arxiv_item_ids),
@@ -2040,11 +2312,15 @@ class PipelineService:
                     excerpt = str(getattr(existing_html, "text") or "")
             if excerpt is None and source == "arxiv":
                 existing_html_document_md = html_document_md_by_id.get(item_id)
-                if existing_html_document_md is not None and getattr(existing_html_document_md, "text", None):
+                if existing_html_document_md is not None and getattr(
+                    existing_html_document_md, "text", None
+                ):
                     excerpt = str(getattr(existing_html_document_md, "text") or "")
             if excerpt is None and source == "arxiv":
                 existing_html_document = html_document_by_id.get(item_id)
-                if existing_html_document is not None and getattr(existing_html_document, "text", None):
+                if existing_html_document is not None and getattr(
+                    existing_html_document, "text", None
+                ):
                     excerpt = str(getattr(existing_html_document, "text") or "")
             if excerpt is None and source == "arxiv":
                 existing_latex = latex_by_id.get(item_id)
@@ -2055,7 +2331,9 @@ class PipelineService:
             if excerpt:
                 trimmed_excerpt = excerpt.strip()
                 if trimmed_excerpt:
-                    combined = f"{title}\n\n{trimmed_excerpt}" if title else trimmed_excerpt
+                    combined = (
+                        f"{title}\n\n{trimmed_excerpt}" if title else trimmed_excerpt
+                    )
 
             if max_chars > 0 and len(combined) > max_chars:
                 combined = combined[:max_chars]
@@ -2085,7 +2363,9 @@ class PipelineService:
         return {"error_category": "unknown", "retryable": False}
 
     @staticmethod
-    def _build_pdf_url(*, source: str, canonical_url: str, source_item_id: str | None) -> str | None:
+    def _build_pdf_url(
+        *, source: str, canonical_url: str, source_item_id: str | None
+    ) -> str | None:
         if source == "arxiv":
             return PipelineService._build_arxiv_pdf_url(
                 canonical_url=canonical_url,
@@ -2112,7 +2392,9 @@ class PipelineService:
         return None
 
     @staticmethod
-    def _build_arxiv_pdf_url(*, canonical_url: str, source_item_id: str | None) -> str | None:
+    def _build_arxiv_pdf_url(
+        *, canonical_url: str, source_item_id: str | None
+    ) -> str | None:
         arxiv_id = PipelineService._extract_arxiv_identifier(
             canonical_url=canonical_url,
             source_item_id=source_item_id,
@@ -2122,7 +2404,9 @@ class PipelineService:
         return f"https://arxiv.org/pdf/{arxiv_id}.pdf"
 
     @staticmethod
-    def _build_arxiv_source_url(*, canonical_url: str, source_item_id: str | None) -> str | None:
+    def _build_arxiv_source_url(
+        *, canonical_url: str, source_item_id: str | None
+    ) -> str | None:
         arxiv_id = PipelineService._extract_arxiv_identifier(
             canonical_url=canonical_url,
             source_item_id=source_item_id,
@@ -2132,7 +2416,9 @@ class PipelineService:
         return f"https://arxiv.org/e-print/{arxiv_id}"
 
     @staticmethod
-    def _build_arxiv_html_url(*, canonical_url: str, source_item_id: str | None) -> str | None:
+    def _build_arxiv_html_url(
+        *, canonical_url: str, source_item_id: str | None
+    ) -> str | None:
         arxiv_id = PipelineService._extract_arxiv_identifier(
             canonical_url=canonical_url,
             source_item_id=source_item_id,
@@ -2142,7 +2428,9 @@ class PipelineService:
         return f"https://arxiv.org/html/{arxiv_id}"
 
     @staticmethod
-    def _extract_arxiv_identifier(*, canonical_url: str, source_item_id: str | None) -> str | None:
+    def _extract_arxiv_identifier(
+        *, canonical_url: str, source_item_id: str | None
+    ) -> str | None:
         for raw_value in (source_item_id or "", canonical_url or ""):
             normalized = PipelineService._normalize_arxiv_identifier(raw_value)
             if normalized is not None:
@@ -2162,9 +2450,11 @@ class PipelineService:
                 return None
         for prefix in ("abs/", "pdf/", "html/", "e-print/", "src/", "format/"):
             if candidate.startswith(prefix):
-                candidate = candidate[len(prefix):]
+                candidate = candidate[len(prefix) :]
                 break
-        candidate = candidate.replace("arXiv:", "").replace("arxiv:", "").strip().strip("/")
+        candidate = (
+            candidate.replace("arXiv:", "").replace("arxiv:", "").strip().strip("/")
+        )
         if candidate.endswith(".pdf"):
             candidate = candidate[:-4]
         candidate = candidate.strip()

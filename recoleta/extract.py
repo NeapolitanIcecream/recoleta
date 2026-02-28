@@ -13,7 +13,12 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 import httpx
 import trafilatura
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 
 _MARKER_PDF_CONVERTER: Any | None = None
@@ -71,7 +76,9 @@ _EXTERNAL_PROGRESS_ENV: dict[str, str] = {
 def _external_progress_disabled() -> Any:
     """Disable third-party progress bars for clean Rich TUI output."""
 
-    previous: dict[str, str | None] = {key: os.environ.get(key) for key in _EXTERNAL_PROGRESS_ENV}
+    previous: dict[str, str | None] = {
+        key: os.environ.get(key) for key in _EXTERNAL_PROGRESS_ENV
+    }
     os.environ.update(_EXTERNAL_PROGRESS_ENV)
     tqdm_patches: list[tuple[object, str, object]] = []
     hf_prev_disabled: bool | None = None
@@ -89,6 +96,7 @@ def _external_progress_disabled() -> Any:
             pass
 
         try:
+
             def force_disable_tqdm(tqdm_cls: object) -> None:
                 original_init = getattr(tqdm_cls, "__init__")
 
@@ -278,7 +286,7 @@ def _extract_latex_text_files_from_tar(payload: bytes) -> list[tuple[str, str]]:
                 if decoded is None:
                     continue
                 extracted_files.append((file_name, decoded))
-    except (tarfile.TarError, OSError):
+    except tarfile.TarError, OSError:
         return []
     return extracted_files
 
@@ -299,7 +307,9 @@ def _clean_latex_text(raw_text: str) -> str | None:
     return "\n".join(cleaned_lines).strip() or None
 
 
-def extract_arxiv_latex_source(archive_bytes: bytes, *, max_chars: int = _ARXIV_LATEX_MAX_CHARS) -> str | None:
+def extract_arxiv_latex_source(
+    archive_bytes: bytes, *, max_chars: int = _ARXIV_LATEX_MAX_CHARS
+) -> str | None:
     if not archive_bytes:
         return None
     payload = _decompress_gzip_if_needed(archive_bytes)
@@ -325,8 +335,12 @@ def extract_arxiv_latex_source(archive_bytes: bytes, *, max_chars: int = _ARXIV_
     return combined or None
 
 
-def extract_html_document_cleaned(html: str, *, max_chars: int = _HTML_DOCUMENT_MAX_CHARS) -> str | None:
-    cleaned, _, _ = extract_html_document_cleaned_with_references(html, max_chars=max_chars)
+def extract_html_document_cleaned(
+    html: str, *, max_chars: int = _HTML_DOCUMENT_MAX_CHARS
+) -> str | None:
+    cleaned, _, _ = extract_html_document_cleaned_with_references(
+        html, max_chars=max_chars
+    )
     return cleaned
 
 
@@ -366,7 +380,13 @@ def extract_html_document_cleaned_with_references(
         if tag.find(["math", "table", "pre", "code", "svg", "img"]):
             return True
         class_attr = tag.get("class")
-        classes = [str(c) for c in class_attr] if isinstance(class_attr, list) else [str(class_attr)] if class_attr else []
+        classes = (
+            [str(c) for c in class_attr]
+            if isinstance(class_attr, list)
+            else [str(class_attr)]
+            if class_attr
+            else []
+        )
         class_blob = " ".join(classes).lower()
         # arXiv/LaTeXML math/table/code wrappers often include these markers.
         keep_markers = (
@@ -528,7 +548,9 @@ def extract_html_document_cleaned_with_references(
     simplify_stats = _simplify_arxiv_html(main_container)
 
     def normalize_html_fragment(fragment: str, *, limit: int) -> str | None:
-        normalized_lines = [line.strip() for line in fragment.splitlines() if line.strip()]
+        normalized_lines = [
+            line.strip() for line in fragment.splitlines() if line.strip()
+        ]
         combined = "\n".join(normalized_lines).strip()
         if not combined:
             return None
@@ -539,7 +561,9 @@ def extract_html_document_cleaned_with_references(
     cleaned_html = normalize_html_fragment(str(main_container), limit=max_chars)
     references_html: str | None = None
     if references_blocks:
-        references_html = normalize_html_fragment("\n\n".join(references_blocks), limit=references_max_chars)
+        references_html = normalize_html_fragment(
+            "\n\n".join(references_blocks), limit=references_max_chars
+        )
 
     stats: dict[str, Any] = {
         "removed_non_body_blocks": removed_non_body,
@@ -572,7 +596,11 @@ def convert_html_document_to_markdown(
         )
     except Exception as exc:  # noqa: BLE001
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        return None, elapsed_ms, f"pandoc_convert_failed error={type(exc).__name__}: {exc}"
+        return (
+            None,
+            elapsed_ms,
+            f"pandoc_convert_failed error={type(exc).__name__}: {exc}",
+        )
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     normalized = str(markdown or "").strip()
@@ -581,4 +609,3 @@ def convert_html_document_to_markdown(
     if max_chars > 0 and len(normalized) > max_chars:
         normalized = normalized[:max_chars].rstrip()
     return normalized or None, elapsed_ms, None
-

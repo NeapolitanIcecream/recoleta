@@ -37,10 +37,14 @@ class _FakeRepository:
     def mark_item_retryable_failed(self, *, item_id: int) -> None:  # noqa: ARG002
         return
 
-    def record_metric(self, *, run_id: str, name: str, value: float, unit: str | None = None) -> None:  # noqa: ARG002
+    def record_metric(
+        self, *, run_id: str, name: str, value: float, unit: str | None = None
+    ) -> None:  # noqa: ARG002
         return
 
-    def add_artifact(self, *, run_id: str, item_id: int | None, kind: str, path: str) -> None:  # noqa: ARG002
+    def add_artifact(
+        self, *, run_id: str, item_id: int | None, kind: str, path: str
+    ) -> None:  # noqa: ARG002
         return
 
 
@@ -122,8 +126,12 @@ def test_parallel_enrich_does_not_close_http_clients_while_workers_running() -> 
         return _gen()
 
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(PipelineService, "_ensure_item_content", _ensure_item_content, raising=True)
-    monkeypatch.setattr(pipeline, "ThreadPoolExecutor", _InterruptingExecutor, raising=True)
+    monkeypatch.setattr(
+        PipelineService, "_ensure_item_content", _ensure_item_content, raising=True
+    )
+    monkeypatch.setattr(
+        pipeline, "ThreadPoolExecutor", _InterruptingExecutor, raising=True
+    )
     monkeypatch.setattr(pipeline, "as_completed", _as_completed_interrupt, raising=True)
     monkeypatch.setattr(pipeline.httpx, "Client", _FakeHttpClient, raising=True)
     try:
@@ -142,4 +150,3 @@ def test_parallel_enrich_does_not_close_http_clients_while_workers_running() -> 
     time.sleep(0.4)
 
     assert saw_closed_client["value"] is False
-

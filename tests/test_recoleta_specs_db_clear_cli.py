@@ -20,12 +20,18 @@ def test_db_clear_requires_yes(tmp_path: Path) -> None:
 def test_db_clear_deletes_db_and_sidecars(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"
-    sidecars = [Path(f"{db_path}-wal"), Path(f"{db_path}-shm"), Path(f"{db_path}-journal")]
+    sidecars = [
+        Path(f"{db_path}-wal"),
+        Path(f"{db_path}-shm"),
+        Path(f"{db_path}-journal"),
+    ]
     db_path.write_text("db", encoding="utf-8")
     for sidecar in sidecars:
         sidecar.write_text("x", encoding="utf-8")
 
-    result = runner.invoke(recoleta.cli.app, ["db", "clear", "--db-path", str(db_path), "--yes"])
+    result = runner.invoke(
+        recoleta.cli.app, ["db", "clear", "--db-path", str(db_path), "--yes"]
+    )
     assert result.exit_code == 0
     assert not db_path.exists()
     for sidecar in sidecars:
@@ -48,7 +54,8 @@ def test_db_clear_can_resolve_db_path_from_config_file(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = runner.invoke(recoleta.cli.app, ["db", "clear", "--config", str(config_path), "--yes"])
+    result = runner.invoke(
+        recoleta.cli.app, ["db", "clear", "--config", str(config_path), "--yes"]
+    )
     assert result.exit_code == 0
     assert not db_path.exists()
-

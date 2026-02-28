@@ -62,4 +62,3 @@ def test_external_progress_disabled_restores_huggingface_state(monkeypatch) -> N
             disable()
         else:
             enable()
-

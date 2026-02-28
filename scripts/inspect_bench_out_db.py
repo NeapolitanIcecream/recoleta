@@ -22,7 +22,9 @@ from recoleta.config import Settings
 from recoleta.observability import configure_process_logging, get_rich_console
 
 
-app = typer.Typer(add_completion=False, help="Inspect recoleta benchmark SQLite DB contents.")
+app = typer.Typer(
+    add_completion=False, help="Inspect recoleta benchmark SQLite DB contents."
+)
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,9 @@ def _p95(values: list[int]) -> int | None:
     return int(sorted_values[idx])
 
 
-def _safe_token_counter(*, model: str, messages: list[dict[str, str]]) -> tuple[int, str | None]:
+def _safe_token_counter(
+    *, model: str, messages: list[dict[str, str]]
+) -> tuple[int, str | None]:
     try:
         value = int(token_counter(model=model, messages=messages))
         return value, None
@@ -60,7 +64,10 @@ def _safe_token_counter(*, model: str, messages: list[dict[str, str]]) -> tuple[
         fallback_model = "gpt-3.5-turbo"
         try:
             value = int(token_counter(model=fallback_model, messages=messages))
-            return value, f"token_counter failed for model={model!r}, fell back to {fallback_model!r}: {type(exc).__name__}: {exc}"
+            return (
+                value,
+                f"token_counter failed for model={model!r}, fell back to {fallback_model!r}: {type(exc).__name__}: {exc}",
+            )
         except Exception as fallback_exc:  # noqa: BLE001
             raise RuntimeError(
                 f"token_counter failed for model={model!r} and fallback model={fallback_model!r}: {fallback_exc}"
@@ -72,7 +79,9 @@ def _resolve_paths(*, bench_dir: Path, db: Path | None) -> DbPaths:
     if db is not None:
         db_path = db.expanduser().resolve()
         bench_results_path = None
-        return DbPaths(bench_dir=bench_dir, db_path=db_path, bench_results_path=bench_results_path)
+        return DbPaths(
+            bench_dir=bench_dir, db_path=db_path, bench_results_path=bench_results_path
+        )
 
     candidates = sorted(bench_dir.glob("recoleta-bench-*.db"))
     if not candidates:
@@ -85,10 +94,14 @@ def _resolve_paths(*, bench_dir: Path, db: Path | None) -> DbPaths:
     db_path = candidates[0]
     bench_results = bench_dir / "bench-results.json"
     bench_results_path = bench_results if bench_results.exists() else None
-    return DbPaths(bench_dir=bench_dir, db_path=db_path, bench_results_path=bench_results_path)
+    return DbPaths(
+        bench_dir=bench_dir, db_path=db_path, bench_results_path=bench_results_path
+    )
 
 
-def _maybe_load_settings(*, bench_results_path: Path | None, config: Path | None) -> Settings | None:
+def _maybe_load_settings(
+    *, bench_results_path: Path | None, config: Path | None
+) -> Settings | None:
     config_path: Path | None = None
     if config is not None:
         config_path = config.expanduser().resolve()
@@ -99,7 +112,9 @@ def _maybe_load_settings(*, bench_results_path: Path | None, config: Path | None
             if isinstance(raw, str) and raw.strip():
                 config_path = Path(raw).expanduser().resolve()
         except Exception as exc:  # noqa: BLE001
-            logger.bind(path=str(bench_results_path)).warning("Failed to parse bench-results.json: {}", exc)
+            logger.bind(path=str(bench_results_path)).warning(
+                "Failed to parse bench-results.json: {}", exc
+            )
 
     if config_path is None:
         return None
@@ -107,7 +122,9 @@ def _maybe_load_settings(*, bench_results_path: Path | None, config: Path | None
     try:
         return Settings()  # pyright: ignore[reportCallIssue]
     except Exception as exc:  # noqa: BLE001
-        logger.bind(path=str(config_path)).warning("Failed to load Settings from config: {}", exc)
+        logger.bind(path=str(config_path)).warning(
+            "Failed to load Settings from config: {}", exc
+        )
         return None
 
 
@@ -120,7 +137,9 @@ def _item_rows(con: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def _content_types(con: sqlite3.Connection) -> list[str]:
     cur = con.cursor()
-    rows = cur.execute("select distinct content_type from contents order by content_type").fetchall()
+    rows = cur.execute(
+        "select distinct content_type from contents order by content_type"
+    ).fetchall()
     return [str(r[0]) for r in rows]
 
 
@@ -162,7 +181,9 @@ def summary(
         Path("bench-out-html-md-v2"),
         help="Benchmark output directory containing recoleta-bench-*.db.",
     ),
-    db: Path | None = typer.Option(None, help="Optional explicit path to the SQLite DB."),
+    db: Path | None = typer.Option(
+        None, help="Optional explicit path to the SQLite DB."
+    ),
 ) -> None:
     """Print content_type distribution and basic length stats."""
     configure_process_logging(level="INFO", log_json=False)
@@ -183,7 +204,9 @@ def summary(
 
         cur = con.cursor()
         for t in types:
-            rows = cur.execute("select length(text) as n from contents where content_type=?", (t,)).fetchall()
+            rows = cur.execute(
+                "select length(text) as n from contents where content_type=?", (t,)
+            ).fetchall()
             lengths = [int(r["n"] or 0) for r in rows]
             exact_200k = sum(1 for v in lengths if v == 200_000)
             table.add_row(
@@ -202,8 +225,12 @@ def summary(
 
 @app.command()
 def items(
-    bench_dir: Path = typer.Option(Path("bench-out-html-md-v2"), help="Benchmark output directory."),
-    db: Path | None = typer.Option(None, help="Optional explicit path to the SQLite DB."),
+    bench_dir: Path = typer.Option(
+        Path("bench-out-html-md-v2"), help="Benchmark output directory."
+    ),
+    db: Path | None = typer.Option(
+        None, help="Optional explicit path to the SQLite DB."
+    ),
 ) -> None:
     """List items with per-type character lengths (quick scan for outliers)."""
     configure_process_logging(level="INFO", log_json=False)
@@ -247,12 +274,22 @@ def items(
 
 @app.command()
 def sample(
-    arxiv_id: str | None = typer.Option(None, help="Sample a specific arXiv id (e.g. 2602.23216v1)."),
+    arxiv_id: str | None = typer.Option(
+        None, help="Sample a specific arXiv id (e.g. 2602.23216v1)."
+    ),
     item_id: int | None = typer.Option(None, help="Sample a specific item id."),
-    content_type: str | None = typer.Option(None, help="Optional: only show one content_type."),
-    max_chars: int = typer.Option(1200, help="How many chars to show per sample (excerpt from start)."),
-    bench_dir: Path = typer.Option(Path("bench-out-html-md-v2"), help="Benchmark output directory."),
-    db: Path | None = typer.Option(None, help="Optional explicit path to the SQLite DB."),
+    content_type: str | None = typer.Option(
+        None, help="Optional: only show one content_type."
+    ),
+    max_chars: int = typer.Option(
+        1200, help="How many chars to show per sample (excerpt from start)."
+    ),
+    bench_dir: Path = typer.Option(
+        Path("bench-out-html-md-v2"), help="Benchmark output directory."
+    ),
+    db: Path | None = typer.Option(
+        None, help="Optional explicit path to the SQLite DB."
+    ),
 ) -> None:
     """Show excerpt(s) for one item, plus markup/noise counters."""
     configure_process_logging(level="INFO", log_json=False)
@@ -263,7 +300,9 @@ def sample(
         cur = con.cursor()
         if item_id is None:
             if arxiv_id:
-                row = cur.execute("select id from items where source_item_id=?", (arxiv_id,)).fetchone()
+                row = cur.execute(
+                    "select id from items where source_item_id=?", (arxiv_id,)
+                ).fetchone()
                 if row is None:
                     raise typer.BadParameter(f"Unknown arxiv_id={arxiv_id!r}")
                 item_id = int(row["id"])
@@ -302,29 +341,50 @@ def sample(
             body.append(json.dumps(stats, ensure_ascii=False), style="dim")
             body.append("\n\n")
             body.append(ex if ex else "<empty>")
-            console.print(Panel(body, title=f"{t} (start excerpt, max_chars={max_chars})", expand=False))
+            console.print(
+                Panel(
+                    body,
+                    title=f"{t} (start excerpt, max_chars={max_chars})",
+                    expand=False,
+                )
+            )
     finally:
         con.close()
 
 
 @app.command("prompt-cost")
 def prompt_cost(
-    model: str | None = typer.Option(None, help="Override model for token_counter (defaults to Settings.llm_model)."),
-    config: Path | None = typer.Option(None, help="Optional recoleta.yaml; overrides bench-results.json config_path."),
+    model: str | None = typer.Option(
+        None, help="Override model for token_counter (defaults to Settings.llm_model)."
+    ),
+    config: Path | None = typer.Option(
+        None, help="Optional recoleta.yaml; overrides bench-results.json config_path."
+    ),
     content_types: list[str] = typer.Option(
         ["html_maintext", "html_document_md", "html_document"],
         help="Which content_types to compare for prompt token cost.",
     ),
-    bench_dir: Path = typer.Option(Path("bench-out-html-md-v2"), help="Benchmark output directory."),
-    db: Path | None = typer.Option(None, help="Optional explicit path to the SQLite DB."),
+    bench_dir: Path = typer.Option(
+        Path("bench-out-html-md-v2"), help="Benchmark output directory."
+    ),
+    db: Path | None = typer.Option(
+        None, help="Optional explicit path to the SQLite DB."
+    ),
 ) -> None:
     """Compare token cost of the analyzer prompt across content_types."""
     configure_process_logging(level="INFO", log_json=False)
     console = get_rich_console()
     paths = _resolve_paths(bench_dir=bench_dir, db=db)
-    settings = _maybe_load_settings(bench_results_path=paths.bench_results_path, config=config)
-    effective_model = (model or (settings.llm_model if settings else None) or "").strip() or "gpt-4o-mini"
-    analyzer = LiteLLMAnalyzer(model=effective_model, output_language=(settings.llm_output_language if settings else None))
+    settings = _maybe_load_settings(
+        bench_results_path=paths.bench_results_path, config=config
+    )
+    effective_model = (
+        model or (settings.llm_model if settings else None) or ""
+    ).strip() or "gpt-4o-mini"
+    analyzer = LiteLLMAnalyzer(
+        model=effective_model,
+        output_language=(settings.llm_output_language if settings else None),
+    )
 
     con = _open_db(paths.db_path)
     try:
@@ -369,18 +429,34 @@ def prompt_cost(
         console.print(table)
         unique_warnings = list(dict.fromkeys(warnings))[:5]
         if unique_warnings:
-            console.print(Panel("\n".join(unique_warnings), title="token_counter warnings (top)", expand=False))
+            console.print(
+                Panel(
+                    "\n".join(unique_warnings),
+                    title="token_counter warnings (top)",
+                    expand=False,
+                )
+            )
     finally:
         con.close()
 
 
 @app.command()
 def pattern(
-    regex: str = typer.Argument(..., help="Regex pattern to count in the excerpt window."),
-    content_type: str = typer.Option("html_document_md", help="Which content_type to scan."),
-    max_chars: int = typer.Option(5000, help="Scan only the first N chars (matches prompt excerpt window)."),
-    bench_dir: Path = typer.Option(Path("bench-out-html-md-v2"), help="Benchmark output directory."),
-    db: Path | None = typer.Option(None, help="Optional explicit path to the SQLite DB."),
+    regex: str = typer.Argument(
+        ..., help="Regex pattern to count in the excerpt window."
+    ),
+    content_type: str = typer.Option(
+        "html_document_md", help="Which content_type to scan."
+    ),
+    max_chars: int = typer.Option(
+        5000, help="Scan only the first N chars (matches prompt excerpt window)."
+    ),
+    bench_dir: Path = typer.Option(
+        Path("bench-out-html-md-v2"), help="Benchmark output directory."
+    ),
+    db: Path | None = typer.Option(
+        None, help="Optional explicit path to the SQLite DB."
+    ),
 ) -> None:
     """Count a regex across items to spot systematic noise."""
     configure_process_logging(level="INFO", log_json=False)
@@ -391,7 +467,9 @@ def pattern(
     con = _open_db(paths.db_path)
     try:
         items_rows = _item_rows(con)
-        table = Table(title=f"Pattern counts: /{regex}/ in {content_type} (first {max_chars} chars)")
+        table = Table(
+            title=f"Pattern counts: /{regex}/ in {content_type} (first {max_chars} chars)"
+        )
         table.add_column("arxiv_id", style="bold")
         table.add_column("count", justify="right")
         table.add_column("first_hit", overflow="fold")
@@ -426,4 +504,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

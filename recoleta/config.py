@@ -9,7 +9,11 @@ from typing import Any
 from platformdirs import user_data_dir
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic.fields import FieldInfo
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 import yaml
 
 
@@ -138,16 +142,22 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         elif suffix == ".json":
             loaded = json.loads(config_path.read_text(encoding="utf-8"))
         else:
-            raise ValueError(f"Unsupported config file type: {config_path.suffix} (expected .yaml/.yml/.json)")
+            raise ValueError(
+                f"Unsupported config file type: {config_path.suffix} (expected .yaml/.yml/.json)"
+            )
 
         if loaded is None:
             return {}
         if not isinstance(loaded, dict):
-            raise ValueError("Config file must contain a mapping/object at the top level")
+            raise ValueError(
+                "Config file must contain a mapping/object at the top level"
+            )
 
         for key in loaded:
             if key in self._FORBIDDEN_TOP_LEVEL_KEYS:
-                raise ValueError(f"Secrets must come from environment variables only: {key}")
+                raise ValueError(
+                    f"Secrets must come from environment variables only: {key}"
+                )
 
         mapped: dict[str, Any] = {}
         for key, value in loaded.items():
@@ -155,11 +165,15 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
                 raise ValueError("Config file keys must be strings")
             mapped_key = self._KEY_MAP.get(key, key)
             if mapped_key in {"telegram_bot_token", "telegram_chat_id"}:
-                raise ValueError(f"Secrets must come from environment variables only: {key}")
+                raise ValueError(
+                    f"Secrets must come from environment variables only: {key}"
+                )
             mapped[mapped_key] = value
         return mapped
 
-    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:  # noqa: ARG002
+    def get_field_value(
+        self, field: FieldInfo, field_name: str
+    ) -> tuple[Any, str, bool]:  # noqa: ARG002
         if self._data is None:
             self._data = self._load_config_file()
         return self._data.get(field_name), field_name, False
@@ -178,8 +192,12 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
             self._data = self._load_config_file()
         collected: dict[str, Any] = {}
         for field_name, field in self.settings_cls.model_fields.items():
-            field_value, field_key, value_is_complex = self.get_field_value(field, field_name)
-            field_value = self.prepare_field_value(field_name, field, field_value, value_is_complex)
+            field_value, field_key, value_is_complex = self.get_field_value(
+                field, field_name
+            )
+            field_value = self.prepare_field_value(
+                field_name, field, field_value, value_is_complex
+            )
             if field_value is not None:
                 collected[field_key] = field_value
         return collected
@@ -204,7 +222,9 @@ class ArxivSourceConfig(BaseModel):
         if not normalized:
             return "html_document"
         if normalized not in _ALLOWED_ARXIV_ENRICH_METHODS:
-            raise ValueError("SOURCES.arxiv.enrich_method must be one of: pdf_text, latex_source, html_document")
+            raise ValueError(
+                "SOURCES.arxiv.enrich_method must be one of: pdf_text, latex_source, html_document"
+            )
         return normalized
 
     @field_validator("enrich_failure_mode", mode="before")
@@ -214,12 +234,16 @@ class ArxivSourceConfig(BaseModel):
         if not normalized:
             return "fallback"
         if normalized not in _ALLOWED_ARXIV_ENRICH_FAILURE_MODES:
-            raise ValueError("SOURCES.arxiv.enrich_failure_mode must be one of: fallback, strict")
+            raise ValueError(
+                "SOURCES.arxiv.enrich_failure_mode must be one of: fallback, strict"
+            )
         return normalized
 
 
 class HNSourceConfig(BaseModel):
-    rss_urls: list[str] = Field(default_factory=lambda: ["https://news.ycombinator.com/rss"])
+    rss_urls: list[str] = Field(
+        default_factory=lambda: ["https://news.ycombinator.com/rss"]
+    )
 
 
 class HFDailySourceConfig(BaseModel):
@@ -253,22 +277,40 @@ class Settings(BaseSettings):
         validate_by_name=True,
     )
 
-    config_path: Path | None = Field(default=None, validation_alias="RECOLETA_CONFIG_PATH")
+    config_path: Path | None = Field(
+        default=None, validation_alias="RECOLETA_CONFIG_PATH"
+    )
     recoleta_db_path: Path = Field(validation_alias="RECOLETA_DB_PATH")
     llm_model: str = Field(validation_alias="LLM_MODEL")
-    llm_output_language: str | None = Field(default=None, validation_alias="LLM_OUTPUT_LANGUAGE")
+    llm_output_language: str | None = Field(
+        default=None, validation_alias="LLM_OUTPUT_LANGUAGE"
+    )
 
-    obsidian_vault_path: Path | None = Field(default=None, validation_alias="OBSIDIAN_VAULT_PATH")
-    telegram_bot_token: SecretStr | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
-    telegram_chat_id: SecretStr | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
+    obsidian_vault_path: Path | None = Field(
+        default=None, validation_alias="OBSIDIAN_VAULT_PATH"
+    )
+    telegram_bot_token: SecretStr | None = Field(
+        default=None, validation_alias="TELEGRAM_BOT_TOKEN"
+    )
+    telegram_chat_id: SecretStr | None = Field(
+        default=None, validation_alias="TELEGRAM_CHAT_ID"
+    )
 
-    sources: SourcesConfig = Field(default_factory=SourcesConfig, validation_alias="SOURCES")
+    sources: SourcesConfig = Field(
+        default_factory=SourcesConfig, validation_alias="SOURCES"
+    )
     topics: list[str] = Field(default_factory=list, validation_alias="TOPICS")
     allow_tags: list[str] = Field(default_factory=list, validation_alias="ALLOW_TAGS")
     deny_tags: list[str] = Field(default_factory=list, validation_alias="DENY_TAGS")
-    min_relevance_score: float = Field(default=0.6, validation_alias="MIN_RELEVANCE_SCORE")
-    max_deliveries_per_day: int = Field(default=10, validation_alias="MAX_DELIVERIES_PER_DAY")
-    title_dedup_threshold: float = Field(default=92.0, validation_alias="TITLE_DEDUP_THRESHOLD")
+    min_relevance_score: float = Field(
+        default=0.6, validation_alias="MIN_RELEVANCE_SCORE"
+    )
+    max_deliveries_per_day: int = Field(
+        default=10, validation_alias="MAX_DELIVERIES_PER_DAY"
+    )
+    title_dedup_threshold: float = Field(
+        default=92.0, validation_alias="TITLE_DEDUP_THRESHOLD"
+    )
     title_dedup_max_candidates: int = Field(
         default=500,
         ge=0,
@@ -277,8 +319,12 @@ class Settings(BaseSettings):
 
     triage_enabled: bool = Field(default=False, validation_alias="TRIAGE_ENABLED")
     triage_mode: str = Field(default="prioritize", validation_alias="TRIAGE_MODE")
-    triage_embedding_model: str = Field(default="text-embedding-3-small", validation_alias="TRIAGE_EMBEDDING_MODEL")
-    triage_embedding_dimensions: int | None = Field(default=None, validation_alias="TRIAGE_EMBEDDING_DIMENSIONS")
+    triage_embedding_model: str = Field(
+        default="text-embedding-3-small", validation_alias="TRIAGE_EMBEDDING_MODEL"
+    )
+    triage_embedding_dimensions: int | None = Field(
+        default=None, validation_alias="TRIAGE_EMBEDDING_DIMENSIONS"
+    )
     triage_embedding_batch_max_inputs: int = Field(
         default=64,
         ge=1,
@@ -289,37 +335,68 @@ class Settings(BaseSettings):
         ge=1,
         validation_alias="TRIAGE_EMBEDDING_BATCH_MAX_CHARS",
     )
-    triage_query_mode: str = Field(default="joined", validation_alias="TRIAGE_QUERY_MODE")
-    triage_candidate_factor: int = Field(default=5, ge=1, validation_alias="TRIAGE_CANDIDATE_FACTOR")
-    triage_max_candidates: int = Field(default=500, ge=1, validation_alias="TRIAGE_MAX_CANDIDATES")
-    triage_item_text_max_chars: int = Field(default=1200, ge=1, validation_alias="TRIAGE_ITEM_TEXT_MAX_CHARS")
-    triage_min_similarity: float = Field(default=0.0, ge=0.0, le=1.0, validation_alias="TRIAGE_MIN_SIMILARITY")
+    triage_query_mode: str = Field(
+        default="joined", validation_alias="TRIAGE_QUERY_MODE"
+    )
+    triage_candidate_factor: int = Field(
+        default=5, ge=1, validation_alias="TRIAGE_CANDIDATE_FACTOR"
+    )
+    triage_max_candidates: int = Field(
+        default=500, ge=1, validation_alias="TRIAGE_MAX_CANDIDATES"
+    )
+    triage_item_text_max_chars: int = Field(
+        default=1200, ge=1, validation_alias="TRIAGE_ITEM_TEXT_MAX_CHARS"
+    )
+    triage_min_similarity: float = Field(
+        default=0.0, ge=0.0, le=1.0, validation_alias="TRIAGE_MIN_SIMILARITY"
+    )
     triage_exploration_rate: float = Field(
         default=0.05,
         ge=0.0,
         le=1.0,
         validation_alias="TRIAGE_EXPLORATION_RATE",
     )
-    triage_recency_floor: int = Field(default=5, ge=0, validation_alias="TRIAGE_RECENCY_FLOOR")
+    triage_recency_floor: int = Field(
+        default=5, ge=0, validation_alias="TRIAGE_RECENCY_FLOOR"
+    )
     analyze_limit: int = Field(default=100, ge=1, validation_alias="ANALYZE_LIMIT")
-    analyze_content_max_chars: int = Field(default=32_768, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS")
+    analyze_content_max_chars: int = Field(
+        default=32_768, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS"
+    )
 
-    ingest_interval_minutes: int = Field(default=60, validation_alias="INGEST_INTERVAL_MINUTES")
-    analyze_interval_minutes: int = Field(default=120, validation_alias="ANALYZE_INTERVAL_MINUTES")
-    publish_interval_minutes: int = Field(default=120, validation_alias="PUBLISH_INTERVAL_MINUTES")
+    ingest_interval_minutes: int = Field(
+        default=60, validation_alias="INGEST_INTERVAL_MINUTES"
+    )
+    analyze_interval_minutes: int = Field(
+        default=120, validation_alias="ANALYZE_INTERVAL_MINUTES"
+    )
+    publish_interval_minutes: int = Field(
+        default=120, validation_alias="PUBLISH_INTERVAL_MINUTES"
+    )
 
     artifacts_dir: Path | None = Field(default=None, validation_alias="ARTIFACTS_DIR")
-    obsidian_base_folder: str = Field(default="Recoleta", validation_alias="OBSIDIAN_BASE_FOLDER")
-    publish_targets: list[str] = Field(default_factory=lambda: ["markdown"], validation_alias="PUBLISH_TARGETS")
-    markdown_output_dir: Path = Field(default_factory=_default_markdown_output_dir, validation_alias="MARKDOWN_OUTPUT_DIR")
+    obsidian_base_folder: str = Field(
+        default="Recoleta", validation_alias="OBSIDIAN_BASE_FOLDER"
+    )
+    publish_targets: list[str] = Field(
+        default_factory=lambda: ["markdown"], validation_alias="PUBLISH_TARGETS"
+    )
+    markdown_output_dir: Path = Field(
+        default_factory=_default_markdown_output_dir,
+        validation_alias="MARKDOWN_OUTPUT_DIR",
+    )
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     log_json: bool = Field(default=False, validation_alias="LOG_JSON")
-    write_debug_artifacts: bool = Field(default=False, validation_alias="WRITE_DEBUG_ARTIFACTS")
+    write_debug_artifacts: bool = Field(
+        default=False, validation_alias="WRITE_DEBUG_ARTIFACTS"
+    )
 
     @model_validator(mode="after")
     def _validate_debug_artifacts_require_artifacts_dir(self) -> "Settings":
         if self.write_debug_artifacts and self.artifacts_dir is None:
-            raise ValueError("ARTIFACTS_DIR is required when WRITE_DEBUG_ARTIFACTS=true")
+            raise ValueError(
+                "ARTIFACTS_DIR is required when WRITE_DEBUG_ARTIFACTS=true"
+            )
         return self
 
     @classmethod
@@ -468,9 +545,13 @@ class Settings(BaseSettings):
         try:
             parsed = int(value)
         except Exception as exc:  # noqa: BLE001
-            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_INPUTS must be an integer") from exc
+            raise ValueError(
+                "TRIAGE_EMBEDDING_BATCH_MAX_INPUTS must be an integer"
+            ) from exc
         if parsed <= 0:
-            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_INPUTS must be a positive integer")
+            raise ValueError(
+                "TRIAGE_EMBEDDING_BATCH_MAX_INPUTS must be a positive integer"
+            )
         return parsed
 
     @field_validator("triage_embedding_batch_max_chars", mode="before")
@@ -486,9 +567,13 @@ class Settings(BaseSettings):
         try:
             parsed = int(value)
         except Exception as exc:  # noqa: BLE001
-            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_CHARS must be an integer") from exc
+            raise ValueError(
+                "TRIAGE_EMBEDDING_BATCH_MAX_CHARS must be an integer"
+            ) from exc
         if parsed <= 0:
-            raise ValueError("TRIAGE_EMBEDDING_BATCH_MAX_CHARS must be a positive integer")
+            raise ValueError(
+                "TRIAGE_EMBEDDING_BATCH_MAX_CHARS must be a positive integer"
+            )
         return parsed
 
     @field_validator("obsidian_vault_path", mode="before")
@@ -539,8 +624,12 @@ class Settings(BaseSettings):
             normalized.append(token)
         normalized = list(dict.fromkeys(normalized))
         if not normalized:
-            raise ValueError("PUBLISH_TARGETS must include at least one target: markdown, obsidian, telegram")
-        unknown = sorted({token for token in normalized if token not in _ALLOWED_PUBLISH_TARGETS})
+            raise ValueError(
+                "PUBLISH_TARGETS must include at least one target: markdown, obsidian, telegram"
+            )
+        unknown = sorted(
+            {token for token in normalized if token not in _ALLOWED_PUBLISH_TARGETS}
+        )
         if unknown:
             raise ValueError(
                 "Unsupported PUBLISH_TARGETS value(s): "

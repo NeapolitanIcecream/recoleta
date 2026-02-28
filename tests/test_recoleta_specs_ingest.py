@@ -10,7 +10,13 @@ from recoleta.config import Settings
 from recoleta.models import ITEM_STATE_ANALYZED, Item
 from recoleta.pipeline import PipelineService
 from recoleta.types import ItemDraft
-from tests.spec_support import ExplodingRepository, FakeAnalyzer, FakeTelegramSender, _build_runtime
+from tests.spec_support import (
+    ExplodingRepository,
+    FakeAnalyzer,
+    FakeTelegramSender,
+    _build_runtime,
+)
+
 
 def test_ingest_pulls_all_configured_sources_without_network(
     monkeypatch: pytest.MonkeyPatch,
@@ -59,9 +65,15 @@ def test_ingest_pulls_all_configured_sources_without_network(
         title="HF Daily Item",
     )
 
-    monkeypatch.setattr(source_connectors, "fetch_arxiv_drafts", lambda **_: [draft_arxiv])
-    monkeypatch.setattr(source_connectors, "fetch_openreview_drafts", lambda **_: [draft_openreview])
-    monkeypatch.setattr(source_connectors, "fetch_hf_daily_papers_drafts", lambda **_: [draft_hf])
+    monkeypatch.setattr(
+        source_connectors, "fetch_arxiv_drafts", lambda **_: [draft_arxiv]
+    )
+    monkeypatch.setattr(
+        source_connectors, "fetch_openreview_drafts", lambda **_: [draft_openreview]
+    )
+    monkeypatch.setattr(
+        source_connectors, "fetch_hf_daily_papers_drafts", lambda **_: [draft_hf]
+    )
 
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -76,7 +88,9 @@ def test_ingest_pulls_all_configured_sources_without_network(
     assert repository.count_items() == 3
 
 
-def test_ingest_does_not_crash_on_source_failure_and_records_metric(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_does_not_crash_on_source_failure_and_records_metric(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import recoleta.sources as source_connectors
 
     settings, repository = _build_runtime()
@@ -88,7 +102,9 @@ def test_ingest_does_not_crash_on_source_failure_and_records_metric(configured_e
         title="Source Failure Still Ingests",
     )
 
-    def fake_fetch_rss_drafts(*, feed_urls: list[str], source: str, max_items_per_feed: int = 50) -> list[ItemDraft]:  # noqa: ARG001
+    def fake_fetch_rss_drafts(
+        *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
+    ) -> list[ItemDraft]:  # noqa: ARG001
         if source == "hn":
             raise RuntimeError("simulated HN connector failure")
         return [draft_rss]
@@ -106,12 +122,18 @@ def test_ingest_does_not_crash_on_source_failure_and_records_metric(configured_e
     assert result.inserted == 1
 
     metrics = repository.list_metrics(run_id="run-ingest-source-failure")
-    source_failures = [metric for metric in metrics if metric.name == "pipeline.ingest.source_failures_total"]
+    source_failures = [
+        metric
+        for metric in metrics
+        if metric.name == "pipeline.ingest.source_failures_total"
+    ]
     assert len(source_failures) == 1
     assert source_failures[0].value == 1
 
 
-def test_ingest_progress_starts_before_source_pull_and_sets_total(configured_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ingest_progress_starts_before_source_pull_and_sets_total(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import recoleta.pipeline as pipeline_module
     import recoleta.sources as source_connectors
 
@@ -148,7 +170,9 @@ def test_ingest_progress_starts_before_source_pull_and_sets_total(configured_env
 
     monkeypatch.setattr(pipeline_module, "Progress", FakeProgress, raising=False)
 
-    def fake_fetch_rss_drafts(*, feed_urls: list[str], source: str, max_items_per_feed: int = 50) -> list[ItemDraft]:  # noqa: ARG001
+    def fake_fetch_rss_drafts(
+        *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
+    ) -> list[ItemDraft]:  # noqa: ARG001
         timeline.append(f"source_pull_{source}")
         return [
             ItemDraft.from_values(
@@ -172,7 +196,11 @@ def test_ingest_progress_starts_before_source_pull_and_sets_total(configured_env
 
     assert result.inserted == 2
     assert "progress_add_task" in timeline
-    first_source_pull_index = min(index for index, marker in enumerate(timeline) if marker.startswith("source_pull_"))
+    first_source_pull_index = min(
+        index
+        for index, marker in enumerate(timeline)
+        if marker.startswith("source_pull_")
+    )
     assert timeline.index("progress_add_task") < first_source_pull_index
     assert "TimeElapsedColumn" in progress_columns
     assert {"description": "Ingesting items", "total": None} in progress_updates
@@ -217,7 +245,9 @@ def test_ingest_is_idempotent_by_canonical_url_hash(configured_env) -> None:
     assert repository.count_items() == 1
 
 
-def test_ingest_deduplicates_near_duplicate_titles_by_merging_alternate_urls(configured_env) -> None:
+def test_ingest_deduplicates_near_duplicate_titles_by_merging_alternate_urls(
+    configured_env,
+) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
         settings=settings,
@@ -303,7 +333,9 @@ def test_ingest_does_not_regress_state_for_analyzed_items(configured_env) -> Non
         assert item.state == ITEM_STATE_ANALYZED
 
 
-def test_ingest_writes_debug_artifact_on_repository_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_ingest_writes_debug_artifact_on_repository_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
     artifacts_dir = tmp_path / "artifacts"
@@ -339,7 +371,9 @@ def test_ingest_writes_debug_artifact_on_repository_failure(monkeypatch: pytest.
 
     assert result.failed == 1
     assert len(repository.artifacts) == 1
-    recorded_run_id, recorded_item_id, recorded_kind, recorded_path = repository.artifacts[0]
+    recorded_run_id, recorded_item_id, recorded_kind, recorded_path = (
+        repository.artifacts[0]
+    )
     assert recorded_run_id == "run-ingest-exploding"
     assert recorded_item_id is None
     assert recorded_kind == "error_context"

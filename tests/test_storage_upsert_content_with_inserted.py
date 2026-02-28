@@ -34,4 +34,3 @@ def test_upsert_content_with_inserted_reports_inserted(tmp_path: Path) -> None:
     )
     assert inserted_second is False
     assert second.id == first.id
-

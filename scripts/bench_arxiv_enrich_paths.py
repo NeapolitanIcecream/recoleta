@@ -19,7 +19,10 @@ from rich.table import Table
 
 from recoleta.analyzer import LiteLLMAnalyzer
 from recoleta.config import Settings
-from recoleta.extract import convert_html_document_to_markdown, extract_html_document_cleaned
+from recoleta.extract import (
+    convert_html_document_to_markdown,
+    extract_html_document_cleaned,
+)
 from recoleta.models import Item
 from recoleta.pipeline import PipelineService
 from recoleta.sources import fetch_arxiv_drafts
@@ -75,7 +78,9 @@ def _json_load(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _safe_token_counter(*, model: str, messages: list[dict[str, str]]) -> tuple[int, str | None]:
+def _safe_token_counter(
+    *, model: str, messages: list[dict[str, str]]
+) -> tuple[int, str | None]:
     try:
         value = int(token_counter(model=model, messages=messages))
         return value, None
@@ -83,7 +88,10 @@ def _safe_token_counter(*, model: str, messages: list[dict[str, str]]) -> tuple[
         fallback_model = "gpt-3.5-turbo"
         try:
             value = int(token_counter(model=fallback_model, messages=messages))
-            return value, f"token_counter failed for model={model!r}, fell back to {fallback_model!r}: {type(exc).__name__}: {exc}"
+            return (
+                value,
+                f"token_counter failed for model={model!r}, fell back to {fallback_model!r}: {type(exc).__name__}: {exc}",
+            )
         except Exception as fallback_exc:
             raise RuntimeError(
                 f"token_counter failed for model={model!r} and fallback model={fallback_model!r}: {fallback_exc}"
@@ -109,7 +117,9 @@ def _resource_snapshot() -> dict[str, Any]:
     ru_maxrss = int(getattr(usage, "ru_maxrss", 0) or 0)
     # On macOS ru_maxrss is bytes; on Linux it's kilobytes.
     maxrss_unit = "bytes" if sys.platform == "darwin" else "kb"
-    maxrss_mb = (ru_maxrss / (1024 * 1024)) if maxrss_unit == "bytes" else (ru_maxrss / 1024)
+    maxrss_mb = (
+        (ru_maxrss / (1024 * 1024)) if maxrss_unit == "bytes" else (ru_maxrss / 1024)
+    )
     return {
         "platform": sys.platform,
         "ru_maxrss": ru_maxrss,
@@ -146,7 +156,9 @@ def _probe_candidate_html_md(
         debug["html_extract_empty"] = True
         return False, debug
 
-    markdown, convert_ms, convert_error = convert_html_document_to_markdown(cleaned_html)
+    markdown, convert_ms, convert_error = convert_html_document_to_markdown(
+        cleaned_html
+    )
     debug["pandoc_ms"] = convert_ms
     if convert_error is not None:
         debug["pandoc_error"] = convert_error
@@ -156,7 +168,10 @@ def _probe_candidate_html_md(
         return False, debug
 
     debug["probe_ok"] = True
-    debug["probe_chars"] = {"html": len(cleaned_html), "html_document_md": len(markdown)}
+    debug["probe_chars"] = {
+        "html": len(cleaned_html),
+        "html_document_md": len(markdown),
+    }
     return True, debug
 
 
@@ -175,14 +190,18 @@ def _freeze_drafts(
     pull_ms = int((time.perf_counter() - pull_started) * 1000)
 
     if not drafts:
-        raise RuntimeError("No arXiv drafts fetched. Check SOURCES.arxiv.queries and network.")
+        raise RuntimeError(
+            "No arXiv drafts fetched. Check SOURCES.arxiv.queries and network."
+        )
 
     timeout = httpx.Timeout(20.0, connect=8.0)
     headers = {"User-Agent": "recoleta/bench/0.1"}
     probe_debug: list[dict[str, Any]] = []
     selected: list[FrozenDraft] = []
     console = Console()
-    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+    with httpx.Client(
+        timeout=timeout, headers=headers, follow_redirects=True
+    ) as client:
         for idx, draft in enumerate(drafts, start=1):
             if len(selected) >= n:
                 break
@@ -194,10 +213,18 @@ def _freeze_drafts(
                 source_item_id=draft.source_item_id,
             )
             if not html_url:
-                probe_debug.append({"arxiv_id": draft.source_item_id, "probe_ok": False, "reason": "missing_url"})
+                probe_debug.append(
+                    {
+                        "arxiv_id": draft.source_item_id,
+                        "probe_ok": False,
+                        "reason": "missing_url",
+                    }
+                )
                 continue
 
-            console.print(f"[cyan]probe[/cyan] {idx}/{len(drafts)} arxiv_id={draft.source_item_id}")
+            console.print(
+                f"[cyan]probe[/cyan] {idx}/{len(drafts)} arxiv_id={draft.source_item_id}"
+            )
             ok, dbg = _probe_candidate_html_md(
                 client=client,
                 draft=draft,
@@ -206,7 +233,9 @@ def _freeze_drafts(
             probe_debug.append(dbg)
             if ok:
                 selected.append(FrozenDraft.from_item_draft(draft))
-                console.print(f"[green]selected[/green] {draft.source_item_id} ({len(selected)}/{n})")
+                console.print(
+                    f"[green]selected[/green] {draft.source_item_id} ({len(selected)}/{n})"
+                )
 
     if len(selected) < n:
         _json_dump(out_dir / "drafts-probe-debug.json", probe_debug)
@@ -221,7 +250,9 @@ def _freeze_drafts(
         "candidates_requested": candidates,
         "candidates_received": len(drafts),
         "selected": len(selected),
-        "probe_debug_path": str(out_dir / "drafts-probe-debug.json") if (out_dir / "drafts-probe-debug.json").exists() else None,
+        "probe_debug_path": str(out_dir / "drafts-probe-debug.json")
+        if (out_dir / "drafts-probe-debug.json").exists()
+        else None,
     }
     return selected, meta
 
@@ -246,7 +277,9 @@ def _build_settings_for_method(
     return Settings.model_validate(payload)  # pyright: ignore[reportCallIssue]
 
 
-def _query_items_for_frozen_drafts(*, repo: Repository, frozen: list[FrozenDraft]) -> list[Item]:
+def _query_items_for_frozen_drafts(
+    *, repo: Repository, frozen: list[FrozenDraft]
+) -> list[Item]:
     from sqlmodel import Session, select  # local import to keep script fast
 
     ids = {d.source_item_id for d in frozen if d.source_item_id}
@@ -275,7 +308,9 @@ def _enrich_with_timing(
     enrich_wall_ms = int((time.perf_counter() - started) * 1000)
 
     with Session(service.repository.engine) as session:
-        statement = select(Metric).where(Metric.run_id == run_id).order_by(cast(Any, Metric.id))
+        statement = (
+            select(Metric).where(Metric.run_id == run_id).order_by(cast(Any, Metric.id))
+        )
         metrics = list(session.exec(statement))
 
     by_name: dict[str, float] = {m.name: float(m.value) for m in metrics}
@@ -286,14 +321,30 @@ def _enrich_with_timing(
         "processed": int(by_name.get("pipeline.enrich.processed_total") or 0),
         "skipped": int(by_name.get("pipeline.enrich.skipped_total") or 0),
         "failed": int(by_name.get("pipeline.enrich.failed_total") or 0),
-        "item_duration_ms_total": int(by_name.get("pipeline.enrich.item_duration_ms_total") or 0),
-        "sql_queries_total": int(by_name.get("pipeline.enrich.db.sql_queries_total") or 0),
-        "sql_commits_total": int(by_name.get("pipeline.enrich.db.sql_commits_total") or 0),
-        "fetch_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.fetch_ms_sum") or 0),
-        "cleanup_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.cleanup_ms_sum") or 0),
-        "pandoc_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.pandoc_ms_sum") or 0),
-        "db_read_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.db_read_ms_sum") or 0),
-        "db_write_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.db_write_ms_sum") or 0),
+        "item_duration_ms_total": int(
+            by_name.get("pipeline.enrich.item_duration_ms_total") or 0
+        ),
+        "sql_queries_total": int(
+            by_name.get("pipeline.enrich.db.sql_queries_total") or 0
+        ),
+        "sql_commits_total": int(
+            by_name.get("pipeline.enrich.db.sql_commits_total") or 0
+        ),
+        "fetch_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.fetch_ms_sum") or 0
+        ),
+        "cleanup_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.cleanup_ms_sum") or 0
+        ),
+        "pandoc_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.pandoc_ms_sum") or 0
+        ),
+        "db_read_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.db_read_ms_sum") or 0
+        ),
+        "db_write_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.db_write_ms_sum") or 0
+        ),
     }
 
     per_item: list[dict[str, Any]] = []
@@ -319,7 +370,10 @@ def _compute_tokens(
     items: list[Item],
     content_type: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    analyzer = LiteLLMAnalyzer(model=service.settings.llm_model, output_language=service.settings.llm_output_language)
+    analyzer = LiteLLMAnalyzer(
+        model=service.settings.llm_model,
+        output_language=service.settings.llm_output_language,
+    )
     warnings: list[str] = []
 
     per_item: list[dict[str, Any]] = []
@@ -334,8 +388,14 @@ def _compute_tokens(
             canonical_url=item.canonical_url,
             source_item_id=item.source_item_id,
         )
-        content = service.repository.get_latest_content(item_id=item_id, content_type=content_type)
-        text = (getattr(content, "text", None) or "").strip() if content is not None else ""
+        content = service.repository.get_latest_content(
+            item_id=item_id, content_type=content_type
+        )
+        text = (
+            (getattr(content, "text", None) or "").strip()
+            if content is not None
+            else ""
+        )
         if not text:
             per_item.append(
                 {
@@ -390,7 +450,9 @@ def _compute_tokens(
         "full_tokens_median": int(_median([float(v) for v in full_tokens_values]) or 0),
         "full_tokens_p95": int(_p95([float(v) for v in full_tokens_values]) or 0),
         "prompt_tokens_sum": int(sum(prompt_tokens_values)),
-        "prompt_tokens_median": int(_median([float(v) for v in prompt_tokens_values]) or 0),
+        "prompt_tokens_median": int(
+            _median([float(v) for v in prompt_tokens_values]) or 0
+        ),
         "prompt_tokens_p95": int(_p95([float(v) for v in prompt_tokens_values]) or 0),
         "token_counter_warnings": list(dict.fromkeys(warnings))[:10],
     }
@@ -435,7 +497,9 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
         lines.append(f"- full_tokens_median: {html_tokens.get('full_tokens_median')}")
         lines.append(f"- full_tokens_p95: {html_tokens.get('full_tokens_p95')}")
         lines.append(f"- prompt_tokens_sum: {html_tokens.get('prompt_tokens_sum')}")
-        lines.append(f"- prompt_tokens_median: {html_tokens.get('prompt_tokens_median')}")
+        lines.append(
+            f"- prompt_tokens_median: {html_tokens.get('prompt_tokens_median')}"
+        )
         lines.append(f"- prompt_tokens_p95: {html_tokens.get('prompt_tokens_p95')}")
         lines.append("")
         lines.append("#### html_document_md (pandoc Markdown)\n")
@@ -449,9 +513,15 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
         delta = tokens.get("delta") or {}
         if delta:
             lines.append("#### delta (md - html)\n")
-            lines.append(f"- full_tokens_sum_delta: {delta.get('full_tokens_sum_delta')}")
-            lines.append(f"- prompt_tokens_sum_delta: {delta.get('prompt_tokens_sum_delta')}")
-        warnings = (md_tokens.get("token_counter_warnings") or []) + (html_tokens.get("token_counter_warnings") or [])
+            lines.append(
+                f"- full_tokens_sum_delta: {delta.get('full_tokens_sum_delta')}"
+            )
+            lines.append(
+                f"- prompt_tokens_sum_delta: {delta.get('prompt_tokens_sum_delta')}"
+            )
+        warnings = (md_tokens.get("token_counter_warnings") or []) + (
+            html_tokens.get("token_counter_warnings") or []
+        )
         if warnings:
             lines.append("")
             lines.append("#### token_counter warnings\n")
@@ -463,7 +533,9 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
         per_items = r.get("per_item") or []
         for it in per_items:
             if it.get("status") != "ok":
-                lines.append(f"- {it.get('arxiv_id') or it.get('item_id')}: status={it.get('status')}")
+                lines.append(
+                    f"- {it.get('arxiv_id') or it.get('item_id')}: status={it.get('status')}"
+                )
                 continue
             lines.append(
                 f"- {it.get('arxiv_id')}: "
@@ -477,19 +549,45 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark arXiv html_document_md route (html_document -> html_document_md).")
+    parser = argparse.ArgumentParser(
+        description="Benchmark arXiv html_document_md route (html_document -> html_document_md)."
+    )
     parser.add_argument("--config", required=True, help="Path to recoleta.yaml")
-    parser.add_argument("--n", type=int, default=20, help="Number of arXiv sources to benchmark (<= 50 recommended).")
-    parser.add_argument("--candidates", type=int, default=20, help="Max arXiv results per query used for selecting candidates.")
-    parser.add_argument("--repeat", type=int, default=5, help="Number of benchmark repetitions (recorded).")
-    parser.add_argument("--warmup", type=int, default=1, help="Number of warm-up runs (not recorded).")
-    parser.add_argument("--concurrency", type=int, default=1, help="html_document_max_concurrency used by PipelineService.enrich.")
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=20,
+        help="Number of arXiv sources to benchmark (<= 50 recommended).",
+    )
+    parser.add_argument(
+        "--candidates",
+        type=int,
+        default=20,
+        help="Max arXiv results per query used for selecting candidates.",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=5,
+        help="Number of benchmark repetitions (recorded).",
+    )
+    parser.add_argument(
+        "--warmup", type=int, default=1, help="Number of warm-up runs (not recorded)."
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="html_document_max_concurrency used by PipelineService.enrich.",
+    )
     parser.add_argument(
         "--drafts",
         default=None,
         help="Optional path to an existing drafts.json produced by a previous run. When set, skips arXiv API draft fetching.",
     )
-    parser.add_argument("--out", default=".", help="Output directory for drafts.json and bench results.")
+    parser.add_argument(
+        "--out", default=".", help="Output directory for drafts.json and bench results."
+    )
     args = parser.parse_args()
 
     console = Console()
@@ -519,16 +617,27 @@ def main() -> None:
         drafts_path = Path(str(args.drafts)).expanduser().resolve()
         loaded = _json_load(drafts_path)
         if not isinstance(loaded, list) or not loaded:
-            raise ValueError(f"--drafts must point to a non-empty JSON list: {drafts_path}")
+            raise ValueError(
+                f"--drafts must point to a non-empty JSON list: {drafts_path}"
+            )
         frozen = [FrozenDraft(**cast(dict[str, Any], item)) for item in loaded]  # type: ignore[arg-type]
         if len(frozen) < n:
-            raise ValueError(f"--drafts has only {len(frozen)} items, but --n={n} was requested.")
+            raise ValueError(
+                f"--drafts has only {len(frozen)} items, but --n={n} was requested."
+            )
         frozen = frozen[:n]
         _json_dump(out_dir / "drafts.json", [d.__dict__ for d in frozen])
-        freeze_meta = {"pull_drafts_ms": None, "candidates_requested": None, "candidates_received": None, "selected": len(frozen)}
+        freeze_meta = {
+            "pull_drafts_ms": None,
+            "candidates_requested": None,
+            "candidates_received": None,
+            "selected": len(frozen),
+        }
     else:
         candidates = max(5, int(args.candidates))
-        frozen, freeze_meta = _freeze_drafts(settings=base_settings, out_dir=out_dir, n=n, candidates=candidates)
+        frozen, freeze_meta = _freeze_drafts(
+            settings=base_settings, out_dir=out_dir, n=n, candidates=candidates
+        )
 
     results: dict[str, Any] = {
         "config_path": str(os.environ["RECOLETA_CONFIG_PATH"]),
@@ -581,7 +690,9 @@ def main() -> None:
             ingest_ms = int((time.perf_counter() - ingest_started) * 1000)
 
             items = _query_items_for_frozen_drafts(repo=repo, frozen=frozen)
-            enrich_summary, enrich_per_item = _enrich_with_timing(service=service, run_id=run_id, items=items)
+            enrich_summary, enrich_per_item = _enrich_with_timing(
+                service=service, run_id=run_id, items=items
+            )
 
             triage_started = time.perf_counter()
             service.triage(run_id=run_id, limit=max(1, len(items)))
@@ -593,13 +704,17 @@ def main() -> None:
                 "ingest_ms": ingest_ms,
                 "enrich_ms": int(enrich_summary.get("enrich_ms") or 0),
                 "triage_ms": triage_ms,
-                "pipeline_ms": int(ingest_ms + int(enrich_summary.get("enrich_ms") or 0) + triage_ms),
+                "pipeline_ms": int(
+                    ingest_ms + int(enrich_summary.get("enrich_ms") or 0) + triage_ms
+                ),
                 "enrich": enrich_summary,
                 "resources": {
                     "before": before,
                     "after": after,
-                    "cpu_user_s_delta": float(after.get("user_cpu_s") or 0.0) - float(before.get("user_cpu_s") or 0.0),
-                    "cpu_sys_s_delta": float(after.get("sys_cpu_s") or 0.0) - float(before.get("sys_cpu_s") or 0.0),
+                    "cpu_user_s_delta": float(after.get("user_cpu_s") or 0.0)
+                    - float(before.get("user_cpu_s") or 0.0),
+                    "cpu_sys_s_delta": float(after.get("sys_cpu_s") or 0.0)
+                    - float(before.get("sys_cpu_s") or 0.0),
                     "max_rss_mb": float(after.get("max_rss_mb") or 0.0),
                 },
             }
@@ -653,9 +768,15 @@ def main() -> None:
             content_type="html_document_md",
         )
 
-        per_item_by_id: dict[int, dict[str, Any]] = {int(r["item_id"]): dict(r) for r in last_enrich_per_item}
-        html_by_id: dict[int, dict[str, Any]] = {int(r["item_id"]): dict(r) for r in html_tokens_per_item}
-        md_by_id: dict[int, dict[str, Any]] = {int(r["item_id"]): dict(r) for r in md_tokens_per_item}
+        per_item_by_id: dict[int, dict[str, Any]] = {
+            int(r["item_id"]): dict(r) for r in last_enrich_per_item
+        }
+        html_by_id: dict[int, dict[str, Any]] = {
+            int(r["item_id"]): dict(r) for r in html_tokens_per_item
+        }
+        md_by_id: dict[int, dict[str, Any]] = {
+            int(r["item_id"]): dict(r) for r in md_tokens_per_item
+        }
         merged_per_item: list[dict[str, Any]] = []
         for item in last_items:
             if item.id is None:
@@ -664,7 +785,11 @@ def main() -> None:
             enrich_part = per_item_by_id.get(item_id) or {}
             html_part = html_by_id.get(item_id) or {}
             md_part = md_by_id.get(item_id) or {}
-            status = "ok" if (html_part.get("status") == "ok" and md_part.get("status") == "ok") else "partial"
+            status = (
+                "ok"
+                if (html_part.get("status") == "ok" and md_part.get("status") == "ok")
+                else "partial"
+            )
             merged_per_item.append(
                 {
                     "item_id": item_id,
@@ -685,15 +810,23 @@ def main() -> None:
             "html_document": html_tokens_summary,
             "html_document_md": md_tokens_summary,
             "delta": {
-                "full_tokens_sum_delta": int((md_tokens_summary.get("full_tokens_sum") or 0) - (html_tokens_summary.get("full_tokens_sum") or 0)),
-                "prompt_tokens_sum_delta": int((md_tokens_summary.get("prompt_tokens_sum") or 0) - (html_tokens_summary.get("prompt_tokens_sum") or 0)),
+                "full_tokens_sum_delta": int(
+                    (md_tokens_summary.get("full_tokens_sum") or 0)
+                    - (html_tokens_summary.get("full_tokens_sum") or 0)
+                ),
+                "prompt_tokens_sum_delta": int(
+                    (md_tokens_summary.get("prompt_tokens_sum") or 0)
+                    - (html_tokens_summary.get("prompt_tokens_sum") or 0)
+                ),
             },
         }
         method_out["per_item"] = merged_per_item
         results["methods"][method] = method_out
 
     _json_dump(out_dir / "bench-results.json", results)
-    (out_dir / "bench-results.md").write_text(_render_report_md(results=results), encoding="utf-8")
+    (out_dir / "bench-results.md").write_text(
+        _render_report_md(results=results), encoding="utf-8"
+    )
 
     table = Table(title="arXiv enrich benchmark summary")
     table.add_column("method", style="bold")
@@ -704,9 +837,15 @@ def main() -> None:
     table.add_column("md_minus_html_full", justify="right")
     for method in ("html_document",):
         r = results["methods"][method]
-        html_sum = ((r.get("tokens") or {}).get("html_document") or {}).get("full_tokens_sum")
-        md_sum = ((r.get("tokens") or {}).get("html_document_md") or {}).get("full_tokens_sum")
-        delta = ((r.get("tokens") or {}).get("delta") or {}).get("full_tokens_sum_delta")
+        html_sum = ((r.get("tokens") or {}).get("html_document") or {}).get(
+            "full_tokens_sum"
+        )
+        md_sum = ((r.get("tokens") or {}).get("html_document_md") or {}).get(
+            "full_tokens_sum"
+        )
+        delta = ((r.get("tokens") or {}).get("delta") or {}).get(
+            "full_tokens_sum_delta"
+        )
         table.add_row(
             method,
             str((r.get("durations") or {}).get("ingest_ms_median")),
@@ -723,4 +862,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
