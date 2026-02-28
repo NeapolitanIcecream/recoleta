@@ -1,0 +1,12 @@
+RECOLETA_DB_PATH: ./recoleta-bench-placeholder.db
+LLM_MODEL: gpt-4o-mini
+LLM_OUTPUT_LANGUAGE: en
+TRIAGE_ENABLED: false
+TOPICS: []
+SOURCES:
+  arxiv:
+    queries:
+      - "cat:cs.AI"
+    enrich_method: "html_document"
+    enrich_failure_mode: "strict"
+

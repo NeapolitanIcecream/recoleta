@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -228,48 +230,117 @@ class PipelineService:
         log = logger.bind(module="pipeline.enrich", run_id=run_id)
         enrich_started = time.perf_counter()
         include_debug = self.settings.write_debug_artifacts and self.settings.artifacts_dir is not None
-        items = self.repository.list_items_for_analysis(limit=limit)
-        enrich_processed = 0
-        enrich_failed = 0
-        enrich_skipped = 0
-        enrich_duration_ms_total = 0
-        arxiv_items_by_method: dict[str, int] = {
-            "pdf_text": 0,
-            "latex_source": 0,
-            "html_document": 0,
-        }
-        arxiv_failed_by_method: dict[str, int] = {
-            "pdf_text": 0,
-            "latex_source": 0,
-            "html_document": 0,
-        }
+        with self.repository.sql_diagnostics() as sql_diag:
+            items = self.repository.list_items_for_analysis(limit=limit)
+            enrich_processed = 0
+            enrich_failed = 0
+            enrich_skipped = 0
+            enrich_duration_ms_total = 0
+            arxiv_items_by_method: dict[str, int] = {
+                "pdf_text": 0,
+                "latex_source": 0,
+                "html_document": 0,
+            }
+            arxiv_failed_by_method: dict[str, int] = {
+                "pdf_text": 0,
+                "latex_source": 0,
+                "html_document": 0,
+            }
+            html_document_items_total = 0
+            html_document_fetch_ms_sum = 0
+            html_document_cleanup_ms_sum = 0
+            html_document_pandoc_ms_sum = 0
+            html_document_db_read_ms_sum = 0
+            html_document_db_write_ms_sum = 0
 
-        def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
-            artifact_path = self._write_debug_artifact(
-                run_id=run_id,
-                item_id=item_id,
-                kind=kind,
-                payload=payload,
-            )
-            if artifact_path is None:
-                return
-            try:
-                self.repository.add_artifact(
+            def write_and_record_artifact(*, item_id: int | None, kind: str, payload: dict[str, Any]) -> None:
+                artifact_path = self._write_debug_artifact(
                     run_id=run_id,
                     item_id=item_id,
                     kind=kind,
-                    path=str(artifact_path),
+                    payload=payload,
                 )
-            except Exception as artifact_exc:
-                log.bind(item_id=item_id).warning(
-                    "Enrich {} artifact record failed: {}",
-                    kind,
-                    self._sanitize_error_message(str(artifact_exc)),
-                )
+                if artifact_path is None:
+                    return
+                try:
+                    self.repository.add_artifact(
+                        run_id=run_id,
+                        item_id=item_id,
+                        kind=kind,
+                        path=str(artifact_path),
+                    )
+                except Exception as artifact_exc:
+                    log.bind(item_id=item_id).warning(
+                        "Enrich {} artifact record failed: {}",
+                        kind,
+                        self._sanitize_error_message(str(artifact_exc)),
+                    )
 
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        headers = {"User-Agent": "recoleta/0.1"}
-        with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+            timeout = httpx.Timeout(10.0, connect=5.0)
+            headers = {"User-Agent": "recoleta/0.1"}
+            html_document_max_concurrency = int(self.settings.sources.arxiv.html_document_max_concurrency or 1)
+            enable_parallel = (
+                bool(self.settings.sources.arxiv.enrich_method == "html_document")
+                and bool(self.settings.sources.arxiv.html_document_enable_parallel)
+                and html_document_max_concurrency > 1
+            )
+
+            def _process_one(*, client: httpx.Client, item: Any) -> dict[str, Any]:
+                raw_item_id = getattr(item, "id", None)
+                if raw_item_id is None:
+                    return {"status": "skipped", "reason": "missing_item_id"}
+                item_id = int(raw_item_id)
+                source = str(getattr(item, "source", "") or "").strip().lower()
+                arxiv_method: str | None = None
+                if source == "arxiv":
+                    arxiv_method = self.settings.sources.arxiv.enrich_method
+                diag: dict[str, int] = {}
+                try:
+                    _, stored_new_content = self._ensure_item_content(
+                        client=client,
+                        item=item,
+                        log=log,
+                        diag=diag,
+                    )
+                    db_mark_started = time.perf_counter()
+                    self.repository.mark_item_enriched(item_id=item_id)
+                    diag["db_write_ms"] = diag.get("db_write_ms", 0) + int((time.perf_counter() - db_mark_started) * 1000)
+                    return {
+                        "status": "ok",
+                        "item_id": item_id,
+                        "source": source,
+                        "arxiv_method": arxiv_method,
+                        "stored_new": bool(stored_new_content),
+                        "diag": diag,
+                    }
+                except Exception as enrich_exc:  # noqa: BLE001
+                    sanitized_error = self._sanitize_error_message(str(enrich_exc))
+                    classification = self._classify_exception(enrich_exc)
+                    try:
+                        db_mark_started = time.perf_counter()
+                        if classification.get("retryable") is True:
+                            self.repository.mark_item_retryable_failed(item_id=item_id)
+                        else:
+                            self.repository.mark_item_failed(item_id=item_id)
+                        diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+                            (time.perf_counter() - db_mark_started) * 1000
+                        )
+                    except Exception as mark_exc:  # noqa: BLE001
+                        log.bind(item_id=item_id).warning(
+                            "Enrich mark_item_state failed: {}",
+                            self._sanitize_error_message(str(mark_exc)),
+                        )
+                    return {
+                        "status": "failed",
+                        "item_id": item_id,
+                        "source": source,
+                        "arxiv_method": arxiv_method,
+                        "error_type": type(enrich_exc).__name__,
+                        "error_message": sanitized_error,
+                        "classification": classification,
+                        "diag": diag,
+                    }
+
             with Progress(
                 TextColumn("{task.description}"),
                 BarColumn(),
@@ -277,107 +348,209 @@ class PipelineService:
                 TimeElapsedColumn(),
                 console=self._progress_console,
             ) as progress:
-                for item in progress.track(items, description="Enriching items"):
-                    raw_item_id = getattr(item, "id", None)
-                    if raw_item_id is None:
+                task_id = progress.add_task("Enriching items", total=len(items))
+
+                def _consume_result(result: dict[str, Any], *, item_elapsed_ms: int) -> None:
+                    nonlocal enrich_processed, enrich_failed, enrich_skipped, enrich_duration_ms_total
+                    nonlocal html_document_items_total
+                    nonlocal html_document_fetch_ms_sum, html_document_cleanup_ms_sum, html_document_pandoc_ms_sum
+                    nonlocal html_document_db_read_ms_sum, html_document_db_write_ms_sum
+
+                    status = result.get("status")
+                    if status == "skipped":
                         enrich_failed += 1
-                        log.warning("Enrich skipped: item has no id")
-                        continue
-                    item_id = int(raw_item_id)
-                    source = str(getattr(item, "source", "") or "").strip().lower()
-                    arxiv_method: str | None = None
-                    if source == "arxiv":
-                        arxiv_method = self.settings.sources.arxiv.enrich_method
-                        arxiv_items_by_method[arxiv_method] = arxiv_items_by_method.get(arxiv_method, 0) + 1
-                    enrich_item_started = time.perf_counter()
-                    try:
-                        _, stored_new_content = self._ensure_item_content(client=client, item=item, log=log)
-                        self.repository.mark_item_enriched(item_id=item_id)
-                        if stored_new_content:
+                        log.warning("Enrich skipped: {}", result.get("reason") or "unknown")
+                    elif status == "ok":
+                        if result.get("stored_new"):
                             enrich_processed += 1
                         else:
                             enrich_skipped += 1
-                    except Exception as enrich_exc:
+                    else:
                         enrich_failed += 1
-                        if arxiv_method is not None:
+                        item_id = result.get("item_id")
+                        arxiv_method = result.get("arxiv_method")
+                        if isinstance(arxiv_method, str) and arxiv_method:
                             arxiv_failed_by_method[arxiv_method] = arxiv_failed_by_method.get(arxiv_method, 0) + 1
-                        sanitized_error = self._sanitize_error_message(str(enrich_exc))
-                        classification = self._classify_exception(enrich_exc)
-                        try:
-                            if classification.get("retryable") is True:
-                                self.repository.mark_item_retryable_failed(item_id=item_id)
-                            else:
-                                self.repository.mark_item_failed(item_id=item_id)
-                        except Exception as mark_exc:
-                            log.bind(item_id=item_id).warning(
-                                "Enrich mark_item_state failed: {}",
-                                self._sanitize_error_message(str(mark_exc)),
-                            )
+                        classification = result.get("classification") or {}
                         if include_debug:
                             write_and_record_artifact(
-                                item_id=item_id,
+                                item_id=int(item_id) if item_id is not None else None,
                                 kind="error_context",
                                 payload={
                                     "stage": "enrich",
-                                    "error_type": type(enrich_exc).__name__,
-                                    "error_message": sanitized_error,
+                                    "error_type": result.get("error_type") or "Exception",
+                                    "error_message": result.get("error_message") or "unknown",
                                     "item_id": item_id,
-                                    **classification,
+                                    **(classification if isinstance(classification, dict) else {}),
                                 },
                             )
-                        log.bind(item_id=item_id).warning("Enrich failed: {}", sanitized_error)
-                    finally:
-                        enrich_duration_ms_total += int((time.perf_counter() - enrich_item_started) * 1000)
+                        log.bind(item_id=item_id).warning("Enrich failed: {}", result.get("error_message") or "unknown")
 
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.processed_total",
-            value=enrich_processed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.skipped_total",
-            value=enrich_skipped,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.failed_total",
-            value=enrich_failed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.item_duration_ms_total",
-            value=enrich_duration_ms_total,
-            unit="ms",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.enrich.duration_ms",
-            value=int((time.perf_counter() - enrich_started) * 1000),
-            unit="ms",
-        )
-        for method in ("pdf_text", "latex_source", "html_document"):
+                    diag = result.get("diag") or {}
+                    source = str(result.get("source") or "").strip().lower()
+                    arxiv_method = result.get("arxiv_method")
+                    if source == "arxiv" and isinstance(arxiv_method, str) and arxiv_method:
+                        arxiv_items_by_method[arxiv_method] = arxiv_items_by_method.get(arxiv_method, 0) + 1
+                    if source == "arxiv" and arxiv_method == "html_document":
+                        html_document_items_total += 1
+                        html_document_fetch_ms_sum += int(diag.get("fetch_ms") or 0)
+                        html_document_cleanup_ms_sum += int(diag.get("cleanup_ms") or 0)
+                        html_document_pandoc_ms_sum += int(diag.get("pandoc_ms") or 0)
+                        html_document_db_read_ms_sum += int(diag.get("db_read_ms") or 0)
+                        html_document_db_write_ms_sum += int(diag.get("db_write_ms") or 0)
+
+                    enrich_duration_ms_total += int(item_elapsed_ms)
+                    progress.advance(task_id, 1)
+
+                if not enable_parallel:
+                    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
+                        for item in items:
+                            item_started = time.perf_counter()
+                            result = _process_one(client=client, item=item)
+                            _consume_result(result, item_elapsed_ms=int((time.perf_counter() - item_started) * 1000))
+                else:
+                    local = threading.local()
+                    created_clients: list[httpx.Client] = []
+                    created_lock = threading.Lock()
+
+                    def _get_thread_client() -> httpx.Client:
+                        existing = getattr(local, "client", None)
+                        if isinstance(existing, httpx.Client):
+                            return existing
+                        client = httpx.Client(timeout=timeout, headers=headers, follow_redirects=True)
+                        local.client = client
+                        with created_lock:
+                            created_clients.append(client)
+                        return client
+
+                    def _worker(item: Any) -> dict[str, Any]:
+                        started = time.perf_counter()
+                        client = _get_thread_client()
+                        result = _process_one(client=client, item=item)
+                        result["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+                        return result
+
+                    try:
+                        with ThreadPoolExecutor(max_workers=html_document_max_concurrency) as executor:
+                            futures = {executor.submit(_worker, item): item for item in items}
+                            for fut in as_completed(futures):
+                                try:
+                                    result = fut.result()
+                                except Exception as exc:  # noqa: BLE001
+                                    result = {
+                                        "status": "failed",
+                                        "error_type": type(exc).__name__,
+                                        "error_message": self._sanitize_error_message(str(exc)),
+                                        "classification": self._classify_exception(exc),
+                                        "elapsed_ms": 0,
+                                    }
+                                _consume_result(result, item_elapsed_ms=int(result.get("elapsed_ms") or 0))
+                    finally:
+                        with created_lock:
+                            to_close = list(created_clients)
+                        for c in to_close:
+                            try:
+                                c.close()
+                            except Exception:
+                                pass
+
             self.repository.record_metric(
                 run_id=run_id,
-                name=f"pipeline.enrich.arxiv.method_selected.{method}_total",
-                value=arxiv_items_by_method.get(method, 0),
+                name="pipeline.enrich.processed_total",
+                value=enrich_processed,
                 unit="count",
             )
             self.repository.record_metric(
                 run_id=run_id,
-                name=f"pipeline.enrich.arxiv.method_failed.{method}_total",
-                value=arxiv_failed_by_method.get(method, 0),
+                name="pipeline.enrich.skipped_total",
+                value=enrich_skipped,
                 unit="count",
             )
-        log.info(
-            "Enrich completed with processed={} skipped={} failed={}",
-            enrich_processed,
-            enrich_skipped,
-            enrich_failed,
-        )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.failed_total",
+                value=enrich_failed,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.item_duration_ms_total",
+                value=enrich_duration_ms_total,
+                unit="ms",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.duration_ms",
+                value=int((time.perf_counter() - enrich_started) * 1000),
+                unit="ms",
+            )
+            for method in ("pdf_text", "latex_source", "html_document"):
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name=f"pipeline.enrich.arxiv.method_selected.{method}_total",
+                    value=arxiv_items_by_method.get(method, 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name=f"pipeline.enrich.arxiv.method_failed.{method}_total",
+                    value=arxiv_failed_by_method.get(method, 0),
+                    unit="count",
+                )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.db.sql_queries_total",
+                value=sql_diag.queries_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.db.sql_commits_total",
+                value=sql_diag.commits_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.items_total",
+                value=html_document_items_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.fetch_ms_sum",
+                value=html_document_fetch_ms_sum,
+                unit="ms",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.cleanup_ms_sum",
+                value=html_document_cleanup_ms_sum,
+                unit="ms",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.pandoc_ms_sum",
+                value=html_document_pandoc_ms_sum,
+                unit="ms",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.db_read_ms_sum",
+                value=html_document_db_read_ms_sum,
+                unit="ms",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.db_write_ms_sum",
+                value=html_document_db_write_ms_sum,
+                unit="ms",
+            )
+            log.info(
+                "Enrich completed with processed={} skipped={} failed={}",
+                enrich_processed,
+                enrich_skipped,
+                enrich_failed,
+            )
 
     def triage(self, *, run_id: str, limit: int, candidate_limit: int | None = None) -> None:
         triage_enabled = bool(self.settings.triage_enabled) and bool(self.settings.topics)
@@ -931,7 +1104,14 @@ class PipelineService:
                 return loaded
         return None
 
-    def _ensure_item_content(self, *, client: httpx.Client, item: Any, log: Any) -> tuple[str, bool]:
+    def _ensure_item_content(
+        self,
+        *,
+        client: httpx.Client,
+        item: Any,
+        log: Any,
+        diag: dict[str, int] | None = None,
+    ) -> tuple[str, bool]:
         raw_item_id = getattr(item, "id", None)
         if raw_item_id is None:
             raise ValueError("item id is required for enrichment")
@@ -947,6 +1127,7 @@ class PipelineService:
                 canonical_url=canonical_url,
                 source_item_id=source_item_id,
                 log=log,
+                diag=diag,
             )
         elif source == "openreview":
             content_text, stored_new_content = self._ensure_pdf_content_with_optional_html_fallback(
@@ -977,6 +1158,7 @@ class PipelineService:
         canonical_url: str,
         source_item_id: str | None,
         log: Any,
+        diag: dict[str, int] | None = None,
     ) -> tuple[str, bool]:
         method = self.settings.sources.arxiv.enrich_method
         failure_mode = self.settings.sources.arxiv.enrich_failure_mode
@@ -1025,6 +1207,7 @@ class PipelineService:
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
                     log=log,
+                    diag=diag,
                 )
             except Exception as method_exc:
                 if failure_mode == "strict":
@@ -1082,37 +1265,45 @@ class PipelineService:
         canonical_url: str,
         source_item_id: str | None,
         log: Any,
+        diag: dict[str, int] | None = None,
     ) -> tuple[str, bool]:
-        existing_document = self._get_latest_content_text(item_id=item_id, content_type="html_document")
-        existing_md = self._get_latest_content_text(item_id=item_id, content_type="html_document_md")
-        existing_refs = self._get_latest_content_text(item_id=item_id, content_type="html_references")
+        db_read_started = time.perf_counter()
+        existing = self.repository.get_latest_content_texts(
+            item_id=item_id,
+            content_types=["html_document", "html_document_md", "html_references"],
+        )
+        existing_document = existing.get("html_document")
+        existing_md = existing.get("html_document_md")
+        existing_refs = existing.get("html_references")
+        if diag is not None:
+            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int((time.perf_counter() - db_read_started) * 1000)
+        if (
+            bool(self.settings.sources.arxiv.html_document_skip_cleanup_when_complete)
+            and existing_document is not None
+            and existing_md is not None
+            and existing_refs is not None
+        ):
+            return existing_document, False
         stored_new = False
         if existing_document is not None:
+            cleanup_started = time.perf_counter()
             cleaned_document, references_html, stats = extract_html_document_cleaned_with_references(existing_document)
-            if cleaned_document is not None and cleaned_document != existing_document:
-                self.repository.upsert_content(
-                    item_id=item_id,
-                    content_type="html_document",
-                    text=cleaned_document,
+            if diag is not None:
+                diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + int(
+                    (time.perf_counter() - cleanup_started) * 1000
                 )
-                stored_new = True
+            pending_upserts: dict[str, str] = {}
+            if cleaned_document is not None and cleaned_document != existing_document:
+                pending_upserts["html_document"] = cleaned_document
                 existing_document = cleaned_document
             if existing_refs is None and references_html is not None:
-                self.repository.upsert_content(
-                    item_id=item_id,
-                    content_type="html_references",
-                    text=references_html,
-                )
-                stored_new = True
+                pending_upserts["html_references"] = references_html
             if existing_md is None and existing_document is not None:
                 markdown, elapsed_ms, error = convert_html_document_to_markdown(existing_document)
+                if diag is not None:
+                    diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
                 if markdown is not None:
-                    self.repository.upsert_content(
-                        item_id=item_id,
-                        content_type="html_document_md",
-                        text=markdown,
-                    )
-                    stored_new = True
+                    pending_upserts["html_document_md"] = markdown
                     log.bind(item_id=item_id).info(
                         "html_document_md created from existing html_document elapsed_ms={} chars_in={} chars_out={}",
                         elapsed_ms,
@@ -1132,6 +1323,19 @@ class PipelineService:
                 stats.get("removed_references_blocks"),
                 stats.get("references_chars"),
             )
+            if pending_upserts:
+                db_write_started = time.perf_counter()
+                if bool(self.settings.sources.arxiv.html_document_use_batched_db_writes):
+                    inserted = self.repository.upsert_contents_texts(item_id=item_id, texts_by_type=pending_upserts)
+                else:
+                    for ctype, text in pending_upserts.items():
+                        self.repository.upsert_content(item_id=item_id, content_type=ctype, text=text)
+                    inserted = len(pending_upserts)
+                if diag is not None:
+                    diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+                        (time.perf_counter() - db_write_started) * 1000
+                    )
+                stored_new = stored_new or (inserted > 0)
             return existing_document, stored_new
         html_url = self._build_arxiv_html_url(
             canonical_url=canonical_url,
@@ -1139,28 +1343,24 @@ class PipelineService:
         )
         if not html_url:
             raise ValueError("missing arXiv html url")
+        fetch_started = time.perf_counter()
         html = fetch_url_html(client, html_url)
+        if diag is not None:
+            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int((time.perf_counter() - fetch_started) * 1000)
+        cleanup_started = time.perf_counter()
         cleaned_document, references_html, stats = extract_html_document_cleaned_with_references(html)
+        if diag is not None:
+            diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + int((time.perf_counter() - cleanup_started) * 1000)
         if cleaned_document is None:
             raise RuntimeError("empty arXiv html document extraction")
-        self.repository.upsert_content(
-            item_id=item_id,
-            content_type="html_document",
-            text=cleaned_document,
-        )
+        pending_upserts_new: dict[str, str] = {"html_document": cleaned_document}
         if references_html is not None:
-            self.repository.upsert_content(
-                item_id=item_id,
-                content_type="html_references",
-                text=references_html,
-            )
+            pending_upserts_new["html_references"] = references_html
         markdown, elapsed_ms, error = convert_html_document_to_markdown(cleaned_document)
+        if diag is not None:
+            diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
         if markdown is not None:
-            self.repository.upsert_content(
-                item_id=item_id,
-                content_type="html_document_md",
-                text=markdown,
-            )
+            pending_upserts_new["html_document_md"] = markdown
             log.bind(item_id=item_id).info(
                 "html_document_md created elapsed_ms={} chars_in={} chars_out={}",
                 elapsed_ms,
@@ -1182,12 +1382,21 @@ class PipelineService:
         )
         extracted_maintext = extract_html_maintext(html)
         if extracted_maintext is not None:
-            self.repository.upsert_content(
-                item_id=item_id,
-                content_type="html_maintext",
-                text=extracted_maintext,
-            )
-        return cleaned_document, True
+            pending_upserts_new["html_maintext"] = extracted_maintext
+        if pending_upserts_new:
+            db_write_started = time.perf_counter()
+            if bool(self.settings.sources.arxiv.html_document_use_batched_db_writes):
+                inserted = self.repository.upsert_contents_texts(item_id=item_id, texts_by_type=pending_upserts_new)
+            else:
+                for ctype, text in pending_upserts_new.items():
+                    self.repository.upsert_content(item_id=item_id, content_type=ctype, text=text)
+                inserted = len(pending_upserts_new)
+            if diag is not None:
+                diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+                    (time.perf_counter() - db_write_started) * 1000
+                )
+            stored_new = stored_new or (inserted > 0)
+        return cleaned_document, bool(stored_new)
 
     def _ensure_pdf_content_with_optional_html_fallback(
         self,

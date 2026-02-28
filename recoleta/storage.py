@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from dataclasses import dataclass
 import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
+from threading import Lock
 from typing import Any, cast
 from uuid import uuid4
 
 from rapidfuzz import fuzz
-from sqlalchemy import desc, func
+from sqlalchemy import desc, event, func
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from recoleta.models import (
@@ -57,6 +60,12 @@ def _from_json_object(value: str | None) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+@dataclass
+class SqlDiagnostics:
+    queries_total: int = 0
+    commits_total: int = 0
+
+
 class Repository:
     def __init__(
         self,
@@ -67,9 +76,52 @@ class Repository:
     ) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_engine(f"sqlite:///{self.db_path}", echo=False)
+        self.engine = create_engine(
+            f"sqlite:///{self.db_path}",
+            echo=False,
+            connect_args={"check_same_thread": False},
+        )
         self.title_dedup_threshold = float(title_dedup_threshold)
         self.title_dedup_max_candidates = max(0, int(title_dedup_max_candidates))
+        self._sql_diag_lock = Lock()
+        self._sql_diag_active: SqlDiagnostics | None = None
+        self._sql_diag_installed = False
+
+    def _ensure_sql_diagnostics_installed(self) -> None:
+        if self._sql_diag_installed:
+            return
+
+        def _before_cursor_execute(*_: Any, **__: Any) -> None:
+            active = self._sql_diag_active
+            if active is None:
+                return
+            with self._sql_diag_lock:
+                active.queries_total += 1
+
+        event.listen(self.engine, "before_cursor_execute", _before_cursor_execute)
+        self._sql_diag_installed = True
+
+    @contextmanager
+    def sql_diagnostics(self) -> Any:
+        """Collect coarse SQL diagnostics for a single run (aggregate counts only)."""
+
+        self._ensure_sql_diagnostics_installed()
+        diag = SqlDiagnostics()
+        with self._sql_diag_lock:
+            previous = self._sql_diag_active
+            self._sql_diag_active = diag
+        try:
+            yield diag
+        finally:
+            with self._sql_diag_lock:
+                self._sql_diag_active = previous
+
+    def _commit(self, session: Session) -> None:
+        active = self._sql_diag_active
+        if active is not None:
+            with self._sql_diag_lock:
+                active.commits_total += 1
+        session.commit()
 
     def init_schema(self) -> None:
         SQLModel.metadata.create_all(self.engine)
@@ -82,7 +134,7 @@ class Repository:
         )
         with Session(self.engine) as session:
             session.add(run)
-            session.commit()
+            self._commit(session)
             session.refresh(run)
             return run
 
@@ -95,13 +147,13 @@ class Repository:
             run.status = final_status
             run.finished_at = utc_now()
             session.add(run)
-            session.commit()
+            self._commit(session)
 
     def record_metric(self, *, run_id: str, name: str, value: float, unit: str | None = None) -> None:
         metric = Metric(run_id=run_id, name=name, value=value, unit=unit)
         with Session(self.engine) as session:
             session.add(metric)
-            session.commit()
+            self._commit(session)
 
     def list_metrics(self, *, run_id: str) -> list[Metric]:
         with Session(self.engine) as session:
@@ -178,7 +230,7 @@ class Repository:
                     state=ITEM_STATE_INGESTED,
                 )
                 session.add(created)
-                session.commit()
+                self._commit(session)
                 session.refresh(created)
                 return created, True
 
@@ -226,7 +278,7 @@ class Repository:
             ):
                 existing.source_item_id = draft.source_item_id
             session.add(existing)
-            session.commit()
+            self._commit(session)
             session.refresh(existing)
             return existing, False
 
@@ -273,6 +325,33 @@ class Repository:
             )
             return session.exec(statement).first()
 
+    def get_latest_content_texts(self, *, item_id: int, content_types: list[str]) -> dict[str, str | None]:
+        """Fetch latest text for multiple content_types of a single item in one query."""
+
+        normalized_item_id = int(item_id)
+        types = [str(t or "").strip() for t in (content_types or [])]
+        types = [t for t in types if t]
+        if normalized_item_id <= 0 or not types:
+            return {}
+
+        wanted = set(types)
+        out: dict[str, str | None] = {t: None for t in types}
+        with Session(self.engine) as session:
+            statement = (
+                select(Content)
+                .where(Content.item_id == normalized_item_id, cast(Any, Content.content_type).in_(types))
+                .order_by(desc(cast(Any, Content.id)))
+            )
+            for content in session.exec(statement):
+                ctype = str(getattr(content, "content_type", "") or "").strip()
+                if ctype in wanted and out.get(ctype) is None:
+                    text = getattr(content, "text", None)
+                    out[ctype] = text if isinstance(text, str) and text.strip() else None
+                    wanted.discard(ctype)
+                    if not wanted:
+                        break
+        return out
+
     def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]:
         normalized_ids: list[int] = []
         seen: set[int] = set()
@@ -305,6 +384,63 @@ class Repository:
             statement = select(Content).join(latest_ids, cast(Any, Content.id) == latest_ids.c.max_id)
             contents = list(session.exec(statement))
             return {content.item_id: content for content in contents}
+
+    def upsert_contents_texts(self, *, item_id: int, texts_by_type: dict[str, str]) -> int:
+        """Upsert multiple text contents for a single item with one commit."""
+
+        normalized_item_id = int(item_id)
+        if normalized_item_id <= 0:
+            raise ValueError("item_id must be > 0")
+        if not isinstance(texts_by_type, dict) or not texts_by_type:
+            return 0
+
+        normalized: dict[str, str] = {}
+        for raw_type, raw_text in texts_by_type.items():
+            content_type = str(raw_type or "").strip()
+            if not content_type:
+                continue
+            if not isinstance(raw_text, str):
+                continue
+            text = raw_text.strip()
+            if not text:
+                continue
+            normalized[content_type] = text
+        if not normalized:
+            return 0
+
+        hashes_by_type: dict[str, str] = {ctype: sha256_hex(text) for ctype, text in normalized.items()}
+        target_types = list(hashes_by_type.keys())
+        target_hashes = list(set(hashes_by_type.values()))
+
+        inserted = 0
+        with Session(self.engine) as session:
+            existing_pairs: set[tuple[str, str]] = set()
+            statement = select(Content.content_type, Content.content_hash).where(
+                Content.item_id == normalized_item_id,
+                cast(Any, Content.content_type).in_(target_types),
+                cast(Any, Content.content_hash).in_(target_hashes),
+            )
+            for ctype, chash in session.exec(statement):
+                existing_pairs.add((str(ctype), str(chash)))
+
+            for ctype, text in normalized.items():
+                chash = hashes_by_type[ctype]
+                if (ctype, chash) in existing_pairs:
+                    continue
+                session.add(
+                    Content(
+                        item_id=normalized_item_id,
+                        content_type=ctype,
+                        text=text,
+                        artifact_path=None,
+                        content_hash=chash,
+                    )
+                )
+                inserted += 1
+
+            if inserted > 0:
+                self._commit(session)
+        return inserted
 
     def upsert_content(
         self,
@@ -345,7 +481,7 @@ class Repository:
                 content_hash=content_hash,
             )
             session.add(content)
-            session.commit()
+            self._commit(session)
             session.refresh(content)
             return content
 
@@ -385,7 +521,7 @@ class Repository:
                 session.add(item)
 
             session.add(analysis)
-            session.commit()
+            self._commit(session)
             session.refresh(analysis)
             return analysis
 
@@ -397,7 +533,7 @@ class Repository:
             item.state = ITEM_STATE_ENRICHED
             item.updated_at = utc_now()
             session.add(item)
-            session.commit()
+            self._commit(session)
 
     def mark_item_triaged(self, *, item_id: int) -> None:
         with Session(self.engine) as session:
@@ -407,7 +543,7 @@ class Repository:
             item.state = ITEM_STATE_TRIAGED
             item.updated_at = utc_now()
             session.add(item)
-            session.commit()
+            self._commit(session)
 
     def mark_item_failed(self, *, item_id: int) -> None:
         with Session(self.engine) as session:
@@ -417,7 +553,7 @@ class Repository:
             item.state = ITEM_STATE_FAILED
             item.updated_at = utc_now()
             session.add(item)
-            session.commit()
+            self._commit(session)
 
     def mark_item_retryable_failed(self, *, item_id: int) -> None:
         with Session(self.engine) as session:
@@ -427,7 +563,7 @@ class Repository:
             item.state = ITEM_STATE_RETRYABLE_FAILED
             item.updated_at = utc_now()
             session.add(item)
-            session.commit()
+            self._commit(session)
 
     def list_items_for_publish(self, *, limit: int, min_relevance_score: float) -> list[tuple[Item, Analysis]]:
         with Session(self.engine) as session:
@@ -497,7 +633,7 @@ class Repository:
                     sent_at=now if status == DELIVERY_STATUS_SENT else None,
                 )
                 session.add(delivery)
-                session.commit()
+                self._commit(session)
                 session.refresh(delivery)
                 return delivery
 
@@ -507,7 +643,7 @@ class Repository:
             if status == DELIVERY_STATUS_SENT:
                 existing.sent_at = now
             session.add(existing)
-            session.commit()
+            self._commit(session)
             session.refresh(existing)
             return existing
 
@@ -519,13 +655,13 @@ class Repository:
             item.state = ITEM_STATE_PUBLISHED
             item.updated_at = utc_now()
             session.add(item)
-            session.commit()
+            self._commit(session)
 
     def add_artifact(self, *, run_id: str, item_id: int | None, kind: str, path: str) -> None:
         artifact = Artifact(run_id=run_id, item_id=item_id, kind=kind, path=path)
         with Session(self.engine) as session:
             session.add(artifact)
-            session.commit()
+            self._commit(session)
 
     @staticmethod
     def decode_list(value: str | None) -> list[str]:

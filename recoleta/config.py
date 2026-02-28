@@ -190,6 +190,10 @@ class ArxivSourceConfig(BaseModel):
     max_results_per_run: int = 50
     enrich_method: str = Field(default="html_document")
     enrich_failure_mode: str = Field(default="fallback")
+    html_document_max_concurrency: int = Field(default=4, ge=1, le=32)
+    html_document_enable_parallel: bool = True
+    html_document_skip_cleanup_when_complete: bool = True
+    html_document_use_batched_db_writes: bool = True
 
     @field_validator("enrich_method", mode="before")
     @classmethod

@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import resource
 import statistics
+import sys
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -101,6 +103,22 @@ def _p95(values: list[float]) -> float | None:
     sorted_values = sorted(values)
     idx = max(0, int(round(0.95 * (len(sorted_values) - 1))))
     return float(sorted_values[idx])
+
+
+def _resource_snapshot() -> dict[str, Any]:
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    ru_maxrss = int(getattr(usage, "ru_maxrss", 0) or 0)
+    # On macOS ru_maxrss is bytes; on Linux it's kilobytes.
+    maxrss_unit = "bytes" if sys.platform == "darwin" else "kb"
+    maxrss_mb = (ru_maxrss / (1024 * 1024)) if maxrss_unit == "bytes" else (ru_maxrss / 1024)
+    return {
+        "platform": sys.platform,
+        "ru_maxrss": ru_maxrss,
+        "ru_maxrss_unit": maxrss_unit,
+        "max_rss_mb": float(maxrss_mb),
+        "user_cpu_s": float(getattr(usage, "ru_utime", 0.0) or 0.0),
+        "sys_cpu_s": float(getattr(usage, "ru_stime", 0.0) or 0.0),
+    }
 
 
 def _probe_candidate_html_md(
@@ -209,7 +227,13 @@ def _freeze_drafts(
     return selected, meta
 
 
-def _build_settings_for_method(*, base: Settings, method: str, db_path: Path) -> Settings:
+def _build_settings_for_method(
+    *,
+    base: Settings,
+    method: str,
+    db_path: Path,
+    html_document_max_concurrency: int,
+) -> Settings:
     payload = base.model_dump(mode="python")
     payload["recoleta_db_path"] = str(db_path)
     payload["triage_enabled"] = False
@@ -217,6 +241,7 @@ def _build_settings_for_method(*, base: Settings, method: str, db_path: Path) ->
     arxiv_cfg = dict((sources.get("arxiv") or {}))
     arxiv_cfg["enrich_method"] = method
     arxiv_cfg["enrich_failure_mode"] = "strict"
+    arxiv_cfg["html_document_max_concurrency"] = int(html_document_max_concurrency)
     sources["arxiv"] = arxiv_cfg
     payload["sources"] = sources
     return Settings.model_validate(payload)  # pyright: ignore[reportCallIssue]
@@ -242,95 +267,50 @@ def _enrich_with_timing(
     run_id: str,
     items: list[Item],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from recoleta.models import ITEM_STATE_ENRICHED  # avoid unused import in type check
+    from sqlmodel import Session, select  # local import to keep script fast
 
-    timeout = httpx.Timeout(20.0, connect=8.0)
-    headers = {"User-Agent": "recoleta/bench/0.1"}
-    per_item: list[dict[str, Any]] = []
-    method = service.settings.sources.arxiv.enrich_method
+    from recoleta.models import Metric
 
-    enrich_started = time.perf_counter()
-    failed = 0
-    processed = 0
-    skipped = 0
-    total_item_ms = 0
-    with httpx.Client(timeout=timeout, headers=headers, follow_redirects=True) as client:
-        for item in items:
-            if item.id is None:
-                continue
-            item_started = time.perf_counter()
-            item_id = int(item.id)
-            arxiv_id = PipelineService._extract_arxiv_identifier(
-                canonical_url=item.canonical_url,
-                source_item_id=item.source_item_id,
-            )
-            record: dict[str, Any] = {
-                "item_id": item_id,
-                "arxiv_id": arxiv_id,
-                "title": item.title,
-                "canonical_url": item.canonical_url,
-                "source_item_id": item.source_item_id,
-            }
-            try:
-                _, stored_new = service._ensure_item_content(client=client, item=item, log=logger)  # noqa: SLF001
-                service.repository.mark_item_enriched(item_id=item_id)
-                if stored_new:
-                    processed += 1
-                else:
-                    skipped += 1
-                record["status"] = "ok"
-                record["stored_new_content"] = bool(stored_new)
-            except Exception as exc:
-                failed += 1
-                record["status"] = "failed"
-                record["error_type"] = type(exc).__name__
-                record["error_message"] = service._sanitize_error_message(str(exc))  # noqa: SLF001
-                classification = service._classify_exception(exc)  # noqa: SLF001
-                record.update(classification)
-                try:
-                    if classification.get("retryable") is True:
-                        service.repository.mark_item_retryable_failed(item_id=item_id)
-                    else:
-                        service.repository.mark_item_failed(item_id=item_id)
-                except Exception:
-                    pass
-            finally:
-                elapsed_ms = int((time.perf_counter() - item_started) * 1000)
-                total_item_ms += elapsed_ms
-                record["enrich_item_ms"] = elapsed_ms
-                record["enrich_method"] = method
-                per_item.append(record)
+    started = time.perf_counter()
+    service.enrich(run_id=run_id, limit=max(1, len(items)))
+    enrich_wall_ms = int((time.perf_counter() - started) * 1000)
 
-    enrich_ms = int((time.perf_counter() - enrich_started) * 1000)
+    with Session(service.repository.engine) as session:
+        statement = select(Metric).where(Metric.run_id == run_id).order_by(cast(Any, Metric.id))
+        metrics = list(session.exec(statement))
 
-    service.repository.record_metric(run_id=run_id, name="pipeline.enrich.processed_total", value=processed, unit="count")
-    service.repository.record_metric(run_id=run_id, name="pipeline.enrich.skipped_total", value=skipped, unit="count")
-    service.repository.record_metric(run_id=run_id, name="pipeline.enrich.failed_total", value=failed, unit="count")
-    service.repository.record_metric(run_id=run_id, name="pipeline.enrich.item_duration_ms_total", value=total_item_ms, unit="ms")
-    service.repository.record_metric(run_id=run_id, name="pipeline.enrich.duration_ms", value=enrich_ms, unit="ms")
-    for m in ("pdf_text", "latex_source", "html_document"):
-        selected = len([r for r in per_item if r.get("enrich_method") == m])
-        failed_m = len([r for r in per_item if r.get("enrich_method") == m and r.get("status") == "failed"])
-        service.repository.record_metric(
-            run_id=run_id,
-            name=f"pipeline.enrich.arxiv.method_selected.{m}_total",
-            value=selected,
-            unit="count",
-        )
-        service.repository.record_metric(
-            run_id=run_id,
-            name=f"pipeline.enrich.arxiv.method_failed.{m}_total",
-            value=failed_m,
-            unit="count",
-        )
+    by_name: dict[str, float] = {m.name: float(m.value) for m in metrics}
 
     summary = {
-        "enrich_ms": enrich_ms,
-        "processed": processed,
-        "skipped": skipped,
-        "failed": failed,
-        "item_duration_ms_total": total_item_ms,
+        "enrich_wall_ms": enrich_wall_ms,
+        "enrich_ms": int(by_name.get("pipeline.enrich.duration_ms") or enrich_wall_ms),
+        "processed": int(by_name.get("pipeline.enrich.processed_total") or 0),
+        "skipped": int(by_name.get("pipeline.enrich.skipped_total") or 0),
+        "failed": int(by_name.get("pipeline.enrich.failed_total") or 0),
+        "item_duration_ms_total": int(by_name.get("pipeline.enrich.item_duration_ms_total") or 0),
+        "sql_queries_total": int(by_name.get("pipeline.enrich.db.sql_queries_total") or 0),
+        "sql_commits_total": int(by_name.get("pipeline.enrich.db.sql_commits_total") or 0),
+        "fetch_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.fetch_ms_sum") or 0),
+        "cleanup_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.cleanup_ms_sum") or 0),
+        "pandoc_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.pandoc_ms_sum") or 0),
+        "db_read_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.db_read_ms_sum") or 0),
+        "db_write_ms_sum": int(by_name.get("pipeline.enrich.arxiv.html_document.db_write_ms_sum") or 0),
     }
+
+    per_item: list[dict[str, Any]] = []
+    for item in items:
+        if item.id is None:
+            continue
+        per_item.append(
+            {
+                "item_id": int(item.id),
+                "arxiv_id": PipelineService._extract_arxiv_identifier(  # noqa: SLF001
+                    canonical_url=item.canonical_url,
+                    source_item_id=item.source_item_id,
+                ),
+                "enrich_item_ms": None,
+            }
+        )
     return summary, per_item
 
 
@@ -427,6 +407,9 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
     lines.append(f"- selected_n: {results.get('selected_n')}")
     lines.append(f"- candidates_requested: {results.get('candidates_requested')}")
     lines.append(f"- pull_drafts_ms: {results.get('pull_drafts_ms')}")
+    lines.append(f"- repeat: {results.get('repeat')}")
+    lines.append(f"- warmup: {results.get('warmup')}")
+    lines.append(f"- concurrency: {results.get('concurrency')}")
     lines.append("")
 
     for method in ("html_document",):
@@ -434,9 +417,14 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
         lines.append(f"## {method}\n")
         lines.append("### durations\n")
         durations = r.get("durations") or {}
-        lines.append(f"- ingest_ms: {durations.get('ingest_ms')}")
-        lines.append(f"- enrich_ms: {durations.get('enrich_ms')}")
-        lines.append(f"- total_ms: {durations.get('total_ms')}")
+        lines.append(f"- ingest_ms_median: {durations.get('ingest_ms_median')}")
+        lines.append(f"- ingest_ms_p95: {durations.get('ingest_ms_p95')}")
+        lines.append(f"- enrich_ms_median: {durations.get('enrich_ms_median')}")
+        lines.append(f"- enrich_ms_p95: {durations.get('enrich_ms_p95')}")
+        lines.append(f"- triage_ms_median: {durations.get('triage_ms_median')}")
+        lines.append(f"- triage_ms_p95: {durations.get('triage_ms_p95')}")
+        lines.append(f"- pipeline_ms_median: {durations.get('pipeline_ms_median')}")
+        lines.append(f"- pipeline_ms_p95: {durations.get('pipeline_ms_p95')}")
         lines.append("")
 
         lines.append("### tokens\n")
@@ -492,8 +480,11 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark arXiv html_document_md route (html_document -> html_document_md).")
     parser.add_argument("--config", required=True, help="Path to recoleta.yaml")
-    parser.add_argument("--n", type=int, default=5, help="Number of arXiv sources to benchmark (<= 5 recommended).")
+    parser.add_argument("--n", type=int, default=20, help="Number of arXiv sources to benchmark (<= 50 recommended).")
     parser.add_argument("--candidates", type=int, default=20, help="Max arXiv results per query used for selecting candidates.")
+    parser.add_argument("--repeat", type=int, default=5, help="Number of benchmark repetitions (recorded).")
+    parser.add_argument("--warmup", type=int, default=1, help="Number of warm-up runs (not recorded).")
+    parser.add_argument("--concurrency", type=int, default=1, help="html_document_max_concurrency used by PipelineService.enrich.")
     parser.add_argument(
         "--drafts",
         default=None,
@@ -510,8 +501,17 @@ def main() -> None:
     base_settings = Settings()  # pyright: ignore[reportCallIssue]
 
     n = int(args.n)
-    if n <= 0 or n > 5:
-        raise ValueError("--n must be in [1,5]")
+    if n <= 0 or n > 50:
+        raise ValueError("--n must be in [1,50]")
+    repeat = int(args.repeat)
+    warmup = int(args.warmup)
+    if repeat <= 0 or repeat > 50:
+        raise ValueError("--repeat must be in [1,50]")
+    if warmup < 0 or warmup > 20:
+        raise ValueError("--warmup must be in [0,20]")
+    concurrency = int(args.concurrency)
+    if concurrency <= 0 or concurrency > 32:
+        raise ValueError("--concurrency must be in [1,32]")
 
     drafts_path: Path | None = None
     frozen: list[FrozenDraft] = []
@@ -536,41 +536,129 @@ def main() -> None:
         "selected_n": n,
         "candidates_requested": freeze_meta.get("candidates_requested"),
         "pull_drafts_ms": freeze_meta.get("pull_drafts_ms"),
+        "repeat": repeat,
+        "warmup": warmup,
+        "concurrency": concurrency,
         "methods": {},
     }
 
     for method in ("html_document",):
         method_out: dict[str, Any] = {}
         db_path = out_dir / f"recoleta-bench-{method}.db"
-        settings = _build_settings_for_method(base=base_settings, method=method, db_path=db_path)
-        repo = Repository(
-            db_path=settings.recoleta_db_path,
-            title_dedup_threshold=settings.title_dedup_threshold,
-            title_dedup_max_candidates=settings.title_dedup_max_candidates,
-        )
-        repo.init_schema()
-        service = PipelineService(settings=settings, repository=repo)
-
-        run_id = f"bench-{method}-{int(time.time())}"
         drafts = [d.to_item_draft() for d in frozen]
 
-        started = time.perf_counter()
-        ingest_started = time.perf_counter()
-        ingest_result = service.ingest(run_id=run_id, drafts=drafts)
-        ingest_ms = int((time.perf_counter() - ingest_started) * 1000)
+        runs: list[dict[str, Any]] = []
+        last_service: PipelineService | None = None
+        last_repo: Repository | None = None
+        last_items: list[Item] = []
+        last_run_id: str | None = None
+        last_ingest_result: Any | None = None
+        last_enrich_summary: dict[str, Any] = {}
+        last_enrich_per_item: list[dict[str, Any]] = []
 
-        items = _query_items_for_frozen_drafts(repo=repo, frozen=frozen)
-        enrich_summary, enrich_per_item = _enrich_with_timing(service=service, run_id=run_id, items=items)
+        for idx in range(warmup + repeat):
+            if db_path.exists():
+                db_path.unlink()
 
-        html_tokens_summary, html_tokens_per_item = _compute_tokens(service=service, items=items, content_type="html_document")
-        md_tokens_summary, md_tokens_per_item = _compute_tokens(service=service, items=items, content_type="html_document_md")
+            settings = _build_settings_for_method(
+                base=base_settings,
+                method=method,
+                db_path=db_path,
+                html_document_max_concurrency=concurrency,
+            )
+            repo = Repository(
+                db_path=settings.recoleta_db_path,
+                title_dedup_threshold=settings.title_dedup_threshold,
+                title_dedup_max_candidates=settings.title_dedup_max_candidates,
+            )
+            repo.init_schema()
+            service = PipelineService(settings=settings, repository=repo)
 
-        total_ms = int((time.perf_counter() - started) * 1000)
-        per_item_by_id: dict[int, dict[str, Any]] = {int(r["item_id"]): dict(r) for r in enrich_per_item}
+            run_id = f"bench-{method}-{int(time.time())}-{idx}"
+            before = _resource_snapshot()
+
+            ingest_started = time.perf_counter()
+            ingest_result = service.ingest(run_id=run_id, drafts=drafts)
+            ingest_ms = int((time.perf_counter() - ingest_started) * 1000)
+
+            items = _query_items_for_frozen_drafts(repo=repo, frozen=frozen)
+            enrich_summary, enrich_per_item = _enrich_with_timing(service=service, run_id=run_id, items=items)
+
+            triage_started = time.perf_counter()
+            service.triage(run_id=run_id, limit=max(1, len(items)))
+            triage_ms = int((time.perf_counter() - triage_started) * 1000)
+
+            after = _resource_snapshot()
+            run_record = {
+                "run_id": run_id,
+                "ingest_ms": ingest_ms,
+                "enrich_ms": int(enrich_summary.get("enrich_ms") or 0),
+                "triage_ms": triage_ms,
+                "pipeline_ms": int(ingest_ms + int(enrich_summary.get("enrich_ms") or 0) + triage_ms),
+                "enrich": enrich_summary,
+                "resources": {
+                    "before": before,
+                    "after": after,
+                    "cpu_user_s_delta": float(after.get("user_cpu_s") or 0.0) - float(before.get("user_cpu_s") or 0.0),
+                    "cpu_sys_s_delta": float(after.get("sys_cpu_s") or 0.0) - float(before.get("sys_cpu_s") or 0.0),
+                    "max_rss_mb": float(after.get("max_rss_mb") or 0.0),
+                },
+            }
+            if idx >= warmup:
+                runs.append(run_record)
+
+            last_service = service
+            last_repo = repo
+            last_items = items
+            last_run_id = run_id
+            last_ingest_result = ingest_result
+            last_enrich_summary = enrich_summary
+            last_enrich_per_item = enrich_per_item
+
+        ingest_values = [float(r.get("ingest_ms") or 0) for r in runs]
+        enrich_values = [float(r.get("enrich_ms") or 0) for r in runs]
+        triage_values = [float(r.get("triage_ms") or 0) for r in runs]
+        pipeline_values = [float(r.get("pipeline_ms") or 0) for r in runs]
+        method_out["runs"] = runs
+        method_out["durations"] = {
+            "ingest_ms_median": _median(ingest_values),
+            "ingest_ms_p95": _p95(ingest_values),
+            "enrich_ms_median": _median(enrich_values),
+            "enrich_ms_p95": _p95(enrich_values),
+            "triage_ms_median": _median(triage_values),
+            "triage_ms_p95": _p95(triage_values),
+            "pipeline_ms_median": _median(pipeline_values),
+            "pipeline_ms_p95": _p95(pipeline_values),
+        }
+
+        method_out["run_id"] = last_run_id
+        method_out["db_path"] = str(db_path)
+        method_out["ingest_result"] = {
+            "inserted": getattr(last_ingest_result, "inserted", None),
+            "updated": getattr(last_ingest_result, "updated", None),
+            "failed": getattr(last_ingest_result, "failed", None),
+        }
+        method_out["enrich_result"] = last_enrich_summary
+
+        if last_service is None or last_repo is None:
+            raise RuntimeError("benchmark did not produce a final run")
+
+        html_tokens_summary, html_tokens_per_item = _compute_tokens(
+            service=last_service,
+            items=last_items,
+            content_type="html_document",
+        )
+        md_tokens_summary, md_tokens_per_item = _compute_tokens(
+            service=last_service,
+            items=last_items,
+            content_type="html_document_md",
+        )
+
+        per_item_by_id: dict[int, dict[str, Any]] = {int(r["item_id"]): dict(r) for r in last_enrich_per_item}
         html_by_id: dict[int, dict[str, Any]] = {int(r["item_id"]): dict(r) for r in html_tokens_per_item}
         md_by_id: dict[int, dict[str, Any]] = {int(r["item_id"]): dict(r) for r in md_tokens_per_item}
         merged_per_item: list[dict[str, Any]] = []
-        for item in items:
+        for item in last_items:
             if item.id is None:
                 continue
             item_id = int(item.id)
@@ -594,19 +682,6 @@ def main() -> None:
                 }
             )
 
-        method_out["run_id"] = run_id
-        method_out["db_path"] = str(db_path)
-        method_out["ingest_result"] = {
-            "inserted": ingest_result.inserted,
-            "updated": ingest_result.updated,
-            "failed": ingest_result.failed,
-        }
-        method_out["enrich_result"] = enrich_summary
-        method_out["durations"] = {
-            "ingest_ms": ingest_ms,
-            "enrich_ms": enrich_summary.get("enrich_ms"),
-            "total_ms": total_ms,
-        }
         method_out["tokens"] = {
             "html_document": html_tokens_summary,
             "html_document_md": md_tokens_summary,
@@ -635,8 +710,8 @@ def main() -> None:
         delta = ((r.get("tokens") or {}).get("delta") or {}).get("full_tokens_sum_delta")
         table.add_row(
             method,
-            str(r["durations"].get("ingest_ms")),
-            str(r["durations"].get("enrich_ms")),
+            str((r.get("durations") or {}).get("ingest_ms_median")),
+            str((r.get("durations") or {}).get("enrich_ms_median")),
             str(html_sum),
             str(md_sum),
             str(delta),

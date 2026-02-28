@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from recoleta.models import Analysis, Content, Delivery, Item
 from recoleta.types import AnalysisResult, ItemDraft
 
 
 class RepositoryPort(Protocol):
+    engine: Any
+
+    def sql_diagnostics(self) -> Any: ...
+
     def record_metric(self, *, run_id: str, name: str, value: float, unit: str | None = None) -> None: ...
 
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]: ...
@@ -18,7 +22,11 @@ class RepositoryPort(Protocol):
 
     def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None: ...
 
+    def get_latest_content_texts(self, *, item_id: int, content_types: list[str]) -> dict[str, str | None]: ...
+
     def get_latest_contents(self, *, item_ids: list[int], content_type: str) -> dict[int, Content]: ...
+
+    def upsert_contents_texts(self, *, item_id: int, texts_by_type: dict[str, str]) -> int: ...
 
     def upsert_content(
         self,
