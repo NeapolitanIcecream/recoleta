@@ -11,6 +11,7 @@ def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(monkeypa
     monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.delenv("RECOLETA_CONFIG_PATH", raising=False)
 
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
