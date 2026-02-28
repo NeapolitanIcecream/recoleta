@@ -1,4 +1,4 @@
-# Performance rollback policy (enrich html_document/html_md)
+# Performance rollback policy (arXiv html_document -> html_document_md)
 
 ## Kill switches
 - `SOURCES.arxiv.html_document_max_concurrency=1` or `SOURCES.arxiv.html_document_enable_parallel=false`: disable parallel enrich.

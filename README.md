@@ -56,6 +56,7 @@ flowchart LR
 - **Python**: >= 3.14
 - **Package manager**: [`uv`](https://docs.astral.sh/uv/) (recommended)
 - **LLM provider** supported by LiteLLM (e.g. OpenAI / Anthropic)
+- **Pandoc** (recommended): used to generate `html_document_md` from arXiv `html_document` when available
 - **Optional integrations**:
   - Obsidian Vault (for writing notes directly into Obsidian)
   - Telegram Bot token + destination chat ID (for mobile digest)
@@ -210,6 +211,9 @@ Common optional knobs:
   - `hn.rss_urls`
   - `rss.feeds`
   - `arxiv.queries`, `arxiv.max_results_per_run`
+  - `arxiv.enrich_method`, `arxiv.enrich_failure_mode`
+  - `arxiv.html_document_max_concurrency`, `arxiv.html_document_requests_per_second`
+  - `arxiv.html_document_log_sample_rate`
   - `openreview.venues`
   - `hf_daily.enabled`
 - **Relevance & filtering**:
