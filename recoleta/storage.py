@@ -485,6 +485,51 @@ class Repository:
             session.refresh(content)
             return content
 
+    def upsert_content_with_inserted(
+        self,
+        *,
+        item_id: int,
+        content_type: str,
+        text: str | None,
+        artifact_path: str | None = None,
+    ) -> tuple[Content, bool]:
+        """Upsert a single content row and report whether it inserted a new record."""
+
+        if text is None and artifact_path is None:
+            raise ValueError("Either text or artifact_path must be provided")
+        normalized_text = text.strip() if isinstance(text, str) else None
+        if normalized_text == "":
+            raise ValueError("text must not be empty")
+
+        if normalized_text is not None:
+            content_hash = sha256_hex(normalized_text)
+        else:
+            resolved = Path(str(artifact_path)).expanduser().resolve()
+            content_hash = hashlib.sha256(resolved.read_bytes()).hexdigest()
+
+        with Session(self.engine) as session:
+            existing = session.exec(
+                select(Content).where(
+                    Content.item_id == item_id,
+                    Content.content_type == content_type,
+                    Content.content_hash == content_hash,
+                )
+            ).first()
+            if existing is not None:
+                return existing, False
+
+            content = Content(
+                item_id=item_id,
+                content_type=content_type,
+                text=normalized_text,
+                artifact_path=artifact_path,
+                content_hash=content_hash,
+            )
+            session.add(content)
+            self._commit(session)
+            session.refresh(content)
+            return content, True
+
     def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis:
         with Session(self.engine) as session:
             analysis = session.exec(select(Analysis).where(Analysis.item_id == item_id)).first()

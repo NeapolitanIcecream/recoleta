@@ -37,6 +37,15 @@ class RepositoryPort(Protocol):
         artifact_path: str | None = None,
     ) -> Content: ...
 
+    def upsert_content_with_inserted(
+        self,
+        *,
+        item_id: int,
+        content_type: str,
+        text: str | None,
+        artifact_path: str | None = None,
+    ) -> tuple[Content, bool]: ...
+
     def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis: ...
 
     def mark_item_enriched(self, *, item_id: int) -> None: ...

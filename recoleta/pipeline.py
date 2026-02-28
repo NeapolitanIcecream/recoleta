@@ -1457,9 +1457,14 @@ class PipelineService:
                 if bool(self.settings.sources.arxiv.html_document_use_batched_db_writes):
                     inserted = self.repository.upsert_contents_texts(item_id=item_id, texts_by_type=pending_upserts)
                 else:
+                    inserted = 0
                     for ctype, text in pending_upserts.items():
-                        self.repository.upsert_content(item_id=item_id, content_type=ctype, text=text)
-                    inserted = len(pending_upserts)
+                        _, did_insert = self.repository.upsert_content_with_inserted(
+                            item_id=item_id,
+                            content_type=ctype,
+                            text=text,
+                        )
+                        inserted += 1 if did_insert else 0
                 if diag is not None:
                     diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
                         (time.perf_counter() - db_write_started) * 1000
@@ -1517,9 +1522,14 @@ class PipelineService:
             if bool(self.settings.sources.arxiv.html_document_use_batched_db_writes):
                 inserted = self.repository.upsert_contents_texts(item_id=item_id, texts_by_type=pending_upserts_new)
             else:
+                inserted = 0
                 for ctype, text in pending_upserts_new.items():
-                    self.repository.upsert_content(item_id=item_id, content_type=ctype, text=text)
-                inserted = len(pending_upserts_new)
+                    _, did_insert = self.repository.upsert_content_with_inserted(
+                        item_id=item_id,
+                        content_type=ctype,
+                        text=text,
+                    )
+                    inserted += 1 if did_insert else 0
             if diag is not None:
                 diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
                     (time.perf_counter() - db_write_started) * 1000
