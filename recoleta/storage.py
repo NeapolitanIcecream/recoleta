@@ -573,8 +573,6 @@ class Repository:
                     model=result.model,
                     provider=result.provider,
                     summary=result.summary,
-                    insight=result.insight,
-                    idea_directions_json=_to_json(result.idea_directions),
                     topics_json=_to_json(result.topics),
                     relevance_score=result.relevance_score,
                     novelty_score=result.novelty_score,
@@ -585,8 +583,6 @@ class Repository:
                 analysis.model = result.model
                 analysis.provider = result.provider
                 analysis.summary = result.summary
-                analysis.insight = result.insight
-                analysis.idea_directions_json = _to_json(result.idea_directions)
                 analysis.topics_json = _to_json(result.topics)
                 analysis.relevance_score = result.relevance_score
                 analysis.novelty_score = result.novelty_score

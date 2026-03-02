@@ -33,7 +33,7 @@ publish_targets:
 
 ## LLM behavior
 
-# Optional language hint for LLM-generated text fields (summary/insight/idea_directions).
+# Optional language hint for LLM-generated text fields (summary).
 # JSON keys remain English and topics remain concise English tags.
 # llm_output_language: null  # Default: null
 

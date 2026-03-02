@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Recoleta delivers a small number of curated insights to Telegram. Delivery must be async-friendly, handle flood limits, and provide robust error handling.
+Recoleta delivers a small number of curated summaries to Telegram. Delivery must be async-friendly, handle flood limits, and provide robust error handling.
 
 ## Decision
 Use `python-telegram-bot` as the Telegram Bot API client, leveraging its async API and rate limiting patterns.

@@ -61,8 +61,6 @@ class AnalysisResult:
     model: str
     provider: str
     summary: str
-    insight: str
-    idea_directions: list[str]
     topics: list[str]
     relevance_score: float
     novelty_score: float | None

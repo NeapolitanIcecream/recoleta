@@ -41,7 +41,7 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Runs/<run_id>.md`: per-run index (same content as `latest.md`)
 - `Inbox/`: one note per published item
 
-Each item note contains YAML frontmatter and the sections: `Summary`, `Insight`, `Ideas`, `Links`.
+Each item note contains YAML frontmatter and the sections: `Summary`, `Links`.
 
 ## CLI UX
 

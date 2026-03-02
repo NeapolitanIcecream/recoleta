@@ -4,7 +4,7 @@ This document defines how Recoleta controls the natural language used in LLM-gen
 
 ## Goals
 
-- Let users configure the output language for `summary`, `insight`, and `idea_directions`.
+- Let users configure the output language for `summary`.
 - Keep structured output schema stable so existing validation and storage continue to work.
 - Avoid regressions in publish filtering based on `topics` tags.
 
@@ -36,7 +36,7 @@ Validation rules:
 
 When `llm_output_language` is set, Recoleta appends language instructions in the analyzer system message:
 
-- `summary`, `insight`, and `idea_directions` values should use the configured language.
+- `summary` should use the configured language.
 - JSON keys must remain in English.
 - `topics` should remain concise English tags.
 

@@ -31,7 +31,7 @@ Secrets:
 
 Optional LLM behavior:
 
-- `LLM_OUTPUT_LANGUAGE`: preferred output language for LLM-generated `summary`, `insight`, and `idea_directions`.
+- `LLM_OUTPUT_LANGUAGE`: preferred output language for LLM-generated `summary`.
   - JSON keys remain English.
   - `topics` remain concise English tags for downstream allow/deny filtering.
   - Empty value means unset.

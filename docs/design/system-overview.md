@@ -1,17 +1,15 @@
 # Recoleta System Overview
 
-Recoleta is a personal research intelligence funnel. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw/normalized records, uses an LLM to extract trends and produce high-signal summaries/insights/idea directions, then publishes the selected outputs to **local Markdown by default** (with optional Obsidian and Telegram integrations).
+Recoleta is a personal research intelligence funnel. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw/normalized records, uses an LLM to produce high-signal summaries, then publishes the selected outputs to **local Markdown by default** (with optional Obsidian and Telegram integrations).
 
 ## Goals
 
 - Ingest heterogeneous sources into a **single normalized item model**.
 - Run **incremental** processing (idempotent, resumable, deduplicated).
 - Use LLM to produce:
-  - concise summary
-  - short insight (why it matters)
-  - idea directions (what to try next)
+  - high-signal summary
   - topic tags and a relevance score against user-defined interests
-- Publish the best insights to one or more user-facing targets:
+- Publish the best summaries to one or more user-facing targets:
   - local Markdown output (default)
   - Obsidian Vault (optional)
   - Telegram (optional, mobile digest)

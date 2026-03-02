@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Recoleta produces user-facing `summary`, `insight`, and `idea_directions` fields via LLM, but language is currently implicit and not configurable.
+Recoleta produces user-facing `summary` via LLM, but language is currently implicit and not configurable.
 
 ## Decision
 Add optional `LLM_OUTPUT_LANGUAGE` (`llm_output_language`) to typed settings and inject it into the analyzer system message. Keep JSON keys in English and keep `topics` as concise English tags.

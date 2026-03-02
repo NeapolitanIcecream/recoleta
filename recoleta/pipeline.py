@@ -1929,10 +1929,6 @@ class PipelineService:
                                 relevance_score=analysis.relevance_score,
                                 run_id=run_id,
                                 summary=analysis.summary,
-                                insight=analysis.insight,
-                                ideas=self.repository.decode_list(
-                                    analysis.idea_directions_json
-                                ),
                             )
                         )
                     if enable_markdown:
@@ -1948,10 +1944,6 @@ class PipelineService:
                             relevance_score=analysis.relevance_score,
                             run_id=run_id,
                             summary=analysis.summary,
-                            insight=analysis.insight,
-                            ideas=self.repository.decode_list(
-                                analysis.idea_directions_json
-                            ),
                         )
                         markdown_notes.append((item.title, md_note_path))
                         note_paths.append(md_note_path)
@@ -1963,7 +1955,6 @@ class PipelineService:
                         message_text = build_telegram_message(
                             title=item.title,
                             summary=analysis.summary,
-                            insight=analysis.insight,
                             url=item.canonical_url,
                         )
                         if self.telegram_sender is None:

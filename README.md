@@ -43,7 +43,7 @@ flowchart LR
 
 - **Multi-source ingestion**: arXiv, Hacker News RSS, Hugging Face Daily Papers, OpenReview, and custom RSS feeds.
 - **Incremental & idempotent pipeline**: SQLite-backed state machine prevents duplicates and re-sends.
-- **Structured LLM outputs**: JSON-only analysis validated by Pydantic (summary/insight/ideas/tags/scores).
+- **Structured LLM outputs**: JSON-only analysis validated by Pydantic (summary/tags/scores).
 - **Semantic triage before LLM (optional)**: pre-rank (and optionally filter) candidates by topic similarity to improve LLM ROI under backlog.
 - **Outputs where you read**: local Markdown output (default) + optional Obsidian notes + optional curated Telegram digest.
 - **Operationally friendly**: structured logs, per-run metrics in SQLite, optional scrubbed debug artifacts.
@@ -101,7 +101,7 @@ publish_targets:
 # Local Markdown output directory (default: platform-specific user data dir + /outputs)
 markdown_output_dir: "~/.local/share/recoleta/outputs"
 
-# Optional: language for summary/insight/idea text.
+# Optional: language for summary text.
 # JSON keys stay in English and topics remain English tags.
 llm_output_language: "Chinese (Simplified)"
 
@@ -149,10 +149,17 @@ uv run recoleta analyze --limit 50
 uv run recoleta publish --limit 20
 ```
 
+Or run the full pipeline once (no scheduler):
+
+```bash
+uv run recoleta run --once --analyze-limit 50 --publish-limit 20
+```
+
 Command intent:
 - `recoleta ingest`: prepare backlog (ingest + enrich + optional semantic triage)
 - `recoleta analyze`: Stage 4 only (LLM on prepared items)
 - `recoleta publish`: deliver analyzed items
+ - `recoleta run --once`: run `ingest -> analyze -> publish` once and exit
 
 Where to look next:
 
@@ -212,7 +219,7 @@ Conditionally required:
 Common optional knobs:
 
 - **LLM output language**:
-  - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary`, `insight`, `idea_directions`; JSON keys and `topics` stay English)
+  - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary`; JSON keys and `topics` stay English)
 - **Sources**: `SOURCES` / `sources`
   - `hn.enabled`, `hn.rss_urls`
   - `rss.enabled`, `rss.feeds`

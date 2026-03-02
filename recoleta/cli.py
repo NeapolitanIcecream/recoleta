@@ -302,18 +302,44 @@ def db_reset(
 
 
 @app.command("run")
-def run_scheduler() -> None:
-    """Run periodic ingest/analyze/publish jobs with APScheduler."""
+def run_scheduler(
+    once: bool = typer.Option(
+        False,
+        "--once",
+        help="Run ingest/analyze/publish once and exit (no scheduler).",
+    ),
+    analyze_limit: int | None = typer.Option(
+        None,
+        "--analyze-limit",
+        min=1,
+        help="Max number of items analyzed in the one-off run. Defaults to ANALYZE_LIMIT.",
+    ),
+    publish_limit: int = typer.Option(
+        50,
+        "--publish-limit",
+        min=1,
+        help="Max number of analyzed items published in the one-off run.",
+    ),
+) -> None:
+    """Run periodic ingest/analyze/publish jobs with APScheduler (or run once)."""
 
     symbols = _runtime_symbols()
+
+    if once:
+        _run_pipeline_once(
+            analyze_limit=analyze_limit,
+            publish_limit=publish_limit,
+        )
+        return
+
     console_cls = symbols["Console"]
+    settings, _, _ = _build_runtime()
+    console = console_cls(stderr=settings.log_json)
+
     blocking_scheduler_cls = _import_symbol(
         "apscheduler.schedulers.blocking",
         attr_name="BlockingScheduler",
     )
-
-    settings, _, _ = _build_runtime()
-    console = console_cls(stderr=settings.log_json)
     scheduler = blocking_scheduler_cls(
         timezone="UTC",
         executors={"default": {"type": "threadpool", "max_workers": 1}},
@@ -361,6 +387,55 @@ def run_scheduler() -> None:
     )
     console.print("[cyan]scheduler started[/cyan]")
     scheduler.start()
+
+
+def _run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None:
+    """Run prepare -> analyze -> publish once under one run_id."""
+
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    console_cls = symbols["Console"]
+
+    settings, repository, service = _build_runtime()
+    console = console_cls(stderr=settings.log_json)
+    run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
+    log = logger.bind(module="cli.run.once", run_id=run.id)
+
+    try:
+        ingest_result = service.prepare(run_id=run.id)
+        analyze_result = service.analyze(run_id=run.id, limit=analyze_limit)
+        publish_result = service.publish(run_id=run.id, limit=publish_limit)
+        repository.finish_run(run.id, success=True)
+    except KeyboardInterrupt:
+        try:
+            repository.finish_run(run.id, success=False)
+        except Exception:
+            log.exception("Run finish failed during interrupt")
+        log.warning("Run interrupted")
+        raise typer.Exit(code=130) from None
+    except Exception:
+        repository.finish_run(run.id, success=False)
+        log.exception("Run failed")
+        raise
+
+    console.print(
+        "[green]run --once completed[/green] "
+        f"ingest(inserted={ingest_result.inserted} updated={ingest_result.updated} failed={ingest_result.failed}) "
+        f"analyze(processed={analyze_result.processed} failed={analyze_result.failed}) "
+        f"publish(sent={publish_result.sent} skipped={publish_result.skipped} failed={publish_result.failed})"
+    )
+    if "markdown" in settings.publish_targets:
+        console.print(f"[cyan]markdown output[/cyan] {settings.markdown_output_dir}")
+        console.print(
+            f"[cyan]latest index[/cyan] {settings.markdown_output_dir / 'latest.md'}"
+        )
+    if (
+        "obsidian" in settings.publish_targets
+        and settings.obsidian_vault_path is not None
+    ):
+        console.print(
+            f"[cyan]obsidian notes[/cyan] {settings.obsidian_vault_path / settings.obsidian_base_folder / 'Inbox'}"
+        )
 
 
 def main() -> None:

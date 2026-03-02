@@ -57,8 +57,6 @@ LLM outputs (validated structured payload).
 - `model` (text): e.g. `openai.gpt-4o-mini`
 - `provider` (text): LiteLLM provider label
 - `summary` (text)
-- `insight` (text)
-- `idea_directions_json` (text): list[string]
 - `topics_json` (text): list[string]
 - `relevance_score` (real): 0..1
 - `novelty_score` (real, nullable): 0..1
@@ -162,8 +160,6 @@ Minimal frontmatter:
 Body sections (recommended):
 
 - `## Summary`
-- `## Insight`
-- `## Ideas`
 - `## Links` (canonical + PDF + related threads)
 
 ## Local Markdown output layout

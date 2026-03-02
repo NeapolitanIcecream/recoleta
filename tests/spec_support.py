@@ -31,11 +31,6 @@ class FakeAnalyzer:
             model="test/fake-model",
             provider="test",
             summary=f"Summary for {title}",
-            insight="This matters because it aligns with user interests.",
-            idea_directions=[
-                "Try reproducing the approach.",
-                "Benchmark against a baseline.",
-            ],
             topics=user_topics[:2] or ["general"],
             relevance_score=0.92,
             novelty_score=0.55,
@@ -54,7 +49,6 @@ class FakeAnalyzer:
             },
             response={
                 "summary": result.summary,
-                "insight": result.insight,
                 "relevance_score": result.relevance_score,
             },
         )

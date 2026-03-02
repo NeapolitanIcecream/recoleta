@@ -101,8 +101,6 @@ Responsibilities:
 - For each prepared item, load **already stored** content (for arXiv, follow the configured enrich method; otherwise prefer `pdf_text`, then `html_maintext`).
 - Call LiteLLM to produce structured output:
   - summary
-  - insight
-  - idea_directions (list)
   - topics/tags
   - relevance score against user topics
   - novelty score (optional)

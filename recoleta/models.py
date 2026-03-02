@@ -79,8 +79,6 @@ class Analysis(SQLModel, table=True):
     model: str = Field(max_length=128)
     provider: str = Field(max_length=64)
     summary: str = Field(sa_type=Text)
-    insight: str = Field(sa_type=Text)
-    idea_directions_json: str = Field(default="[]", sa_type=Text)
     topics_json: str = Field(default="[]", sa_type=Text)
     relevance_score: float = 0.0
     novelty_score: float | None = None

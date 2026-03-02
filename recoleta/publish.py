@@ -50,8 +50,6 @@ def write_obsidian_note(
     relevance_score: float,
     run_id: str,
     summary: str,
-    insight: str,
-    ideas: list[str],
 ) -> Path:
     note_dir = vault_path / base_folder / "Inbox"
     note_dir.mkdir(parents=True, exist_ok=True)
@@ -83,13 +81,7 @@ def write_obsidian_note(
         "",
         "## Summary",
         summary.strip(),
-        "",
-        "## Insight",
-        insight.strip(),
-        "",
-        "## Ideas",
     ]
-    lines.extend(_format_ideas_markdown(ideas))
     lines.extend(
         [
             "",
@@ -115,8 +107,6 @@ def write_markdown_note(
     relevance_score: float,
     run_id: str,
     summary: str,
-    insight: str,
-    ideas: list[str],
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
@@ -147,13 +137,7 @@ def write_markdown_note(
         "",
         "## Summary",
         summary.strip(),
-        "",
-        "## Insight",
-        insight.strip(),
-        "",
-        "## Ideas",
     ]
-    lines.extend(_format_ideas_markdown(ideas))
     lines.extend(
         [
             "",
@@ -224,58 +208,5 @@ def write_markdown_run_index(
     return latest_path
 
 
-def build_telegram_message(*, title: str, summary: str, insight: str, url: str) -> str:
-    return (
-        f"{title}\n\n"
-        f"Summary: {summary.strip()}\n\n"
-        f"Why it matters: {insight.strip()}\n\n"
-        f"Link: {url}"
-    )
-
-
-def _format_ideas_markdown(ideas: list[str]) -> list[str]:
-    lines: list[str] = []
-    for raw in ideas:
-        idea = str(raw or "").strip()
-        if not idea:
-            continue
-        parsed = _parse_structured_direction(idea)
-        if parsed is None:
-            lines.append(f"- {idea}")
-            continue
-        lines.extend(
-            [
-                f"- **Opportunity**: {parsed['opportunity']}",
-                f"  - **Why now**: {parsed['why_now']}",
-                f"  - **Example bet**: {parsed['example_bet']}",
-            ]
-        )
-    return lines
-
-
-def _parse_structured_direction(text: str) -> dict[str, str] | None:
-    """Parse one-line structured direction.
-
-    Expected format:
-    "Opportunity: ... | Why now: ... | Example bet: ..."
-    """
-
-    normalized = " ".join(str(text).strip().split())
-    if not normalized:
-        return None
-    parts = [part.strip() for part in normalized.split("|")]
-    if len(parts) != 3:
-        return None
-
-    def strip_prefix(value: str, prefix: str) -> str | None:
-        if value.lower().startswith(prefix.lower()):
-            remainder = value[len(prefix) :].strip()
-            return remainder or None
-        return None
-
-    opportunity = strip_prefix(parts[0], "Opportunity:")
-    why_now = strip_prefix(parts[1], "Why now:")
-    example_bet = strip_prefix(parts[2], "Example bet:")
-    if opportunity is None or why_now is None or example_bet is None:
-        return None
-    return {"opportunity": opportunity, "why_now": why_now, "example_bet": example_bet}
+def build_telegram_message(*, title: str, summary: str, url: str) -> str:
+    return f"{title}\n\nSummary: {summary.strip()}\n\nLink: {url}"

@@ -34,8 +34,6 @@ class Analyzer(Protocol):
 
 class _AnalysisPayload(BaseModel):
     summary: str
-    insight: str
-    idea_directions: list[str]
     topics: list[str]
     relevance_score: float = Field(ge=0.0, le=1.0)
     novelty_score: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -87,8 +85,6 @@ class LiteLLMAnalyzer:
             model=self.model,
             provider=provider,
             summary=payload.summary,
-            insight=payload.insight,
-            idea_directions=payload.idea_directions,
             topics=payload.topics,
             relevance_score=payload.relevance_score,
             novelty_score=payload.novelty_score,
@@ -127,28 +123,32 @@ class LiteLLMAnalyzer:
         if max_chars > 0 and len(trimmed_content) > max_chars:
             trimmed_content = trimmed_content[:max_chars] + "\n...[truncated]..."
         return (
-            "Analyze one research item and return a single JSON object with keys: "
-            "summary, insight, idea_directions, topics, relevance_score, novelty_score.\n"
-            "\n"
-            "You are writing for a smart but busy technical lead. Prefer plain language over jargon.\n"
+            "Read the following research paper and return a single JSON object with keys: "
+            "summary, topics, relevance_score, novelty_score.\n"
             "\n"
             "Hard requirements (must follow):\n"
-            "- Output MUST be strict JSON only. No markdown, no extra keys, no code fences.\n"
-            "- summary: <= 4 short sentences. Describe what it is and what changed. Avoid numbers unless essential.\n"
-            "- insight: <= 3 short sentences. It must be a NEW VIEWPOINT (not a contribution list).\n"
-            '  - Sentence 1 MUST use the pattern: "It reframes <X> from <A> to <B>."\n'
-            "  - Sentence 2: why this viewpoint is different from the default/previous framing.\n"
-            "  - Sentence 3: the broader implication (why it matters beyond this single paper).\n"
-            "- idea_directions: 3 to 5 items. Each item is a BROAD, GENERALIZABLE direction for the broader LLM scope.\n"
-            "  - Do NOT propose direct next-step improvements of this paper.\n"
-            '  - Each item MUST include three labeled parts in one line: "Opportunity: ... | Why now: ... | Example bet: ..."\n'
-            "- topics: 3 to 6 concise English tags in lower-kebab-case (e.g. tool-use-agents). No spaces.\n"
+            "- Output MUST be strict JSON only. No markdown outside JSON, no extra keys, no code fences.\n"
+            "- summary: a high-signal TL;DR in Markdown (inside the string).\n"
+            "  - Answer these questions explicitly:\n"
+            "    1) What problem does it solve, and why does it matter?\n"
+            "    2) What is the core method/mechanism? Explain in the simplest possible terms.\n"
+            "    3) What breakthrough results does it claim? Include numbers when available (metric/dataset/baseline/comparison).\n"
+            "  - Use this structure:\n"
+            "    - TL;DR: one sentence\n"
+            "    - Problem: 1-3 bullets\n"
+            "    - Approach: 2-5 bullets\n"
+            "    - Results: 2-6 bullets with numbers; if the provided text has no quantitative results, say so and list the strongest concrete claims.\n"
+            "- topics: 3 to 6 concise English tags in lower-kebab-case. No spaces.\n"
             "- relevance_score and novelty_score in [0,1].\n"
             "\n"
-            f"User topics: {serialized_topics}\n"
+            f"User topics (for relevance scoring only): {serialized_topics}\n"
             f"Title: {title}\n"
             f"URL: {canonical_url}\n"
-            + (f"Content excerpt:\n{trimmed_content}\n" if trimmed_content else "")
+            + (
+                f"Paper content (excerpt):\n{trimmed_content}\n"
+                if trimmed_content
+                else ""
+            )
         )
 
     def _build_system_message(self) -> str:
@@ -156,7 +156,7 @@ class LiteLLMAnalyzer:
         if not self.output_language:
             return base_message
         return (
-            f"{base_message} Use {self.output_language} for summary, insight, and idea_directions values. "
+            f"{base_message} Use {self.output_language} for the summary value. "
             "Keep all JSON keys in English and keep topics as concise English tags."
         )
 

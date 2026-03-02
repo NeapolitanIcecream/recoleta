@@ -12,8 +12,6 @@ def _mock_response_content() -> str:
     return json.dumps(
         {
             "summary": "Short summary",
-            "insight": "Useful insight",
-            "idea_directions": ["Direction one", "Direction two"],
             "topics": ["agents", "llm"],
             "relevance_score": 0.9,
             "novelty_score": 0.4,
@@ -47,10 +45,7 @@ def test_analyzer_system_message_includes_output_language(
     assert result.summary == "Short summary"
     assert debug is not None
     system_message = captured_messages[0]["content"]
-    assert (
-        "Use Chinese (Simplified) for summary, insight, and idea_directions values."
-        in system_message
-    )
+    assert "Use Chinese (Simplified) for the summary value." in system_message
     assert (
         "Keep all JSON keys in English and keep topics as concise English tags."
         in system_message
