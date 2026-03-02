@@ -1747,9 +1747,22 @@ class PipelineService:
             if not pdf_url:
                 raise ValueError("missing pdf url")
             pdf_bytes = fetch_url_bytes(client, pdf_url)
-            extracted_pdf = extract_pdf_text(pdf_bytes)
+            pdf_diag: dict[str, Any] = {}
+            extracted_pdf = extract_pdf_text(
+                pdf_bytes,
+                marker_device=self.settings.marker_torch_device,
+                diag=pdf_diag,
+            )
             if extracted_pdf is None:
                 raise RuntimeError("empty pdf text extraction")
+            pdf_backend = str(pdf_diag.get("pdf_backend") or "").strip().lower()
+            if pdf_backend == "marker":
+                log.bind(
+                    item_id=item_id,
+                    pdf_backend="marker",
+                    pdf_has_text_layer=bool(pdf_diag.get("pdf_has_text_layer")),
+                    pymupdf4llm_md_chars=int(pdf_diag.get("pymupdf4llm_md_chars") or 0),
+                ).info("PDF extracted via marker")
             self.repository.upsert_content(
                 item_id=item_id,
                 content_type="pdf_text",

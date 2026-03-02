@@ -358,6 +358,10 @@ class Settings(BaseSettings):
         default=None, validation_alias="LLM_OUTPUT_LANGUAGE"
     )
 
+    marker_torch_device: str | None = Field(
+        default=None, validation_alias="MARKER_TORCH_DEVICE"
+    )
+
     obsidian_vault_path: Path | None = Field(
         default=None, validation_alias="OBSIDIAN_VAULT_PATH"
     )

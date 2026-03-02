@@ -21,7 +21,7 @@ from tenacity import (
 )
 
 
-_MARKER_PDF_CONVERTER: Any | None = None
+_MARKER_PDF_CONVERTERS: dict[str, Any] = {}
 _PYMUPDF: Any | None = None
 _PYMUPDF4LLM: Any | None = None
 _PYMUPDF_READY: bool | None = None
@@ -210,17 +210,27 @@ def extract_html_maintext(html: str) -> str | None:
     return stripped or None
 
 
-def _get_marker_pdf_converter() -> Any:
-    global _MARKER_PDF_CONVERTER
-    if _MARKER_PDF_CONVERTER is not None:
-        return _MARKER_PDF_CONVERTER
+def _get_marker_pdf_converter(marker_device: str | None = None) -> Any:
+    device_key = str(marker_device or "").strip().lower()
+    cached = _MARKER_PDF_CONVERTERS.get(device_key)
+    if cached is not None:
+        return cached
 
     with _external_progress_disabled():
         from marker.converters.pdf import PdfConverter
         from marker.models import create_model_dict
 
-        _MARKER_PDF_CONVERTER = PdfConverter(artifact_dict=create_model_dict())
-    return _MARKER_PDF_CONVERTER
+        device = str(marker_device).strip() if marker_device else None
+        models = create_model_dict(device=device) if device else create_model_dict()
+        converter = PdfConverter(artifact_dict=models)
+
+    _MARKER_PDF_CONVERTERS[device_key] = converter
+    return converter
+
+
+def _is_meta_tensor_failure(exc: BaseException) -> bool:
+    message = str(exc or "").lower()
+    return ("meta tensor" in message) or ("to_empty()" in message)
 
 
 def _get_pymupdf_module() -> Any | None:
@@ -299,15 +309,37 @@ def _extract_pdf_text_with_pymupdf4llm(doc: Any) -> str | None:
     return normalized or None
 
 
-def _extract_pdf_text_with_marker(pdf_bytes: bytes) -> str | None:
+def _extract_pdf_text_with_marker(
+    pdf_bytes: bytes,
+    *,
+    marker_device: str | None = None,
+    diag: dict[str, Any] | None = None,
+) -> str | None:
     if not pdf_bytes:
         return None
-    converter = _get_marker_pdf_converter()
+    converter = (
+        _get_marker_pdf_converter()
+        if marker_device is None
+        else _get_marker_pdf_converter(marker_device)
+    )
     with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
         tmp.write(pdf_bytes)
         tmp.flush()
         with _external_progress_disabled():
-            rendered = converter(tmp.name)
+            try:
+                rendered = converter(tmp.name)
+            except Exception as exc:
+                # Marker/Surya can fail to materialize weights on some devices (e.g., MPS).
+                # Retry once on CPU when we detect the meta-tensor failure signature.
+                if (
+                    _is_meta_tensor_failure(exc)
+                    and str(marker_device or "").strip().lower() != "cpu"
+                ):
+                    if diag is not None:
+                        diag["marker_retry_cpu"] = True
+                    rendered = _get_marker_pdf_converter("cpu")(tmp.name)
+                else:
+                    raise
 
     markdown = getattr(rendered, "markdown", None)
     if isinstance(markdown, str) and markdown.strip():
@@ -324,7 +356,21 @@ def _extract_pdf_text_with_marker(pdf_bytes: bytes) -> str | None:
     return None
 
 
-def extract_pdf_text(pdf_bytes: bytes) -> str | None:
+def _pdf_markdown_looks_useful(markdown: str | None, *, min_chars: int) -> bool:
+    normalized = str(markdown or "").strip()
+    if not normalized:
+        return False
+    # Ignore whitespace to avoid accepting empty layout artifacts.
+    dense_chars = len("".join(normalized.split()))
+    return dense_chars >= min_chars
+
+
+def extract_pdf_text(
+    pdf_bytes: bytes,
+    *,
+    marker_device: str | None = None,
+    diag: dict[str, Any] | None = None,
+) -> str | None:
     if not pdf_bytes:
         return None
     pymupdf = _get_pymupdf_module()
@@ -337,16 +383,33 @@ def extract_pdf_text(pdf_bytes: bytes) -> str | None:
 
         if doc is not None:
             try:
-                if _pdf_has_text_layer(doc):
-                    pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(doc)
-                    if pymupdf_markdown is not None:
-                        return pymupdf_markdown
+                has_text_layer = _pdf_has_text_layer(doc)
+                if diag is not None:
+                    diag["pdf_has_text_layer"] = bool(has_text_layer)
+
+                pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(doc)
+                if diag is not None:
+                    diag["pymupdf4llm_md_chars"] = len(str(pymupdf_markdown or ""))
+
+                # Prefer pymupdf4llm when it returns any meaningful markdown, even if the
+                # text-layer heuristic is inconclusive (e.g., short introductions).
+                # When `has_text_layer` is false, the PDF can still be digital but short.
+                # Prefer accepting small-but-non-empty outputs to avoid unnecessary OCR.
+                min_chars = 24
+                if _pdf_markdown_looks_useful(pymupdf_markdown, min_chars=min_chars):
+                    if diag is not None:
+                        diag["pdf_backend"] = "pymupdf4llm"
+                    return str(pymupdf_markdown).strip()
             finally:
                 try:
                     doc.close()
                 except Exception:
                     pass
-    return _extract_pdf_text_with_marker(pdf_bytes)
+    if diag is not None:
+        diag["pdf_backend"] = "marker"
+    return _extract_pdf_text_with_marker(
+        pdf_bytes, marker_device=marker_device, diag=diag
+    )
 
 
 def _decode_text_bytes(payload: bytes) -> str | None:
@@ -544,6 +607,10 @@ def extract_html_document_cleaned_with_references(
         # Strip most attributes to reduce pandoc emitting raw HTML. Preserve a small allowlist.
         allowed_attrs = {"colspan", "rowspan", "href", "src", "alt"}
         for tag in container.find_all(True):
+            # Preserve MathML attributes and namespaces. arXiv HTML uses LaTeXML MathML
+            # where attributes like `xmlns` and `encoding` are required for correct parsing.
+            if tag.name == "math" or tag.find_parent("math") is not None:
+                continue
             attrs = dict(getattr(tag, "attrs", {}) or {})
             if not attrs:
                 continue

@@ -893,7 +893,11 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
         raise AssertionError("html fetch should not be used")
 
     monkeypatch.setattr(pipeline, "fetch_url_bytes", fake_fetch_url_bytes)
-    monkeypatch.setattr(pipeline, "extract_pdf_text", lambda _bytes: "mock pdf text")  # noqa: ARG005
+    monkeypatch.setattr(
+        pipeline,
+        "extract_pdf_text",
+        lambda _bytes, **_: "mock pdf text",  # noqa: ARG005
+    )
     monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
 
     service = PipelineService(
