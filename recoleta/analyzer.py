@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from typing import Any, Protocol
 
+from loguru import logger
 from pydantic import BaseModel, Field
+from pydantic import ValidationError
+from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt
+from tenacity.wait import wait_base, wait_exponential_jitter
 
+from recoleta.observability import collect_environment_secrets, scrub_secrets
 from recoleta.types import AnalysisResult, AnalyzeDebug
 
 completion: Any | None = None
+_SCRUB_SECRETS: tuple[str, ...] | None = None
+_retry_sleep: Callable[[float], None] = time.sleep
 
 
 def _get_completion() -> Any:
@@ -37,6 +45,61 @@ class _AnalysisPayload(BaseModel):
     topics: list[str]
     relevance_score: float = Field(ge=0.0, le=1.0)
     novelty_score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class _AnalyzeRetryableError(RuntimeError):
+    pass
+
+
+def _get_scrub_secrets() -> tuple[str, ...]:
+    global _SCRUB_SECRETS  # noqa: PLW0603
+    if _SCRUB_SECRETS is None:
+        _SCRUB_SECRETS = collect_environment_secrets()
+    return _SCRUB_SECRETS
+
+
+def _sanitize_error_message(message: str, *, max_len: int = 400) -> str:
+    scrubbed = scrub_secrets(message, secrets=_get_scrub_secrets())
+    if len(scrubbed) <= max_len:
+        return scrubbed
+    return scrubbed[:max_len] + "...[truncated]"
+
+
+def _should_retry_llm(exc: BaseException) -> bool:
+    try:
+        import litellm
+    except Exception:
+        return isinstance(exc, _AnalyzeRetryableError)
+
+    candidates = (
+        getattr(litellm, "RateLimitError", None),
+        getattr(litellm, "ServiceUnavailableError", None),
+        getattr(litellm, "Timeout", None),
+        getattr(litellm, "APIError", None),
+    )
+    retryable_types = tuple(
+        candidate for candidate in candidates if isinstance(candidate, type)
+    )
+    if retryable_types and isinstance(exc, retryable_types):
+        return True
+    return isinstance(exc, _AnalyzeRetryableError)
+
+
+class _LiteLLMWait(wait_base):
+    def __init__(self) -> None:
+        self._fallback = wait_exponential_jitter(initial=0.5, max=8.0)
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        if retry_state.outcome is None:
+            return self._fallback(retry_state)
+        exc = retry_state.outcome.exception()
+        retry_after = getattr(exc, "retry_after", None)
+        if retry_after is None:
+            return self._fallback(retry_state)
+        try:
+            return max(0.0, min(30.0, float(retry_after)))
+        except Exception:
+            return self._fallback(retry_state)
 
 
 class LiteLLMAnalyzer:
@@ -72,14 +135,70 @@ class LiteLLMAnalyzer:
             {"role": "system", "content": self._build_system_message()},
             {"role": "user", "content": prompt},
         ]
-        response = _get_completion()(
-            model=self.model,
-            messages=messages,
-            response_format={"type": "json_object"},
+
+        log = logger.bind(module="analyzer.llm", model=self.model)
+        retry_attempts: list[dict[str, Any]] = []
+
+        def _before_sleep(retry_state: RetryCallState) -> None:
+            if retry_state.outcome is None:
+                return
+            exc = retry_state.outcome.exception()
+            if exc is None:
+                return
+            sleep_s = 0.0
+            next_action = getattr(retry_state, "next_action", None)
+            if next_action is not None:
+                sleep_s = float(getattr(next_action, "sleep", 0.0) or 0.0)
+
+            retry_attempts.append(
+                {
+                    "attempt": int(retry_state.attempt_number),
+                    "error_type": type(exc).__name__,
+                    "error_message": _sanitize_error_message(str(exc)),
+                    "retryable": bool(_should_retry_llm(exc)),
+                    "sleep_s": sleep_s,
+                }
+            )
+            log.opt(exception=False).warning(
+                "Analyze LLM call retrying attempt={} sleep_s={} error_type={} error={}",
+                retry_state.attempt_number,
+                round(sleep_s, 3),
+                type(exc).__name__,
+                _sanitize_error_message(str(exc)),
+            )
+
+        def _call_and_parse() -> tuple[_AnalysisPayload, str]:
+            response = _get_completion()(
+                model=self.model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+            raw_content = _extract_content(response)
+            try:
+                decoded = json.loads(raw_content)
+            except json.JSONDecodeError as exc:
+                raise _AnalyzeRetryableError(
+                    f"LLM returned invalid JSON: {exc.msg}"
+                ) from exc
+            try:
+                payload = _AnalysisPayload.model_validate(decoded)
+            except ValidationError as exc:
+                raise _AnalyzeRetryableError(
+                    f"LLM returned JSON with invalid schema: {type(exc).__name__}"
+                ) from exc
+            return payload, raw_content
+
+        retrying = Retrying(
+            retry=retry_if_exception(_should_retry_llm),
+            stop=stop_after_attempt(4),
+            wait=_LiteLLMWait(),
+            sleep=_retry_sleep,
+            before_sleep=_before_sleep,
+            reraise=True,
         )
+        payload, raw_content = retrying(_call_and_parse)
+
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        raw_content = _extract_content(response)
-        payload = _AnalysisPayload.model_validate(json.loads(raw_content))
         provider = self.model.split("/", 1)[0] if "/" in self.model else "unknown"
         result = AnalysisResult(
             model=self.model,
@@ -103,6 +222,10 @@ class LiteLLMAnalyzer:
             "elapsed_ms": elapsed_ms,
             "content": raw_content,
             "parsed": payload.model_dump(mode="json"),
+            "retry": {
+                "attempts": retry_attempts,
+                "attempts_total": len(retry_attempts) + 1,
+            },
         }
         return result, AnalyzeDebug(request=request_debug, response=response_debug)
 
