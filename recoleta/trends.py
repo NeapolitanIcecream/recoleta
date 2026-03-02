@@ -65,10 +65,12 @@ def _iter_embedding_batches(
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b):
+        return 0.0
     dot = 0.0
     norm_a = 0.0
     norm_b = 0.0
-    for x, y in zip(a, b, strict=True):
+    for x, y in zip(a, b):
         fx = float(x)
         fy = float(y)
         dot += fx * fy
@@ -224,10 +226,17 @@ def ensure_summary_embeddings_for_period(
     skipped_total = 0
     for cid in chunk_ids:
         row = existing.get(cid)
-        if (
-            row is not None
-            and str(getattr(row, "text_hash", "") or "") == chunk_hashes[cid]
-        ):
+        row_hash = str(getattr(row, "text_hash", "") or "") if row is not None else ""
+        row_dims = getattr(row, "dimensions", None) if row is not None else None
+        dims_match = (
+            (row_dims is None and embedding_dimensions is None)
+            or (
+                row_dims is not None
+                and embedding_dimensions is not None
+                and int(row_dims) == int(embedding_dimensions)
+            )
+        )
+        if row is not None and row_hash == chunk_hashes[cid] and dims_match:
             skipped_total += 1
             continue
         to_embed_ids.append(cid)

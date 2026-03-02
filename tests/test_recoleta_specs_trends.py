@@ -257,6 +257,80 @@ def test_trends_semantic_search_ranks_relevant_summaries_higher(
     assert hits[0].chunk_index == 0
 
 
+def test_trends_semantic_search_reembeds_when_embedding_dimensions_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    _, repository = _build_runtime()
+
+    with Session(repository.engine) as session:
+        doc = Document(
+            doc_type="item",
+            item_id=42,
+            title="Dims",
+            published_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        assert doc.id is not None
+        doc_id = int(doc.id)
+
+    chunk, _ = repository.upsert_document_chunk(
+        doc_id=doc_id,
+        chunk_index=0,
+        kind="summary",
+        text_value="Agents are great.",
+        start_char=0,
+        end_char=None,
+        source_content_type="analysis_summary",
+    )
+    assert chunk.id is not None
+
+    # Seed an old embedding row with a different dimensions value.
+    repository.upsert_chunk_embedding(
+        chunk_id=int(chunk.id),
+        model="test/embed",
+        dimensions=2,
+        text_hash=str(getattr(chunk, "text_hash") or ""),
+        vector=[1.0, 0.0],
+    )
+
+    def fake_embedding(**kwargs):  # type: ignore[no-untyped-def]
+        inputs = kwargs.get("input") or []
+        dims = int(kwargs.get("dimensions") or 3)
+        data = [{"embedding": [1.0] + [0.0] * (dims - 1)} for _ in inputs]
+        return {"data": data, "usage": {"inputs": len(inputs)}}
+
+    import recoleta.trends as trends
+
+    monkeypatch.setattr(trends, "embedding", fake_embedding)
+
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+    hits = semantic_search_summaries_in_period(
+        repository=repository,
+        run_id="run-dims",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        query="agents",
+        embedding_model="test/embed",
+        embedding_dimensions=3,
+        max_batch_inputs=64,
+        max_batch_chars=40000,
+        limit=5,
+        corpus_limit=10,
+    )
+    assert hits
+
+    updated = repository.get_chunk_embedding(chunk_id=int(chunk.id), model="test/embed")
+    assert updated is not None
+    assert updated.dimensions == 3
+
+
 def test_trends_period_overlap_includes_cross_boundary_trend_docs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
