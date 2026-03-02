@@ -255,3 +255,54 @@ def test_trends_semantic_search_ranks_relevant_summaries_higher(
     assert hits
     assert hits[0].doc_id == doc_a_id
     assert hits[0].chunk_index == 0
+
+
+def test_trends_period_overlap_includes_cross_boundary_trend_docs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    _, repository = _build_runtime()
+
+    # Month window: 2026-03-01..2026-04-01
+    month_start = datetime(2026, 3, 1, tzinfo=UTC)
+    month_end = datetime(2026, 4, 1, tzinfo=UTC)
+
+    # Weekly trend crosses month boundary: 2026-02-24..2026-03-03 (overlaps March).
+    trend_start = datetime(2026, 2, 24, tzinfo=UTC)
+    trend_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    with Session(repository.engine) as session:
+        doc = Document(
+            doc_type="trend",
+            granularity="week",
+            period_start=trend_start,
+            period_end=trend_end,
+            title="Cross-boundary week",
+        )
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        assert doc.id is not None
+
+    chunk, _ = repository.upsert_document_chunk(
+        doc_id=int(doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="Cross-boundary trend summary.",
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_overview",
+    )
+    assert chunk.id is not None
+
+    docs = repository.list_documents(
+        doc_type="trend",
+        granularity="week",
+        period_start=month_start,
+        period_end=month_end,
+        order_by="event_asc",
+        limit=50,
+    )
+    assert any(int(d.id or 0) == int(doc.id) for d in docs)

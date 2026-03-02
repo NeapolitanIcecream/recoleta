@@ -1023,8 +1023,9 @@ class Repository:
                 statement = statement.where(
                     cast(Any, Document.period_start).is_not(None),
                     cast(Any, Document.period_end).is_not(None),
-                    cast(Any, Document.period_start) >= period_start,
-                    cast(Any, Document.period_end) <= period_end,
+                    # Overlap predicate: include trends intersecting the window.
+                    cast(Any, Document.period_start) < period_end,
+                    cast(Any, Document.period_end) > period_start,
                 )
                 normalized_granularity = (
                     str(granularity or "").strip().lower()
@@ -1091,7 +1092,7 @@ class Repository:
             )
         elif normalized_type == "trend":
             period_pred = (
-                "d.period_start >= :period_start AND d.period_end <= :period_end"
+                "d.period_start < :period_end AND d.period_end > :period_start"
             )
         else:
             raise ValueError("unsupported doc_type")
@@ -1186,8 +1187,8 @@ class Repository:
                 statement = statement.where(
                     cast(Any, Document.period_start).is_not(None),
                     cast(Any, Document.period_end).is_not(None),
-                    cast(Any, Document.period_start) >= period_start,
-                    cast(Any, Document.period_end) <= period_end,
+                    cast(Any, Document.period_start) < period_end,
+                    cast(Any, Document.period_end) > period_start,
                 )
             else:
                 raise ValueError("unsupported doc_type")
