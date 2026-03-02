@@ -153,6 +153,182 @@ def write_markdown_note(
     return note_path
 
 
+def _trend_date_token(*, granularity: str, period_start: datetime) -> str:
+    normalized = str(granularity or "").strip().lower()
+    if normalized == "day":
+        return period_start.strftime("%Y-%m-%d")
+    if normalized == "week":
+        iso = period_start.isocalendar()
+        return f"{iso.year}-W{iso.week:02d}"
+    if normalized == "month":
+        return period_start.strftime("%Y-%m")
+    return period_start.strftime("%Y-%m-%d")
+
+
+def write_obsidian_trend_note(
+    *,
+    vault_path: Path,
+    base_folder: str,
+    trend_doc_id: int,
+    title: str,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    run_id: str,
+    overview_md: str,
+    topics: list[str],
+    clusters: list[dict[str, Any]] | None = None,
+    highlights: list[str] | None = None,
+) -> Path:
+    note_dir = vault_path / base_folder / "Trends"
+    note_dir.mkdir(parents=True, exist_ok=True)
+
+    token = _trend_date_token(granularity=granularity, period_start=period_start)
+    slug = slugify(title, lowercase=True) or "trend"
+    note_path = note_dir / f"{granularity}--{token}--{slug}--{trend_doc_id}.md"
+
+    frontmatter = {
+        "kind": "trend",
+        "trend_doc_id": int(trend_doc_id),
+        "granularity": str(granularity),
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "topics": topics,
+        "run_id": run_id,
+    }
+
+    lines: list[str] = [
+        "---",
+        yaml.safe_dump(frontmatter, sort_keys=False).strip(),
+        "---",
+        "",
+        f"# {title}",
+        "",
+        "## Overview",
+        (overview_md or "").strip(),
+        "",
+        "## Topics",
+    ]
+    if topics:
+        lines.extend([f"- {t}" for t in topics])
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "## Clusters"])
+    clusters = clusters or []
+    if clusters:
+        for cluster in clusters:
+            name = str(cluster.get("name") or "").strip() or "cluster"
+            desc = str(cluster.get("description") or "").strip()
+            lines.append(f"- **{name}**: {desc}".rstrip())
+            reps = cluster.get("representative_chunks") or []
+            if isinstance(reps, list) and reps:
+                for rep in reps[:6]:
+                    if not isinstance(rep, dict):
+                        continue
+                    doc_id = rep.get("doc_id")
+                    chunk_index = rep.get("chunk_index")
+                    score = rep.get("score")
+                    lines.append(
+                        f"  - doc_id={doc_id} chunk_index={chunk_index} score={score}"
+                    )
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "## Highlights"])
+    highlights = highlights or []
+    if highlights:
+        lines.extend([f"- {h}" for h in highlights])
+    else:
+        lines.append("- (none)")
+
+    note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    return note_path
+
+
+def write_markdown_trend_note(
+    *,
+    output_dir: Path,
+    trend_doc_id: int,
+    title: str,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    run_id: str,
+    overview_md: str,
+    topics: list[str],
+    clusters: list[dict[str, Any]] | None = None,
+    highlights: list[str] | None = None,
+) -> Path:
+    output_dir = output_dir.expanduser().resolve()
+    if output_dir.exists() and not output_dir.is_dir():
+        raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
+    trends_dir = output_dir / "Trends"
+    trends_dir.mkdir(parents=True, exist_ok=True)
+
+    token = _trend_date_token(granularity=granularity, period_start=period_start)
+    slug = slugify(title, lowercase=True) or "trend"
+    note_path = trends_dir / f"{granularity}--{token}--{slug}--{trend_doc_id}.md"
+
+    frontmatter = {
+        "kind": "trend",
+        "trend_doc_id": int(trend_doc_id),
+        "granularity": str(granularity),
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "topics": topics,
+        "run_id": run_id,
+    }
+
+    lines: list[str] = [
+        "---",
+        yaml.safe_dump(frontmatter, sort_keys=False).strip(),
+        "---",
+        "",
+        f"# {title}",
+        "",
+        "## Overview",
+        (overview_md or "").strip(),
+        "",
+        "## Topics",
+    ]
+    if topics:
+        lines.extend([f"- {t}" for t in topics])
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "## Clusters"])
+    clusters = clusters or []
+    if clusters:
+        for cluster in clusters:
+            name = str(cluster.get("name") or "").strip() or "cluster"
+            desc = str(cluster.get("description") or "").strip()
+            lines.append(f"- **{name}**: {desc}".rstrip())
+            reps = cluster.get("representative_chunks") or []
+            if isinstance(reps, list) and reps:
+                for rep in reps[:6]:
+                    if not isinstance(rep, dict):
+                        continue
+                    doc_id = rep.get("doc_id")
+                    chunk_index = rep.get("chunk_index")
+                    score = rep.get("score")
+                    lines.append(
+                        f"  - doc_id={doc_id} chunk_index={chunk_index} score={score}"
+                    )
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "## Highlights"])
+    highlights = highlights or []
+    if highlights:
+        lines.extend([f"- {h}" for h in highlights])
+    else:
+        lines.append("- (none)")
+
+    note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    return note_path
+
+
 def write_markdown_run_index(
     *,
     output_dir: Path,

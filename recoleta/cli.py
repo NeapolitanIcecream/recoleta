@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 import importlib
 import json
 from pathlib import Path
@@ -166,6 +167,50 @@ def publish(
         console.print(
             f"[cyan]obsidian notes[/cyan] {settings.obsidian_vault_path / settings.obsidian_base_folder / 'Inbox'}"
         )
+
+
+@app.command()
+def trends(
+    granularity: str = typer.Option(
+        "day",
+        "--granularity",
+        help="Trend granularity. Allowed: day, week, month.",
+    ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Anchor date in UTC (YYYY-MM-DD). Defaults to today (UTC).",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for trend generation. Defaults to LLM_MODEL.",
+    ),
+) -> None:
+    """Generate trends for a period (day/week/month)."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+
+    parsed_anchor: date | None = None
+    if anchor_date is not None and str(anchor_date).strip():
+        parsed_anchor = date.fromisoformat(str(anchor_date).strip())
+
+    settings, result = _execute_stage(
+        stage_name="trends",
+        stage_runner=lambda service, run_id: service.trends(
+            run_id=run_id,
+            granularity=granularity,
+            anchor_date=parsed_anchor,
+            llm_model=model,
+        ),
+    )
+    console = console_cls(stderr=settings.log_json)
+    console.print(
+        "[green]trends completed[/green] "
+        f"doc_id={result.doc_id} granularity={result.granularity} "
+        f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+    )
 
 
 def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:

@@ -4,9 +4,9 @@ import hashlib
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -49,15 +49,26 @@ from recoleta.publish import (
     build_telegram_message,
     write_markdown_note,
     write_markdown_run_index,
+    write_markdown_trend_note,
     write_obsidian_note,
+    write_obsidian_trend_note,
 )
 from recoleta import sources
 from recoleta.triage import SemanticTriage, TriageCandidate
+from recoleta.trends import (
+    day_period_bounds,
+    generate_trend_via_tools,
+    index_items_as_documents,
+    month_period_bounds,
+    persist_trend_payload,
+    week_period_bounds,
+)
 from recoleta.types import (
     AnalyzeResult,
     IngestResult,
     ItemDraft,
     PublishResult,
+    TrendResult,
     utc_now,
 )
 
@@ -2074,6 +2085,240 @@ class PipelineService:
             publish_result.failed,
         )
         return publish_result
+
+    def trends(
+        self,
+        *,
+        run_id: str,
+        granularity: str = "day",
+        anchor_date: date | None = None,
+        llm_model: str | None = None,
+    ) -> TrendResult:
+        log = logger.bind(module="pipeline.trends", run_id=run_id)
+        started = time.perf_counter()
+        normalized_granularity = str(granularity or "").strip().lower()
+        if normalized_granularity not in {"day", "week", "month"}:
+            raise ValueError("granularity must be one of: day, week, month")
+        anchor = anchor_date or utc_now().date()
+
+        try:
+            if normalized_granularity == "day":
+                period_start, period_end = day_period_bounds(anchor)
+                corpus_doc_type = "item"
+                corpus_granularity: str | None = None
+                index_stats = index_items_as_documents(
+                    repository=cast(Any, self.repository),
+                    run_id=run_id,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.items_total",
+                    value=float(index_stats.get("items_total") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.docs_upserted_total",
+                    value=float(index_stats.get("docs_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.chunks_upserted_total",
+                    value=float(index_stats.get("chunks_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.duration_ms",
+                    value=float(index_stats.get("duration_ms") or 0),
+                    unit="ms",
+                )
+            elif normalized_granularity == "week":
+                period_start, period_end = week_period_bounds(anchor)
+                corpus_doc_type = "trend"
+                corpus_granularity = "day"
+            else:
+                period_start, period_end = month_period_bounds(anchor)
+                corpus_doc_type = "trend"
+                corpus_granularity = "week"
+
+            include_debug = bool(
+                self.settings.write_debug_artifacts
+                and self.settings.artifacts_dir is not None
+            )
+            model = llm_model or self.settings.llm_model
+
+            payload, debug = generate_trend_via_tools(
+                repository=cast(Any, self.repository),
+                run_id=run_id,
+                llm_model=model,
+                embedding_model=self.settings.triage_embedding_model,
+                embedding_dimensions=self.settings.triage_embedding_dimensions,
+                embedding_batch_max_inputs=self.settings.triage_embedding_batch_max_inputs,
+                embedding_batch_max_chars=self.settings.triage_embedding_batch_max_chars,
+                granularity=normalized_granularity,
+                period_start=period_start,
+                period_end=period_end,
+                corpus_doc_type=corpus_doc_type,
+                corpus_granularity=corpus_granularity,
+                include_debug=include_debug,
+            )
+
+            doc_id = persist_trend_payload(
+                repository=cast(Any, self.repository),
+                granularity=normalized_granularity,
+                period_start=period_start,
+                period_end=period_end,
+                payload=payload,
+            )
+
+            targets = set(self.settings.publish_targets or [])
+            if "obsidian" in targets and self.settings.obsidian_vault_path is None:
+                raise ValueError(
+                    "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
+                )
+
+            try:
+                if "markdown" in targets:
+                    write_markdown_trend_note(
+                        output_dir=self.settings.markdown_output_dir,
+                        trend_doc_id=doc_id,
+                        title=str(payload.title),
+                        granularity=normalized_granularity,
+                        period_start=period_start,
+                        period_end=period_end,
+                        run_id=run_id,
+                        overview_md=str(payload.overview_md),
+                        topics=list(payload.topics),
+                        clusters=[c.model_dump(mode="json") for c in payload.clusters],
+                        highlights=list(payload.highlights),
+                    )
+                if (
+                    "obsidian" in targets
+                    and self.settings.obsidian_vault_path is not None
+                ):
+                    write_obsidian_trend_note(
+                        vault_path=self.settings.obsidian_vault_path,
+                        base_folder=self.settings.obsidian_base_folder,
+                        trend_doc_id=doc_id,
+                        title=str(payload.title),
+                        granularity=normalized_granularity,
+                        period_start=period_start,
+                        period_end=period_end,
+                        run_id=run_id,
+                        overview_md=str(payload.overview_md),
+                        topics=list(payload.topics),
+                        clusters=[c.model_dump(mode="json") for c in payload.clusters],
+                        highlights=list(payload.highlights),
+                    )
+            except Exception as note_exc:  # noqa: BLE001
+                log.warning(
+                    "Trend note write failed: {}",
+                    self._sanitize_error_message(str(note_exc)),
+                )
+
+            if include_debug and debug is not None:
+                artifact_path = self._write_debug_artifact(
+                    run_id=run_id,
+                    item_id=None,
+                    kind="llm_response",
+                    payload={
+                        "stage": "trends",
+                        "granularity": normalized_granularity,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                        "trend_doc_id": doc_id,
+                        "debug": debug,
+                    },
+                )
+                if artifact_path is not None:
+                    try:
+                        self.repository.add_artifact(
+                            run_id=run_id,
+                            item_id=None,
+                            kind="llm_response",
+                            path=str(artifact_path),
+                        )
+                    except Exception as artifact_exc:  # noqa: BLE001
+                        log.warning(
+                            "Trends debug artifact record failed: {}",
+                            self._sanitize_error_message(str(artifact_exc)),
+                        )
+
+            tool_calls_total = 0
+            if isinstance(debug, dict):
+                tool_calls_total = int(debug.get("tool_calls_total") or 0)
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.tool_calls_total",
+                value=tool_calls_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.duration_ms",
+                value=int((time.perf_counter() - started) * 1000),
+                unit="ms",
+            )
+            log.info(
+                "Trends completed doc_id={} granularity={} period_start={} period_end={}",
+                doc_id,
+                normalized_granularity,
+                period_start.isoformat(),
+                period_end.isoformat(),
+            )
+            return TrendResult(
+                doc_id=int(doc_id),
+                granularity=normalized_granularity,
+                period_start=period_start,
+                period_end=period_end,
+                title=str(payload.title),
+            )
+        except Exception as exc:
+            sanitized_error = self._sanitize_error_message(str(exc))
+            artifact_path = self._write_debug_artifact(
+                run_id=run_id,
+                item_id=None,
+                kind="error_context",
+                payload={
+                    "stage": "trends",
+                    "error_type": type(exc).__name__,
+                    "error_message": sanitized_error,
+                    "granularity": normalized_granularity,
+                    "anchor_date": anchor.isoformat(),
+                    **self._classify_exception(exc),
+                },
+            )
+            if artifact_path is not None:
+                try:
+                    self.repository.add_artifact(
+                        run_id=run_id,
+                        item_id=None,
+                        kind="error_context",
+                        path=str(artifact_path),
+                    )
+                except Exception as artifact_exc:  # noqa: BLE001
+                    log.warning(
+                        "Trends error artifact record failed: {}",
+                        self._sanitize_error_message(str(artifact_exc)),
+                    )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.failed_total",
+                value=1,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.duration_ms",
+                value=int((time.perf_counter() - started) * 1000),
+                unit="ms",
+            )
+            log.warning("Trends failed: {}", sanitized_error)
+            raise
 
     def _pull_source_drafts(
         self, *, run_id: str, log: Any

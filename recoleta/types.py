@@ -93,3 +93,12 @@ class PublishResult:
     skipped: int = 0
     failed: int = 0
     note_paths: list[Path] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class TrendResult:
+    doc_id: int
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    title: str

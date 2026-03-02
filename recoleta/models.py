@@ -24,6 +24,9 @@ DELIVERY_STATUS_SENT = "sent"
 DELIVERY_STATUS_SKIPPED = "skipped"
 DELIVERY_STATUS_FAILED = "failed"
 
+DOC_TYPE_ITEM = "item"
+DOC_TYPE_TREND = "trend"
+
 
 class Run(SQLModel, table=True):
     __tablename__ = "runs"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
@@ -127,4 +130,69 @@ class Artifact(SQLModel, table=True):
     item_id: int | None = Field(default=None, foreign_key="items.id", index=True)
     kind: str = Field(max_length=64, index=True)
     path: str = Field(max_length=2048)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class Document(SQLModel, table=True):
+    __tablename__ = "documents"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+    __table_args__ = (
+        UniqueConstraint("doc_type", "item_id", name="uq_documents_doc_type_item_id"),
+        UniqueConstraint(
+            "doc_type",
+            "granularity",
+            "period_start",
+            "period_end",
+            name="uq_documents_doc_type_granularity_period",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    doc_type: str = Field(index=True, max_length=16)
+
+    # For doc_type == "item"
+    item_id: int | None = Field(default=None, foreign_key="items.id", index=True)
+    source: str | None = Field(default=None, max_length=32)
+    canonical_url: str | None = Field(default=None, sa_type=Text)
+    title: str | None = Field(default=None, sa_type=Text)
+    published_at: datetime | None = Field(default=None, index=True)
+
+    # For doc_type == "trend"
+    granularity: str | None = Field(default=None, max_length=16, index=True)
+    period_start: datetime | None = Field(default=None, index=True)
+    period_end: datetime | None = Field(default=None, index=True)
+
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class DocumentChunk(SQLModel, table=True):
+    __tablename__ = "document_chunks"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+    __table_args__ = (
+        UniqueConstraint("doc_id", "chunk_index", name="uq_document_chunks_doc_chunk"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    doc_id: int = Field(foreign_key="documents.id", index=True)
+    chunk_index: int = Field(index=True)
+    kind: str = Field(max_length=16, index=True)  # summary|content|meta
+    text: str = Field(sa_type=Text)
+    start_char: int | None = None
+    end_char: int | None = None
+    text_hash: str = Field(max_length=64, index=True)
+    source_content_type: str | None = Field(default=None, max_length=32)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ChunkEmbedding(SQLModel, table=True):
+    __tablename__ = "chunk_embeddings"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+    __table_args__ = (
+        UniqueConstraint("chunk_id", "model", name="uq_chunk_embeddings_chunk_model"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    chunk_id: int = Field(foreign_key="document_chunks.id", index=True)
+    model: str = Field(max_length=128, index=True)
+    dimensions: int | None = Field(default=None)
+    vector_json: str = Field(sa_type=Text)
+    text_hash: str = Field(max_length=64, index=True)
     created_at: datetime = Field(default_factory=utc_now)
