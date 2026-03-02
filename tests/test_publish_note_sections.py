@@ -108,3 +108,22 @@ def test_telegram_message_normalizes_markdownish_summary() -> None:
     assert "<b>bold</b>" in msg
     assert "<code>code</code>" in msg
     assert 'href="https://example.com/x?a=1&amp;b=2"' in msg
+
+
+def test_telegram_message_does_not_emphasize_inside_link_href() -> None:
+    msg = build_telegram_message(
+        title="T",
+        summary="[x](https://example.com/_foo_)",
+        url="https://example.com",
+    )
+    assert 'href="https://example.com/_foo_"' in msg
+    assert "<i>" not in msg
+
+
+def test_telegram_message_rejects_non_http_links_in_summary() -> None:
+    msg = build_telegram_message(
+        title="T",
+        summary="[x](javascript:alert(1))",
+        url="https://example.com",
+    )
+    assert 'href="javascript:alert(1)"' not in msg

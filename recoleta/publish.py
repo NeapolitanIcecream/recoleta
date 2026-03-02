@@ -236,6 +236,12 @@ def build_telegram_message(*, title: str, summary: str, url: str) -> str:
         codespans: list[str] = []
 
         def _inline_to_html(line: str) -> str:
+            def _apply_outside_tags(value: str, transform: Any) -> str:
+                parts = re.split(r"(<[^>]+>)", value)
+                for idx in range(0, len(parts), 2):
+                    parts[idx] = transform(parts[idx])
+                return "".join(parts)
+
             # Protect inline code spans first so we don't interpret markdown inside them.
             def _stash_codespan(match: re.Match[str]) -> str:
                 code = match.group(1) or ""
@@ -247,23 +253,44 @@ def build_telegram_message(*, title: str, summary: str, url: str) -> str:
             escaped = html.escape(protected, quote=True)
 
             # Links: [label](url)
-            escaped = re.sub(
-                r"\[([^\]\n]+)\]\(([^)\s\n]+)\)",
-                r'<a href="\2">\1</a>',
-                escaped,
-            )
+            def _replace_link(match: re.Match[str]) -> str:
+                label = match.group(1) or ""
+                url_escaped = match.group(2) or ""
+                url_unescaped = html.unescape(url_escaped)
+                try:
+                    parsed = urlparse(url_unescaped)
+                except Exception:
+                    return match.group(0)
+                if parsed.scheme and parsed.scheme not in {"http", "https"}:
+                    return f"{label} ({url_escaped})"
+                safe_href = html.escape(url_unescaped, quote=True)
+                return f'<a href="{safe_href}">{label}</a>'
+
+            escaped = re.sub(r"\[([^\]\n]+)\]\(([^)\s\n]+)\)", _replace_link, escaped)
 
             # Bold: **text** or __text__
-            escaped = re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", escaped)
-            escaped = re.sub(r"__([^\n]+?)__", r"<b>\1</b>", escaped)
+            escaped = _apply_outside_tags(
+                escaped,
+                lambda s: re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", s),
+            )
+            escaped = _apply_outside_tags(
+                escaped,
+                lambda s: re.sub(r"__([^\n]+?)__", r"<b>\1</b>", s),
+            )
 
             # Italic: *text* or _text_ (avoid bold markers)
-            escaped = re.sub(
-                r"(?<!\*)\*([^\n]+?)\*(?!\*)",
-                r"<i>\1</i>",
+            escaped = _apply_outside_tags(
                 escaped,
+                lambda s: re.sub(
+                    r"(?<!\*)\*([^\n]+?)\*(?!\*)",
+                    r"<i>\1</i>",
+                    s,
+                ),
             )
-            escaped = re.sub(r"(?<!_)_([^\n]+?)_(?!_)", r"<i>\1</i>", escaped)
+            escaped = _apply_outside_tags(
+                escaped,
+                lambda s: re.sub(r"(?<!_)_([^\n]+?)_(?!_)", r"<i>\1</i>", s),
+            )
 
             for idx, html_snippet in enumerate(codespans):
                 escaped = escaped.replace(f"\x00CS{idx}\x00", html_snippet)
