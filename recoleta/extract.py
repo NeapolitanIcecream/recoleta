@@ -22,10 +22,16 @@ from tenacity import (
 
 
 _MARKER_PDF_CONVERTER: Any | None = None
+_PYMUPDF: Any | None = None
+_PYMUPDF4LLM: Any | None = None
+_PYMUPDF_READY: bool | None = None
+_PYMUPDF4LLM_READY: bool | None = None
 _ARXIV_LATEX_MAX_CHARS = 200_000
 _HTML_DOCUMENT_MAX_CHARS = 200_000
 _HTML_REFERENCES_MAX_CHARS = 120_000
 _LATEX_TEXT_SUFFIXES = (".tex", ".bib", ".bbl", ".txt", ".cls", ".sty")
+_PDF_TEXT_LAYER_CHECK_MAX_PAGES = 3
+_PDF_TEXT_LAYER_MIN_CHARS = 200
 
 # Pandoc availability is environment-dependent. Cache the check so we don't
 # repeatedly raise and log the same error on hot paths.
@@ -217,10 +223,114 @@ def _get_marker_pdf_converter() -> Any:
     return _MARKER_PDF_CONVERTER
 
 
-def extract_pdf_text(pdf_bytes: bytes) -> str | None:
-    if not pdf_bytes:
+def _get_pymupdf_module() -> Any | None:
+    global _PYMUPDF, _PYMUPDF_READY
+    if _PYMUPDF_READY is False:
+        return None
+    if _PYMUPDF is not None:
+        return _PYMUPDF
+    try:
+        import pymupdf  # type: ignore[import-not-found]
+
+        _PYMUPDF = pymupdf
+        _PYMUPDF_READY = True
+        return _PYMUPDF
+    except Exception:
+        try:
+            import fitz  # type: ignore[import-not-found]
+
+            _PYMUPDF = fitz
+            _PYMUPDF_READY = True
+            return _PYMUPDF
+        except Exception:
+            _PYMUPDF_READY = False
+            return None
+
+
+def _get_pymupdf4llm_module() -> Any | None:
+    global _PYMUPDF4LLM, _PYMUPDF4LLM_READY
+    if _PYMUPDF4LLM_READY is False:
+        return None
+    if _PYMUPDF4LLM is not None:
+        return _PYMUPDF4LLM
+    try:
+        import pymupdf4llm  # type: ignore[import-not-found]
+
+        _PYMUPDF4LLM = pymupdf4llm
+        _PYMUPDF4LLM_READY = True
+        return _PYMUPDF4LLM
+    except Exception:
+        _PYMUPDF4LLM_READY = False
         return None
 
+
+def _pdf_has_text_layer(pdf_bytes: bytes) -> bool:
+    if not pdf_bytes:
+        return False
+    pymupdf = _get_pymupdf_module()
+    if pymupdf is None:
+        return False
+
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    except Exception:
+        return False
+
+    try:
+        page_count = int(getattr(doc, "page_count", 0) or 0)
+        if page_count <= 0:
+            return False
+        text_chars = 0
+        for page_index in range(min(page_count, _PDF_TEXT_LAYER_CHECK_MAX_PAGES)):
+            page = doc.load_page(page_index)
+            extracted = str(page.get_text("text") or "")
+            if not extracted:
+                continue
+            # Ignore layout whitespace to avoid false positives.
+            text_chars += len("".join(extracted.split()))
+            if text_chars >= _PDF_TEXT_LAYER_MIN_CHARS:
+                return True
+    except Exception:
+        return False
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    return False
+
+
+def _extract_pdf_text_with_pymupdf4llm(pdf_bytes: bytes) -> str | None:
+    if not pdf_bytes:
+        return None
+    pymupdf = _get_pymupdf_module()
+    pymupdf4llm = _get_pymupdf4llm_module()
+    if pymupdf is None or pymupdf4llm is None:
+        return None
+
+    markdown: Any = None
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    except Exception:
+        return None
+
+    try:
+        markdown = pymupdf4llm.to_markdown(doc)
+    except Exception:
+        return None
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+    normalized = str(markdown or "").strip()
+    return normalized or None
+
+
+def _extract_pdf_text_with_marker(pdf_bytes: bytes) -> str | None:
+    if not pdf_bytes:
+        return None
     converter = _get_marker_pdf_converter()
     with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
         tmp.write(pdf_bytes)
@@ -241,6 +351,16 @@ def extract_pdf_text(pdf_bytes: bytes) -> str | None:
     except Exception:
         return None
     return None
+
+
+def extract_pdf_text(pdf_bytes: bytes) -> str | None:
+    if not pdf_bytes:
+        return None
+    if _pdf_has_text_layer(pdf_bytes):
+        pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(pdf_bytes)
+        if pymupdf_markdown is not None:
+            return pymupdf_markdown
+    return _extract_pdf_text_with_marker(pdf_bytes)
 
 
 def _decode_text_bytes(payload: bytes) -> str | None:
