@@ -89,7 +89,7 @@ def write_obsidian_note(
         "",
         "## Ideas",
     ]
-    lines.extend(f"- {idea.strip()}" for idea in ideas if idea.strip())
+    lines.extend(_format_ideas_markdown(ideas))
     lines.extend(
         [
             "",
@@ -153,7 +153,7 @@ def write_markdown_note(
         "",
         "## Ideas",
     ]
-    lines.extend(f"- {idea.strip()}" for idea in ideas if idea.strip())
+    lines.extend(_format_ideas_markdown(ideas))
     lines.extend(
         [
             "",
@@ -231,3 +231,51 @@ def build_telegram_message(*, title: str, summary: str, insight: str, url: str) 
         f"Why it matters: {insight.strip()}\n\n"
         f"Link: {url}"
     )
+
+
+def _format_ideas_markdown(ideas: list[str]) -> list[str]:
+    lines: list[str] = []
+    for raw in ideas:
+        idea = str(raw or "").strip()
+        if not idea:
+            continue
+        parsed = _parse_structured_direction(idea)
+        if parsed is None:
+            lines.append(f"- {idea}")
+            continue
+        lines.extend(
+            [
+                f"- **Opportunity**: {parsed['opportunity']}",
+                f"  - **Why now**: {parsed['why_now']}",
+                f"  - **Example bet**: {parsed['example_bet']}",
+            ]
+        )
+    return lines
+
+
+def _parse_structured_direction(text: str) -> dict[str, str] | None:
+    """Parse one-line structured direction.
+
+    Expected format:
+    "Opportunity: ... | Why now: ... | Example bet: ..."
+    """
+
+    normalized = " ".join(str(text).strip().split())
+    if not normalized:
+        return None
+    parts = [part.strip() for part in normalized.split("|")]
+    if len(parts) != 3:
+        return None
+
+    def strip_prefix(value: str, prefix: str) -> str | None:
+        if value.lower().startswith(prefix.lower()):
+            remainder = value[len(prefix) :].strip()
+            return remainder or None
+        return None
+
+    opportunity = strip_prefix(parts[0], "Opportunity:")
+    why_now = strip_prefix(parts[1], "Why now:")
+    example_bet = strip_prefix(parts[2], "Example bet:")
+    if opportunity is None or why_now is None or example_bet is None:
+        return None
+    return {"opportunity": opportunity, "why_now": why_now, "example_bet": example_bet}
