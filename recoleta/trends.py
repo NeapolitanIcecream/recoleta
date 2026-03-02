@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -228,13 +229,10 @@ def ensure_summary_embeddings_for_period(
         row = existing.get(cid)
         row_hash = str(getattr(row, "text_hash", "") or "") if row is not None else ""
         row_dims = getattr(row, "dimensions", None) if row is not None else None
-        dims_match = (
-            (row_dims is None and embedding_dimensions is None)
-            or (
-                row_dims is not None
-                and embedding_dimensions is not None
-                and int(row_dims) == int(embedding_dimensions)
-            )
+        dims_match = (row_dims is None and embedding_dimensions is None) or (
+            row_dims is not None
+            and embedding_dimensions is not None
+            and int(row_dims) == int(embedding_dimensions)
         )
         if row is not None and row_hash == chunk_hashes[cid] and dims_match:
             skipped_total += 1
@@ -557,6 +555,11 @@ def _tool_schemas() -> list[dict[str, Any]]:
     ]
 
 
+def _litellm_mock_response_from_env() -> str | None:
+    raw = str(os.getenv("RECOLETA_LITELLM_MOCK_RESPONSE", "")).strip()
+    return raw or None
+
+
 def _chunk_text_segments(
     text_value: str, *, chunk_chars: int
 ) -> list[tuple[int, int, str]]:
@@ -862,12 +865,16 @@ def generate_trend_via_tools(
     tool_calls_total = 0
 
     for step in range(max(1, int(max_steps))):
-        response = _get_completion()(
-            model=llm_model,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-        )
+        kwargs: dict[str, Any] = {
+            "model": llm_model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+        mock_response = _litellm_mock_response_from_env()
+        if mock_response is not None:
+            kwargs["mock_response"] = mock_response
+        response = _get_completion()(**kwargs)
         message = _response_message(response)
         content = _message_content(message)
         tool_calls = _message_tool_calls(message)
@@ -930,17 +937,21 @@ def generate_trend_via_tools(
     except Exception:
         decoded = None
     if not isinstance(decoded, dict):
-        finalize = _get_completion()(
-            model=llm_model,
-            messages=messages
+        kwargs = {
+            "model": llm_model,
+            "messages": messages
             + [
                 {
                     "role": "system",
                     "content": "Return strict JSON only. No markdown, no extra keys.",
                 }
             ],
-            response_format={"type": "json_object"},
-        )
+            "response_format": {"type": "json_object"},
+        }
+        mock_response = _litellm_mock_response_from_env()
+        if mock_response is not None:
+            kwargs["mock_response"] = mock_response
+        finalize = _get_completion()(**kwargs)
         final_message = _response_message(finalize)
         decoded = json.loads(_message_content(final_message))
 

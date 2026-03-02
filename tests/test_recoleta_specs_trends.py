@@ -380,3 +380,42 @@ def test_trends_period_overlap_includes_cross_boundary_trend_docs(
         limit=50,
     )
     assert any(int(d.id or 0) == int(doc.id) for d in docs)
+
+
+def test_trends_skips_llm_when_corpus_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Spec: when there is no corpus, trends should not call the LLM (token-safe)."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    import recoleta.trends as trends
+
+    def _must_not_call_completion():  # type: ignore[no-untyped-def]
+        raise AssertionError("LLM completion must not be called for empty corpus")
+
+    monkeypatch.setattr(trends, "_get_completion", lambda: _must_not_call_completion)
+
+    result: TrendResult = service.trends(
+        run_id="run-trend-empty",
+        granularity="day",
+        anchor_date=utc_now().date(),
+        llm_model="test/fake-model",
+    )
+    assert result.doc_id > 0
+
+    with Session(repository.engine) as session:
+        docs = list(session.exec(select(Document)))
+        assert any(doc.doc_type == "trend" for doc in docs)

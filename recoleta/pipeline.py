@@ -61,6 +61,7 @@ from recoleta.trends import (
     index_items_as_documents,
     month_period_bounds,
     persist_trend_payload,
+    TrendPayload,
     week_period_bounds,
 )
 from recoleta.types import (
@@ -2101,7 +2102,12 @@ class PipelineService:
             raise ValueError("granularity must be one of: day, week, month")
         anchor = anchor_date or utc_now().date()
 
+        index_stats: dict[str, Any] = {}
         try:
+            include_debug = bool(
+                self.settings.write_debug_artifacts
+                and self.settings.artifacts_dir is not None
+            )
             if normalized_granularity == "day":
                 period_start, period_end = day_period_bounds(anchor)
                 corpus_doc_type = "item"
@@ -2145,27 +2151,77 @@ class PipelineService:
                 corpus_doc_type = "trend"
                 corpus_granularity = "week"
 
-            include_debug = bool(
-                self.settings.write_debug_artifacts
-                and self.settings.artifacts_dir is not None
-            )
             model = llm_model or self.settings.llm_model
 
-            payload, debug = generate_trend_via_tools(
-                repository=cast(Any, self.repository),
+            # Fail-fast / token-safe behavior: if the corpus is empty, do not call the LLM.
+            corpus_docs_total = 0
+            if corpus_doc_type == "item":
+                corpus_docs_total = int(index_stats.get("docs_upserted") or 0)
+            else:
+                probe = cast(Any, self.repository).list_documents(
+                    doc_type="trend",
+                    granularity=corpus_granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    order_by="event_desc",
+                    offset=0,
+                    limit=1,
+                )
+                corpus_docs_total = 1 if probe else 0
+
+            self.repository.record_metric(
                 run_id=run_id,
-                llm_model=model,
-                embedding_model=self.settings.triage_embedding_model,
-                embedding_dimensions=self.settings.triage_embedding_dimensions,
-                embedding_batch_max_inputs=self.settings.triage_embedding_batch_max_inputs,
-                embedding_batch_max_chars=self.settings.triage_embedding_batch_max_chars,
-                granularity=normalized_granularity,
-                period_start=period_start,
-                period_end=period_end,
-                corpus_doc_type=corpus_doc_type,
-                corpus_granularity=corpus_granularity,
-                include_debug=include_debug,
+                name="pipeline.trends.corpus.docs_total",
+                value=corpus_docs_total,
+                unit="count",
             )
+
+            if corpus_docs_total <= 0:
+                log.info(
+                    "Trends corpus is empty; skipping LLM invocation granularity={} period_start={} period_end={}",
+                    normalized_granularity,
+                    period_start.isoformat(),
+                    period_end.isoformat(),
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.corpus.empty",
+                    value=1.0,
+                    unit="bool",
+                )
+                payload = TrendPayload(
+                    title=f"{normalized_granularity.title()} Trend",
+                    granularity=normalized_granularity,
+                    period_start=period_start.isoformat(),
+                    period_end=period_end.isoformat(),
+                    overview_md="- No documents available for this period.",
+                    topics=[],
+                    clusters=[],
+                    highlights=[],
+                )
+                debug = {"empty_corpus": True} if include_debug else None
+            else:
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.corpus.empty",
+                    value=0.0,
+                    unit="bool",
+                )
+                payload, debug = generate_trend_via_tools(
+                    repository=cast(Any, self.repository),
+                    run_id=run_id,
+                    llm_model=model,
+                    embedding_model=self.settings.triage_embedding_model,
+                    embedding_dimensions=self.settings.triage_embedding_dimensions,
+                    embedding_batch_max_inputs=self.settings.triage_embedding_batch_max_inputs,
+                    embedding_batch_max_chars=self.settings.triage_embedding_batch_max_chars,
+                    granularity=normalized_granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    corpus_doc_type=corpus_doc_type,
+                    corpus_granularity=corpus_granularity,
+                    include_debug=include_debug,
+                )
 
             doc_id = persist_trend_payload(
                 repository=cast(Any, self.repository),
