@@ -579,6 +579,7 @@ def extract_html_document_cleaned_with_references(
         removed_metadata = 0
         unwrapped = 0
         removed_attrs = 0
+        math_subtree_ids: set[int] = set()
 
         # Remove common author/contact/metadata blocks (keeps abstract and body).
         metadata_selectors = [
@@ -605,11 +606,20 @@ def extract_html_document_cleaned_with_references(
                 a.unwrap()
 
         # Strip most attributes to reduce pandoc emitting raw HTML. Preserve a small allowlist.
+        math_roots = list(container.find_all("math"))
+        if math_roots:
+            # Avoid repeated upward traversals (`find_parent`) for every tag by precomputing
+            # the MathML subtree membership once.
+            for math_root in math_roots:
+                math_subtree_ids.add(id(math_root))
+                for descendant in math_root.find_all(True):
+                    math_subtree_ids.add(id(descendant))
+
         allowed_attrs = {"colspan", "rowspan", "href", "src", "alt"}
         for tag in container.find_all(True):
             # Preserve MathML attributes and namespaces. arXiv HTML uses LaTeXML MathML
             # where attributes like `xmlns` and `encoding` are required for correct parsing.
-            if tag.name == "math" or tag.find_parent("math") is not None:
+            if math_subtree_ids and id(tag) in math_subtree_ids:
                 continue
             attrs = dict(getattr(tag, "attrs", {}) or {})
             if not attrs:
