@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import html
 from pathlib import Path
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -217,6 +218,90 @@ def build_telegram_message(*, title: str, summary: str, url: str) -> str:
     summary_raw = str(summary or "").strip()
     url_raw = str(url or "").strip()
 
+    def _format_telegram_summary_html(text: str) -> str:
+        raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not raw:
+            return ""
+
+        codeblocks: list[str] = []
+
+        def _stash_codeblock(match: re.Match[str]) -> str:
+            code = (match.group(1) or "").strip("\n")
+            token = f"\x00CB{len(codeblocks)}\x00"
+            codeblocks.append(f"<pre><code>{html.escape(code)}</code></pre>")
+            return token
+
+        raw = re.sub(r"```[^\n]*\n([\s\S]*?)```", _stash_codeblock, raw)
+
+        codespans: list[str] = []
+
+        def _inline_to_html(line: str) -> str:
+            # Protect inline code spans first so we don't interpret markdown inside them.
+            def _stash_codespan(match: re.Match[str]) -> str:
+                code = match.group(1) or ""
+                token = f"\x00CS{len(codespans)}\x00"
+                codespans.append(f"<code>{html.escape(code)}</code>")
+                return token
+
+            protected = re.sub(r"`([^`\n]+)`", _stash_codespan, line)
+            escaped = html.escape(protected, quote=True)
+
+            # Links: [label](url)
+            escaped = re.sub(
+                r"\[([^\]\n]+)\]\(([^)\s\n]+)\)",
+                r'<a href="\2">\1</a>',
+                escaped,
+            )
+
+            # Bold: **text** or __text__
+            escaped = re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", escaped)
+            escaped = re.sub(r"__([^\n]+?)__", r"<b>\1</b>", escaped)
+
+            # Italic: *text* or _text_ (avoid bold markers)
+            escaped = re.sub(
+                r"(?<!\*)\*([^\n]+?)\*(?!\*)",
+                r"<i>\1</i>",
+                escaped,
+            )
+            escaped = re.sub(r"(?<!_)_([^\n]+?)_(?!_)", r"<i>\1</i>", escaped)
+
+            for idx, html_snippet in enumerate(codespans):
+                escaped = escaped.replace(f"\x00CS{idx}\x00", html_snippet)
+            return escaped
+
+        lines: list[str] = []
+        for raw_line in raw.splitlines():
+            stripped = raw_line.strip()
+            cb = re.fullmatch(r"\x00CB(\d+)\x00", stripped)
+            if cb:
+                idx = int(cb.group(1))
+                if 0 <= idx < len(codeblocks):
+                    lines.append(codeblocks[idx])
+                    continue
+
+            if not stripped:
+                lines.append("")
+                continue
+
+            heading = re.match(r"^\s*#{1,6}\s+(.*)$", raw_line)
+            if heading:
+                content = heading.group(1).strip()
+                lines.append(f"<b>{_inline_to_html(content)}</b>")
+                continue
+
+            bullet = re.match(r"^\s*[-*]\s+(.*)$", raw_line)
+            if bullet:
+                content = bullet.group(1).strip()
+                lines.append(f"• {_inline_to_html(content)}")
+                continue
+
+            lines.append(_inline_to_html(raw_line.strip()))
+
+        rendered = "\n".join(lines).strip()
+        while "\n\n\n" in rendered:
+            rendered = rendered.replace("\n\n\n", "\n\n")
+        return rendered
+
     def _link_label(value: str) -> str:
         try:
             parsed = urlparse(value)
@@ -228,7 +313,7 @@ def build_telegram_message(*, title: str, summary: str, url: str) -> str:
 
     def _render(summary_text: str) -> str:
         safe_title = html.escape(title_raw)
-        safe_summary = html.escape(summary_text.strip())
+        safe_summary = _format_telegram_summary_html(summary_text)
         safe_url_attr = html.escape(url_raw, quote=True)
         safe_label = html.escape(_link_label(url_raw))
 
@@ -256,6 +341,8 @@ def build_telegram_message(*, title: str, summary: str, url: str) -> str:
     while lo <= hi:
         mid = (lo + hi) // 2
         candidate = summary_raw[:mid].rstrip()
+        if candidate.count("```") % 2 == 1:
+            candidate = candidate.rsplit("```", 1)[0].rstrip()
         candidate_msg = _render(candidate + "…")
         if len(candidate_msg) <= max_chars:
             best = candidate

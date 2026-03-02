@@ -83,3 +83,28 @@ def test_telegram_message_truncates_long_summary() -> None:
     )
     assert len(msg) <= 4096
     assert "…" in msg
+
+
+def test_telegram_message_normalizes_markdownish_summary() -> None:
+    msg = build_telegram_message(
+        title="T",
+        summary=(
+            "### Section\n"
+            "- item 1\n"
+            "* item 2\n"
+            "This is *italic* and **bold** and `code`.\n"
+            "[link](https://example.com/x?a=1&b=2)\n"
+        ),
+        url="https://example.com",
+    )
+    assert "###" not in msg
+    assert "- item" not in msg
+    assert "*italic*" not in msg
+    assert "**bold**" not in msg
+    assert "<b>Section</b>" in msg
+    assert "\n• item 1" in msg
+    assert "\n• item 2" in msg
+    assert "<i>italic</i>" in msg
+    assert "<b>bold</b>" in msg
+    assert "<code>code</code>" in msg
+    assert 'href="https://example.com/x?a=1&amp;b=2"' in msg
