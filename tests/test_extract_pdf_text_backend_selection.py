@@ -60,7 +60,7 @@ def test_extract_pdf_text_falls_back_to_marker_for_blank_pdf_pages(
 
     blank_pdf = _build_pdf_bytes(text=None)
 
-    def fail_if_pymupdf4llm_called(_pdf_bytes: bytes) -> str | None:
+    def fail_if_pymupdf4llm_called(_doc: Any) -> str | None:
         raise AssertionError("pymupdf4llm path should be skipped for blank PDF")
 
     monkeypatch.setattr(

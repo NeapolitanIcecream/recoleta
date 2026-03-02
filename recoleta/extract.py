@@ -264,18 +264,7 @@ def _get_pymupdf4llm_module() -> Any | None:
         return None
 
 
-def _pdf_has_text_layer(pdf_bytes: bytes) -> bool:
-    if not pdf_bytes:
-        return False
-    pymupdf = _get_pymupdf_module()
-    if pymupdf is None:
-        return False
-
-    try:
-        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    except Exception:
-        return False
-
+def _pdf_has_text_layer(doc: Any) -> bool:
     try:
         page_count = int(getattr(doc, "page_count", 0) or 0)
         if page_count <= 0:
@@ -292,37 +281,19 @@ def _pdf_has_text_layer(pdf_bytes: bytes) -> bool:
                 return True
     except Exception:
         return False
-    finally:
-        try:
-            doc.close()
-        except Exception:
-            pass
     return False
 
 
-def _extract_pdf_text_with_pymupdf4llm(pdf_bytes: bytes) -> str | None:
-    if not pdf_bytes:
-        return None
-    pymupdf = _get_pymupdf_module()
+def _extract_pdf_text_with_pymupdf4llm(doc: Any) -> str | None:
     pymupdf4llm = _get_pymupdf4llm_module()
-    if pymupdf is None or pymupdf4llm is None:
+    if pymupdf4llm is None:
         return None
 
     markdown: Any = None
     try:
-        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    except Exception:
-        return None
-
-    try:
         markdown = pymupdf4llm.to_markdown(doc)
     except Exception:
         return None
-    finally:
-        try:
-            doc.close()
-        except Exception:
-            pass
 
     normalized = str(markdown or "").strip()
     return normalized or None
@@ -356,10 +327,25 @@ def _extract_pdf_text_with_marker(pdf_bytes: bytes) -> str | None:
 def extract_pdf_text(pdf_bytes: bytes) -> str | None:
     if not pdf_bytes:
         return None
-    if _pdf_has_text_layer(pdf_bytes):
-        pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(pdf_bytes)
-        if pymupdf_markdown is not None:
-            return pymupdf_markdown
+    pymupdf = _get_pymupdf_module()
+    pymupdf4llm = _get_pymupdf4llm_module()
+    if pymupdf is not None and pymupdf4llm is not None:
+        try:
+            doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        except Exception:
+            doc = None
+
+        if doc is not None:
+            try:
+                if _pdf_has_text_layer(doc):
+                    pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(doc)
+                    if pymupdf_markdown is not None:
+                        return pymupdf_markdown
+            finally:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
     return _extract_pdf_text_with_marker(pdf_bytes)
 
 
