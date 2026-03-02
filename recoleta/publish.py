@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import html
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 from slugify import slugify
@@ -209,4 +211,64 @@ def write_markdown_run_index(
 
 
 def build_telegram_message(*, title: str, summary: str, url: str) -> str:
-    return f"{title}\n\nSummary: {summary.strip()}\n\nLink: {url}"
+    max_chars = 4096
+
+    title_raw = str(title or "").strip() or "Untitled"
+    summary_raw = str(summary or "").strip()
+    url_raw = str(url or "").strip()
+
+    def _link_label(value: str) -> str:
+        try:
+            parsed = urlparse(value)
+            if parsed.netloc:
+                return parsed.netloc
+        except Exception:
+            pass
+        return "Open"
+
+    def _render(summary_text: str) -> str:
+        safe_title = html.escape(title_raw)
+        safe_summary = html.escape(summary_text.strip())
+        safe_url_attr = html.escape(url_raw, quote=True)
+        safe_label = html.escape(_link_label(url_raw))
+
+        lines = [
+            f"<b>{safe_title}</b>",
+            "",
+            "<b>Summary:</b>",
+            safe_summary,
+            "",
+            f'<b>Link:</b> <a href="{safe_url_attr}">{safe_label}</a>',
+        ]
+        return "\n".join(lines).strip()
+
+    message = _render(summary_raw)
+    if len(message) <= max_chars:
+        return message
+
+    if not summary_raw:
+        return _render("…")[:max_chars]
+
+    # Truncate summary while keeping HTML valid (escape happens after truncation).
+    lo = 0
+    hi = len(summary_raw)
+    best = ""
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        candidate = summary_raw[:mid].rstrip()
+        candidate_msg = _render(candidate + "…")
+        if len(candidate_msg) <= max_chars:
+            best = candidate
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    if best:
+        # Prefer breaking at a boundary for readability.
+        boundary = max(best.rfind("\n"), best.rfind(" "))
+        if boundary >= 120:
+            best = best[:boundary].rstrip()
+        return _render(best + "…")
+
+    # Extremely small budget: still return a valid, short message.
+    return _render("…")[:max_chars]

@@ -58,3 +58,28 @@ def test_telegram_message_includes_title_summary_and_link() -> None:
     assert "Summary:" in msg
     assert "Link:" in msg
     assert "Why it matters:" not in msg
+
+
+def test_telegram_message_uses_html_and_escapes() -> None:
+    msg = build_telegram_message(
+        title='T & <x> "q"',
+        summary="S <b>bad</b> & more",
+        url="https://example.com/path?a=1&b=2",
+    )
+    assert msg.startswith("<b>")
+    assert "<b>T &amp; &lt;x&gt; &quot;q&quot;</b>" in msg
+    assert "<b>Summary:</b>" in msg
+    assert "&lt;b&gt;bad&lt;/b&gt;" in msg
+    assert "<b>Link:</b>" in msg
+    assert 'href="https://example.com/path?a=1&amp;b=2"' in msg
+    assert ">example.com<" in msg
+
+
+def test_telegram_message_truncates_long_summary() -> None:
+    msg = build_telegram_message(
+        title="T",
+        summary="a" * 10_000,
+        url="https://example.com",
+    )
+    assert len(msg) <= 4096
+    assert "…" in msg

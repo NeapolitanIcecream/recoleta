@@ -6,6 +6,7 @@ from datetime import timedelta
 from threading import Thread
 
 from telegram import Bot
+from telegram.constants import ParseMode
 from telegram.error import NetworkError, RetryAfter, TimedOut
 from tenacity import (
     AsyncRetrying,
@@ -78,6 +79,7 @@ class TelegramSender:
                     chat_id=self.chat_id,
                     text=text,
                     disable_web_page_preview=True,
+                    parse_mode=ParseMode.HTML,
                 )
                 return str(message.message_id)
         raise RuntimeError("Failed to send message after retries")
