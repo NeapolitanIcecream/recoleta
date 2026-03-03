@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 from sqlmodel import Session, select
@@ -15,14 +14,6 @@ from recoleta.types import ItemDraft, TrendResult, utc_now
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
-def _fake_completion_returning_json(payload: dict[str, Any]):
-    def _completion(**kwargs):  # type: ignore[no-untyped-def]
-        _ = kwargs
-        return {"choices": [{"message": {"content": json.dumps(payload)}}]}
-
-    return _completion
-
-
 def test_trends_day_indexes_items_and_persists_trend_document(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -32,6 +23,7 @@ def test_trends_day_indexes_items_and_persists_trend_document(
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
     monkeypatch.setenv("TOPICS", json.dumps(["agents", "ml-systems"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -64,12 +56,14 @@ def test_trends_day_indexes_items_and_persists_trend_document(
         "clusters": [],
         "highlights": ["agents"],
     }
+    from recoleta.rag import agent as rag_agent
+    from recoleta.trends import TrendPayload
 
-    import recoleta.trends as trends
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
 
-    monkeypatch.setattr(
-        trends, "_get_completion", lambda: _fake_completion_returning_json(payload)
-    )
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
     result: TrendResult = service.trends(
         run_id="run-trend-day",
@@ -110,6 +104,7 @@ def test_trends_text_search_can_find_summary_chunks(
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
     monkeypatch.setenv("TOPICS", json.dumps(["agents", "ml-systems"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -142,11 +137,14 @@ def test_trends_text_search_can_find_summary_chunks(
         "clusters": [],
         "highlights": [],
     }
-    import recoleta.trends as trends
+    from recoleta.rag import agent as rag_agent
+    from recoleta.trends import TrendPayload
 
-    monkeypatch.setattr(
-        trends, "_get_completion", lambda: _fake_completion_returning_json(payload)
-    )
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
     _ = service.trends(
         run_id="run-trend-search",
@@ -172,6 +170,7 @@ def test_trends_semantic_search_ranks_relevant_summaries_higher(
 ) -> None:
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
     _, repository = _build_runtime()
 
@@ -232,14 +231,15 @@ def test_trends_semantic_search_ranks_relevant_summaries_higher(
                 data.append({"embedding": [0.0, 1.0]})
         return {"data": data, "usage": {"inputs": len(inputs)}}
 
-    import recoleta.trends as trends
+    import recoleta.rag.embeddings as rag_embeddings
 
-    monkeypatch.setattr(trends, "embedding", fake_embedding)
+    monkeypatch.setattr(rag_embeddings, "_embedding", fake_embedding)
 
     period_start = datetime(2026, 1, 1, tzinfo=UTC)
     period_end = datetime(2026, 1, 2, tzinfo=UTC)
     hits = semantic_search_summaries_in_period(
         repository=repository,
+        lancedb_dir=Path(str(tmp_path / "lancedb")),
         run_id="run-semantic",
         doc_type="item",
         period_start=period_start,
@@ -257,12 +257,13 @@ def test_trends_semantic_search_ranks_relevant_summaries_higher(
     assert hits[0].chunk_index == 0
 
 
-def test_trends_semantic_search_reembeds_when_embedding_dimensions_change(
+def test_trends_semantic_search_reembeds_when_text_hash_changes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
     _, repository = _build_runtime()
 
     with Session(repository.engine) as session:
@@ -288,47 +289,72 @@ def test_trends_semantic_search_reembeds_when_embedding_dimensions_change(
         source_content_type="analysis_summary",
     )
     assert chunk.id is not None
+    # Seed an old vector row with a different text_hash value.
+    from recoleta.rag.vector_store import (
+        LanceVectorStore,
+        VectorRow,
+        embedding_table_name,
+    )
 
-    # Seed an old embedding row with a different dimensions value.
-    repository.upsert_chunk_embedding(
-        chunk_id=int(chunk.id),
-        model="test/embed",
-        dimensions=2,
-        text_hash=str(getattr(chunk, "text_hash") or ""),
-        vector=[1.0, 0.0],
+    store = LanceVectorStore(
+        db_dir=tmp_path / "lancedb",
+        table_name=embedding_table_name(
+            embedding_model="test/embed", embedding_dimensions=2
+        ),
+    )
+    store.upsert_rows(
+        rows=[
+            VectorRow(
+                chunk_id=int(chunk.id),
+                doc_id=doc_id,
+                doc_type="item",
+                chunk_index=0,
+                kind="summary",
+                text_hash="old_hash",
+                text_preview="old",
+                event_start_ts=float(datetime(2026, 1, 1, tzinfo=UTC).timestamp()),
+                event_end_ts=float(datetime(2026, 1, 1, tzinfo=UTC).timestamp()),
+                vector=[0.0, 1.0],
+            )
+        ]
     )
 
     def fake_embedding(**kwargs):  # type: ignore[no-untyped-def]
         inputs = kwargs.get("input") or []
-        dims = int(kwargs.get("dimensions") or 3)
+        dims = int(kwargs.get("dimensions") or 2)
         data = [{"embedding": [1.0] + [0.0] * (dims - 1)} for _ in inputs]
         return {"data": data, "usage": {"inputs": len(inputs)}}
 
-    import recoleta.trends as trends
+    import recoleta.rag.embeddings as rag_embeddings
 
-    monkeypatch.setattr(trends, "embedding", fake_embedding)
+    monkeypatch.setattr(rag_embeddings, "_embedding", fake_embedding)
 
     period_start = datetime(2026, 1, 1, tzinfo=UTC)
     period_end = datetime(2026, 1, 2, tzinfo=UTC)
     hits = semantic_search_summaries_in_period(
         repository=repository,
+        lancedb_dir=Path(str(tmp_path / "lancedb")),
         run_id="run-dims",
         doc_type="item",
         period_start=period_start,
         period_end=period_end,
         query="agents",
         embedding_model="test/embed",
-        embedding_dimensions=3,
+        embedding_dimensions=2,
         max_batch_inputs=64,
         max_batch_chars=40000,
         limit=5,
         corpus_limit=10,
     )
     assert hits
-
-    updated = repository.get_chunk_embedding(chunk_id=int(chunk.id), model="test/embed")
-    assert updated is not None
-    assert updated.dimensions == 3
+    refreshed = LanceVectorStore(
+        db_dir=tmp_path / "lancedb",
+        table_name=embedding_table_name(
+            embedding_model="test/embed", embedding_dimensions=2
+        ),
+    )
+    existing = refreshed.fetch_existing_hashes(chunk_ids=[int(chunk.id)])
+    assert existing.get(int(chunk.id)) == str(getattr(chunk, "text_hash") or "")
 
 
 def test_trends_period_overlap_includes_cross_boundary_trend_docs(
@@ -392,6 +418,7 @@ def test_trends_skips_llm_when_corpus_is_empty(
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -401,12 +428,12 @@ def test_trends_skips_llm_when_corpus_is_empty(
         telegram_sender=FakeTelegramSender(),
     )
 
-    import recoleta.trends as trends
+    from recoleta.rag import agent as rag_agent
 
-    def _must_not_call_completion():  # type: ignore[no-untyped-def]
-        raise AssertionError("LLM completion must not be called for empty corpus")
+    def _must_not_call_agent(**kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("Trend agent must not be called for empty corpus")
 
-    monkeypatch.setattr(trends, "_get_completion", lambda: _must_not_call_completion)
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _must_not_call_agent)
 
     result: TrendResult = service.trends(
         run_id="run-trend-empty",

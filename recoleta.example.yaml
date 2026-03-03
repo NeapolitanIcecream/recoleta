@@ -115,6 +115,17 @@ sources:
 # triage_exploration_rate: 0.05  # Default: 0.05
 # triage_recency_floor: 5  # Default: 5
 
+## Trends RAG (semantic search)
+#
+# LanceDB directory used as the local vector store for semantic search.
+# rag_lancedb_dir: "~/.local/share/recoleta/lancedb"
+#
+# Embedding configuration used by trends semantic search.
+# trends_embedding_model: "text-embedding-3-small"
+# trends_embedding_dimensions: null
+# trends_embedding_batch_max_inputs: 64
+# trends_embedding_batch_max_chars: 40000
+
 ## Analysis limits
 
 # analyze_limit: 100  # Default: 100

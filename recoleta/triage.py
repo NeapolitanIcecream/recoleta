@@ -5,59 +5,15 @@ import math
 import random
 import time
 from dataclasses import dataclass
-from typing import Any, Protocol, Sequence
+from typing import Any, Sequence
 
 from rapidfuzz import fuzz
 
 from recoleta.models import Item
-
-embedding: Any | None = None
-
-
-def _get_embedding() -> Any:
-    global embedding  # noqa: PLW0603
-    if embedding is None:
-        from litellm import embedding as _embedding
-
-        embedding = _embedding
-    return embedding
-
+from recoleta.rag.embeddings import Embedder, LiteLLMEmbedder, iter_embedding_batches
 
 _DEFAULT_EMBEDDING_BATCH_MAX_INPUTS = 64
 _DEFAULT_EMBEDDING_BATCH_MAX_CHARS = 40_000
-
-
-def _iter_embedding_batches(
-    inputs: list[str],
-    *,
-    max_batch_inputs: int,
-    max_batch_chars: int,
-):
-    normalized_max_inputs = max(1, int(max_batch_inputs))
-    normalized_max_chars = max(1, int(max_batch_chars))
-
-    batch: list[str] = []
-    batch_chars = 0
-    for text in inputs:
-        text_chars = len(text)
-        if not batch:
-            batch = [text]
-            batch_chars = text_chars
-            continue
-
-        would_exceed_inputs = len(batch) >= normalized_max_inputs
-        would_exceed_chars = (batch_chars + text_chars) > normalized_max_chars
-        if would_exceed_inputs or would_exceed_chars:
-            yield batch
-            batch = [text]
-            batch_chars = text_chars
-            continue
-
-        batch.append(text)
-        batch_chars += text_chars
-
-    if batch:
-        yield batch
 
 
 def _merge_usage_totals(totals: dict[str, float], usage: Any) -> None:
@@ -97,44 +53,6 @@ class TriageOutput:
     selected: list[TriageScoredCandidate]
     stats: TriageStats
     artifacts: dict[str, dict[str, Any]]
-
-
-class Embedder(Protocol):
-    def embed(
-        self,
-        *,
-        model: str,
-        inputs: list[str],
-        dimensions: int | None = None,
-    ) -> tuple[list[list[float]], dict[str, Any]]: ...
-
-
-class LiteLLMEmbedder:
-    def embed(
-        self,
-        *,
-        model: str,
-        inputs: list[str],
-        dimensions: int | None = None,
-    ) -> tuple[list[list[float]], dict[str, Any]]:
-        started = time.perf_counter()
-        kwargs: dict[str, Any] = {"model": model, "input": inputs}
-        if dimensions is not None:
-            kwargs["dimensions"] = dimensions
-        response = _get_embedding()(**kwargs)
-        elapsed_ms = int((time.perf_counter() - started) * 1000)
-        vectors = _extract_embeddings(response)
-        usage = _extract_usage(response)
-        sample_head = vectors[0][:8] if vectors and vectors[0] else []
-        debug: dict[str, Any] = {
-            "model": model,
-            "inputs_total": len(inputs),
-            "dimensions": dimensions,
-            "elapsed_ms": elapsed_ms,
-            "usage": usage,
-            "sample_embedding_head": sample_head,
-        }
-        return vectors, debug
 
 
 class SemanticTriage:
@@ -242,7 +160,7 @@ class SemanticTriage:
             items_batch_chars_max = 0
             items_sample_head: list[float] = []
 
-            for batch in _iter_embedding_batches(
+            for batch in iter_embedding_batches(
                 item_texts,
                 max_batch_inputs=self.embedding_batch_max_inputs,
                 max_batch_chars=self.embedding_batch_max_chars,
@@ -510,37 +428,6 @@ def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     if norm_a <= 0.0 or norm_b <= 0.0:
         return 0.0
     return dot / (math.sqrt(norm_a) * math.sqrt(norm_b))
-
-
-def _extract_embeddings(response: object) -> list[list[float]]:
-    data: Any
-    if isinstance(response, dict):
-        data = response.get("data")
-    else:
-        data = getattr(response, "data", None)
-    if not isinstance(data, list):
-        raise ValueError("embedding response missing data list")
-    vectors: list[list[float]] = []
-    for entry in data:
-        if isinstance(entry, dict):
-            raw = entry.get("embedding")
-        else:
-            raw = getattr(entry, "embedding", None)
-        if not isinstance(raw, list):
-            raise ValueError("embedding entry missing embedding list")
-        vectors.append([float(value) for value in raw])
-    return vectors
-
-
-def _extract_usage(response: object) -> dict[str, Any] | None:
-    usage: Any
-    if isinstance(response, dict):
-        usage = response.get("usage")
-    else:
-        usage = getattr(response, "usage", None)
-    if isinstance(usage, dict):
-        return usage
-    return None
 
 
 def _stable_seed(value: str) -> int:

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from typing import Any, cast
@@ -1199,6 +1199,99 @@ class Repository:
                 .limit(normalized_limit)
             )
             return list(session.exec(statement))
+
+    def list_summary_chunk_index_rows_in_period(
+        self,
+        *,
+        doc_type: str,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Return summary chunk rows with document time window metadata for vector sync."""
+
+        normalized_type = str(doc_type or "").strip().lower()
+        normalized_limit = max(0, int(limit))
+        normalized_offset = max(0, int(offset))
+        if normalized_limit <= 0:
+            return []
+
+        with Session(self.engine) as session:
+            statement = (
+                select(DocumentChunk, Document)
+                .join(
+                    Document, cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id)
+                )
+                .where(
+                    Document.doc_type == normalized_type,
+                    DocumentChunk.kind == "summary",
+                )
+            )
+            if normalized_type == "item":
+                statement = statement.where(
+                    cast(Any, Document.published_at).is_not(None),
+                    cast(Any, Document.published_at) >= period_start,
+                    cast(Any, Document.published_at) < period_end,
+                )
+                statement = statement.order_by(desc(cast(Any, DocumentChunk.id)))
+            elif normalized_type == "trend":
+                statement = statement.where(
+                    cast(Any, Document.period_start).is_not(None),
+                    cast(Any, Document.period_end).is_not(None),
+                    cast(Any, Document.period_start) < period_end,
+                    cast(Any, Document.period_end) > period_start,
+                )
+                statement = statement.order_by(desc(cast(Any, DocumentChunk.id)))
+            else:
+                raise ValueError("unsupported doc_type")
+
+            statement = statement.offset(normalized_offset).limit(normalized_limit)
+            rows = list(session.exec(statement))
+
+        out: list[dict[str, Any]] = []
+        for chunk, doc in rows:
+            chunk_id = getattr(chunk, "id", None)
+            doc_id = getattr(doc, "id", None)
+            if chunk_id is None or doc_id is None:
+                continue
+            if normalized_type == "item":
+                published_at = getattr(doc, "published_at", None)
+                if not isinstance(published_at, datetime):
+                    continue
+                if published_at.tzinfo is None:
+                    published_at = published_at.replace(tzinfo=UTC)
+                event_start_ts = float(published_at.timestamp())
+                event_end_ts = float(published_at.timestamp())
+            else:
+                dstart = getattr(doc, "period_start", None)
+                dend = getattr(doc, "period_end", None)
+                if not isinstance(dstart, datetime) or not isinstance(dend, datetime):
+                    continue
+                if dstart.tzinfo is None:
+                    dstart = dstart.replace(tzinfo=UTC)
+                if dend.tzinfo is None:
+                    dend = dend.replace(tzinfo=UTC)
+                event_start_ts = float(dstart.timestamp())
+                event_end_ts = float(dend.timestamp())
+
+            text_value = str(getattr(chunk, "text", "") or "")
+            preview = text_value[:240] + ("..." if len(text_value) > 240 else "")
+            out.append(
+                {
+                    "chunk_id": int(chunk_id),
+                    "doc_id": int(doc_id),
+                    "doc_type": normalized_type,
+                    "chunk_index": int(getattr(chunk, "chunk_index")),
+                    "kind": str(getattr(chunk, "kind") or ""),
+                    "text": text_value,
+                    "text_hash": str(getattr(chunk, "text_hash") or ""),
+                    "text_preview": preview,
+                    "event_start_ts": event_start_ts,
+                    "event_end_ts": event_end_ts,
+                }
+            )
+        return out
 
     def get_chunk_embedding(
         self, *, chunk_id: int, model: str

@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+from pathlib import Path
+from typing import Any
+
+from loguru import logger
+
+
+@dataclass(frozen=True, slots=True)
+class VectorRow:
+    chunk_id: int
+    doc_id: int
+    doc_type: str
+    chunk_index: int
+    kind: str
+    text_hash: str
+    text_preview: str
+    event_start_ts: float
+    event_end_ts: float
+    vector: list[float]
+
+
+class LanceVectorStore:
+    def __init__(
+        self,
+        *,
+        db_dir: Path,
+        table_name: str = "chunk_vectors",
+    ) -> None:
+        self.db_dir = Path(db_dir).expanduser().resolve()
+        self.db_dir.mkdir(parents=True, exist_ok=True)
+        self.table_name = str(table_name or "").strip() or "chunk_vectors"
+        self._db: Any | None = None
+        self._table: Any | None = None
+
+    def _connect(self) -> Any:
+        if self._db is None:
+            import lancedb
+
+            self._db = lancedb.connect(str(self.db_dir))
+        return self._db
+
+    def _open_table(self) -> Any:
+        if self._table is not None:
+            return self._table
+
+        db = self._connect()
+        try:
+            self._table = db.open_table(self.table_name)
+            return self._table
+        except Exception:
+            # Create on first write.
+            self._table = None
+            raise
+
+    def ensure_table(self, *, bootstrap_row: VectorRow | None = None) -> None:
+        try:
+            _ = self._open_table()
+            return
+        except Exception:
+            pass
+
+        if bootstrap_row is None:
+            # We intentionally create the table only when we have real data.
+            return
+
+        db = self._connect()
+        row = self._row_to_dict(bootstrap_row)
+        try:
+            self._table = db.create_table(self.table_name, [row])
+        except Exception:
+            # In case of races, try open again.
+            self._table = db.open_table(self.table_name)
+
+    @staticmethod
+    def _row_to_dict(row: VectorRow) -> dict[str, Any]:
+        return {
+            "chunk_id": int(row.chunk_id),
+            "doc_id": int(row.doc_id),
+            "doc_type": str(row.doc_type),
+            "chunk_index": int(row.chunk_index),
+            "kind": str(row.kind),
+            "text_hash": str(row.text_hash),
+            "text_preview": str(row.text_preview),
+            "event_start_ts": float(row.event_start_ts),
+            "event_end_ts": float(row.event_end_ts),
+            "vector": [float(v) for v in row.vector],
+        }
+
+    def upsert_rows(self, *, rows: list[VectorRow]) -> int:
+        if not rows:
+            return 0
+
+        self.ensure_table(bootstrap_row=rows[0])
+        try:
+            table = self._open_table()
+        except Exception as exc:  # noqa: BLE001
+            log = logger.bind(module="rag.vector_store")
+            log.warning(
+                "Failed to open LanceDB table error_type={} error={}",
+                type(exc).__name__,
+                str(exc),
+            )
+            raise
+
+        payload = [self._row_to_dict(row) for row in rows]
+        table.merge_insert(
+            "chunk_id"
+        ).when_matched_update_all().when_not_matched_insert_all().execute(  # type: ignore[no-untyped-call]
+            payload
+        )
+        return len(payload)
+
+    def fetch_existing_hashes(self, *, chunk_ids: list[int]) -> dict[int, str]:
+        """Best-effort batch read of existing (chunk_id -> text_hash)."""
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for raw in chunk_ids:
+            try:
+                cid = int(raw)
+            except Exception:
+                continue
+            if cid <= 0 or cid in seen:
+                continue
+            seen.add(cid)
+            normalized.append(cid)
+        if not normalized:
+            return {}
+
+        try:
+            table = self._open_table()
+        except Exception:
+            return {}
+
+        # Batch WHERE with IN, keep chunks reasonably sized.
+        out: dict[int, str] = {}
+        batch_size = 400
+        for i in range(0, len(normalized), batch_size):
+            batch = normalized[i : i + batch_size]
+            ids = ", ".join(str(cid) for cid in batch)
+            where = f"chunk_id IN ({ids})"
+            rows = (
+                table.search(None)
+                .where(where)  # type: ignore[no-untyped-call]
+                .select(["chunk_id", "text_hash"])
+                .limit(len(batch))
+                .to_list()
+            )
+            for row in rows:
+                try:
+                    out[int(row.get("chunk_id") or 0)] = str(row.get("text_hash") or "")
+                except Exception:
+                    continue
+        return out
+
+    def search(
+        self,
+        *,
+        query_vector: list[float],
+        where: str,
+        limit: int,
+        metric: str = "cosine",
+        refine_factor: int = 10,
+        nprobes: int = 20,
+        select_columns: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        normalized_limit = max(1, min(int(limit), 50))
+        try:
+            table = self._open_table()
+        except Exception:
+            return []
+
+        query = (
+            table.search([float(v) for v in query_vector]).metric(metric).where(where)
+        )  # type: ignore[no-untyped-call]
+        query = (
+            query.refine_factor(int(refine_factor))
+            .nprobes(int(nprobes))
+            .limit(normalized_limit)
+        )  # type: ignore[no-untyped-call]
+        if select_columns:
+            query = query.select(select_columns)  # type: ignore[no-untyped-call]
+        rows = query.to_list()  # type: ignore[no-untyped-call]
+        return [dict(row) for row in rows]
+
+
+def _vector_dims_from_schema(table: Any) -> int:
+    try:
+        schema = getattr(table, "schema", None)
+        if schema is None:
+            return 0
+        field = schema.field("vector")
+        dtype = field.type
+        size = getattr(dtype, "list_size", None)
+        if isinstance(size, int) and size > 0:
+            return size
+    except Exception:
+        return 0
+    return 0
+
+
+def embedding_table_name(
+    *, embedding_model: str, embedding_dimensions: int | None
+) -> str:
+    """Generate a stable LanceDB table name for a specific embedding configuration."""
+
+    model = str(embedding_model or "").strip() or "unknown"
+    dims = "auto" if embedding_dimensions is None else str(int(embedding_dimensions))
+    fingerprint = hashlib.sha256(f"{model}|{dims}".encode("utf-8")).hexdigest()[:16]
+    return f"chunk_vectors_{fingerprint}"

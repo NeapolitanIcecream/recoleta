@@ -55,15 +55,7 @@ from recoleta.publish import (
 )
 from recoleta import sources
 from recoleta.triage import SemanticTriage, TriageCandidate
-from recoleta.trends import (
-    day_period_bounds,
-    generate_trend_via_tools,
-    index_items_as_documents,
-    month_period_bounds,
-    persist_trend_payload,
-    TrendPayload,
-    week_period_bounds,
-)
+from recoleta import trends
 from recoleta.types import (
     AnalyzeResult,
     IngestResult,
@@ -2078,10 +2070,10 @@ class PipelineService:
                 and self.settings.artifacts_dir is not None
             )
             if normalized_granularity == "day":
-                period_start, period_end = day_period_bounds(anchor)
+                period_start, period_end = trends.day_period_bounds(anchor)
                 corpus_doc_type = "item"
                 corpus_granularity: str | None = None
-                index_stats = index_items_as_documents(
+                index_stats = trends.index_items_as_documents(
                     repository=cast(Any, self.repository),
                     run_id=run_id,
                     period_start=period_start,
@@ -2112,11 +2104,11 @@ class PipelineService:
                     unit="ms",
                 )
             elif normalized_granularity == "week":
-                period_start, period_end = week_period_bounds(anchor)
+                period_start, period_end = trends.week_period_bounds(anchor)
                 corpus_doc_type = "trend"
                 corpus_granularity = "day"
             else:
-                period_start, period_end = month_period_bounds(anchor)
+                period_start, period_end = trends.month_period_bounds(anchor)
                 corpus_doc_type = "trend"
                 corpus_granularity = "week"
 
@@ -2158,7 +2150,7 @@ class PipelineService:
                     value=1.0,
                     unit="bool",
                 )
-                payload = TrendPayload(
+                payload = trends.TrendPayload(
                     title=f"{normalized_granularity.title()} Trend",
                     granularity=normalized_granularity,
                     period_start=period_start.isoformat(),
@@ -2176,14 +2168,15 @@ class PipelineService:
                     value=0.0,
                     unit="bool",
                 )
-                payload, debug = generate_trend_via_tools(
+                payload, debug = trends.generate_trend_via_tools(
                     repository=cast(Any, self.repository),
                     run_id=run_id,
                     llm_model=model,
-                    embedding_model=self.settings.triage_embedding_model,
-                    embedding_dimensions=self.settings.triage_embedding_dimensions,
-                    embedding_batch_max_inputs=self.settings.triage_embedding_batch_max_inputs,
-                    embedding_batch_max_chars=self.settings.triage_embedding_batch_max_chars,
+                    embedding_model=self.settings.trends_embedding_model,
+                    embedding_dimensions=self.settings.trends_embedding_dimensions,
+                    embedding_batch_max_inputs=self.settings.trends_embedding_batch_max_inputs,
+                    embedding_batch_max_chars=self.settings.trends_embedding_batch_max_chars,
+                    lancedb_dir=self.settings.rag_lancedb_dir,
                     granularity=normalized_granularity,
                     period_start=period_start,
                     period_end=period_end,
@@ -2192,7 +2185,7 @@ class PipelineService:
                     include_debug=include_debug,
                 )
 
-            doc_id = persist_trend_payload(
+            doc_id = trends.persist_trend_payload(
                 repository=cast(Any, self.repository),
                 granularity=normalized_granularity,
                 period_start=period_start,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 import importlib
 import json
 from pathlib import Path
@@ -23,6 +23,8 @@ app = typer.Typer(
 )
 db_app = typer.Typer(help="Database utilities.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
+rag_app = typer.Typer(help="RAG utilities.", no_args_is_help=True)
+app.add_typer(rag_app, name="rag")
 
 
 def _runtime_symbols() -> dict[str, Any]:
@@ -211,6 +213,95 @@ def trends(
         f"doc_id={result.doc_id} granularity={result.granularity} "
         f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
     )
+
+
+@rag_app.command("sync-vectors")
+def rag_sync_vectors(
+    doc_type: str = typer.Option(
+        "item",
+        "--doc-type",
+        help="Corpus doc_type for summary vector sync. Allowed: item, trend.",
+    ),
+    period_start: str = typer.Option(
+        ...,
+        "--period-start",
+        help="Inclusive start time (ISO 8601, UTC recommended).",
+    ),
+    period_end: str = typer.Option(
+        ...,
+        "--period-end",
+        help="Exclusive end time (ISO 8601, UTC recommended).",
+    ),
+    page_size: int = typer.Option(
+        500, "--page-size", min=1, max=5000, help="SQLite paging size per batch."
+    ),
+) -> None:
+    """Sync/rebuild summary vectors from SQLite corpus into LanceDB."""
+
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    console_cls = symbols["Console"]
+
+    settings, repository, _ = _build_runtime()
+    console = console_cls(stderr=settings.log_json)
+
+    try:
+        start_dt = datetime.fromisoformat(str(period_start).strip())
+        end_dt = datetime.fromisoformat(str(period_end).strip())
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]invalid datetime[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=UTC)
+    else:
+        start_dt = start_dt.astimezone(UTC)
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=UTC)
+    else:
+        end_dt = end_dt.astimezone(UTC)
+    if end_dt <= start_dt:
+        console.print("[red]invalid datetime range[/red] period_end must be > period_start")
+        raise typer.Exit(code=2)
+
+    run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
+    log = logger.bind(module="cli.rag.sync_vectors", run_id=run.id)
+    try:
+        from recoleta.rag.sync import sync_summary_vectors_in_period
+        from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
+
+        store = LanceVectorStore(
+            db_dir=settings.rag_lancedb_dir,
+            table_name=embedding_table_name(
+                embedding_model=settings.trends_embedding_model,
+                embedding_dimensions=settings.trends_embedding_dimensions,
+            ),
+        )
+        stats = sync_summary_vectors_in_period(
+            repository=repository,
+            vector_store=store,
+            run_id=run.id,
+            doc_type=str(doc_type).strip().lower(),
+            period_start=start_dt,
+            period_end=end_dt,
+            embedding_model=settings.trends_embedding_model,
+            embedding_dimensions=settings.trends_embedding_dimensions,
+            max_batch_inputs=settings.trends_embedding_batch_max_inputs,
+            max_batch_chars=settings.trends_embedding_batch_max_chars,
+            page_size=page_size,
+        )
+        repository.finish_run(run.id, success=True)
+        console.print(f"[green]rag sync completed[/green] stats={stats}")
+    except KeyboardInterrupt:
+        try:
+            repository.finish_run(run.id, success=False)
+        except Exception:
+            log.exception("Run finish failed during interrupt")
+        log.warning("RAG sync interrupted")
+        raise typer.Exit(code=130) from None
+    except Exception:
+        repository.finish_run(run.id, success=False)
+        log.exception("RAG sync failed")
+        raise
 
 
 def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:

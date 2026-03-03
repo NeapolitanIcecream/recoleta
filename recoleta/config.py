@@ -56,6 +56,10 @@ def _default_markdown_output_dir() -> Path:
     return (Path(user_data_dir("recoleta")) / "outputs").expanduser().resolve()
 
 
+def _default_lancedb_dir() -> Path:
+    return (Path(user_data_dir("recoleta")) / "lancedb").expanduser().resolve()
+
+
 _ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
 _ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
 _ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
@@ -100,6 +104,11 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "LOG_LEVEL": "log_level",
         "LOG_JSON": "log_json",
         "WRITE_DEBUG_ARTIFACTS": "write_debug_artifacts",
+        "RAG_LANCEDB_DIR": "rag_lancedb_dir",
+        "TRENDS_EMBEDDING_MODEL": "trends_embedding_model",
+        "TRENDS_EMBEDDING_DIMENSIONS": "trends_embedding_dimensions",
+        "TRENDS_EMBEDDING_BATCH_MAX_INPUTS": "trends_embedding_batch_max_inputs",
+        "TRENDS_EMBEDDING_BATCH_MAX_CHARS": "trends_embedding_batch_max_chars",
     }
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
@@ -463,6 +472,22 @@ class Settings(BaseSettings):
         default=False, validation_alias="WRITE_DEBUG_ARTIFACTS"
     )
 
+    rag_lancedb_dir: Path = Field(
+        default_factory=_default_lancedb_dir, validation_alias="RAG_LANCEDB_DIR"
+    )
+    trends_embedding_model: str = Field(
+        default="text-embedding-3-small", validation_alias="TRENDS_EMBEDDING_MODEL"
+    )
+    trends_embedding_dimensions: int | None = Field(
+        default=None, validation_alias="TRENDS_EMBEDDING_DIMENSIONS"
+    )
+    trends_embedding_batch_max_inputs: int = Field(
+        default=64, ge=1, validation_alias="TRENDS_EMBEDDING_BATCH_MAX_INPUTS"
+    )
+    trends_embedding_batch_max_chars: int = Field(
+        default=40_000, ge=1, validation_alias="TRENDS_EMBEDDING_BATCH_MAX_CHARS"
+    )
+
     @model_validator(mode="after")
     def _validate_debug_artifacts_require_artifacts_dir(self) -> "Settings":
         if self.write_debug_artifacts and self.artifacts_dir is None:
@@ -669,6 +694,87 @@ class Settings(BaseSettings):
         if value is None:
             return None
         return Path(value).expanduser().resolve()
+
+    @field_validator("rag_lancedb_dir", mode="before")
+    @classmethod
+    def _normalize_lancedb_dir(cls, value: str | Path | None) -> Path:
+        if value is None:
+            return _default_lancedb_dir()
+        return Path(value).expanduser().resolve()
+
+    @field_validator("trends_embedding_model", mode="before")
+    @classmethod
+    def _normalize_trends_embedding_model(cls, value: Any) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return "text-embedding-3-small"
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("TRENDS_EMBEDDING_MODEL must be a single-line value")
+        if len(normalized) > 128:
+            raise ValueError("TRENDS_EMBEDDING_MODEL must be <= 128 characters")
+        return normalized
+
+    @field_validator("trends_embedding_dimensions", mode="before")
+    @classmethod
+    def _normalize_trends_embedding_dimensions(cls, value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            value = stripped
+        try:
+            parsed = int(value)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("TRENDS_EMBEDDING_DIMENSIONS must be an integer") from exc
+        if parsed <= 0:
+            raise ValueError("TRENDS_EMBEDDING_DIMENSIONS must be a positive integer")
+        return parsed
+
+    @field_validator("trends_embedding_batch_max_inputs", mode="before")
+    @classmethod
+    def _normalize_trends_embedding_batch_max_inputs(cls, value: Any) -> int:
+        if value is None:
+            return 64
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return 64
+            value = stripped
+        try:
+            parsed = int(value)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(
+                "TRENDS_EMBEDDING_BATCH_MAX_INPUTS must be an integer"
+            ) from exc
+        if parsed <= 0:
+            raise ValueError(
+                "TRENDS_EMBEDDING_BATCH_MAX_INPUTS must be a positive integer"
+            )
+        return parsed
+
+    @field_validator("trends_embedding_batch_max_chars", mode="before")
+    @classmethod
+    def _normalize_trends_embedding_batch_max_chars(cls, value: Any) -> int:
+        if value is None:
+            return 40_000
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return 40_000
+            value = stripped
+        try:
+            parsed = int(value)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(
+                "TRENDS_EMBEDDING_BATCH_MAX_CHARS must be an integer"
+            ) from exc
+        if parsed <= 0:
+            raise ValueError(
+                "TRENDS_EMBEDDING_BATCH_MAX_CHARS must be a positive integer"
+            )
+        return parsed
 
     @field_validator("markdown_output_dir", mode="before")
     @classmethod
