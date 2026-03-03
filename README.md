@@ -101,7 +101,7 @@ publish_targets:
 # Local Markdown output directory (default: platform-specific user data dir + /outputs)
 markdown_output_dir: "~/.local/share/recoleta/outputs"
 
-# Optional: language for summary text.
+# Optional: language for summary text and trend notes.
 # JSON keys stay in English and topics remain English tags.
 llm_output_language: "Chinese (Simplified)"
 
@@ -270,7 +270,7 @@ Conditionally required:
 Common optional knobs:
 
 - **LLM output language**:
-  - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary`; JSON keys and `topics` stay English)
+  - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary` and trend notes; JSON keys and `topics` stay English)
 - **Sources**: `SOURCES` / `sources`
   - `hn.enabled`, `hn.rss_urls`
   - `rss.enabled`, `rss.feeds`

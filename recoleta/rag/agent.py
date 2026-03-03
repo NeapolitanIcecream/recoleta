@@ -29,7 +29,24 @@ class TrendAgentDeps:
     embedding_max_errors: int = 0
 
 
-def build_trend_agent(*, llm_model: str) -> Agent[TrendAgentDeps, TrendPayload]:
+def _build_trend_instructions(*, output_language: str | None) -> str:
+    base = (
+        "You are a research trend analyst. Use tools to explore the local corpus. "
+        "Prefer summary chunks (chunk_index=0) first. "
+        "When ready, return a TrendPayload with concise, grounded content."
+    )
+    if not output_language:
+        return base
+    return (
+        f"{base} Use {output_language} for all natural language fields "
+        "(title, overview_md, clusters[].name, clusters[].description, highlights). "
+        "Keep all JSON keys in English and keep topics as concise English tags."
+    )
+
+
+def build_trend_agent(
+    *, llm_model: str, output_language: str | None = None
+) -> Agent[TrendAgentDeps, TrendPayload]:
     from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
 
     model = build_pydantic_ai_model(llm_model)
@@ -37,11 +54,7 @@ def build_trend_agent(*, llm_model: str) -> Agent[TrendAgentDeps, TrendPayload]:
         model,
         deps_type=TrendAgentDeps,
         output_type=TrendPayload,
-        instructions=(
-            "You are a research trend analyst. Use tools to explore the local corpus. "
-            "Prefer summary chunks (chunk_index=0) first. "
-            "When ready, return a TrendPayload with concise, grounded content."
-        ),
+        instructions=_build_trend_instructions(output_language=output_language),
     )
 
     @agent.tool
@@ -268,6 +281,7 @@ def generate_trend_payload(
     vector_store: LanceVectorStore,
     run_id: str,
     llm_model: str,
+    output_language: str | None = None,
     embedding_model: str,
     embedding_dimensions: int | None,
     embedding_batch_max_inputs: int,
@@ -282,7 +296,7 @@ def generate_trend_payload(
     include_debug: bool = False,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     log = logger.bind(module="rag.trend_agent", run_id=run_id)
-    agent = build_trend_agent(llm_model=llm_model)
+    agent = build_trend_agent(llm_model=llm_model, output_language=output_language)
     deps = TrendAgentDeps(
         repository=repository,
         vector_store=vector_store,

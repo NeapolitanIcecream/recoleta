@@ -4,7 +4,7 @@ This document defines how Recoleta controls the natural language used in LLM-gen
 
 ## Goals
 
-- Let users configure the output language for `summary`.
+- Let users configure the output language for `summary` and trend notes.
 - Keep structured output schema stable so existing validation and storage continue to work.
 - Avoid regressions in publish filtering based on `topics` tags.
 
@@ -34,9 +34,12 @@ Validation rules:
 
 ## Prompt behavior
 
-When `llm_output_language` is set, Recoleta appends language instructions in the analyzer system message:
+When `llm_output_language` is set, Recoleta appends language instructions in:
 
-- `summary` should use the configured language.
+- the analyzer system message (for `summary`)
+- the trend agent instructions (for trend note content)
+
+- `summary` and trend note natural language fields should use the configured language.
 - JSON keys must remain in English.
 - `topics` should remain concise English tags.
 

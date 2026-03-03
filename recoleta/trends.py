@@ -104,6 +104,50 @@ class TrendPayload(BaseModel):
     highlights: list[str] = Field(default_factory=list)
 
 
+def _is_chinese_output_language(output_language: str | None) -> bool:
+    normalized = str(output_language or "").strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    return lowered.startswith("zh") or "chinese" in lowered or "中文" in normalized
+
+
+def build_empty_trend_payload(
+    *,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    output_language: str | None = None,
+) -> TrendPayload:
+    normalized_granularity = str(granularity or "").strip().lower() or "day"
+    if _is_chinese_output_language(output_language):
+        title_map = {
+            "day": "每日趋势",
+            "week": "每周趋势",
+            "month": "每月趋势",
+        }
+        title = title_map.get(normalized_granularity, "趋势")
+        overview_md = "- 该周期没有可用文档。"
+    else:
+        title_map = {
+            "day": "Daily Trend",
+            "week": "Weekly Trend",
+            "month": "Monthly Trend",
+        }
+        title = title_map.get(normalized_granularity, "Trend")
+        overview_md = "- No documents available for this period."
+    return TrendPayload(
+        title=title,
+        granularity=normalized_granularity,
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        overview_md=overview_md,
+        topics=[],
+        clusters=[],
+        highlights=[],
+    )
+
+
 def _chunk_text_segments(
     text_value: str, *, chunk_chars: int
 ) -> list[tuple[int, int, str]]:
@@ -241,6 +285,7 @@ def generate_trend_via_tools(
     repository: Repository,
     run_id: str,
     llm_model: str,
+    output_language: str | None = None,
     embedding_model: str,
     embedding_dimensions: int | None,
     embedding_batch_max_inputs: int,
@@ -269,6 +314,7 @@ def generate_trend_via_tools(
         vector_store=store,
         run_id=run_id,
         llm_model=llm_model,
+        output_language=output_language,
         embedding_model=embedding_model,
         embedding_dimensions=embedding_dimensions,
         embedding_batch_max_inputs=embedding_batch_max_inputs,

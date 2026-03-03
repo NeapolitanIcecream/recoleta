@@ -23,6 +23,7 @@ def test_trends_day_indexes_items_and_persists_trend_document(
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
     monkeypatch.setenv("TOPICS", json.dumps(["agents", "ml-systems"]))
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
@@ -61,7 +62,7 @@ def test_trends_day_indexes_items_and_persists_trend_document(
     from recoleta.trends import TrendPayload
 
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
-        _ = kwargs
+        assert kwargs.get("output_language") == "Chinese (Simplified)"
         return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)

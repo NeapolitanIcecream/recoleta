@@ -2220,15 +2220,11 @@ class PipelineService:
                     value=1.0,
                     unit="bool",
                 )
-                payload = trends.TrendPayload(
-                    title=f"{normalized_granularity.title()} Trend",
+                payload = trends.build_empty_trend_payload(
                     granularity=normalized_granularity,
-                    period_start=period_start.isoformat(),
-                    period_end=period_end.isoformat(),
-                    overview_md="- No documents available for this period.",
-                    topics=[],
-                    clusters=[],
-                    highlights=[],
+                    period_start=period_start,
+                    period_end=period_end,
+                    output_language=self.settings.llm_output_language,
                 )
                 debug = {"empty_corpus": True} if include_debug else None
                 self.repository.record_metric(
@@ -2266,6 +2262,7 @@ class PipelineService:
                     repository=cast(Any, self.repository),
                     run_id=run_id,
                     llm_model=model,
+                    output_language=self.settings.llm_output_language,
                     embedding_model=self.settings.trends_embedding_model,
                     embedding_dimensions=self.settings.trends_embedding_dimensions,
                     embedding_batch_max_inputs=self.settings.trends_embedding_batch_max_inputs,
