@@ -66,6 +66,9 @@ class AnalysisResult:
     novelty_score: float | None
     cost_usd: float | None
     latency_ms: int | None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 @dataclass(slots=True)

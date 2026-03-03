@@ -64,6 +64,59 @@ def extract_usage(response: object) -> dict[str, Any] | None:
     return None
 
 
+def _extract_response_cost_usd(response: object) -> float | None:
+    hidden: Any | None
+    if isinstance(response, dict):
+        hidden = response.get("_hidden_params")
+    else:
+        hidden = getattr(response, "_hidden_params", None)
+    if not isinstance(hidden, dict):
+        return None
+    raw = hidden.get("response_cost")
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _get_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _estimate_prompt_tokens(*, model: str, inputs: list[str]) -> int | None:
+    normalized_model = str(model or "").strip()
+    if not normalized_model:
+        return None
+    if not inputs:
+        return 0
+    try:
+        from litellm.utils import token_counter
+    except Exception:
+        return None
+
+    joined = "\n\n".join(str(v) for v in inputs if str(v))
+    if not joined.strip():
+        return 0
+    messages = [{"role": "user", "content": joined}]
+    try:
+        return int(token_counter(model=normalized_model, messages=messages))
+    except Exception:
+        try:
+            return int(token_counter(model="gpt-3.5-turbo", messages=messages))
+        except Exception:
+            return None
+
+
 class Embedder(Protocol):
     def embed(
         self,
@@ -102,11 +155,46 @@ class LiteLLMEmbedder:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         vectors = extract_embeddings(response)
         usage = extract_usage(response)
+        prompt_tokens: int | None = None
+        total_tokens: int | None = None
+        if isinstance(usage, dict):
+            prompt_tokens = _get_int(usage.get("prompt_tokens"))
+            total_tokens = _get_int(usage.get("total_tokens"))
+            if prompt_tokens is None:
+                prompt_tokens = _get_int(usage.get("input_tokens"))
+            if total_tokens is None and prompt_tokens is not None:
+                total_tokens = prompt_tokens
+
+        tokens_estimated = False
+        if prompt_tokens is None:
+            estimated = _estimate_prompt_tokens(model=model, inputs=inputs)
+            if estimated is not None:
+                prompt_tokens = int(estimated)
+                total_tokens = int(estimated)
+                tokens_estimated = True
+
+        cost_usd = _extract_response_cost_usd(response)
+        if cost_usd is None and prompt_tokens is not None:
+            try:
+                from litellm.cost_calculator import cost_per_token
+
+                prompt_cost, completion_cost = cost_per_token(
+                    model=str(model),
+                    prompt_tokens=int(prompt_tokens),
+                    completion_tokens=0,
+                )
+                cost_usd = float(prompt_cost) + float(completion_cost)
+            except Exception:
+                cost_usd = None
         debug: dict[str, Any] = {
             "model": model,
             "inputs_total": len(inputs),
             "dimensions": dimensions,
             "elapsed_ms": elapsed_ms,
             "usage": usage,
+            "prompt_tokens": prompt_tokens,
+            "total_tokens": total_tokens,
+            "tokens_estimated": tokens_estimated,
+            "cost_usd": cost_usd,
         }
         return vectors, debug

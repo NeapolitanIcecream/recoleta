@@ -76,6 +76,10 @@ def ensure_summary_vectors_for_period(
             "skipped_total": 0,
             "embedding_calls_total": 0,
             "embedding_errors_total": 0,
+            "embedding_prompt_tokens_total": 0,
+            "embedding_prompt_tokens_missing_total": 0,
+            "embedding_cost_usd_total": 0.0,
+            "embedding_cost_missing_total": 0,
             "embedding_failure_mode": normalized_failure_mode,
             "embedding_max_errors": normalized_max_errors,
         }
@@ -105,6 +109,10 @@ def ensure_summary_vectors_for_period(
             "skipped_total": skipped_total,
             "embedding_calls_total": 0,
             "embedding_errors_total": 0,
+            "embedding_prompt_tokens_total": 0,
+            "embedding_prompt_tokens_missing_total": 0,
+            "embedding_cost_usd_total": 0.0,
+            "embedding_cost_missing_total": 0,
             "embedding_failure_mode": normalized_failure_mode,
             "embedding_max_errors": normalized_max_errors,
         }
@@ -113,6 +121,10 @@ def ensure_summary_vectors_for_period(
     embedding_calls_total = 0
     embedding_errors_total = 0
     embedded_total = 0
+    embedding_prompt_tokens_total = 0
+    embedding_prompt_tokens_missing_total = 0
+    embedding_cost_usd_total = 0.0
+    embedding_cost_missing_total = 0
 
     texts = [str(r["text"]) for r in to_embed_rows]
     idx = 0
@@ -123,9 +135,25 @@ def ensure_summary_vectors_for_period(
         idx += len(batch)
         try:
             embedding_calls_total += 1
-            vectors, _ = embedder.embed(
+            vectors, embed_debug = embedder.embed(
                 model=normalized_model, inputs=batch, dimensions=embedding_dimensions
             )
+            if isinstance(embed_debug, dict):
+                raw_prompt = embed_debug.get("prompt_tokens")
+                if raw_prompt is None:
+                    raw_prompt = embed_debug.get("total_tokens")
+                if isinstance(raw_prompt, (int, float)):
+                    embedding_prompt_tokens_total += int(raw_prompt)
+                else:
+                    embedding_prompt_tokens_missing_total += 1
+                raw_cost = embed_debug.get("cost_usd")
+                if isinstance(raw_cost, (int, float)):
+                    embedding_cost_usd_total += float(raw_cost)
+                else:
+                    embedding_cost_missing_total += 1
+            else:
+                embedding_prompt_tokens_missing_total += 1
+                embedding_cost_missing_total += 1
             if len(vectors) != len(batch):
                 raise ValueError("embedding output size mismatch")
             upserts: list[VectorRow] = []
@@ -194,6 +222,10 @@ def ensure_summary_vectors_for_period(
         "skipped_total": skipped_total,
         "embedding_calls_total": embedding_calls_total,
         "embedding_errors_total": embedding_errors_total,
+        "embedding_prompt_tokens_total": embedding_prompt_tokens_total,
+        "embedding_prompt_tokens_missing_total": embedding_prompt_tokens_missing_total,
+        "embedding_cost_usd_total": embedding_cost_usd_total,
+        "embedding_cost_missing_total": embedding_cost_missing_total,
         "embedding_failure_mode": normalized_failure_mode,
         "embedding_max_errors": normalized_max_errors,
     }
@@ -218,6 +250,7 @@ def semantic_search_summaries_in_period(
     embedding_max_errors: int = 0,
     limit: int = 10,
     corpus_limit: int = 500,
+    metric_namespace: str | None = None,
 ) -> list[SemanticSearchHit]:
     log = logger.bind(module="rag.semantic_search", run_id=run_id, doc_type=doc_type)
     normalized_query = str(query or "").strip()
@@ -242,7 +275,7 @@ def semantic_search_summaries_in_period(
     )
 
     embedder = LiteLLMEmbedder()
-    query_vecs, _ = embedder.embed(
+    query_vecs, query_debug = embedder.embed(
         model=str(embedding_model).strip(),
         inputs=[f"Query: {normalized_query}"],
         dimensions=embedding_dimensions,
@@ -306,4 +339,73 @@ def semantic_search_summaries_in_period(
             "embedding_max_errors": index_stats.get("embedding_max_errors"),
         },
     )
+
+    if metric_namespace is not None and str(metric_namespace).strip():
+        prefix = str(metric_namespace).strip()
+        calls_total = int(index_stats.get("embedding_calls_total") or 0) + 1
+        errors_total = int(index_stats.get("embedding_errors_total") or 0)
+        prompt_tokens_total = int(index_stats.get("embedding_prompt_tokens_total") or 0)
+        prompt_tokens_missing_total = int(
+            index_stats.get("embedding_prompt_tokens_missing_total") or 0
+        )
+        cost_usd_total = float(index_stats.get("embedding_cost_usd_total") or 0.0)
+        cost_missing_total = int(index_stats.get("embedding_cost_missing_total") or 0)
+
+        if isinstance(query_debug, dict):
+            raw_prompt = query_debug.get("prompt_tokens")
+            if raw_prompt is None:
+                raw_prompt = query_debug.get("total_tokens")
+            if isinstance(raw_prompt, (int, float)):
+                prompt_tokens_total += int(raw_prompt)
+            else:
+                prompt_tokens_missing_total += 1
+            raw_cost = query_debug.get("cost_usd")
+            if isinstance(raw_cost, (int, float)):
+                cost_usd_total += float(raw_cost)
+            else:
+                cost_missing_total += 1
+        else:
+            prompt_tokens_missing_total += 1
+            cost_missing_total += 1
+
+        repository.record_metric(
+            run_id=run_id,
+            name=f"{prefix}.embedding_calls_total",
+            value=calls_total,
+            unit="count",
+        )
+        repository.record_metric(
+            run_id=run_id,
+            name=f"{prefix}.embedding_errors_total",
+            value=errors_total,
+            unit="count",
+        )
+        if prompt_tokens_total > 0:
+            repository.record_metric(
+                run_id=run_id,
+                name=f"{prefix}.embedding_prompt_tokens_total",
+                value=prompt_tokens_total,
+                unit="count",
+            )
+        if cost_usd_total > 0.0:
+            repository.record_metric(
+                run_id=run_id,
+                name=f"{prefix}.embedding_estimated_cost_usd",
+                value=cost_usd_total,
+                unit="usd",
+            )
+        if prompt_tokens_missing_total > 0:
+            repository.record_metric(
+                run_id=run_id,
+                name=f"{prefix}.embedding_prompt_tokens_missing_total",
+                value=prompt_tokens_missing_total,
+                unit="count",
+            )
+        if cost_missing_total > 0:
+            repository.record_metric(
+                run_id=run_id,
+                name=f"{prefix}.embedding_cost_missing_total",
+                value=cost_missing_total,
+                unit="count",
+            )
     return hits

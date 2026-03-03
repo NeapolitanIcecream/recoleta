@@ -196,6 +196,7 @@ def build_trend_agent(*, llm_model: str) -> Agent[TrendAgentDeps, TrendPayload]:
             embedding_failure_mode=str(deps.embedding_failure_mode or "continue"),
             embedding_max_errors=int(deps.embedding_max_errors or 0),
             limit=int(limit or 10),
+            metric_namespace="pipeline.trends",
         )
         rows = [
             {
@@ -222,6 +223,56 @@ def _count_tool_calls(messages: list[Any]) -> int:
             if getattr(part, "part_kind", None) == "tool-call":
                 total += 1
     return total
+
+
+def _estimate_cost_usd_from_tokens(
+    *, model: str, input_tokens: int | None, output_tokens: int | None
+) -> float | None:
+    if input_tokens is None and output_tokens is None:
+        return None
+    prompt_tokens = int(input_tokens or 0)
+    completion_tokens = int(output_tokens or 0)
+    if prompt_tokens <= 0 and completion_tokens <= 0:
+        return 0.0
+    try:
+        from litellm.cost_calculator import cost_per_token
+    except Exception:
+        return None
+
+    candidates: list[str] = []
+    raw = str(model or "").strip()
+    if raw:
+        candidates.append(raw)
+        # pydantic-ai normalized form: provider:model
+        if "/" in raw and ":" not in raw:
+            provider, rest = raw.split("/", 1)
+            provider = provider.strip()
+            rest = rest.strip()
+            if provider and rest:
+                candidates.append(f"{provider}:{rest}")
+                candidates.append(rest)
+        if ":" in raw:
+            _, rest = raw.split(":", 1)
+            rest = rest.strip()
+            if rest:
+                candidates.append(rest)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        try:
+            prompt_cost, completion_cost = cost_per_token(
+                model=normalized,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+            return float(prompt_cost) + float(completion_cost)
+        except Exception:
+            continue
+    return None
 
 
 def generate_trend_payload(
@@ -277,18 +328,27 @@ def generate_trend_payload(
 
     result = agent.run_sync(prompt, deps=deps)
     payload = result.output
-    debug: dict[str, Any] | None = None
+    usage = result.usage()
+    usage_dict = {
+        "input_tokens": getattr(usage, "input_tokens", None),
+        "output_tokens": getattr(usage, "output_tokens", None),
+        "requests": getattr(usage, "requests", None),
+    }
+    estimated_cost_usd = _estimate_cost_usd_from_tokens(
+        model=llm_model,
+        input_tokens=getattr(usage, "input_tokens", None),
+        output_tokens=getattr(usage, "output_tokens", None),
+    )
+    debug: dict[str, Any] = {
+        "usage": usage_dict,
+        "estimated_cost_usd": estimated_cost_usd,
+    }
     if include_debug:
         messages = result.all_messages()
-        usage = result.usage()
-        usage_dict = {
-            "input_tokens": getattr(usage, "input_tokens", None),
-            "output_tokens": getattr(usage, "output_tokens", None),
-            "requests": getattr(usage, "requests", None),
-        }
-        debug = {
-            "tool_calls_total": _count_tool_calls(messages),
-            "usage": usage_dict,
-        }
-    log.info("Trend generation done debug={}", bool(debug))
+        debug["tool_calls_total"] = _count_tool_calls(messages)
+    log.info(
+        "Trend generation done include_debug={} cost_present={}",
+        bool(include_debug),
+        estimated_cost_usd is not None,
+    )
     return payload, debug

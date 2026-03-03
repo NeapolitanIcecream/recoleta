@@ -936,6 +936,30 @@ class PipelineService:
                 value=stats.embedding_errors_total,
                 unit="count",
             )
+            if stats.embedding_prompt_tokens_total is not None:
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.embedding_prompt_tokens_total",
+                    value=stats.embedding_prompt_tokens_total,
+                    unit="count",
+                )
+            if stats.embedding_cost_usd_total is not None:
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.estimated_cost_usd",
+                    value=stats.embedding_cost_usd_total,
+                    unit="usd",
+                )
+            if (
+                stats.embedding_cost_missing_total is not None
+                and stats.embedding_cost_missing_total > 0
+            ):
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.triage.cost_missing_total",
+                    value=stats.embedding_cost_missing_total,
+                    unit="count",
+                )
             self.repository.record_metric(
                 run_id=run_id,
                 name="pipeline.triage.failed_total",
@@ -1035,6 +1059,12 @@ class PipelineService:
         llm_calls_total = 0
         llm_errors_total = 0
         missing_content_total = 0
+        llm_prompt_tokens_total = 0
+        llm_completion_tokens_total = 0
+        llm_tokens_seen = False
+        llm_cost_usd_total = 0.0
+        llm_cost_seen = False
+        llm_cost_missing_total = 0
         llm_calls_by_provider_token: dict[str, int] = {}
         llm_errors_by_provider_token: dict[str, int] = {}
         llm_calls_by_model_token: dict[str, int] = {}
@@ -1161,6 +1191,19 @@ class PipelineService:
                     llm_calls_by_model_token[model_token] = (
                         llm_calls_by_model_token.get(model_token, 0) + 1
                     )
+                    if analysis_result.prompt_tokens is not None:
+                        llm_prompt_tokens_total += int(analysis_result.prompt_tokens)
+                        llm_tokens_seen = True
+                    if analysis_result.completion_tokens is not None:
+                        llm_completion_tokens_total += int(
+                            analysis_result.completion_tokens
+                        )
+                        llm_tokens_seen = True
+                    if analysis_result.cost_usd is not None:
+                        llm_cost_usd_total += float(analysis_result.cost_usd)
+                        llm_cost_seen = True
+                    else:
+                        llm_cost_missing_total += 1
 
                     if include_debug:
                         if debug is None:
@@ -1227,6 +1270,33 @@ class PipelineService:
             value=llm_errors_total,
             unit="count",
         )
+        if llm_tokens_seen:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.llm_prompt_tokens_total",
+                value=llm_prompt_tokens_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.llm_completion_tokens_total",
+                value=llm_completion_tokens_total,
+                unit="count",
+            )
+        if llm_cost_seen:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.estimated_cost_usd",
+                value=llm_cost_usd_total,
+                unit="usd",
+            )
+        if llm_cost_missing_total > 0:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.cost_missing_total",
+                value=llm_cost_missing_total,
+                unit="count",
+            )
         self.repository.record_metric(
             run_id=run_id,
             name="pipeline.analyze.missing_content_total",
@@ -2161,6 +2231,30 @@ class PipelineService:
                     highlights=[],
                 )
                 debug = {"empty_corpus": True} if include_debug else None
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.llm_requests_total",
+                    value=0,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.llm_input_tokens_total",
+                    value=0,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.llm_output_tokens_total",
+                    value=0,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.estimated_cost_usd",
+                    value=0.0,
+                    unit="usd",
+                )
             else:
                 self.repository.record_metric(
                     run_id=run_id,
@@ -2190,6 +2284,48 @@ class PipelineService:
                     corpus_granularity=corpus_granularity,
                     include_debug=include_debug,
                 )
+                if isinstance(debug, dict):
+                    usage = debug.get("usage")
+                    if isinstance(usage, dict):
+                        requests = usage.get("requests")
+                        input_tokens = usage.get("input_tokens")
+                        output_tokens = usage.get("output_tokens")
+                        if isinstance(requests, (int, float)):
+                            self.repository.record_metric(
+                                run_id=run_id,
+                                name="pipeline.trends.llm_requests_total",
+                                value=float(requests),
+                                unit="count",
+                            )
+                        if isinstance(input_tokens, (int, float)):
+                            self.repository.record_metric(
+                                run_id=run_id,
+                                name="pipeline.trends.llm_input_tokens_total",
+                                value=float(input_tokens),
+                                unit="count",
+                            )
+                        if isinstance(output_tokens, (int, float)):
+                            self.repository.record_metric(
+                                run_id=run_id,
+                                name="pipeline.trends.llm_output_tokens_total",
+                                value=float(output_tokens),
+                                unit="count",
+                            )
+                    cost_usd = debug.get("estimated_cost_usd")
+                    if isinstance(cost_usd, (int, float)):
+                        self.repository.record_metric(
+                            run_id=run_id,
+                            name="pipeline.trends.estimated_cost_usd",
+                            value=float(cost_usd),
+                            unit="usd",
+                        )
+                    else:
+                        self.repository.record_metric(
+                            run_id=run_id,
+                            name="pipeline.trends.cost_missing_total",
+                            value=1,
+                            unit="count",
+                        )
 
             doc_id = trends.persist_trend_payload(
                 repository=cast(Any, self.repository),

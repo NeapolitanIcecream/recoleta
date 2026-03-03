@@ -46,6 +46,10 @@ class TriageStats:
     embedding_errors_total: int
     duration_ms: int
     method: str
+    embedding_prompt_tokens_total: int | None = None
+    embedding_prompt_tokens_missing_total: int | None = None
+    embedding_cost_usd_total: float | None = None
+    embedding_cost_missing_total: int | None = None
 
 
 @dataclass(slots=True)
@@ -124,6 +128,35 @@ class SemanticTriage:
         embedding_calls_total = 0
         embedding_errors_total = 0
         method = "embedding_cosine"
+        embedding_prompt_tokens_total = 0
+        embedding_prompt_tokens_missing_total = 0
+        embedding_cost_usd_total = 0.0
+        embedding_cost_missing_total = 0
+
+        def _accumulate_embedding_debug(debug: Any) -> None:
+            nonlocal embedding_prompt_tokens_total
+            nonlocal embedding_prompt_tokens_missing_total
+            nonlocal embedding_cost_usd_total
+            nonlocal embedding_cost_missing_total
+
+            if not isinstance(debug, dict):
+                embedding_prompt_tokens_missing_total += 1
+                embedding_cost_missing_total += 1
+                return
+
+            raw_prompt = debug.get("prompt_tokens")
+            if raw_prompt is None:
+                raw_prompt = debug.get("total_tokens")
+            if isinstance(raw_prompt, (int, float)):
+                embedding_prompt_tokens_total += int(raw_prompt)
+            else:
+                embedding_prompt_tokens_missing_total += 1
+
+            raw_cost = debug.get("cost_usd")
+            if isinstance(raw_cost, (int, float)):
+                embedding_cost_usd_total += float(raw_cost)
+            else:
+                embedding_cost_missing_total += 1
 
         embedding_request: dict[str, Any] | None = None
         if include_debug:
@@ -149,6 +182,7 @@ class SemanticTriage:
                 model=embedding_model,
                 dimensions=embedding_dimensions,
             )
+            _accumulate_embedding_debug(query_debug)
             embedding_debug = {"query": query_debug}
 
             item_texts = [candidate.text for candidate in candidates]
@@ -177,6 +211,7 @@ class SemanticTriage:
                     inputs=batch,
                     dimensions=embedding_dimensions,
                 )
+                _accumulate_embedding_debug(batch_debug)
                 if len(batch_vectors) != len(batch):
                     raise ValueError("embedding output size mismatch")
                 item_vectors.extend(batch_vectors)
@@ -244,6 +279,16 @@ class SemanticTriage:
         )
 
         duration_ms = int((time.perf_counter() - started) * 1000)
+        prompt_tokens_total: int | None = None
+        if embedding_calls_total <= 0:
+            prompt_tokens_total = 0
+        elif embedding_prompt_tokens_total > 0:
+            prompt_tokens_total = embedding_prompt_tokens_total
+        cost_usd_total: float | None = None
+        if embedding_calls_total <= 0:
+            cost_usd_total = 0.0
+        elif embedding_cost_usd_total > 0.0:
+            cost_usd_total = embedding_cost_usd_total
         stats = TriageStats(
             candidates_total=len(candidates),
             scored_total=len(scored),
@@ -253,6 +298,14 @@ class SemanticTriage:
             embedding_errors_total=embedding_errors_total,
             duration_ms=duration_ms,
             method=method,
+            embedding_prompt_tokens_total=prompt_tokens_total,
+            embedding_prompt_tokens_missing_total=embedding_prompt_tokens_missing_total
+            if embedding_calls_total > 0
+            else 0,
+            embedding_cost_usd_total=cost_usd_total,
+            embedding_cost_missing_total=embedding_cost_missing_total
+            if embedding_calls_total > 0
+            else 0,
         )
 
         if include_debug:

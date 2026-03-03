@@ -35,6 +35,9 @@ def _runtime_symbols() -> dict[str, Any]:
     _RUNTIME_SYMBOLS = {
         "logger": _import_symbol("loguru", attr_name="logger"),
         "Console": _import_symbol("rich.console", attr_name="Console"),
+        "build_billing_table": _import_symbol(
+            "recoleta.billing", attr_name="build_billing_table"
+        ),
         "Settings": _import_symbol("recoleta.config", attr_name="Settings"),
         "configure_process_logging": _import_symbol(
             "recoleta.observability",
@@ -66,11 +69,39 @@ def _build_runtime() -> tuple[Any, Any, Any]:
     return settings, repository, service
 
 
+def _print_billing_report(*, console: Any, repository: Any, run_id: str) -> None:
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    build_billing_table = symbols["build_billing_table"]
+    log = logger.bind(module="cli.billing", run_id=run_id)
+    try:
+        metrics = repository.list_metrics(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Billing metrics load failed error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        return
+    try:
+        table = build_billing_table(metrics=metrics, title="Billing report")
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Billing table render failed error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        return
+    if table is None:
+        return
+    console.print(table)
+
+
 def _execute_stage(
     *,
     stage_name: str,
     stage_runner: Callable[[Any, str], Any],
-) -> tuple[Any, Any]:
+) -> tuple[Any, Any, str, Any]:
     symbols = _runtime_symbols()
     logger = symbols["logger"]
 
@@ -80,7 +111,7 @@ def _execute_stage(
     try:
         result = stage_runner(service, run.id)
         repository.finish_run(run.id, success=True)
-        return settings, result
+        return settings, repository, run.id, result
     except KeyboardInterrupt:
         try:
             repository.finish_run(run.id, success=False)
@@ -101,7 +132,7 @@ def ingest() -> None:
     symbols = _runtime_symbols()
     console_cls = symbols["Console"]
 
-    settings, result = _execute_stage(
+    settings, _, _, result = _execute_stage(
         stage_name="ingest",
         stage_runner=lambda service, run_id: service.prepare(run_id=run_id),
     )
@@ -124,7 +155,7 @@ def analyze(
     symbols = _runtime_symbols()
     console_cls = symbols["Console"]
 
-    settings, result = _execute_stage(
+    settings, _, _, result = _execute_stage(
         stage_name="analyze",
         stage_runner=lambda service, run_id: service.analyze(
             run_id=run_id, limit=limit
@@ -147,7 +178,7 @@ def publish(
     symbols = _runtime_symbols()
     console_cls = symbols["Console"]
 
-    settings, result = _execute_stage(
+    settings, _, _, result = _execute_stage(
         stage_name="publish",
         stage_runner=lambda service, run_id: service.publish(
             run_id=run_id, limit=limit
@@ -198,7 +229,7 @@ def trends(
     if anchor_date is not None and str(anchor_date).strip():
         parsed_anchor = date.fromisoformat(str(anchor_date).strip())
 
-    settings, result = _execute_stage(
+    settings, repository, run_id, result = _execute_stage(
         stage_name="trends",
         stage_runner=lambda service, run_id: service.trends(
             run_id=run_id,
@@ -213,6 +244,7 @@ def trends(
         f"doc_id={result.doc_id} granularity={result.granularity} "
         f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
     )
+    _print_billing_report(console=console, repository=repository, run_id=run_id)
 
 
 @rag_app.command("sync-vectors")
@@ -667,25 +699,29 @@ def _run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None
         repository.finish_run(run.id, success=False)
         log.exception("Run failed")
         raise
-
-    console.print(
-        "[green]run --once completed[/green] "
-        f"ingest(inserted={ingest_result.inserted} updated={ingest_result.updated} failed={ingest_result.failed}) "
-        f"analyze(processed={analyze_result.processed} failed={analyze_result.failed}) "
-        f"publish(sent={publish_result.sent} skipped={publish_result.skipped} failed={publish_result.failed})"
-    )
-    if "markdown" in settings.publish_targets:
-        console.print(f"[cyan]markdown output[/cyan] {settings.markdown_output_dir}")
+    else:
         console.print(
-            f"[cyan]latest index[/cyan] {settings.markdown_output_dir / 'latest.md'}"
+            "[green]run --once completed[/green] "
+            f"ingest(inserted={ingest_result.inserted} updated={ingest_result.updated} failed={ingest_result.failed}) "
+            f"analyze(processed={analyze_result.processed} failed={analyze_result.failed}) "
+            f"publish(sent={publish_result.sent} skipped={publish_result.skipped} failed={publish_result.failed})"
         )
-    if (
-        "obsidian" in settings.publish_targets
-        and settings.obsidian_vault_path is not None
-    ):
-        console.print(
-            f"[cyan]obsidian notes[/cyan] {settings.obsidian_vault_path / settings.obsidian_base_folder / 'Inbox'}"
-        )
+        if "markdown" in settings.publish_targets:
+            console.print(
+                f"[cyan]markdown output[/cyan] {settings.markdown_output_dir}"
+            )
+            console.print(
+                f"[cyan]latest index[/cyan] {settings.markdown_output_dir / 'latest.md'}"
+            )
+        if (
+            "obsidian" in settings.publish_targets
+            and settings.obsidian_vault_path is not None
+        ):
+            console.print(
+                f"[cyan]obsidian notes[/cyan] {settings.obsidian_vault_path / settings.obsidian_base_folder / 'Inbox'}"
+            )
+    finally:
+        _print_billing_report(console=console, repository=repository, run_id=run.id)
 
 
 def main() -> None:

@@ -167,7 +167,7 @@ class LiteLLMAnalyzer:
                 _sanitize_error_message(str(exc)),
             )
 
-        def _call_and_parse() -> tuple[_AnalysisPayload, str]:
+        def _call_and_parse() -> tuple[_AnalysisPayload, str, object]:
             response = _get_completion()(
                 model=self.model,
                 messages=messages,
@@ -186,7 +186,7 @@ class LiteLLMAnalyzer:
                 raise _AnalyzeRetryableError(
                     f"LLM returned JSON with invalid schema: {type(exc).__name__}"
                 ) from exc
-            return payload, raw_content
+            return payload, raw_content, response
 
         retrying = Retrying(
             retry=retry_if_exception(_should_retry_llm),
@@ -196,10 +196,20 @@ class LiteLLMAnalyzer:
             before_sleep=_before_sleep,
             reraise=True,
         )
-        payload, raw_content = retrying(_call_and_parse)
+        payload, raw_content, response = retrying(_call_and_parse)
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         provider = self.model.split("/", 1)[0] if "/" in self.model else "unknown"
+        usage = _extract_usage_dict(response)
+        prompt_tokens, completion_tokens, total_tokens = _extract_token_counts(usage)
+        cost_usd = _extract_response_cost_usd(response)
+        if cost_usd is None:
+            try:
+                from litellm.cost_calculator import completion_cost
+
+                cost_usd = float(completion_cost(completion_response=response))
+            except Exception:
+                cost_usd = None
         result = AnalysisResult(
             model=self.model,
             provider=provider,
@@ -207,8 +217,11 @@ class LiteLLMAnalyzer:
             topics=payload.topics,
             relevance_score=payload.relevance_score,
             novelty_score=payload.novelty_score,
-            cost_usd=None,
+            cost_usd=cost_usd,
             latency_ms=elapsed_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
         )
         if not include_debug:
             return result, None
@@ -222,6 +235,8 @@ class LiteLLMAnalyzer:
             "elapsed_ms": elapsed_ms,
             "content": raw_content,
             "parsed": payload.model_dump(mode="json"),
+            "usage": usage,
+            "cost_usd": cost_usd,
             "retry": {
                 "attempts": retry_attempts,
                 "attempts_total": len(retry_attempts) + 1,
@@ -290,3 +305,76 @@ def _extract_content(response: object) -> str:
     choices = getattr(response, "choices")
     first_choice = choices[0]
     return str(first_choice.message.content)
+
+
+def _extract_usage_dict(response: object) -> dict[str, Any] | None:
+    usage: Any
+    if isinstance(response, dict):
+        usage = response.get("usage")
+    else:
+        usage = getattr(response, "usage", None)
+    if isinstance(usage, dict):
+        return usage
+    if usage is None:
+        return None
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+    completion_tokens = getattr(usage, "completion_tokens", None)
+    total_tokens = getattr(usage, "total_tokens", None)
+    out: dict[str, Any] = {}
+    if prompt_tokens is not None:
+        out["prompt_tokens"] = prompt_tokens
+    if completion_tokens is not None:
+        out["completion_tokens"] = completion_tokens
+    if total_tokens is not None:
+        out["total_tokens"] = total_tokens
+    return out or None
+
+
+def _extract_response_cost_usd(response: object) -> float | None:
+    hidden: Any | None
+    if isinstance(response, dict):
+        hidden = response.get("_hidden_params")
+    else:
+        hidden = getattr(response, "_hidden_params", None)
+    if not isinstance(hidden, dict):
+        return None
+    raw = hidden.get("response_cost")
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _get_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _extract_token_counts(
+    usage: dict[str, Any] | None,
+) -> tuple[int | None, int | None, int | None]:
+    if not isinstance(usage, dict):
+        return None, None, None
+    prompt_tokens = _get_int(usage.get("prompt_tokens"))
+    completion_tokens = _get_int(usage.get("completion_tokens"))
+    total_tokens = _get_int(usage.get("total_tokens"))
+    if prompt_tokens is None:
+        prompt_tokens = _get_int(usage.get("input_tokens"))
+    if completion_tokens is None:
+        completion_tokens = _get_int(usage.get("output_tokens"))
+    if (
+        total_tokens is None
+        and prompt_tokens is not None
+        and completion_tokens is not None
+    ):
+        total_tokens = prompt_tokens + completion_tokens
+    return prompt_tokens, completion_tokens, total_tokens
