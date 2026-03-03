@@ -1743,30 +1743,25 @@ class PipelineService:
         )
         if existing_pdf is not None:
             return existing_pdf, False
-        try:
-            pdf_url = self._build_pdf_url(
-                source=source,
-                canonical_url=canonical_url,
-                source_item_id=source_item_id,
-            )
-            if not pdf_url:
-                raise ValueError("missing pdf url")
-            pdf_bytes = fetch_url_bytes(client, pdf_url)
-            pdf_diag: dict[str, Any] = {}
-            extracted_pdf = extract_pdf_text(
-                pdf_bytes,
-                diag=pdf_diag,
-            )
-            if extracted_pdf is None:
-                raise RuntimeError("empty pdf text extraction")
-            self.repository.upsert_content(
-                item_id=item_id,
-                content_type="pdf_text",
-                text=extracted_pdf,
-            )
-            return extracted_pdf, True
-        except Exception:
-            raise
+        pdf_url = self._build_pdf_url(
+            source=source,
+            canonical_url=canonical_url,
+            source_item_id=source_item_id,
+        )
+        if not pdf_url:
+            raise ValueError("missing pdf url")
+
+        pdf_bytes = fetch_url_bytes(client, pdf_url)
+        extracted_pdf = extract_pdf_text(pdf_bytes)
+        if extracted_pdf is None:
+            raise RuntimeError("empty pdf text extraction")
+
+        self.repository.upsert_content(
+            item_id=item_id,
+            content_type="pdf_text",
+            text=extracted_pdf,
+        )
+        return extracted_pdf, True
 
     def _ensure_html_maintext_content(
         self,

@@ -174,14 +174,16 @@ def _pdf_has_text_layer(doc: Any) -> bool:
     return False
 
 
-def _extract_pdf_text_with_pymupdf4llm(doc: Any) -> str | None:
-    pymupdf4llm = _get_pymupdf4llm_module()
-    if pymupdf4llm is None:
+def _extract_pdf_text_with_pymupdf4llm(
+    doc: Any, *, pymupdf4llm: Any | None = None
+) -> str | None:
+    module = pymupdf4llm or _get_pymupdf4llm_module()
+    if module is None:
         return None
 
     markdown: Any = None
     try:
-        markdown = pymupdf4llm.to_markdown(doc)
+        markdown = module.to_markdown(doc)
     except Exception:
         return None
 
@@ -226,7 +228,9 @@ def extract_pdf_text(
         if diag is not None:
             diag["pdf_has_text_layer"] = bool(has_text_layer)
 
-        pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(doc)
+        pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(
+            doc, pymupdf4llm=pymupdf4llm
+        )
         if diag is not None:
             diag["pymupdf4llm_md_chars"] = len(str(pymupdf_markdown or ""))
 
