@@ -2176,6 +2176,12 @@ class PipelineService:
                     embedding_dimensions=self.settings.trends_embedding_dimensions,
                     embedding_batch_max_inputs=self.settings.trends_embedding_batch_max_inputs,
                     embedding_batch_max_chars=self.settings.trends_embedding_batch_max_chars,
+                    embedding_failure_mode=getattr(
+                        self.settings, "trends_embedding_failure_mode", "continue"
+                    ),
+                    embedding_max_errors=int(
+                        getattr(self.settings, "trends_embedding_max_errors", 0) or 0
+                    ),
                     lancedb_dir=self.settings.rag_lancedb_dir,
                     granularity=normalized_granularity,
                     period_start=period_start,

@@ -63,6 +63,7 @@ def _default_lancedb_dir() -> Path:
 _ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
 _ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
 _ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
+_ALLOWED_TRENDS_EMBEDDING_FAILURE_MODES = {"continue", "fail_fast", "threshold"}
 
 
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
@@ -109,6 +110,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRENDS_EMBEDDING_DIMENSIONS": "trends_embedding_dimensions",
         "TRENDS_EMBEDDING_BATCH_MAX_INPUTS": "trends_embedding_batch_max_inputs",
         "TRENDS_EMBEDDING_BATCH_MAX_CHARS": "trends_embedding_batch_max_chars",
+        "TRENDS_EMBEDDING_FAILURE_MODE": "trends_embedding_failure_mode",
+        "TRENDS_EMBEDDING_MAX_ERRORS": "trends_embedding_max_errors",
     }
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
@@ -487,12 +490,34 @@ class Settings(BaseSettings):
     trends_embedding_batch_max_chars: int = Field(
         default=40_000, ge=1, validation_alias="TRENDS_EMBEDDING_BATCH_MAX_CHARS"
     )
+    trends_embedding_failure_mode: str = Field(
+        default="continue", validation_alias="TRENDS_EMBEDDING_FAILURE_MODE"
+    )
+    trends_embedding_max_errors: int = Field(
+        default=0, ge=0, validation_alias="TRENDS_EMBEDDING_MAX_ERRORS"
+    )
 
     @model_validator(mode="after")
     def _validate_debug_artifacts_require_artifacts_dir(self) -> "Settings":
         if self.write_debug_artifacts and self.artifacts_dir is None:
             raise ValueError(
                 "ARTIFACTS_DIR is required when WRITE_DEBUG_ARTIFACTS=true"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_trends_embedding_failure_policy(self) -> "Settings":
+        mode = (
+            str(self.trends_embedding_failure_mode or "").strip().lower() or "continue"
+        )
+        if mode not in _ALLOWED_TRENDS_EMBEDDING_FAILURE_MODES:
+            raise ValueError(
+                "TRENDS_EMBEDDING_FAILURE_MODE must be one of: continue, fail_fast, threshold"
+            )
+        self.trends_embedding_failure_mode = mode
+        if mode == "threshold" and int(self.trends_embedding_max_errors or 0) <= 0:
+            raise ValueError(
+                "TRENDS_EMBEDDING_MAX_ERRORS must be > 0 when TRENDS_EMBEDDING_FAILURE_MODE=threshold"
             )
         return self
 

@@ -25,6 +25,8 @@ class TrendAgentDeps:
     embedding_dimensions: int | None
     embedding_batch_max_inputs: int
     embedding_batch_max_chars: int
+    embedding_failure_mode: str = "continue"
+    embedding_max_errors: int = 0
 
 
 def _normalize_pydantic_ai_model(model: str) -> str:
@@ -191,6 +193,8 @@ def build_trend_agent(*, llm_model: str) -> Agent[TrendAgentDeps, TrendPayload]:
             embedding_dimensions=deps.embedding_dimensions,
             max_batch_inputs=deps.embedding_batch_max_inputs,
             max_batch_chars=deps.embedding_batch_max_chars,
+            embedding_failure_mode=str(deps.embedding_failure_mode or "continue"),
+            embedding_max_errors=int(deps.embedding_max_errors or 0),
             limit=int(limit or 10),
         )
         rows = [
@@ -230,6 +234,8 @@ def generate_trend_payload(
     embedding_dimensions: int | None,
     embedding_batch_max_inputs: int,
     embedding_batch_max_chars: int,
+    embedding_failure_mode: str = "continue",
+    embedding_max_errors: int = 0,
     granularity: str,
     period_start: datetime,
     period_end: datetime,
@@ -249,6 +255,8 @@ def generate_trend_payload(
         embedding_dimensions=embedding_dimensions,
         embedding_batch_max_inputs=embedding_batch_max_inputs,
         embedding_batch_max_chars=embedding_batch_max_chars,
+        embedding_failure_mode=str(embedding_failure_mode or "continue"),
+        embedding_max_errors=int(embedding_max_errors or 0),
     )
 
     prompt = json.dumps(

@@ -22,6 +22,8 @@ def sync_summary_vectors_in_period(
     embedding_dimensions: int | None,
     max_batch_inputs: int,
     max_batch_chars: int,
+    embedding_failure_mode: str = "continue",
+    embedding_max_errors: int = 0,
     page_size: int = 500,
     max_pages: int = 10_000,
 ) -> dict[str, Any]:
@@ -50,6 +52,8 @@ def sync_summary_vectors_in_period(
             embedding_dimensions=embedding_dimensions,
             max_batch_inputs=max_batch_inputs,
             max_batch_chars=max_batch_chars,
+            embedding_failure_mode=embedding_failure_mode,
+            embedding_max_errors=embedding_max_errors,
             limit=normalized_page,
             offset=offset,
         )
@@ -72,6 +76,9 @@ def sync_summary_vectors_in_period(
         "skipped_total": skipped_total,
         "embedding_calls_total": embedding_calls_total,
         "embedding_errors_total": embedding_errors_total,
+        "embedding_failure_mode": str(embedding_failure_mode or "").strip().lower()
+        or "continue",
+        "embedding_max_errors": max(0, int(embedding_max_errors or 0)),
         "page_size": normalized_page,
     }
     log.info("Vector sync finished stats={}", out)

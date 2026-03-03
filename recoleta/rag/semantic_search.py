@@ -37,6 +37,8 @@ def ensure_summary_vectors_for_period(
     embedding_dimensions: int | None,
     max_batch_inputs: int,
     max_batch_chars: int,
+    embedding_failure_mode: str = "continue",
+    embedding_max_errors: int = 0,
     limit: int = 500,
     offset: int = 0,
 ) -> dict[str, Any]:
@@ -46,6 +48,19 @@ def ensure_summary_vectors_for_period(
     normalized_model = str(embedding_model or "").strip()
     if not normalized_model:
         raise ValueError("embedding_model must not be empty")
+
+    normalized_failure_mode = str(embedding_failure_mode or "").strip().lower()
+    if not normalized_failure_mode:
+        normalized_failure_mode = "continue"
+    if normalized_failure_mode not in {"continue", "fail_fast", "threshold"}:
+        raise ValueError(
+            "embedding_failure_mode must be one of: continue, fail_fast, threshold"
+        )
+    normalized_max_errors = max(0, int(embedding_max_errors or 0))
+    if normalized_failure_mode == "threshold" and normalized_max_errors <= 0:
+        raise ValueError(
+            "embedding_max_errors must be a positive integer when embedding_failure_mode=threshold"
+        )
 
     rows = repository.list_summary_chunk_index_rows_in_period(
         doc_type=doc_type,
@@ -61,6 +76,8 @@ def ensure_summary_vectors_for_period(
             "skipped_total": 0,
             "embedding_calls_total": 0,
             "embedding_errors_total": 0,
+            "embedding_failure_mode": normalized_failure_mode,
+            "embedding_max_errors": normalized_max_errors,
         }
 
     chunk_ids = [int(r["chunk_id"]) for r in rows if int(r.get("chunk_id") or 0) > 0]
@@ -88,6 +105,8 @@ def ensure_summary_vectors_for_period(
             "skipped_total": skipped_total,
             "embedding_calls_total": 0,
             "embedding_errors_total": 0,
+            "embedding_failure_mode": normalized_failure_mode,
+            "embedding_max_errors": normalized_max_errors,
         }
 
     embedder = LiteLLMEmbedder()
@@ -136,6 +155,38 @@ def ensure_summary_vectors_for_period(
                 type(exc).__name__,
                 str(exc),
             )
+            if normalized_failure_mode == "fail_fast":
+                log.warning(
+                    "Vector sync aborting (fail_fast) calls={} errors={}",
+                    embedding_calls_total,
+                    embedding_errors_total,
+                )
+                raise
+            if (
+                normalized_failure_mode == "threshold"
+                and normalized_max_errors > 0
+                and embedding_errors_total >= normalized_max_errors
+            ):
+                log.warning(
+                    "Vector sync aborting (threshold) calls={} errors={} max_errors={}",
+                    embedding_calls_total,
+                    embedding_errors_total,
+                    normalized_max_errors,
+                )
+                raise
+
+    if (
+        normalized_failure_mode == "threshold"
+        and embedding_calls_total > 0
+        and embedded_total <= 0
+        and embedding_errors_total >= embedding_calls_total
+    ):
+        log.warning(
+            "Vector sync aborted (all batches failed) calls={} errors={}",
+            embedding_calls_total,
+            embedding_errors_total,
+        )
+        raise RuntimeError("vector sync failed: all embedding batches failed")
 
     stats = {
         "chunks_total": len(chunk_ids),
@@ -143,6 +194,8 @@ def ensure_summary_vectors_for_period(
         "skipped_total": skipped_total,
         "embedding_calls_total": embedding_calls_total,
         "embedding_errors_total": embedding_errors_total,
+        "embedding_failure_mode": normalized_failure_mode,
+        "embedding_max_errors": normalized_max_errors,
     }
     log.info("Vector sync done stats={}", stats)
     return stats
@@ -161,6 +214,8 @@ def semantic_search_summaries_in_period(
     embedding_dimensions: int | None,
     max_batch_inputs: int,
     max_batch_chars: int,
+    embedding_failure_mode: str = "continue",
+    embedding_max_errors: int = 0,
     limit: int = 10,
     corpus_limit: int = 500,
 ) -> list[SemanticSearchHit]:
@@ -180,6 +235,8 @@ def semantic_search_summaries_in_period(
         embedding_dimensions=embedding_dimensions,
         max_batch_inputs=max_batch_inputs,
         max_batch_chars=max_batch_chars,
+        embedding_failure_mode=embedding_failure_mode,
+        embedding_max_errors=embedding_max_errors,
         limit=corpus_limit,
         offset=0,
     )
@@ -245,6 +302,8 @@ def semantic_search_summaries_in_period(
             "skipped_total": index_stats.get("skipped_total"),
             "embedding_calls_total": index_stats.get("embedding_calls_total"),
             "embedding_errors_total": index_stats.get("embedding_errors_total"),
+            "embedding_failure_mode": index_stats.get("embedding_failure_mode"),
+            "embedding_max_errors": index_stats.get("embedding_max_errors"),
         },
     )
     return hits

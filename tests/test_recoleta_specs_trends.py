@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import io
 import json
 from pathlib import Path
 
@@ -355,6 +356,154 @@ def test_trends_semantic_search_reembeds_when_text_hash_changes(
     )
     existing = refreshed.fetch_existing_hashes(chunk_ids=[int(chunk.id)])
     assert existing.get(int(chunk.id)) == str(getattr(chunk, "text_hash") or "")
+
+
+def test_trends_vector_sync_threshold_aborts_after_max_errors_and_emits_log(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Spec: threshold failure mode aborts vector sync once max errors is reached."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    _, repository = _build_runtime()
+
+    with Session(repository.engine) as session:
+        doc = Document(
+            doc_type="item",
+            item_id=101,
+            title="Embedding failure policy",
+            published_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        assert doc.id is not None
+        doc_id = int(doc.id)
+
+    chunk, _ = repository.upsert_document_chunk(
+        doc_id=doc_id,
+        chunk_index=0,
+        kind="summary",
+        text_value="Agents are great.",
+        start_char=0,
+        end_char=None,
+        source_content_type="analysis_summary",
+    )
+    assert chunk.id is not None
+
+    def _always_fail_embedding(**kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        raise RuntimeError("simulated embedding failure")
+
+    import recoleta.rag.embeddings as rag_embeddings
+
+    monkeypatch.setattr(rag_embeddings, "_embedding", _always_fail_embedding)
+
+    from loguru import logger as loguru_logger
+
+    stream = io.StringIO()
+    sink_id = loguru_logger.add(stream, level="WARNING")
+    try:
+        period_start = datetime(2026, 1, 1, tzinfo=UTC)
+        period_end = datetime(2026, 1, 2, tzinfo=UTC)
+        with pytest.raises(RuntimeError, match="simulated embedding failure"):
+            _ = semantic_search_summaries_in_period(
+                repository=repository,
+                lancedb_dir=Path(str(tmp_path / "lancedb")),
+                run_id="run-threshold-1",
+                doc_type="item",
+                period_start=period_start,
+                period_end=period_end,
+                query="agents",
+                embedding_model="test/embed",
+                embedding_dimensions=2,
+                max_batch_inputs=64,
+                max_batch_chars=40_000,
+                embedding_failure_mode="threshold",
+                embedding_max_errors=1,
+                limit=5,
+                corpus_limit=10,
+            )
+        output = stream.getvalue()
+        assert "Vector sync aborting (threshold)" in output
+    finally:
+        loguru_logger.remove(sink_id)
+
+
+def test_trends_vector_sync_threshold_aborts_when_all_batches_fail_and_emits_log(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Spec: threshold failure mode aborts even if max_errors is not reached, when all batches fail."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    _, repository = _build_runtime()
+
+    with Session(repository.engine) as session:
+        doc = Document(
+            doc_type="item",
+            item_id=102,
+            title="Embedding all-failure policy",
+            published_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        assert doc.id is not None
+        doc_id = int(doc.id)
+
+    chunk, _ = repository.upsert_document_chunk(
+        doc_id=doc_id,
+        chunk_index=0,
+        kind="summary",
+        text_value="Agents are great.",
+        start_char=0,
+        end_char=None,
+        source_content_type="analysis_summary",
+    )
+    assert chunk.id is not None
+
+    def _always_fail_embedding(**kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        raise RuntimeError("simulated embedding failure")
+
+    import recoleta.rag.embeddings as rag_embeddings
+
+    monkeypatch.setattr(rag_embeddings, "_embedding", _always_fail_embedding)
+
+    from loguru import logger as loguru_logger
+
+    stream = io.StringIO()
+    sink_id = loguru_logger.add(stream, level="WARNING")
+    try:
+        period_start = datetime(2026, 1, 1, tzinfo=UTC)
+        period_end = datetime(2026, 1, 2, tzinfo=UTC)
+        with pytest.raises(RuntimeError, match="all embedding batches failed"):
+            _ = semantic_search_summaries_in_period(
+                repository=repository,
+                lancedb_dir=Path(str(tmp_path / "lancedb")),
+                run_id="run-threshold-all",
+                doc_type="item",
+                period_start=period_start,
+                period_end=period_end,
+                query="agents",
+                embedding_model="test/embed",
+                embedding_dimensions=2,
+                max_batch_inputs=64,
+                max_batch_chars=40_000,
+                embedding_failure_mode="threshold",
+                embedding_max_errors=10,
+                limit=5,
+                corpus_limit=10,
+            )
+        output = stream.getvalue()
+        assert "Vector sync aborted (all batches failed)" in output
+    finally:
+        loguru_logger.remove(sink_id)
 
 
 def test_trends_period_overlap_includes_cross_boundary_trend_docs(

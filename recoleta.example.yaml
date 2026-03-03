@@ -125,6 +125,8 @@ sources:
 # trends_embedding_dimensions: null
 # trends_embedding_batch_max_inputs: 64
 # trends_embedding_batch_max_chars: 40000
+# trends_embedding_failure_mode: "continue"  # Default: "continue" (continue|fail_fast|threshold)
+# trends_embedding_max_errors: 0  # Default: 0 (required >0 when failure_mode=threshold)
 
 ## Analysis limits
 

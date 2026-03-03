@@ -260,7 +260,9 @@ def rag_sync_vectors(
     else:
         end_dt = end_dt.astimezone(UTC)
     if end_dt <= start_dt:
-        console.print("[red]invalid datetime range[/red] period_end must be > period_start")
+        console.print(
+            "[red]invalid datetime range[/red] period_end must be > period_start"
+        )
         raise typer.Exit(code=2)
 
     run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
@@ -287,6 +289,12 @@ def rag_sync_vectors(
             embedding_dimensions=settings.trends_embedding_dimensions,
             max_batch_inputs=settings.trends_embedding_batch_max_inputs,
             max_batch_chars=settings.trends_embedding_batch_max_chars,
+            embedding_failure_mode=getattr(
+                settings, "trends_embedding_failure_mode", "continue"
+            ),
+            embedding_max_errors=int(
+                getattr(settings, "trends_embedding_max_errors", 0) or 0
+            ),
             page_size=page_size,
         )
         repository.finish_run(run.id, success=True)
@@ -301,6 +309,99 @@ def rag_sync_vectors(
     except Exception:
         repository.finish_run(run.id, success=False)
         log.exception("RAG sync failed")
+        raise
+
+
+@rag_app.command("build-index")
+def rag_build_index(
+    vector: bool = typer.Option(
+        True, "--vector/--no-vector", help="Build a vector index (ANN)."
+    ),
+    scalar: bool = typer.Option(
+        True,
+        "--scalar/--no-scalar",
+        help="Build scalar indices for filter columns.",
+    ),
+    vector_index_type: str = typer.Option(
+        "IVF_HNSW_SQ",
+        "--vector-index-type",
+        help="Vector index type. Examples: IVF_FLAT, IVF_SQ, IVF_HNSW_SQ, IVF_PQ (requires enough rows).",
+    ),
+    vector_metric: str = typer.Option(
+        "cosine",
+        "--vector-metric",
+        help="Vector distance metric. Examples: cosine, l2, dot.",
+    ),
+    vector_num_partitions: int | None = typer.Option(
+        None,
+        "--vector-num-partitions",
+        min=1,
+        help="Optional IVF partition count. If omitted, LanceDB chooses defaults.",
+    ),
+    vector_num_sub_vectors: int | None = typer.Option(
+        None,
+        "--vector-num-sub-vectors",
+        min=1,
+        help="Optional PQ sub-vector count (PQ variants only).",
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Exit non-zero if any index build fails.",
+    ),
+) -> None:
+    """Build/rebuild indices for the current embedding table in LanceDB."""
+
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    console_cls = symbols["Console"]
+
+    settings, repository, _ = _build_runtime()
+    console = console_cls(stderr=settings.log_json)
+
+    run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
+    log = logger.bind(module="cli.rag.build_index", run_id=run.id)
+    try:
+        from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
+
+        store = LanceVectorStore(
+            db_dir=settings.rag_lancedb_dir,
+            table_name=embedding_table_name(
+                embedding_model=settings.trends_embedding_model,
+                embedding_dimensions=settings.trends_embedding_dimensions,
+            ),
+        )
+        stats = store.build_indices(
+            build_vector_index=bool(vector),
+            vector_index_type=str(vector_index_type),
+            vector_metric=str(vector_metric),
+            vector_num_partitions=vector_num_partitions,
+            vector_num_sub_vectors=vector_num_sub_vectors,
+            build_scalar_indices=bool(scalar),
+            replace=True,
+            strict=bool(strict),
+        )
+        errors = stats.get("errors") or []
+        ok = bool(stats.get("table_exists")) and (not errors or not strict)
+        repository.finish_run(run.id, success=ok)
+        if not stats.get("table_exists"):
+            console.print(
+                "[yellow]rag build-index skipped[/yellow] table not found (run `recoleta rag sync-vectors` first)"
+            )
+            return
+        console.print(f"[green]rag build-index completed[/green] stats={stats}")
+        if strict and errors:
+            raise typer.Exit(code=1)
+    except KeyboardInterrupt:
+        try:
+            repository.finish_run(run.id, success=False)
+        except Exception:
+            log.exception("Run finish failed during interrupt")
+        log.warning("RAG build-index interrupted")
+        raise typer.Exit(code=130) from None
+    except Exception:
+        repository.finish_run(run.id, success=False)
+        log.exception("RAG build-index failed")
         raise
 
 
