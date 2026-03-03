@@ -37,10 +37,6 @@ publish_targets:
 # JSON keys remain English and topics remain concise English tags.
 # llm_output_language: null  # Default: null
 
-# Optional marker-pdf torch device hint (used only when marker OCR fallback runs).
-# Examples: "cpu", "mps", "cuda", "cuda:0"
-# marker_torch_device: null  # Default: null
-
 ## Topic and ranking configuration
 
 # Topics are used for relevance scoring and optional semantic triage.

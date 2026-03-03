@@ -45,8 +45,7 @@ Note on `aiohttp`:
 - `trafilatura`: extract main text from web pages.
 - `beautifulsoup4`: optional HTML cleanup and fallback parsing.
 - `markdownify`: convert HTML fragments to Markdown.
-- `pymupdf4llm`: preferred PDF-to-Markdown path for text-layer PDFs (non-OCR).
-- `marker-pdf`: OCR-capable fallback for scanned/no-text PDFs.
+- `pymupdf4llm`: PDF-to-Markdown extraction (non-OCR). `pdf_text` enrich fails when PDFs have no readable text layer.
 - `pyyaml`: emit YAML frontmatter reliably.
 - `python-slugify`: stable, filesystem-safe note filenames.
 

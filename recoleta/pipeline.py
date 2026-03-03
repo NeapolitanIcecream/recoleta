@@ -1397,16 +1397,13 @@ class PipelineService:
                 arxiv_html_throttle=arxiv_html_throttle,
             )
         elif source == "openreview":
-            content_text, stored_new_content = (
-                self._ensure_pdf_content_with_optional_html_fallback(
-                    client=client,
-                    source=source,
-                    item_id=item_id,
-                    canonical_url=canonical_url,
-                    source_item_id=source_item_id,
-                    allow_html_fallback=True,
-                    log=log,
-                )
+            content_text, stored_new_content = self._ensure_pdf_content(
+                client=client,
+                source=source,
+                item_id=item_id,
+                canonical_url=canonical_url,
+                source_item_id=source_item_id,
+                log=log,
             )
         else:
             content_text, stored_new_content = self._ensure_html_maintext_content(
@@ -1433,13 +1430,12 @@ class PipelineService:
         method = self.settings.sources.arxiv.enrich_method
         failure_mode = self.settings.sources.arxiv.enrich_failure_mode
         if method == "pdf_text":
-            return self._ensure_pdf_content_with_optional_html_fallback(
+            return self._ensure_pdf_content(
                 client=client,
                 source="arxiv",
                 item_id=item_id,
                 canonical_url=canonical_url,
                 source_item_id=source_item_id,
-                allow_html_fallback=failure_mode == "fallback",
                 log=log,
             )
 
@@ -1455,17 +1451,16 @@ class PipelineService:
                 if failure_mode == "strict":
                     raise
                 log.bind(item_id=item_id).warning(
-                    "arXiv enrich_method={} failed, falling back to pdf/html path: {}",
+                    "arXiv enrich_method={} failed, falling back to pdf path: {}",
                     method,
                     self._sanitize_error_message(str(method_exc)),
                 )
-                return self._ensure_pdf_content_with_optional_html_fallback(
+                return self._ensure_pdf_content(
                     client=client,
                     source="arxiv",
                     item_id=item_id,
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
-                    allow_html_fallback=True,
                     log=log,
                 )
 
@@ -1484,17 +1479,16 @@ class PipelineService:
                 if failure_mode == "strict":
                     raise
                 log.bind(item_id=item_id).warning(
-                    "arXiv enrich_method={} failed, falling back to pdf/html path: {}",
+                    "arXiv enrich_method={} failed, falling back to pdf path: {}",
                     method,
                     self._sanitize_error_message(str(method_exc)),
                 )
-                return self._ensure_pdf_content_with_optional_html_fallback(
+                return self._ensure_pdf_content(
                     client=client,
                     source="arxiv",
                     item_id=item_id,
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
-                    allow_html_fallback=True,
                     log=log,
                 )
 
@@ -1734,7 +1728,7 @@ class PipelineService:
             stored_new = stored_new or (inserted > 0)
         return cleaned_document, bool(stored_new)
 
-    def _ensure_pdf_content_with_optional_html_fallback(
+    def _ensure_pdf_content(
         self,
         *,
         client: httpx.Client,
@@ -1742,7 +1736,6 @@ class PipelineService:
         item_id: int,
         canonical_url: str,
         source_item_id: str | None,
-        allow_html_fallback: bool,
         log: Any,
     ) -> tuple[str, bool]:
         existing_pdf = self._get_latest_content_text(
@@ -1762,37 +1755,18 @@ class PipelineService:
             pdf_diag: dict[str, Any] = {}
             extracted_pdf = extract_pdf_text(
                 pdf_bytes,
-                marker_device=self.settings.marker_torch_device,
                 diag=pdf_diag,
             )
             if extracted_pdf is None:
                 raise RuntimeError("empty pdf text extraction")
-            pdf_backend = str(pdf_diag.get("pdf_backend") or "").strip().lower()
-            if pdf_backend == "marker":
-                log.bind(
-                    item_id=item_id,
-                    pdf_backend="marker",
-                    pdf_has_text_layer=bool(pdf_diag.get("pdf_has_text_layer")),
-                    pymupdf4llm_md_chars=int(pdf_diag.get("pymupdf4llm_md_chars") or 0),
-                ).info("PDF extracted via marker")
             self.repository.upsert_content(
                 item_id=item_id,
                 content_type="pdf_text",
                 text=extracted_pdf,
             )
             return extracted_pdf, True
-        except Exception as pdf_exc:
-            if not allow_html_fallback:
-                raise
-            log.bind(item_id=item_id).warning(
-                "PDF enrich failed, falling back to HTML: {}",
-                self._sanitize_error_message(str(pdf_exc)),
-            )
-            return self._ensure_html_maintext_content(
-                client=client,
-                item_id=item_id,
-                canonical_url=canonical_url,
-            )
+        except Exception:
+            raise
 
     def _ensure_html_maintext_content(
         self,

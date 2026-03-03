@@ -67,7 +67,7 @@ Responsibilities:
 
 Responsibilities:
 - For HTML: download and extract main text (e.g., `trafilatura`).
-- For PDF: download and extract text/markdown (e.g., `marker-pdf` for arXiv/OpenReview PDFs).
+- For PDF: download and extract text/markdown (via `pymupdf4llm`; non-OCR).
 - Persist extracted content to:
   - SQLite `contents` (small text blobs) and/or
   - filesystem artifact store (for larger payloads), with a pointer stored in SQLite.

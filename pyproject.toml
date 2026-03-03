@@ -15,7 +15,6 @@ dependencies = [
     "litellm>=1.76.1",
     "loguru>=0.7.3",
     "markdownify>=1.2.2",
-    "marker-pdf>=1.10.2",
     "openai>=1.109.1",
     "openreview-py>=1.57.1",
     "orjson>=3.11.7",

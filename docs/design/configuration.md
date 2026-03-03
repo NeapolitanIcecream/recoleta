@@ -36,12 +36,6 @@ Optional LLM behavior:
   - `topics` remain concise English tags for downstream allow/deny filtering.
   - Empty value means unset.
 
-Optional PDF/OCR behavior:
-
-- `MARKER_TORCH_DEVICE`: optional torch device hint for `marker-pdf` model initialization.
-  - Examples: `cpu`, `mps`, `cuda`, `cuda:0`.
-  - Use `cpu` as a stable fallback if GPU/MPS initialization fails (e.g., meta-tensor errors).
-
 ## Source configuration
 
 These can be provided as a JSON/YAML string or a config file.

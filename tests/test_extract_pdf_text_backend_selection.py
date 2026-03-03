@@ -35,64 +35,47 @@ def test_extract_pdf_text_prefers_pymupdf4llm_for_text_layer_pdf(
         def to_markdown(_doc: Any) -> str:
             return "fast markdown from pymupdf4llm"
 
-    def fail_if_marker_called() -> Any:
-        raise AssertionError("marker converter should not be used for text-layer PDF")
-
     text_pdf = _build_pdf_bytes(text="Readable text layer. " * 80)
 
     monkeypatch.setattr(extract, "_get_pymupdf4llm_module", lambda: FakePyMuPDF4LLM())
-    monkeypatch.setattr(extract, "_get_marker_pdf_converter", fail_if_marker_called)
 
     extracted = extract.extract_pdf_text(text_pdf)
 
     assert extracted == "fast markdown from pymupdf4llm"
 
 
-def test_extract_pdf_text_falls_back_to_marker_for_blank_pdf_pages(
+def test_extract_pdf_text_returns_none_for_blank_pdf_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeRendered:
-        markdown = "ocr result from marker"
-
-    class FakeMarkerConverter:
-        def __call__(self, _path: str) -> Any:
-            return FakeRendered()
+    class FakePyMuPDF4LLM:
+        @staticmethod
+        def to_markdown(_doc: Any) -> str:
+            return ""
 
     blank_pdf = _build_pdf_bytes(text=None)
 
-    monkeypatch.setattr(
-        extract,
-        "_extract_pdf_text_with_pymupdf4llm",
-        lambda _doc: None,  # noqa: ARG005
-    )
-    monkeypatch.setattr(
-        extract, "_get_marker_pdf_converter", lambda: FakeMarkerConverter()
-    )
+    monkeypatch.setattr(extract, "_get_pymupdf4llm_module", lambda: FakePyMuPDF4LLM())
 
-    extracted = extract.extract_pdf_text(blank_pdf)
+    diag: dict[str, Any] = {}
+    extracted = extract.extract_pdf_text(blank_pdf, diag=diag)
 
-    assert extracted == "ocr result from marker"
+    assert extracted is None
+    assert diag.get("pdf_backend") == "none"
 
 
 def test_extract_pdf_text_uses_pymupdf4llm_even_when_text_layer_check_is_inconclusive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Spec: don't jump to marker just because the first pages have little text."""
+    """Spec: don't treat sparse pages as a reason to fail early."""
 
     class FakePyMuPDF4LLM:
         @staticmethod
         def to_markdown(_doc: Any) -> str:
             return "markdown from pymupdf4llm despite sparse text"
 
-    def fail_if_marker_called() -> Any:
-        raise AssertionError(
-            "marker should not be used when pymupdf4llm yields markdown"
-        )
-
     sparse_text_pdf = _build_pdf_bytes(text="Short text.\n" * 5)
 
     monkeypatch.setattr(extract, "_get_pymupdf4llm_module", lambda: FakePyMuPDF4LLM())
-    monkeypatch.setattr(extract, "_get_marker_pdf_converter", fail_if_marker_called)
 
     extracted = extract.extract_pdf_text(sparse_text_pdf)
 

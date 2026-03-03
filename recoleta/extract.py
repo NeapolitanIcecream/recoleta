@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import gzip
 from io import BytesIO
-import os
 import tarfile
-import tempfile
 import time
-from contextlib import contextmanager
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -21,7 +18,6 @@ from tenacity import (
 )
 
 
-_MARKER_PDF_CONVERTERS: dict[str, Any] = {}
 _PYMUPDF: Any | None = None
 _PYMUPDF4LLM: Any | None = None
 _PYMUPDF_READY: bool | None = None
@@ -70,99 +66,6 @@ def _ensure_pandoc_ready() -> tuple[bool, str | None, Any | None]:
     return _PANDOC_READY, _PANDOC_READY_ERROR, _PYPANDOC
 
 
-_EXTERNAL_PROGRESS_ENV: dict[str, str] = {
-    # HuggingFace Hub tqdm progress bars (used by many model download paths).
-    "HF_HUB_DISABLE_PROGRESS_BARS": "1",
-    # tqdm supports env overrides via the TQDM_ prefix (envwrap). Use a boolean-ish value.
-    "TQDM_DISABLE": "True",
-}
-
-
-@contextmanager
-def _external_progress_disabled() -> Any:
-    """Disable third-party progress bars for clean Rich TUI output."""
-
-    previous: dict[str, str | None] = {
-        key: os.environ.get(key) for key in _EXTERNAL_PROGRESS_ENV
-    }
-    os.environ.update(_EXTERNAL_PROGRESS_ENV)
-    tqdm_patches: list[tuple[object, str, object]] = []
-    hf_prev_disabled: bool | None = None
-    try:
-        try:
-            import huggingface_hub.utils as hf_utils
-
-            are_disabled = getattr(hf_utils, "are_progress_bars_disabled", None)
-            disable = getattr(hf_utils, "disable_progress_bars", None)
-            if callable(are_disabled):
-                hf_prev_disabled = bool(are_disabled())
-            if callable(disable):
-                disable()
-        except Exception:
-            pass
-
-        try:
-
-            def force_disable_tqdm(tqdm_cls: object) -> None:
-                original_init = getattr(tqdm_cls, "__init__")
-
-                def patched_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-                    # Some libraries explicitly pass disable=False. Override unconditionally.
-                    kwargs["disable"] = True
-                    return original_init(self, *args, **kwargs)
-
-                tqdm_patches.append((tqdm_cls, "__init__", original_init))
-                setattr(tqdm_cls, "__init__", patched_init)
-
-            import tqdm.std as tqdm_std
-
-            force_disable_tqdm(tqdm_std.tqdm)
-
-            # Best-effort: patch common frontends that might define their own tqdm class.
-            try:
-                import tqdm.auto as tqdm_auto
-
-                force_disable_tqdm(tqdm_auto.tqdm)
-            except Exception:
-                pass
-            try:
-                import tqdm.notebook as tqdm_notebook
-
-                force_disable_tqdm(tqdm_notebook.tqdm)
-            except Exception:
-                pass
-            try:
-                import tqdm.rich as tqdm_rich  # type: ignore[import-not-found]
-
-                force_disable_tqdm(tqdm_rich.tqdm)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-        yield
-    finally:
-        if hf_prev_disabled is False:
-            try:
-                import huggingface_hub.utils as hf_utils
-
-                enable = getattr(hf_utils, "enable_progress_bars", None)
-                if callable(enable):
-                    enable()
-            except Exception:
-                pass
-        for target, attr, value in reversed(tqdm_patches):
-            try:
-                setattr(target, attr, value)
-            except Exception:
-                pass
-        for key, old_value in previous.items():
-            if old_value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = old_value
-
-
 def _should_retry_httpx(exc: BaseException) -> bool:
     if isinstance(exc, httpx.RequestError):
         return True
@@ -208,29 +111,6 @@ def extract_html_maintext(html: str) -> str | None:
         return None
     stripped = extracted.strip()
     return stripped or None
-
-
-def _get_marker_pdf_converter(marker_device: str | None = None) -> Any:
-    device_key = str(marker_device or "").strip().lower()
-    cached = _MARKER_PDF_CONVERTERS.get(device_key)
-    if cached is not None:
-        return cached
-
-    with _external_progress_disabled():
-        from marker.converters.pdf import PdfConverter
-        from marker.models import create_model_dict
-
-        device = str(marker_device).strip() if marker_device else None
-        models = create_model_dict(device=device) if device else create_model_dict()
-        converter = PdfConverter(artifact_dict=models)
-
-    _MARKER_PDF_CONVERTERS[device_key] = converter
-    return converter
-
-
-def _is_meta_tensor_failure(exc: BaseException) -> bool:
-    message = str(exc or "").lower()
-    return ("meta tensor" in message) or ("to_empty()" in message)
 
 
 def _get_pymupdf_module() -> Any | None:
@@ -309,53 +189,6 @@ def _extract_pdf_text_with_pymupdf4llm(doc: Any) -> str | None:
     return normalized or None
 
 
-def _extract_pdf_text_with_marker(
-    pdf_bytes: bytes,
-    *,
-    marker_device: str | None = None,
-    diag: dict[str, Any] | None = None,
-) -> str | None:
-    if not pdf_bytes:
-        return None
-    converter = (
-        _get_marker_pdf_converter()
-        if marker_device is None
-        else _get_marker_pdf_converter(marker_device)
-    )
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp:
-        tmp.write(pdf_bytes)
-        tmp.flush()
-        with _external_progress_disabled():
-            try:
-                rendered = converter(tmp.name)
-            except Exception as exc:
-                # Marker/Surya can fail to materialize weights on some devices (e.g., MPS).
-                # Retry once on CPU when we detect the meta-tensor failure signature.
-                if (
-                    _is_meta_tensor_failure(exc)
-                    and str(marker_device or "").strip().lower() != "cpu"
-                ):
-                    if diag is not None:
-                        diag["marker_retry_cpu"] = True
-                    rendered = _get_marker_pdf_converter("cpu")(tmp.name)
-                else:
-                    raise
-
-    markdown = getattr(rendered, "markdown", None)
-    if isinstance(markdown, str) and markdown.strip():
-        return markdown.strip()
-
-    try:
-        from marker.output import text_from_rendered
-
-        text, _, _ = text_from_rendered(rendered)
-        if isinstance(text, str) and text.strip():
-            return text.strip()
-    except Exception:
-        return None
-    return None
-
-
 def _pdf_markdown_looks_useful(markdown: str | None, *, min_chars: int) -> bool:
     normalized = str(markdown or "").strip()
     if not normalized:
@@ -368,48 +201,49 @@ def _pdf_markdown_looks_useful(markdown: str | None, *, min_chars: int) -> bool:
 def extract_pdf_text(
     pdf_bytes: bytes,
     *,
-    marker_device: str | None = None,
     diag: dict[str, Any] | None = None,
 ) -> str | None:
     if not pdf_bytes:
+        if diag is not None:
+            diag["pdf_backend"] = "none"
         return None
     pymupdf = _get_pymupdf_module()
     pymupdf4llm = _get_pymupdf4llm_module()
-    if pymupdf is not None and pymupdf4llm is not None:
+    if pymupdf is None or pymupdf4llm is None:
+        if diag is not None:
+            diag["pdf_backend"] = "none"
+        return None
+
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    except Exception:
+        if diag is not None:
+            diag["pdf_backend"] = "none"
+        return None
+
+    try:
+        has_text_layer = _pdf_has_text_layer(doc)
+        if diag is not None:
+            diag["pdf_has_text_layer"] = bool(has_text_layer)
+
+        pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(doc)
+        if diag is not None:
+            diag["pymupdf4llm_md_chars"] = len(str(pymupdf_markdown or ""))
+
+        min_chars = 24
+        if _pdf_markdown_looks_useful(pymupdf_markdown, min_chars=min_chars):
+            if diag is not None:
+                diag["pdf_backend"] = "pymupdf4llm"
+            return str(pymupdf_markdown).strip()
+    finally:
         try:
-            doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+            doc.close()
         except Exception:
-            doc = None
+            pass
 
-        if doc is not None:
-            try:
-                has_text_layer = _pdf_has_text_layer(doc)
-                if diag is not None:
-                    diag["pdf_has_text_layer"] = bool(has_text_layer)
-
-                pymupdf_markdown = _extract_pdf_text_with_pymupdf4llm(doc)
-                if diag is not None:
-                    diag["pymupdf4llm_md_chars"] = len(str(pymupdf_markdown or ""))
-
-                # Prefer pymupdf4llm when it returns any meaningful markdown, even if the
-                # text-layer heuristic is inconclusive (e.g., short introductions).
-                # When `has_text_layer` is false, the PDF can still be digital but short.
-                # Prefer accepting small-but-non-empty outputs to avoid unnecessary OCR.
-                min_chars = 24
-                if _pdf_markdown_looks_useful(pymupdf_markdown, min_chars=min_chars):
-                    if diag is not None:
-                        diag["pdf_backend"] = "pymupdf4llm"
-                    return str(pymupdf_markdown).strip()
-            finally:
-                try:
-                    doc.close()
-                except Exception:
-                    pass
     if diag is not None:
-        diag["pdf_backend"] = "marker"
-    return _extract_pdf_text_with_marker(
-        pdf_bytes, marker_device=marker_device, diag=diag
-    )
+        diag["pdf_backend"] = "none"
+    return None
 
 
 def _decode_text_bytes(payload: bytes) -> str | None:
