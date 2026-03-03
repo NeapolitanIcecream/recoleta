@@ -29,23 +29,10 @@ class TrendAgentDeps:
     embedding_max_errors: int = 0
 
 
-def _normalize_pydantic_ai_model(model: str) -> str:
-    normalized = str(model or "").strip()
-    if not normalized:
-        raise ValueError("llm_model must not be empty")
-    if ":" in normalized:
-        return normalized
-    if "/" in normalized:
-        provider, rest = normalized.split("/", 1)
-        provider = provider.strip()
-        rest = rest.strip()
-        if provider and rest:
-            return f"{provider}:{rest}"
-    return normalized
-
-
 def build_trend_agent(*, llm_model: str) -> Agent[TrendAgentDeps, TrendPayload]:
-    model = _normalize_pydantic_ai_model(llm_model)
+    from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
+
+    model = build_pydantic_ai_model(llm_model)
     agent: Agent[TrendAgentDeps, TrendPayload] = Agent(
         model,
         deps_type=TrendAgentDeps,

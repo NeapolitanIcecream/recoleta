@@ -325,6 +325,9 @@ Recoleta delegates LLM calls to LiteLLM. You must provide provider credentials v
 
 - OpenAI: `OPENAI_API_KEY`
 - Anthropic: `ANTHROPIC_API_KEY`
+- OpenRouter: `OPENROUTER_API_KEY`
+- Custom OpenAI-compatible endpoints (including LiteLLM Proxy): set `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) to the endpoint base URL.
+- Custom OpenRouter endpoints: set `OPENROUTER_API_BASE` (or `OPENROUTER_BASE_URL`) to the endpoint base URL.
 
 ### Debug artifacts & metrics (optional)
 
