@@ -382,16 +382,27 @@ def rag_build_index(
             strict=bool(strict),
         )
         errors = stats.get("errors") or []
-        ok = bool(stats.get("table_exists")) and (not errors or not strict)
-        repository.finish_run(run.id, success=ok)
-        if not stats.get("table_exists"):
+        table_exists = bool(stats.get("table_exists"))
+
+        if not table_exists:
+            repository.finish_run(run.id, success=True)
             console.print(
                 "[yellow]rag build-index skipped[/yellow] table not found (run `recoleta rag sync-vectors` first)"
             )
             return
-        console.print(f"[green]rag build-index completed[/green] stats={stats}")
+
         if strict and errors:
+            repository.finish_run(run.id, success=False)
+            console.print(f"[red]rag build-index failed[/red] stats={stats}")
             raise typer.Exit(code=1)
+
+        repository.finish_run(run.id, success=True)
+        if errors:
+            console.print(
+                f"[yellow]rag build-index completed with errors[/yellow] stats={stats}"
+            )
+        else:
+            console.print(f"[green]rag build-index completed[/green] stats={stats}")
     except KeyboardInterrupt:
         try:
             repository.finish_run(run.id, success=False)
@@ -399,6 +410,8 @@ def rag_build_index(
             log.exception("Run finish failed during interrupt")
         log.warning("RAG build-index interrupted")
         raise typer.Exit(code=130) from None
+    except typer.Exit:
+        raise
     except Exception:
         repository.finish_run(run.id, success=False)
         log.exception("RAG build-index failed")
