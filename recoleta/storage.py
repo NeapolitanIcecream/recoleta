@@ -953,6 +953,78 @@ class Repository:
             )
         return chunk, inserted
 
+    def delete_document_chunks(
+        self,
+        *,
+        doc_id: int,
+        kind: str | None = None,
+        chunk_index_gte: int | None = None,
+    ) -> int:
+        normalized_doc_id = int(doc_id)
+        if normalized_doc_id <= 0:
+            raise ValueError("doc_id must be > 0")
+
+        normalized_kind: str | None = None
+        if kind is not None:
+            candidate = str(kind or "").strip().lower()
+            if not candidate:
+                normalized_kind = None
+            elif candidate not in {"summary", "content", "meta"}:
+                raise ValueError("unsupported chunk kind")
+            else:
+                normalized_kind = candidate
+
+        normalized_index_gte: int | None = None
+        if chunk_index_gte is not None:
+            normalized_index_gte = int(chunk_index_gte)
+            if normalized_index_gte < 0:
+                raise ValueError("chunk_index_gte must be >= 0")
+
+        with Session(self.engine) as session:
+            statement = select(DocumentChunk).where(
+                DocumentChunk.doc_id == normalized_doc_id
+            )
+            if normalized_kind is not None:
+                statement = statement.where(DocumentChunk.kind == normalized_kind)
+            if normalized_index_gte is not None:
+                statement = statement.where(
+                    DocumentChunk.chunk_index >= normalized_index_gte
+                )
+            rows = list(session.exec(statement))
+            if not rows:
+                return 0
+
+            chunk_ids: list[int] = []
+            for row in rows:
+                raw_id = getattr(row, "id", None)
+                if raw_id is None:
+                    continue
+                try:
+                    cid = int(raw_id)
+                except Exception:
+                    continue
+                if cid > 0:
+                    chunk_ids.append(cid)
+
+            if chunk_ids:
+                with self.engine.begin() as conn:
+                    for cid in chunk_ids:
+                        conn.execute(
+                            text(
+                                "DELETE FROM chunk_embeddings WHERE chunk_id = :chunk_id"
+                            ),
+                            {"chunk_id": cid},
+                        )
+                        conn.execute(
+                            text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
+                            {"rowid": cid},
+                        )
+
+            for row in rows:
+                session.delete(row)
+            self._commit(session)
+            return len(rows)
+
     def _sync_chunk_fts(
         self,
         *,

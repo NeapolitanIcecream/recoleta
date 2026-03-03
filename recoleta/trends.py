@@ -141,6 +141,7 @@ def index_items_as_documents(
     docs_upserted = 0
     chunks_upserted = 0
     content_chunks_upserted = 0
+    content_chunks_deleted = 0
 
     content_types = [
         "pdf_text",
@@ -177,9 +178,15 @@ def index_items_as_documents(
                     chosen_type = ctype
                     break
             if not chosen or chosen_type is None:
+                content_chunks_deleted += repository.delete_document_chunks(
+                    doc_id=doc_id,
+                    kind="content",
+                    chunk_index_gte=1,
+                )
                 continue
 
             segments = _chunk_text_segments(chosen, chunk_chars=content_chunk_chars)
+            max_written_index: int | None = None
             for seg_idx, (start_char, end_char, seg) in enumerate(
                 segments[: max(0, int(max_content_chunks_per_item))],
                 start=1,
@@ -195,6 +202,20 @@ def index_items_as_documents(
                 )
                 chunks_upserted += 1
                 content_chunks_upserted += 1
+                max_written_index = seg_idx
+
+            if max_written_index is None:
+                content_chunks_deleted += repository.delete_document_chunks(
+                    doc_id=doc_id,
+                    kind="content",
+                    chunk_index_gte=1,
+                )
+            else:
+                content_chunks_deleted += repository.delete_document_chunks(
+                    doc_id=doc_id,
+                    kind="content",
+                    chunk_index_gte=max_written_index + 1,
+                )
         except Exception as exc:  # noqa: BLE001
             log.bind(item_id=getattr(item, "id", None)).warning(
                 "Index item failed error_type={} error={}",
@@ -208,6 +229,7 @@ def index_items_as_documents(
         "docs_upserted": docs_upserted,
         "chunks_upserted": chunks_upserted,
         "content_chunks_upserted": content_chunks_upserted,
+        "content_chunks_deleted": content_chunks_deleted,
         "duration_ms": elapsed_ms,
     }
     log.info("Index items done stats={}", stats)

@@ -96,6 +96,103 @@ def test_trends_day_indexes_items_and_persists_trend_document(
         assert "Summary for" in summary_chunks[0].text
 
 
+def test_trends_index_items_clears_stale_content_chunks_when_content_shrinks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: re-indexing an item should not leave stale content chunks behind."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    _, repository = _build_runtime()
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="stale-content-1",
+        canonical_url="https://example.com/stale-content-1",
+        title="Stale Content Chunks",
+        authors=["Alice"],
+        published_at=datetime(2026, 1, 1, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    item_id = int(item.id)
+
+    analyzer = FakeAnalyzer()
+    analysis, _ = analyzer.analyze(
+        title=str(item.title),
+        canonical_url=str(item.canonical_url),
+        user_topics=["agents"],
+        include_debug=False,
+    )
+    _ = repository.save_analysis(item_id=item_id, result=analysis)
+
+    # First run: content splits into 2 chunks (200 + remainder).
+    _ = repository.upsert_content(
+        item_id=item_id, content_type="pdf_text", text="A" * 350
+    )
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+    from recoleta.trends import index_items_as_documents
+
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-stale-content-1",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+        content_chunk_chars=200,
+        max_content_chunks_per_item=8,
+    )
+
+    with Session(repository.engine) as session:
+        doc = session.exec(
+            select(Document).where(
+                Document.doc_type == "item", Document.item_id == item_id
+            )
+        ).first()
+        assert doc is not None
+        assert doc.id is not None
+        doc_id = int(doc.id)
+
+        chunks = list(
+            session.exec(
+                select(DocumentChunk).where(
+                    DocumentChunk.doc_id == doc_id,
+                    DocumentChunk.kind == "content",
+                )
+            )
+        )
+        assert any(c.chunk_index == 2 for c in chunks)
+
+    # Second run: content shrinks to 1 chunk; chunk_index=2 should be removed.
+    _ = repository.upsert_content(
+        item_id=item_id, content_type="pdf_text", text="B" * 150
+    )
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-stale-content-2",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+        content_chunk_chars=200,
+        max_content_chunks_per_item=8,
+    )
+
+    with Session(repository.engine) as session:
+        stale = session.exec(
+            select(DocumentChunk).where(
+                DocumentChunk.doc_id == doc_id,
+                DocumentChunk.kind == "content",
+                DocumentChunk.chunk_index == 2,
+            )
+        ).first()
+        assert stale is None
+
+
 def test_trends_text_search_can_find_summary_chunks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
