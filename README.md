@@ -168,6 +168,57 @@ Where to look next:
 - **Telegram (optional)**: messages are sent to `TELEGRAM_CHAT_ID`
 - **SQLite index**: `RECOLETA_DB_PATH` (safe to re-run; deliveries are idempotent)
 
+### 📈 Trend analysis (daily / weekly / monthly)
+
+Recoleta can generate **trend notes** as a standalone stage:
+
+```bash
+uv run recoleta trends
+```
+
+Key behaviors:
+
+- **Time windows**: `--date` is an anchor date in **UTC** (`YYYY-MM-DD`).
+  - `day`: the UTC calendar day of `--date`
+  - `week`: ISO week (Monday start) containing `--date`
+  - `month`: calendar month containing `--date`
+- **Corpus sources**:
+  - `day` trends are generated from **analyzed items** in that day.
+  - `week` trends are generated from existing **day trend documents** in that week.
+  - `month` trends are generated from existing **week trend documents** in that month.
+- **Token-safe**: if the corpus is empty, Recoleta **skips the LLM call** and emits a placeholder trend document.
+
+Examples:
+
+```bash
+# Daily trend for today (UTC)
+uv run recoleta trends --granularity day
+
+# Daily trend for a specific day (UTC)
+uv run recoleta trends --granularity day --date 2026-03-02
+
+# Weekly trend (requires daily trends for that week)
+uv run recoleta trends --granularity week --date 2026-03-02
+
+# Monthly trend (requires weekly trends for that month)
+uv run recoleta trends --granularity month --date 2026-03-02
+
+# Override the LLM model used for trend generation
+uv run recoleta trends --granularity week --model "openai/gpt-4o-mini"
+```
+
+Outputs:
+
+- **SQLite**: a durable `trend` document is persisted into `RECOLETA_DB_PATH`.
+- **Local Markdown** (when `PUBLISH_TARGETS` includes `markdown`): `MARKDOWN_OUTPUT_DIR/Trends/`
+- **Obsidian** (when `PUBLISH_TARGETS` includes `obsidian`): `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Trends/`
+
+Optional knobs (env or config):
+
+- `RAG_LANCEDB_DIR`: where semantic vectors are stored (default: platform user data dir + `/lancedb`)
+- `TRENDS_EMBEDDING_MODEL`, `TRENDS_EMBEDDING_DIMENSIONS`
+- `TRENDS_EMBEDDING_FAILURE_MODE` (`continue|fail_fast|threshold`) and `TRENDS_EMBEDDING_MAX_ERRORS` (required when `threshold`)
+
 ### 🗓️ Run continuously (built-in scheduler)
 
 ```bash
@@ -294,6 +345,7 @@ Recoleta ships a small CLI surface:
 - `recoleta analyze --limit 100`: run structured LLM analysis for prepared items only
 - `recoleta publish --limit 50`: write Obsidian notes and send Telegram deliverables
 - `recoleta run`: schedule ingest/analyze/publish periodically
+- `recoleta trends --granularity week --date 2026-03-02`: generate a trend note (day/week/month)
 
 ### Further reading
 
