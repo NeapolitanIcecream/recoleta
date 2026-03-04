@@ -252,17 +252,17 @@ def ensure_trend_cluster_representatives(
                 invalid_reps_dropped_total += 1
                 continue
             score_raw = getattr(rep, "score", None)
-            score: float | None = None
+            rep_score: float | None = None
             if score_raw is not None:
                 try:
-                    score = float(score_raw)  # type: ignore[arg-type]
+                    rep_score = float(score_raw)  # type: ignore[arg-type]
                 except Exception:
-                    score = None
+                    rep_score = None
             cleaned.append(
                 TrendCluster.RepresentativeChunk(
                     doc_id=doc_id,
                     chunk_index=chunk_index,
-                    score=round(score, 6) if score is not None else None,
+                    score=round(rep_score, 6) if rep_score is not None else None,
                 )
             )
 
@@ -297,19 +297,19 @@ def ensure_trend_cluster_representatives(
                 if doc_id <= 0 or chunk_index < 0:
                     continue
                 score_raw = r.get("score")
-                score: float | None
+                hit_score: float | None
                 if score_raw is None:
-                    score = None
+                    hit_score = None
                 else:
                     try:
-                        score = float(score_raw)  # type: ignore[arg-type]
+                        hit_score = float(score_raw)  # type: ignore[arg-type]
                     except Exception:
-                        score = None
+                        hit_score = None
                 backfilled.append(
                     TrendCluster.RepresentativeChunk(
                         doc_id=doc_id,
                         chunk_index=chunk_index,
-                        score=round(score, 6) if score is not None else None,
+                        score=round(hit_score, 6) if hit_score is not None else None,
                     )
                 )
                 if len(backfilled) >= normalized_max_reps:
