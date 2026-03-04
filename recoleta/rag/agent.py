@@ -213,6 +213,141 @@ def build_trend_agent(
     return agent
 
 
+def ensure_trend_cluster_representatives(
+    *,
+    payload: TrendPayload,
+    search,
+    max_reps: int = 6,
+) -> dict[str, int]:
+    clusters_total = len(payload.clusters or [])
+    clusters_backfilled_total = 0
+    invalid_reps_dropped_total = 0
+    reps_backfilled_total = 0
+
+    normalized_max_reps = max(0, int(max_reps or 0))
+    if normalized_max_reps <= 0 or not payload.clusters:
+        return {
+            "clusters_total": clusters_total,
+            "clusters_backfilled_total": 0,
+            "invalid_reps_dropped_total": 0,
+            "reps_backfilled_total": 0,
+        }
+
+    for cluster in payload.clusters:
+        raw_reps = cluster.representative_chunks or []
+        cleaned: list[dict[str, Any]] = []
+        for rep in raw_reps:
+            if not isinstance(rep, dict):
+                invalid_reps_dropped_total += 1
+                continue
+            doc_id_raw = rep.get("doc_id")
+            chunk_index_raw = rep.get("chunk_index")
+            if doc_id_raw is None or chunk_index_raw is None:
+                invalid_reps_dropped_total += 1
+                continue
+            try:
+                doc_id = int(doc_id_raw)
+                chunk_index = int(chunk_index_raw)
+            except Exception:
+                invalid_reps_dropped_total += 1
+                continue
+            if doc_id <= 0 or chunk_index < 0:
+                invalid_reps_dropped_total += 1
+                continue
+            score_raw = rep.get("score")
+            score: float | None
+            if score_raw is None:
+                score = None
+            else:
+                try:
+                    score = float(score_raw)  # type: ignore[arg-type]
+                except Exception:
+                    score = None
+            cleaned.append(
+                {
+                    "doc_id": doc_id,
+                    "chunk_index": chunk_index,
+                    "score": round(score, 6) if score is not None else None,
+                }
+            )
+
+        if cleaned:
+            cluster.representative_chunks = cleaned[:normalized_max_reps]
+            continue
+
+        query = " ".join(
+            [
+                str(getattr(cluster, "name", "") or "").strip(),
+                str(getattr(cluster, "description", "") or "").strip(),
+            ]
+        ).strip()
+        backfilled = []
+        if query:
+            try:
+                rows = search(query, normalized_max_reps) or []
+            except Exception:
+                rows = []
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                doc_id_raw = r.get("doc_id")
+                chunk_index_raw = r.get("chunk_index")
+                if doc_id_raw is None or chunk_index_raw is None:
+                    continue
+                try:
+                    doc_id = int(doc_id_raw)
+                    chunk_index = int(chunk_index_raw)
+                except Exception:
+                    continue
+                if doc_id <= 0 or chunk_index < 0:
+                    continue
+                score_raw = r.get("score")
+                score: float | None
+                if score_raw is None:
+                    score = None
+                else:
+                    try:
+                        score = float(score_raw)  # type: ignore[arg-type]
+                    except Exception:
+                        score = None
+                backfilled.append(
+                    {
+                        "doc_id": doc_id,
+                        "chunk_index": chunk_index,
+                        "score": round(score, 6) if score is not None else None,
+                    }
+                )
+                if len(backfilled) >= normalized_max_reps:
+                    break
+
+        if not backfilled:
+            doc_ids = list(getattr(cluster, "representative_doc_ids", []) or [])
+            for raw_doc_id in doc_ids:
+                try:
+                    doc_id = int(raw_doc_id)
+                except Exception:
+                    continue
+                if doc_id <= 0:
+                    continue
+                backfilled.append({"doc_id": doc_id, "chunk_index": 0, "score": None})
+                if len(backfilled) >= normalized_max_reps:
+                    break
+
+        if backfilled:
+            cluster.representative_chunks = backfilled
+            clusters_backfilled_total += 1
+            reps_backfilled_total += len(backfilled)
+        else:
+            cluster.representative_chunks = []
+
+    return {
+        "clusters_total": clusters_total,
+        "clusters_backfilled_total": clusters_backfilled_total,
+        "invalid_reps_dropped_total": invalid_reps_dropped_total,
+        "reps_backfilled_total": reps_backfilled_total,
+    }
+
+
 def _count_tool_calls(messages: list[Any]) -> int:
     total = 0
     for msg in messages:
@@ -329,6 +464,57 @@ def generate_trend_payload(
 
     result = agent.run_sync(prompt, deps=deps)
     payload = result.output
+    rep_stats = ensure_trend_cluster_representatives(
+        payload=payload,
+        search=lambda q, n: [
+            {
+                "doc_id": h.doc_id,
+                "chunk_index": h.chunk_index,
+                "score": round(float(h.score), 6),
+            }
+            for h in semantic_search_summaries_in_period(
+                repository=repository,
+                vector_store=vector_store,
+                run_id=run_id,
+                doc_type=str(corpus_doc_type or "").strip().lower(),
+                period_start=period_start,
+                period_end=period_end,
+                query=q,
+                embedding_model=embedding_model,
+                embedding_dimensions=embedding_dimensions,
+                max_batch_inputs=embedding_batch_max_inputs,
+                max_batch_chars=embedding_batch_max_chars,
+                embedding_failure_mode=str(embedding_failure_mode or "continue"),
+                embedding_max_errors=int(embedding_max_errors or 0),
+                limit=int(n),
+                metric_namespace="pipeline.trends",
+            )
+        ],
+        max_reps=6,
+    )
+    if rep_stats.get("invalid_reps_dropped_total", 0) or rep_stats.get(
+        "clusters_backfilled_total", 0
+    ):
+        log.warning("Trend cluster representatives normalized stats={}", rep_stats)
+        try:
+            repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.cluster_representatives_backfilled_total",
+                value=int(rep_stats.get("clusters_backfilled_total") or 0),
+                unit="count",
+            )
+            repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.cluster_representatives_invalid_dropped_total",
+                value=int(rep_stats.get("invalid_reps_dropped_total") or 0),
+                unit="count",
+            )
+        except Exception as metric_exc:  # noqa: BLE001
+            log.warning(
+                "Trend representative metrics failed error_type={} error={}",
+                type(metric_exc).__name__,
+                str(metric_exc),
+            )
     usage = result.usage()
     usage_dict = {
         "input_tokens": getattr(usage, "input_tokens", None),

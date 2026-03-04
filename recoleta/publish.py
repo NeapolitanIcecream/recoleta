@@ -229,6 +229,8 @@ def write_obsidian_trend_note(
                     doc_id = rep.get("doc_id")
                     chunk_index = rep.get("chunk_index")
                     score = rep.get("score")
+                    if doc_id is None or chunk_index is None:
+                        continue
                     lines.append(
                         f"  - doc_id={doc_id} chunk_index={chunk_index} score={score}"
                     )
@@ -312,6 +314,8 @@ def write_markdown_trend_note(
                     doc_id = rep.get("doc_id")
                     chunk_index = rep.get("chunk_index")
                     score = rep.get("score")
+                    if doc_id is None or chunk_index is None:
+                        continue
                     lines.append(
                         f"  - doc_id={doc_id} chunk_index={chunk_index} score={score}"
                     )
