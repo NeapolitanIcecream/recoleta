@@ -11,7 +11,7 @@ from pydantic_ai import Agent, RunContext
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.storage import Repository
-from recoleta.trends import TrendPayload
+from recoleta.trends import TrendCluster, TrendPayload
 
 
 @dataclass(slots=True)
@@ -34,6 +34,11 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "You are a research trend analyst. Use tools to explore the local corpus. "
         "Prefer summary chunks (chunk_index=0) first. "
         "When ready, return a TrendPayload with concise, grounded content."
+    )
+    base += (
+        " For clusters[].representative_chunks, either omit the entry or provide an object "
+        "with required integer fields doc_id and chunk_index, and optional float score. "
+        "Never output null for doc_id/chunk_index."
     )
     if not output_language:
         return base
@@ -235,40 +240,30 @@ def ensure_trend_cluster_representatives(
 
     for cluster in payload.clusters:
         raw_reps = cluster.representative_chunks or []
-        cleaned: list[dict[str, Any]] = []
+        cleaned: list[TrendCluster.RepresentativeChunk] = []
         for rep in raw_reps:
-            if not isinstance(rep, dict):
-                invalid_reps_dropped_total += 1
-                continue
-            doc_id_raw = rep.get("doc_id")
-            chunk_index_raw = rep.get("chunk_index")
-            if doc_id_raw is None or chunk_index_raw is None:
-                invalid_reps_dropped_total += 1
-                continue
             try:
-                doc_id = int(doc_id_raw)
-                chunk_index = int(chunk_index_raw)
+                doc_id = int(getattr(rep, "doc_id"))
+                chunk_index = int(getattr(rep, "chunk_index"))
             except Exception:
                 invalid_reps_dropped_total += 1
                 continue
             if doc_id <= 0 or chunk_index < 0:
                 invalid_reps_dropped_total += 1
                 continue
-            score_raw = rep.get("score")
-            score: float | None
-            if score_raw is None:
-                score = None
-            else:
+            score_raw = getattr(rep, "score", None)
+            score: float | None = None
+            if score_raw is not None:
                 try:
                     score = float(score_raw)  # type: ignore[arg-type]
                 except Exception:
                     score = None
             cleaned.append(
-                {
-                    "doc_id": doc_id,
-                    "chunk_index": chunk_index,
-                    "score": round(score, 6) if score is not None else None,
-                }
+                TrendCluster.RepresentativeChunk(
+                    doc_id=doc_id,
+                    chunk_index=chunk_index,
+                    score=round(score, 6) if score is not None else None,
+                )
             )
 
         if cleaned:
@@ -281,7 +276,7 @@ def ensure_trend_cluster_representatives(
                 str(getattr(cluster, "description", "") or "").strip(),
             ]
         ).strip()
-        backfilled = []
+        backfilled: list[TrendCluster.RepresentativeChunk] = []
         if query:
             try:
                 rows = search(query, normalized_max_reps) or []
@@ -311,11 +306,11 @@ def ensure_trend_cluster_representatives(
                     except Exception:
                         score = None
                 backfilled.append(
-                    {
-                        "doc_id": doc_id,
-                        "chunk_index": chunk_index,
-                        "score": round(score, 6) if score is not None else None,
-                    }
+                    TrendCluster.RepresentativeChunk(
+                        doc_id=doc_id,
+                        chunk_index=chunk_index,
+                        score=round(score, 6) if score is not None else None,
+                    )
                 )
                 if len(backfilled) >= normalized_max_reps:
                     break
@@ -329,7 +324,11 @@ def ensure_trend_cluster_representatives(
                     continue
                 if doc_id <= 0:
                     continue
-                backfilled.append({"doc_id": doc_id, "chunk_index": 0, "score": None})
+                backfilled.append(
+                    TrendCluster.RepresentativeChunk(
+                        doc_id=doc_id, chunk_index=0, score=None
+                    )
+                )
                 if len(backfilled) >= normalized_max_reps:
                     break
 

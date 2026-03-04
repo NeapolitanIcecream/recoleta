@@ -90,7 +90,13 @@ class TrendCluster(BaseModel):
     name: str
     description: str
     representative_doc_ids: list[int] = Field(default_factory=list)
-    representative_chunks: list[dict[str, Any]] = Field(default_factory=list)
+
+    class RepresentativeChunk(BaseModel):
+        doc_id: int
+        chunk_index: int
+        score: float | None = None
+
+    representative_chunks: list[RepresentativeChunk] = Field(default_factory=list)
 
 
 class TrendPayload(BaseModel):

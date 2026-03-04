@@ -19,7 +19,7 @@ def test_trends_backfills_cluster_representatives_when_invalid() -> None:
                 name="cluster-a",
                 description="agents and tools",
                 representative_doc_ids=[],
-                representative_chunks=[{"score": 0.1}, {}],
+                representative_chunks=[],
             )
         ],
         highlights=[],
@@ -39,5 +39,5 @@ def test_trends_backfills_cluster_representatives_when_invalid() -> None:
     assert stats["clusters_backfilled_total"] == 1
     reps = payload.clusters[0].representative_chunks
     assert reps
-    assert reps[0]["doc_id"] == 123
-    assert reps[0]["chunk_index"] == 0
+    assert reps[0].doc_id == 123
+    assert reps[0].chunk_index == 0
