@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
@@ -61,6 +62,19 @@ def _from_json_object(value: str | None) -> dict[str, Any]:
     except Exception:
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+_FTS5_QUERY_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+
+
+def _to_fts5_query(value: str) -> str:
+    """Convert plain text into a safe FTS5 query (no operators, no column filters)."""
+
+    tokens = _FTS5_QUERY_TOKEN_RE.findall(value)
+    if not tokens:
+        return ""
+    escaped_tokens = [token.replace('"', '""') for token in tokens]
+    return " ".join(f'"{token}"' for token in escaped_tokens)
 
 
 @dataclass
@@ -1162,6 +1176,9 @@ class Repository:
         normalized_query = str(query or "").strip()
         if not normalized_query:
             return []
+        fts_query = _to_fts5_query(normalized_query)
+        if not fts_query:
+            return []
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(1, min(int(limit), 50))
 
@@ -1195,7 +1212,7 @@ class Repository:
         LIMIT :limit
         """
         params = {
-            "query": normalized_query,
+            "query": fts_query,
             "doc_type": normalized_type,
             "period_start": period_start,
             "period_end": period_end,

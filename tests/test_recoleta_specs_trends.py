@@ -263,6 +263,53 @@ def test_trends_text_search_can_find_summary_chunks(
     assert hits[0]["doc_id"] > 0
 
 
+def test_search_chunks_text_accepts_hyphenated_query_terms(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: FTS5 MATCH must not crash on hyphenated terms like 'vision-language'."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    _, repository = _build_runtime()
+
+    with Session(repository.engine) as session:
+        doc = Document(
+            doc_type="item",
+            item_id=1,
+            title="Hyphenated Query Spec",
+            published_at=datetime(2026, 3, 4, tzinfo=UTC),
+        )
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+        assert doc.id is not None
+        doc_id = int(doc.id)
+
+    _chunk, _created = repository.upsert_document_chunk(
+        doc_id=doc_id,
+        chunk_index=0,
+        kind="summary",
+        text_value="Streaming vision-language models are improving.",
+        start_char=0,
+        end_char=None,
+        source_content_type="analysis_summary",
+    )
+
+    period_start = datetime(2026, 3, 4, tzinfo=UTC)
+    period_end = datetime(2026, 3, 5, tzinfo=UTC)
+    hits = repository.search_chunks_text(
+        query="streaming vision-language",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    assert hits
+
+
 def test_trends_semantic_search_ranks_relevant_summaries_higher(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

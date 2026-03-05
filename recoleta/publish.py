@@ -39,6 +39,99 @@ def _read_yaml_frontmatter(path: Path) -> dict[str, Any] | None:
     return loaded if isinstance(loaded, dict) else None
 
 
+def _item_note_path(
+    *,
+    note_dir: Path,
+    item_id: int,
+    title: str,
+    canonical_url: str,
+    published_at: datetime | None,
+) -> Path:
+    date_prefix = (published_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    slug = slugify(title, lowercase=True) or "untitled-item"
+    note_path = note_dir / f"{date_prefix}--{slug}.md"
+    if note_path.exists():
+        frontmatter = _read_yaml_frontmatter(note_path) or {}
+        existing_url = str(frontmatter.get("url") or "").strip()
+        if existing_url != canonical_url.strip():
+            note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
+    return note_path
+
+
+def _render_item_note_lines(
+    *,
+    title: str,
+    source: str,
+    canonical_url: str,
+    published_at: datetime | None,
+    authors: list[str],
+    topics: list[str],
+    relevance_score: float,
+    run_id: str,
+    summary: str,
+) -> list[str]:
+    frontmatter = {
+        "source": source,
+        "url": canonical_url,
+        "published_at": published_at.isoformat() if published_at else None,
+        "authors": authors,
+        "topics": topics,
+        "relevance_score": round(relevance_score, 4),
+        "run_id": run_id,
+    }
+    return [
+        "---",
+        yaml.safe_dump(frontmatter, sort_keys=False).strip(),
+        "---",
+        "",
+        f"# {title}",
+        "",
+        "## Summary",
+        summary.strip(),
+        "",
+        "## Links",
+        f"- Canonical: {canonical_url}",
+        "",
+    ]
+
+
+def _write_item_note(
+    *,
+    note_dir: Path,
+    item_id: int,
+    title: str,
+    source: str,
+    canonical_url: str,
+    published_at: datetime | None,
+    authors: list[str],
+    topics: list[str],
+    relevance_score: float,
+    run_id: str,
+    summary: str,
+) -> Path:
+    note_dir.mkdir(parents=True, exist_ok=True)
+    note_path = _item_note_path(
+        note_dir=note_dir,
+        item_id=item_id,
+        title=title,
+        canonical_url=canonical_url,
+        published_at=published_at,
+    )
+    lines = _render_item_note_lines(
+        title=title,
+        source=source,
+        canonical_url=canonical_url,
+        published_at=published_at,
+        authors=authors,
+        topics=topics,
+        relevance_score=relevance_score,
+        run_id=run_id,
+        summary=summary,
+    )
+    note_path.write_text("\n".join(lines), encoding="utf-8")
+    return note_path
+
+
 def write_obsidian_note(
     *,
     vault_path: Path,
@@ -55,46 +148,19 @@ def write_obsidian_note(
     summary: str,
 ) -> Path:
     note_dir = vault_path / base_folder / "Inbox"
-    note_dir.mkdir(parents=True, exist_ok=True)
-    date_prefix = (published_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
-    slug = slugify(title, lowercase=True) or "untitled-item"
-    note_path = note_dir / f"{date_prefix}--{slug}.md"
-    if note_path.exists():
-        frontmatter = _read_yaml_frontmatter(note_path) or {}
-        existing_url = str(frontmatter.get("url") or "").strip()
-        if existing_url != canonical_url.strip():
-            note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
-
-    frontmatter = {
-        "source": source,
-        "url": canonical_url,
-        "published_at": published_at.isoformat() if published_at else None,
-        "authors": authors,
-        "topics": topics,
-        "relevance_score": round(relevance_score, 4),
-        "run_id": run_id,
-    }
-
-    lines = [
-        "---",
-        yaml.safe_dump(frontmatter, sort_keys=False).strip(),
-        "---",
-        "",
-        f"# {title}",
-        "",
-        "## Summary",
-        summary.strip(),
-    ]
-    lines.extend(
-        [
-            "",
-            "## Links",
-            f"- Canonical: {canonical_url}",
-            "",
-        ]
+    return _write_item_note(
+        note_dir=note_dir,
+        item_id=item_id,
+        title=title,
+        source=source,
+        canonical_url=canonical_url,
+        published_at=published_at,
+        authors=authors,
+        topics=topics,
+        relevance_score=relevance_score,
+        run_id=run_id,
+        summary=summary,
     )
-    note_path.write_text("\n".join(lines), encoding="utf-8")
-    return note_path
 
 
 def write_markdown_note(
@@ -116,41 +182,19 @@ def write_markdown_note(
         raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
 
     note_dir = output_dir / "Inbox"
-    note_dir.mkdir(parents=True, exist_ok=True)
-    date_prefix = (published_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
-    slug = slugify(title, lowercase=True) or "untitled-item"
-    note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
-
-    frontmatter = {
-        "source": source,
-        "url": canonical_url,
-        "published_at": published_at.isoformat() if published_at else None,
-        "authors": authors,
-        "topics": topics,
-        "relevance_score": round(relevance_score, 4),
-        "run_id": run_id,
-    }
-
-    lines = [
-        "---",
-        yaml.safe_dump(frontmatter, sort_keys=False).strip(),
-        "---",
-        "",
-        f"# {title}",
-        "",
-        "## Summary",
-        summary.strip(),
-    ]
-    lines.extend(
-        [
-            "",
-            "## Links",
-            f"- Canonical: {canonical_url}",
-            "",
-        ]
+    return _write_item_note(
+        note_dir=note_dir,
+        item_id=item_id,
+        title=title,
+        source=source,
+        canonical_url=canonical_url,
+        published_at=published_at,
+        authors=authors,
+        topics=topics,
+        relevance_score=relevance_score,
+        run_id=run_id,
+        summary=summary,
     )
-    note_path.write_text("\n".join(lines), encoding="utf-8")
-    return note_path
 
 
 def _trend_date_token(*, granularity: str, period_start: datetime) -> str:
@@ -211,27 +255,19 @@ def _append_obsidian_callout(
     lines.append("")
 
 
-def write_obsidian_trend_note(
+def _render_trend_note_lines(
     *,
-    vault_path: Path,
-    base_folder: str,
-    trend_doc_id: int,
     title: str,
+    trend_doc_id: int,
     granularity: str,
     period_start: datetime,
     period_end: datetime,
     run_id: str,
     overview_md: str,
     topics: list[str],
-    clusters: list[dict[str, Any]] | None = None,
-    highlights: list[str] | None = None,
-) -> Path:
-    note_dir = vault_path / base_folder / "Trends"
-    note_dir.mkdir(parents=True, exist_ok=True)
-
-    token = _trend_date_token(granularity=granularity, period_start=period_start)
-    note_path = note_dir / f"{granularity}--{token}--trend--{trend_doc_id}.md"
-
+    clusters: list[dict[str, Any]] | None,
+    highlights: list[str] | None,
+) -> list[str]:
     tags = ["recoleta/trend"]
     for topic in topics or []:
         normalized = _sanitize_obsidian_tag(topic)
@@ -323,9 +359,71 @@ def write_obsidian_trend_note(
         lines.extend([f"- {h}" for h in highlights])
     else:
         lines.append("- (none)")
+    return lines
 
+
+def _write_trend_note(
+    *,
+    note_dir: Path,
+    trend_doc_id: int,
+    title: str,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    run_id: str,
+    overview_md: str,
+    topics: list[str],
+    clusters: list[dict[str, Any]] | None,
+    highlights: list[str] | None,
+) -> Path:
+    note_dir.mkdir(parents=True, exist_ok=True)
+    token = _trend_date_token(granularity=granularity, period_start=period_start)
+    note_path = note_dir / f"{granularity}--{token}--trend--{trend_doc_id}.md"
+    lines = _render_trend_note_lines(
+        title=title,
+        trend_doc_id=trend_doc_id,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        run_id=run_id,
+        overview_md=overview_md,
+        topics=topics,
+        clusters=clusters,
+        highlights=highlights,
+    )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return note_path
+
+
+def write_obsidian_trend_note(
+    *,
+    vault_path: Path,
+    base_folder: str,
+    trend_doc_id: int,
+    title: str,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    run_id: str,
+    overview_md: str,
+    topics: list[str],
+    clusters: list[dict[str, Any]] | None = None,
+    highlights: list[str] | None = None,
+) -> Path:
+    note_dir = vault_path / base_folder / "Trends"
+    return _write_trend_note(
+        note_dir=note_dir,
+        trend_doc_id=trend_doc_id,
+        title=title,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        run_id=run_id,
+        overview_md=overview_md,
+        topics=topics,
+        clusters=clusters,
+        highlights=highlights,
+    )
 
 
 def write_markdown_trend_note(
@@ -346,90 +444,19 @@ def write_markdown_trend_note(
     if output_dir.exists() and not output_dir.is_dir():
         raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
     trends_dir = output_dir / "Trends"
-    trends_dir.mkdir(parents=True, exist_ok=True)
-
-    token = _trend_date_token(granularity=granularity, period_start=period_start)
-    note_path = trends_dir / f"{granularity}--{token}--trend--{trend_doc_id}.md"
-
-    frontmatter = {
-        "kind": "trend",
-        "trend_doc_id": int(trend_doc_id),
-        "granularity": str(granularity),
-        "period_start": period_start.isoformat(),
-        "period_end": period_end.isoformat(),
-        "topics": topics,
-        "run_id": run_id,
-    }
-
-    highlights = highlights or []
-    tldr = [str(h).strip() for h in highlights[:3] if str(h).strip()]
-
-    lines: list[str] = [
-        "---",
-        yaml.safe_dump(frontmatter, sort_keys=False).strip(),
-        "---",
-        "",
-        f"# {title}",
-        "",
-    ]
-    if tldr:
-        lines.extend(["## TL;DR", *[f"- {h}" for h in tldr], ""])
-    lines.extend(
-        [
-            "## Overview",
-            (overview_md or "").strip(),
-            "",
-            "## Topics",
-        ]
+    return _write_trend_note(
+        note_dir=trends_dir,
+        trend_doc_id=trend_doc_id,
+        title=title,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        run_id=run_id,
+        overview_md=overview_md,
+        topics=topics,
+        clusters=clusters,
+        highlights=highlights,
     )
-    if topics:
-        lines.extend([f"- {t}" for t in topics])
-    else:
-        lines.append("- (none)")
-
-    lines.extend(["", "## Clusters"])
-    clusters = clusters or []
-    if clusters:
-        for cluster in clusters:
-            name = _single_line(str(cluster.get("name") or ""), fallback="Cluster")
-            desc = str(cluster.get("description") or "").strip()
-            lines.extend(["", f"### {name}", ""])
-            if desc:
-                lines.append(desc)
-                lines.append("")
-            reps = cluster.get("representative_chunks") or []
-            if isinstance(reps, list) and reps:
-                lines.append("#### Representative papers")
-                for rep in reps[:6]:
-                    if not isinstance(rep, dict):
-                        continue
-                    rep_title = str(rep.get("title") or "").strip()
-                    if not rep_title:
-                        continue
-                    url = str(rep.get("url") or "").strip()
-                    authors_raw = rep.get("authors")
-                    authors: list[str] = []
-                    if isinstance(authors_raw, list):
-                        authors = [
-                            str(a).strip() for a in authors_raw if str(a).strip()
-                        ]
-                    author_suffix = _format_author_suffix(authors, max_authors=6)
-                    if url:
-                        lines.append(f"- [{rep_title}]({url}){author_suffix}")
-                    else:
-                        lines.append(f"- {rep_title}{author_suffix}")
-                lines.append("")
-    else:
-        lines.append("- (none)")
-
-    lines.extend(["", "## Highlights"])
-    if highlights:
-        lines.extend([f"- {h}" for h in highlights])
-    else:
-        lines.append("- (none)")
-
-    note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
-    return note_path
 
 
 def write_markdown_run_index(
