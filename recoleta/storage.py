@@ -1129,6 +1129,13 @@ class Repository:
         with Session(self.engine) as session:
             return session.get(Document, normalized_id)
 
+    def get_item(self, *, item_id: int) -> Item | None:
+        normalized_id = int(item_id)
+        if normalized_id <= 0:
+            return None
+        with Session(self.engine) as session:
+            return session.get(Item, normalized_id)
+
     def read_document_chunk(
         self, *, doc_id: int, chunk_index: int
     ) -> DocumentChunk | None:

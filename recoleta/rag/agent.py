@@ -33,7 +33,13 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
     base = (
         "You are a research trend analyst. Use tools to explore the local corpus. "
         "Prefer summary chunks (chunk_index=0) first. "
-        "When ready, return a TrendPayload with concise, grounded content."
+        "When ready, return a TrendPayload with grounded, readable content."
+    )
+    base += (
+        " Prioritize readability over compression: use short sentences, avoid long multi-clause lines, "
+        "and avoid stacking many technical terms in a single sentence. "
+        "Introduce acronyms once with a brief explanation in the output language, then reuse them. "
+        "Avoid repetitive phrasing across overview, clusters, and highlights; each section should add new value."
     )
     base += (
         " For clusters[].representative_chunks, either omit the entry or provide an object "
@@ -454,7 +460,8 @@ def generate_trend_payload(
             "corpus": {"doc_type": corpus_doc_type, "granularity": corpus_granularity},
             "notes": [
                 "Use tools to cite representative doc_id/chunk_index in clusters.",
-                "Keep output concise and grounded in the corpus.",
+                "Optimize for readability: short sentences, minimal jargon pile-ups, no repetitive filler.",
+                "Keep claims grounded in the local corpus.",
             ],
         },
         ensure_ascii=False,

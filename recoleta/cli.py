@@ -69,6 +69,15 @@ def _build_runtime() -> tuple[Any, Any, Any]:
     return settings, repository, service
 
 
+def _parse_anchor_date_option(value: str) -> date:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("date is required")
+    if len(raw) == 8 and raw.isdigit():
+        raw = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    return date.fromisoformat(raw)
+
+
 def _print_billing_report(*, console: Any, repository: Any, run_id: str) -> None:
     symbols = _runtime_symbols()
     logger = symbols["logger"]
@@ -212,12 +221,22 @@ def trends(
     anchor_date: str | None = typer.Option(
         None,
         "--date",
-        help="Anchor date in UTC (YYYY-MM-DD). Defaults to today (UTC).",
+        help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
     ),
     model: str | None = typer.Option(
         None,
         "--model",
         help="Override LLM model for trend generation. Defaults to LLM_MODEL.",
+    ),
+    backfill: bool = typer.Option(
+        False,
+        "--backfill/--no-backfill",
+        help="Backfill missing lower-granularity trends before generating week/month trends.",
+    ),
+    backfill_mode: str = typer.Option(
+        "missing",
+        "--backfill-mode",
+        help="Backfill policy. Allowed: missing, all.",
     ),
 ) -> None:
     """Generate trends for a period (day/week/month)."""
@@ -227,7 +246,15 @@ def trends(
 
     parsed_anchor: date | None = None
     if anchor_date is not None and str(anchor_date).strip():
-        parsed_anchor = date.fromisoformat(str(anchor_date).strip())
+        raw_anchor = str(anchor_date).strip()
+        try:
+            parsed_anchor = _parse_anchor_date_option(raw_anchor)
+        except Exception as exc:  # noqa: BLE001
+            console = console_cls()
+            console.print(
+                f"[red]invalid date[/red] value={raw_anchor} expected=YYYY-MM-DD|YYYYMMDD"
+            )
+            raise typer.Exit(code=2) from exc
 
     settings, repository, run_id, result = _execute_stage(
         stage_name="trends",
@@ -236,6 +263,63 @@ def trends(
             granularity=granularity,
             anchor_date=parsed_anchor,
             llm_model=model,
+            backfill=backfill,
+            backfill_mode=backfill_mode,
+        ),
+    )
+    console = console_cls(stderr=settings.log_json)
+    console.print(
+        "[green]trends completed[/green] "
+        f"doc_id={result.doc_id} granularity={result.granularity} "
+        f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+    )
+    _print_billing_report(console=console, repository=repository, run_id=run_id)
+
+
+@app.command("trends-week")
+def trends_week(
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for trend generation. Defaults to LLM_MODEL.",
+    ),
+    backfill_mode: str = typer.Option(
+        "missing",
+        "--backfill-mode",
+        help="Backfill policy. Allowed: missing, all.",
+    ),
+) -> None:
+    """Generate weekly trends and backfill missing daily trends."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+
+    parsed_anchor: date | None = None
+    if anchor_date is not None and str(anchor_date).strip():
+        raw_anchor = str(anchor_date).strip()
+        try:
+            parsed_anchor = _parse_anchor_date_option(raw_anchor)
+        except Exception as exc:  # noqa: BLE001
+            console = console_cls()
+            console.print(
+                f"[red]invalid date[/red] value={raw_anchor} expected=YYYY-MM-DD|YYYYMMDD"
+            )
+            raise typer.Exit(code=2) from exc
+
+    settings, repository, run_id, result = _execute_stage(
+        stage_name="trends",
+        stage_runner=lambda service, run_id: service.trends(
+            run_id=run_id,
+            granularity="week",
+            anchor_date=parsed_anchor,
+            llm_model=model,
+            backfill=True,
+            backfill_mode=backfill_mode,
         ),
     )
     console = console_cls(stderr=settings.log_json)
@@ -574,13 +658,80 @@ def db_reset(
     config_path: Path | None = typer.Option(
         None, "--config", help="Path to config file used to resolve recoleta_db_path."
     ),
+    trends_only: bool = typer.Option(
+        False,
+        "--trends-only",
+        help="Only reset trend-related documents/chunks (keeps items, analyses, contents).",
+    ),
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Confirm deletion without prompting."
     ),
 ) -> None:
-    """Alias for `recoleta db clear`."""
+    """Reset the SQLite DB (full reset) or only trend-related content."""
 
-    db_clear(db_path=db_path, config_path=config_path, yes=yes)
+    if not trends_only:
+        db_clear(db_path=db_path, config_path=config_path, yes=yes)
+        return
+
+    if not yes:
+        typer.echo("refusing to reset trends without --yes")
+        raise typer.Exit(code=2)
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    logger = symbols["logger"]
+    repository_cls = symbols["Repository"]
+    console = console_cls()
+    log = logger.bind(module="cli.db.reset")
+
+    try:
+        resolved = _resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]db path resolution failed[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    if not resolved.exists():
+        console.print(f"[green]db already empty[/green] path={resolved}")
+        return
+
+    repository = repository_cls(db_path=resolved)
+    repository.init_schema()
+
+    sqlmodel_session = _import_symbol("sqlmodel", attr_name="Session")
+    sqlmodel_select = _import_symbol("sqlmodel", attr_name="select")
+    document_model = _import_symbol("recoleta.models", attr_name="Document")
+
+    with sqlmodel_session(repository.engine) as session:  # type: ignore[operator]
+        statement = sqlmodel_select(document_model).where(
+            document_model.doc_type.in_(["item", "trend"])
+        )
+        docs = list(session.exec(statement))
+        doc_ids = [int(getattr(d, "id") or 0) for d in docs if getattr(d, "id", None)]
+
+    chunks_deleted_total = 0
+    for doc_id in doc_ids:
+        chunks_deleted_total += int(repository.delete_document_chunks(doc_id=doc_id))
+
+    docs_deleted_total = 0
+    with sqlmodel_session(repository.engine) as session:  # type: ignore[operator]
+        statement = sqlmodel_select(document_model).where(
+            document_model.id.in_(doc_ids)
+        )
+        for doc in session.exec(statement):
+            session.delete(doc)
+            docs_deleted_total += 1
+        session.commit()
+
+    log.info(
+        "Trends reset done deleted_docs={} deleted_chunks={} path={}",
+        docs_deleted_total,
+        chunks_deleted_total,
+        str(resolved),
+    )
+    console.print(
+        "[green]db trends reset[/green] "
+        f"deleted_docs={docs_deleted_total} deleted_chunks={chunks_deleted_total} path={resolved}"
+    )
 
 
 @app.command("run")

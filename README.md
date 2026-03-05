@@ -178,7 +178,7 @@ uv run recoleta trends
 
 Key behaviors:
 
-- **Time windows**: `--date` is an anchor date in **UTC** (`YYYY-MM-DD`).
+- **Time windows**: `--date` is an anchor date in **UTC** (`YYYY-MM-DD` or `YYYYMMDD`).
   - `day`: the UTC calendar day of `--date`
   - `week`: ISO week (Monday start) containing `--date`
   - `month`: calendar month containing `--date`
@@ -186,6 +186,9 @@ Key behaviors:
   - `day` trends are generated from **analyzed items** in that day.
   - `week` trends are generated from existing **day trend documents** in that week.
   - `month` trends are generated from existing **week trend documents** in that month.
+- **Optional auto-backfill**: `--backfill` can auto-generate missing lower-granularity trends before generating `week`/`month` trends.
+  - `week --backfill`: generates missing `day` trends for the week first.
+  - `month --backfill`: (not yet) generates missing `week` trends for the month first.
 - **Token-safe**: if the corpus is empty, Recoleta **skips the LLM call** and emits a placeholder trend document.
 
 Examples:
@@ -197,8 +200,17 @@ uv run recoleta trends --granularity day
 # Daily trend for a specific day (UTC)
 uv run recoleta trends --granularity day --date 2026-03-02
 
-# Weekly trend (requires daily trends for that week)
+# Weekly trend (by default, requires daily trends for that week)
 uv run recoleta trends --granularity week --date 2026-03-02
+
+# Weekly trend with automatic daily backfill (missing days only)
+uv run recoleta trends --granularity week --date 2026-03-02 --backfill
+
+# Shortcut: weekly trend + backfill
+uv run recoleta trends-week --date 2026-03-02
+
+# Rebuild all daily trends for the week, then generate the weekly trend
+uv run recoleta trends-week --date 2026-03-02 --backfill-mode all
 
 # Monthly trend (requires weekly trends for that month)
 uv run recoleta trends --granularity month --date 2026-03-02

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -55,7 +55,14 @@ class _FakeService:
         self.calls: list[dict[str, object]] = []
 
     def trends(  # type: ignore[no-untyped-def]
-        self, *, run_id: str, granularity: str, anchor_date=None, llm_model=None
+        self,
+        *,
+        run_id: str,
+        granularity: str,
+        anchor_date=None,
+        llm_model=None,
+        backfill: bool = False,
+        backfill_mode: str = "missing",
     ):
         self.calls.append(
             {
@@ -63,6 +70,8 @@ class _FakeService:
                 "granularity": granularity,
                 "anchor_date": anchor_date,
                 "llm_model": llm_model,
+                "backfill": bool(backfill),
+                "backfill_mode": str(backfill_mode),
             }
         )
         return SimpleNamespace(
@@ -105,3 +114,65 @@ def test_trends_cli_prints_billing_report_by_default(
     assert "Billing report" in result.stdout
     assert fake_repo.finished == [("run-1", True)]
     assert fake_service.calls and fake_service.calls[0]["run_id"] == "run-1"
+
+
+def test_trends_cli_accepts_yyyymmdd_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "trends",
+            "--granularity",
+            "day",
+            "--date",
+            "20260101",
+        ],
+    )
+    assert result.exit_code == 0
+    assert fake_service.calls and fake_service.calls[0]["anchor_date"] == date(
+        2026, 1, 1
+    )
+
+
+def test_trends_week_cli_accepts_yyyymmdd_date_and_enables_backfill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "trends-week",
+            "--date",
+            "20260101",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Billing report" in result.stdout
+    assert fake_service.calls
+    call = fake_service.calls[0]
+    assert call["granularity"] == "week"
+    assert call["backfill"] is True
+    assert call["backfill_mode"] == "missing"
+    assert call["anchor_date"] == date(2026, 1, 1)

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, cast
 from urllib.parse import parse_qs, urlparse
@@ -2125,6 +2126,8 @@ class PipelineService:
         granularity: str = "day",
         anchor_date: date | None = None,
         llm_model: str | None = None,
+        backfill: bool = False,
+        backfill_mode: str = "missing",
     ) -> TrendResult:
         log = logger.bind(module="pipeline.trends", run_id=run_id)
         started = time.perf_counter()
@@ -2183,6 +2186,106 @@ class PipelineService:
                 corpus_granularity = "week"
 
             model = llm_model or self.settings.llm_model
+
+            normalized_backfill_mode = str(backfill_mode or "missing").strip().lower()
+            if normalized_backfill_mode not in {"missing", "all"}:
+                raise ValueError("backfill_mode must be one of: missing, all")
+
+            if bool(backfill) and normalized_granularity == "week":
+                backfill_started = time.perf_counter()
+                backfill_days_total = 7
+                backfill_missing_total = 0
+                backfill_generated_total = 0
+                backfill_skipped_total = 0
+                backfill_failed_total = 0
+
+                week_start_day = period_start.date()
+                for offset in range(backfill_days_total):
+                    day = week_start_day + timedelta(days=offset)
+                    day_start, day_end = trends.day_period_bounds(day)
+                    existing = cast(Any, self.repository).list_documents(
+                        doc_type="trend",
+                        granularity="day",
+                        period_start=day_start,
+                        period_end=day_end,
+                        order_by="event_desc",
+                        offset=0,
+                        limit=1,
+                    )
+                    is_missing = not bool(existing)
+                    if is_missing:
+                        backfill_missing_total += 1
+                    if normalized_backfill_mode == "missing" and not is_missing:
+                        backfill_skipped_total += 1
+                        continue
+                    try:
+                        _ = self.trends(
+                            run_id=run_id,
+                            granularity="day",
+                            anchor_date=day,
+                            llm_model=model,
+                            backfill=False,
+                            backfill_mode="missing",
+                        )
+                        backfill_generated_total += 1
+                    except Exception as day_exc:  # noqa: BLE001
+                        backfill_failed_total += 1
+                        log.warning(
+                            "Trends week backfill failed day={} error_type={} error={}",
+                            day.isoformat(),
+                            type(day_exc).__name__,
+                            self._sanitize_error_message(str(day_exc)),
+                        )
+
+                backfill_duration_ms = int(
+                    (time.perf_counter() - backfill_started) * 1000
+                )
+                backfill_stats = {
+                    "days_total": backfill_days_total,
+                    "missing_total": backfill_missing_total,
+                    "generated_total": backfill_generated_total,
+                    "skipped_total": backfill_skipped_total,
+                    "failed_total": backfill_failed_total,
+                    "duration_ms": backfill_duration_ms,
+                    "mode": normalized_backfill_mode,
+                }
+                log.info("Trends week backfill done stats={}", backfill_stats)
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.backfill.days_total",
+                    value=backfill_days_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.backfill.missing_total",
+                    value=backfill_missing_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.backfill.generated_total",
+                    value=backfill_generated_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.backfill.skipped_total",
+                    value=backfill_skipped_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.backfill.failed_total",
+                    value=backfill_failed_total,
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.backfill.duration_ms",
+                    value=backfill_duration_ms,
+                    unit="ms",
+                )
 
             # Fail-fast / token-safe behavior: if the corpus is empty, do not call the LLM.
             corpus_docs_total = 0
@@ -2332,6 +2435,236 @@ class PipelineService:
                 payload=payload,
             )
 
+            doc_cache: dict[int, Any | None] = {}
+            item_cache: dict[int, Any | None] = {}
+
+            def _get_doc(doc_id_value: int) -> Any | None:
+                normalized_doc_id = int(doc_id_value)
+                if normalized_doc_id <= 0:
+                    return None
+                if normalized_doc_id not in doc_cache:
+                    doc_cache[normalized_doc_id] = cast(
+                        Any, self.repository
+                    ).get_document(doc_id=normalized_doc_id)
+                return doc_cache.get(normalized_doc_id)
+
+            def _parse_authors(value: Any) -> list[str]:
+                if value is None:
+                    return []
+                if isinstance(value, list):
+                    return [str(a).strip() for a in value if str(a).strip()]
+                if isinstance(value, str):
+                    raw = value.strip()
+                    if not raw:
+                        return []
+                    try:
+                        loaded = orjson.loads(raw)
+                    except Exception:
+                        return []
+                    if isinstance(loaded, list):
+                        return [str(a).strip() for a in loaded if str(a).strip()]
+                return []
+
+            def _citation_label_from_title(raw_title: str) -> str:
+                normalized = " ".join(str(raw_title or "").split()).strip()
+                if not normalized:
+                    return "Paper"
+                if ":" in normalized:
+                    prefix = normalized.split(":", 1)[0].strip()
+                    if 2 <= len(prefix) <= 40:
+                        normalized = prefix
+                normalized = normalized.replace("[", "(").replace("]", ")")
+                if len(normalized) > 60:
+                    normalized = normalized[:60].rstrip() + "…"
+                return normalized
+
+            def _citation_for_doc_id(doc_id_value: int) -> str | None:
+                doc = _get_doc(doc_id_value)
+                if doc is None:
+                    return None
+                title = str(getattr(doc, "title", "") or "").strip()
+                url = str(getattr(doc, "canonical_url", "") or "").strip()
+                label = (
+                    _citation_label_from_title(title)
+                    if title
+                    else f"doc_id:{int(doc_id_value)}"
+                )
+                if url:
+                    return f"[{label}]({url})"
+                return label
+
+            doc_ref_pattern = re.compile(r"\bdoc_id\s*[:=]\s*([0-9][0-9,\s]*)\b")
+            doc_short_pattern = re.compile(r"\bdoc\s+(\d+)\b")
+            chunk_suffix_pattern = re.compile(
+                r"\s*[,;，；]?\s*chunk(?:_index)?\s*[:=]\s*\d+",
+                re.IGNORECASE,
+            )
+
+            rewrite_occurrences_total = 0
+            rewrite_doc_ids_resolved_total = 0
+            rewrite_doc_ids_unresolved_total = 0
+
+            def _rewrite_doc_refs(value: str) -> str:
+                nonlocal rewrite_occurrences_total
+                nonlocal rewrite_doc_ids_resolved_total
+                nonlocal rewrite_doc_ids_unresolved_total
+
+                raw = str(value or "")
+                if not raw.strip():
+                    return raw
+
+                def _replace_doc_id_match(match: re.Match[str]) -> str:
+                    nonlocal rewrite_occurrences_total
+                    nonlocal rewrite_doc_ids_resolved_total
+                    nonlocal rewrite_doc_ids_unresolved_total
+
+                    numbers = [int(x) for x in re.findall(r"\d+", match.group(1) or "")]
+                    seen: set[int] = set()
+                    doc_ids: list[int] = []
+                    for n in numbers:
+                        if n <= 0 or n in seen:
+                            continue
+                        seen.add(n)
+                        doc_ids.append(n)
+                    if not doc_ids:
+                        return match.group(0)
+
+                    rewrite_occurrences_total += 1
+                    citations: list[str] = []
+                    for doc_id_inner in doc_ids:
+                        cite = _citation_for_doc_id(doc_id_inner)
+                        if cite is None:
+                            rewrite_doc_ids_unresolved_total += 1
+                            citations.append(f"doc_id:{doc_id_inner}")
+                        else:
+                            rewrite_doc_ids_resolved_total += 1
+                            citations.append(cite)
+                    return "、".join(citations)
+
+                def _replace_doc_short_match(match: re.Match[str]) -> str:
+                    nonlocal rewrite_occurrences_total
+                    nonlocal rewrite_doc_ids_resolved_total
+                    nonlocal rewrite_doc_ids_unresolved_total
+
+                    raw_id = match.group(1) or ""
+                    try:
+                        doc_id_inner = int(raw_id)
+                    except Exception:
+                        return match.group(0)
+                    if doc_id_inner <= 0:
+                        return match.group(0)
+                    cite = _citation_for_doc_id(doc_id_inner)
+                    if cite is None:
+                        rewrite_doc_ids_unresolved_total += 1
+                        return match.group(0)
+                    rewrite_occurrences_total += 1
+                    rewrite_doc_ids_resolved_total += 1
+                    return cite
+
+                rewritten = doc_ref_pattern.sub(_replace_doc_id_match, raw)
+                rewritten = doc_short_pattern.sub(_replace_doc_short_match, rewritten)
+                rewritten = chunk_suffix_pattern.sub("", rewritten)
+                return rewritten
+
+            overview_md_for_notes = _rewrite_doc_refs(str(payload.overview_md))
+            highlights_for_notes = [
+                _rewrite_doc_refs(str(h)) for h in (list(payload.highlights) or [])
+            ]
+
+            clusters_for_notes: list[dict[str, Any]] = []
+            if payload.clusters:
+                for cluster in payload.clusters:
+                    cluster_dict = cluster.model_dump(mode="json")
+                    cluster_dict["description"] = _rewrite_doc_refs(
+                        str(cluster_dict.get("description") or "").strip()
+                    )
+                    reps = cluster_dict.get("representative_chunks") or []
+                    enriched_reps: list[dict[str, Any]] = []
+                    if isinstance(reps, list) and reps:
+                        for rep in reps:
+                            if not isinstance(rep, dict):
+                                continue
+                            raw_doc_id = rep.get("doc_id")
+                            raw_chunk_index = rep.get("chunk_index")
+                            if raw_doc_id is None or raw_chunk_index is None:
+                                continue
+                            try:
+                                doc_id_int = int(raw_doc_id)
+                                _ = int(raw_chunk_index)
+                            except Exception:
+                                continue
+                            if doc_id_int <= 0:
+                                continue
+                            doc = _get_doc(doc_id_int)
+                            if doc is None:
+                                continue
+
+                            title = str(getattr(doc, "title", "") or "").strip()
+                            url = str(getattr(doc, "canonical_url", "") or "").strip()
+                            if not title:
+                                continue
+
+                            authors: list[str] = []
+                            doc_type = (
+                                str(getattr(doc, "doc_type", "") or "").strip().lower()
+                            )
+                            if doc_type == "item":
+                                raw_item_id = getattr(doc, "item_id", None)
+                                try:
+                                    item_id_int = (
+                                        int(raw_item_id)
+                                        if raw_item_id is not None
+                                        else 0
+                                    )
+                                except Exception:
+                                    item_id_int = 0
+                                if item_id_int > 0:
+                                    if item_id_int not in item_cache:
+                                        item_cache[item_id_int] = cast(
+                                            Any, self.repository
+                                        ).get_item(item_id=item_id_int)
+                                    item = item_cache.get(item_id_int)
+                                    if item is not None:
+                                        authors = _parse_authors(
+                                            getattr(item, "authors", None)
+                                        )
+
+                            enriched = dict(rep)
+                            enriched["title"] = title
+                            if url:
+                                enriched["url"] = url
+                            if authors:
+                                enriched["authors"] = authors
+                            enriched_reps.append(enriched)
+                    cluster_dict["representative_chunks"] = enriched_reps
+                    clusters_for_notes.append(cluster_dict)
+
+            if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
+                log.info(
+                    "Trend note doc refs rewritten occurrences={} resolved_doc_ids={} unresolved_doc_ids={}",
+                    rewrite_occurrences_total,
+                    rewrite_doc_ids_resolved_total,
+                    rewrite_doc_ids_unresolved_total,
+                )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.note_doc_refs_rewrite_occurrences_total",
+                value=rewrite_occurrences_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.note_doc_refs_resolved_total",
+                value=rewrite_doc_ids_resolved_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.note_doc_refs_unresolved_total",
+                value=rewrite_doc_ids_unresolved_total,
+                unit="count",
+            )
+
             targets = set(self.settings.publish_targets or [])
             if "obsidian" in targets and self.settings.obsidian_vault_path is None:
                 raise ValueError(
@@ -2348,10 +2681,10 @@ class PipelineService:
                         period_start=period_start,
                         period_end=period_end,
                         run_id=run_id,
-                        overview_md=str(payload.overview_md),
+                        overview_md=overview_md_for_notes,
                         topics=list(payload.topics),
-                        clusters=[c.model_dump(mode="json") for c in payload.clusters],
-                        highlights=list(payload.highlights),
+                        clusters=clusters_for_notes,
+                        highlights=highlights_for_notes,
                     )
                 if (
                     "obsidian" in targets
@@ -2366,10 +2699,10 @@ class PipelineService:
                         period_start=period_start,
                         period_end=period_end,
                         run_id=run_id,
-                        overview_md=str(payload.overview_md),
+                        overview_md=overview_md_for_notes,
                         topics=list(payload.topics),
-                        clusters=[c.model_dump(mode="json") for c in payload.clusters],
-                        highlights=list(payload.highlights),
+                        clusters=clusters_for_notes,
+                        highlights=highlights_for_notes,
                     )
             except Exception as note_exc:  # noqa: BLE001
                 log.warning(

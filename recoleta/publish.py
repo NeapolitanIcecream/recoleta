@@ -165,6 +165,52 @@ def _trend_date_token(*, granularity: str, period_start: datetime) -> str:
     return period_start.strftime("%Y-%m-%d")
 
 
+def _single_line(value: str, *, fallback: str) -> str:
+    cleaned = " ".join(str(value or "").split()).strip()
+    return cleaned if cleaned else fallback
+
+
+def _sanitize_obsidian_tag(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    normalized = "".join(
+        ch if (ch.isalnum() or ch in {"-", "_", "/"}) else "-" for ch in raw
+    )
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    normalized = normalized.strip("-")
+    return normalized.lower()
+
+
+def _format_author_suffix(authors: list[str], *, max_authors: int = 6) -> str:
+    cleaned = [str(a).strip() for a in (authors or []) if str(a).strip()]
+    if not cleaned:
+        return ""
+    limit = max(0, int(max_authors))
+    if limit > 0 and len(cleaned) > limit:
+        return f" — {'; '.join(cleaned[:limit])}; …"
+    return f" — {'; '.join(cleaned)}"
+
+
+def _append_obsidian_callout(
+    lines: list[str],
+    *,
+    callout_type: str,
+    title: str,
+    bullets: list[str],
+    collapsed: bool,
+) -> None:
+    cleaned = [str(b).strip() for b in (bullets or []) if str(b).strip()]
+    if not cleaned:
+        return
+    marker = f"[!{str(callout_type).strip()}]" + ("-" if collapsed else "")
+    lines.append(f"> {marker} {str(title).strip()}")
+    for b in cleaned:
+        lines.append(f"> - {b}")
+    lines.append("")
+
+
 def write_obsidian_trend_note(
     *,
     vault_path: Path,
@@ -184,8 +230,15 @@ def write_obsidian_trend_note(
     note_dir.mkdir(parents=True, exist_ok=True)
 
     token = _trend_date_token(granularity=granularity, period_start=period_start)
-    slug = slugify(title, lowercase=True) or "trend"
-    note_path = note_dir / f"{granularity}--{token}--{slug}--{trend_doc_id}.md"
+    note_path = note_dir / f"{granularity}--{token}--trend--{trend_doc_id}.md"
+
+    tags = ["recoleta/trend"]
+    for topic in topics or []:
+        normalized = _sanitize_obsidian_tag(topic)
+        if normalized:
+            tags.append(f"topic/{normalized}")
+    seen_tags: set[str] = set()
+    tags = [t for t in tags if not (t in seen_tags or seen_tags.add(t))]
 
     frontmatter = {
         "kind": "trend",
@@ -195,7 +248,12 @@ def write_obsidian_trend_note(
         "period_end": period_end.isoformat(),
         "topics": topics,
         "run_id": run_id,
+        "aliases": [f"recoleta-trend-{int(trend_doc_id)}"],
+        "tags": tags,
     }
+
+    highlights = highlights or []
+    tldr = [str(h).strip() for h in highlights[:3] if str(h).strip()]
 
     lines: list[str] = [
         "---",
@@ -204,11 +262,22 @@ def write_obsidian_trend_note(
         "",
         f"# {title}",
         "",
-        "## Overview",
-        (overview_md or "").strip(),
-        "",
-        "## Topics",
     ]
+    _append_obsidian_callout(
+        lines,
+        callout_type="summary",
+        title="TL;DR",
+        bullets=tldr,
+        collapsed=False,
+    )
+    lines.extend(
+        [
+            "## Overview",
+            (overview_md or "").strip(),
+            "",
+            "## Topics",
+        ]
+    )
     if topics:
         lines.extend([f"- {t}" for t in topics])
     else:
@@ -218,27 +287,38 @@ def write_obsidian_trend_note(
     clusters = clusters or []
     if clusters:
         for cluster in clusters:
-            name = str(cluster.get("name") or "").strip() or "cluster"
+            name = _single_line(str(cluster.get("name") or ""), fallback="Cluster")
             desc = str(cluster.get("description") or "").strip()
-            lines.append(f"- **{name}**: {desc}".rstrip())
+            lines.extend(["", f"### {name}", ""])
+            if desc:
+                lines.append(desc)
+                lines.append("")
             reps = cluster.get("representative_chunks") or []
             if isinstance(reps, list) and reps:
+                lines.append("#### Representative papers")
                 for rep in reps[:6]:
                     if not isinstance(rep, dict):
                         continue
-                    doc_id = rep.get("doc_id")
-                    chunk_index = rep.get("chunk_index")
-                    score = rep.get("score")
-                    if doc_id is None or chunk_index is None:
+                    rep_title = str(rep.get("title") or "").strip()
+                    if not rep_title:
                         continue
-                    lines.append(
-                        f"  - doc_id={doc_id} chunk_index={chunk_index} score={score}"
-                    )
+                    url = str(rep.get("url") or "").strip()
+                    authors_raw = rep.get("authors")
+                    authors: list[str] = []
+                    if isinstance(authors_raw, list):
+                        authors = [
+                            str(a).strip() for a in authors_raw if str(a).strip()
+                        ]
+                    author_suffix = _format_author_suffix(authors, max_authors=6)
+                    if url:
+                        lines.append(f"- [{rep_title}]({url}){author_suffix}")
+                    else:
+                        lines.append(f"- {rep_title}{author_suffix}")
+                lines.append("")
     else:
         lines.append("- (none)")
 
     lines.extend(["", "## Highlights"])
-    highlights = highlights or []
     if highlights:
         lines.extend([f"- {h}" for h in highlights])
     else:
@@ -269,8 +349,7 @@ def write_markdown_trend_note(
     trends_dir.mkdir(parents=True, exist_ok=True)
 
     token = _trend_date_token(granularity=granularity, period_start=period_start)
-    slug = slugify(title, lowercase=True) or "trend"
-    note_path = trends_dir / f"{granularity}--{token}--{slug}--{trend_doc_id}.md"
+    note_path = trends_dir / f"{granularity}--{token}--trend--{trend_doc_id}.md"
 
     frontmatter = {
         "kind": "trend",
@@ -282,6 +361,9 @@ def write_markdown_trend_note(
         "run_id": run_id,
     }
 
+    highlights = highlights or []
+    tldr = [str(h).strip() for h in highlights[:3] if str(h).strip()]
+
     lines: list[str] = [
         "---",
         yaml.safe_dump(frontmatter, sort_keys=False).strip(),
@@ -289,11 +371,17 @@ def write_markdown_trend_note(
         "",
         f"# {title}",
         "",
-        "## Overview",
-        (overview_md or "").strip(),
-        "",
-        "## Topics",
     ]
+    if tldr:
+        lines.extend(["## TL;DR", *[f"- {h}" for h in tldr], ""])
+    lines.extend(
+        [
+            "## Overview",
+            (overview_md or "").strip(),
+            "",
+            "## Topics",
+        ]
+    )
     if topics:
         lines.extend([f"- {t}" for t in topics])
     else:
@@ -303,27 +391,38 @@ def write_markdown_trend_note(
     clusters = clusters or []
     if clusters:
         for cluster in clusters:
-            name = str(cluster.get("name") or "").strip() or "cluster"
+            name = _single_line(str(cluster.get("name") or ""), fallback="Cluster")
             desc = str(cluster.get("description") or "").strip()
-            lines.append(f"- **{name}**: {desc}".rstrip())
+            lines.extend(["", f"### {name}", ""])
+            if desc:
+                lines.append(desc)
+                lines.append("")
             reps = cluster.get("representative_chunks") or []
             if isinstance(reps, list) and reps:
+                lines.append("#### Representative papers")
                 for rep in reps[:6]:
                     if not isinstance(rep, dict):
                         continue
-                    doc_id = rep.get("doc_id")
-                    chunk_index = rep.get("chunk_index")
-                    score = rep.get("score")
-                    if doc_id is None or chunk_index is None:
+                    rep_title = str(rep.get("title") or "").strip()
+                    if not rep_title:
                         continue
-                    lines.append(
-                        f"  - doc_id={doc_id} chunk_index={chunk_index} score={score}"
-                    )
+                    url = str(rep.get("url") or "").strip()
+                    authors_raw = rep.get("authors")
+                    authors: list[str] = []
+                    if isinstance(authors_raw, list):
+                        authors = [
+                            str(a).strip() for a in authors_raw if str(a).strip()
+                        ]
+                    author_suffix = _format_author_suffix(authors, max_authors=6)
+                    if url:
+                        lines.append(f"- [{rep_title}]({url}){author_suffix}")
+                    else:
+                        lines.append(f"- {rep_title}{author_suffix}")
+                lines.append("")
     else:
         lines.append("- (none)")
 
     lines.extend(["", "## Highlights"])
-    highlights = highlights or []
     if highlights:
         lines.extend([f"- {h}" for h in highlights])
     else:
