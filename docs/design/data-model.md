@@ -171,4 +171,12 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `latest.md` (entry point for the most recent publish run)
 - `Runs/<run_id>.md` (per-run index)
 - `Inbox/` (one note per item, Markdown + YAML frontmatter)
+- `Trends/` (canonical trend markdown notes and derived trend PDFs)
+- `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
+- `site/` (optional static site export derived from `Trends/`)
 
+Trend markdown notes are the canonical source for the richer trend surfaces:
+
+- Telegram trend PDFs render from `Trends/*.md`
+- the static site exporter renders from a trend markdown directory
+- a repository can mirror selected trend notes into `site-content/Trends/` for GitHub Pages deployment

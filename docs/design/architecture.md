@@ -9,6 +9,8 @@ Recoleta is a CLI-first application with a small set of commands:
 - `recoleta ingest`: run **prepare** work (ingest + enrich + optional triage) and persist a Stage 4-ready backlog.
 - `recoleta analyze`: run **Stage 4 only** (LLM analysis on prepared items); no network enrichment or triage in this command.
 - `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram).
+- `recoleta trends`: generate day/week/month trend documents from analyzed items or lower-granularity trend documents.
+- `recoleta site`: build and stage a static site from canonical trend markdown notes.
 - `recoleta run`: schedule ingest/analyze/publish periodically (optional; can also be done by cron/launchd).
 
 ## Module boundaries
@@ -22,7 +24,8 @@ Current module layout:
 - `recoleta/analyzer.py`: LLM invocation via LiteLLM
 - `recoleta/triage.py`: semantic scoring and pre-ranking before LLM (optional)
 - `recoleta/storage.py`: SQLite repository + filesystem writers
-- `recoleta/publish.py`: Markdown/Obsidian note writers and Telegram message builder
+- `recoleta/publish.py`: Markdown/Obsidian note writers, Telegram message builder, and trend PDF rendering
+- `recoleta/site.py`: static site export from canonical trend markdown notes
 - `recoleta/delivery.py`: Telegram sender
 - `recoleta/observability.py`: logging setup, debug artifacts, metrics helpers
 
@@ -133,7 +136,14 @@ Responsibilities:
 - Write local Markdown notes and a per-run index (`latest.md`) by default.
 - Optionally write Obsidian notes in Markdown with YAML frontmatter.
 - Optionally send Telegram messages (short mobile-friendly format) with safe rate limiting.
+- For trends, persist a canonical markdown note first, then derive the Telegram PDF from that note.
+- For trend Telegram delivery, prefer the browser PDF renderer and fall back to the Story renderer when necessary.
 - Record delivery results and message IDs for idempotency.
+
+Operational guidance:
+- Keep the trend markdown note as the canonical source for downstream surfaces.
+- Treat the generated PDF as a delivery artifact, not as the source of truth.
+- When `--debug-pdf` is enabled, export the exact HTML/CSS/markdown inputs used for the render.
 
 ## Durable pre-ranking boundary
 
@@ -163,6 +173,8 @@ Recoleta persists state in two places:
 - **Filesystem outputs**:
   - Local Markdown output directory (default, user-facing artifacts)
   - Obsidian Vault notes (user-facing artifacts)
+  - trend PDF artifacts derived from canonical markdown notes
+  - static site build outputs and repo-local staged trend snapshots
   - optional raw artifacts directory (HTML/PDF/text snapshots, debug JSON)
 
 SQLite enables:
@@ -185,6 +197,7 @@ Every pipeline stage must emit at least one machine-readable signal:
   - `{run_id}/{item_id}/llm-request.json`
   - `{run_id}/{item_id}/llm-response.json`
   - optional triage artifacts (when enabled): `embedding-request.json`, `embedding-response.json`, `triage-summary.json`
+  - optional trend PDF render bundles under `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/<pdf-stem>/`
   - scrub secrets before writing
 
 ## Error handling and retries
@@ -194,4 +207,3 @@ Every pipeline stage must emit at least one machine-readable signal:
   - transient: retry, then mark `retryable_failed`
   - permanent: mark `failed` and stop further stages for that item
 - Persist failure context (error type, message, stage) in SQLite for later inspection.
-

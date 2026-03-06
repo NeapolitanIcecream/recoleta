@@ -129,7 +129,24 @@ Choose one:
 - `ARTIFACTS_DIR` (required when `WRITE_DEBUG_ARTIFACTS=true`): where to write raw/debug artifacts (outside the Vault is fine).
 - `OBSIDIAN_BASE_FOLDER` (default `Recoleta`): base folder under the Vault.
 - `PUBLISH_TARGETS` (default `["markdown"]`): which publish integrations are enabled.
-- `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`).
+- `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`, `Trends/`, and derived `site/` output).
+
+### Browser trend PDF rendering
+
+Trend PDFs are rendered from canonical trend markdown notes. The browser renderer probes browser executables in this order:
+
+- `RECOLETA_PLAYWRIGHT_EXECUTABLE_PATH`
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
+- `GOOGLE_CHROME_BIN`
+- `CHROME_BIN`
+- common Chrome / Chromium / Edge install locations
+- Playwright's default Chromium launcher
+
+Notes:
+
+- Telegram trend delivery uses browser rendering first and falls back to the Story renderer when browser launch or browser PDF export fails.
+- `recoleta trends --debug-pdf` is a CLI flag, not a persistent config setting. It exports a per-render debug bundle under `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/`.
+- `recoleta site build --input-dir ... --output-dir ...` and `recoleta site stage --input-dir ... --output-dir ...` intentionally work without loading the full runtime config so CI can build from staged trend notes only.
 
 ## Logging and diagnostics
 
@@ -142,4 +159,3 @@ Choose one:
 - Secrets must only come from env (or OS keychain in a future version).
 - Debug artifacts must be scrubbed (remove tokens, headers, cookies).
 - Logs must never include raw secrets.
-

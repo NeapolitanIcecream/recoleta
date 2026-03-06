@@ -46,6 +46,7 @@ flowchart LR
 - **Structured LLM outputs**: JSON-only analysis validated by Pydantic (summary/tags/scores).
 - **Semantic triage before LLM (optional)**: pre-rank (and optionally filter) candidates by topic similarity to improve LLM ROI under backlog.
 - **Outputs where you read**: local Markdown output (default) + optional Obsidian notes + optional curated Telegram digest.
+- **Trend surfaces**: trend markdown notes can be republished as browser-rendered PDFs and as a deployable static website.
 - **Operationally friendly**: structured logs, per-run metrics in SQLite, optional scrubbed debug artifacts.
 
 <a id="recoleta-installation"></a>
@@ -60,6 +61,7 @@ flowchart LR
 - **Optional integrations**:
   - Obsidian Vault (for writing notes directly into Obsidian)
   - Telegram Bot token + destination chat ID (for mobile digest)
+  - Chromium-compatible browser for browser-rendered trend PDFs (`uv run playwright install chromium` is a good fallback when no system browser is available)
 
 ### Install (from source)
 
@@ -222,14 +224,22 @@ uv run recoleta trends --granularity week --model "openai/gpt-4o-mini"
 Outputs:
 
 - **SQLite**: a durable `trend` document is persisted into `RECOLETA_DB_PATH`.
-- **Local Markdown** (when `PUBLISH_TARGETS` includes `markdown`): `MARKDOWN_OUTPUT_DIR/Trends/`
+- **Local Markdown** (when `PUBLISH_TARGETS` includes `markdown`): `MARKDOWN_OUTPUT_DIR/Trends/` (canonical source for downstream PDF/site rendering)
 - **Obsidian** (when `PUBLISH_TARGETS` includes `obsidian`): `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Trends/`
+- **Telegram PDF** (when `PUBLISH_TARGETS` includes `telegram` and the corpus is non-empty): `<trend-note>.pdf`, rendered from the canonical markdown note
 
 Optional knobs (env or config):
 
 - `RAG_LANCEDB_DIR`: where semantic vectors are stored (default: platform user data dir + `/lancedb`)
 - `TRENDS_EMBEDDING_MODEL`, `TRENDS_EMBEDDING_DIMENSIONS`
 - `TRENDS_EMBEDDING_FAILURE_MODE` (`continue|fail_fast|threshold`) and `TRENDS_EMBEDDING_MAX_ERRORS` (required when `threshold`)
+
+PDF behavior:
+
+- Telegram trend delivery renders the PDF from the canonical markdown note under `MARKDOWN_OUTPUT_DIR/Trends/`.
+- The renderer uses `backend="auto"`: browser rendering via Playwright/Chromium first, then a `PyMuPDF Story` fallback if browser rendering is unavailable.
+- Telegram uses a browser-rendered `continuous` page mode by default to avoid A4 page breaks in the mobile reading surface.
+- `uv run recoleta trends --granularity day --debug-pdf` writes a debug bundle to `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/<pdf-stem>/` containing the source markdown, normalized markdown, HTML, CSS, manifest, and per-page PNG previews.
 
 ### 🌐 Static trends site
 
@@ -359,6 +369,11 @@ Common optional knobs:
   - `MARKDOWN_OUTPUT_DIR` / `markdown_output_dir`
   - `OBSIDIAN_BASE_FOLDER` / `obsidian_base_folder`
   - `ARTIFACTS_DIR` / `artifacts_dir` (required if `WRITE_DEBUG_ARTIFACTS=true`)
+- **Browser PDF rendering**:
+  - `RECOLETA_PLAYWRIGHT_EXECUTABLE_PATH`
+  - `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
+  - `GOOGLE_CHROME_BIN`
+  - `CHROME_BIN`
 - **Scheduling**:
   - `INGEST_INTERVAL_MINUTES`, `ANALYZE_INTERVAL_MINUTES`, `PUBLISH_INTERVAL_MINUTES`
 - **Logging & diagnostics**:
@@ -393,9 +408,12 @@ Recoleta ships a small CLI surface:
 
 - `recoleta ingest`: prepare items for LLM (ingest + enrich + optional triage)
 - `recoleta analyze --limit 100`: run structured LLM analysis for prepared items only
-- `recoleta publish --limit 50`: write Obsidian notes and send Telegram deliverables
+- `recoleta publish --limit 50`: write Markdown/Obsidian notes and send Telegram deliverables
 - `recoleta run`: schedule ingest/analyze/publish periodically
 - `recoleta trends --granularity week --date 2026-03-02`: generate a trend note (day/week/month)
+- `recoleta trends --granularity day --debug-pdf`: generate a trend note and export a PDF debug bundle for the rendered Telegram PDF
+- `recoleta site build`: render a static site from trend markdown notes
+- `recoleta site stage`: mirror trend markdown/PDF artifacts into `site-content/Trends/` for deployment
 
 ### Further reading
 
@@ -404,6 +422,7 @@ Recoleta ships a small CLI surface:
 - [`docs/design/configuration.md`](docs/design/configuration.md) — full configuration reference and rules
 - [`docs/design/semantic-pre-ranking.md`](docs/design/semantic-pre-ranking.md) — semantic triage before LLM (pre-ranking and optional filtering)
 - [`docs/design/outputs.md`](docs/design/outputs.md) — publish targets and local Markdown layout
+- [`docs/design/trend-surfaces.md`](docs/design/trend-surfaces.md) — canonical trend markdown, browser PDF rendering, debug bundles, and static site deployment
 - [`docs/design/llm-output-language.md`](docs/design/llm-output-language.md) — configurable analysis language behavior
 - [`docs/design/data-model.md`](docs/design/data-model.md) — SQLite schema and Obsidian note layout
 - [`docs/adr/`](docs/adr/) — architecture decision records (SQLite, LiteLLM, config file, Telegram delivery)
