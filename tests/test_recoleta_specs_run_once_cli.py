@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import signal
 from types import SimpleNamespace
 
 import pytest
@@ -84,6 +85,18 @@ class _InterruptingService(_FakeService):
         raise KeyboardInterrupt
 
 
+class _FakeSignalInterrupt(KeyboardInterrupt):
+    def __init__(self, signum: int) -> None:
+        super().__init__()
+        self.signum = signum
+
+
+class _SignalInterruptingService(_FakeService):
+    def prepare(self, *, run_id: str):  # type: ignore[no-untyped-def]
+        self.calls.append(("prepare", run_id))
+        raise _FakeSignalInterrupt(signal.SIGTERM)
+
+
 def test_run_once_does_not_start_scheduler_and_runs_stages_in_order(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
@@ -147,5 +160,29 @@ def test_run_once_prints_billing_report_on_keyboard_interrupt(
 
     result = runner.invoke(recoleta.cli.app, ["run", "--once"])
     assert result.exit_code == 130
+    assert "Billing report" in result.stdout
+    assert fake_repo.finished == [("run-1", False)]
+
+
+def test_run_once_preserves_sigterm_exit_code(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: SIGTERM should reuse run cleanup and billing-report output."""
+
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _FakeRepo()
+    fake_service = _SignalInterruptingService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(recoleta.cli.app, ["run", "--once"])
+    assert result.exit_code == 143
     assert "Billing report" in result.stdout
     assert fake_repo.finished == [("run-1", False)]

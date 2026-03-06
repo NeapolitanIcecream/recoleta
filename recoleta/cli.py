@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 import importlib
 import json
 from pathlib import Path
-from typing import Any
+import signal
+from typing import Any, NoReturn
 
 
 def _import_symbol(module_name: str, *, attr_name: str | None = None) -> Any:
@@ -106,6 +108,65 @@ def _print_billing_report(*, console: Any, repository: Any, run_id: str) -> None
     console.print(table)
 
 
+class _SignalKeyboardInterrupt(KeyboardInterrupt):
+    def __init__(self, signum: int) -> None:
+        super().__init__()
+        self.signum = int(signum)
+
+
+def _interrupt_signal_name(exc: KeyboardInterrupt) -> str:
+    signum = getattr(exc, "signum", None)
+    if isinstance(signum, int) and signum > 0:
+        try:
+            return signal.Signals(signum).name
+        except ValueError:
+            return f"SIG{signum}"
+    return "SIGINT"
+
+
+def _interrupt_exit_code(exc: KeyboardInterrupt) -> int:
+    signum = getattr(exc, "signum", None)
+    if isinstance(signum, int) and signum > 0:
+        return 128 + signum
+    return 130
+
+
+@contextmanager
+def _graceful_shutdown_signals() -> Iterator[None]:
+    try:
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+    except (AttributeError, ValueError):
+        yield
+        return
+
+    def _handle_sigterm(signum: int, _: Any) -> None:
+        raise _SignalKeyboardInterrupt(signum)
+
+    try:
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+    except ValueError:
+        yield
+        return
+
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
+
+
+def _raise_typer_exit_for_interrupt(
+    *, log: Any, message: str, exc: KeyboardInterrupt
+) -> NoReturn:
+    exit_code = _interrupt_exit_code(exc)
+    log.warning(
+        "{} signal={} exit_code={}",
+        message,
+        _interrupt_signal_name(exc),
+        exit_code,
+    )
+    raise typer.Exit(code=exit_code) from None
+
+
 def _execute_stage(
     *,
     stage_name: str,
@@ -118,16 +179,20 @@ def _execute_stage(
     run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
     stage_log = logger.bind(module=f"cli.{stage_name}", run_id=run.id)
     try:
-        result = stage_runner(service, run.id)
+        with _graceful_shutdown_signals():
+            result = stage_runner(service, run.id)
         repository.finish_run(run.id, success=True)
         return settings, repository, run.id, result
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         try:
             repository.finish_run(run.id, success=False)
         except Exception:
             stage_log.exception("Run finish failed during interrupt")
-        stage_log.warning("Stage interrupted")
-        raise typer.Exit(code=130) from None
+        _raise_typer_exit_for_interrupt(
+            log=stage_log,
+            message="Stage interrupted",
+            exc=exc,
+        )
     except Exception:
         repository.finish_run(run.id, success=False)
         stage_log.exception("Stage execution failed")
@@ -384,44 +449,48 @@ def rag_sync_vectors(
     run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
     log = logger.bind(module="cli.rag.sync_vectors", run_id=run.id)
     try:
-        from recoleta.rag.sync import sync_summary_vectors_in_period
-        from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
+        with _graceful_shutdown_signals():
+            from recoleta.rag.sync import sync_summary_vectors_in_period
+            from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 
-        store = LanceVectorStore(
-            db_dir=settings.rag_lancedb_dir,
-            table_name=embedding_table_name(
+            store = LanceVectorStore(
+                db_dir=settings.rag_lancedb_dir,
+                table_name=embedding_table_name(
+                    embedding_model=settings.trends_embedding_model,
+                    embedding_dimensions=settings.trends_embedding_dimensions,
+                ),
+            )
+            stats = sync_summary_vectors_in_period(
+                repository=repository,
+                vector_store=store,
+                run_id=run.id,
+                doc_type=str(doc_type).strip().lower(),
+                period_start=start_dt,
+                period_end=end_dt,
                 embedding_model=settings.trends_embedding_model,
                 embedding_dimensions=settings.trends_embedding_dimensions,
-            ),
-        )
-        stats = sync_summary_vectors_in_period(
-            repository=repository,
-            vector_store=store,
-            run_id=run.id,
-            doc_type=str(doc_type).strip().lower(),
-            period_start=start_dt,
-            period_end=end_dt,
-            embedding_model=settings.trends_embedding_model,
-            embedding_dimensions=settings.trends_embedding_dimensions,
-            max_batch_inputs=settings.trends_embedding_batch_max_inputs,
-            max_batch_chars=settings.trends_embedding_batch_max_chars,
-            embedding_failure_mode=getattr(
-                settings, "trends_embedding_failure_mode", "continue"
-            ),
-            embedding_max_errors=int(
-                getattr(settings, "trends_embedding_max_errors", 0) or 0
-            ),
-            page_size=page_size,
-        )
+                max_batch_inputs=settings.trends_embedding_batch_max_inputs,
+                max_batch_chars=settings.trends_embedding_batch_max_chars,
+                embedding_failure_mode=getattr(
+                    settings, "trends_embedding_failure_mode", "continue"
+                ),
+                embedding_max_errors=int(
+                    getattr(settings, "trends_embedding_max_errors", 0) or 0
+                ),
+                page_size=page_size,
+            )
         repository.finish_run(run.id, success=True)
         console.print(f"[green]rag sync completed[/green] stats={stats}")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         try:
             repository.finish_run(run.id, success=False)
         except Exception:
             log.exception("Run finish failed during interrupt")
-        log.warning("RAG sync interrupted")
-        raise typer.Exit(code=130) from None
+        _raise_typer_exit_for_interrupt(
+            log=log,
+            message="RAG sync interrupted",
+            exc=exc,
+        )
     except Exception:
         repository.finish_run(run.id, success=False)
         log.exception("RAG sync failed")
@@ -478,25 +547,26 @@ def rag_build_index(
     run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
     log = logger.bind(module="cli.rag.build_index", run_id=run.id)
     try:
-        from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
+        with _graceful_shutdown_signals():
+            from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 
-        store = LanceVectorStore(
-            db_dir=settings.rag_lancedb_dir,
-            table_name=embedding_table_name(
-                embedding_model=settings.trends_embedding_model,
-                embedding_dimensions=settings.trends_embedding_dimensions,
-            ),
-        )
-        stats = store.build_indices(
-            build_vector_index=bool(vector),
-            vector_index_type=str(vector_index_type),
-            vector_metric=str(vector_metric),
-            vector_num_partitions=vector_num_partitions,
-            vector_num_sub_vectors=vector_num_sub_vectors,
-            build_scalar_indices=bool(scalar),
-            replace=True,
-            strict=bool(strict),
-        )
+            store = LanceVectorStore(
+                db_dir=settings.rag_lancedb_dir,
+                table_name=embedding_table_name(
+                    embedding_model=settings.trends_embedding_model,
+                    embedding_dimensions=settings.trends_embedding_dimensions,
+                ),
+            )
+            stats = store.build_indices(
+                build_vector_index=bool(vector),
+                vector_index_type=str(vector_index_type),
+                vector_metric=str(vector_metric),
+                vector_num_partitions=vector_num_partitions,
+                vector_num_sub_vectors=vector_num_sub_vectors,
+                build_scalar_indices=bool(scalar),
+                replace=True,
+                strict=bool(strict),
+            )
         errors = stats.get("errors") or []
         table_exists = bool(stats.get("table_exists"))
 
@@ -519,13 +589,16 @@ def rag_build_index(
             )
         else:
             console.print(f"[green]rag build-index completed[/green] stats={stats}")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         try:
             repository.finish_run(run.id, success=False)
         except Exception:
             log.exception("Run finish failed during interrupt")
-        log.warning("RAG build-index interrupted")
-        raise typer.Exit(code=130) from None
+        _raise_typer_exit_for_interrupt(
+            log=log,
+            message="RAG build-index interrupted",
+            exc=exc,
+        )
     except typer.Exit:
         raise
     except Exception:
@@ -757,6 +830,7 @@ def run_scheduler(
     """Run periodic ingest/analyze/publish jobs with APScheduler (or run once)."""
 
     symbols = _runtime_symbols()
+    logger = symbols["logger"]
 
     if once:
         _run_pipeline_once(
@@ -819,7 +893,29 @@ def run_scheduler(
         replace_existing=True,
     )
     console.print("[cyan]scheduler started[/cyan]")
-    scheduler.start()
+    scheduler_log = logger.bind(module="cli.run.scheduler")
+    try:
+        with _graceful_shutdown_signals():
+            scheduler.start()
+    except KeyboardInterrupt as exc:
+        scheduler_log.warning(
+            "Scheduler stopping signal={} exit_code={} waiting_for_jobs=true",
+            _interrupt_signal_name(exc),
+            _interrupt_exit_code(exc),
+        )
+        try:
+            scheduler.shutdown(wait=True)
+        except KeyboardInterrupt:
+            scheduler_log.warning(
+                "Scheduler shutdown interrupted again; forcing stop without waiting."
+            )
+            try:
+                scheduler.shutdown(wait=False)
+            except Exception:
+                scheduler_log.exception("Forced scheduler shutdown failed")
+        except Exception:
+            scheduler_log.exception("Scheduler shutdown failed during interrupt")
+        raise typer.Exit(code=_interrupt_exit_code(exc)) from None
 
 
 def _run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None:
@@ -835,17 +931,21 @@ def _run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None
     log = logger.bind(module="cli.run.once", run_id=run.id)
 
     try:
-        ingest_result = service.prepare(run_id=run.id)
-        analyze_result = service.analyze(run_id=run.id, limit=analyze_limit)
-        publish_result = service.publish(run_id=run.id, limit=publish_limit)
+        with _graceful_shutdown_signals():
+            ingest_result = service.prepare(run_id=run.id)
+            analyze_result = service.analyze(run_id=run.id, limit=analyze_limit)
+            publish_result = service.publish(run_id=run.id, limit=publish_limit)
         repository.finish_run(run.id, success=True)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         try:
             repository.finish_run(run.id, success=False)
         except Exception:
             log.exception("Run finish failed during interrupt")
-        log.warning("Run interrupted")
-        raise typer.Exit(code=130) from None
+        _raise_typer_exit_for_interrupt(
+            log=log,
+            message="Run interrupted",
+            exc=exc,
+        )
     except Exception:
         repository.finish_run(run.id, success=False)
         log.exception("Run failed")

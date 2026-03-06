@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import signal
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,6 +26,12 @@ class _FakeRepository:
         self.finished.append((run_id, success))
 
 
+class _FakeSignalInterrupt(KeyboardInterrupt):
+    def __init__(self, signum: int) -> None:
+        super().__init__()
+        self.signum = signum
+
+
 def test_execute_stage_marks_run_failed_on_keyboard_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -45,4 +52,27 @@ def test_execute_stage_marks_run_failed_on_keyboard_interrupt(
         cli._execute_stage(stage_name="ingest", stage_runner=_runner)
 
     assert exc.value.exit_code == 130
+    assert repo.finished == [("run-1", False)]
+
+
+def test_execute_stage_preserves_sigterm_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: SIGTERM should map to exit code 143 after cleanup."""
+
+    settings = SimpleNamespace(safe_fingerprint=lambda: "fp")  # noqa: E731
+    repo = _FakeRepository()
+    service = object()
+
+    monkeypatch.setattr(
+        cli, "_build_runtime", lambda: (settings, repo, service), raising=True
+    )
+
+    def _runner(_: Any, __: str) -> Any:  # noqa: ANN401
+        raise _FakeSignalInterrupt(signal.SIGTERM)
+
+    with pytest.raises(typer.Exit) as exc:
+        cli._execute_stage(stage_name="ingest", stage_runner=_runner)
+
+    assert exc.value.exit_code == 143
     assert repo.finished == [("run-1", False)]
