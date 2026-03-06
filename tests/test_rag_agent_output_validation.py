@@ -49,6 +49,7 @@ def test_trend_agent_validates_typed_output(
         run_id="run-agent-test",
         period_start=datetime(2026, 1, 1, tzinfo=UTC),
         period_end=datetime(2026, 1, 2, tzinfo=UTC),
+        rag_sources=None,
         embedding_model="test/embed",
         embedding_dimensions=None,
         embedding_batch_max_inputs=64,

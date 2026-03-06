@@ -2144,108 +2144,84 @@ class PipelineService:
                 self.settings.write_debug_artifacts
                 and self.settings.artifacts_dir is not None
             )
+
+            def _record_index_metrics(stats: dict[str, Any], *, failed: bool) -> None:
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.items_total",
+                    value=float(stats.get("items_total") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.docs_upserted_total",
+                    value=float(stats.get("docs_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.chunks_upserted_total",
+                    value=float(stats.get("chunks_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.duration_ms",
+                    value=float(stats.get("duration_ms") or 0),
+                    unit="ms",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.failed_total",
+                    value=1 if failed else 0,
+                    unit="count",
+                )
+
+            def _index_items_for_period(*, required: bool) -> dict[str, Any]:
+                try:
+                    stats = trends.index_items_as_documents(
+                        repository=cast(Any, self.repository),
+                        run_id=run_id,
+                        period_start=period_start,
+                        period_end=period_end,
+                    )
+                except Exception as exc:
+                    failed_stats = {
+                        "items_total": 0,
+                        "docs_upserted": 0,
+                        "chunks_upserted": 0,
+                        "duration_ms": 0,
+                    }
+                    _record_index_metrics(failed_stats, failed=True)
+                    log.warning(
+                        "Trends index failed granularity={} period_start={} period_end={} error_type={} error={}",
+                        normalized_granularity,
+                        period_start.isoformat(),
+                        period_end.isoformat(),
+                        type(exc).__name__,
+                        self._sanitize_error_message(str(exc)),
+                    )
+                    if required:
+                        raise
+                    return failed_stats
+                _record_index_metrics(stats, failed=False)
+                return stats
+
             if normalized_granularity == "day":
                 period_start, period_end = trends.day_period_bounds(anchor)
                 corpus_doc_type = "item"
                 corpus_granularity: str | None = None
-                index_stats = trends.index_items_as_documents(
-                    repository=cast(Any, self.repository),
-                    run_id=run_id,
-                    period_start=period_start,
-                    period_end=period_end,
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.items_total",
-                    value=float(index_stats.get("items_total") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.docs_upserted_total",
-                    value=float(index_stats.get("docs_upserted") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.chunks_upserted_total",
-                    value=float(index_stats.get("chunks_upserted") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.duration_ms",
-                    value=float(index_stats.get("duration_ms") or 0),
-                    unit="ms",
-                )
+                index_stats = _index_items_for_period(required=True)
             elif normalized_granularity == "week":
                 period_start, period_end = trends.week_period_bounds(anchor)
                 corpus_doc_type = "trend"
                 corpus_granularity = "day"
-                index_stats = trends.index_items_as_documents(
-                    repository=cast(Any, self.repository),
-                    run_id=run_id,
-                    period_start=period_start,
-                    period_end=period_end,
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.items_total",
-                    value=float(index_stats.get("items_total") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.docs_upserted_total",
-                    value=float(index_stats.get("docs_upserted") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.chunks_upserted_total",
-                    value=float(index_stats.get("chunks_upserted") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.duration_ms",
-                    value=float(index_stats.get("duration_ms") or 0),
-                    unit="ms",
-                )
+                index_stats = _index_items_for_period(required=False)
             else:
                 period_start, period_end = trends.month_period_bounds(anchor)
                 corpus_doc_type = "trend"
                 corpus_granularity = "week"
-                index_stats = trends.index_items_as_documents(
-                    repository=cast(Any, self.repository),
-                    run_id=run_id,
-                    period_start=period_start,
-                    period_end=period_end,
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.items_total",
-                    value=float(index_stats.get("items_total") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.docs_upserted_total",
-                    value=float(index_stats.get("docs_upserted") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.chunks_upserted_total",
-                    value=float(index_stats.get("chunks_upserted") or 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name="pipeline.trends.index.duration_ms",
-                    value=float(index_stats.get("duration_ms") or 0),
-                    unit="ms",
-                )
+                index_stats = _index_items_for_period(required=False)
 
             model = llm_model or self.settings.llm_model
 

@@ -151,7 +151,9 @@ def test_trends_week_backfill_emits_failure_metric_when_a_day_generation_fails(
     state = {"raised": False}
 
     def _fail_once(**kwargs):  # type: ignore[no-untyped-def]
-        if not state["raised"]:
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        if not state["raised"] and (period_end - period_start).days <= 1:
             state["raised"] = True
             raise RuntimeError("simulated day index failure")
         return original_index(**kwargs)
@@ -170,3 +172,92 @@ def test_trends_week_backfill_emits_failure_metric_when_a_day_generation_fails(
     metrics = repository.list_metrics(run_id="run-week-backfill-fail-1")
     totals = {m.name: float(m.value) for m in metrics}
     assert totals.get("pipeline.trends.backfill.failed_total", 0.0) == 1.0
+
+
+def test_trends_week_backfill_continues_when_initial_item_indexing_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: week trends treat initial item indexing as best-effort."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    anchor = date(2026, 3, 2)
+    week_start, week_end = week_period_bounds(anchor)
+    week_payload = TrendPayload.model_validate(
+        {
+            "title": "Weekly Trend",
+            "granularity": "week",
+            "period_start": week_start.isoformat(),
+            "period_end": week_end.isoformat(),
+            "overview_md": "- weekly",
+            "topics": ["week"],
+            "clusters": [],
+            "highlights": ["weekly"],
+        }
+    )
+
+    from recoleta.rag import agent as rag_agent
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        return week_payload, {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    import recoleta.trends as trends_mod
+
+    original_index = trends_mod.index_items_as_documents
+    state = {"raised": False}
+
+    def _fail_week_index_once(**kwargs):  # type: ignore[no-untyped-def]
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        if not state["raised"] and (period_end - period_start).days > 1:
+            state["raised"] = True
+            raise RuntimeError("simulated week index failure")
+        return original_index(**kwargs)
+
+    monkeypatch.setattr(trends_mod, "index_items_as_documents", _fail_week_index_once)
+
+    result = service.trends(
+        run_id="run-week-index-fail-1",
+        granularity="week",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+        backfill=True,
+        backfill_mode="missing",
+    )
+
+    assert result.granularity == "week"
+
+    metrics = repository.list_metrics(run_id="run-week-index-fail-1")
+    assert (
+        sum(
+            float(m.value)
+            for m in metrics
+            if m.name == "pipeline.trends.index.failed_total"
+        )
+        == 1.0
+    )
+    assert (
+        sum(
+            float(m.value)
+            for m in metrics
+            if m.name == "pipeline.trends.backfill.failed_total"
+        )
+        == 0.0
+    )
