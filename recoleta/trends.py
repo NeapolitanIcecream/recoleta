@@ -316,6 +316,12 @@ def build_overview_pack_md(
                 except Exception:
                     return 0
 
+            def selection_key(item: Any) -> tuple[str, str]:
+                url = str(getattr(item, "canonical_url", "") or "").strip()
+                if url:
+                    return ("url", url)
+                return ("item_id", str(item_id_value(item)))
+
             sorted_pairs = sorted(
                 pairs,
                 key=lambda pair: (
@@ -325,7 +331,16 @@ def build_overview_pack_md(
                     -item_id_value(pair[0]),
                 ),
             )
-            selected = sorted_pairs[:top_k]
+            selected: list[tuple[Any, Any]] = []
+            seen_selection_keys: set[tuple[str, str]] = set()
+            for item, analysis in sorted_pairs:
+                key = selection_key(item)
+                if key in seen_selection_keys:
+                    continue
+                seen_selection_keys.add(key)
+                selected.append((item, analysis))
+                if len(selected) >= top_k:
+                    break
             lines.append(
                 f"- items_total={len(pairs)} | selected={len(selected)} | top_k={top_k}"
             )

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from recoleta.pipeline import PipelineService
 from recoleta.trends import (
     TrendGenerationPlan,
@@ -182,6 +184,79 @@ def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> 
         assert "| summary=" in line
         summary = line.split("| summary=", 1)[1].strip()
         assert len(summary) <= 5
+
+
+def test_overview_pack_day_item_top_k_deduplicates_duplicate_urls(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: top-k overview input should not repeat the same paper URL."""
+
+    _ = configured_env
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    anchor = datetime(2026, 3, 5, tzinfo=UTC).date()
+    day_start, day_end = day_period_bounds(anchor)
+
+    drafts = [
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="overview-item-dup-a",
+            canonical_url="https://example.com/overview-item-dup-a",
+            title="Toolformer Planning for Browser Agents",
+            authors=["Alice"],
+            published_at=day_start + timedelta(hours=3),
+            raw_metadata={"source": "test"},
+        ),
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="overview-item-dup-b",
+            canonical_url="https://example.com/overview-item-dup-b",
+            title="Diffusion Policies for Dexterous Robot Hands",
+            authors=["Bob"],
+            published_at=day_start + timedelta(hours=2),
+            raw_metadata={"source": "test"},
+        ),
+    ]
+
+    service.prepare(run_id="run-overview-pack-day-dedup", drafts=drafts, limit=10)
+    _ = service.analyze(run_id="run-overview-pack-day-dedup", limit=10)
+
+    pairs = repository.list_analyzed_items_in_period(
+        period_start=day_start,
+        period_end=day_end,
+        limit=10,
+    )
+    assert len(pairs) == 2
+
+    def _duplicate_first_pair(**_kwargs):  # type: ignore[no-untyped-def]
+        return [pairs[0], pairs[0], pairs[1]]
+
+    monkeypatch.setattr(repository, "list_analyzed_items_in_period", _duplicate_first_pair)
+
+    plan = TrendGenerationPlan(
+        target_granularity="day", period_start=day_start, period_end=day_end
+    )
+
+    md, stats = build_overview_pack_md(
+        repository,
+        plan,
+        overview_pack_max_chars=10_000,
+        item_overview_top_k=2,
+        item_overview_item_max_chars=200,
+    )
+    assert stats.get("truncated") is False
+
+    item_lines = [line for line in md.splitlines() if line.startswith("- rank=")]
+    assert len(item_lines) == 2
+    assert md.count("url=https://example.com/overview-item-dup-a") == 1
+    assert md.count("url=https://example.com/overview-item-dup-b") == 1
 
 
 def test_overview_pack_truncation_sets_stats_flag(configured_env) -> None:
