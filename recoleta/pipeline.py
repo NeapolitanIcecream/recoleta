@@ -2180,10 +2180,70 @@ class PipelineService:
                 period_start, period_end = trends.week_period_bounds(anchor)
                 corpus_doc_type = "trend"
                 corpus_granularity = "day"
+                index_stats = trends.index_items_as_documents(
+                    repository=cast(Any, self.repository),
+                    run_id=run_id,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.items_total",
+                    value=float(index_stats.get("items_total") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.docs_upserted_total",
+                    value=float(index_stats.get("docs_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.chunks_upserted_total",
+                    value=float(index_stats.get("chunks_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.duration_ms",
+                    value=float(index_stats.get("duration_ms") or 0),
+                    unit="ms",
+                )
             else:
                 period_start, period_end = trends.month_period_bounds(anchor)
                 corpus_doc_type = "trend"
                 corpus_granularity = "week"
+                index_stats = trends.index_items_as_documents(
+                    repository=cast(Any, self.repository),
+                    run_id=run_id,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.items_total",
+                    value=float(index_stats.get("items_total") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.docs_upserted_total",
+                    value=float(index_stats.get("docs_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.chunks_upserted_total",
+                    value=float(index_stats.get("chunks_upserted") or 0),
+                    unit="count",
+                )
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name="pipeline.trends.index.duration_ms",
+                    value=float(index_stats.get("duration_ms") or 0),
+                    unit="ms",
+                )
 
             model = llm_model or self.settings.llm_model
 

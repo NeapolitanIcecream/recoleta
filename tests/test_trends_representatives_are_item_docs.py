@@ -13,7 +13,6 @@ from recoleta.trends import (
     TrendCluster,
     TrendPayload,
     day_period_bounds,
-    index_items_as_documents,
     persist_trend_payload,
     week_period_bounds,
 )
@@ -86,12 +85,6 @@ def test_trends_week_enforces_item_level_representatives(
         include_debug=False,
     )
     _ = repository.save_analysis(item_id=item_id, result=analysis)
-    _ = index_items_as_documents(
-        repository=repository,
-        run_id="run-week-reps-item",
-        period_start=week_start,
-        period_end=week_end,
-    )
 
     # Patch trend generation to return a weekly payload whose reps point to a trend doc (non-item).
     from recoleta.rag import agent as rag_agent
