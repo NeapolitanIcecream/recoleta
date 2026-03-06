@@ -54,7 +54,6 @@ def test_write_obsidian_trend_note_renders_clusters_as_headings_and_papers(
     ).resolve()
     assert note_path.resolve() == expected
     text = note_path.read_text(encoding="utf-8")
-    assert "> [!summary] TL;DR" in text
     assert "aliases:" in text
     assert "tags:" in text
     assert "## Clusters" in text
@@ -62,6 +61,8 @@ def test_write_obsidian_trend_note_renders_clusters_as_headings_and_papers(
     assert "#### Representative papers" in text
     assert "- [Robometer: Scaling ...](http://arxiv.org/abs/2603.02115v1)" in text
     assert " — A; B; C; D; E; F; …" in text
+    assert "TL;DR" not in text
+    assert "## Highlights" not in text
     assert "doc_id=" not in text
 
 

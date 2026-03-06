@@ -142,12 +142,131 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
         text = "\n".join(str(page.get_text()) for page in document)
 
     assert "Daily Trend" in text
-    assert "Agent stacks are getting more production-shaped." in text
 
     metrics = repository.list_metrics(run_id="run-trend-telegram")
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.trends.pdf.generated_total"].value == 1
     assert by_name["pipeline.trends.telegram.sent_total"].value == 1
+    assert by_name["pipeline.trends.telegram.failed_total"].value == 0
+
+
+def test_trends_telegram_publish_skips_duplicate_delivery_for_unchanged_period(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: rerunning the same trend period must not resend identical PDFs."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat-id")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-telegram-dedupe-1",
+        canonical_url="https://example.com/trend-telegram-dedupe-1",
+        title="Trend Dedupe",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-telegram-dedupe-prepare", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-telegram-dedupe-analyze", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    payload = TrendPayload(
+        title="Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
+        overview_md="The period-level trend content is unchanged.",
+        topics=["agents"],
+        clusters=[],
+        highlights=["This list should not affect delivery dedupe."],
+    )
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return payload, {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    first_result = service.trends(
+        run_id="run-trend-telegram-dedupe-first",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+    )
+    second_result = service.trends(
+        run_id="run-trend-telegram-dedupe-second",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+    )
+
+    assert first_result.doc_id > 0
+    assert second_result.doc_id == first_result.doc_id
+    assert len(sender.documents) == 1
+
+    second_metrics = repository.list_metrics(run_id="run-trend-telegram-dedupe-second")
+    second_by_name = {metric.name: metric for metric in second_metrics}
+    assert second_by_name["pipeline.trends.telegram.sent_total"].value == 0
+    assert second_by_name["pipeline.trends.telegram.failed_total"].value == 0
+
+
+def test_trends_empty_period_does_not_publish_telegram_message(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: empty trend periods should not create outbound Telegram deliveries."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat-id")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    result = service.trends(
+        run_id="run-trend-telegram-empty",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+    )
+
+    assert result.doc_id > 0
+    assert len(sender.messages) == 0
+    assert len(sender.documents) == 0
+    assert not (settings.markdown_output_dir / "Trends").exists()
+
+    metrics = repository.list_metrics(run_id="run-trend-telegram-empty")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.trends.pdf.generated_total"].value == 0
+    assert by_name["pipeline.trends.pdf.failed_total"].value == 0
+    assert by_name["pipeline.trends.telegram.sent_total"].value == 0
     assert by_name["pipeline.trends.telegram.failed_total"].value == 0
 
 

@@ -2395,8 +2395,9 @@ class PipelineService:
                 value=corpus_docs_total,
                 unit="count",
             )
+            empty_corpus = corpus_docs_total <= 0
 
-            if corpus_docs_total <= 0:
+            if empty_corpus:
                 log.info(
                     "Trends corpus is empty; skipping LLM invocation granularity={} period_start={} period_end={}",
                     normalized_granularity,
@@ -2998,6 +2999,21 @@ class PipelineService:
                 unit="count",
             )
 
+            trend_delivery_hash = hashlib.sha256(
+                orjson.dumps(
+                    {
+                        "title": title_for_notes,
+                        "granularity": normalized_granularity,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                        "overview_md": overview_md_for_notes,
+                        "topics": list(payload.topics),
+                        "clusters": clusters_for_notes,
+                    },
+                    option=orjson.OPT_SORT_KEYS,
+                )
+            ).hexdigest()
+
             targets = set(self.settings.publish_targets or [])
             if "obsidian" in targets and self.settings.obsidian_vault_path is None:
                 raise ValueError(
@@ -3016,13 +3032,30 @@ class PipelineService:
                     chat_id=self.settings.telegram_chat_id.get_secret_value(),
                 )
 
+            repository_any = cast(Any, self.repository)
+            telegram_destination = (
+                mask_value(self.settings.telegram_chat_id.get_secret_value())
+                if self.settings.telegram_chat_id is not None
+                else "__telegram_sender__"
+            )
+            telegram_already_sent = False
+            if "telegram" in targets and not empty_corpus:
+                telegram_already_sent = bool(
+                    repository_any.has_sent_trend_delivery(
+                        doc_id=doc_id,
+                        channel=DELIVERY_CHANNEL_TELEGRAM,
+                        destination=telegram_destination,
+                        content_hash=trend_delivery_hash,
+                    )
+                )
+
             markdown_note_path: Path | None = None
             pdf_generated_total = 0
             pdf_failed_total = 0
             telegram_sent_total = 0
             telegram_failed_total = 0
 
-            if "markdown" in targets or "telegram" in targets:
+            if "markdown" in targets or ("telegram" in targets and not empty_corpus):
                 try:
                     # Telegram trend delivery renders from the canonical markdown note.
                     markdown_note_path = write_markdown_trend_note(
@@ -3066,45 +3099,82 @@ class PipelineService:
                     )
 
             if "telegram" in targets:
-                trend_pdf_path: Path | None = None
-                try:
-                    if markdown_note_path is None:
-                        raise RuntimeError(
-                            "trend markdown note is unavailable for PDF delivery"
-                        )
-                    trend_pdf_path = render_trend_note_pdf(
-                        markdown_path=markdown_note_path
+                if empty_corpus:
+                    log.info(
+                        "Trend Telegram delivery skipped for empty corpus doc_id={} granularity={} period_start={} period_end={}",
+                        doc_id,
+                        normalized_granularity,
+                        period_start.isoformat(),
+                        period_end.isoformat(),
                     )
-                    pdf_generated_total = 1
-                except Exception as pdf_exc:  # noqa: BLE001
-                    pdf_failed_total = 1
-                    log.bind(module="pipeline.trends.pdf").warning(
-                        "Trend PDF render failed: {}",
-                        self._sanitize_error_message(str(pdf_exc)),
+                elif telegram_already_sent:
+                    log.info(
+                        "Trend Telegram delivery skipped for unchanged content doc_id={} granularity={} period_start={} period_end={}",
+                        doc_id,
+                        normalized_granularity,
+                        period_start.isoformat(),
+                        period_end.isoformat(),
                     )
-
-                if trend_pdf_path is not None:
+                else:
+                    trend_pdf_path: Path | None = None
                     try:
-                        if self.telegram_sender is None:
-                            raise RuntimeError("telegram sender is not configured")
-                        caption = build_telegram_trend_document_caption(
-                            title=title_for_notes,
-                            overview_md=overview_md_for_notes,
-                            granularity=normalized_granularity,
-                            period_start=period_start,
+                        if markdown_note_path is None:
+                            raise RuntimeError(
+                                "trend markdown note is unavailable for PDF delivery"
+                            )
+                        trend_pdf_path = render_trend_note_pdf(
+                            markdown_path=markdown_note_path
                         )
-                        _ = self.telegram_sender.send_document(
-                            filename=trend_pdf_path.name,
-                            content=trend_pdf_path.read_bytes(),
-                            caption=caption,
+                        pdf_generated_total = 1
+                    except Exception as pdf_exc:  # noqa: BLE001
+                        pdf_failed_total = 1
+                        log.bind(module="pipeline.trends.pdf").warning(
+                            "Trend PDF render failed: {}",
+                            self._sanitize_error_message(str(pdf_exc)),
                         )
-                        telegram_sent_total = 1
-                    except Exception as telegram_exc:  # noqa: BLE001
-                        telegram_failed_total = 1
-                        log.bind(module="pipeline.trends.telegram").warning(
-                            "Trend Telegram delivery failed: {}",
-                            self._sanitize_error_message(str(telegram_exc)),
-                        )
+
+                    if trend_pdf_path is not None:
+                        try:
+                            if self.telegram_sender is None:
+                                raise RuntimeError("telegram sender is not configured")
+                            caption = build_telegram_trend_document_caption(
+                                title=title_for_notes,
+                                overview_md=overview_md_for_notes,
+                                granularity=normalized_granularity,
+                                period_start=period_start,
+                            )
+                            message_id = self.telegram_sender.send_document(
+                                filename=trend_pdf_path.name,
+                                content=trend_pdf_path.read_bytes(),
+                                caption=caption,
+                            )
+                            repository_any.upsert_trend_delivery(
+                                doc_id=doc_id,
+                                channel=DELIVERY_CHANNEL_TELEGRAM,
+                                destination=telegram_destination,
+                                content_hash=trend_delivery_hash,
+                                message_id=message_id,
+                                status=DELIVERY_STATUS_SENT,
+                            )
+                            telegram_sent_total = 1
+                        except Exception as telegram_exc:  # noqa: BLE001
+                            telegram_failed_total = 1
+                            sanitized_error = self._sanitize_error_message(
+                                str(telegram_exc)
+                            )
+                            repository_any.upsert_trend_delivery(
+                                doc_id=doc_id,
+                                channel=DELIVERY_CHANNEL_TELEGRAM,
+                                destination=telegram_destination,
+                                content_hash=trend_delivery_hash,
+                                message_id=None,
+                                status=DELIVERY_STATUS_FAILED,
+                                error=sanitized_error,
+                            )
+                            log.bind(module="pipeline.trends.telegram").warning(
+                                "Trend Telegram delivery failed: {}",
+                                sanitized_error,
+                            )
 
             self.repository.record_metric(
                 run_id=run_id,

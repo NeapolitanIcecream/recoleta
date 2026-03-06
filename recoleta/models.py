@@ -111,6 +111,28 @@ class Delivery(SQLModel, table=True):
     sent_at: datetime | None = None
 
 
+class TrendDelivery(SQLModel, table=True):
+    __tablename__ = "trend_deliveries"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+    __table_args__ = (
+        UniqueConstraint(
+            "doc_id",
+            "channel",
+            "destination",
+            name="uq_trend_deliveries_doc_channel_destination",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    doc_id: int = Field(foreign_key="documents.id", index=True)
+    channel: str = Field(max_length=32)
+    destination: str = Field(max_length=128, index=True)
+    content_hash: str = Field(max_length=64, index=True)
+    message_id: str | None = Field(default=None, max_length=128)
+    status: str = Field(default=DELIVERY_STATUS_SENT, max_length=24, index=True)
+    error: str | None = Field(default=None, sa_type=Text)
+    sent_at: datetime | None = None
+
+
 class Metric(SQLModel, table=True):
     __tablename__ = "metrics"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
 

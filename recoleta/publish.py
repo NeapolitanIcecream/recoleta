@@ -290,9 +290,6 @@ def _render_trend_note_lines(
         "tags": tags,
     }
 
-    highlights = highlights or []
-    tldr = [str(h).strip() for h in highlights[:3] if str(h).strip()]
-
     lines: list[str] = [
         "---",
         yaml.safe_dump(frontmatter, sort_keys=False).strip(),
@@ -301,13 +298,6 @@ def _render_trend_note_lines(
         f"# {title}",
         "",
     ]
-    _append_obsidian_callout(
-        lines,
-        callout_type="summary",
-        title="TL;DR",
-        bullets=tldr,
-        collapsed=False,
-    )
     lines.extend(
         [
             "## Overview",
@@ -356,11 +346,6 @@ def _render_trend_note_lines(
     else:
         lines.append("- (none)")
 
-    lines.extend(["", "## Highlights"])
-    if highlights:
-        lines.extend([f"- {h}" for h in highlights])
-    else:
-        lines.append("- (none)")
     return lines
 
 
