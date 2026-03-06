@@ -3027,7 +3027,7 @@ class PipelineService:
                 raise ValueError(
                     "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
                 )
-            if "telegram" in targets:
+            if "telegram" in targets and self.telegram_sender is None:
                 if (
                     self.settings.telegram_bot_token is None
                     or self.settings.telegram_chat_id is None
@@ -3035,11 +3035,10 @@ class PipelineService:
                     raise ValueError(
                         "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'"
                     )
-                if self.telegram_sender is None:
-                    self.telegram_sender = TelegramSender(
-                        token=self.settings.telegram_bot_token.get_secret_value(),
-                        chat_id=self.settings.telegram_chat_id.get_secret_value(),
-                    )
+                self.telegram_sender = TelegramSender(
+                    token=self.settings.telegram_bot_token.get_secret_value(),
+                    chat_id=self.settings.telegram_chat_id.get_secret_value(),
+                )
 
             markdown_note_path: Path | None = None
             pdf_generated_total = 0

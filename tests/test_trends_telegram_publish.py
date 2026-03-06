@@ -151,6 +151,78 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
     assert by_name["pipeline.trends.telegram.failed_total"].value == 0
 
 
+def test_trends_telegram_publish_uses_injected_sender_without_telegram_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: trend Telegram delivery should work with an injected sender alone."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-telegram-injected-sender-1",
+        canonical_url="https://example.com/trend-telegram-injected-sender-1",
+        title="Injected Sender Trend",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-telegram-injected-sender", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-telegram-injected-sender", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return (
+            TrendPayload(
+                title="Daily Trend",
+                granularity="day",
+                period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
+                period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
+                overview_md="Injected senders should be sufficient for trend delivery.",
+                topics=["agents"],
+                clusters=[],
+                highlights=["No explicit bot credentials should be required here."],
+            ),
+            {"tool_calls_total": 0},
+        )
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-trend-telegram-injected-sender",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+    )
+
+    assert result.doc_id > 0
+    assert len(sender.documents) == 1
+
+    metrics = repository.list_metrics(run_id="run-trend-telegram-injected-sender")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.trends.pdf.generated_total"].value == 1
+    assert by_name["pipeline.trends.telegram.sent_total"].value == 1
+    assert by_name["pipeline.trends.telegram.failed_total"].value == 0
+
+
 def test_trends_telegram_publish_records_failure_metric_when_document_send_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
