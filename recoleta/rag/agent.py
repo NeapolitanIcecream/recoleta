@@ -36,6 +36,12 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "When ready, return a TrendPayload with grounded, readable content."
     )
     base += (
+        " When available, use trend documents (doc_type=trend) for synthesis and higher-level themes, "
+        "and use item documents (doc_type=item) for concrete citations and for selecting Top-N must-read items. "
+        "Always include a Top-N must-read block as Markdown (either a dedicated section in overview_md or a per-cluster section). "
+        "If ranking_n is provided in the prompt, use it as N."
+    )
+    base += (
         " Prioritize readability over compression: use short sentences, avoid long multi-clause lines, "
         "and avoid stacking many technical terms in a single sentence. "
         "Introduce acronyms once with a brief explanation in the output language, then reuse them. "
@@ -415,6 +421,43 @@ def _estimate_cost_usd_from_tokens(
     return None
 
 
+def build_trend_prompt_payload(
+    *,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    corpus_doc_type: str,
+    corpus_granularity: str | None = None,
+    overview_pack_md: str | None = None,
+    rag_sources: list[dict[str, Any]] | None = None,
+    ranking_n: int | None = None,
+    rep_source_doc_type: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "task": "Generate research trends for the period.",
+        "granularity": granularity,
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "corpus": {"doc_type": corpus_doc_type, "granularity": corpus_granularity},
+        "notes": [
+            "Use tools to cite representative doc_id/chunk_index in clusters.",
+            "Optimize for readability: short sentences, minimal jargon pile-ups, no repetitive filler.",
+            "Keep claims grounded in the local corpus.",
+        ],
+    }
+    if overview_pack_md is not None:
+        payload["overview_pack_md"] = str(overview_pack_md)
+    if rag_sources is not None:
+        payload["rag_sources"] = rag_sources
+    if ranking_n is not None:
+        payload["ranking_n"] = int(ranking_n)
+    if rep_source_doc_type is not None:
+        normalized = str(rep_source_doc_type).strip().lower()
+        if normalized:
+            payload["rep_source_doc_type"] = normalized
+    return payload
+
+
 def generate_trend_payload(
     *,
     repository: Repository,
@@ -433,6 +476,10 @@ def generate_trend_payload(
     period_end: datetime,
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
+    overview_pack_md: str | None = None,
+    rag_sources: list[dict[str, Any]] | None = None,
+    ranking_n: int | None = None,
+    rep_source_doc_type: str | None = None,
     include_debug: bool = False,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     log = logger.bind(module="rag.trend_agent", run_id=run_id)
@@ -452,24 +499,29 @@ def generate_trend_payload(
     )
 
     prompt = json.dumps(
-        {
-            "task": "Generate research trends for the period.",
-            "granularity": granularity,
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "corpus": {"doc_type": corpus_doc_type, "granularity": corpus_granularity},
-            "notes": [
-                "Use tools to cite representative doc_id/chunk_index in clusters.",
-                "Optimize for readability: short sentences, minimal jargon pile-ups, no repetitive filler.",
-                "Keep claims grounded in the local corpus.",
-            ],
-        },
+        build_trend_prompt_payload(
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            corpus_doc_type=corpus_doc_type,
+            corpus_granularity=corpus_granularity,
+            overview_pack_md=overview_pack_md,
+            rag_sources=rag_sources,
+            ranking_n=ranking_n,
+            rep_source_doc_type=rep_source_doc_type,
+        ),
         ensure_ascii=False,
         separators=(",", ":"),
     )
 
     result = agent.run_sync(prompt, deps=deps)
     payload = result.output
+    rep_doc_type_candidate = str(rep_source_doc_type or "").strip().lower()
+    rep_doc_type = (
+        rep_doc_type_candidate
+        if rep_doc_type_candidate in {"item", "trend"}
+        else "item"
+    )
     rep_stats = ensure_trend_cluster_representatives(
         payload=payload,
         search=lambda q, n: [
@@ -482,7 +534,7 @@ def generate_trend_payload(
                 repository=repository,
                 vector_store=vector_store,
                 run_id=run_id,
-                doc_type=str(corpus_doc_type or "").strip().lower(),
+                doc_type=rep_doc_type,
                 period_start=period_start,
                 period_end=period_end,
                 query=q,

@@ -138,6 +138,33 @@ def test_settings_loads_allow_and_deny_tags_from_env_strings(
     assert settings.deny_tags == ["crypto"]
 
 
+def test_settings_loads_trends_self_similar_settings_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRENDS_SELF_SIMILAR_ENABLED", "true")
+    monkeypatch.setenv("TRENDS_RANKING_N", "42")
+    monkeypatch.setenv("TRENDS_OVERVIEW_PACK_MAX_CHARS", "1234")
+    monkeypatch.setenv("TRENDS_ITEM_OVERVIEW_TOP_K", "7")
+    monkeypatch.setenv("TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS", "999")
+    monkeypatch.setenv("TRENDS_REP_MIN_PER_CLUSTER", "3")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.trends_self_similar_enabled is True
+    assert settings.trends_ranking_n == 42
+    assert settings.trends_overview_pack_max_chars == 1234
+    assert settings.trends_item_overview_top_k == 7
+    assert settings.trends_item_overview_item_max_chars == 999
+    assert settings.trends_rep_min_per_cluster == 3
+
+
+def test_settings_rejects_invalid_trends_ranking_n(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRENDS_RANKING_N", "0")
+    with pytest.raises(ValueError, match=r"(TRENDS_RANKING_N|trends_ranking_n)"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_settings_loads_llm_output_language_from_env(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -188,6 +215,35 @@ def test_settings_loads_from_config_file_and_env(
     assert settings.llm_model == "openai/gpt-4o-mini"
     assert settings.topics == ["agents"]
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
+
+
+def test_settings_loads_trends_self_similar_settings_from_config_file(
+    configured_env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "TRENDS_SELF_SIMILAR_ENABLED: true",
+                "TRENDS_RANKING_N: 33",
+                "TRENDS_OVERVIEW_PACK_MAX_CHARS: 9000",
+                "TRENDS_ITEM_OVERVIEW_TOP_K: 0",
+                "TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS: 321",
+                "TRENDS_REP_MIN_PER_CLUSTER: 4",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+    assert settings.trends_self_similar_enabled is True
+    assert settings.trends_ranking_n == 33
+    assert settings.trends_overview_pack_max_chars == 9000
+    assert settings.trends_item_overview_top_k == 0
+    assert settings.trends_item_overview_item_max_chars == 321
+    assert settings.trends_rep_min_per_cluster == 4
 
 
 def test_settings_loads_llm_output_language_from_config_file(

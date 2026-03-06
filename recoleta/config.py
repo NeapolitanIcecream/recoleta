@@ -112,6 +112,12 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRENDS_EMBEDDING_BATCH_MAX_CHARS": "trends_embedding_batch_max_chars",
         "TRENDS_EMBEDDING_FAILURE_MODE": "trends_embedding_failure_mode",
         "TRENDS_EMBEDDING_MAX_ERRORS": "trends_embedding_max_errors",
+        "TRENDS_SELF_SIMILAR_ENABLED": "trends_self_similar_enabled",
+        "TRENDS_RANKING_N": "trends_ranking_n",
+        "TRENDS_OVERVIEW_PACK_MAX_CHARS": "trends_overview_pack_max_chars",
+        "TRENDS_ITEM_OVERVIEW_TOP_K": "trends_item_overview_top_k",
+        "TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS": "trends_item_overview_item_max_chars",
+        "TRENDS_REP_MIN_PER_CLUSTER": "trends_rep_min_per_cluster",
     }
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
@@ -495,6 +501,22 @@ class Settings(BaseSettings):
     )
     trends_embedding_max_errors: int = Field(
         default=0, ge=0, validation_alias="TRENDS_EMBEDDING_MAX_ERRORS"
+    )
+    trends_self_similar_enabled: bool = Field(
+        default=False, validation_alias="TRENDS_SELF_SIMILAR_ENABLED"
+    )
+    trends_ranking_n: int = Field(default=10, ge=1, validation_alias="TRENDS_RANKING_N")
+    trends_overview_pack_max_chars: int = Field(
+        default=8000, ge=1, validation_alias="TRENDS_OVERVIEW_PACK_MAX_CHARS"
+    )
+    trends_item_overview_top_k: int = Field(
+        default=20, ge=0, validation_alias="TRENDS_ITEM_OVERVIEW_TOP_K"
+    )
+    trends_item_overview_item_max_chars: int = Field(
+        default=500, ge=1, validation_alias="TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS"
+    )
+    trends_rep_min_per_cluster: int = Field(
+        default=2, ge=1, validation_alias="TRENDS_REP_MIN_PER_CLUSTER"
     )
 
     @model_validator(mode="after")

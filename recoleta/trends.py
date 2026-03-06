@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -108,6 +108,259 @@ class TrendPayload(BaseModel):
     topics: list[str] = Field(default_factory=list)
     clusters: list[TrendCluster] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
+
+
+def prev_level_for_granularity(granularity: str) -> str:
+    normalized = str(granularity or "").strip().lower()
+    mapping = {
+        "day": "item",
+        "week": "day",
+        "month": "week",
+    }
+    if normalized in mapping:
+        return mapping[normalized]
+    raise ValueError("unsupported granularity")
+
+
+def rag_sources_for_granularity(granularity: str) -> list[dict[str, str | None]]:
+    normalized = str(granularity or "").strip().lower()
+    if normalized == "day":
+        return [{"doc_type": "item", "granularity": None}]
+    if normalized == "week":
+        return [
+            {"doc_type": "item", "granularity": None},
+            {"doc_type": "trend", "granularity": "day"},
+        ]
+    if normalized == "month":
+        return [
+            {"doc_type": "item", "granularity": None},
+            {"doc_type": "trend", "granularity": "day"},
+            {"doc_type": "trend", "granularity": "week"},
+        ]
+    raise ValueError("unsupported granularity")
+
+
+@dataclass(slots=True)
+class TrendGenerationPlan:
+    target_granularity: str
+    period_start: datetime
+    period_end: datetime
+    prev_level: str = field(init=False)
+    overview_pack_strategy: str = field(init=False)
+    rag_sources: list[dict[str, str | None]] = field(init=False)
+    rep_source_doc_type: str = field(default="item", init=False)
+
+    def __post_init__(self) -> None:
+        normalized = str(self.target_granularity or "").strip().lower()
+        if not normalized:
+            raise ValueError("target_granularity must not be empty")
+        self.target_granularity = normalized
+        self.prev_level = prev_level_for_granularity(normalized)
+        self.overview_pack_strategy = (
+            "item_top_k" if self.prev_level == "item" else "trend_overviews"
+        )
+        self.rag_sources = rag_sources_for_granularity(normalized)
+
+
+def _to_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _sanitize_inline_text(value: str) -> str:
+    normalized = str(value or "")
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized.replace("\n", " ").strip()
+    if not normalized:
+        return ""
+    normalized = " ".join(normalized.split())
+    return normalized.replace("|", "\\|")
+
+
+def _truncate_chars(value: str, *, max_chars: int) -> tuple[str, bool]:
+    cap = int(max_chars)
+    if cap <= 0:
+        return "", bool(value)
+    if len(value) <= cap:
+        return value, False
+    return value[:cap], True
+
+
+def build_overview_pack_md(
+    repository: Repository,
+    plan: TrendGenerationPlan,
+    *,
+    overview_pack_max_chars: int,
+    item_overview_top_k: int,
+    item_overview_item_max_chars: int,
+) -> tuple[str, dict[str, Any]]:
+    strategy = str(getattr(plan, "overview_pack_strategy", "") or "").strip().lower()
+    stats: dict[str, Any] = {"strategy": strategy, "truncated": False}
+
+    lines: list[str] = []
+    period_start = _to_utc_datetime(plan.period_start)
+    period_end = _to_utc_datetime(plan.period_end)
+    lines.append(f"## Overview pack (strategy={strategy})")
+    lines.append(
+        f"- period_start={period_start.isoformat()} | period_end={period_end.isoformat()}"
+    )
+
+    if strategy == "trend_overviews":
+        prev_level = str(getattr(plan, "prev_level", "") or "").strip().lower()
+        lines.append(f"- prev_level={prev_level}")
+        docs = repository.list_documents(
+            doc_type="trend",
+            granularity=prev_level or None,
+            period_start=period_start,
+            period_end=period_end,
+            order_by="event_asc",
+            limit=500,
+        )
+        docs_by_start: dict[datetime, Any] = {}
+        for doc in docs:
+            raw_start = getattr(doc, "period_start", None)
+            if not isinstance(raw_start, datetime):
+                continue
+            docs_by_start[_to_utc_datetime(raw_start)] = doc
+
+        if (
+            str(getattr(plan, "target_granularity", "") or "").strip().lower() == "week"
+            and prev_level == "day"
+        ):
+            for i in range(7):
+                day_start = _to_utc_datetime(period_start + timedelta(days=i))
+                token = day_start.date().isoformat()
+                doc = docs_by_start.get(day_start)
+                if doc is None:
+                    lines.append(f"- day {token} | missing | doc_id=- | (missing)")
+                    continue
+
+                doc_id = int(getattr(doc, "id", 0) or 0)
+                chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=0)
+                if chunk is None:
+                    lines.append(
+                        f"- day {token} | missing_chunk | doc_id={doc_id} | (missing chunk)"
+                    )
+                    continue
+                overview = _sanitize_inline_text(str(getattr(chunk, "text", "") or ""))
+                status = "ok"
+                if not overview:
+                    overview = "(empty)"
+                    status = "empty"
+                lines.append(f"- day {token} | {status} | doc_id={doc_id} | {overview}")
+        else:
+            for doc in docs:
+                raw_start = getattr(doc, "period_start", None)
+                start = (
+                    _to_utc_datetime(raw_start)
+                    if isinstance(raw_start, datetime)
+                    else None
+                )
+                token = start.date().isoformat() if isinstance(start, datetime) else "-"
+                doc_id = int(getattr(doc, "id", 0) or 0)
+                chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=0)
+                if chunk is None:
+                    lines.append(
+                        f"- {prev_level} {token} | missing_chunk | doc_id={doc_id} | (missing chunk)"
+                    )
+                    continue
+                overview = _sanitize_inline_text(str(getattr(chunk, "text", "") or ""))
+                status = "ok"
+                if not overview:
+                    overview = "(empty)"
+                    status = "empty"
+                lines.append(
+                    f"- {prev_level} {token} | {status} | doc_id={doc_id} | {overview}"
+                )
+            if not docs:
+                lines.append(
+                    f"- {prev_level or 'trend'} - | missing | doc_id=- | (no docs)"
+                )
+
+    elif strategy == "item_top_k":
+        top_k = max(0, int(item_overview_top_k))
+        item_max_chars = max(0, int(item_overview_item_max_chars))
+        candidate_limit = max(0, min(2000, max(50, top_k * 25)))
+        if top_k <= 0:
+            lines.append("- items_total=0 | selected=0")
+        else:
+            pairs = repository.list_analyzed_items_in_period(
+                period_start=period_start,
+                period_end=period_end,
+                limit=candidate_limit,
+            )
+
+            def event_at_ts(item: Any) -> float:
+                raw = getattr(item, "published_at", None) or getattr(
+                    item, "created_at", None
+                )
+                if isinstance(raw, datetime):
+                    return float(_to_utc_datetime(raw).timestamp())
+                return 0.0
+
+            def novelty_score(analysis: Any) -> float:
+                raw = getattr(analysis, "novelty_score", None)
+                if raw is None:
+                    return -1.0
+                try:
+                    return float(raw)
+                except Exception:
+                    return -1.0
+
+            def relevance_score(analysis: Any) -> float:
+                raw = getattr(analysis, "relevance_score", 0.0)
+                try:
+                    return float(raw)
+                except Exception:
+                    return 0.0
+
+            def item_id_value(item: Any) -> int:
+                raw = getattr(item, "id", 0)
+                try:
+                    return int(raw or 0)
+                except Exception:
+                    return 0
+
+            sorted_pairs = sorted(
+                pairs,
+                key=lambda pair: (
+                    -relevance_score(pair[1]),
+                    -novelty_score(pair[1]),
+                    -event_at_ts(pair[0]),
+                    -item_id_value(pair[0]),
+                ),
+            )
+            selected = sorted_pairs[:top_k]
+            lines.append(
+                f"- items_total={len(pairs)} | selected={len(selected)} | top_k={top_k}"
+            )
+            for rank, (item, analysis) in enumerate(selected, start=1):
+                title = (
+                    _sanitize_inline_text(str(getattr(item, "title", "") or ""))
+                    or "(untitled)"
+                )
+                url = (
+                    _sanitize_inline_text(str(getattr(item, "canonical_url", "") or ""))
+                    or "-"
+                )
+                summary_raw = _sanitize_inline_text(
+                    str(getattr(analysis, "summary", "") or "")
+                )
+                summary = summary_raw[:item_max_chars] if item_max_chars > 0 else ""
+                lines.append(
+                    f"- rank={rank} | title={title} | url={url} | summary={summary}"
+                )
+
+    else:
+        lines.append(f"- unsupported_strategy={strategy or '(empty)'}")
+
+    md = "\n".join(lines).rstrip() + "\n"
+    md, truncated = _truncate_chars(md, max_chars=int(overview_pack_max_chars))
+    stats["truncated"] = bool(truncated)
+    stats["chars"] = len(md)
+    stats["max_chars"] = int(overview_pack_max_chars)
+    return md, stats
 
 
 def _is_chinese_output_language(output_language: str | None) -> bool:
@@ -304,6 +557,10 @@ def generate_trend_via_tools(
     period_end: datetime,
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
+    overview_pack_md: str | None = None,
+    rag_sources: list[dict[str, str | None]] | None = None,
+    ranking_n: int | None = None,
+    rep_source_doc_type: str | None = None,
     include_debug: bool = False,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     from recoleta.rag.agent import generate_trend_payload
@@ -315,7 +572,8 @@ def generate_trend_via_tools(
             embedding_model=embedding_model, embedding_dimensions=embedding_dimensions
         ),
     )
-    return generate_trend_payload(
+    generate_trend_payload_any = cast(Any, generate_trend_payload)
+    return generate_trend_payload_any(
         repository=repository,
         vector_store=store,
         run_id=run_id,
@@ -332,6 +590,10 @@ def generate_trend_via_tools(
         period_end=period_end,
         corpus_doc_type=corpus_doc_type,
         corpus_granularity=corpus_granularity,
+        overview_pack_md=overview_pack_md,
+        rag_sources=rag_sources,
+        ranking_n=ranking_n,
+        rep_source_doc_type=rep_source_doc_type,
         include_debug=include_debug,
     )
 

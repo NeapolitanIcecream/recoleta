@@ -2191,51 +2191,98 @@ class PipelineService:
             if normalized_backfill_mode not in {"missing", "all"}:
                 raise ValueError("backfill_mode must be one of: missing, all")
 
-            if bool(backfill) and normalized_granularity == "week":
+            prev_granularity = cast(Any, trends).prev_level_for_granularity(
+                normalized_granularity
+            )
+            if bool(backfill) and prev_granularity in {"day", "week"}:
                 backfill_started = time.perf_counter()
-                backfill_days_total = 7
+                backfill_days_total = 0
                 backfill_missing_total = 0
                 backfill_generated_total = 0
                 backfill_skipped_total = 0
                 backfill_failed_total = 0
 
-                week_start_day = period_start.date()
-                for offset in range(backfill_days_total):
-                    day = week_start_day + timedelta(days=offset)
-                    day_start, day_end = trends.day_period_bounds(day)
-                    existing = cast(Any, self.repository).list_documents(
-                        doc_type="trend",
-                        granularity="day",
-                        period_start=day_start,
-                        period_end=day_end,
-                        order_by="event_desc",
-                        offset=0,
-                        limit=1,
-                    )
-                    is_missing = not bool(existing)
-                    if is_missing:
-                        backfill_missing_total += 1
-                    if normalized_backfill_mode == "missing" and not is_missing:
-                        backfill_skipped_total += 1
-                        continue
-                    try:
-                        _ = self.trends(
-                            run_id=run_id,
+                if prev_granularity == "day":
+                    backfill_days_total = 7
+                    week_start_day = period_start.date()
+                    for offset in range(backfill_days_total):
+                        day = week_start_day + timedelta(days=offset)
+                        day_start, day_end = trends.day_period_bounds(day)
+                        existing = cast(Any, self.repository).list_documents(
+                            doc_type="trend",
                             granularity="day",
-                            anchor_date=day,
-                            llm_model=model,
-                            backfill=False,
-                            backfill_mode="missing",
+                            period_start=day_start,
+                            period_end=day_end,
+                            order_by="event_desc",
+                            offset=0,
+                            limit=1,
                         )
-                        backfill_generated_total += 1
-                    except Exception as day_exc:  # noqa: BLE001
-                        backfill_failed_total += 1
-                        log.warning(
-                            "Trends week backfill failed day={} error_type={} error={}",
-                            day.isoformat(),
-                            type(day_exc).__name__,
-                            self._sanitize_error_message(str(day_exc)),
+                        is_missing = not bool(existing)
+                        if is_missing:
+                            backfill_missing_total += 1
+                        if normalized_backfill_mode == "missing" and not is_missing:
+                            backfill_skipped_total += 1
+                            continue
+                        try:
+                            _ = self.trends(
+                                run_id=run_id,
+                                granularity="day",
+                                anchor_date=day,
+                                llm_model=model,
+                                backfill=False,
+                                backfill_mode="missing",
+                            )
+                            backfill_generated_total += 1
+                        except Exception as day_exc:  # noqa: BLE001
+                            backfill_failed_total += 1
+                            log.warning(
+                                "Trends week backfill failed day={} error_type={} error={}",
+                                day.isoformat(),
+                                type(day_exc).__name__,
+                                self._sanitize_error_message(str(day_exc)),
+                            )
+                else:
+                    cursor = period_start.date()
+                    while True:
+                        week_start, week_end = trends.week_period_bounds(cursor)
+                        if week_start >= period_end:
+                            break
+                        backfill_days_total += 1
+                        existing = cast(Any, self.repository).list_documents(
+                            doc_type="trend",
+                            granularity="week",
+                            period_start=week_start,
+                            period_end=week_end,
+                            order_by="event_desc",
+                            offset=0,
+                            limit=1,
                         )
+                        is_missing = not bool(existing)
+                        if is_missing:
+                            backfill_missing_total += 1
+                        if normalized_backfill_mode == "missing" and not is_missing:
+                            backfill_skipped_total += 1
+                            cursor = (week_start + timedelta(days=7)).date()
+                            continue
+                        try:
+                            _ = self.trends(
+                                run_id=run_id,
+                                granularity="week",
+                                anchor_date=week_start.date(),
+                                llm_model=model,
+                                backfill=False,
+                                backfill_mode="missing",
+                            )
+                            backfill_generated_total += 1
+                        except Exception as week_exc:  # noqa: BLE001
+                            backfill_failed_total += 1
+                            log.warning(
+                                "Trends month backfill failed week_start={} error_type={} error={}",
+                                week_start.date().isoformat(),
+                                type(week_exc).__name__,
+                                self._sanitize_error_message(str(week_exc)),
+                            )
+                        cursor = (week_start + timedelta(days=7)).date()
 
                 backfill_duration_ms = int(
                     (time.perf_counter() - backfill_started) * 1000
@@ -2249,7 +2296,8 @@ class PipelineService:
                     "duration_ms": backfill_duration_ms,
                     "mode": normalized_backfill_mode,
                 }
-                log.info("Trends week backfill done stats={}", backfill_stats)
+                log_label = "week" if prev_granularity == "day" else "month"
+                log.info("Trends {} backfill done stats={}", log_label, backfill_stats)
                 self.repository.record_metric(
                     run_id=run_id,
                     name="pipeline.trends.backfill.days_total",
@@ -2427,6 +2475,201 @@ class PipelineService:
                             unit="count",
                         )
 
+            # Enforce representative papers to be item-level documents (doc_type=item).
+            rep_dropped_non_item_total = 0
+            rep_backfilled_total = 0
+            rep_failed_clusters_total = 0
+
+            rep_doc_type_cache: dict[int, str | None] = {}
+
+            def _doc_type_for_doc_id(doc_id_value: int) -> str | None:
+                normalized_doc_id = int(doc_id_value)
+                if normalized_doc_id <= 0:
+                    return None
+                if normalized_doc_id not in rep_doc_type_cache:
+                    doc = cast(Any, self.repository).get_document(
+                        doc_id=normalized_doc_id
+                    )
+                    if doc is None:
+                        rep_doc_type_cache[normalized_doc_id] = None
+                    else:
+                        rep_doc_type_cache[normalized_doc_id] = (
+                            str(getattr(doc, "doc_type", "") or "").strip().lower()
+                            or None
+                        )
+                return rep_doc_type_cache.get(normalized_doc_id)
+
+            def _cluster_queries(cluster: Any) -> list[str]:
+                name = str(getattr(cluster, "name", "") or "").strip()
+                desc = str(getattr(cluster, "description", "") or "").strip()
+                candidates = [
+                    " ".join([name, desc]).strip(),
+                    name,
+                    desc,
+                ]
+                out: list[str] = []
+                seen: set[str] = set()
+                for candidate in candidates:
+                    normalized = " ".join(str(candidate or "").split()).strip()
+                    if not normalized or normalized in seen:
+                        continue
+                    seen.add(normalized)
+                    out.append(normalized)
+                return out
+
+            def _backfill_item_reps_text(cluster: Any, *, limit: int) -> list[Any]:
+                reps: list[Any] = []
+                seen: set[tuple[int, int]] = set()
+                for query in _cluster_queries(cluster):
+                    try:
+                        rows = cast(Any, self.repository).search_chunks_text(
+                            query=query,
+                            doc_type="item",
+                            period_start=period_start,
+                            period_end=period_end,
+                            limit=limit,
+                        )
+                    except Exception:
+                        rows = []
+                    for row in rows or []:
+                        if not isinstance(row, dict):
+                            continue
+                        raw_doc_id = row.get("doc_id")
+                        raw_chunk_index = row.get("chunk_index")
+                        if raw_doc_id is None or raw_chunk_index is None:
+                            continue
+                        try:
+                            doc_id_int = int(raw_doc_id)
+                            chunk_index_int = int(raw_chunk_index)
+                        except Exception:
+                            continue
+                        if doc_id_int <= 0 or chunk_index_int < 0:
+                            continue
+                        key = (doc_id_int, chunk_index_int)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        reps.append(
+                            trends.TrendCluster.RepresentativeChunk(
+                                doc_id=doc_id_int,
+                                chunk_index=chunk_index_int,
+                                score=None,
+                            )
+                        )
+                        if len(reps) >= limit:
+                            return reps
+                return reps
+
+            def _backfill_item_reps_semantic(cluster: Any, *, limit: int) -> list[Any]:
+                queries = _cluster_queries(cluster)
+                if not queries:
+                    return []
+                query = queries[0]
+                try:
+                    hits = trends.semantic_search_summaries_in_period(
+                        repository=cast(Any, self.repository),
+                        lancedb_dir=self.settings.rag_lancedb_dir,
+                        run_id=run_id,
+                        doc_type="item",
+                        period_start=period_start,
+                        period_end=period_end,
+                        query=query,
+                        embedding_model=self.settings.trends_embedding_model,
+                        embedding_dimensions=self.settings.trends_embedding_dimensions,
+                        max_batch_inputs=self.settings.trends_embedding_batch_max_inputs,
+                        max_batch_chars=self.settings.trends_embedding_batch_max_chars,
+                        embedding_failure_mode=getattr(
+                            self.settings, "trends_embedding_failure_mode", "continue"
+                        ),
+                        embedding_max_errors=int(
+                            getattr(self.settings, "trends_embedding_max_errors", 0)
+                            or 0
+                        ),
+                        limit=limit,
+                    )
+                except Exception:
+                    return []
+                reps: list[Any] = []
+                seen: set[tuple[int, int]] = set()
+                for hit in hits or []:
+                    try:
+                        doc_id_int = int(getattr(hit, "doc_id"))
+                        chunk_index_int = int(getattr(hit, "chunk_index"))
+                    except Exception:
+                        continue
+                    if doc_id_int <= 0 or chunk_index_int < 0:
+                        continue
+                    key = (doc_id_int, chunk_index_int)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    score_raw = getattr(hit, "score", None)
+                    score_value: float | None
+                    if score_raw is None:
+                        score_value = None
+                    else:
+                        try:
+                            score_value = float(score_raw)
+                        except Exception:
+                            score_value = None
+                    reps.append(
+                        trends.TrendCluster.RepresentativeChunk(
+                            doc_id=doc_id_int,
+                            chunk_index=chunk_index_int,
+                            score=round(score_value, 6)
+                            if score_value is not None
+                            else None,
+                        )
+                    )
+                    if len(reps) >= limit:
+                        break
+                return reps
+
+            max_reps = 6
+            for cluster in list(getattr(payload, "clusters", []) or []):
+                cleaned: list[Any] = []
+                for rep in list(getattr(cluster, "representative_chunks", []) or []):
+                    try:
+                        doc_id_int = int(getattr(rep, "doc_id"))
+                    except Exception:
+                        continue
+                    doc_type = _doc_type_for_doc_id(doc_id_int)
+                    if doc_type != "item":
+                        rep_dropped_non_item_total += 1
+                        continue
+                    cleaned.append(rep)
+                cluster.representative_chunks = cleaned[:max_reps]
+                if cluster.representative_chunks:
+                    continue
+                backfilled = _backfill_item_reps_text(cluster, limit=max_reps)
+                if not backfilled:
+                    backfilled = _backfill_item_reps_semantic(cluster, limit=max_reps)
+                if backfilled:
+                    cluster.representative_chunks = backfilled[:max_reps]
+                    rep_backfilled_total += 1
+                else:
+                    cluster.representative_chunks = []
+                    rep_failed_clusters_total += 1
+
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.rep_enforcement.dropped_non_item_total",
+                value=rep_dropped_non_item_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.rep_enforcement.backfilled_total",
+                value=rep_backfilled_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.rep_enforcement.failed_clusters_total",
+                value=rep_failed_clusters_total,
+                unit="count",
+            )
+
             doc_id = trends.persist_trend_payload(
                 repository=cast(Any, self.repository),
                 granularity=normalized_granularity,
@@ -2484,11 +2727,7 @@ class PipelineService:
                     return None
                 title = str(getattr(doc, "title", "") or "").strip()
                 url = str(getattr(doc, "canonical_url", "") or "").strip()
-                label = (
-                    _citation_label_from_title(title)
-                    if title
-                    else f"doc_id:{int(doc_id_value)}"
-                )
+                label = _citation_label_from_title(title)
                 if url:
                     return f"[{label}]({url})"
                 return label
@@ -2535,7 +2774,7 @@ class PipelineService:
                         cite = _citation_for_doc_id(doc_id_inner)
                         if cite is None:
                             rewrite_doc_ids_unresolved_total += 1
-                            citations.append(f"doc_id:{doc_id_inner}")
+                            citations.append("Paper")
                         else:
                             rewrite_doc_ids_resolved_total += 1
                             citations.append(cite)
