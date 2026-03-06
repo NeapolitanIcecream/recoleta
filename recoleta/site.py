@@ -1,0 +1,1475 @@
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import html
+import json
+import os
+from pathlib import Path
+import shutil
+from typing import Any
+from urllib.parse import quote
+
+from bs4 import BeautifulSoup
+from loguru import logger
+from markdown_it import MarkdownIt
+from slugify import slugify
+
+from recoleta.publish import (
+    _build_trend_browser_body_html,
+    _extract_trend_pdf_sections,
+    _normalize_obsidian_callouts_for_pdf,
+    _split_yaml_frontmatter_text,
+    _trend_date_token,
+    _trend_pdf_hero_dek,
+    _trend_pdf_meta_rows,
+    _trend_pdf_topics_summary,
+)
+
+
+@dataclass(slots=True)
+class TrendSiteDocument:
+    markdown_path: Path
+    markdown_asset_path: Path
+    pdf_asset_path: Path | None
+    page_path: Path
+    stem: str
+    title: str
+    granularity: str
+    period_token: str
+    period_start: datetime | None
+    period_end: datetime | None
+    topics: list[str]
+    body_html: str
+    excerpt: str
+    frontmatter: dict[str, Any]
+
+
+@dataclass(slots=True)
+class TrendSiteSourceDocument:
+    markdown_path: Path
+    pdf_path: Path | None
+    stem: str
+    frontmatter: dict[str, Any]
+    markdown_body: str
+    granularity: str
+    period_start: datetime | None
+    period_end: datetime | None
+    topics: list[str]
+
+
+def _parse_site_datetime(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _safe_excerpt(value: str, *, limit: int = 220) -> str:
+    collapsed = " ".join(str(value or "").split()).strip()
+    if len(collapsed) <= limit:
+        return collapsed
+    boundary = collapsed.rfind(" ", 0, limit)
+    if boundary < max(80, limit // 2):
+        boundary = limit
+    return collapsed[:boundary].rstrip() + "…"
+
+
+def _section_excerpt(sections: list[Any]) -> str:
+    preferred_html = ""
+    for section in sections:
+        heading = str(getattr(section, "heading", "") or "").strip().lower()
+        if "overview" in heading or "summary" in heading or "tl;dr" in heading:
+            preferred_html = str(getattr(section, "inner_html", "") or "")
+            break
+    if not preferred_html and sections:
+        preferred_html = str(getattr(sections[0], "inner_html", "") or "")
+    text = BeautifulSoup(preferred_html, "html.parser").get_text(" ", strip=True)
+    return _safe_excerpt(text, limit=220)
+
+
+def _site_href(*, from_page: Path, to_page: Path) -> str:
+    relative = Path(os.path.relpath(to_page, start=from_page.parent))
+    return "/".join(
+        part if part in {".", ".."} else quote(part) for part in relative.parts
+    )
+
+
+def _topic_slug(topic: str) -> str:
+    return slugify(str(topic or "").strip(), lowercase=True) or "topic"
+
+
+def _paths_overlap(path_a: Path, path_b: Path) -> bool:
+    return path_a == path_b or path_a in path_b.parents or path_b in path_a.parents
+
+
+def _reset_directory(path: Path) -> None:
+    if path.exists():
+        if not path.is_dir():
+            raise ValueError(f"Output path must be a directory: {path}")
+        shutil.rmtree(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _render_topic_link_pills(
+    *,
+    topics: list[str],
+    from_page: Path,
+    topic_pages: dict[str, Path],
+) -> str:
+    if not topics:
+        return "<span class='meta-pill subdued'>No tracked topics</span>"
+    pills: list[str] = []
+    seen: set[str] = set()
+    for topic in topics:
+        cleaned = str(topic).strip()
+        if not cleaned:
+            continue
+        slug = _topic_slug(cleaned)
+        if slug in seen:
+            continue
+        seen.add(slug)
+        topic_page = topic_pages.get(slug)
+        if topic_page is None:
+            pills.append(f"<span class='topic-pill'>{html.escape(cleaned)}</span>")
+            continue
+        href = _site_href(from_page=from_page, to_page=topic_page)
+        pills.append(
+            f"<a class='topic-pill topic-pill-link' href='{href}'>{html.escape(cleaned)}</a>"
+        )
+    return "".join(pills) if pills else "<span class='meta-pill subdued'>No tracked topics</span>"
+
+
+def _site_page_shell(
+    *,
+    title: str,
+    page_path: Path,
+    output_dir: Path,
+    page_heading: str,
+    page_subtitle: str,
+    body_class: str,
+    active_nav: str,
+    content_html: str,
+) -> str:
+    stylesheet_path = output_dir / "assets" / "site.css"
+    stylesheet_href = _site_href(from_page=page_path, to_page=stylesheet_path)
+    index_href = _site_href(from_page=page_path, to_page=output_dir / "index.html")
+    archive_href = _site_href(from_page=page_path, to_page=output_dir / "archive.html")
+    topics_href = _site_href(from_page=page_path, to_page=output_dir / "topics" / "index.html")
+
+    def nav_link(label: str, href: str, key: str) -> str:
+        class_name = "nav-link is-active" if key == active_nav else "nav-link"
+        return f"<a class='{class_name}' href='{href}'>{label}</a>"
+
+    return (
+        "<!doctype html>"
+        "<html lang='zh-CN'>"
+        "<head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>{html.escape(title)}</title>"
+        "<meta name='theme-color' content='#10273f'>"
+        f"<link rel='stylesheet' href='{stylesheet_href}'>"
+        "</head>"
+        f"<body class='{body_class}'>"
+        "<div class='site-bg'></div>"
+        "<div class='site-shell'>"
+        "<header class='site-header'>"
+        "<div class='nav-brand-wrap'>"
+        f"<a class='nav-brand' href='{index_href}'>Recoleta Trends</a>"
+        f"<div class='nav-caption'>{html.escape(page_subtitle)}</div>"
+        "</div>"
+        "<nav class='nav-links'>"
+        f"{nav_link('Home', index_href, 'home')}"
+        f"{nav_link('Archive', archive_href, 'archive')}"
+        f"{nav_link('Topics', topics_href, 'topics')}"
+        "</nav>"
+        "</header>"
+        "<main class='site-main'>"
+        "<section class='page-hero'>"
+        f"<div class='hero-kicker'>{html.escape(page_subtitle)}</div>"
+        f"<h1 class='page-title'>{html.escape(page_heading)}</h1>"
+        "</section>"
+        f"{content_html}"
+        "</main>"
+        "<footer class='site-footer'>"
+        "<span>Static export generated from Recoleta trend notes.</span>"
+        "</footer>"
+        "</div>"
+        "</body>"
+        "</html>"
+    )
+
+
+def _render_trend_card(
+    *,
+    document: TrendSiteDocument,
+    from_page: Path,
+    topic_pages: dict[str, Path],
+) -> str:
+    trend_href = _site_href(from_page=from_page, to_page=document.page_path)
+    pdf_href = (
+        _site_href(from_page=from_page, to_page=document.pdf_asset_path)
+        if document.pdf_asset_path is not None
+        else None
+    )
+    markdown_href = _site_href(from_page=from_page, to_page=document.markdown_asset_path)
+    topic_links = _render_topic_link_pills(
+        topics=document.topics[:4],
+        from_page=from_page,
+        topic_pages=topic_pages,
+    )
+    actions = [
+        f"<a class='action-link' href='{trend_href}'>Open brief</a>",
+        f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>",
+    ]
+    if pdf_href is not None:
+        actions.insert(1, f"<a class='action-link secondary' href='{pdf_href}'>PDF</a>")
+    return (
+        "<article class='trend-card'>"
+        "<div class='card-meta-row'>"
+        f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
+        f"<span class='meta-date'>{html.escape(document.period_token)}</span>"
+        "</div>"
+        f"<h2 class='card-title'><a href='{trend_href}'>{html.escape(document.title)}</a></h2>"
+        f"<p class='card-excerpt'>{html.escape(document.excerpt)}</p>"
+        f"<div class='topic-pill-row'>{topic_links}</div>"
+        f"<div class='card-actions'>{''.join(actions)}</div>"
+        "</article>"
+    )
+
+
+def _render_topic_card(
+    *,
+    topic: str,
+    count: int,
+    latest_token: str,
+    page_path: Path,
+    topic_page_path: Path,
+) -> str:
+    href = _site_href(from_page=page_path, to_page=topic_page_path)
+    return (
+        "<article class='topic-card'>"
+        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(topic)}</a></h2>"
+        f"<div class='topic-card-meta'>{count} briefs · latest {html.escape(latest_token)}</div>"
+        "</article>"
+    )
+
+
+def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path) -> str:
+    rows: list[str] = []
+    grouped: dict[str, list[TrendSiteDocument]] = defaultdict(list)
+    for document in documents:
+        period_start = document.period_start
+        month_key = (
+            period_start.astimezone(timezone.utc).strftime("%Y-%m")
+            if period_start is not None
+            else "Unknown"
+        )
+        grouped[month_key].append(document)
+
+    for month_key in sorted(grouped.keys(), reverse=True):
+        month_documents = grouped[month_key]
+        items = "".join(
+            "<li class='archive-item'>"
+            f"<a href='{_site_href(from_page=from_page, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
+            f"<span>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}</span>"
+            "</li>"
+            for document in month_documents
+        )
+        rows.append(
+            "<section class='archive-block'>"
+            f"<h2 class='section-title'>{html.escape(month_key)}</h2>"
+            f"<ul class='archive-list'>{items}</ul>"
+            "</section>"
+        )
+    return "".join(rows)
+
+
+def _render_detail_page(
+    *,
+    document: TrendSiteDocument,
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+    previous_document: TrendSiteDocument | None,
+    next_document: TrendSiteDocument | None,
+) -> str:
+    breadcrumb_home = _site_href(from_page=document.page_path, to_page=output_dir / "index.html")
+    breadcrumb_archive = _site_href(from_page=document.page_path, to_page=output_dir / "archive.html")
+    markdown_href = _site_href(
+        from_page=document.page_path,
+        to_page=document.markdown_asset_path,
+    )
+    pdf_href = (
+        _site_href(from_page=document.page_path, to_page=document.pdf_asset_path)
+        if document.pdf_asset_path is not None
+        else None
+    )
+    topic_links = _render_topic_link_pills(
+        topics=document.topics,
+        from_page=document.page_path,
+        topic_pages=topic_pages,
+    )
+    meta_items = "".join(
+        "<div class='meta-panel'>"
+        f"<div class='meta-panel-label'>{html.escape(label)}</div>"
+        f"<div class='meta-panel-value'>{html.escape(value)}</div>"
+        "</div>"
+        for label, value in _trend_pdf_meta_rows(document.frontmatter)
+    )
+
+    pager_items: list[str] = []
+    if previous_document is not None:
+        previous_href = _site_href(
+            from_page=document.page_path,
+            to_page=previous_document.page_path,
+        )
+        pager_items.append(
+            "<a class='pager-card' href='{}'><span>Newer</span><strong>{}</strong></a>".format(
+                previous_href, html.escape(previous_document.title)
+            )
+        )
+    if next_document is not None:
+        next_href = _site_href(from_page=document.page_path, to_page=next_document.page_path)
+        pager_items.append(
+            "<a class='pager-card' href='{}'><span>Older</span><strong>{}</strong></a>".format(
+                next_href, html.escape(next_document.title)
+            )
+        )
+
+    action_links = [
+        f"<a class='action-link' href='{markdown_href}'>Source markdown</a>",
+    ]
+    if pdf_href is not None:
+        action_links.insert(0, f"<a class='action-link' href='{pdf_href}'>Download PDF</a>")
+
+    content_html = (
+        "<nav class='breadcrumbs'>"
+        f"<a href='{breadcrumb_home}'>Home</a>"
+        "<span>/</span>"
+        f"<a href='{breadcrumb_archive}'>Archive</a>"
+        "<span>/</span>"
+        f"<span>{html.escape(document.period_token)}</span>"
+        "</nav>"
+        "<section class='detail-hero'>"
+        "<div class='detail-hero-main'>"
+        f"<div class='hero-kicker'>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}</div>"
+        f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
+        f"<p class='detail-dek'>{html.escape(_trend_pdf_hero_dek(document.frontmatter))}</p>"
+        f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
+        f"<div class='topic-pill-row'>{topic_links}</div>"
+        f"<div class='card-actions detail-actions'>{''.join(action_links)}</div>"
+        "</div>"
+        "<aside class='detail-hero-side'>"
+        f"{meta_items}"
+        "</aside>"
+        "</section>"
+        f"<section class='detail-content'>{document.body_html}</section>"
+        + (
+            f"<section class='pager-row'>{''.join(pager_items)}</section>"
+            if pager_items
+            else ""
+        )
+    )
+
+    return _site_page_shell(
+        title=document.title,
+        page_path=document.page_path,
+        output_dir=output_dir,
+        page_heading=document.title,
+        page_subtitle=f"{document.granularity.title()} brief",
+        body_class="page-detail",
+        active_nav="archive",
+        content_html=content_html,
+    )
+
+
+def _render_home_page(
+    *,
+    documents: list[TrendSiteDocument],
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+) -> str:
+    page_path = output_dir / "index.html"
+    latest_cards = "".join(
+        _render_trend_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+        )
+        for document in documents[:6]
+    )
+
+    topic_counter: Counter[str] = Counter()
+    latest_by_topic: dict[str, TrendSiteDocument] = {}
+    label_by_slug: dict[str, str] = {}
+    for document in documents:
+        for topic in document.topics:
+            cleaned = str(topic).strip()
+            if not cleaned:
+                continue
+            slug = _topic_slug(cleaned)
+            topic_counter[slug] += 1
+            label_by_slug.setdefault(slug, cleaned)
+            latest_by_topic.setdefault(slug, document)
+
+    topic_cards = "".join(
+        _render_topic_card(
+            topic=label_by_slug[slug],
+            count=topic_counter[slug],
+            latest_token=latest_by_topic[slug].period_token,
+            page_path=page_path,
+            topic_page_path=topic_pages[slug],
+        )
+        for slug, _count in topic_counter.most_common(12)
+        if slug in topic_pages
+    )
+
+    archive_preview = "".join(
+        "<li class='timeline-item'>"
+        f"<a href='{_site_href(from_page=page_path, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
+        f"<span>{html.escape(document.period_token)}</span>"
+        "</li>"
+        for document in documents[:8]
+    )
+
+    generated_span = ""
+    if documents:
+        newest = documents[0].period_token
+        oldest = documents[-1].period_token
+        generated_span = f"{newest} to {oldest}"
+
+    content_html = (
+        "<section class='home-hero-card'>"
+        "<div class='home-hero-copy'>"
+        "<div class='hero-kicker'>Research dispatches, not raw system output</div>"
+        "<h1 class='home-title'>A lighter-weight way to browse Recoleta trends.</h1>"
+        "<p class='home-dek'>"
+        "This site turns trend notes into a single, navigable reading surface."
+        " Readers can scan the latest briefs, jump by topic, and open a single trend page"
+        " without carrying the full workflow context."
+        "</p>"
+        "<div class='hero-actions'>"
+        f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'archive.html')}'>Open archive</a>"
+        f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'topics' / 'index.html')}'>Browse topics</a>"
+        "</div>"
+        "</div>"
+        "<div class='hero-stats'>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Briefs</div><div class='meta-panel-value'>{len(documents)}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Topics</div><div class='meta-panel-value'>{len(topic_pages)}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Window</div><div class='meta-panel-value'>{html.escape(generated_span or 'n/a')}</div></div>"
+        "</div>"
+        "</section>"
+        "<section class='home-section'>"
+        "<div class='section-heading-row'>"
+        "<h2 class='section-title'>Latest briefs</h2>"
+        "</div>"
+        f"<div class='trend-grid'>{latest_cards or '<div class=\"empty-card\">No trend notes available yet.</div>'}</div>"
+        "</section>"
+        "<section class='home-section split-layout'>"
+        "<div>"
+        "<h2 class='section-title'>Topic radar</h2>"
+        f"<div class='topic-card-grid'>{topic_cards or '<div class=\"empty-card\">No topics available yet.</div>'}</div>"
+        "</div>"
+        "<div>"
+        "<h2 class='section-title'>Archive preview</h2>"
+        f"<ul class='timeline-list'>{archive_preview or '<li class=\"timeline-item empty\">No archive entries yet.</li>'}</ul>"
+        "</div>"
+        "</section>"
+    )
+
+    return _site_page_shell(
+        title="Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading="Recoleta Trends",
+        page_subtitle="Static trend site",
+        body_class="page-home",
+        active_nav="home",
+        content_html=content_html,
+    )
+
+
+def _render_topics_index_page(
+    *,
+    documents: list[TrendSiteDocument],
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+) -> str:
+    page_path = output_dir / "topics" / "index.html"
+    topic_counter: Counter[str] = Counter()
+    latest_by_topic: dict[str, TrendSiteDocument] = {}
+    label_by_slug: dict[str, str] = {}
+
+    for document in documents:
+        for topic in document.topics:
+            cleaned = str(topic).strip()
+            if not cleaned:
+                continue
+            slug = _topic_slug(cleaned)
+            topic_counter[slug] += 1
+            label_by_slug.setdefault(slug, cleaned)
+            latest_by_topic.setdefault(slug, document)
+
+    cards = "".join(
+        _render_topic_card(
+            topic=label_by_slug[slug],
+            count=topic_counter[slug],
+            latest_token=latest_by_topic[slug].period_token,
+            page_path=page_path,
+            topic_page_path=topic_pages[slug],
+        )
+        for slug, _count in topic_counter.most_common()
+        if slug in topic_pages
+    )
+
+    content_html = (
+        "<section class='home-section'>"
+        "<h2 class='section-title'>All tracked topics</h2>"
+        f"<div class='topic-card-grid'>{cards or '<div class=\"empty-card\">No topics available yet.</div>'}</div>"
+        "</section>"
+    )
+
+    return _site_page_shell(
+        title="Topics · Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading="Topics",
+        page_subtitle="Topic navigation",
+        body_class="page-topics",
+        active_nav="topics",
+        content_html=content_html,
+    )
+
+
+def _render_topic_page(
+    *,
+    topic: str,
+    topic_slug: str,
+    documents: list[TrendSiteDocument],
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+) -> str:
+    page_path = topic_pages[topic_slug]
+    cards = "".join(
+        _render_trend_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+        )
+        for document in documents
+    )
+    content_html = (
+        "<section class='home-section'>"
+        "<div class='section-heading-row'>"
+        f"<h2 class='section-title'>{html.escape(topic)}</h2>"
+        f"<span class='meta-date'>{len(documents)} briefs</span>"
+        "</div>"
+        f"<div class='trend-grid'>{cards}</div>"
+        "</section>"
+    )
+    return _site_page_shell(
+        title=f"{topic} · Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading=topic,
+        page_subtitle="Topic page",
+        body_class="page-topic",
+        active_nav="topics",
+        content_html=content_html,
+    )
+
+
+def _render_archive_page(*, documents: list[TrendSiteDocument], output_dir: Path) -> str:
+    page_path = output_dir / "archive.html"
+    content_html = (
+        "<section class='home-section'>"
+        "<h2 class='section-title'>Archive</h2>"
+        f"{_render_archive_rows(documents=documents, from_page=page_path)}"
+        "</section>"
+    )
+    return _site_page_shell(
+        title="Archive · Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading="Archive",
+        page_subtitle="Trend timeline",
+        body_class="page-archive",
+        active_nav="archive",
+        content_html=content_html,
+    )
+
+
+_SITE_CSS = """
+:root {
+  --bg-top: #dce7f2;
+  --bg-bottom: #f7fafc;
+  --panel: rgba(255, 255, 255, 0.82);
+  --panel-strong: rgba(250, 252, 255, 0.94);
+  --line: rgba(17, 41, 71, 0.10);
+  --text: #162235;
+  --muted: #60748a;
+  --accent: #1d67c2;
+  --accent-soft: #eaf2fb;
+  --hero-start: #10273f;
+  --hero-end: #2a5f95;
+  --radius-xl: 30px;
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  --shadow-lg: 0 22px 60px rgba(22, 40, 69, 0.10);
+  --shadow-md: 0 14px 36px rgba(22, 40, 69, 0.08);
+}
+* {
+  box-sizing: border-box;
+}
+html, body {
+  margin: 0;
+  min-height: 100%;
+}
+body {
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.68), transparent 28%),
+    radial-gradient(circle at top right, rgba(29, 103, 194, 0.10), transparent 24%),
+    linear-gradient(180deg, var(--bg-top) 0%, #eaf1f7 35%, var(--bg-bottom) 100%);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Segoe UI", sans-serif;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.site-shell {
+  position: relative;
+  width: min(1240px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 22px 0 48px;
+}
+.site-header {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(245, 248, 252, 0.72);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-md);
+}
+.nav-brand-wrap {
+  min-width: 0;
+}
+.nav-brand {
+  display: inline-block;
+  color: #10273f;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+.nav-caption {
+  color: var(--muted);
+  font-size: 12px;
+}
+.nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.nav-link {
+  padding: 10px 14px;
+  border-radius: 999px;
+  color: #2f4b69;
+  font-size: 13px;
+  font-weight: 600;
+}
+.nav-link.is-active {
+  background: rgba(29, 103, 194, 0.12);
+  color: #164e94;
+}
+.site-main {
+  display: grid;
+  gap: 18px;
+}
+.page-hero,
+.home-hero-card,
+.detail-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+.page-hero {
+  padding: 28px 30px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 34%),
+    linear-gradient(135deg, var(--hero-start) 0%, var(--hero-end) 100%);
+  color: #f5fbff;
+}
+.hero-kicker {
+  margin-bottom: 8px;
+  color: rgba(235, 242, 252, 0.82);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.page-title,
+.home-title,
+.detail-title {
+  margin: 0;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: clamp(34px, 5vw, 54px);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+.home-hero-card,
+.detail-hero,
+.home-section,
+.detail-content,
+.pager-row,
+.archive-block {
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+}
+.home-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.9fr);
+  gap: 20px;
+  padding: 24px;
+}
+.home-dek,
+.detail-dek {
+  max-width: 70ch;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.6;
+}
+.hero-actions,
+.card-actions,
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.hero-stats,
+.detail-hero-side {
+  display: grid;
+  gap: 10px;
+}
+.meta-panel {
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.46);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(245, 249, 253, 0.86));
+}
+.meta-panel-label {
+  margin-bottom: 6px;
+  color: #7187a0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.meta-panel-value {
+  color: #1f3248;
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.home-section,
+.detail-content,
+.archive-block {
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.split-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 18px;
+}
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.section-title {
+  margin: 0 0 12px;
+  color: #183453;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+.trend-grid,
+.topic-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.trend-card,
+.topic-card,
+.pager-card {
+  display: block;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, var(--panel-strong) 0%, rgba(245, 249, 253, 0.92) 100%);
+}
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.meta-pill,
+.topic-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(29, 103, 194, 0.14);
+  background: rgba(29, 103, 194, 0.08);
+  color: #225693;
+  font-size: 12px;
+  font-weight: 600;
+}
+.meta-pill.subdued {
+  border-color: rgba(17, 41, 71, 0.08);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--muted);
+}
+.topic-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.topic-pill-link:hover,
+.action-link:hover,
+.trend-card a:hover,
+.topic-card a:hover {
+  opacity: 0.85;
+}
+.meta-date {
+  color: #6e849d;
+  font-size: 13px;
+}
+.card-title,
+.topic-card-title {
+  margin: 14px 0 10px;
+  color: #15253a;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 26px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+.card-title a,
+.topic-card-title a {
+  color: inherit;
+}
+.card-excerpt {
+  margin: 0 0 14px;
+  color: #4f647a;
+  line-height: 1.62;
+}
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #1d67c2;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+}
+.action-link.secondary {
+  background: rgba(29, 103, 194, 0.10);
+  color: #1b579d;
+}
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  color: #7489a1;
+  font-size: 13px;
+}
+.detail-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.9fr);
+  gap: 18px;
+  padding: 22px;
+}
+.detail-summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  margin-bottom: 12px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(29, 103, 194, 0.09);
+  color: #1c5da8;
+  font-size: 13px;
+  font-weight: 700;
+}
+.detail-content {
+  padding: 0;
+}
+.detail-content .document-flow {
+  padding: 16px;
+}
+.detail-content .summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.detail-content .surface-card {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, var(--panel-strong), rgba(244, 248, 252, 0.92));
+}
+.detail-content .summary-grid .surface-card {
+  margin-top: 0;
+}
+.detail-content .summary-card-primary {
+  background:
+    linear-gradient(180deg, rgba(235, 243, 253, 0.95), rgba(248, 251, 254, 0.96));
+}
+.detail-content .summary-card-secondary {
+  background:
+    linear-gradient(180deg, rgba(247, 250, 254, 0.95), rgba(251, 252, 254, 0.96));
+}
+.detail-content .highlight-card {
+  background:
+    linear-gradient(180deg, rgba(247, 250, 254, 0.95), rgba(241, 247, 253, 0.96));
+}
+.detail-content .section-label {
+  margin: 0 0 10px;
+  color: #6a8098;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.detail-content .prose,
+.detail-content .cluster-body {
+  color: #213246;
+  font-size: 15px;
+  line-height: 1.66;
+}
+.detail-content .prose p,
+.detail-content .cluster-body p {
+  margin: 0 0 10px;
+}
+.detail-content .prose h3,
+.detail-content .cluster-card h3 {
+  margin: 14px 0 8px;
+  color: #16395c;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 24px;
+  line-height: 1.08;
+}
+.detail-content .prose h4,
+.detail-content .cluster-body h4 {
+  margin: 12px 0 7px;
+  color: #6e849d;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.detail-content .prose ul,
+.detail-content .prose ol,
+.detail-content .cluster-body ul,
+.detail-content .cluster-body ol {
+  margin: 8px 0 10px;
+  padding-inline-start: 1.08em;
+}
+.detail-content .prose li,
+.detail-content .cluster-body li {
+  margin: 0 0 7px;
+  padding-left: 0.12em;
+}
+.detail-content .prose blockquote,
+.detail-content .cluster-body blockquote {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-left: 3px solid rgba(29, 103, 194, 0.42);
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: #24476d;
+}
+.detail-content .prose table,
+.detail-content .cluster-body table {
+  width: 100%;
+  margin: 12px 0;
+  border-collapse: collapse;
+}
+.detail-content .prose th,
+.detail-content .prose td,
+.detail-content .cluster-body th,
+.detail-content .cluster-body td {
+  padding: 8px;
+  border: 1px solid #d8e1eb;
+  text-align: left;
+  vertical-align: top;
+}
+.detail-content .prose th,
+.detail-content .cluster-body th {
+  background: #eff5fa;
+}
+.detail-content .topic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.detail-content .topic-pill {
+  justify-content: center;
+  min-height: 40px;
+  background: rgba(248, 251, 255, 0.98);
+  border: 1px solid #dbe4ef;
+  color: #425a74;
+}
+.detail-content .cluster-columns {
+  column-count: 2;
+  column-gap: 14px;
+}
+.detail-content .cluster-card {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(251, 253, 255, 0.96);
+  break-inside: avoid;
+}
+.pager-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+}
+.pager-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: #6f859d;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.pager-card strong {
+  color: #16304f;
+  font-size: 18px;
+  line-height: 1.32;
+}
+.timeline-list,
+.archive-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline-item,
+.archive-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(251, 253, 255, 0.86);
+}
+.timeline-item a,
+.archive-item a {
+  color: #162f4d;
+  font-weight: 600;
+}
+.timeline-item span,
+.archive-item span,
+.topic-card-meta {
+  color: #6b8098;
+  font-size: 13px;
+}
+.site-footer {
+  margin-top: 18px;
+  color: #6e8298;
+  font-size: 12px;
+}
+.empty-card {
+  padding: 24px;
+  border: 1px dashed rgba(17, 41, 71, 0.16);
+  border-radius: 18px;
+  color: var(--muted);
+}
+@media (max-width: 1080px) {
+  .home-hero-card,
+  .detail-hero,
+  .split-layout {
+    grid-template-columns: 1fr;
+  }
+  .trend-grid,
+  .topic-card-grid,
+  .detail-content .summary-grid,
+  .pager-row {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .site-shell {
+    width: min(100% - 16px, 100%);
+    padding-top: 12px;
+  }
+  .site-header {
+    position: static;
+    border-radius: 24px;
+    padding: 16px;
+  }
+  .page-hero,
+  .home-hero-card,
+  .home-section,
+  .detail-hero,
+  .detail-content,
+  .archive-block {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .detail-content .document-flow {
+    padding: 12px 0 0;
+  }
+  .detail-content .topic-grid,
+  .detail-content .cluster-columns {
+    grid-template-columns: 1fr;
+    column-count: 1;
+  }
+  .timeline-item,
+  .archive-item {
+    flex-direction: column;
+  }
+}
+"""
+
+
+def _load_trend_source_documents(
+    *,
+    input_dir: Path,
+    limit: int | None = None,
+) -> list[TrendSiteSourceDocument]:
+    source_documents: list[TrendSiteSourceDocument] = []
+    markdown_paths = sorted(input_dir.glob("*.md"))
+
+    for markdown_path in markdown_paths:
+        raw_markdown = markdown_path.read_text(encoding="utf-8")
+        frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
+        if str(frontmatter.get("kind") or "").strip().lower() != "trend":
+            continue
+
+        period_start = _parse_site_datetime(frontmatter.get("period_start"))
+        period_end = _parse_site_datetime(frontmatter.get("period_end"))
+        granularity = str(frontmatter.get("granularity") or "trend").strip().lower() or "trend"
+        topics_raw = frontmatter.get("topics")
+        topics = []
+        if isinstance(topics_raw, list):
+            topics = [str(topic).strip() for topic in topics_raw if str(topic).strip()]
+
+        source_pdf_path = markdown_path.with_suffix(".pdf")
+        pdf_path = source_pdf_path if source_pdf_path.exists() and source_pdf_path.is_file() else None
+        source_documents.append(
+            TrendSiteSourceDocument(
+                markdown_path=markdown_path,
+                pdf_path=pdf_path,
+                stem=markdown_path.stem,
+                frontmatter=frontmatter,
+                markdown_body=markdown_body,
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+                topics=topics,
+            )
+        )
+
+    source_documents.sort(
+        key=lambda document: (
+            document.period_start or datetime.min.replace(tzinfo=timezone.utc),
+            document.stem,
+        ),
+        reverse=True,
+    )
+    return source_documents[:limit] if limit is not None else source_documents
+
+
+def _load_trend_site_documents(
+    *,
+    input_dir: Path,
+    output_dir: Path,
+    limit: int | None = None,
+) -> list[TrendSiteDocument]:
+    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
+    documents: list[TrendSiteDocument] = []
+    source_documents = _load_trend_source_documents(input_dir=input_dir, limit=limit)
+
+    artifacts_dir = output_dir / "artifacts"
+    trends_dir = output_dir / "trends"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    trends_dir.mkdir(parents=True, exist_ok=True)
+
+    for source_document in source_documents:
+        normalized_markdown = _normalize_obsidian_callouts_for_pdf(
+            source_document.markdown_body
+        ).strip()
+        if not normalized_markdown:
+            normalized_markdown = "# Trend\n"
+        body_html = markdown.render(normalized_markdown)
+        title, sections = _extract_trend_pdf_sections(body_html=body_html)
+        excerpt = _section_excerpt(sections)
+        browser_body_html = _build_trend_browser_body_html(sections=sections)
+
+        period_token = (
+            _trend_date_token(
+                granularity=source_document.granularity,
+                period_start=source_document.period_start,
+            )
+            if source_document.period_start is not None
+            else source_document.stem
+        )
+
+        markdown_asset_path = artifacts_dir / source_document.markdown_path.name
+        shutil.copy2(source_document.markdown_path, markdown_asset_path)
+
+        pdf_asset_path: Path | None = None
+        if source_document.pdf_path is not None:
+            pdf_asset_path = artifacts_dir / source_document.pdf_path.name
+            shutil.copy2(source_document.pdf_path, pdf_asset_path)
+
+        documents.append(
+            TrendSiteDocument(
+                markdown_path=source_document.markdown_path,
+                markdown_asset_path=markdown_asset_path,
+                pdf_asset_path=pdf_asset_path,
+                page_path=trends_dir / f"{source_document.stem}.html",
+                stem=source_document.stem,
+                title=title,
+                granularity=source_document.granularity,
+                period_token=period_token,
+                period_start=source_document.period_start,
+                period_end=source_document.period_end,
+                topics=source_document.topics,
+                body_html=browser_body_html,
+                excerpt=excerpt,
+                frontmatter=source_document.frontmatter,
+            )
+        )
+
+    return documents
+
+
+def export_trend_static_site(
+    *,
+    input_dir: Path,
+    output_dir: Path,
+    limit: int | None = None,
+) -> Path:
+    resolved_input_dir = input_dir.expanduser().resolve()
+    if not resolved_input_dir.exists() or not resolved_input_dir.is_dir():
+        raise ValueError(f"Trend input directory must exist: {resolved_input_dir}")
+
+    resolved_output_dir = output_dir.expanduser().resolve()
+    if _paths_overlap(resolved_input_dir, resolved_output_dir):
+        raise ValueError(
+            "Trend site output directory must not overlap the input directory"
+        )
+    _reset_directory(resolved_output_dir)
+    (resolved_output_dir / "assets").mkdir(parents=True, exist_ok=True)
+    (resolved_output_dir / "topics").mkdir(parents=True, exist_ok=True)
+
+    documents = _load_trend_site_documents(
+        input_dir=resolved_input_dir,
+        output_dir=resolved_output_dir,
+        limit=limit,
+    )
+
+    label_by_topic_slug: dict[str, str] = {}
+    topic_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)
+    for document in documents:
+        for topic in document.topics:
+            slug = _topic_slug(topic)
+            label_by_topic_slug.setdefault(slug, topic)
+            topic_documents[slug].append(document)
+
+    topic_pages = {
+        slug: resolved_output_dir / "topics" / f"{slug}.html"
+        for slug in sorted(topic_documents.keys())
+    }
+
+    (resolved_output_dir / "assets" / "site.css").write_text(
+        _SITE_CSS.strip() + "\n",
+        encoding="utf-8",
+    )
+    (resolved_output_dir / ".nojekyll").write_text("", encoding="utf-8")
+
+    (resolved_output_dir / "index.html").write_text(
+        _render_home_page(
+            documents=documents,
+            output_dir=resolved_output_dir,
+            topic_pages=topic_pages,
+        ),
+        encoding="utf-8",
+    )
+    (resolved_output_dir / "archive.html").write_text(
+        _render_archive_page(
+            documents=documents,
+            output_dir=resolved_output_dir,
+        ),
+        encoding="utf-8",
+    )
+    (resolved_output_dir / "topics" / "index.html").write_text(
+        _render_topics_index_page(
+            documents=documents,
+            output_dir=resolved_output_dir,
+            topic_pages=topic_pages,
+        ),
+        encoding="utf-8",
+    )
+
+    for idx, document in enumerate(documents):
+        previous_document = documents[idx - 1] if idx > 0 else None
+        next_document = documents[idx + 1] if idx + 1 < len(documents) else None
+        document.page_path.write_text(
+            _render_detail_page(
+                document=document,
+                output_dir=resolved_output_dir,
+                topic_pages=topic_pages,
+                previous_document=previous_document,
+                next_document=next_document,
+            ),
+            encoding="utf-8",
+        )
+
+    for slug, page_path in topic_pages.items():
+        page_path.write_text(
+            _render_topic_page(
+                topic=label_by_topic_slug[slug],
+                topic_slug=slug,
+                documents=topic_documents[slug],
+                output_dir=resolved_output_dir,
+                topic_pages=topic_pages,
+            ),
+            encoding="utf-8",
+        )
+
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "input_dir": str(resolved_input_dir),
+        "output_dir": str(resolved_output_dir),
+        "trends_total": len(documents),
+        "topics_total": len(topic_pages),
+        "files": {
+            "index": "index.html",
+            "archive": "archive.html",
+            "nojekyll": ".nojekyll",
+            "topics_index": "topics/index.html",
+            "stylesheet": "assets/site.css",
+            "trend_pages": [
+                str(document.page_path.relative_to(resolved_output_dir))
+                for document in documents
+            ],
+            "topic_pages": [
+                str(path.relative_to(resolved_output_dir))
+                for path in topic_pages.values()
+            ],
+        },
+    }
+    manifest_path = resolved_output_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    logger.bind(
+        module="site.build",
+        output_dir=str(resolved_output_dir),
+        trends_total=len(documents),
+        topics_total=len(topic_pages),
+    ).info("Trend static site export completed")
+    return manifest_path
+
+
+def stage_trend_site_source(
+    *,
+    input_dir: Path,
+    output_dir: Path,
+    limit: int | None = None,
+) -> Path:
+    resolved_input_dir = input_dir.expanduser().resolve()
+    if not resolved_input_dir.exists() or not resolved_input_dir.is_dir():
+        raise ValueError(f"Trend input directory must exist: {resolved_input_dir}")
+
+    resolved_output_dir = output_dir.expanduser().resolve()
+    if _paths_overlap(resolved_input_dir, resolved_output_dir):
+        raise ValueError(
+            "Trend site stage output directory must not overlap the input directory"
+        )
+    _reset_directory(resolved_output_dir)
+
+    source_documents = _load_trend_source_documents(
+        input_dir=resolved_input_dir,
+        limit=limit,
+    )
+    staged_markdown_files: list[str] = []
+    staged_pdf_files: list[str] = []
+
+    for source_document in source_documents:
+        staged_markdown_path = resolved_output_dir / source_document.markdown_path.name
+        shutil.copy2(source_document.markdown_path, staged_markdown_path)
+        staged_markdown_files.append(staged_markdown_path.name)
+
+        if source_document.pdf_path is None:
+            continue
+        staged_pdf_path = resolved_output_dir / source_document.pdf_path.name
+        shutil.copy2(source_document.pdf_path, staged_pdf_path)
+        staged_pdf_files.append(staged_pdf_path.name)
+
+    manifest = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "input_dir": str(resolved_input_dir),
+        "output_dir": str(resolved_output_dir),
+        "trends_total": len(source_documents),
+        "pdf_total": len(staged_pdf_files),
+        "files": {
+            "markdown": staged_markdown_files,
+            "pdf": staged_pdf_files,
+        },
+    }
+    manifest_path = resolved_output_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    logger.bind(
+        module="site.stage",
+        output_dir=str(resolved_output_dir),
+        trends_total=len(source_documents),
+        pdf_total=len(staged_pdf_files),
+    ).info("Trend site source staging completed")
+    return manifest_path

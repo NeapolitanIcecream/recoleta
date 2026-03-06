@@ -27,6 +27,8 @@ db_app = typer.Typer(help="Database utilities.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 rag_app = typer.Typer(help="RAG utilities.", no_args_is_help=True)
 app.add_typer(rag_app, name="rag")
+site_app = typer.Typer(help="Static site utilities.", no_args_is_help=True)
+app.add_typer(site_app, name="site")
 
 
 def _runtime_symbols() -> dict[str, Any]:
@@ -69,6 +71,16 @@ def _build_runtime() -> tuple[Any, Any, Any]:
     repository.init_schema()
     service = pipeline_service_cls(settings=settings, repository=repository)
     return settings, repository, service
+
+
+def _build_settings() -> Any:
+    symbols = _runtime_symbols()
+    settings_cls = symbols["Settings"]
+    configure_process_logging = symbols["configure_process_logging"]
+
+    settings = settings_cls()  # pyright: ignore[reportCallIssue]
+    configure_process_logging(level=settings.log_level, log_json=settings.log_json)
+    return settings
 
 
 def _parse_anchor_date_option(value: str) -> date:
@@ -406,6 +418,149 @@ def trends_week(
         f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
     )
     _print_billing_report(console=console, repository=repository, run_id=run_id)
+
+
+@site_app.command("build")
+def site_build(
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Destination directory for the exported static site. Defaults to MARKDOWN_OUTPUT_DIR/site.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally export only the latest N trend notes.",
+    ),
+) -> None:
+    """Build a static website from trend markdown notes."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    export_trend_static_site = _import_symbol(
+        "recoleta.site",
+        attr_name="export_trend_static_site",
+    )
+
+    resolved_input_dir = (
+        input_dir.expanduser().resolve()
+        if input_dir is not None
+        else None
+    )
+    resolved_output_dir = (
+        output_dir.expanduser().resolve()
+        if output_dir is not None
+        else None
+    )
+    settings = _build_settings() if resolved_input_dir is None or resolved_output_dir is None else None
+    if resolved_input_dir is None:
+        assert settings is not None
+        resolved_input_dir = settings.markdown_output_dir / "Trends"
+    if resolved_output_dir is None:
+        assert settings is not None
+        resolved_output_dir = settings.markdown_output_dir / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=resolved_input_dir,
+        output_dir=resolved_output_dir,
+        limit=limit,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    console = (
+        console_cls(stderr=settings.log_json)
+        if settings is not None
+        else console_cls()
+    )
+    console.print(
+        "[green]site build completed[/green] "
+        f"trends={manifest['trends_total']} "
+        f"topics={manifest['topics_total']} "
+        f"output={resolved_output_dir}"
+    )
+
+
+@site_app.command("stage")
+def site_stage(
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Repo-local directory to mirror trend markdown notes for deployment. Defaults to ./site-content/Trends.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally stage only the latest N trend notes.",
+    ),
+) -> None:
+    """Stage trend markdown notes into a repo-local directory for deployment."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    stage_trend_site_source = _import_symbol(
+        "recoleta.site",
+        attr_name="stage_trend_site_source",
+    )
+
+    resolved_input_dir = (
+        input_dir.expanduser().resolve()
+        if input_dir is not None
+        else None
+    )
+    resolved_output_dir = (
+        output_dir.expanduser().resolve()
+        if output_dir is not None
+        else None
+    )
+    settings = _build_settings() if resolved_input_dir is None or resolved_output_dir is None else None
+    if resolved_input_dir is None:
+        assert settings is not None
+        resolved_input_dir = settings.markdown_output_dir / "Trends"
+    if resolved_output_dir is None:
+        resolved_output_dir = (Path.cwd() / "site-content" / "Trends").resolve()
+    manifest_path = stage_trend_site_source(
+        input_dir=resolved_input_dir,
+        output_dir=resolved_output_dir,
+        limit=limit,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    console = (
+        console_cls(stderr=settings.log_json)
+        if settings is not None
+        else console_cls()
+    )
+    console.print(
+        "[green]site stage completed[/green] "
+        f"trends={manifest['trends_total']} "
+        f"pdfs={manifest['pdf_total']} "
+        f"output={resolved_output_dir}"
+    )
 
 
 @rag_app.command("sync-vectors")

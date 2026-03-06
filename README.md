@@ -231,6 +231,41 @@ Optional knobs (env or config):
 - `TRENDS_EMBEDDING_MODEL`, `TRENDS_EMBEDDING_DIMENSIONS`
 - `TRENDS_EMBEDDING_FAILURE_MODE` (`continue|fail_fast|threshold`) and `TRENDS_EMBEDDING_MAX_ERRORS` (required when `threshold`)
 
+### 🌐 Static trends site
+
+Recoleta can turn trend notes into a deployable static website:
+
+```bash
+# Build a local preview from MARKDOWN_OUTPUT_DIR/Trends
+uv run recoleta site build
+
+# Stage trend markdown/PDF artifacts into the repo for deployment
+uv run recoleta site stage
+```
+
+Behavior:
+
+- `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
+- `recoleta site stage` mirrors trend markdown notes into `./site-content/Trends` by default so they can be committed and deployed.
+- Both commands treat the output directory as a managed artifact and clear stale files before writing.
+
+For CI or GitHub Pages, you can pass explicit directories and avoid depending on a full Recoleta config:
+
+```bash
+uv run recoleta site build \
+  --input-dir site-content/Trends \
+  --output-dir site-dist
+```
+
+GitHub Pages flow:
+
+1. Run `uv run recoleta site stage` after generating new trend notes.
+2. Commit `site-content/Trends/` to the repo.
+3. In the GitHub repository settings, set **Pages** to **GitHub Actions**.
+4. Push to `main`.
+
+The included workflow `.github/workflows/site-pages.yml` builds `site-dist/` from `site-content/Trends/` and deploys it to Pages.
+
 ### 🗓️ Run continuously (built-in scheduler)
 
 ```bash

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 import recoleta.cli
+import recoleta.site
 
 
 @dataclass(slots=True)
@@ -45,6 +47,7 @@ class _FakeRepo:
 
 class _FakeSettings:
     log_json = False
+    markdown_output_dir = Path("/tmp/recoleta-output")
 
     def safe_fingerprint(self) -> str:
         return "fp-1"
@@ -207,3 +210,190 @@ def test_trends_cli_forwards_debug_pdf_flag(
     assert result.exit_code == 0
     assert fake_service.calls
     assert fake_service.calls[0]["debug_pdf"] is True
+
+
+def test_site_build_cli_uses_settings_default_directories(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_settings.markdown_output_dir = tmp_path / "output"
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+
+    def _fake_export_trend_static_site(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+        calls["input_dir"] = input_dir
+        calls["output_dir"] = output_dir
+        calls["limit"] = limit
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            '{"trends_total": 3, "topics_total": 5}\n',
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(
+        recoleta.site,
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["site", "build"],
+    )
+
+    assert result.exit_code == 0
+    assert calls["input_dir"] == fake_settings.markdown_output_dir / "Trends"
+    assert calls["output_dir"] == fake_settings.markdown_output_dir / "site"
+    assert calls["limit"] is None
+    assert "site build completed" in result.stdout
+
+
+def test_site_stage_cli_uses_repo_local_default_output_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_settings.markdown_output_dir = tmp_path / "output"
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+    monkeypatch.chdir(tmp_path)
+
+    def _fake_stage_trend_site_source(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+        calls["input_dir"] = input_dir
+        calls["output_dir"] = output_dir
+        calls["limit"] = limit
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            '{"trends_total": 4, "pdf_total": 2}\n',
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(
+        recoleta.site,
+        "stage_trend_site_source",
+        _fake_stage_trend_site_source,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["site", "stage"],
+    )
+
+    assert result.exit_code == 0
+    assert calls["input_dir"] == fake_settings.markdown_output_dir / "Trends"
+    assert calls["output_dir"] == tmp_path / "site-content" / "Trends"
+    assert calls["limit"] is None
+    assert "site stage completed" in result.stdout
+
+
+def test_site_build_cli_with_explicit_paths_does_not_require_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    calls: dict[str, object] = {}
+
+    def _fail_build_settings():  # type: ignore[no-untyped-def]
+        raise AssertionError("settings should not be loaded")
+
+    def _fake_export_trend_static_site(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+        calls["input_dir"] = input_dir
+        calls["output_dir"] = output_dir
+        calls["limit"] = limit
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            '{"trends_total": 3, "topics_total": 5}\n',
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", _fail_build_settings)
+    monkeypatch.setattr(
+        recoleta.site,
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "site",
+            "build",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["input_dir"] == input_dir.resolve()
+    assert calls["output_dir"] == output_dir.resolve()
+    assert calls["limit"] is None
+    assert "site build completed" in result.stdout
+
+
+def test_site_stage_cli_with_explicit_paths_does_not_require_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    calls: dict[str, object] = {}
+
+    def _fail_build_settings():  # type: ignore[no-untyped-def]
+        raise AssertionError("settings should not be loaded")
+
+    def _fake_stage_trend_site_source(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+        calls["input_dir"] = input_dir
+        calls["output_dir"] = output_dir
+        calls["limit"] = limit
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            '{"trends_total": 4, "pdf_total": 2}\n',
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", _fail_build_settings)
+    monkeypatch.setattr(
+        recoleta.site,
+        "stage_trend_site_source",
+        _fake_stage_trend_site_source,
+    )
+
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "site",
+            "stage",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["input_dir"] == input_dir.resolve()
+    assert calls["output_dir"] == output_dir.resolve()
+    assert calls["limit"] is None
+    assert "site stage completed" in result.stdout
