@@ -5,7 +5,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from threading import Thread
 
-from telegram import Bot
+from telegram import Bot, InputFile
 from telegram.constants import ParseMode
 from telegram.error import NetworkError, RetryAfter, TimedOut
 from tenacity import (
@@ -45,9 +45,7 @@ class TelegramSender:
         self.token = token
         self.chat_id = chat_id
 
-    async def _send_async(self, text: str) -> str:
-        bot = Bot(token=self.token)
-
+    def _retrying(self) -> AsyncRetrying:
         class _TelegramWait(wait_base):
             def __init__(self) -> None:
                 self._fallback = wait_exponential_jitter(initial=0.5, max=8.0)
@@ -67,13 +65,16 @@ class TelegramSender:
                 except Exception:
                     return self._fallback(retry_state)
 
-        retrying = AsyncRetrying(
+        return AsyncRetrying(
             retry=retry_if_exception_type((RetryAfter, TimedOut, NetworkError)),
             stop=stop_after_attempt(4),
             wait=_TelegramWait(),
             reraise=True,
         )
-        async for attempt in retrying:
+
+    async def _send_async(self, text: str) -> str:
+        bot = Bot(token=self.token)
+        async for attempt in self._retrying():
             with attempt:
                 message = await bot.send_message(
                     chat_id=self.chat_id,
@@ -84,6 +85,27 @@ class TelegramSender:
                 return str(message.message_id)
         raise RuntimeError("Failed to send message after retries")
 
+    async def _send_document_async(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        caption: str | None = None,
+    ) -> str:
+        bot = Bot(token=self.token)
+        document = InputFile(content, filename=filename)
+        async for attempt in self._retrying():
+            with attempt:
+                message = await bot.send_document(
+                    chat_id=self.chat_id,
+                    document=document,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                    disable_content_type_detection=True,
+                )
+                return str(message.message_id)
+        raise RuntimeError("Failed to send document after retries")
+
     def send(self, text: str) -> str:
         try:
             asyncio.get_running_loop()
@@ -91,3 +113,31 @@ class TelegramSender:
             return asyncio.run(self._send_async(text))
 
         return _run_blocking_in_thread(lambda: asyncio.run(self._send_async(text)))
+
+    def send_document(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        caption: str | None = None,
+    ) -> str:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(
+                self._send_document_async(
+                    filename=filename,
+                    content=content,
+                    caption=caption,
+                )
+            )
+
+        return _run_blocking_in_thread(
+            lambda: asyncio.run(
+                self._send_document_async(
+                    filename=filename,
+                    content=content,
+                    caption=caption,
+                )
+            )
+        )

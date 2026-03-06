@@ -58,10 +58,27 @@ class FakeAnalyzer:
 class FakeTelegramSender:
     def __init__(self) -> None:
         self.messages: list[str] = []
+        self.documents: list[dict[str, Any]] = []
 
     def send(self, text: str) -> str:
         self.messages.append(text)
         return f"message-{len(self.messages)}"
+
+    def send_document(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        caption: str | None = None,
+    ) -> str:
+        self.documents.append(
+            {
+                "filename": filename,
+                "content": content,
+                "caption": caption,
+            }
+        )
+        return f"document-{len(self.documents)}"
 
 
 class FlakyTelegramSender:

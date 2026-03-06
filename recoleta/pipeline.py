@@ -48,6 +48,8 @@ from recoleta.observability import (
 from recoleta.ports import RepositoryPort
 from recoleta.publish import (
     build_telegram_message,
+    build_telegram_trend_document_caption,
+    render_trend_note_pdf,
     write_markdown_note,
     write_markdown_run_index,
     write_markdown_trend_note,
@@ -3025,10 +3027,30 @@ class PipelineService:
                 raise ValueError(
                     "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
                 )
+            if "telegram" in targets:
+                if (
+                    self.settings.telegram_bot_token is None
+                    or self.settings.telegram_chat_id is None
+                ):
+                    raise ValueError(
+                        "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'"
+                    )
+                if self.telegram_sender is None:
+                    self.telegram_sender = TelegramSender(
+                        token=self.settings.telegram_bot_token.get_secret_value(),
+                        chat_id=self.settings.telegram_chat_id.get_secret_value(),
+                    )
 
-            try:
-                if "markdown" in targets:
-                    write_markdown_trend_note(
+            markdown_note_path: Path | None = None
+            pdf_generated_total = 0
+            pdf_failed_total = 0
+            telegram_sent_total = 0
+            telegram_failed_total = 0
+
+            if "markdown" in targets or "telegram" in targets:
+                try:
+                    # Telegram trend delivery renders from the canonical markdown note.
+                    markdown_note_path = write_markdown_trend_note(
                         output_dir=self.settings.markdown_output_dir,
                         trend_doc_id=doc_id,
                         title=title_for_notes,
@@ -3041,10 +3063,13 @@ class PipelineService:
                         clusters=clusters_for_notes,
                         highlights=highlights_for_notes,
                     )
-                if (
-                    "obsidian" in targets
-                    and self.settings.obsidian_vault_path is not None
-                ):
+                except Exception as note_exc:  # noqa: BLE001
+                    log.bind(module="pipeline.trends.markdown_note").warning(
+                        "Trend markdown note write failed: {}",
+                        self._sanitize_error_message(str(note_exc)),
+                    )
+            if "obsidian" in targets and self.settings.obsidian_vault_path is not None:
+                try:
                     write_obsidian_trend_note(
                         vault_path=self.settings.obsidian_vault_path,
                         base_folder=self.settings.obsidian_base_folder,
@@ -3059,11 +3084,77 @@ class PipelineService:
                         clusters=clusters_for_notes,
                         highlights=highlights_for_notes,
                     )
-            except Exception as note_exc:  # noqa: BLE001
-                log.warning(
-                    "Trend note write failed: {}",
-                    self._sanitize_error_message(str(note_exc)),
-                )
+                except Exception as note_exc:  # noqa: BLE001
+                    log.bind(module="pipeline.trends.obsidian_note").warning(
+                        "Trend obsidian note write failed: {}",
+                        self._sanitize_error_message(str(note_exc)),
+                    )
+
+            if "telegram" in targets:
+                trend_pdf_path: Path | None = None
+                try:
+                    if markdown_note_path is None:
+                        raise RuntimeError(
+                            "trend markdown note is unavailable for PDF delivery"
+                        )
+                    trend_pdf_path = render_trend_note_pdf(
+                        markdown_path=markdown_note_path
+                    )
+                    pdf_generated_total = 1
+                except Exception as pdf_exc:  # noqa: BLE001
+                    pdf_failed_total = 1
+                    log.bind(module="pipeline.trends.pdf").warning(
+                        "Trend PDF render failed: {}",
+                        self._sanitize_error_message(str(pdf_exc)),
+                    )
+
+                if trend_pdf_path is not None:
+                    try:
+                        if self.telegram_sender is None:
+                            raise RuntimeError("telegram sender is not configured")
+                        caption = build_telegram_trend_document_caption(
+                            title=title_for_notes,
+                            overview_md=overview_md_for_notes,
+                            granularity=normalized_granularity,
+                            period_start=period_start,
+                        )
+                        _ = self.telegram_sender.send_document(
+                            filename=trend_pdf_path.name,
+                            content=trend_pdf_path.read_bytes(),
+                            caption=caption,
+                        )
+                        telegram_sent_total = 1
+                    except Exception as telegram_exc:  # noqa: BLE001
+                        telegram_failed_total = 1
+                        log.bind(module="pipeline.trends.telegram").warning(
+                            "Trend Telegram delivery failed: {}",
+                            self._sanitize_error_message(str(telegram_exc)),
+                        )
+
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.pdf.generated_total",
+                value=pdf_generated_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.pdf.failed_total",
+                value=pdf_failed_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.telegram.sent_total",
+                value=telegram_sent_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.telegram.failed_total",
+                value=telegram_failed_total,
+                unit="count",
+            )
 
             if include_debug and debug is not None:
                 artifact_path = self._write_debug_artifact(

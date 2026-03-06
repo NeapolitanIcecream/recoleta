@@ -4,9 +4,11 @@ from datetime import datetime, timezone
 import html
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
+import fitz
+from markdown_it import MarkdownIt
 import yaml
 from slugify import slugify
 
@@ -517,178 +519,479 @@ def write_markdown_run_index(
     return latest_path
 
 
-def build_telegram_message(*, title: str, summary: str, url: str) -> str:
-    max_chars = 4096
+def _split_yaml_frontmatter_text(text: str) -> tuple[dict[str, Any], str]:
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return {}, normalized
 
-    title_raw = str(title or "").strip() or "Untitled"
-    summary_raw = str(summary or "").strip()
-    url_raw = str(url or "").strip()
+    end_idx: int | None = None
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            end_idx = idx
+            break
+    if end_idx is None:
+        return {}, normalized
 
-    def _format_telegram_summary_html(text: str) -> str:
-        raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-        if not raw:
-            return ""
+    raw = "\n".join(lines[1:end_idx]).strip()
+    body = "\n".join(lines[end_idx + 1 :]).lstrip("\n")
+    if not raw:
+        return {}, body
 
-        codeblocks: list[str] = []
+    try:
+        loaded = yaml.safe_load(raw)
+    except Exception:
+        return {}, body
+    if isinstance(loaded, dict):
+        return loaded, body
+    return {}, body
 
-        def _stash_codeblock(match: re.Match[str]) -> str:
-            code = (match.group(1) or "").strip("\n")
-            token = f"\x00CB{len(codeblocks)}\x00"
-            codeblocks.append(f"<pre><code>{html.escape(code)}</code></pre>")
+
+def _normalize_obsidian_callouts_for_pdf(text: str) -> str:
+    lines = str(text or "").splitlines()
+    if not lines:
+        return ""
+
+    normalized: list[str] = []
+    idx = 0
+    while idx < len(lines):
+        match = re.match(r"^\s*>\s*\[!([^\]]+)\][-+]?\s*(.*)$", lines[idx])
+        if match is None:
+            normalized.append(lines[idx])
+            idx += 1
+            continue
+
+        callout_kind = str(match.group(1) or "").strip().replace("-", " ")
+        title = str(match.group(2) or "").strip() or callout_kind.title()
+        body_lines: list[str] = []
+        idx += 1
+        while idx < len(lines):
+            current = lines[idx]
+            if not current.lstrip().startswith(">"):
+                break
+            body_lines.append(re.sub(r"^\s*>\s?", "", current))
+            idx += 1
+
+        normalized.extend(["", f"## {title}", ""])
+        normalized.extend(body_lines)
+        if body_lines and body_lines[-1].strip():
+            normalized.append("")
+    return "\n".join(normalized).strip() + "\n"
+
+
+def _trend_pdf_meta_chips(frontmatter: dict[str, Any]) -> list[str]:
+    chips = ["Recoleta Trend Brief"]
+    granularity = str(frontmatter.get("granularity") or "").strip().lower()
+    raw_period_start = str(frontmatter.get("period_start") or "").strip()
+    if granularity:
+        chips.append(granularity.title())
+    if granularity and raw_period_start:
+        try:
+            period_start = datetime.fromisoformat(raw_period_start)
+            if period_start.tzinfo is None:
+                period_start = period_start.replace(tzinfo=timezone.utc)
+            chips.append(_trend_date_token(granularity=granularity, period_start=period_start))
+        except Exception:
+            chips.append(raw_period_start)
+    topics = frontmatter.get("topics")
+    if isinstance(topics, list) and topics:
+        chips.append(f"{len(topics)} topics")
+    return chips
+
+
+def _build_trend_pdf_html(*, body_html: str, frontmatter: dict[str, Any]) -> str:
+    chips = "".join(
+        f"<span class='meta-chip'>{html.escape(str(chip))}</span>"
+        for chip in _trend_pdf_meta_chips(frontmatter)
+    )
+    return (
+        "<html>"
+        "<body>"
+        "<div class='page-shell'>"
+        "<div class='hero'>"
+        "<div class='hero-kicker'>Recoleta</div>"
+        f"<div class='hero-chips'>{chips}</div>"
+        "</div>"
+        f"<main class='content'>{body_html}</main>"
+        "</div>"
+        "</body>"
+        "</html>"
+    )
+
+
+_TREND_PDF_CSS = """
+body {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.58;
+  color: #16313d;
+  background: #fffaf5;
+}
+.page-shell {
+  padding: 0;
+}
+.hero {
+  margin-bottom: 22pt;
+  padding: 16pt 18pt;
+  border-radius: 18pt;
+  background: #f5ede3;
+  border: 1pt solid #dec9ae;
+}
+.hero-kicker {
+  margin-bottom: 8pt;
+  font-size: 9pt;
+  font-weight: bold;
+  letter-spacing: 1.8pt;
+  text-transform: uppercase;
+  color: #9a5a25;
+}
+.hero-chips {
+  margin-top: 4pt;
+}
+.meta-chip {
+  display: inline-block;
+  margin: 0 6pt 6pt 0;
+  padding: 4pt 10pt;
+  border-radius: 999pt;
+  background: #fffdf8;
+  border: 1pt solid #dec9ae;
+  color: #7d4b1f;
+  font-size: 9.5pt;
+}
+h1 {
+  margin: 0 0 12pt 0;
+  font-size: 23pt;
+  line-height: 1.2;
+  color: #102a37;
+}
+h2 {
+  margin: 20pt 0 8pt 0;
+  padding-bottom: 4pt;
+  font-size: 15.5pt;
+  line-height: 1.25;
+  color: #184154;
+  border-bottom: 1pt solid #e6d8c5;
+}
+h3 {
+  margin: 16pt 0 6pt 0;
+  font-size: 13pt;
+  color: #22536a;
+}
+h4, h5, h6 {
+  margin: 12pt 0 4pt 0;
+  font-size: 11pt;
+  color: #22536a;
+}
+p {
+  margin: 0 0 10pt 0;
+}
+ul, ol {
+  margin: 0 0 12pt 18pt;
+}
+li {
+  margin: 0 0 4pt 0;
+}
+blockquote {
+  margin: 0 0 14pt 0;
+  padding: 10pt 12pt;
+  border-left: 3pt solid #c9813a;
+  background: #fff8ef;
+  color: #31505e;
+}
+pre {
+  margin: 0 0 14pt 0;
+  padding: 12pt;
+  border-radius: 12pt;
+  background: #16212b;
+  color: #f8fafc;
+  font-size: 9pt;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+code {
+  padding: 1pt 4pt;
+  border-radius: 6pt;
+  background: #f4eee5;
+  border: 1pt solid #e7dac7;
+  font-size: 9.5pt;
+}
+a {
+  color: #b85a1c;
+  text-decoration: none;
+}
+hr {
+  margin: 18pt 0;
+  border: 0;
+  border-top: 1pt solid #e6d8c5;
+}
+table {
+  width: 100%;
+  margin: 0 0 14pt 0;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 6pt 8pt;
+  border: 1pt solid #eadfce;
+}
+th {
+  background: #f7f0e4;
+}
+strong {
+  color: #102a37;
+}
+"""
+
+
+def render_trend_note_pdf(
+    *,
+    markdown_path: Path,
+    output_path: Path | None = None,
+) -> Path:
+    markdown_path = markdown_path.expanduser().resolve()
+    if not markdown_path.exists():
+        raise ValueError(f"Trend markdown note does not exist: {markdown_path}")
+    if not markdown_path.is_file():
+        raise ValueError(f"Trend markdown note must be a file: {markdown_path}")
+
+    resolved_output_path = (
+        output_path.expanduser().resolve()
+        if output_path is not None
+        else markdown_path.with_suffix(".pdf")
+    )
+    resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    frontmatter, markdown_body = _split_yaml_frontmatter_text(
+        markdown_path.read_text(encoding="utf-8")
+    )
+    normalized_body = _normalize_obsidian_callouts_for_pdf(markdown_body).strip()
+    if not normalized_body:
+        normalized_body = "# Trend\n"
+
+    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
+    body_html = markdown.render(normalized_body)
+    document_html = _build_trend_pdf_html(
+        body_html=body_html,
+        frontmatter=frontmatter,
+    )
+
+    page_rect = fitz.paper_rect("a4")
+    content_rect = fitz.Rect(42, 42, page_rect.width - 42, page_rect.height - 42)
+
+    def _rect_fn(rect_num: int, _filled: fitz.Rect) -> tuple[fitz.Rect, fitz.Rect, None]:
+        _ = rect_num
+        return page_rect, content_rect, None
+
+    writer = fitz.DocumentWriter(str(resolved_output_path), "compress")
+    try:
+        fitz.Story(document_html, user_css=_TREND_PDF_CSS, em=11).write(
+            writer, _rect_fn
+        )
+    finally:
+        writer.close()
+    return resolved_output_path
+
+
+def _format_telegram_markdownish_html(text: str) -> str:
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not raw:
+        return ""
+
+    codeblocks: list[str] = []
+
+    def _stash_codeblock(match: re.Match[str]) -> str:
+        code = (match.group(1) or "").strip("\n")
+        token = f"\x00CB{len(codeblocks)}\x00"
+        codeblocks.append(f"<pre><code>{html.escape(code)}</code></pre>")
+        return token
+
+    raw = re.sub(r"```[^\n]*\n([\s\S]*?)```", _stash_codeblock, raw)
+
+    codespans: list[str] = []
+
+    def _inline_to_html(line: str) -> str:
+        def _apply_outside_tags(value: str, transform: Any) -> str:
+            parts = re.split(r"(<[^>]+>)", value)
+            for idx in range(0, len(parts), 2):
+                parts[idx] = transform(parts[idx])
+            return "".join(parts)
+
+        def _stash_codespan(match: re.Match[str]) -> str:
+            code = match.group(1) or ""
+            token = f"\x00CS{len(codespans)}\x00"
+            codespans.append(f"<code>{html.escape(code)}</code>")
             return token
 
-        raw = re.sub(r"```[^\n]*\n([\s\S]*?)```", _stash_codeblock, raw)
+        protected = re.sub(r"`([^`\n]+)`", _stash_codespan, line)
+        escaped = html.escape(protected, quote=True)
 
-        codespans: list[str] = []
+        def _replace_link(match: re.Match[str]) -> str:
+            label = match.group(1) or ""
+            url_escaped = match.group(2) or ""
+            url_unescaped = html.unescape(url_escaped)
+            try:
+                parsed = urlparse(url_unescaped)
+            except Exception:
+                return match.group(0)
+            if parsed.scheme and parsed.scheme not in {"http", "https"}:
+                return f"{label} ({url_escaped})"
+            safe_href = html.escape(url_unescaped, quote=True)
+            return f'<a href="{safe_href}">{label}</a>'
 
-        def _inline_to_html(line: str) -> str:
-            def _apply_outside_tags(value: str, transform: Any) -> str:
-                parts = re.split(r"(<[^>]+>)", value)
-                for idx in range(0, len(parts), 2):
-                    parts[idx] = transform(parts[idx])
-                return "".join(parts)
+        escaped = re.sub(r"\[([^\]\n]+)\]\(([^)\s\n]+)\)", _replace_link, escaped)
+        escaped = _apply_outside_tags(
+            escaped,
+            lambda s: re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", s),
+        )
+        escaped = _apply_outside_tags(
+            escaped,
+            lambda s: re.sub(r"__([^\n]+?)__", r"<b>\1</b>", s),
+        )
+        escaped = _apply_outside_tags(
+            escaped,
+            lambda s: re.sub(r"(?<!\*)\*([^\n]+?)\*(?!\*)", r"<i>\1</i>", s),
+        )
+        escaped = _apply_outside_tags(
+            escaped,
+            lambda s: re.sub(r"(?<!_)_([^\n]+?)_(?!_)", r"<i>\1</i>", s),
+        )
 
-            # Protect inline code spans first so we don't interpret markdown inside them.
-            def _stash_codespan(match: re.Match[str]) -> str:
-                code = match.group(1) or ""
-                token = f"\x00CS{len(codespans)}\x00"
-                codespans.append(f"<code>{html.escape(code)}</code>")
-                return token
+        for idx, html_snippet in enumerate(codespans):
+            escaped = escaped.replace(f"\x00CS{idx}\x00", html_snippet)
+        return escaped
 
-            protected = re.sub(r"`([^`\n]+)`", _stash_codespan, line)
-            escaped = html.escape(protected, quote=True)
-
-            # Links: [label](url)
-            def _replace_link(match: re.Match[str]) -> str:
-                label = match.group(1) or ""
-                url_escaped = match.group(2) or ""
-                url_unescaped = html.unescape(url_escaped)
-                try:
-                    parsed = urlparse(url_unescaped)
-                except Exception:
-                    return match.group(0)
-                if parsed.scheme and parsed.scheme not in {"http", "https"}:
-                    return f"{label} ({url_escaped})"
-                safe_href = html.escape(url_unescaped, quote=True)
-                return f'<a href="{safe_href}">{label}</a>'
-
-            escaped = re.sub(r"\[([^\]\n]+)\]\(([^)\s\n]+)\)", _replace_link, escaped)
-
-            # Bold: **text** or __text__
-            escaped = _apply_outside_tags(
-                escaped,
-                lambda s: re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", s),
-            )
-            escaped = _apply_outside_tags(
-                escaped,
-                lambda s: re.sub(r"__([^\n]+?)__", r"<b>\1</b>", s),
-            )
-
-            # Italic: *text* or _text_ (avoid bold markers)
-            escaped = _apply_outside_tags(
-                escaped,
-                lambda s: re.sub(
-                    r"(?<!\*)\*([^\n]+?)\*(?!\*)",
-                    r"<i>\1</i>",
-                    s,
-                ),
-            )
-            escaped = _apply_outside_tags(
-                escaped,
-                lambda s: re.sub(r"(?<!_)_([^\n]+?)_(?!_)", r"<i>\1</i>", s),
-            )
-
-            for idx, html_snippet in enumerate(codespans):
-                escaped = escaped.replace(f"\x00CS{idx}\x00", html_snippet)
-            return escaped
-
-        lines: list[str] = []
-        for raw_line in raw.splitlines():
-            stripped = raw_line.strip()
-            cb = re.fullmatch(r"\x00CB(\d+)\x00", stripped)
-            if cb:
-                idx = int(cb.group(1))
-                if 0 <= idx < len(codeblocks):
-                    lines.append(codeblocks[idx])
-                    continue
-
-            if not stripped:
-                lines.append("")
+    lines: list[str] = []
+    for raw_line in raw.splitlines():
+        stripped = raw_line.strip()
+        cb = re.fullmatch(r"\x00CB(\d+)\x00", stripped)
+        if cb:
+            idx = int(cb.group(1))
+            if 0 <= idx < len(codeblocks):
+                lines.append(codeblocks[idx])
                 continue
 
-            heading = re.match(r"^\s*#{1,6}\s+(.*)$", raw_line)
-            if heading:
-                content = heading.group(1).strip()
-                lines.append(f"<b>{_inline_to_html(content)}</b>")
-                continue
+        if not stripped:
+            lines.append("")
+            continue
 
-            bullet = re.match(r"^\s*[-*]\s+(.*)$", raw_line)
-            if bullet:
-                content = bullet.group(1).strip()
-                lines.append(f"• {_inline_to_html(content)}")
-                continue
+        heading = re.match(r"^\s*#{1,6}\s+(.*)$", raw_line)
+        if heading:
+            content = heading.group(1).strip()
+            lines.append(f"<b>{_inline_to_html(content)}</b>")
+            continue
 
-            lines.append(_inline_to_html(raw_line.strip()))
+        bullet = re.match(r"^\s*[-*]\s+(.*)$", raw_line)
+        if bullet:
+            content = bullet.group(1).strip()
+            lines.append(f"• {_inline_to_html(content)}")
+            continue
 
-        rendered = "\n".join(lines).strip()
-        while "\n\n\n" in rendered:
-            rendered = rendered.replace("\n\n\n", "\n\n")
-        return rendered
+        lines.append(_inline_to_html(raw_line.strip()))
 
-    def _link_label(value: str) -> str:
-        try:
-            parsed = urlparse(value)
-            if parsed.netloc:
-                return parsed.netloc
-        except Exception:
-            pass
-        return "Open"
+    rendered = "\n".join(lines).strip()
+    while "\n\n\n" in rendered:
+        rendered = rendered.replace("\n\n\n", "\n\n")
+    return rendered
 
-    def _render(summary_text: str) -> str:
-        safe_title = html.escape(title_raw)
-        safe_summary = _format_telegram_summary_html(summary_text)
-        safe_url_attr = html.escape(url_raw, quote=True)
-        safe_label = html.escape(_link_label(url_raw))
 
-        lines = [
-            f"<b>{safe_title}</b>",
-            "",
-            "<b>Summary:</b>",
-            safe_summary,
-            "",
-            f'<b>Link:</b> <a href="{safe_url_attr}">{safe_label}</a>',
-        ]
-        return "\n".join(lines).strip()
-
-    message = _render(summary_raw)
+def _truncate_telegram_text(
+    *,
+    raw_text: str,
+    max_chars: int,
+    render: Callable[[str], str],
+) -> str:
+    message = render(raw_text)
     if len(message) <= max_chars:
         return message
+    if not raw_text:
+        return render("…")[:max_chars]
 
-    if not summary_raw:
-        return _render("…")[:max_chars]
-
-    # Truncate summary while keeping HTML valid (escape happens after truncation).
     lo = 0
-    hi = len(summary_raw)
+    hi = len(raw_text)
     best = ""
     while lo <= hi:
         mid = (lo + hi) // 2
-        candidate = summary_raw[:mid].rstrip()
+        candidate = raw_text[:mid].rstrip()
         if candidate.count("```") % 2 == 1:
             candidate = candidate.rsplit("```", 1)[0].rstrip()
-        candidate_msg = _render(candidate + "…")
-        if len(candidate_msg) <= max_chars:
+        candidate_message = render(candidate + "…")
+        if len(candidate_message) <= max_chars:
             best = candidate
             lo = mid + 1
         else:
             hi = mid - 1
 
     if best:
-        # Prefer breaking at a boundary for readability.
         boundary = max(best.rfind("\n"), best.rfind(" "))
         if boundary >= 120:
             best = best[:boundary].rstrip()
-        return _render(best + "…")
+        return render(best + "…")
+    return render("…")[:max_chars]
 
-    # Extremely small budget: still return a valid, short message.
-    return _render("…")[:max_chars]
+
+def _link_label(value: str) -> str:
+    try:
+        parsed = urlparse(value)
+        if parsed.netloc:
+            return parsed.netloc
+    except Exception:
+        pass
+    return "Open"
+
+
+def build_telegram_message(*, title: str, summary: str, url: str) -> str:
+    title_raw = str(title or "").strip() or "Untitled"
+    summary_raw = str(summary or "").strip()
+    url_raw = str(url or "").strip()
+
+    def _render(summary_text: str) -> str:
+        safe_title = html.escape(title_raw)
+        safe_summary = _format_telegram_markdownish_html(summary_text)
+        safe_url_attr = html.escape(url_raw, quote=True)
+        safe_label = html.escape(_link_label(url_raw))
+        return "\n".join(
+            [
+                f"<b>{safe_title}</b>",
+                "",
+                "<b>Summary:</b>",
+                safe_summary,
+                "",
+                f'<b>Link:</b> <a href="{safe_url_attr}">{safe_label}</a>',
+            ]
+        ).strip()
+
+    return _truncate_telegram_text(raw_text=summary_raw, max_chars=4096, render=_render)
+
+
+def build_telegram_trend_document_caption(
+    *,
+    title: str,
+    overview_md: str,
+    granularity: str,
+    period_start: datetime,
+) -> str:
+    title_raw = str(title or "").strip() or "Trend"
+    overview_raw = str(overview_md or "").strip()
+    period_token = _trend_date_token(
+        granularity=granularity,
+        period_start=period_start,
+    )
+    period_label = f"{str(granularity or '').strip().title()} · {period_token}".strip(
+        " ·"
+    )
+
+    def _render(overview_text: str) -> str:
+        safe_title = html.escape(title_raw)
+        safe_overview = _format_telegram_markdownish_html(overview_text)
+        safe_period = html.escape(period_label)
+        return "\n".join(
+            [
+                f"<b>{safe_title}</b>",
+                "",
+                "<b>Overview:</b>",
+                safe_overview,
+                "",
+                f"<b>Period:</b> {safe_period}",
+            ]
+        ).strip()
+
+    return _truncate_telegram_text(raw_text=overview_raw, max_chars=1024, render=_render)
