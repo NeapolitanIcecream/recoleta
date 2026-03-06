@@ -21,6 +21,7 @@ class TrendAgentDeps:
     run_id: str
     period_start: datetime
     period_end: datetime
+    rag_sources: list[dict[str, Any]] | None
     embedding_model: str
     embedding_dimensions: int | None
     embedding_batch_max_inputs: int
@@ -61,6 +62,71 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
     )
 
 
+def resolve_rag_query_sources(
+    *,
+    doc_type: str,
+    granularity: str | None,
+    rag_sources: list[dict[str, Any]] | None,
+) -> list[tuple[str, str | None]]:
+    normalized_type = str(doc_type or "").strip().lower()
+    if normalized_type not in {"item", "trend"}:
+        return []
+
+    normalized_granularity = (
+        str(granularity or "").strip().lower() if granularity is not None else ""
+    )
+    normalized_sources: list[tuple[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
+    for source in rag_sources or []:
+        if not isinstance(source, dict):
+            continue
+        source_type = str(source.get("doc_type") or "").strip().lower()
+        if source_type not in {"item", "trend"}:
+            continue
+        source_granularity = (
+            str(source.get("granularity") or "").strip().lower()
+            if source.get("granularity") is not None
+            else ""
+        )
+        key = (
+            source_type,
+            source_granularity or None if source_type == "trend" else None,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_sources.append(key)
+
+    if not normalized_sources:
+        if normalized_type == "item":
+            return [("item", None)]
+        return [("trend", normalized_granularity or None)]
+
+    allowed_sources = [
+        source for source in normalized_sources if source[0] == normalized_type
+    ]
+    if not allowed_sources:
+        return []
+    if normalized_type == "item":
+        return [("item", None)]
+    if normalized_granularity:
+        requested = ("trend", normalized_granularity)
+        return [requested] if requested in allowed_sources else []
+    return allowed_sources
+
+
+def _doc_event_sort_key(doc: Any) -> tuple[float, int]:
+    raw_event = getattr(doc, "published_at", None)
+    if not isinstance(raw_event, datetime):
+        raw_event = getattr(doc, "period_start", None)
+    event_ts = raw_event.timestamp() if isinstance(raw_event, datetime) else 0.0
+    try:
+        doc_id = int(getattr(doc, "id") or 0)
+    except Exception:
+        doc_id = 0
+    return event_ts, doc_id
+
+
 def build_trend_agent(
     *, llm_model: str, output_language: str | None = None
 ) -> Agent[TrendAgentDeps, TrendPayload]:
@@ -84,15 +150,41 @@ def build_trend_agent(
         limit: int = 50,
     ) -> dict[str, Any]:
         deps = ctx.deps
-        docs = deps.repository.list_documents(
-            doc_type=str(doc_type or "").strip().lower(),
-            period_start=deps.period_start,
-            period_end=deps.period_end,
-            granularity=(str(granularity).strip().lower() if granularity else None),
-            order_by=str(order_by or "event_desc").strip(),
-            offset=int(offset or 0),
-            limit=int(limit or 50),
+        requested_sources = resolve_rag_query_sources(
+            doc_type=doc_type,
+            granularity=granularity,
+            rag_sources=deps.rag_sources,
         )
+        normalized_order = str(order_by or "event_desc").strip()
+        normalized_offset = max(0, int(offset or 0))
+        normalized_limit = max(0, int(limit or 50))
+        if not requested_sources or normalized_limit <= 0:
+            return {"docs": [], "returned": 0}
+
+        docs: list[Any] = []
+        seen_doc_ids: set[int] = set()
+        for source_doc_type, source_granularity in requested_sources:
+            rows = deps.repository.list_documents(
+                doc_type=source_doc_type,
+                period_start=deps.period_start,
+                period_end=deps.period_end,
+                granularity=source_granularity,
+                order_by=normalized_order,
+                offset=0,
+                limit=normalized_limit,
+            )
+            for doc in rows:
+                try:
+                    doc_id = int(getattr(doc, "id") or 0)
+                except Exception:
+                    continue
+                if doc_id <= 0 or doc_id in seen_doc_ids:
+                    continue
+                seen_doc_ids.add(doc_id)
+                docs.append(doc)
+
+        docs.sort(key=_doc_event_sort_key, reverse=normalized_order != "event_asc")
+        docs = docs[normalized_offset : normalized_offset + normalized_limit]
         out: list[dict[str, Any]] = []
         for doc in docs:
             published_at = getattr(doc, "published_at", None)
@@ -178,16 +270,52 @@ def build_trend_agent(
         ctx: RunContext[TrendAgentDeps],
         query: str,
         doc_type: str,
+        granularity: str | None = None,
         limit: int = 10,
     ) -> dict[str, Any]:
         deps = ctx.deps
-        hits = deps.repository.search_chunks_text(
-            query=str(query or ""),
-            doc_type=str(doc_type or "").strip().lower(),
-            period_start=deps.period_start,
-            period_end=deps.period_end,
-            limit=int(limit or 10),
+        requested_sources = resolve_rag_query_sources(
+            doc_type=doc_type,
+            granularity=granularity,
+            rag_sources=deps.rag_sources,
         )
+        normalized_limit = max(1, int(limit or 10))
+        if not requested_sources:
+            return {"hits": [], "returned": 0}
+
+        hits: list[dict[str, Any]] = []
+        seen_hits: set[tuple[int, int]] = set()
+        for source_doc_type, source_granularity in requested_sources:
+            rows = deps.repository.search_chunks_text(
+                query=str(query or ""),
+                doc_type=source_doc_type,
+                granularity=source_granularity,
+                period_start=deps.period_start,
+                period_end=deps.period_end,
+                limit=normalized_limit,
+            )
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    key = (
+                        int(row.get("doc_id") or 0),
+                        int(row.get("chunk_index") or -1),
+                    )
+                except Exception:
+                    continue
+                if key[0] <= 0 or key[1] < 0 or key in seen_hits:
+                    continue
+                seen_hits.add(key)
+                hits.append(row)
+        hits.sort(
+            key=lambda row: (
+                float(row.get("rank") or 0.0),
+                int(row.get("doc_id") or 0),
+                int(row.get("chunk_index") or 0),
+            )
+        )
+        hits = hits[:normalized_limit]
         return {"hits": hits, "returned": len(hits)}
 
     @agent.tool
@@ -195,26 +323,60 @@ def build_trend_agent(
         ctx: RunContext[TrendAgentDeps],
         query: str,
         doc_type: str,
+        granularity: str | None = None,
         limit: int = 10,
     ) -> dict[str, Any]:
         deps = ctx.deps
-        hits = semantic_search_summaries_in_period(
-            repository=deps.repository,
-            vector_store=deps.vector_store,
-            run_id=deps.run_id,
-            doc_type=str(doc_type or "").strip().lower(),
-            period_start=deps.period_start,
-            period_end=deps.period_end,
-            query=str(query or ""),
-            embedding_model=deps.embedding_model,
-            embedding_dimensions=deps.embedding_dimensions,
-            max_batch_inputs=deps.embedding_batch_max_inputs,
-            max_batch_chars=deps.embedding_batch_max_chars,
-            embedding_failure_mode=str(deps.embedding_failure_mode or "continue"),
-            embedding_max_errors=int(deps.embedding_max_errors or 0),
-            limit=int(limit or 10),
-            metric_namespace="pipeline.trends",
+        requested_sources = resolve_rag_query_sources(
+            doc_type=doc_type,
+            granularity=granularity,
+            rag_sources=deps.rag_sources,
         )
+        normalized_limit = max(1, int(limit or 10))
+        if not requested_sources:
+            return {"hits": [], "returned": 0}
+
+        hits: list[Any] = []
+        seen_hits: set[tuple[int, int]] = set()
+        for source_doc_type, source_granularity in requested_sources:
+            rows = semantic_search_summaries_in_period(
+                repository=deps.repository,
+                vector_store=deps.vector_store,
+                run_id=deps.run_id,
+                doc_type=source_doc_type,
+                granularity=source_granularity,
+                period_start=deps.period_start,
+                period_end=deps.period_end,
+                query=str(query or ""),
+                embedding_model=deps.embedding_model,
+                embedding_dimensions=deps.embedding_dimensions,
+                max_batch_inputs=deps.embedding_batch_max_inputs,
+                max_batch_chars=deps.embedding_batch_max_chars,
+                embedding_failure_mode=str(deps.embedding_failure_mode or "continue"),
+                embedding_max_errors=int(deps.embedding_max_errors or 0),
+                limit=normalized_limit,
+                metric_namespace="pipeline.trends",
+            )
+            for hit in rows:
+                try:
+                    key = (
+                        int(getattr(hit, "doc_id")),
+                        int(getattr(hit, "chunk_index")),
+                    )
+                except Exception:
+                    continue
+                if key[0] <= 0 or key[1] < 0 or key in seen_hits:
+                    continue
+                seen_hits.add(key)
+                hits.append(hit)
+        hits.sort(
+            key=lambda hit: (
+                -float(getattr(hit, "score", 0.0) or 0.0),
+                int(getattr(hit, "doc_id") or 0),
+                int(getattr(hit, "chunk_index") or 0),
+            )
+        )
+        hits = hits[:normalized_limit]
         rows = [
             {
                 "chunk_id": h.chunk_id,
@@ -490,6 +652,7 @@ def generate_trend_payload(
         run_id=run_id,
         period_start=period_start,
         period_end=period_end,
+        rag_sources=rag_sources,
         embedding_model=embedding_model,
         embedding_dimensions=embedding_dimensions,
         embedding_batch_max_inputs=embedding_batch_max_inputs,

@@ -31,6 +31,7 @@ def ensure_summary_vectors_for_period(
     vector_store: LanceVectorStore,
     run_id: str,
     doc_type: str,
+    granularity: str | None = None,
     period_start: datetime,
     period_end: datetime,
     embedding_model: str,
@@ -64,6 +65,7 @@ def ensure_summary_vectors_for_period(
 
     rows = repository.list_summary_chunk_index_rows_in_period(
         doc_type=doc_type,
+        granularity=granularity,
         period_start=period_start,
         period_end=period_end,
         limit=limit,
@@ -72,6 +74,7 @@ def ensure_summary_vectors_for_period(
     if not rows:
         return {
             "chunks_total": 0,
+            "candidate_chunk_ids": [],
             "embedded_total": 0,
             "skipped_total": 0,
             "embedding_calls_total": 0,
@@ -105,6 +108,7 @@ def ensure_summary_vectors_for_period(
     if not to_embed_rows:
         return {
             "chunks_total": len(chunk_ids),
+            "candidate_chunk_ids": chunk_ids,
             "embedded_total": 0,
             "skipped_total": skipped_total,
             "embedding_calls_total": 0,
@@ -218,6 +222,7 @@ def ensure_summary_vectors_for_period(
 
     stats = {
         "chunks_total": len(chunk_ids),
+        "candidate_chunk_ids": chunk_ids,
         "embedded_total": embedded_total,
         "skipped_total": skipped_total,
         "embedding_calls_total": embedding_calls_total,
@@ -239,6 +244,7 @@ def semantic_search_summaries_in_period(
     vector_store: LanceVectorStore,
     run_id: str,
     doc_type: str,
+    granularity: str | None = None,
     period_start: datetime,
     period_end: datetime,
     query: str,
@@ -262,6 +268,7 @@ def semantic_search_summaries_in_period(
         vector_store=vector_store,
         run_id=run_id,
         doc_type=doc_type,
+        granularity=granularity,
         period_start=period_start,
         period_end=period_end,
         embedding_model=embedding_model,
@@ -273,6 +280,14 @@ def semantic_search_summaries_in_period(
         limit=corpus_limit,
         offset=0,
     )
+    candidate_chunk_ids = [
+        int(raw_id)
+        for raw_id in list(index_stats.get("candidate_chunk_ids") or [])
+        if int(raw_id or 0) > 0
+    ]
+    if not candidate_chunk_ids:
+        log.info("Semantic search skipped: empty candidate corpus")
+        return []
 
     embedder = LiteLLMEmbedder()
     query_vecs, query_debug = embedder.embed(
@@ -289,7 +304,8 @@ def semantic_search_summaries_in_period(
     where = (
         "kind = 'summary' "
         f"AND doc_type = '{_sanitize_where_string(str(doc_type).strip().lower())}' "
-        f"AND event_start_ts < {end_ts} AND event_end_ts >= {start_ts}"
+        f"AND event_start_ts < {end_ts} AND event_end_ts >= {start_ts} "
+        f"AND chunk_id IN ({', '.join(str(cid) for cid in candidate_chunk_ids)})"
     )
     rows = vector_store.search(
         query_vector=query_vec,

@@ -1169,6 +1169,7 @@ class Repository:
         *,
         query: str,
         doc_type: str,
+        granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
         limit: int = 10,
@@ -1193,6 +1194,22 @@ class Repository:
         else:
             raise ValueError("unsupported doc_type")
 
+        extra_predicates: list[str] = []
+        params = {
+            "query": fts_query,
+            "doc_type": normalized_type,
+            "period_start": period_start,
+            "period_end": period_end,
+            "limit": normalized_limit,
+        }
+        if normalized_type == "trend":
+            normalized_granularity = (
+                str(granularity or "").strip().lower() if granularity is not None else ""
+            )
+            if normalized_granularity:
+                extra_predicates.append("d.granularity = :granularity")
+                params["granularity"] = normalized_granularity
+
         sql = f"""
         SELECT
             dc.id AS chunk_id,
@@ -1208,16 +1225,10 @@ class Repository:
             chunk_fts MATCH :query
             AND d.doc_type = :doc_type
             AND {period_pred}
+            {"AND " + " AND ".join(extra_predicates) if extra_predicates else ""}
         ORDER BY rank ASC
         LIMIT :limit
         """
-        params = {
-            "query": fts_query,
-            "doc_type": normalized_type,
-            "period_start": period_start,
-            "period_end": period_end,
-            "limit": normalized_limit,
-        }
         with self.engine.begin() as conn:
             rows = conn.execute(text(sql), params).mappings().all()
         out: list[dict[str, Any]] = []
@@ -1300,6 +1311,7 @@ class Repository:
         self,
         *,
         doc_type: str,
+        granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
         limit: int = 500,
@@ -1338,6 +1350,15 @@ class Repository:
                     cast(Any, Document.period_start) < period_end,
                     cast(Any, Document.period_end) > period_start,
                 )
+                normalized_granularity = (
+                    str(granularity or "").strip().lower()
+                    if granularity is not None
+                    else ""
+                )
+                if normalized_granularity:
+                    statement = statement.where(
+                        Document.granularity == normalized_granularity
+                    )
                 statement = statement.order_by(desc(cast(Any, DocumentChunk.id)))
             else:
                 raise ValueError("unsupported doc_type")
@@ -1378,6 +1399,7 @@ class Repository:
                     "chunk_id": int(chunk_id),
                     "doc_id": int(doc_id),
                     "doc_type": normalized_type,
+                    "granularity": str(getattr(doc, "granularity", "") or "") or None,
                     "chunk_index": int(getattr(chunk, "chunk_index")),
                     "kind": str(getattr(chunk, "kind") or ""),
                     "text": text_value,

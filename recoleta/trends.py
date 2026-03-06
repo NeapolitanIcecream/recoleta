@@ -34,6 +34,7 @@ def semantic_search_summaries_in_period(
     lancedb_dir: Path,
     run_id: str,
     doc_type: str,
+    granularity: str | None = None,
     period_start: datetime,
     period_end: datetime,
     query: str,
@@ -62,6 +63,7 @@ def semantic_search_summaries_in_period(
         vector_store=store,
         run_id=run_id,
         doc_type=doc_type,
+        granularity=granularity,
         period_start=period_start,
         period_end=period_end,
         query=query,
@@ -233,22 +235,20 @@ def build_overview_pack_md(
                 token = day_start.date().isoformat()
                 doc = docs_by_start.get(day_start)
                 if doc is None:
-                    lines.append(f"- day {token} | missing | doc_id=- | (missing)")
+                    lines.append(f"- day {token} | missing | (missing)")
                     continue
 
                 doc_id = int(getattr(doc, "id", 0) or 0)
                 chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=0)
                 if chunk is None:
-                    lines.append(
-                        f"- day {token} | missing_chunk | doc_id={doc_id} | (missing chunk)"
-                    )
+                    lines.append(f"- day {token} | missing_chunk | (missing chunk)")
                     continue
                 overview = _sanitize_inline_text(str(getattr(chunk, "text", "") or ""))
                 status = "ok"
                 if not overview:
                     overview = "(empty)"
                     status = "empty"
-                lines.append(f"- day {token} | {status} | doc_id={doc_id} | {overview}")
+                lines.append(f"- day {token} | {status} | {overview}")
         else:
             for doc in docs:
                 raw_start = getattr(doc, "period_start", None)
@@ -261,22 +261,16 @@ def build_overview_pack_md(
                 doc_id = int(getattr(doc, "id", 0) or 0)
                 chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=0)
                 if chunk is None:
-                    lines.append(
-                        f"- {prev_level} {token} | missing_chunk | doc_id={doc_id} | (missing chunk)"
-                    )
+                    lines.append(f"- {prev_level} {token} | missing_chunk | (missing chunk)")
                     continue
                 overview = _sanitize_inline_text(str(getattr(chunk, "text", "") or ""))
                 status = "ok"
                 if not overview:
                     overview = "(empty)"
                     status = "empty"
-                lines.append(
-                    f"- {prev_level} {token} | {status} | doc_id={doc_id} | {overview}"
-                )
+                lines.append(f"- {prev_level} {token} | {status} | {overview}")
             if not docs:
-                lines.append(
-                    f"- {prev_level or 'trend'} - | missing | doc_id=- | (no docs)"
-                )
+                lines.append(f"- {prev_level or 'trend'} - | missing | (no docs)")
 
     elif strategy == "item_top_k":
         top_k = max(0, int(item_overview_top_k))

@@ -130,7 +130,7 @@ def test_trends_week_published_markdown_locks_quality_signals(
         assert docs and len(docs) >= 3
         doc_ids = [int(getattr(d, "id")) for d in docs[:3]]
         payload = {
-            "title": "Weekly Trend",
+            "title": f"Weekly Trend doc_id={doc_ids[0]}, chunk: 0",
             "granularity": "week",
             "period_start": pstart.isoformat(),
             "period_end": pend.isoformat(),
@@ -138,7 +138,7 @@ def test_trends_week_published_markdown_locks_quality_signals(
             "topics": ["agents"],
             "clusters": [
                 {
-                    "name": "Top-10 must-read",
+                    "name": f"Top-10 must-read doc_id={doc_ids[1]}, chunk_index: 0",
                     "description": f"Curated from doc_id={doc_ids[1]}, chunk_index: 0.",
                     "representative_doc_ids": [],
                     "representative_chunks": [
@@ -174,6 +174,7 @@ def test_trends_week_published_markdown_locks_quality_signals(
         re.search(r"^#{2,6}\s+Top-\d+\s+must-?read\b", md, flags=re.M | re.I)
         is not None
     )
+    assert re.search(r"^#\s+Weekly Trend\b", md, flags=re.M) is not None
     assert re.search(r"^#{2,6}\s+Representative\b", md, flags=re.M | re.I) is not None
     link_total = len(re.findall(r"\[[^\]]+\]\(https?://", md)) + len(
         re.findall(r"<https?://", md)

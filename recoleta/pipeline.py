@@ -2917,6 +2917,7 @@ class PipelineService:
                 rewritten = chunk_suffix_pattern.sub("", rewritten)
                 return rewritten
 
+            title_for_notes = _rewrite_doc_refs(str(payload.title))
             overview_md_for_notes = _rewrite_doc_refs(str(payload.overview_md))
             highlights_for_notes = [
                 _rewrite_doc_refs(str(h)) for h in (list(payload.highlights) or [])
@@ -2926,6 +2927,9 @@ class PipelineService:
             if payload.clusters:
                 for cluster in payload.clusters:
                     cluster_dict = cluster.model_dump(mode="json")
+                    cluster_dict["name"] = _rewrite_doc_refs(
+                        str(cluster_dict.get("name") or "").strip()
+                    )
                     cluster_dict["description"] = _rewrite_doc_refs(
                         str(cluster_dict.get("description") or "").strip()
                     )
@@ -3027,7 +3031,7 @@ class PipelineService:
                     write_markdown_trend_note(
                         output_dir=self.settings.markdown_output_dir,
                         trend_doc_id=doc_id,
-                        title=str(payload.title),
+                        title=title_for_notes,
                         granularity=normalized_granularity,
                         period_start=period_start,
                         period_end=period_end,
@@ -3045,7 +3049,7 @@ class PipelineService:
                         vault_path=self.settings.obsidian_vault_path,
                         base_folder=self.settings.obsidian_base_folder,
                         trend_doc_id=doc_id,
-                        title=str(payload.title),
+                        title=title_for_notes,
                         granularity=normalized_granularity,
                         period_start=period_start,
                         period_end=period_end,

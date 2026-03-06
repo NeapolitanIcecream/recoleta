@@ -702,6 +702,168 @@ def test_trends_period_overlap_includes_cross_boundary_trend_docs(
     assert any(int(d.id or 0) == int(doc.id) for d in docs)
 
 
+def test_trends_search_chunks_text_filters_by_trend_granularity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    _, repository = _build_runtime()
+
+    month_start = datetime(2026, 3, 1, tzinfo=UTC)
+    month_end = datetime(2026, 4, 1, tzinfo=UTC)
+    day_doc = repository.upsert_document_for_trend(
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC),
+        title="Daily agents",
+    )
+    week_doc = repository.upsert_document_for_trend(
+        granularity="week",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        title="Weekly agents",
+    )
+    month_doc = repository.upsert_document_for_trend(
+        granularity="month",
+        period_start=month_start,
+        period_end=month_end,
+        title="Monthly agents",
+    )
+    assert day_doc.id is not None
+    assert week_doc.id is not None
+    assert month_doc.id is not None
+
+    repository.upsert_document_chunk(
+        doc_id=int(day_doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="agents day summary",
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_overview",
+    )
+    repository.upsert_document_chunk(
+        doc_id=int(week_doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="agents week summary",
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_overview",
+    )
+    repository.upsert_document_chunk(
+        doc_id=int(month_doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="agents month summary",
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_overview",
+    )
+
+    hits = repository.search_chunks_text(
+        query="agents",
+        doc_type="trend",
+        granularity="day",
+        period_start=month_start,
+        period_end=month_end,
+        limit=10,
+    )
+    assert hits
+    assert {int(hit["doc_id"]) for hit in hits} == {int(day_doc.id)}
+
+
+def test_trends_semantic_search_filters_by_trend_granularity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    _, repository = _build_runtime()
+
+    month_start = datetime(2026, 3, 1, tzinfo=UTC)
+    month_end = datetime(2026, 4, 1, tzinfo=UTC)
+    with Session(repository.engine) as session:
+        day_doc = Document(
+            doc_type="trend",
+            granularity="day",
+            period_start=datetime(2026, 3, 5, tzinfo=UTC),
+            period_end=datetime(2026, 3, 6, tzinfo=UTC),
+            title="Daily agents",
+        )
+        week_doc = Document(
+            doc_type="trend",
+            granularity="week",
+            period_start=datetime(2026, 3, 2, tzinfo=UTC),
+            period_end=datetime(2026, 3, 9, tzinfo=UTC),
+            title="Weekly gardening",
+        )
+        session.add(day_doc)
+        session.add(week_doc)
+        session.commit()
+        session.refresh(day_doc)
+        session.refresh(week_doc)
+        assert day_doc.id is not None
+        assert week_doc.id is not None
+        day_doc_id = int(day_doc.id)
+        week_doc_id = int(week_doc.id)
+
+    repository.upsert_document_chunk(
+        doc_id=day_doc_id,
+        chunk_index=0,
+        kind="summary",
+        text_value="Agents are great.",
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_overview",
+    )
+    repository.upsert_document_chunk(
+        doc_id=week_doc_id,
+        chunk_index=0,
+        kind="summary",
+        text_value="Gardening tips.",
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_overview",
+    )
+
+    def fake_embedding(**kwargs):  # type: ignore[no-untyped-def]
+        inputs = kwargs.get("input") or []
+        data = []
+        for text in inputs:
+            token = str(text).lower()
+            if "query:" in token or "agents" in token:
+                data.append({"embedding": [1.0, 0.0]})
+            else:
+                data.append({"embedding": [0.0, 1.0]})
+        return {"data": data, "usage": {"inputs": len(inputs)}}
+
+    import recoleta.rag.embeddings as rag_embeddings
+
+    monkeypatch.setattr(rag_embeddings, "_embedding", fake_embedding)
+
+    hits = semantic_search_summaries_in_period(
+        repository=repository,
+        lancedb_dir=Path(str(tmp_path / "lancedb")),
+        run_id="run-semantic-granularity",
+        doc_type="trend",
+        granularity="day",
+        period_start=month_start,
+        period_end=month_end,
+        query="agents",
+        embedding_model="test/embed",
+        embedding_dimensions=None,
+        max_batch_inputs=64,
+        max_batch_chars=40000,
+        limit=5,
+        corpus_limit=10,
+    )
+    assert hits
+    assert {hit.doc_id for hit in hits} == {day_doc_id}
+
+
 def test_trends_skips_llm_when_corpus_is_empty(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

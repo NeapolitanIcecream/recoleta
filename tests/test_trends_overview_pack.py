@@ -56,6 +56,7 @@ def test_overview_pack_week_includes_7_day_entries_with_placeholders(
         item_overview_item_max_chars=200,
     )
     assert stats.get("truncated") is False
+    assert "doc_id" not in md
 
     lines = [line for line in md.splitlines() if line.startswith("- day ")]
     assert len(lines) == 7
@@ -107,7 +108,7 @@ def test_overview_pack_week_marks_missing_chunk_when_trend_doc_has_no_summary_ch
         item_overview_top_k=20,
         item_overview_item_max_chars=200,
     )
-    assert f"doc_id={int(doc.id)}" in md
+    assert "doc_id" not in md
     assert f"- day {day_start.date().isoformat()} | missing_chunk |" in md
 
 

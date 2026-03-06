@@ -32,3 +32,29 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
     ]
     assert prompt_payload.get("ranking_n") == 7
     assert prompt_payload.get("rep_source_doc_type") == "item"
+
+
+def test_resolve_rag_query_sources_limits_week_trend_searches_to_day_docs() -> None:
+    sources = rag_agent.resolve_rag_query_sources(
+        doc_type="trend",
+        granularity=None,
+        rag_sources=[
+            {"doc_type": "item", "granularity": None},
+            {"doc_type": "trend", "granularity": "day"},
+        ],
+    )
+
+    assert sources == [("trend", "day")]
+
+
+def test_resolve_rag_query_sources_rejects_disallowed_trend_granularity() -> None:
+    sources = rag_agent.resolve_rag_query_sources(
+        doc_type="trend",
+        granularity="month",
+        rag_sources=[
+            {"doc_type": "item", "granularity": None},
+            {"doc_type": "trend", "granularity": "day"},
+        ],
+    )
+
+    assert sources == []
