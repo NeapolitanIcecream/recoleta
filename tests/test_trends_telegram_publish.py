@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 import json
 from pathlib import Path
+import shutil
 
 import fitz
 import pytest
 
+import recoleta.publish as publish_module
 from recoleta.pipeline import PipelineService
 from recoleta.publish import render_trend_note_pdf, write_markdown_trend_note
 from recoleta.trends import TrendPayload
@@ -55,6 +57,216 @@ def test_render_trend_note_pdf_preserves_title_and_sections(tmp_path: Path) -> N
     assert "Weekly Trend" in text
     assert "Overview" in text
     assert "Representative papers" in text
+
+
+def test_render_trend_note_pdf_debug_bundle_exports_intermediate_files(
+    tmp_path: Path,
+) -> None:
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=8,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-trend-pdf-debug",
+        overview_md="## Signal\n\n- A stronger emphasis on evaluation loops.\n",
+        topics=["agents", "evaluation"],
+        clusters=[],
+        highlights=["Teams are optimizing for system reliability, not just demos."],
+    )
+
+    debug_dir = tmp_path / "pdf-debug"
+    pdf_path = render_trend_note_pdf(markdown_path=note_path, debug_dir=debug_dir)
+
+    assert pdf_path.exists()
+    assert (debug_dir / "manifest.json").exists()
+    assert (debug_dir / "source.md").exists()
+    assert (debug_dir / "normalized.md").exists()
+    assert (debug_dir / "document.html").exists()
+    assert (debug_dir / "styles.css").exists()
+    assert list(debug_dir.glob("page-*.png"))
+
+    manifest = json.loads((debug_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["page_count"] >= 1
+    assert manifest["pdf_path"].endswith(".pdf")
+    assert manifest["title"] == "Weekly Trend"
+
+
+def test_render_trend_note_pdf_browser_renderer_uses_continuous_page(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=18,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-trend-pdf-browser",
+        overview_md="A denser browser-based PDF renderer.",
+        topics=["agents", "evaluation"],
+        clusters=[],
+        highlights=["Browser PDF should support continuous height."],
+    )
+
+    calls: dict[str, object] = {}
+
+    class _FakePage:
+        def set_content(self, html: str, *, wait_until: str = "load") -> None:
+            calls["html"] = html
+            calls["wait_until"] = wait_until
+
+        def emulate_media(self, *, media: str) -> None:
+            calls["media"] = media
+
+        def evaluate(self, _script: str) -> int:
+            return 2400
+
+        def pdf(self, **kwargs: object) -> None:
+            calls["pdf_kwargs"] = kwargs
+            pdf_path = Path(str(kwargs["path"]))
+            pdf_path.parent.mkdir(parents=True, exist_ok=True)
+            doc = fitz.open()
+            doc.new_page()
+            doc.save(pdf_path)
+            doc.close()
+
+    class _FakeBrowser:
+        def new_page(self, **kwargs: object) -> _FakePage:
+            calls["new_page_kwargs"] = kwargs
+            return _FakePage()
+
+        def close(self) -> None:
+            calls["browser_closed"] = True
+
+    class _FakeChromium:
+        def launch(self, **kwargs: object) -> _FakeBrowser:
+            calls["launch_kwargs"] = kwargs
+            return _FakeBrowser()
+
+    class _FakePlaywrightContext:
+        chromium = _FakeChromium()
+
+        def __enter__(self) -> "_FakePlaywrightContext":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        publish_module,
+        "_get_playwright_sync_api",
+        lambda: (lambda: _FakePlaywrightContext()),
+    )
+    monkeypatch.setattr(
+        publish_module,
+        "_trend_pdf_browser_launch_options",
+        lambda: [{"executable_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}],
+    )
+
+    debug_dir = tmp_path / "browser-debug"
+    pdf_path = publish_module.render_trend_note_pdf(
+        markdown_path=note_path,
+        backend="browser",
+        page_mode="continuous",
+        debug_dir=debug_dir,
+    )
+
+    assert pdf_path.exists()
+    assert calls["media"] == "screen"
+    assert "width" in dict(calls["pdf_kwargs"])  # type: ignore[arg-type]
+    assert dict(calls["pdf_kwargs"])["width"] == "210mm"  # type: ignore[arg-type]
+    assert str(dict(calls["pdf_kwargs"])["height"]).endswith("px")  # type: ignore[arg-type]
+
+    manifest = json.loads((debug_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["renderer"] == "browser"
+    assert manifest["page_mode"] == "continuous"
+
+
+def test_prepare_trend_pdf_browser_css_uses_raster_card_gradients(
+    tmp_path: Path,
+) -> None:
+    """Regression: browser PDF card gradients must avoid vector print seams."""
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=20,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-trend-pdf-css",
+        overview_md="Raster card gradients should stay visually stable in PDF viewers.",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Card backgrounds should not show horizontal seams."],
+    )
+
+    inputs = publish_module._prepare_trend_pdf_render_inputs(
+        markdown_path=note_path,
+        backend="browser",
+        page_mode="continuous",
+    )
+
+    assert 'url("data:image/png;base64,' in inputs.css
+    assert (
+        "linear-gradient(180deg, rgba(235, 243, 253, 0.99),"
+        " rgba(248, 251, 254, 0.99))" not in inputs.css
+    )
+
+
+def test_render_trend_note_pdf_auto_falls_back_to_story_renderer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=19,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-trend-pdf-fallback",
+        overview_md="Browser rendering fails, story renderer saves the day.",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    calls = {"story_total": 0}
+
+    def _fake_browser_render(_inputs: object) -> None:
+        raise RuntimeError("simulated browser render failure")
+
+    def _fake_story_render(inputs: object) -> None:
+        calls["story_total"] += 1
+        output_path = Path(str(getattr(inputs, "output_path")))
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "story fallback")
+        doc.save(output_path)
+        doc.close()
+
+    monkeypatch.setattr(
+        publish_module,
+        "_render_trend_note_pdf_browser",
+        _fake_browser_render,
+    )
+    monkeypatch.setattr(
+        publish_module,
+        "_render_trend_note_pdf_story",
+        _fake_story_render,
+    )
+
+    pdf_path = publish_module.render_trend_note_pdf(
+        markdown_path=note_path,
+        backend="auto",
+    )
+
+    assert pdf_path.exists()
+    assert calls["story_total"] == 1
 
 
 def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
@@ -146,8 +358,164 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
     metrics = repository.list_metrics(run_id="run-trend-telegram")
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.trends.pdf.generated_total"].value == 1
+    assert (
+        by_name["pipeline.trends.pdf.browser.generated_total"].value
+        + by_name["pipeline.trends.pdf.story.generated_total"].value
+        == 1
+    )
     assert by_name["pipeline.trends.telegram.sent_total"].value == 1
     assert by_name["pipeline.trends.telegram.failed_total"].value == 0
+
+
+def test_trends_telegram_publish_debug_pdf_exports_preview_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat-id")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-telegram-debug-1",
+        canonical_url="https://example.com/trend-telegram-debug-1",
+        title="Tool-Using Agents",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-telegram-debug", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-telegram-debug", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    payload = TrendPayload(
+        title="Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
+        overview_md="Debug mode should export render intermediates.",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Preview artifacts help visual iteration."],
+    )
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return payload, {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-trend-telegram-debug",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+        debug_pdf=True,
+    )
+
+    assert result.doc_id > 0
+    assert len(sender.documents) == 1
+
+    debug_root = settings.markdown_output_dir / "Trends" / ".pdf-debug"
+    manifests = sorted(debug_root.glob("*/manifest.json"))
+    assert len(manifests) == 1
+
+    metrics = repository.list_metrics(run_id="run-trend-telegram-debug")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.trends.pdf.debug.generated_total"].value == 1
+    assert by_name["pipeline.trends.pdf.debug.failed_total"].value == 0
+
+
+def test_trends_telegram_publish_debug_pdf_failure_is_non_fatal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat-id")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    debug_root = settings.markdown_output_dir / "Trends" / ".pdf-debug"
+    debug_root.parent.mkdir(parents=True, exist_ok=True)
+    debug_root.write_text("not-a-directory", encoding="utf-8")
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-telegram-debug-fail-1",
+        canonical_url="https://example.com/trend-telegram-debug-fail-1",
+        title="Tool-Using Agents",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-telegram-debug-fail", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-telegram-debug-fail", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    payload = TrendPayload(
+        title="Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
+        overview_md="Debug export failures must not block Telegram delivery.",
+        topics=["agents"],
+        clusters=[],
+        highlights=["The PDF still needs to go out."],
+    )
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return payload, {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-trend-telegram-debug-fail",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+        debug_pdf=True,
+    )
+
+    assert result.doc_id > 0
+    assert len(sender.documents) == 1
+    assert debug_root.is_file()
+
+    metrics = repository.list_metrics(run_id="run-trend-telegram-debug-fail")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.trends.pdf.generated_total"].value == 1
+    assert by_name["pipeline.trends.pdf.debug.generated_total"].value == 0
+    assert by_name["pipeline.trends.pdf.debug.failed_total"].value == 1
+
+    debug_root.unlink()
+    shutil.rmtree(settings.markdown_output_dir, ignore_errors=True)
 
 
 def test_trends_telegram_publish_skips_duplicate_delivery_for_unchanged_period(

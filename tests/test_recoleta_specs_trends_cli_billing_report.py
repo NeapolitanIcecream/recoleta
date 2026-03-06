@@ -63,6 +63,7 @@ class _FakeService:
         llm_model=None,
         backfill: bool = False,
         backfill_mode: str = "missing",
+        debug_pdf: bool = False,
     ):
         self.calls.append(
             {
@@ -72,6 +73,7 @@ class _FakeService:
                 "llm_model": llm_model,
                 "backfill": bool(backfill),
                 "backfill_mode": str(backfill_mode),
+                "debug_pdf": bool(debug_pdf),
             }
         )
         return SimpleNamespace(
@@ -176,3 +178,32 @@ def test_trends_week_cli_accepts_yyyymmdd_date_and_enables_backfill(
     assert call["backfill"] is True
     assert call["backfill_mode"] == "missing"
     assert call["anchor_date"] == date(2026, 1, 1)
+
+
+def test_trends_cli_forwards_debug_pdf_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "trends",
+            "--granularity",
+            "day",
+            "--debug-pdf",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_service.calls
+    assert fake_service.calls[0]["debug_pdf"] is True

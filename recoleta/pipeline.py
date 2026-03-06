@@ -49,7 +49,8 @@ from recoleta.ports import RepositoryPort
 from recoleta.publish import (
     build_telegram_message,
     build_telegram_trend_document_caption,
-    render_trend_note_pdf,
+    export_trend_note_pdf_debug_bundle,
+    render_trend_note_pdf_result,
     write_markdown_note,
     write_markdown_run_index,
     write_markdown_trend_note,
@@ -2130,6 +2131,7 @@ class PipelineService:
         llm_model: str | None = None,
         backfill: bool = False,
         backfill_mode: str = "missing",
+        debug_pdf: bool = False,
     ) -> TrendResult:
         log = logger.bind(module="pipeline.trends", run_id=run_id)
         started = time.perf_counter()
@@ -3052,6 +3054,10 @@ class PipelineService:
             markdown_note_path: Path | None = None
             pdf_generated_total = 0
             pdf_failed_total = 0
+            pdf_debug_generated_total = 0
+            pdf_debug_failed_total = 0
+            pdf_browser_generated_total = 0
+            pdf_story_generated_total = 0
             telegram_sent_total = 0
             telegram_failed_total = 0
 
@@ -3117,21 +3123,62 @@ class PipelineService:
                     )
                 else:
                     trend_pdf_path: Path | None = None
+                    trend_pdf_result = None
                     try:
                         if markdown_note_path is None:
                             raise RuntimeError(
                                 "trend markdown note is unavailable for PDF delivery"
                             )
-                        trend_pdf_path = render_trend_note_pdf(
-                            markdown_path=markdown_note_path
+                        trend_pdf_result = render_trend_note_pdf_result(
+                            markdown_path=markdown_note_path,
+                            backend="auto",
+                            page_mode="continuous",
                         )
+                        trend_pdf_path = trend_pdf_result.path
                         pdf_generated_total = 1
+                        if trend_pdf_result.prepared.renderer == "browser":
+                            pdf_browser_generated_total = 1
+                        else:
+                            pdf_story_generated_total = 1
                     except Exception as pdf_exc:  # noqa: BLE001
                         pdf_failed_total = 1
                         log.bind(module="pipeline.trends.pdf").warning(
                             "Trend PDF render failed: {}",
                             self._sanitize_error_message(str(pdf_exc)),
                         )
+
+                    if trend_pdf_path is not None and debug_pdf:
+                        try:
+                            if markdown_note_path is None:
+                                raise RuntimeError(
+                                    "trend markdown note is unavailable for PDF debug export"
+                                )
+                            debug_dir = (
+                                markdown_note_path.parent
+                                / ".pdf-debug"
+                                / trend_pdf_path.stem
+                            )
+                            export_trend_note_pdf_debug_bundle(
+                                markdown_path=markdown_note_path,
+                                pdf_path=trend_pdf_path,
+                                debug_dir=debug_dir,
+                                prepared=(
+                                    trend_pdf_result.prepared
+                                    if trend_pdf_result is not None
+                                    else None
+                                ),
+                            )
+                            pdf_debug_generated_total = 1
+                            log.bind(
+                                module="pipeline.trends.pdf.debug",
+                                debug_path=str(debug_dir),
+                            ).info("Trend PDF debug export completed")
+                        except Exception as debug_exc:  # noqa: BLE001
+                            pdf_debug_failed_total = 1
+                            log.bind(module="pipeline.trends.pdf.debug").warning(
+                                "Trend PDF debug export failed: {}",
+                                self._sanitize_error_message(str(debug_exc)),
+                            )
 
                     if trend_pdf_path is not None:
                         try:
@@ -3186,6 +3233,30 @@ class PipelineService:
                 run_id=run_id,
                 name="pipeline.trends.pdf.failed_total",
                 value=pdf_failed_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.pdf.debug.generated_total",
+                value=pdf_debug_generated_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.pdf.debug.failed_total",
+                value=pdf_debug_failed_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.pdf.browser.generated_total",
+                value=pdf_browser_generated_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.trends.pdf.story.generated_total",
+                value=pdf_story_generated_total,
                 unit="count",
             )
             self.repository.record_metric(

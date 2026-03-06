@@ -212,6 +212,8 @@ __marimo__/
 bench-out*/
 recoleta-bench-*.db
 bench-perf*/
+.codex-debug/
+.DS_Store
 
 # Git worktrees (project-local)
 .worktrees/

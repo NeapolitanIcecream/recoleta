@@ -303,6 +303,11 @@ def trends(
         "--backfill-mode",
         help="Backfill policy. Allowed: missing, all.",
     ),
+    debug_pdf: bool = typer.Option(
+        False,
+        "--debug-pdf/--no-debug-pdf",
+        help="Export PDF render intermediates and page previews beside the trend PDF.",
+    ),
 ) -> None:
     """Generate trends for a period (day/week/month)."""
 
@@ -330,6 +335,7 @@ def trends(
             llm_model=model,
             backfill=backfill,
             backfill_mode=backfill_mode,
+            debug_pdf=debug_pdf,
         ),
     )
     console = console_cls(stderr=settings.log_json)
@@ -358,6 +364,11 @@ def trends_week(
         "--backfill-mode",
         help="Backfill policy. Allowed: missing, all.",
     ),
+    debug_pdf: bool = typer.Option(
+        False,
+        "--debug-pdf/--no-debug-pdf",
+        help="Export PDF render intermediates and page previews beside the trend PDF.",
+    ),
 ) -> None:
     """Generate weekly trends and backfill missing daily trends."""
 
@@ -385,6 +396,7 @@ def trends_week(
             llm_model=model,
             backfill=True,
             backfill_mode=backfill_mode,
+            debug_pdf=debug_pdf,
         ),
     )
     console = console_cls(stderr=settings.log_json)
