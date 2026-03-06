@@ -2469,6 +2469,54 @@ class PipelineService:
                     value=0.0,
                     unit="bool",
                 )
+                overview_pack_md: str | None = None
+                rag_sources: list[dict[str, str | None]] | None = None
+                ranking_n: int | None = None
+                rep_source_doc_type: str | None = None
+                if bool(getattr(self.settings, "trends_self_similar_enabled", False)):
+                    plan = trends.TrendGenerationPlan(
+                        target_granularity=normalized_granularity,
+                        period_start=period_start,
+                        period_end=period_end,
+                    )
+                    overview_pack_md, pack_stats = trends.build_overview_pack_md(
+                        cast(Any, self.repository),
+                        plan,
+                        overview_pack_max_chars=int(
+                            getattr(
+                                self.settings, "trends_overview_pack_max_chars", 8000
+                            )
+                            or 8000
+                        ),
+                        item_overview_top_k=int(
+                            getattr(self.settings, "trends_item_overview_top_k", 20)
+                            or 20
+                        ),
+                        item_overview_item_max_chars=int(
+                            getattr(
+                                self.settings,
+                                "trends_item_overview_item_max_chars",
+                                500,
+                            )
+                            or 500
+                        ),
+                    )
+                    rag_sources = list(getattr(plan, "rag_sources", []) or [])
+                    ranking_n = int(
+                        getattr(self.settings, "trends_ranking_n", 10) or 10
+                    )
+                    rep_source_doc_type = str(
+                        getattr(plan, "rep_source_doc_type", "item") or "item"
+                    ).strip()
+                    if isinstance(pack_stats, dict) and bool(
+                        pack_stats.get("truncated")
+                    ):
+                        self.repository.record_metric(
+                            run_id=run_id,
+                            name="pipeline.trends.overview_pack.truncated_total",
+                            value=1,
+                            unit="count",
+                        )
                 payload, debug = trends.generate_trend_via_tools(
                     repository=cast(Any, self.repository),
                     run_id=run_id,
@@ -2490,6 +2538,10 @@ class PipelineService:
                     period_end=period_end,
                     corpus_doc_type=corpus_doc_type,
                     corpus_granularity=corpus_granularity,
+                    overview_pack_md=overview_pack_md,
+                    rag_sources=rag_sources,
+                    ranking_n=ranking_n,
+                    rep_source_doc_type=rep_source_doc_type,
                     include_debug=include_debug,
                 )
                 if isinstance(debug, dict):
