@@ -707,14 +707,23 @@ class Repository:
         self, *, channel: str, destination: str, since: datetime
     ) -> int:
         with Session(self.engine) as session:
-            statement = select(func.count(cast(Any, Delivery.id))).where(
+            item_statement = select(func.count(cast(Any, Delivery.id))).where(
                 Delivery.channel == channel,
                 Delivery.destination == destination,
                 Delivery.status == DELIVERY_STATUS_SENT,
                 cast(Any, Delivery.sent_at).is_not(None),
                 cast(Any, Delivery.sent_at) >= since,
             )
-            return int(session.exec(statement).one())
+            trend_statement = select(func.count(cast(Any, TrendDelivery.id))).where(
+                TrendDelivery.channel == channel,
+                TrendDelivery.destination == destination,
+                TrendDelivery.status == DELIVERY_STATUS_SENT,
+                cast(Any, TrendDelivery.sent_at).is_not(None),
+                cast(Any, TrendDelivery.sent_at) >= since,
+            )
+            return int(session.exec(item_statement).one()) + int(
+                session.exec(trend_statement).one()
+            )
 
     def upsert_delivery(
         self,

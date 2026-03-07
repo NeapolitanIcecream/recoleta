@@ -146,6 +146,28 @@ class PipelineService:
             error_text or None,
         )
 
+    def _telegram_delivery_destination(self) -> str:
+        if self.settings.telegram_chat_id is not None:
+            return mask_value(self.settings.telegram_chat_id.get_secret_value())
+        return "__telegram_sender__"
+
+    def _telegram_delivery_budget(self) -> tuple[str, int, int]:
+        destination = self._telegram_delivery_destination()
+        now = utc_now()
+        midnight_utc = datetime(
+            year=now.year,
+            month=now.month,
+            day=now.day,
+            tzinfo=now.tzinfo,
+        )
+        sent_today = self.repository.count_sent_deliveries_since(
+            channel=DELIVERY_CHANNEL_TELEGRAM,
+            destination=destination,
+            since=midnight_utc,
+        )
+        remaining_today = max(0, self.settings.max_deliveries_per_day - sent_today)
+        return destination, sent_today, remaining_today
+
     def ingest(
         self, *, run_id: str, drafts: list[ItemDraft] | None = None
     ) -> IngestResult:
@@ -1883,22 +1905,11 @@ class PipelineService:
                     token=self.settings.telegram_bot_token.get_secret_value(),
                     chat_id=self.settings.telegram_chat_id.get_secret_value(),
                 )
-            destination_hash = mask_value(
-                self.settings.telegram_chat_id.get_secret_value()
-            )
-            now = utc_now()
-            midnight_utc = datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-                tzinfo=now.tzinfo,
-            )
-            sent_today = self.repository.count_sent_deliveries_since(
-                channel=DELIVERY_CHANNEL_TELEGRAM,
-                destination=destination_hash,
-                since=midnight_utc,
-            )
-            remaining_today = max(0, self.settings.max_deliveries_per_day - sent_today)
+            (
+                destination_hash,
+                sent_today,
+                remaining_today,
+            ) = self._telegram_delivery_budget()
             if remaining_today <= 0:
                 log.info(
                     "Publish skipped: daily delivery cap reached sent_today={} cap={}",
@@ -3035,13 +3046,21 @@ class PipelineService:
                 )
 
             repository_any = cast(Any, self.repository)
-            telegram_destination = (
-                mask_value(self.settings.telegram_chat_id.get_secret_value())
-                if self.settings.telegram_chat_id is not None
-                else "__telegram_sender__"
-            )
+            telegram_destination = self._telegram_delivery_destination()
+            telegram_remaining_today: int | None = None
             telegram_already_sent = False
-            if "telegram" in targets and not empty_corpus:
+            if "telegram" in targets:
+                (
+                    _,
+                    _,
+                    telegram_remaining_today,
+                ) = self._telegram_delivery_budget()
+            if (
+                "telegram" in targets
+                and not empty_corpus
+                and telegram_remaining_today is not None
+                and telegram_remaining_today > 0
+            ):
                 telegram_already_sent = bool(
                     repository_any.has_sent_trend_delivery(
                         doc_id=doc_id,
@@ -3061,7 +3080,15 @@ class PipelineService:
             telegram_sent_total = 0
             telegram_failed_total = 0
 
-            if "markdown" in targets or ("telegram" in targets and not empty_corpus):
+            telegram_can_attempt_delivery = (
+                "telegram" in targets
+                and not empty_corpus
+                and telegram_remaining_today is not None
+                and telegram_remaining_today > 0
+                and not telegram_already_sent
+            )
+
+            if "markdown" in targets or telegram_can_attempt_delivery:
                 try:
                     # Telegram trend delivery renders from the canonical markdown note.
                     markdown_note_path = write_markdown_trend_note(
@@ -3108,6 +3135,17 @@ class PipelineService:
                 if empty_corpus:
                     log.info(
                         "Trend Telegram delivery skipped for empty corpus doc_id={} granularity={} period_start={} period_end={}",
+                        doc_id,
+                        normalized_granularity,
+                        period_start.isoformat(),
+                        period_end.isoformat(),
+                    )
+                elif (
+                    telegram_remaining_today is not None
+                    and telegram_remaining_today <= 0
+                ):
+                    log.info(
+                        "Trend Telegram delivery skipped for daily cap doc_id={} granularity={} period_start={} period_end={}",
                         doc_id,
                         normalized_granularity,
                         period_start.isoformat(),

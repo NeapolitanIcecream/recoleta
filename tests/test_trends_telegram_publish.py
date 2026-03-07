@@ -367,6 +367,152 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
     assert by_name["pipeline.trends.telegram.failed_total"].value == 0
 
 
+def test_trends_telegram_publish_respects_daily_delivery_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: trend PDFs must not bypass the shared Telegram daily cap."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("MAX_DELIVERIES_PER_DAY", "0")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat-id")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-telegram-cap-1",
+        canonical_url="https://example.com/trend-telegram-cap-1",
+        title="Trend Cap",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-telegram-cap-prepare", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-telegram-cap-analyze", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    payload = TrendPayload(
+        title="Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
+        overview_md="The daily cap should block this PDF delivery.",
+        topics=["agents"],
+        clusters=[],
+        highlights=["No outbound Telegram delivery should be created."],
+    )
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return payload, {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-trend-telegram-cap",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+    )
+
+    assert result.doc_id > 0
+    assert len(sender.documents) == 0
+    assert not (settings.markdown_output_dir / "Trends").exists()
+
+    metrics = repository.list_metrics(run_id="run-trend-telegram-cap")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.trends.pdf.generated_total"].value == 0
+    assert by_name["pipeline.trends.telegram.sent_total"].value == 0
+    assert by_name["pipeline.trends.telegram.failed_total"].value == 0
+
+
+def test_publish_counts_trend_delivery_toward_telegram_daily_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: item publish must count earlier trend PDF sends against the same cap."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
+    monkeypatch.setenv("MAX_DELIVERIES_PER_DAY", "1")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat-id")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-telegram-cap-shared-1",
+        canonical_url="https://example.com/trend-telegram-cap-shared-1",
+        title="Trend Cap Shared",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-telegram-cap-shared-prepare", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-telegram-cap-shared-analyze", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    payload = TrendPayload(
+        title="Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
+        overview_md="The trend delivery should consume the only allowed send today.",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Subsequent item publishing should be skipped."],
+    )
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return payload, {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    trend_result = service.trends(
+        run_id="run-trend-telegram-cap-shared-trend",
+        granularity="day",
+        anchor_date=date(2026, 3, 5),
+        llm_model="test/fake-model",
+    )
+    publish_result = service.publish(
+        run_id="run-trend-telegram-cap-shared-publish",
+        limit=10,
+    )
+
+    assert trend_result.doc_id > 0
+    assert len(sender.documents) == 1
+    assert publish_result.sent == 0
+    assert publish_result.failed == 0
+    assert len(sender.messages) == 0
+
+
 def test_trends_telegram_publish_debug_pdf_exports_preview_bundle(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
