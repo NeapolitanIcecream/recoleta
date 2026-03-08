@@ -29,6 +29,18 @@ from recoleta.sources import fetch_arxiv_drafts
 from recoleta.storage import Repository
 from recoleta.types import ItemDraft
 
+_ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
+    "http_404",
+    "http_429",
+    "http_5xx",
+    "http_other",
+    "timeout",
+    "request_error",
+    "missing_url",
+    "empty_document",
+    "other",
+)
+
 
 @dataclass(frozen=True)
 class FrozenDraft:
@@ -268,6 +280,14 @@ def _build_settings_for_method(
     payload["recoleta_db_path"] = str(db_path)
     payload["triage_enabled"] = False
     sources = dict(payload.get("sources") or {})
+    normalized_sources: dict[str, Any] = {}
+    for source_name, source_cfg in sources.items():
+        if not isinstance(source_cfg, dict):
+            continue
+        if bool(source_cfg.get("enabled")) is not True:
+            continue
+        normalized_sources[str(source_name)] = dict(source_cfg)
+    sources = normalized_sources
     arxiv_cfg = dict((sources.get("arxiv") or {}))
     arxiv_cfg["enrich_method"] = method
     arxiv_cfg["enrich_failure_mode"] = "strict"
@@ -293,6 +313,85 @@ def _query_items_for_frozen_drafts(
     return filtered
 
 
+def _summarize_enrich_metrics(by_name: dict[str, float]) -> dict[str, Any]:
+    fallback_by_reason = {
+        bucket: int(
+            by_name.get(
+                f"pipeline.enrich.arxiv.html_document.fallback_to_pdf_reason.{bucket}_total"
+            )
+            or 0
+        )
+        for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS
+    }
+    return {
+        "enrich_ms": int(by_name.get("pipeline.enrich.duration_ms") or 0),
+        "processed": int(by_name.get("pipeline.enrich.processed_total") or 0),
+        "skipped": int(by_name.get("pipeline.enrich.skipped_total") or 0),
+        "failed": int(by_name.get("pipeline.enrich.failed_total") or 0),
+        "item_duration_ms_total": int(
+            by_name.get("pipeline.enrich.item_duration_ms_total") or 0
+        ),
+        "sql_queries_total": int(
+            by_name.get("pipeline.enrich.db.sql_queries_total") or 0
+        ),
+        "sql_commits_total": int(
+            by_name.get("pipeline.enrich.db.sql_commits_total") or 0
+        ),
+        "html_document_items_total": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.items_total") or 0
+        ),
+        "fetch_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.fetch_ms_sum") or 0
+        ),
+        "cleanup_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.cleanup_ms_sum") or 0
+        ),
+        "pandoc_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.pandoc_ms_sum") or 0
+        ),
+        "pandoc_failed_total": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.pandoc_failed_total") or 0
+        ),
+        "pandoc_warning_items_total": int(
+            by_name.get(
+                "pipeline.enrich.arxiv.html_document.pandoc_warning_items_total"
+            )
+            or 0
+        ),
+        "pandoc_warning_count_sum": int(
+            by_name.get(
+                "pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum"
+            )
+            or 0
+        ),
+        "pandoc_warning_tex_math_convert_failed_sum": int(
+            by_name.get(
+                "pipeline.enrich.arxiv.html_document.pandoc_warning_tex_math_convert_failed_sum"
+            )
+            or 0
+        ),
+        "pandoc_math_replaced_sum": int(
+            by_name.get(
+                "pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum"
+            )
+            or 0
+        ),
+        "fallback_to_pdf_total": int(
+            by_name.get(
+                "pipeline.enrich.arxiv.html_document.fallback_to_pdf_total"
+            )
+            or 0
+        ),
+        "fallback_to_pdf_by_reason": fallback_by_reason,
+        "db_read_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.db_read_ms_sum") or 0
+        ),
+        "db_write_ms_sum": int(
+            by_name.get("pipeline.enrich.arxiv.html_document.db_write_ms_sum") or 0
+        ),
+    }
+
+
 def _enrich_with_timing(
     *,
     service: PipelineService,
@@ -314,38 +413,10 @@ def _enrich_with_timing(
         metrics = list(session.exec(statement))
 
     by_name: dict[str, float] = {m.name: float(m.value) for m in metrics}
-
-    summary = {
-        "enrich_wall_ms": enrich_wall_ms,
-        "enrich_ms": int(by_name.get("pipeline.enrich.duration_ms") or enrich_wall_ms),
-        "processed": int(by_name.get("pipeline.enrich.processed_total") or 0),
-        "skipped": int(by_name.get("pipeline.enrich.skipped_total") or 0),
-        "failed": int(by_name.get("pipeline.enrich.failed_total") or 0),
-        "item_duration_ms_total": int(
-            by_name.get("pipeline.enrich.item_duration_ms_total") or 0
-        ),
-        "sql_queries_total": int(
-            by_name.get("pipeline.enrich.db.sql_queries_total") or 0
-        ),
-        "sql_commits_total": int(
-            by_name.get("pipeline.enrich.db.sql_commits_total") or 0
-        ),
-        "fetch_ms_sum": int(
-            by_name.get("pipeline.enrich.arxiv.html_document.fetch_ms_sum") or 0
-        ),
-        "cleanup_ms_sum": int(
-            by_name.get("pipeline.enrich.arxiv.html_document.cleanup_ms_sum") or 0
-        ),
-        "pandoc_ms_sum": int(
-            by_name.get("pipeline.enrich.arxiv.html_document.pandoc_ms_sum") or 0
-        ),
-        "db_read_ms_sum": int(
-            by_name.get("pipeline.enrich.arxiv.html_document.db_read_ms_sum") or 0
-        ),
-        "db_write_ms_sum": int(
-            by_name.get("pipeline.enrich.arxiv.html_document.db_write_ms_sum") or 0
-        ),
-    }
+    summary = _summarize_enrich_metrics(by_name)
+    summary["enrich_wall_ms"] = enrich_wall_ms
+    if not int(summary.get("enrich_ms") or 0):
+        summary["enrich_ms"] = enrich_wall_ms
 
     per_item: list[dict[str, Any]] = []
     for item in items:
@@ -486,6 +557,37 @@ def _render_report_md(*, results: dict[str, Any]) -> str:
         lines.append(f"- triage_ms_p95: {durations.get('triage_ms_p95')}")
         lines.append(f"- pipeline_ms_median: {durations.get('pipeline_ms_median')}")
         lines.append(f"- pipeline_ms_p95: {durations.get('pipeline_ms_p95')}")
+        lines.append("")
+
+        lines.append("### diagnostics\n")
+        enrich_result = r.get("enrich_result") or {}
+        lines.append(
+            f"- html_document_items_total: {enrich_result.get('html_document_items_total')}"
+        )
+        lines.append(f"- pandoc_failed_total: {enrich_result.get('pandoc_failed_total')}")
+        lines.append(
+            f"- pandoc_warning_items_total: {enrich_result.get('pandoc_warning_items_total')}"
+        )
+        lines.append(
+            f"- pandoc_warning_count_sum: {enrich_result.get('pandoc_warning_count_sum')}"
+        )
+        lines.append(
+            "- pandoc_warning_tex_math_convert_failed_sum: "
+            f"{enrich_result.get('pandoc_warning_tex_math_convert_failed_sum')}"
+        )
+        lines.append(
+            f"- pandoc_math_replaced_sum: {enrich_result.get('pandoc_math_replaced_sum')}"
+        )
+        lines.append(
+            f"- fallback_to_pdf_total: {enrich_result.get('fallback_to_pdf_total')}"
+        )
+        fallback_by_reason = enrich_result.get("fallback_to_pdf_by_reason") or {}
+        for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS:
+            if int(fallback_by_reason.get(bucket) or 0) <= 0:
+                continue
+            lines.append(
+                f"- fallback_to_pdf_reason.{bucket}_total: {fallback_by_reason.get(bucket)}"
+            )
         lines.append("")
 
         lines.append("### tokens\n")
@@ -832,6 +934,8 @@ def main() -> None:
     table.add_column("method", style="bold")
     table.add_column("ingest_ms", justify="right")
     table.add_column("enrich_ms", justify="right")
+    table.add_column("pandoc_warns", justify="right")
+    table.add_column("pdf_fallbacks", justify="right")
     table.add_column("html_full_sum", justify="right")
     table.add_column("md_full_sum", justify="right")
     table.add_column("md_minus_html_full", justify="right")
@@ -846,10 +950,13 @@ def main() -> None:
         delta = ((r.get("tokens") or {}).get("delta") or {}).get(
             "full_tokens_sum_delta"
         )
+        enrich_result = r.get("enrich_result") or {}
         table.add_row(
             method,
             str((r.get("durations") or {}).get("ingest_ms_median")),
             str((r.get("durations") or {}).get("enrich_ms_median")),
+            str(enrich_result.get("pandoc_warning_count_sum")),
+            str(enrich_result.get("fallback_to_pdf_total")),
             str(html_sum),
             str(md_sum),
             str(delta),

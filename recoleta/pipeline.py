@@ -69,6 +69,18 @@ from recoleta.types import (
     utc_now,
 )
 
+_ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
+    "http_404",
+    "http_429",
+    "http_5xx",
+    "http_other",
+    "timeout",
+    "request_error",
+    "missing_url",
+    "empty_document",
+    "other",
+)
+
 
 class PipelineService:
     def __init__(
@@ -325,6 +337,15 @@ class PipelineService:
             html_document_fetch_ms_sum = 0
             html_document_cleanup_ms_sum = 0
             html_document_pandoc_ms_sum = 0
+            html_document_pandoc_failed_total = 0
+            html_document_pandoc_warning_items_total = 0
+            html_document_pandoc_warning_count_sum = 0
+            html_document_pandoc_warning_tex_math_convert_failed_sum = 0
+            html_document_pandoc_math_replaced_sum = 0
+            html_document_fallback_to_pdf_total = 0
+            html_document_fallback_reason_totals: dict[str, int] = {
+                bucket: 0 for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS
+            }
             html_document_db_read_ms_sum = 0
             html_document_db_write_ms_sum = 0
 
@@ -477,6 +498,14 @@ class PipelineService:
                         html_document_fetch_ms_sum, \
                         html_document_cleanup_ms_sum, \
                         html_document_pandoc_ms_sum
+                    nonlocal \
+                        html_document_pandoc_failed_total, \
+                        html_document_pandoc_warning_items_total, \
+                        html_document_pandoc_warning_count_sum, \
+                        html_document_pandoc_warning_tex_math_convert_failed_sum, \
+                        html_document_pandoc_math_replaced_sum
+                    nonlocal html_document_fallback_to_pdf_total
+                    nonlocal html_document_fallback_reason_totals
                     nonlocal html_document_db_read_ms_sum, html_document_db_write_ms_sum
 
                     status = result.get("status")
@@ -533,6 +562,29 @@ class PipelineService:
                         html_document_fetch_ms_sum += int(diag.get("fetch_ms") or 0)
                         html_document_cleanup_ms_sum += int(diag.get("cleanup_ms") or 0)
                         html_document_pandoc_ms_sum += int(diag.get("pandoc_ms") or 0)
+                        html_document_pandoc_failed_total += int(
+                            diag.get("pandoc_failed") or 0
+                        )
+                        warning_count = int(diag.get("pandoc_warning_count") or 0)
+                        html_document_pandoc_warning_count_sum += warning_count
+                        if warning_count > 0:
+                            html_document_pandoc_warning_items_total += 1
+                        html_document_pandoc_warning_tex_math_convert_failed_sum += int(
+                            diag.get("pandoc_warning_tex_math_convert_failed") or 0
+                        )
+                        html_document_pandoc_math_replaced_sum += int(
+                            diag.get("pandoc_math_replaced_total") or 0
+                        )
+                        html_document_fallback_to_pdf_total += int(
+                            diag.get("html_document_fallback_to_pdf") or 0
+                        )
+                        for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS:
+                            html_document_fallback_reason_totals[bucket] += int(
+                                diag.get(
+                                    f"html_document_fallback_reason.{bucket}"
+                                )
+                                or 0
+                            )
                         html_document_db_read_ms_sum += int(diag.get("db_read_ms") or 0)
                         html_document_db_write_ms_sum += int(
                             diag.get("db_write_ms") or 0
@@ -762,6 +814,49 @@ class PipelineService:
                 value=html_document_pandoc_ms_sum,
                 unit="ms",
             )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.pandoc_failed_total",
+                value=html_document_pandoc_failed_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.pandoc_warning_items_total",
+                value=html_document_pandoc_warning_items_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum",
+                value=html_document_pandoc_warning_count_sum,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.pandoc_warning_tex_math_convert_failed_sum",
+                value=html_document_pandoc_warning_tex_math_convert_failed_sum,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum",
+                value=html_document_pandoc_math_replaced_sum,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.enrich.arxiv.html_document.fallback_to_pdf_total",
+                value=html_document_fallback_to_pdf_total,
+                unit="count",
+            )
+            for bucket, count in html_document_fallback_reason_totals.items():
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name=f"pipeline.enrich.arxiv.html_document.fallback_to_pdf_reason.{bucket}_total",
+                    value=count,
+                    unit="count",
+                )
             self.repository.record_metric(
                 run_id=run_id,
                 name="pipeline.enrich.arxiv.html_document.db_read_ms_sum",
@@ -1566,7 +1661,16 @@ class PipelineService:
             except Exception as method_exc:
                 if failure_mode == "strict":
                     raise
-                log.bind(item_id=item_id).warning(
+                reason_bucket = self._classify_arxiv_html_document_fallback_reason(
+                    method_exc
+                )
+                if diag is not None:
+                    diag["html_document_fallback_to_pdf"] = 1
+                    diag[f"html_document_fallback_reason.{reason_bucket}"] = 1
+                log.bind(
+                    item_id=item_id,
+                    html_document_fallback_reason=reason_bucket,
+                ).warning(
                     "arXiv enrich_method={} failed, falling back to pdf path: {}",
                     method,
                     self._sanitize_error_message(str(method_exc)),
@@ -1692,7 +1796,8 @@ class PipelineService:
                 pending_upserts["html_references"] = references_html
             if existing_md is None and existing_document is not None:
                 markdown, elapsed_ms, error = convert_html_document_to_markdown(
-                    existing_document
+                    existing_document,
+                    diag=diag,
                 )
                 if diag is not None:
                     diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
@@ -1766,7 +1871,8 @@ class PipelineService:
         if references_html is not None:
             pending_upserts_new["html_references"] = references_html
         markdown, elapsed_ms, error = convert_html_document_to_markdown(
-            cleaned_document
+            cleaned_document,
+            diag=diag,
         )
         if diag is not None:
             diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
@@ -3716,6 +3822,28 @@ class PipelineService:
         if isinstance(exc, ValueError):
             return {"error_category": "validation", "retryable": False}
         return {"error_category": "unknown", "retryable": False}
+
+    @staticmethod
+    def _classify_arxiv_html_document_fallback_reason(exc: BaseException) -> str:
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+            if status == 404:
+                return "http_404"
+            if status == 429:
+                return "http_429"
+            if 500 <= status <= 599:
+                return "http_5xx"
+            return "http_other"
+        if isinstance(exc, httpx.TimeoutException):
+            return "timeout"
+        if isinstance(exc, httpx.RequestError):
+            return "request_error"
+        message = str(exc or "").strip().lower()
+        if "missing arxiv html url" in message:
+            return "missing_url"
+        if "empty arxiv html document extraction" in message:
+            return "empty_document"
+        return "other"
 
     @staticmethod
     def _build_pdf_url(

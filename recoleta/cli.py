@@ -9,6 +9,18 @@ from pathlib import Path
 import signal
 from typing import Any, NoReturn
 
+_ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
+    "http_404",
+    "http_429",
+    "http_5xx",
+    "http_other",
+    "timeout",
+    "request_error",
+    "missing_url",
+    "empty_document",
+    "other",
+)
+
 
 def _import_symbol(module_name: str, *, attr_name: str | None = None) -> Any:
     module = importlib.import_module(module_name)
@@ -120,6 +132,80 @@ def _print_billing_report(*, console: Any, repository: Any, run_id: str) -> None
     console.print(table)
 
 
+def _print_ingest_html_document_summary(
+    *, console: Any, repository: Any, run_id: str
+) -> None:
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    log = logger.bind(module="cli.ingest_summary", run_id=run_id)
+    try:
+        metrics = repository.list_metrics(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Ingest diagnostics load failed error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        return
+
+    by_name = {
+        str(getattr(metric, "name", "") or ""): float(getattr(metric, "value", 0) or 0)
+        for metric in metrics
+    }
+    items_total = int(
+        by_name.get("pipeline.enrich.arxiv.html_document.items_total") or 0
+    )
+    if items_total <= 0:
+        return
+
+    pandoc_failed_total = int(
+        by_name.get("pipeline.enrich.arxiv.html_document.pandoc_failed_total") or 0
+    )
+    pandoc_warning_items_total = int(
+        by_name.get(
+            "pipeline.enrich.arxiv.html_document.pandoc_warning_items_total"
+        )
+        or 0
+    )
+    pandoc_warning_count_sum = int(
+        by_name.get("pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum")
+        or 0
+    )
+    fallback_to_pdf_total = int(
+        by_name.get("pipeline.enrich.arxiv.html_document.fallback_to_pdf_total") or 0
+    )
+    pandoc_math_replaced_sum = int(
+        by_name.get("pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum")
+        or 0
+    )
+    console.print(
+        "[cyan]arxiv html_document[/cyan] "
+        f"items={items_total} "
+        f"pandoc_failed={pandoc_failed_total} "
+        f"pandoc_warning_items={pandoc_warning_items_total} "
+        f"pandoc_warning_count={pandoc_warning_count_sum} "
+        f"pdf_fallbacks={fallback_to_pdf_total} "
+        f"math_replaced={pandoc_math_replaced_sum}"
+    )
+
+    fallback_reason_parts: list[str] = []
+    for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS:
+        count = int(
+            by_name.get(
+                f"pipeline.enrich.arxiv.html_document.fallback_to_pdf_reason.{bucket}_total"
+            )
+            or 0
+        )
+        if count <= 0:
+            continue
+        fallback_reason_parts.append(f"{bucket}={count}")
+    if fallback_reason_parts:
+        console.print(
+            "[cyan]arxiv html_document fallback reasons[/cyan] "
+            + " ".join(fallback_reason_parts)
+        )
+
+
 class _SignalKeyboardInterrupt(KeyboardInterrupt):
     def __init__(self, signum: int) -> None:
         super().__init__()
@@ -218,13 +304,18 @@ def ingest() -> None:
     symbols = _runtime_symbols()
     console_cls = symbols["Console"]
 
-    settings, _, _, result = _execute_stage(
+    settings, repository, run_id, result = _execute_stage(
         stage_name="ingest",
         stage_runner=lambda service, run_id: service.prepare(run_id=run_id),
     )
     console = console_cls(stderr=settings.log_json)
     console.print(
         f"[green]ingest completed[/green] inserted={result.inserted} updated={result.updated} failed={result.failed}"
+    )
+    _print_ingest_html_document_summary(
+        console=console,
+        repository=repository,
+        run_id=run_id,
     )
 
 
