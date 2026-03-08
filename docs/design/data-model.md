@@ -179,4 +179,4 @@ Trend markdown notes are the canonical source for the richer trend surfaces:
 
 - Telegram trend PDFs render from `Trends/*.md`
 - the static site exporter renders from a trend markdown directory
-- a repository can mirror selected trend notes into `site-content/Trends/` for GitHub Pages deployment
+- a repository can mirror selected trend notes into `site-content/` while preserving `Streams/<stream>/Trends/` when topic streams are enabled

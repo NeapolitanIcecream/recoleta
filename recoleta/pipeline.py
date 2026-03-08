@@ -22,7 +22,7 @@ from rich.progress import (
 )
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
-from recoleta.config import Settings
+from recoleta.config import Settings, TopicStreamRuntime
 from recoleta.delivery import TelegramSender
 from recoleta.extract import (
     extract_arxiv_latex_source,
@@ -38,6 +38,10 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ENRICHED,
+    ITEM_STATE_FAILED,
+    ITEM_STATE_PUBLISHED,
+    ITEM_STATE_RETRYABLE_FAILED,
+    ITEM_STATE_TRIAGED,
 )
 from recoleta.observability import (
     collect_environment_secrets,
@@ -53,6 +57,7 @@ from recoleta.publish import (
     render_trend_note_pdf_result,
     write_markdown_note,
     write_markdown_run_index,
+    write_markdown_stream_index,
     write_markdown_trend_note,
     write_obsidian_note,
     write_obsidian_trend_note,
@@ -62,12 +67,158 @@ from recoleta.triage import SemanticTriage, TriageCandidate
 from recoleta import trends
 from recoleta.types import (
     AnalyzeResult,
+    DEFAULT_TOPIC_STREAM,
     IngestResult,
     ItemDraft,
     PublishResult,
     TrendResult,
     utc_now,
 )
+
+
+class _ScopedTrendsRepository:
+    def __init__(self, *, repository: Any, scope: str) -> None:
+        self._repository = repository
+        self._scope = scope
+
+    @property
+    def engine(self) -> Any:
+        return getattr(self._repository, "engine", None)
+
+    def record_metric(
+        self, *, run_id: str, name: str, value: float, unit: str | None = None
+    ) -> None:
+        normalized_name = str(name or "").strip()
+        if normalized_name.startswith("pipeline.trends."):
+            suffix = normalized_name.removeprefix("pipeline.trends.")
+            stream_token = "".join(
+                ch if ch.isalnum() else "_" for ch in self._scope.lower().strip()
+            ).strip("_") or "unknown"
+            normalized_name = f"pipeline.trends.stream.{stream_token}.{suffix}"
+        self._repository.record_metric(
+            run_id=run_id,
+            name=normalized_name,
+            value=value,
+            unit=unit,
+        )
+
+    def list_analyzed_items_in_period(
+        self,
+        *,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int,
+        offset: int = 0,
+    ) -> list[tuple[Any, Any]]:
+        return self._repository.list_analyzed_items_in_period(
+            period_start=period_start,
+            period_end=period_end,
+            limit=limit,
+            offset=offset,
+            scope=self._scope,
+        )
+
+    def upsert_document_for_item(self, *, item: Any) -> Any:
+        return self._repository.upsert_document_for_item(item=item, scope=self._scope)
+
+    def upsert_document_for_trend(
+        self,
+        *,
+        granularity: str,
+        period_start: datetime,
+        period_end: datetime,
+        title: str,
+    ) -> Any:
+        return self._repository.upsert_document_for_trend(
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            title=title,
+            scope=self._scope,
+        )
+
+    def list_documents(
+        self,
+        *,
+        doc_type: str,
+        period_start: datetime,
+        period_end: datetime,
+        granularity: str | None = None,
+        order_by: str = "event_desc",
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[Any]:
+        return self._repository.list_documents(
+            doc_type=doc_type,
+            period_start=period_start,
+            period_end=period_end,
+            granularity=granularity,
+            scope=self._scope,
+            order_by=order_by,
+            offset=offset,
+            limit=limit,
+        )
+
+    def search_chunks_text(
+        self,
+        *,
+        query: str,
+        doc_type: str,
+        granularity: str | None = None,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        return self._repository.search_chunks_text(
+            query=query,
+            doc_type=doc_type,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            scope=self._scope,
+            limit=limit,
+        )
+
+    def list_summary_chunks_in_period(
+        self,
+        *,
+        doc_type: str,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[Any]:
+        return self._repository.list_summary_chunks_in_period(
+            doc_type=doc_type,
+            period_start=period_start,
+            period_end=period_end,
+            scope=self._scope,
+            limit=limit,
+            offset=offset,
+        )
+
+    def list_summary_chunk_index_rows_in_period(
+        self,
+        *,
+        doc_type: str,
+        granularity: str | None = None,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return self._repository.list_summary_chunk_index_rows_in_period(
+            doc_type=doc_type,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            scope=self._scope,
+            limit=limit,
+            offset=offset,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._repository, name)
 
 
 class PipelineService:
@@ -90,6 +241,41 @@ class PipelineService:
         scrub_candidates.extend(collect_environment_secrets())
         self._scrub_secrets = tuple(dict.fromkeys(scrub_candidates))
         self._progress_console = get_rich_console()
+        runtime_builder = getattr(settings, "topic_stream_runtimes", None)
+        self._topic_streams: list[TopicStreamRuntime]
+        if callable(runtime_builder):
+            self._topic_streams = cast(list[TopicStreamRuntime], runtime_builder())
+        else:
+            self._topic_streams = [
+                TopicStreamRuntime(
+                    name=DEFAULT_TOPIC_STREAM,
+                    topics=list(getattr(settings, "topics", []) or []),
+                    allow_tags=list(getattr(settings, "allow_tags", []) or []),
+                    deny_tags=list(getattr(settings, "deny_tags", []) or []),
+                    publish_targets=list(
+                        getattr(settings, "publish_targets", []) or []
+                    ),
+                    markdown_output_dir=Path(
+                        getattr(settings, "markdown_output_dir", ".")
+                    ).expanduser(),
+                    obsidian_base_folder=str(
+                        getattr(settings, "obsidian_base_folder", "Recoleta")
+                    ),
+                    min_relevance_score=float(
+                        getattr(settings, "min_relevance_score", 0.0) or 0.0
+                    ),
+                    max_deliveries_per_day=int(
+                        getattr(settings, "max_deliveries_per_day", 0) or 0
+                    ),
+                    telegram_bot_token=getattr(settings, "telegram_bot_token", None),
+                    telegram_chat_id=getattr(settings, "telegram_chat_id", None),
+                    explicit=False,
+                )
+            ]
+        self._explicit_topic_streams = any(
+            bool(getattr(stream, "explicit", False)) for stream in self._topic_streams
+        )
+        self._mirror_item_states = not self._explicit_topic_streams
         self.analyzer = analyzer or LiteLLMAnalyzer(
             model=settings.llm_model,
             output_language=settings.llm_output_language,
@@ -100,8 +286,13 @@ class PipelineService:
             embedding_batch_max_chars=settings.triage_embedding_batch_max_chars,
         )
         self.telegram_sender = telegram_sender
+        self._telegram_senders: dict[str, Any] = {}
         self._pandoc_unavailable_warned = False
-        if self.telegram_sender is None and "telegram" in settings.publish_targets:
+        if (
+            self.telegram_sender is None
+            and not self._explicit_topic_streams
+            and "telegram" in settings.publish_targets
+        ):
             if (
                 settings.telegram_bot_token is not None
                 and settings.telegram_chat_id is not None
@@ -150,6 +341,97 @@ class PipelineService:
         if self.settings.telegram_chat_id is not None:
             return mask_value(self.settings.telegram_chat_id.get_secret_value())
         return "__telegram_sender__"
+
+    def _metric_token(self, value: str, *, max_len: int = 48) -> str:
+        lowered = value.lower().strip()
+        if not lowered:
+            return "unknown"
+        normalized = "".join(ch if ch.isalnum() else "_" for ch in lowered)
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        normalized = normalized.strip("_")
+        if not normalized:
+            return "unknown"
+        return normalized[:max_len]
+
+    def _stream_metric_name(self, *, stage: str, stream: str, suffix: str) -> str:
+        stream_token = self._metric_token(stream, max_len=32)
+        return f"pipeline.{stage}.stream.{stream_token}.{suffix}"
+
+    def _telegram_destination_for_stream(self, stream: TopicStreamRuntime) -> str:
+        if stream.telegram_chat_id is not None:
+            return mask_value(stream.telegram_chat_id.get_secret_value())
+        return "__telegram_sender__"
+
+    def _telegram_sender_for_stream(self, stream: TopicStreamRuntime) -> Any:
+        if isinstance(self.telegram_sender, dict):
+            sender = self.telegram_sender.get(stream.name)
+            if sender is not None:
+                return sender
+            sender = self.telegram_sender.get(DEFAULT_TOPIC_STREAM)
+            if sender is not None:
+                return sender
+        elif self.telegram_sender is not None:
+            return self.telegram_sender
+
+        if stream.name in self._telegram_senders:
+            return self._telegram_senders[stream.name]
+        if stream.telegram_bot_token is None or stream.telegram_chat_id is None:
+            raise ValueError(
+                f"Telegram credentials are required for topic stream '{stream.name}'"
+            )
+        sender = TelegramSender(
+            token=stream.telegram_bot_token.get_secret_value(),
+            chat_id=stream.telegram_chat_id.get_secret_value(),
+        )
+        self._telegram_senders[stream.name] = sender
+        return sender
+
+    def _telegram_delivery_budget_for_stream(
+        self, stream: TopicStreamRuntime
+    ) -> tuple[str, int, int]:
+        destination = self._telegram_destination_for_stream(stream)
+        now = utc_now()
+        midnight_utc = datetime(
+            year=now.year,
+            month=now.month,
+            day=now.day,
+            tzinfo=now.tzinfo,
+        )
+        sent_today = self.repository.count_sent_deliveries_since(
+            channel=DELIVERY_CHANNEL_TELEGRAM,
+            destination=destination,
+            since=midnight_utc,
+        )
+        remaining_today = max(0, stream.max_deliveries_per_day - sent_today)
+        return destination, sent_today, remaining_today
+
+    def _record_stream_metric(
+        self, *, run_id: str, stage: str, stream: str, suffix: str, value: float, unit: str
+    ) -> None:
+        self.repository.record_metric(
+            run_id=run_id,
+            name=self._stream_metric_name(stage=stage, stream=stream, suffix=suffix),
+            value=value,
+            unit=unit,
+        )
+
+    def _settings_for_topic_stream(self, stream: TopicStreamRuntime) -> Settings:
+        return self.settings.model_copy(
+            update={
+                "topics": list(stream.topics),
+                "topic_streams": [],
+                "allow_tags": list(stream.allow_tags),
+                "deny_tags": list(stream.deny_tags),
+                "publish_targets": list(stream.publish_targets),
+                "markdown_output_dir": stream.markdown_output_dir,
+                "obsidian_base_folder": stream.obsidian_base_folder,
+                "min_relevance_score": float(stream.min_relevance_score),
+                "max_deliveries_per_day": int(stream.max_deliveries_per_day),
+                "telegram_bot_token": stream.telegram_bot_token,
+                "telegram_chat_id": stream.telegram_chat_id,
+            }
+        )
 
     def _telegram_delivery_budget(self) -> tuple[str, int, int]:
         destination = self._telegram_delivery_destination()
@@ -293,9 +575,10 @@ class PipelineService:
         candidate_limit = self._resolve_triage_candidate_limit(limit=effective_limit)
         ingest_result = self.ingest(run_id=run_id, drafts=drafts)
         self.enrich(run_id=run_id, limit=candidate_limit)
-        self.triage(
-            run_id=run_id, limit=effective_limit, candidate_limit=candidate_limit
-        )
+        if not self._explicit_topic_streams:
+            self.triage(
+                run_id=run_id, limit=effective_limit, candidate_limit=candidate_limit
+            )
         return ingest_result
 
     def enrich(self, *, run_id: str, limit: int) -> None:
@@ -784,6 +1067,12 @@ class PipelineService:
     def triage(
         self, *, run_id: str, limit: int, candidate_limit: int | None = None
     ) -> None:
+        if self._explicit_topic_streams:
+            logger.bind(module="pipeline.triage", run_id=run_id).info(
+                "Triage deferred to topic-stream analyze stage streams={}",
+                len(self._topic_streams),
+            )
+            return
         triage_enabled = bool(self.settings.triage_enabled) and bool(
             self.settings.topics
         )
@@ -1072,6 +1361,8 @@ class PipelineService:
             )
 
     def analyze(self, *, run_id: str, limit: int | None = None) -> AnalyzeResult:
+        if self._explicit_topic_streams:
+            return self._analyze_topic_streams(run_id=run_id, limit=limit)
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
         started = time.perf_counter()
         triage_required = bool(self.settings.triage_enabled) and bool(
@@ -1383,6 +1674,620 @@ class PipelineService:
         )
         return analyze_result
 
+    def _select_items_for_topic_stream_analysis(
+        self,
+        *,
+        run_id: str,
+        stream: TopicStreamRuntime,
+        limit: int,
+        include_debug: bool,
+    ) -> list[Any]:
+        triage_enabled = bool(self.settings.triage_enabled) and bool(stream.topics)
+        if not triage_enabled:
+            return self.repository.list_items_for_stream_analysis(
+                stream=stream.name,
+                limit=limit,
+                selected_only=False,
+            )
+
+        log = logger.bind(module="pipeline.triage", run_id=run_id, stream=stream.name)
+        candidate_limit = self._resolve_triage_candidate_limit(limit=limit)
+        items = self.repository.list_items_for_stream_analysis(
+            stream=stream.name,
+            limit=candidate_limit,
+            selected_only=False,
+        )
+        triage_items = [
+            item
+            for item in items
+            if getattr(item, "state", None) == ITEM_STATE_ENRICHED
+        ]
+        triage_candidates, content_fetch_failed, content_fetch_error = (
+            self._build_triage_candidates(items=triage_items)
+        )
+
+        def write_and_record_artifact(
+            *, item_id: int | None, kind: str, payload: dict[str, Any]
+        ) -> None:
+            artifact_path = self._write_debug_artifact(
+                run_id=run_id,
+                item_id=item_id,
+                kind=kind,
+                payload={"stream": stream.name, **payload},
+            )
+            if artifact_path is None:
+                return
+            try:
+                self.repository.add_artifact(
+                    run_id=run_id,
+                    item_id=item_id,
+                    kind=kind,
+                    path=str(artifact_path),
+                )
+            except Exception as artifact_exc:
+                log.bind(item_id=item_id).warning(
+                    "Topic stream triage {} artifact record failed: {}",
+                    kind,
+                    self._sanitize_error_message(str(artifact_exc)),
+                )
+
+        if content_fetch_failed and include_debug and content_fetch_error is not None:
+            write_and_record_artifact(
+                item_id=None,
+                kind="error_context",
+                payload=content_fetch_error,
+            )
+
+        triage_started = time.perf_counter()
+        if not triage_candidates:
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="candidates_total",
+                value=0,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="selected_total",
+                value=0,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="failed_total",
+                value=0,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="duration_ms",
+                value=0,
+                unit="ms",
+            )
+            return []
+
+        try:
+            triage_output = self.semantic_triage.select(
+                run_id=run_id,
+                candidates=triage_candidates,
+                topics=stream.topics,
+                limit=limit,
+                mode=self.settings.triage_mode,
+                query_mode=self.settings.triage_query_mode,
+                embedding_model=self.settings.triage_embedding_model,
+                embedding_dimensions=self.settings.triage_embedding_dimensions,
+                min_similarity=self.settings.triage_min_similarity,
+                exploration_rate=self.settings.triage_exploration_rate,
+                recency_floor=self.settings.triage_recency_floor,
+                include_debug=include_debug,
+            )
+            stats = triage_output.stats
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="candidates_total",
+                value=stats.candidates_total,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="selected_total",
+                value=stats.selected_total,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="failed_total",
+                value=0,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="duration_ms",
+                value=stats.duration_ms,
+                unit="ms",
+            )
+            for kind, payload in triage_output.artifacts.items():
+                write_and_record_artifact(item_id=None, kind=kind, payload=payload)
+
+            selected_items: list[Any] = []
+            for entry in triage_output.selected:
+                selected_item_id = getattr(entry.candidate.item, "id", None)
+                if selected_item_id is None:
+                    continue
+                try:
+                    self.repository.mark_item_stream_state(
+                        item_id=int(selected_item_id),
+                        stream=stream.name,
+                        state=ITEM_STATE_TRIAGED,
+                        mirror_item_state=False,
+                    )
+                except Exception as mark_exc:
+                    log.bind(item_id=selected_item_id).warning(
+                        "Topic stream triage mark_item_stream_state failed: {}",
+                        self._sanitize_error_message(str(mark_exc)),
+                    )
+                selected_items.append(entry.candidate.item)
+            return selected_items
+        except Exception as triage_exc:
+            triage_duration_ms = int((time.perf_counter() - triage_started) * 1000)
+            sanitized_error = self._sanitize_error_message(str(triage_exc))
+            if include_debug:
+                write_and_record_artifact(
+                    item_id=None,
+                    kind="error_context",
+                    payload={
+                        "stage": "triage",
+                        "error_type": type(triage_exc).__name__,
+                        "error_message": sanitized_error,
+                        **self._classify_exception(triage_exc),
+                    },
+                )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="candidates_total",
+                value=len(triage_candidates),
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="selected_total",
+                value=min(limit, len(items)),
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="failed_total",
+                value=1,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="triage",
+                stream=stream.name,
+                suffix="duration_ms",
+                value=triage_duration_ms,
+                unit="ms",
+            )
+            fallback_items = items[:limit]
+            for item in fallback_items:
+                fallback_item_id = getattr(item, "id", None)
+                if fallback_item_id is None:
+                    continue
+                try:
+                    self.repository.mark_item_stream_state(
+                        item_id=int(fallback_item_id),
+                        stream=stream.name,
+                        state=ITEM_STATE_TRIAGED,
+                        mirror_item_state=False,
+                    )
+                except Exception as mark_exc:
+                    log.bind(item_id=fallback_item_id).warning(
+                        "Topic stream triage fallback mark_item_stream_state failed: {}",
+                        self._sanitize_error_message(str(mark_exc)),
+                    )
+            log.warning(
+                "Topic stream triage failed, falling back to recency selected={} error={}",
+                len(fallback_items),
+                sanitized_error,
+            )
+            return fallback_items
+
+    def _analyze_topic_streams(
+        self, *, run_id: str, limit: int | None = None
+    ) -> AnalyzeResult:
+        log = logger.bind(module="pipeline.analyze", run_id=run_id)
+        started = time.perf_counter()
+        effective_limit = self._resolve_analysis_limit(limit=limit)
+        analyze_result = AnalyzeResult()
+        llm_calls_total = 0
+        llm_errors_total = 0
+        missing_content_total = 0
+        llm_prompt_tokens_total = 0
+        llm_completion_tokens_total = 0
+        llm_tokens_seen = False
+        llm_cost_usd_total = 0.0
+        llm_cost_seen = False
+        llm_cost_missing_total = 0
+        llm_calls_by_provider_token: dict[str, int] = {}
+        llm_errors_by_provider_token: dict[str, int] = {}
+        llm_calls_by_model_token: dict[str, int] = {}
+        llm_errors_by_model_token: dict[str, int] = {}
+        include_debug = (
+            self.settings.write_debug_artifacts
+            and self.settings.artifacts_dir is not None
+        )
+        configured_provider = (
+            self.settings.llm_model.split("/", 1)[0]
+            if "/" in self.settings.llm_model
+            else "unknown"
+        )
+        configured_provider_token = self._metric_token(
+            configured_provider,
+            max_len=24,
+        )
+        configured_model_token = self._metric_token(self.settings.llm_model)
+
+        def bucket_provider_token(provider: str) -> str:
+            token = self._metric_token(provider, max_len=24)
+            if token == configured_provider_token:
+                return token
+            return "other"
+
+        def bucket_model_token(model: str) -> str:
+            token = self._metric_token(model)
+            if token == configured_model_token:
+                return token
+            return "other"
+
+        def write_and_record_artifact(
+            *,
+            stream_name: str,
+            item_id: int | None,
+            kind: str,
+            payload: dict[str, Any],
+        ) -> None:
+            artifact_path = self._write_debug_artifact(
+                run_id=run_id,
+                item_id=item_id,
+                kind=kind,
+                payload={"stream": stream_name, **payload},
+            )
+            if artifact_path is None:
+                return
+            try:
+                self.repository.add_artifact(
+                    run_id=run_id,
+                    item_id=item_id,
+                    kind=kind,
+                    path=str(artifact_path),
+                )
+            except Exception as artifact_exc:
+                log.bind(item_id=item_id, stream=stream_name).warning(
+                    "Topic stream analyze {} artifact record failed: {}",
+                    kind,
+                    self._sanitize_error_message(str(artifact_exc)),
+                )
+
+        for stream in self._topic_streams:
+            stream_log = log.bind(stream=stream.name)
+            items = self._select_items_for_topic_stream_analysis(
+                run_id=run_id,
+                stream=stream,
+                limit=effective_limit,
+                include_debug=include_debug,
+            )
+            stream_processed = 0
+            stream_failed = 0
+
+            with Progress(
+                TextColumn("{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=self._progress_console,
+            ) as progress:
+                for item in progress.track(
+                    items,
+                    description=f"Analyzing topic stream {stream.name}",
+                ):
+                    raw_item_id = getattr(item, "id", None)
+                    if raw_item_id is None:
+                        stream_failed += 1
+                        analyze_result.failed += 1
+                        stream_log.warning("Analyze skipped: item has no id")
+                        continue
+                    item_id = int(raw_item_id)
+                    try:
+                        content_text = self._load_stored_content_for_analysis(item=item)
+                        if not content_text:
+                            missing_content_total += 1
+                            stream_failed += 1
+                            analyze_result.failed += 1
+                            try:
+                                self.repository.mark_item_stream_state(
+                                    item_id=item_id,
+                                    stream=stream.name,
+                                    state=ITEM_STATE_RETRYABLE_FAILED,
+                                    mirror_item_state=False,
+                                )
+                            except Exception as mark_exc:
+                                stream_log.bind(item_id=item_id).warning(
+                                    "Topic stream analyze missing content mark_item_stream_state failed: {}",
+                                    self._sanitize_error_message(str(mark_exc)),
+                                )
+                            if include_debug:
+                                write_and_record_artifact(
+                                    stream_name=stream.name,
+                                    item_id=item_id,
+                                    kind="error_context",
+                                    payload={
+                                        "stage": "analyze",
+                                        "error_type": "MissingContent",
+                                        "error_message": "missing stored content before LLM analysis",
+                                        "item_id": item_id,
+                                        "error_category": "ordering",
+                                        "retryable": True,
+                                    },
+                                )
+                            stream_log.bind(item_id=item_id).warning(
+                                "Analyze failed: missing stored content"
+                            )
+                            continue
+
+                        llm_calls_total += 1
+                        analysis_result, debug = self.analyzer.analyze(
+                            title=item.title,
+                            canonical_url=item.canonical_url,
+                            user_topics=stream.topics,
+                            content=content_text,
+                            include_debug=include_debug,
+                        )
+                        provider_token = bucket_provider_token(analysis_result.provider)
+                        llm_calls_by_provider_token[provider_token] = (
+                            llm_calls_by_provider_token.get(provider_token, 0) + 1
+                        )
+                        model_token = bucket_model_token(analysis_result.model)
+                        llm_calls_by_model_token[model_token] = (
+                            llm_calls_by_model_token.get(model_token, 0) + 1
+                        )
+                        if analysis_result.prompt_tokens is not None:
+                            llm_prompt_tokens_total += int(analysis_result.prompt_tokens)
+                            llm_tokens_seen = True
+                        if analysis_result.completion_tokens is not None:
+                            llm_completion_tokens_total += int(
+                                analysis_result.completion_tokens
+                            )
+                            llm_tokens_seen = True
+                        if analysis_result.cost_usd is not None:
+                            llm_cost_usd_total += float(analysis_result.cost_usd)
+                            llm_cost_seen = True
+                        else:
+                            llm_cost_missing_total += 1
+
+                        if include_debug:
+                            if debug is None:
+                                raise RuntimeError(
+                                    "Analyzer did not return debug payload while include_debug is enabled"
+                                )
+                            write_and_record_artifact(
+                                stream_name=stream.name,
+                                item_id=item_id,
+                                kind="llm_request",
+                                payload=debug.request,
+                            )
+                            write_and_record_artifact(
+                                stream_name=stream.name,
+                                item_id=item_id,
+                                kind="llm_response",
+                                payload=debug.response,
+                            )
+
+                        self.repository.save_analysis(
+                            item_id=item_id,
+                            result=analysis_result,
+                            scope=stream.name,
+                            mirror_item_state=False,
+                        )
+                        stream_processed += 1
+                        analyze_result.processed += 1
+                    except Exception as exc:
+                        stream_failed += 1
+                        analyze_result.failed += 1
+                        llm_errors_total += 1
+                        llm_errors_by_provider_token[configured_provider_token] = (
+                            llm_errors_by_provider_token.get(
+                                configured_provider_token,
+                                0,
+                            )
+                            + 1
+                        )
+                        llm_errors_by_model_token[configured_model_token] = (
+                            llm_errors_by_model_token.get(
+                                configured_model_token,
+                                0,
+                            )
+                            + 1
+                        )
+                        sanitized_error = self._sanitize_error_message(str(exc))
+                        classification = self._classify_exception(exc)
+                        state = (
+                            ITEM_STATE_RETRYABLE_FAILED
+                            if classification.get("retryable") is True
+                            else ITEM_STATE_FAILED
+                        )
+                        try:
+                            self.repository.mark_item_stream_state(
+                                item_id=item_id,
+                                stream=stream.name,
+                                state=state,
+                                mirror_item_state=False,
+                            )
+                        except Exception as mark_exc:
+                            stream_log.bind(item_id=item_id).warning(
+                                "Topic stream analyze mark_item_stream_state failed: {}",
+                                self._sanitize_error_message(str(mark_exc)),
+                            )
+                        write_and_record_artifact(
+                            stream_name=stream.name,
+                            item_id=item_id,
+                            kind="error_context",
+                            payload={
+                                "stage": "analyze",
+                                "error_type": type(exc).__name__,
+                                "error_message": sanitized_error,
+                                "item_id": item_id,
+                                **classification,
+                            },
+                        )
+                        stream_log.bind(item_id=item_id).warning(
+                            "Analyze failed: {}",
+                            sanitized_error,
+                        )
+
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="analyze",
+                stream=stream.name,
+                suffix="processed_total",
+                value=stream_processed,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="analyze",
+                stream=stream.name,
+                suffix="failed_total",
+                value=stream_failed,
+                unit="count",
+            )
+
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.streams_total",
+            value=len(self._topic_streams),
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.llm_calls_total",
+            value=llm_calls_total,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.llm_errors_total",
+            value=llm_errors_total,
+            unit="count",
+        )
+        if llm_tokens_seen:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.llm_prompt_tokens_total",
+                value=llm_prompt_tokens_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.llm_completion_tokens_total",
+                value=llm_completion_tokens_total,
+                unit="count",
+            )
+        if llm_cost_seen:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.estimated_cost_usd",
+                value=llm_cost_usd_total,
+                unit="usd",
+            )
+        if llm_cost_missing_total > 0:
+            self.repository.record_metric(
+                run_id=run_id,
+                name="pipeline.analyze.cost_missing_total",
+                value=llm_cost_missing_total,
+                unit="count",
+            )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.missing_content_total",
+            value=missing_content_total,
+            unit="count",
+        )
+        for provider_token, count in llm_calls_by_provider_token.items():
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.analyze.llm_calls.provider.{provider_token}",
+                value=count,
+                unit="count",
+            )
+        for provider_token, count in llm_errors_by_provider_token.items():
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.analyze.llm_errors.provider.{provider_token}",
+                value=count,
+                unit="count",
+            )
+        for model_token, count in llm_calls_by_model_token.items():
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.analyze.llm_calls.model.{model_token}",
+                value=count,
+                unit="count",
+            )
+        for model_token, count in llm_errors_by_model_token.items():
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.analyze.llm_errors.model.{model_token}",
+                value=count,
+                unit="count",
+            )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.processed_total",
+            value=analyze_result.processed,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.failed_total",
+            value=analyze_result.failed,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.analyze.duration_ms",
+            value=int((time.perf_counter() - started) * 1000),
+            unit="ms",
+        )
+        log.info(
+            "Topic stream analyze completed with processed={} failed={} streams={}",
+            analyze_result.processed,
+            analyze_result.failed,
+            len(self._topic_streams),
+        )
+        return analyze_result
+
     def _resolve_analysis_limit(self, *, limit: int | None) -> int:
         resolved = int(self.settings.analyze_limit if limit is None else limit)
         if resolved <= 0:
@@ -1390,8 +2295,8 @@ class PipelineService:
         return resolved
 
     def _resolve_triage_candidate_limit(self, *, limit: int) -> int:
-        triage_enabled = bool(self.settings.triage_enabled) and bool(
-            self.settings.topics
+        triage_enabled = bool(self.settings.triage_enabled) and (
+            bool(self.settings.topics) or self._explicit_topic_streams
         )
         if not triage_enabled:
             return limit
@@ -1875,6 +2780,8 @@ class PipelineService:
         return extracted, True
 
     def publish(self, *, run_id: str, limit: int = 50) -> PublishResult:
+        if self._explicit_topic_streams:
+            return self._publish_topic_streams(run_id=run_id, limit=limit)
         log = logger.bind(module="pipeline.publish", run_id=run_id)
         started = time.perf_counter()
         publish_result = PublishResult()
@@ -2133,6 +3040,331 @@ class PipelineService:
         )
         return publish_result
 
+    def _publish_topic_streams(self, *, run_id: str, limit: int = 50) -> PublishResult:
+        log = logger.bind(module="pipeline.publish", run_id=run_id)
+        started = time.perf_counter()
+        publish_result = PublishResult()
+        markdown_stream_indexes: list[tuple[str, Path]] = []
+
+        for stream in self._topic_streams:
+            stream_log = log.bind(stream=stream.name)
+            targets = set(stream.publish_targets)
+            enable_markdown = "markdown" in targets
+            enable_obsidian = "obsidian" in targets
+            enable_telegram = "telegram" in targets
+            markdown_notes: list[tuple[str, Path]] = []
+            stream_sent = 0
+            stream_skipped = 0
+            stream_failed = 0
+            filtered_total = 0
+
+            if enable_obsidian and self.settings.obsidian_vault_path is None:
+                raise ValueError(
+                    "OBSIDIAN_VAULT_PATH is required when a topic stream publishes to 'obsidian'"
+                )
+
+            destination_hash: str | None = None
+            remaining_today: int | None = None
+            telegram_sender: Any | None = None
+            if enable_telegram:
+                telegram_sender = self._telegram_sender_for_stream(stream)
+                (
+                    destination_hash,
+                    sent_today,
+                    remaining_today,
+                ) = self._telegram_delivery_budget_for_stream(stream)
+                if remaining_today <= 0:
+                    stream_log.info(
+                        "Publish skipped: daily delivery cap reached sent_today={} cap={}",
+                        sent_today,
+                        stream.max_deliveries_per_day,
+                    )
+
+            effective_limit = (
+                min(limit, remaining_today) if remaining_today is not None else limit
+            )
+            candidates = self.repository.list_items_for_publish(
+                limit=effective_limit,
+                min_relevance_score=stream.min_relevance_score,
+                scope=stream.name,
+            )
+            allow_tags = {
+                tag.strip().lower() for tag in stream.allow_tags if tag.strip()
+            }
+            deny_tags = {
+                tag.strip().lower() for tag in stream.deny_tags if tag.strip()
+            }
+
+            with Progress(
+                TextColumn("{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=self._progress_console,
+            ) as progress:
+                for item, analysis in progress.track(
+                    candidates,
+                    description=f"Publishing topic stream {stream.name}",
+                ):
+                    if item.id is None:
+                        continue
+                    telegram_already_sent = False
+                    if enable_telegram and destination_hash is not None:
+                        telegram_already_sent = self.repository.has_sent_delivery(
+                            item_id=item.id,
+                            channel=DELIVERY_CHANNEL_TELEGRAM,
+                            destination=destination_hash,
+                        )
+                    if allow_tags or deny_tags:
+                        topics = {
+                            tag.strip().lower()
+                            for tag in self.repository.decode_list(analysis.topics_json)
+                            if tag.strip()
+                        }
+                        if deny_tags and (topics & deny_tags):
+                            publish_result.skipped += 1
+                            stream_skipped += 1
+                            filtered_total += 1
+                            continue
+                        if allow_tags and not (topics & allow_tags):
+                            publish_result.skipped += 1
+                            stream_skipped += 1
+                            filtered_total += 1
+                            continue
+
+                    try:
+                        note_paths: list[Path] = []
+                        if enable_obsidian:
+                            vault_path = self.settings.obsidian_vault_path
+                            if vault_path is None:
+                                raise RuntimeError(
+                                    "obsidian vault path is not configured"
+                                )
+                            note_paths.append(
+                                write_obsidian_note(
+                                    vault_path=vault_path,
+                                    base_folder=stream.obsidian_base_folder,
+                                    item_id=item.id,
+                                    title=item.title,
+                                    source=item.source,
+                                    canonical_url=item.canonical_url,
+                                    published_at=item.published_at,
+                                    authors=self.repository.decode_list(item.authors),
+                                    topics=self.repository.decode_list(
+                                        analysis.topics_json
+                                    ),
+                                    relevance_score=analysis.relevance_score,
+                                    run_id=run_id,
+                                    summary=analysis.summary,
+                                )
+                            )
+                        if enable_markdown:
+                            md_note_path = write_markdown_note(
+                                output_dir=stream.markdown_output_dir,
+                                item_id=item.id,
+                                title=item.title,
+                                source=item.source,
+                                canonical_url=item.canonical_url,
+                                published_at=item.published_at,
+                                authors=self.repository.decode_list(item.authors),
+                                topics=self.repository.decode_list(analysis.topics_json),
+                                relevance_score=analysis.relevance_score,
+                                run_id=run_id,
+                                summary=analysis.summary,
+                            )
+                            markdown_notes.append((item.title, md_note_path))
+                            note_paths.append(md_note_path)
+                        if (
+                            enable_telegram
+                            and destination_hash is not None
+                            and not telegram_already_sent
+                        ):
+                            if telegram_sender is None:
+                                raise RuntimeError(
+                                    "telegram sender is not configured"
+                                )
+                            message_text = build_telegram_message(
+                                title=item.title,
+                                summary=analysis.summary,
+                                url=item.canonical_url,
+                            )
+                            message_id = telegram_sender.send(message_text)
+                            self.repository.upsert_delivery(
+                                item_id=item.id,
+                                channel=DELIVERY_CHANNEL_TELEGRAM,
+                                destination=destination_hash,
+                                message_id=message_id,
+                                status=DELIVERY_STATUS_SENT,
+                            )
+                        self.repository.mark_item_stream_state(
+                            item_id=item.id,
+                            stream=stream.name,
+                            state=ITEM_STATE_PUBLISHED,
+                            mirror_item_state=False,
+                        )
+                        publish_result.sent += 1
+                        stream_sent += 1
+                        publish_result.note_paths.extend(note_paths)
+                    except Exception as exc:
+                        sanitized_error = self._sanitize_error_message(str(exc))
+                        artifact_path = self._write_debug_artifact(
+                            run_id=run_id,
+                            item_id=item.id,
+                            kind="error_context",
+                            payload={
+                                "stage": "publish",
+                                "stream": stream.name,
+                                "error_type": type(exc).__name__,
+                                "error_message": sanitized_error,
+                                "item_id": item.id,
+                                **self._classify_exception(exc),
+                            },
+                        )
+                        if artifact_path is not None:
+                            try:
+                                self.repository.add_artifact(
+                                    run_id=run_id,
+                                    item_id=item.id,
+                                    kind="error_context",
+                                    path=str(artifact_path),
+                                )
+                            except Exception as artifact_exc:
+                                stream_log.bind(item_id=item.id).warning(
+                                    "Topic stream publish debug artifact record failed: {}",
+                                    self._sanitize_error_message(str(artifact_exc)),
+                                )
+                        if (
+                            enable_telegram
+                            and destination_hash is not None
+                            and not telegram_already_sent
+                        ):
+                            self.repository.upsert_delivery(
+                                item_id=item.id,
+                                channel=DELIVERY_CHANNEL_TELEGRAM,
+                                destination=destination_hash,
+                                message_id=None,
+                                status=DELIVERY_STATUS_FAILED,
+                                error=sanitized_error,
+                            )
+                        publish_result.failed += 1
+                        stream_failed += 1
+                        stream_log.bind(item_id=item.id).warning(
+                            "Publish failed: {}",
+                            sanitized_error,
+                        )
+
+            if enable_markdown:
+                try:
+                    latest_path = write_markdown_run_index(
+                        output_dir=stream.markdown_output_dir,
+                        run_id=run_id,
+                        generated_at=utc_now(),
+                        notes=markdown_notes,
+                    )
+                    markdown_stream_indexes.append((stream.name, latest_path))
+                except Exception as exc:
+                    stream_log.bind(
+                        module="pipeline.publish.markdown_index"
+                    ).warning(
+                        "Markdown index write failed: {}",
+                        self._sanitize_error_message(str(exc)),
+                    )
+
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="publish",
+                stream=stream.name,
+                suffix="sent_total",
+                value=stream_sent,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="publish",
+                stream=stream.name,
+                suffix="skipped_total",
+                value=stream_skipped,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="publish",
+                stream=stream.name,
+                suffix="filtered_total",
+                value=filtered_total,
+                unit="count",
+            )
+            self._record_stream_metric(
+                run_id=run_id,
+                stage="publish",
+                stream=stream.name,
+                suffix="failed_total",
+                value=stream_failed,
+                unit="count",
+            )
+            if remaining_today is not None:
+                self._record_stream_metric(
+                    run_id=run_id,
+                    stage="publish",
+                    stream=stream.name,
+                    suffix="daily_cap_remaining",
+                    value=max(0, remaining_today - stream_sent),
+                    unit="count",
+                )
+
+        if markdown_stream_indexes:
+            try:
+                write_markdown_stream_index(
+                    output_dir=self.settings.markdown_output_dir,
+                    run_id=run_id,
+                    generated_at=utc_now(),
+                    streams=markdown_stream_indexes,
+                )
+            except Exception as exc:
+                log.bind(module="pipeline.publish.streams_index").warning(
+                    "Topic stream markdown index write failed: {}",
+                    self._sanitize_error_message(str(exc)),
+                )
+
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.publish.streams_total",
+            value=len(self._topic_streams),
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.publish.sent_total",
+            value=publish_result.sent,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.publish.skipped_total",
+            value=publish_result.skipped,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.publish.failed_total",
+            value=publish_result.failed,
+            unit="count",
+        )
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.publish.duration_ms",
+            value=int((time.perf_counter() - started) * 1000),
+            unit="ms",
+        )
+        log.info(
+            "Topic stream publish completed with sent={} skipped={} failed={} streams={}",
+            publish_result.sent,
+            publish_result.skipped,
+            publish_result.failed,
+            len(self._topic_streams),
+        )
+        return publish_result
+
     def trends(
         self,
         *,
@@ -2144,6 +3376,16 @@ class PipelineService:
         backfill_mode: str = "missing",
         debug_pdf: bool = False,
     ) -> TrendResult:
+        if self._explicit_topic_streams:
+            return self._trends_topic_streams(
+                run_id=run_id,
+                granularity=granularity,
+                anchor_date=anchor_date,
+                llm_model=llm_model,
+                backfill=backfill,
+                backfill_mode=backfill_mode,
+                debug_pdf=debug_pdf,
+            )
         log = logger.bind(module="pipeline.trends", run_id=run_id)
         started = time.perf_counter()
         normalized_granularity = str(granularity or "").strip().lower()
@@ -3409,6 +4651,90 @@ class PipelineService:
             )
             log.warning("Trends failed: {}", sanitized_error)
             raise
+
+    def _trends_topic_streams(
+        self,
+        *,
+        run_id: str,
+        granularity: str = "day",
+        anchor_date: date | None = None,
+        llm_model: str | None = None,
+        backfill: bool = False,
+        backfill_mode: str = "missing",
+        debug_pdf: bool = False,
+    ) -> TrendResult:
+        log = logger.bind(module="pipeline.trends", run_id=run_id)
+        results: list[TrendResult] = []
+
+        for stream in self._topic_streams:
+            scoped_repository = _ScopedTrendsRepository(
+                repository=self.repository,
+                scope=stream.name,
+            )
+            stream_settings = self._settings_for_topic_stream(stream)
+            stream_targets = set(stream.publish_targets)
+            stream_sender: Any | None = None
+            if "telegram" in stream_targets:
+                stream_sender = self._telegram_sender_for_stream(stream)
+            child_service = PipelineService(
+                settings=stream_settings,
+                repository=cast(RepositoryPort, scoped_repository),
+                analyzer=self.analyzer,
+                triage=self.semantic_triage,
+                telegram_sender=stream_sender,
+            )
+            result = child_service.trends(
+                run_id=run_id,
+                granularity=granularity,
+                anchor_date=anchor_date,
+                llm_model=llm_model,
+                backfill=backfill,
+                backfill_mode=backfill_mode,
+                debug_pdf=debug_pdf,
+            )
+            result.stream = stream.name
+            results.append(result)
+
+        self.repository.record_metric(
+            run_id=run_id,
+            name="pipeline.trends.streams_total",
+            value=len(results),
+            unit="count",
+        )
+        if not results:
+            anchor = anchor_date or utc_now().date()
+            if granularity == "week":
+                period_start, period_end = trends.week_period_bounds(anchor)
+            elif granularity == "month":
+                period_start, period_end = trends.month_period_bounds(anchor)
+            else:
+                period_start, period_end = trends.day_period_bounds(anchor)
+            return TrendResult(
+                doc_id=0,
+                granularity=str(granularity or "").strip().lower() or "day",
+                period_start=period_start,
+                period_end=period_end,
+                title="Trend",
+                stream_results=[],
+            )
+
+        first = results[0]
+        log.info(
+            "Topic stream trends completed streams={} granularity={} period_start={} period_end={}",
+            len(results),
+            first.granularity,
+            first.period_start.isoformat(),
+            first.period_end.isoformat(),
+        )
+        return TrendResult(
+            doc_id=first.doc_id,
+            granularity=first.granularity,
+            period_start=first.period_start,
+            period_end=first.period_end,
+            title=first.title,
+            stream=first.stream,
+            stream_results=results,
+        )
 
     def _pull_source_drafts(
         self, *, run_id: str, log: Any

@@ -7,7 +7,7 @@ on:
     paths:
       - .github/workflows/site-pages.yml
       - recoleta/**
-      - site-content/Trends/**
+      - site-content/**
       - pyproject.toml
       - uv.lock
   workflow_dispatch:
@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ hashFiles('site-content/Trends/*.md') != '' }}
+    if: ${{ hashFiles('site-content/**/*.md') != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -68,15 +68,26 @@ jobs:
           uv run python - <<'PY'
           from pathlib import Path
 
-          input_dir = Path("site-content/Trends")
-          if not input_dir.is_dir():
+          staged_root = Path("site-content")
+          if not staged_root.is_dir():
               raise SystemExit(
-                  "Missing site-content/Trends. Run `uv run recoleta site stage` locally and commit the staged trend notes first."
+                  "Missing site-content. Run `uv run recoleta site stage` locally and commit the staged trend notes first."
               )
-          markdown_files = sorted(input_dir.glob("*.md"))
+
+          markdown_files = []
+          direct_trends_dir = staged_root / "Trends"
+          if direct_trends_dir.is_dir():
+              markdown_files.extend(sorted(direct_trends_dir.glob("*.md")))
+
+          streams_root = staged_root / "Streams"
+          if streams_root.is_dir():
+              for trends_dir in sorted(streams_root.glob("*/Trends")):
+                  if trends_dir.is_dir():
+                      markdown_files.extend(sorted(trends_dir.glob("*.md")))
+
           if not markdown_files:
               raise SystemExit(
-                  "No staged trend markdown found in site-content/Trends. Run `uv run recoleta site stage` after generating trend notes."
+                  "No staged trend markdown found in site-content. Run `uv run recoleta site stage` after generating trend notes."
               )
           print(f"staged trend notes: {len(markdown_files)}")
           PY
@@ -84,7 +95,7 @@ jobs:
       - name: Build static site
         run: |
           uv run recoleta site build \
-            --input-dir site-content/Trends \
+            --input-dir site-content \
             --output-dir site-dist
 
       - name: Upload Pages artifact

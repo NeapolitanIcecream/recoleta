@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import html
@@ -41,9 +42,16 @@ class TrendSiteDocument:
     period_start: datetime | None
     period_end: datetime | None
     topics: list[str]
+    stream: str | None
     body_html: str
     excerpt: str
     frontmatter: dict[str, Any]
+
+
+@dataclass(slots=True)
+class TrendSiteInputDirectory:
+    path: Path
+    stream: str | None
 
 
 @dataclass(slots=True)
@@ -57,6 +65,7 @@ class TrendSiteSourceDocument:
     period_start: datetime | None
     period_end: datetime | None
     topics: list[str]
+    stream: str | None
 
 
 def _parse_site_datetime(value: Any) -> datetime | None:
@@ -106,6 +115,10 @@ def _topic_slug(topic: str) -> str:
     return slugify(str(topic or "").strip(), lowercase=True) or "topic"
 
 
+def _stream_slug(stream: str) -> str:
+    return slugify(str(stream or "").strip(), lowercase=True) or "stream"
+
+
 def _paths_overlap(path_a: Path, path_b: Path) -> bool:
     return path_a == path_b or path_a in path_b.parents or path_b in path_a.parents
 
@@ -116,6 +129,76 @@ def _reset_directory(path: Path) -> None:
             raise ValueError(f"Output path must be a directory: {path}")
         shutil.rmtree(path)
     path.mkdir(parents=True, exist_ok=True)
+
+
+def _coerce_site_input_paths(input_dir: Path | Sequence[Path]) -> list[Path]:
+    raw_inputs = [input_dir] if isinstance(input_dir, Path) else list(input_dir)
+    if not raw_inputs:
+        raise ValueError("Trend input directory list must not be empty")
+
+    resolved_inputs: list[Path] = []
+    for raw_input in raw_inputs:
+        resolved_input = raw_input.expanduser().resolve()
+        if not resolved_input.exists() or not resolved_input.is_dir():
+            raise ValueError(f"Trend input directory must exist: {resolved_input}")
+        resolved_inputs.append(resolved_input)
+    return resolved_inputs
+
+
+def _infer_stream_name_from_trends_dir(path: Path) -> str | None:
+    if path.name != "Trends":
+        return None
+    if len(path.parts) < 3:
+        return None
+    if path.parent.parent.name != "Streams":
+        return None
+    return path.parent.name
+
+
+def _discover_trend_site_input_dirs(
+    raw_inputs: Sequence[Path],
+) -> list[TrendSiteInputDirectory]:
+    discovered: list[TrendSiteInputDirectory] = []
+    seen_paths: set[Path] = set()
+
+    def add_candidate(candidate: Path) -> None:
+        resolved_candidate = candidate.expanduser().resolve()
+        if not resolved_candidate.exists() or not resolved_candidate.is_dir():
+            return
+        if resolved_candidate in seen_paths:
+            return
+        seen_paths.add(resolved_candidate)
+        discovered.append(
+            TrendSiteInputDirectory(
+                path=resolved_candidate,
+                stream=_infer_stream_name_from_trends_dir(resolved_candidate),
+            )
+        )
+
+    for raw_input in raw_inputs:
+        candidates: list[Path] = []
+        if raw_input.name == "Trends":
+            candidates.append(raw_input)
+
+        direct_trends_dir = raw_input / "Trends"
+        if direct_trends_dir.exists() and direct_trends_dir.is_dir():
+            candidates.append(direct_trends_dir)
+
+        streams_root = raw_input if raw_input.name == "Streams" else raw_input / "Streams"
+        if streams_root.exists() and streams_root.is_dir():
+            candidates.extend(
+                path
+                for path in sorted(streams_root.glob("*/Trends"))
+                if path.is_dir()
+            )
+
+        if not candidates:
+            candidates.append(raw_input)
+
+        for candidate in candidates:
+            add_candidate(candidate)
+
+    return discovered
 
 
 def _render_topic_link_pills(
@@ -147,6 +230,28 @@ def _render_topic_link_pills(
     return "".join(pills) if pills else "<span class='meta-pill subdued'>No tracked topics</span>"
 
 
+def _render_stream_link_pill(
+    *,
+    stream: str | None,
+    from_page: Path,
+    stream_pages: dict[str, Path],
+) -> str:
+    cleaned = str(stream or "").strip()
+    if not cleaned:
+        return ""
+    slug = _stream_slug(cleaned)
+    page_path = stream_pages.get(slug)
+    if page_path is None:
+        return f"<span class='meta-pill stream-pill'>{html.escape(cleaned)}</span>"
+    href = _site_href(from_page=from_page, to_page=page_path)
+    return (
+        "<a class='meta-pill stream-pill stream-pill-link' href='{}'>{}</a>".format(
+            href,
+            html.escape(cleaned),
+        )
+    )
+
+
 def _site_page_shell(
     *,
     title: str,
@@ -163,6 +268,10 @@ def _site_page_shell(
     index_href = _site_href(from_page=page_path, to_page=output_dir / "index.html")
     archive_href = _site_href(from_page=page_path, to_page=output_dir / "archive.html")
     topics_href = _site_href(from_page=page_path, to_page=output_dir / "topics" / "index.html")
+    streams_href = _site_href(
+        from_page=page_path,
+        to_page=output_dir / "streams" / "index.html",
+    )
 
     def nav_link(label: str, href: str, key: str) -> str:
         class_name = "nav-link is-active" if key == active_nav else "nav-link"
@@ -190,6 +299,7 @@ def _site_page_shell(
         f"{nav_link('Home', index_href, 'home')}"
         f"{nav_link('Archive', archive_href, 'archive')}"
         f"{nav_link('Topics', topics_href, 'topics')}"
+        f"{nav_link('Streams', streams_href, 'streams')}"
         "</nav>"
         "</header>"
         "<main class='site-main'>"
@@ -213,6 +323,7 @@ def _render_trend_card(
     document: TrendSiteDocument,
     from_page: Path,
     topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
 ) -> str:
     trend_href = _site_href(from_page=from_page, to_page=document.page_path)
     pdf_href = (
@@ -226,6 +337,14 @@ def _render_trend_card(
         from_page=from_page,
         topic_pages=topic_pages,
     )
+    stream_link = _render_stream_link_pill(
+        stream=document.stream,
+        from_page=from_page,
+        stream_pages=stream_pages,
+    )
+    meta_pills = [f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"]
+    if stream_link:
+        meta_pills.append(stream_link)
     actions = [
         f"<a class='action-link' href='{trend_href}'>Open brief</a>",
         f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>",
@@ -235,7 +354,7 @@ def _render_trend_card(
     return (
         "<article class='trend-card'>"
         "<div class='card-meta-row'>"
-        f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
+        f"<div class='card-pill-row'>{''.join(meta_pills)}</div>"
         f"<span class='meta-date'>{html.escape(document.period_token)}</span>"
         "</div>"
         f"<h2 class='card-title'><a href='{trend_href}'>{html.escape(document.title)}</a></h2>"
@@ -263,6 +382,23 @@ def _render_topic_card(
     )
 
 
+def _render_stream_card(
+    *,
+    stream: str,
+    count: int,
+    latest_token: str,
+    page_path: Path,
+    stream_page_path: Path,
+) -> str:
+    href = _site_href(from_page=page_path, to_page=stream_page_path)
+    return (
+        "<article class='topic-card'>"
+        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(stream)}</a></h2>"
+        f"<div class='topic-card-meta'>{count} briefs · latest {html.escape(latest_token)}</div>"
+        "</article>"
+    )
+
+
 def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path) -> str:
     rows: list[str] = []
     grouped: dict[str, list[TrendSiteDocument]] = defaultdict(list)
@@ -280,7 +416,13 @@ def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path)
         items = "".join(
             "<li class='archive-item'>"
             f"<a href='{_site_href(from_page=from_page, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
-            f"<span>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}</span>"
+            f"<span>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}"
+            + (
+                f" · {html.escape(document.stream)}"
+                if document.stream
+                else ""
+            )
+            + "</span>"
             "</li>"
             for document in month_documents
         )
@@ -298,6 +440,7 @@ def _render_detail_page(
     document: TrendSiteDocument,
     output_dir: Path,
     topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
     previous_document: TrendSiteDocument | None,
     next_document: TrendSiteDocument | None,
 ) -> str:
@@ -316,6 +459,11 @@ def _render_detail_page(
         topics=document.topics,
         from_page=document.page_path,
         topic_pages=topic_pages,
+    )
+    stream_link = _render_stream_link_pill(
+        stream=document.stream,
+        from_page=document.page_path,
+        stream_pages=stream_pages,
     )
     meta_items = "".join(
         "<div class='meta-panel'>"
@@ -350,6 +498,14 @@ def _render_detail_page(
     if pdf_href is not None:
         action_links.insert(0, f"<a class='action-link' href='{pdf_href}'>Download PDF</a>")
 
+    detail_stream_html = (
+        f"<div class='detail-stream-row'>{stream_link}</div>" if stream_link else ""
+    )
+    pager_html = (
+        f"<section class='pager-row'>{''.join(pager_items)}</section>"
+        if pager_items
+        else ""
+    )
     content_html = (
         "<nav class='breadcrumbs'>"
         f"<a href='{breadcrumb_home}'>Home</a>"
@@ -364,6 +520,7 @@ def _render_detail_page(
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
         f"<p class='detail-dek'>{html.escape(_trend_pdf_hero_dek(document.frontmatter))}</p>"
         f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
+        f"{detail_stream_html}"
         f"<div class='topic-pill-row'>{topic_links}</div>"
         f"<div class='card-actions detail-actions'>{''.join(action_links)}</div>"
         "</div>"
@@ -372,11 +529,7 @@ def _render_detail_page(
         "</aside>"
         "</section>"
         f"<section class='detail-content'>{document.body_html}</section>"
-        + (
-            f"<section class='pager-row'>{''.join(pager_items)}</section>"
-            if pager_items
-            else ""
-        )
+        f"{pager_html}"
     )
 
     return _site_page_shell(
@@ -396,6 +549,7 @@ def _render_home_page(
     documents: list[TrendSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
 ) -> str:
     page_path = output_dir / "index.html"
     latest_cards = "".join(
@@ -403,6 +557,7 @@ def _render_home_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
+            stream_pages=stream_pages,
         )
         for document in documents[:6]
     )
@@ -432,6 +587,28 @@ def _render_home_page(
         if slug in topic_pages
     )
 
+    stream_counter: Counter[str] = Counter()
+    latest_by_stream: dict[str, TrendSiteDocument] = {}
+    for document in documents:
+        cleaned_stream = str(document.stream or "").strip()
+        if not cleaned_stream:
+            continue
+        slug = _stream_slug(cleaned_stream)
+        stream_counter[slug] += 1
+        latest_by_stream.setdefault(slug, document)
+
+    stream_cards = "".join(
+        _render_stream_card(
+            stream=latest_by_stream[slug].stream or slug,
+            count=stream_counter[slug],
+            latest_token=latest_by_stream[slug].period_token,
+            page_path=page_path,
+            stream_page_path=stream_pages[slug],
+        )
+        for slug, _count in stream_counter.most_common(12)
+        if slug in stream_pages
+    )
+
     archive_preview = "".join(
         "<li class='timeline-item'>"
         f"<a href='{_site_href(from_page=page_path, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
@@ -446,6 +623,16 @@ def _render_home_page(
         oldest = documents[-1].period_token
         generated_span = f"{newest} to {oldest}"
 
+    stream_section_html = (
+        "<section class='home-section'>"
+        "<div class='section-heading-row'>"
+        "<h2 class='section-title'>Topic streams</h2>"
+        "</div>"
+        f"<div class='topic-card-grid'>{stream_cards}</div>"
+        "</section>"
+        if stream_cards
+        else ""
+    )
     content_html = (
         "<section class='home-hero-card'>"
         "<div class='home-hero-copy'>"
@@ -453,7 +640,7 @@ def _render_home_page(
         "<h1 class='home-title'>A lighter-weight way to browse Recoleta trends.</h1>"
         "<p class='home-dek'>"
         "This site turns trend notes into a single, navigable reading surface."
-        " Readers can scan the latest briefs, jump by topic, and open a single trend page"
+        " Readers can scan the latest briefs, jump by topic or stream, and open a single trend page"
         " without carrying the full workflow context."
         "</p>"
         "<div class='hero-actions'>"
@@ -473,6 +660,7 @@ def _render_home_page(
         "</div>"
         f"<div class='trend-grid'>{latest_cards or '<div class=\"empty-card\">No trend notes available yet.</div>'}</div>"
         "</section>"
+        f"{stream_section_html}"
         "<section class='home-section split-layout'>"
         "<div>"
         "<h2 class='section-title'>Topic radar</h2>"
@@ -549,6 +737,55 @@ def _render_topics_index_page(
     )
 
 
+def _render_streams_index_page(
+    *,
+    documents: list[TrendSiteDocument],
+    output_dir: Path,
+    stream_pages: dict[str, Path],
+) -> str:
+    page_path = output_dir / "streams" / "index.html"
+    stream_counter: Counter[str] = Counter()
+    latest_by_stream: dict[str, TrendSiteDocument] = {}
+
+    for document in documents:
+        cleaned_stream = str(document.stream or "").strip()
+        if not cleaned_stream:
+            continue
+        slug = _stream_slug(cleaned_stream)
+        stream_counter[slug] += 1
+        latest_by_stream.setdefault(slug, document)
+
+    cards = "".join(
+        _render_stream_card(
+            stream=latest_by_stream[slug].stream or slug,
+            count=stream_counter[slug],
+            latest_token=latest_by_stream[slug].period_token,
+            page_path=page_path,
+            stream_page_path=stream_pages[slug],
+        )
+        for slug, _count in stream_counter.most_common()
+        if slug in stream_pages
+    )
+
+    content_html = (
+        "<section class='home-section'>"
+        "<h2 class='section-title'>Topic streams</h2>"
+        f"<div class='topic-card-grid'>{cards or '<div class=\"empty-card\">No topic streams available yet.</div>'}</div>"
+        "</section>"
+    )
+
+    return _site_page_shell(
+        title="Streams · Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading="Streams",
+        page_subtitle="Topic stream navigation",
+        body_class="page-streams",
+        active_nav="streams",
+        content_html=content_html,
+    )
+
+
 def _render_topic_page(
     *,
     topic: str,
@@ -556,6 +793,7 @@ def _render_topic_page(
     documents: list[TrendSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
 ) -> str:
     page_path = topic_pages[topic_slug]
     cards = "".join(
@@ -563,6 +801,7 @@ def _render_topic_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
+            stream_pages=stream_pages,
         )
         for document in documents
     )
@@ -583,6 +822,46 @@ def _render_topic_page(
         page_subtitle="Topic page",
         body_class="page-topic",
         active_nav="topics",
+        content_html=content_html,
+    )
+
+
+def _render_stream_page(
+    *,
+    stream: str,
+    stream_slug: str,
+    documents: list[TrendSiteDocument],
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
+) -> str:
+    page_path = stream_pages[stream_slug]
+    cards = "".join(
+        _render_trend_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+            stream_pages=stream_pages,
+        )
+        for document in documents
+    )
+    content_html = (
+        "<section class='home-section'>"
+        "<div class='section-heading-row'>"
+        f"<h2 class='section-title'>{html.escape(stream)}</h2>"
+        f"<span class='meta-date'>{len(documents)} briefs</span>"
+        "</div>"
+        f"<div class='trend-grid'>{cards}</div>"
+        "</section>"
+    )
+    return _site_page_shell(
+        title=f"{stream} · Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading=stream,
+        page_subtitle="Topic stream page",
+        body_class="page-stream",
+        active_nav="streams",
         content_html=content_html,
     )
 
@@ -770,6 +1049,9 @@ a {
   display: grid;
   gap: 10px;
 }
+.detail-stream-row {
+  margin-bottom: 10px;
+}
 .meta-panel {
   padding: 14px 16px;
   border: 1px solid rgba(255, 255, 255, 0.46);
@@ -838,6 +1120,11 @@ a {
   justify-content: space-between;
   gap: 12px;
 }
+.card-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .meta-pill,
 .topic-pill {
   display: inline-flex;
@@ -851,6 +1138,11 @@ a {
   font-size: 12px;
   font-weight: 600;
 }
+.stream-pill {
+  border-color: rgba(21, 98, 76, 0.16);
+  background: rgba(21, 98, 76, 0.08);
+  color: #1e6a55;
+}
 .meta-pill.subdued {
   border-color: rgba(17, 41, 71, 0.08);
   background: rgba(255, 255, 255, 0.65);
@@ -862,6 +1154,7 @@ a {
   gap: 8px;
 }
 .topic-pill-link:hover,
+.stream-pill-link:hover,
 .action-link:hover,
 .trend-card a:hover,
 .topic-card a:hover {
@@ -1174,41 +1467,52 @@ a {
 
 def _load_trend_source_documents(
     *,
-    input_dir: Path,
+    input_dirs: Sequence[TrendSiteInputDirectory],
     limit: int | None = None,
 ) -> list[TrendSiteSourceDocument]:
     source_documents: list[TrendSiteSourceDocument] = []
-    markdown_paths = sorted(input_dir.glob("*.md"))
+    for input_info in input_dirs:
+        markdown_paths = sorted(input_info.path.glob("*.md"))
+        for markdown_path in markdown_paths:
+            raw_markdown = markdown_path.read_text(encoding="utf-8")
+            frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
+            if str(frontmatter.get("kind") or "").strip().lower() != "trend":
+                continue
 
-    for markdown_path in markdown_paths:
-        raw_markdown = markdown_path.read_text(encoding="utf-8")
-        frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
-        if str(frontmatter.get("kind") or "").strip().lower() != "trend":
-            continue
-
-        period_start = _parse_site_datetime(frontmatter.get("period_start"))
-        period_end = _parse_site_datetime(frontmatter.get("period_end"))
-        granularity = str(frontmatter.get("granularity") or "trend").strip().lower() or "trend"
-        topics_raw = frontmatter.get("topics")
-        topics = []
-        if isinstance(topics_raw, list):
-            topics = [str(topic).strip() for topic in topics_raw if str(topic).strip()]
-
-        source_pdf_path = markdown_path.with_suffix(".pdf")
-        pdf_path = source_pdf_path if source_pdf_path.exists() and source_pdf_path.is_file() else None
-        source_documents.append(
-            TrendSiteSourceDocument(
-                markdown_path=markdown_path,
-                pdf_path=pdf_path,
-                stem=markdown_path.stem,
-                frontmatter=frontmatter,
-                markdown_body=markdown_body,
-                granularity=granularity,
-                period_start=period_start,
-                period_end=period_end,
-                topics=topics,
+            period_start = _parse_site_datetime(frontmatter.get("period_start"))
+            period_end = _parse_site_datetime(frontmatter.get("period_end"))
+            granularity = (
+                str(frontmatter.get("granularity") or "trend").strip().lower()
+                or "trend"
             )
-        )
+            topics_raw = frontmatter.get("topics")
+            topics = []
+            if isinstance(topics_raw, list):
+                topics = [
+                    str(topic).strip() for topic in topics_raw if str(topic).strip()
+                ]
+
+            stream = str(frontmatter.get("stream") or input_info.stream or "").strip() or None
+            source_pdf_path = markdown_path.with_suffix(".pdf")
+            pdf_path = (
+                source_pdf_path
+                if source_pdf_path.exists() and source_pdf_path.is_file()
+                else None
+            )
+            source_documents.append(
+                TrendSiteSourceDocument(
+                    markdown_path=markdown_path,
+                    pdf_path=pdf_path,
+                    stem=markdown_path.stem,
+                    frontmatter=frontmatter,
+                    markdown_body=markdown_body,
+                    granularity=granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    topics=topics,
+                    stream=stream,
+                )
+            )
 
     source_documents.sort(
         key=lambda document: (
@@ -1222,13 +1526,13 @@ def _load_trend_source_documents(
 
 def _load_trend_site_documents(
     *,
-    input_dir: Path,
+    input_dirs: Sequence[TrendSiteInputDirectory],
     output_dir: Path,
     limit: int | None = None,
 ) -> list[TrendSiteDocument]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
     documents: list[TrendSiteDocument] = []
-    source_documents = _load_trend_source_documents(input_dir=input_dir, limit=limit)
+    source_documents = _load_trend_source_documents(input_dirs=input_dirs, limit=limit)
 
     artifacts_dir = output_dir / "artifacts"
     trends_dir = output_dir / "trends"
@@ -1276,6 +1580,7 @@ def _load_trend_site_documents(
                 period_start=source_document.period_start,
                 period_end=source_document.period_end,
                 topics=source_document.topics,
+                stream=source_document.stream,
                 body_html=browser_body_html,
                 excerpt=excerpt,
                 frontmatter=source_document.frontmatter,
@@ -1287,25 +1592,25 @@ def _load_trend_site_documents(
 
 def export_trend_static_site(
     *,
-    input_dir: Path,
+    input_dir: Path | Sequence[Path],
     output_dir: Path,
     limit: int | None = None,
 ) -> Path:
-    resolved_input_dir = input_dir.expanduser().resolve()
-    if not resolved_input_dir.exists() or not resolved_input_dir.is_dir():
-        raise ValueError(f"Trend input directory must exist: {resolved_input_dir}")
-
+    resolved_input_roots = _coerce_site_input_paths(input_dir)
+    resolved_input_dirs = _discover_trend_site_input_dirs(resolved_input_roots)
     resolved_output_dir = output_dir.expanduser().resolve()
-    if _paths_overlap(resolved_input_dir, resolved_output_dir):
-        raise ValueError(
-            "Trend site output directory must not overlap the input directory"
-        )
+    for input_info in resolved_input_dirs:
+        if _paths_overlap(input_info.path, resolved_output_dir):
+            raise ValueError(
+                "Trend site output directory must not overlap the input directory"
+            )
     _reset_directory(resolved_output_dir)
     (resolved_output_dir / "assets").mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "topics").mkdir(parents=True, exist_ok=True)
+    (resolved_output_dir / "streams").mkdir(parents=True, exist_ok=True)
 
     documents = _load_trend_site_documents(
-        input_dir=resolved_input_dir,
+        input_dirs=resolved_input_dirs,
         output_dir=resolved_output_dir,
         limit=limit,
     )
@@ -1322,6 +1627,20 @@ def export_trend_static_site(
         slug: resolved_output_dir / "topics" / f"{slug}.html"
         for slug in sorted(topic_documents.keys())
     }
+    label_by_stream_slug: dict[str, str] = {}
+    stream_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)
+    for document in documents:
+        cleaned_stream = str(document.stream or "").strip()
+        if not cleaned_stream:
+            continue
+        slug = _stream_slug(cleaned_stream)
+        label_by_stream_slug.setdefault(slug, cleaned_stream)
+        stream_documents[slug].append(document)
+
+    stream_pages = {
+        slug: resolved_output_dir / "streams" / f"{slug}.html"
+        for slug in sorted(stream_documents.keys())
+    }
 
     (resolved_output_dir / "assets" / "site.css").write_text(
         _SITE_CSS.strip() + "\n",
@@ -1334,6 +1653,7 @@ def export_trend_static_site(
             documents=documents,
             output_dir=resolved_output_dir,
             topic_pages=topic_pages,
+            stream_pages=stream_pages,
         ),
         encoding="utf-8",
     )
@@ -1352,6 +1672,14 @@ def export_trend_static_site(
         ),
         encoding="utf-8",
     )
+    (resolved_output_dir / "streams" / "index.html").write_text(
+        _render_streams_index_page(
+            documents=documents,
+            output_dir=resolved_output_dir,
+            stream_pages=stream_pages,
+        ),
+        encoding="utf-8",
+    )
 
     for idx, document in enumerate(documents):
         previous_document = documents[idx - 1] if idx > 0 else None
@@ -1361,6 +1689,7 @@ def export_trend_static_site(
                 document=document,
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
+                stream_pages=stream_pages,
                 previous_document=previous_document,
                 next_document=next_document,
             ),
@@ -1375,21 +1704,48 @@ def export_trend_static_site(
                 documents=topic_documents[slug],
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
+                stream_pages=stream_pages,
+            ),
+            encoding="utf-8",
+        )
+
+    for slug, page_path in stream_pages.items():
+        page_path.write_text(
+            _render_stream_page(
+                stream=label_by_stream_slug[slug],
+                stream_slug=slug,
+                documents=stream_documents[slug],
+                output_dir=resolved_output_dir,
+                topic_pages=topic_pages,
+                stream_pages=stream_pages,
             ),
             encoding="utf-8",
         )
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "input_dir": str(resolved_input_dir),
+        "input_dir": (
+            str(resolved_input_roots[0])
+            if len(resolved_input_roots) == 1
+            else [str(path) for path in resolved_input_roots]
+        ),
+        "input_dirs": [
+            {
+                "path": str(input_info.path),
+                "stream": input_info.stream,
+            }
+            for input_info in resolved_input_dirs
+        ],
         "output_dir": str(resolved_output_dir),
         "trends_total": len(documents),
         "topics_total": len(topic_pages),
+        "streams_total": len(stream_pages),
         "files": {
             "index": "index.html",
             "archive": "archive.html",
             "nojekyll": ".nojekyll",
             "topics_index": "topics/index.html",
+            "streams_index": "streams/index.html",
             "stylesheet": "assets/site.css",
             "trend_pages": [
                 str(document.page_path.relative_to(resolved_output_dir))
@@ -1398,6 +1754,10 @@ def export_trend_static_site(
             "topic_pages": [
                 str(path.relative_to(resolved_output_dir))
                 for path in topic_pages.values()
+            ],
+            "stream_pages": [
+                str(path.relative_to(resolved_output_dir))
+                for path in stream_pages.values()
             ],
         },
     }
@@ -1411,51 +1771,77 @@ def export_trend_static_site(
         output_dir=str(resolved_output_dir),
         trends_total=len(documents),
         topics_total=len(topic_pages),
+        streams_total=len(stream_pages),
     ).info("Trend static site export completed")
     return manifest_path
 
 
 def stage_trend_site_source(
     *,
-    input_dir: Path,
+    input_dir: Path | Sequence[Path],
     output_dir: Path,
     limit: int | None = None,
 ) -> Path:
-    resolved_input_dir = input_dir.expanduser().resolve()
-    if not resolved_input_dir.exists() or not resolved_input_dir.is_dir():
-        raise ValueError(f"Trend input directory must exist: {resolved_input_dir}")
-
+    resolved_input_roots = _coerce_site_input_paths(input_dir)
+    resolved_input_dirs = _discover_trend_site_input_dirs(resolved_input_roots)
     resolved_output_dir = output_dir.expanduser().resolve()
-    if _paths_overlap(resolved_input_dir, resolved_output_dir):
-        raise ValueError(
-            "Trend site stage output directory must not overlap the input directory"
-        )
+    for input_info in resolved_input_dirs:
+        if _paths_overlap(input_info.path, resolved_output_dir):
+            raise ValueError(
+                "Trend site stage output directory must not overlap the input directory"
+            )
     _reset_directory(resolved_output_dir)
 
     source_documents = _load_trend_source_documents(
-        input_dir=resolved_input_dir,
+        input_dirs=resolved_input_dirs,
         limit=limit,
     )
     staged_markdown_files: list[str] = []
     staged_pdf_files: list[str] = []
 
     for source_document in source_documents:
-        staged_markdown_path = resolved_output_dir / source_document.markdown_path.name
+        target_dir = (
+            resolved_output_dir / "Streams" / source_document.stream / "Trends"
+            if source_document.stream
+            else resolved_output_dir
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+        staged_markdown_path = target_dir / source_document.markdown_path.name
         shutil.copy2(source_document.markdown_path, staged_markdown_path)
-        staged_markdown_files.append(staged_markdown_path.name)
+        staged_markdown_files.append(
+            str(staged_markdown_path.relative_to(resolved_output_dir))
+        )
 
         if source_document.pdf_path is None:
             continue
-        staged_pdf_path = resolved_output_dir / source_document.pdf_path.name
+        staged_pdf_path = target_dir / source_document.pdf_path.name
         shutil.copy2(source_document.pdf_path, staged_pdf_path)
-        staged_pdf_files.append(staged_pdf_path.name)
+        staged_pdf_files.append(str(staged_pdf_path.relative_to(resolved_output_dir)))
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "input_dir": str(resolved_input_dir),
+        "input_dir": (
+            str(resolved_input_roots[0])
+            if len(resolved_input_roots) == 1
+            else [str(path) for path in resolved_input_roots]
+        ),
+        "input_dirs": [
+            {
+                "path": str(input_info.path),
+                "stream": input_info.stream,
+            }
+            for input_info in resolved_input_dirs
+        ],
         "output_dir": str(resolved_output_dir),
         "trends_total": len(source_documents),
         "pdf_total": len(staged_pdf_files),
+        "streams_total": len(
+            {
+                source_document.stream
+                for source_document in source_documents
+                if source_document.stream
+            }
+        ),
         "files": {
             "markdown": staged_markdown_files,
             "pdf": staged_pdf_files,
@@ -1471,5 +1857,6 @@ def stage_trend_site_source(
         output_dir=str(resolved_output_dir),
         trends_total=len(source_documents),
         pdf_total=len(staged_pdf_files),
+        streams_total=manifest["streams_total"],
     ).info("Trend site source staging completed")
     return manifest_path

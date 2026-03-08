@@ -75,10 +75,13 @@ class Content(SQLModel, table=True):
 
 class Analysis(SQLModel, table=True):
     __tablename__ = "analyses"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
-    __table_args__ = (UniqueConstraint("item_id", name="uq_analyses_item_id"),)
+    __table_args__ = (
+        UniqueConstraint("item_id", "scope", name="uq_analyses_item_scope"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     item_id: int = Field(foreign_key="items.id", index=True)
+    scope: str = Field(default="default", max_length=64, index=True)
     model: str = Field(max_length=128)
     provider: str = Field(max_length=64)
     summary: str = Field(sa_type=Text)
@@ -88,6 +91,24 @@ class Analysis(SQLModel, table=True):
     cost_usd: float | None = None
     latency_ms: int | None = None
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class ItemStreamState(SQLModel, table=True):
+    __tablename__ = "item_stream_states"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+    __table_args__ = (
+        UniqueConstraint(
+            "item_id",
+            "stream",
+            name="uq_item_stream_states_item_stream",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    item_id: int = Field(foreign_key="items.id", index=True)
+    stream: str = Field(max_length=64, index=True)
+    state: str = Field(max_length=24, index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class Delivery(SQLModel, table=True):
@@ -158,18 +179,25 @@ class Artifact(SQLModel, table=True):
 class Document(SQLModel, table=True):
     __tablename__ = "documents"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (
-        UniqueConstraint("doc_type", "item_id", name="uq_documents_doc_type_item_id"),
         UniqueConstraint(
             "doc_type",
+            "item_id",
+            "scope",
+            name="uq_documents_doc_type_item_scope",
+        ),
+        UniqueConstraint(
+            "doc_type",
+            "scope",
             "granularity",
             "period_start",
             "period_end",
-            name="uq_documents_doc_type_granularity_period",
+            name="uq_documents_doc_type_scope_granularity_period",
         ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
     doc_type: str = Field(index=True, max_length=16)
+    scope: str = Field(default="default", max_length=64, index=True)
 
     # For doc_type == "item"
     item_id: int | None = Field(default=None, foreign_key="items.id", index=True)

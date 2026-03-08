@@ -6,6 +6,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+DEFAULT_TOPIC_STREAM = "default"
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -105,3 +107,5 @@ class TrendResult:
     period_start: datetime
     period_end: datetime
     title: str
+    stream: str | None = None
+    stream_results: list["TrendResult"] = field(default_factory=list)

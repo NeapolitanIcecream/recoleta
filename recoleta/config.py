@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any
 
 from platformdirs import user_data_dir
@@ -15,6 +17,8 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 import yaml
+
+from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 def _parse_json_or_yaml(value: str) -> Any:
@@ -64,6 +68,181 @@ _ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
 _ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
 _ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
 _ALLOWED_TRENDS_EMBEDDING_FAILURE_MODES = {"continue", "fail_fast", "threshold"}
+_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _normalize_identifier(value: Any, *, field_name: str) -> str:
+    raw = str(value or "").strip().lower()
+    normalized = "".join(
+        ch if (ch.isalnum() or ch in {"-", "_"}) else "-" for ch in raw
+    )
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    normalized = normalized.strip("-_")
+    if not normalized:
+        raise ValueError(f"{field_name} must contain at least one letter or digit")
+    if len(normalized) > 64:
+        raise ValueError(f"{field_name} must be <= 64 characters")
+    return normalized
+
+
+def _normalize_optional_env_name(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if "\n" in normalized or "\r" in normalized:
+        raise ValueError(f"{field_name} must be a single-line value")
+    if len(normalized) > 128:
+        raise ValueError(f"{field_name} must be <= 128 characters")
+    if _ENV_NAME_RE.fullmatch(normalized) is None:
+        raise ValueError(
+            f"{field_name} must be a valid environment variable name"
+        )
+    return normalized
+
+
+def _normalize_publish_targets(
+    values: list[str], *, field_name: str
+) -> list[str]:
+    normalized: list[str] = []
+    for raw in values:
+        if not isinstance(raw, str):
+            continue
+        token = raw.strip().lower()
+        if not token:
+            continue
+        normalized.append(token)
+    normalized = list(dict.fromkeys(normalized))
+    if not normalized:
+        raise ValueError(
+            f"{field_name} must include at least one target: markdown, obsidian, telegram"
+        )
+    unknown = sorted(
+        {token for token in normalized if token not in _ALLOWED_PUBLISH_TARGETS}
+    )
+    if unknown:
+        raise ValueError(
+            f"Unsupported {field_name} value(s): "
+            + ", ".join(unknown)
+            + " (allowed: markdown, obsidian, telegram)"
+        )
+    return normalized
+
+
+def _load_secret_from_env(env_name: str | None) -> SecretStr | None:
+    if env_name is None:
+        return None
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return None
+    return SecretStr(raw)
+
+
+@dataclass(frozen=True, slots=True)
+class TopicStreamRuntime:
+    name: str
+    topics: list[str]
+    allow_tags: list[str]
+    deny_tags: list[str]
+    publish_targets: list[str]
+    markdown_output_dir: Path
+    obsidian_base_folder: str
+    min_relevance_score: float
+    max_deliveries_per_day: int
+    telegram_bot_token: SecretStr | None
+    telegram_chat_id: SecretStr | None
+    explicit: bool
+
+
+class TopicStreamConfig(BaseModel):
+    name: str
+    topics: list[str] = Field(default_factory=list)
+    allow_tags: list[str] = Field(default_factory=list)
+    deny_tags: list[str] = Field(default_factory=list)
+    publish_targets: list[str] | None = None
+    markdown_output_dir: Path | None = None
+    obsidian_base_folder: str | None = None
+    min_relevance_score: float | None = None
+    max_deliveries_per_day: int | None = None
+    telegram_bot_token_env: str | None = None
+    telegram_chat_id_env: str | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_name(cls, value: Any) -> str:
+        return _normalize_identifier(value, field_name="topic_streams.name")
+
+    @field_validator(
+        "topics",
+        "allow_tags",
+        "deny_tags",
+        mode="before",
+    )
+    @classmethod
+    def _parse_string_list_fields(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return _parse_str_list(value)
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+    @field_validator("publish_targets", mode="before")
+    @classmethod
+    def _parse_publish_targets(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return _parse_str_list(value)
+        return value
+
+    @field_validator("markdown_output_dir", mode="before")
+    @classmethod
+    def _normalize_markdown_output_dir(cls, value: str | Path | None) -> Path | None:
+        if value is None:
+            return None
+        return Path(value).expanduser().resolve()
+
+    @field_validator("obsidian_base_folder", mode="before")
+    @classmethod
+    def _normalize_obsidian_base_folder(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().strip("/")
+        return normalized or None
+
+    @field_validator(
+        "telegram_bot_token_env",
+        "telegram_chat_id_env",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_env_names(cls, value: Any, info: Any) -> str | None:
+        return _normalize_optional_env_name(
+            value, field_name=f"topic_streams.{info.field_name}"
+        )
+
+    @model_validator(mode="after")
+    def _validate_topic_stream(self) -> "TopicStreamConfig":
+        if not self.topics:
+            raise ValueError("topic_streams.topics must include at least one topic")
+        if self.publish_targets is not None:
+            self.publish_targets = _normalize_publish_targets(
+                self.publish_targets,
+                field_name="topic_streams.publish_targets",
+            )
+        if (self.telegram_bot_token_env is None) != (
+            self.telegram_chat_id_env is None
+        ):
+            raise ValueError(
+                "topic_streams.telegram_bot_token_env and topic_streams.telegram_chat_id_env must be set together"
+            )
+        return self
 
 
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
@@ -74,6 +253,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "LLM_OUTPUT_LANGUAGE": "llm_output_language",
         "SOURCES": "sources",
         "TOPICS": "topics",
+        "TOPIC_STREAMS": "topic_streams",
         "ALLOW_TAGS": "allow_tags",
         "DENY_TAGS": "deny_tags",
         "MIN_RELEVANCE_SCORE": "min_relevance_score",
@@ -390,6 +570,9 @@ class Settings(BaseSettings):
         default_factory=SourcesConfig, validation_alias="SOURCES"
     )
     topics: list[str] = Field(default_factory=list, validation_alias="TOPICS")
+    topic_streams: list[TopicStreamConfig] = Field(
+        default_factory=list, validation_alias="TOPIC_STREAMS"
+    )
     allow_tags: list[str] = Field(default_factory=list, validation_alias="ALLOW_TAGS")
     deny_tags: list[str] = Field(default_factory=list, validation_alias="DENY_TAGS")
     min_relevance_score: float = Field(
@@ -602,6 +785,18 @@ class Settings(BaseSettings):
             return _parse_str_list(value)
         if isinstance(value, (list, tuple)):
             return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+    @field_validator("topic_streams", mode="before")
+    @classmethod
+    def _parse_topic_streams_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            loaded = _parse_json_or_yaml(value)
+            if not isinstance(loaded, list):
+                raise ValueError("TOPIC_STREAMS must be a JSON/YAML list")
+            return loaded
         return value
 
     @field_validator("allow_tags", mode="before")
@@ -839,30 +1034,103 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_publish_targets(self) -> "Settings":
-        normalized: list[str] = []
-        for raw in self.publish_targets:
-            if not isinstance(raw, str):
-                continue
-            token = raw.strip().lower()
-            if not token:
-                continue
-            normalized.append(token)
-        normalized = list(dict.fromkeys(normalized))
-        if not normalized:
-            raise ValueError(
-                "PUBLISH_TARGETS must include at least one target: markdown, obsidian, telegram"
-            )
-        unknown = sorted(
-            {token for token in normalized if token not in _ALLOWED_PUBLISH_TARGETS}
+        self.publish_targets = _normalize_publish_targets(
+            self.publish_targets,
+            field_name="PUBLISH_TARGETS",
         )
-        if unknown:
-            raise ValueError(
-                "Unsupported PUBLISH_TARGETS value(s): "
-                + ", ".join(unknown)
-                + " (allowed: markdown, obsidian, telegram)"
-            )
-        self.publish_targets = normalized
         return self
+
+    @model_validator(mode="after")
+    def _validate_topic_streams(self) -> "Settings":
+        if self.topic_streams and self.topics:
+            raise ValueError("TOPICS cannot be used together with TOPIC_STREAMS")
+        if not self.topic_streams:
+            return self
+        names = [stream.name for stream in self.topic_streams]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(
+                "TOPIC_STREAMS names must be unique: " + ", ".join(duplicates)
+            )
+        return self
+
+    def topic_stream_runtimes(self) -> list[TopicStreamRuntime]:
+        if not self.topic_streams:
+            return [
+                TopicStreamRuntime(
+                    name=DEFAULT_TOPIC_STREAM,
+                    topics=list(self.topics),
+                    allow_tags=list(self.allow_tags),
+                    deny_tags=list(self.deny_tags),
+                    publish_targets=list(self.publish_targets),
+                    markdown_output_dir=self.markdown_output_dir,
+                    obsidian_base_folder=self.obsidian_base_folder,
+                    min_relevance_score=float(self.min_relevance_score),
+                    max_deliveries_per_day=int(self.max_deliveries_per_day),
+                    telegram_bot_token=self.telegram_bot_token,
+                    telegram_chat_id=self.telegram_chat_id,
+                    explicit=False,
+                )
+            ]
+
+        runtimes: list[TopicStreamRuntime] = []
+        streams_root = self.markdown_output_dir / "Streams"
+        obsidian_streams_root = f"{self.obsidian_base_folder}/Streams"
+        for stream in self.topic_streams:
+            publish_targets = (
+                list(stream.publish_targets)
+                if stream.publish_targets is not None
+                else list(self.publish_targets)
+            )
+            runtimes.append(
+                TopicStreamRuntime(
+                    name=stream.name,
+                    topics=list(stream.topics),
+                    allow_tags=(
+                        list(stream.allow_tags)
+                        if stream.allow_tags
+                        else list(self.allow_tags)
+                    ),
+                    deny_tags=(
+                        list(stream.deny_tags)
+                        if stream.deny_tags
+                        else list(self.deny_tags)
+                    ),
+                    publish_targets=publish_targets,
+                    markdown_output_dir=(
+                        stream.markdown_output_dir
+                        if stream.markdown_output_dir is not None
+                        else (streams_root / stream.name)
+                    ),
+                    obsidian_base_folder=(
+                        stream.obsidian_base_folder
+                        if stream.obsidian_base_folder is not None
+                        else f"{obsidian_streams_root}/{stream.name}"
+                    ),
+                    min_relevance_score=float(
+                        self.min_relevance_score
+                        if stream.min_relevance_score is None
+                        else stream.min_relevance_score
+                    ),
+                    max_deliveries_per_day=int(
+                        self.max_deliveries_per_day
+                        if stream.max_deliveries_per_day is None
+                        else stream.max_deliveries_per_day
+                    ),
+                    telegram_bot_token=(
+                        _load_secret_from_env(stream.telegram_bot_token_env)
+                        if stream.telegram_bot_token_env is not None
+                        else self.telegram_bot_token
+                    ),
+                    telegram_chat_id=(
+                        _load_secret_from_env(stream.telegram_chat_id_env)
+                        if stream.telegram_chat_id_env is not None
+                        else self.telegram_chat_id
+                    ),
+                    explicit=True,
+                )
+            )
+        return runtimes
 
     def safe_fingerprint(self) -> str:
         payload = self.model_dump(mode="json")
