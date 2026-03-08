@@ -97,7 +97,7 @@ SOURCES:
   - Each stream supports:
     - `name`: stable stream identifier (used in metrics, DB scope, and default output paths)
     - `topics`: list of topics for that stream
-    - `allow_tags` / `deny_tags`: optional stream-local publish filters
+    - `allow_tags` / `deny_tags`: optional stream-local publish filters; omit or set `null` to inherit the global filters, use `[]` to clear inherited filters explicitly
     - `publish_targets`: optional override for `markdown|obsidian|telegram`
     - `markdown_output_dir`: optional absolute output dir override
     - `obsidian_base_folder`: optional Obsidian subfolder override

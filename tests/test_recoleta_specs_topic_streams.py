@@ -125,6 +125,38 @@ def test_settings_resolves_topic_stream_runtimes_from_config(
     assert streams[1].telegram_chat_id.get_secret_value() == "@bio-watch"
 
 
+def test_settings_rejects_topic_stream_names_that_collide_after_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("TOPICS", raising=False)
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "outputs"))
+    monkeypatch.setenv("PUBLISH_TARGETS", json.dumps(["markdown"]))
+    monkeypatch.setenv(
+        "TOPIC_STREAMS",
+        json.dumps(
+            [
+                {
+                    "name": "agents-lab",
+                    "topics": ["agents"],
+                },
+                {
+                    "name": "agents_lab",
+                    "topics": ["biology"],
+                },
+            ]
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="TOPIC_STREAMS names collide after downstream normalization",
+    ):
+        _ = Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_analyze_runs_each_topic_stream_with_its_own_topics(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -197,6 +229,67 @@ def test_analyze_emits_stream_scoped_failure_metric_for_topic_streams(
     assert by_name["pipeline.analyze.stream.agents_lab.processed_total"].value == 1
     assert by_name["pipeline.analyze.stream.bio_watch.failed_total"].value == 1
     assert by_name["pipeline.analyze.streams_total"].value == 2
+
+
+def test_publish_allows_topic_stream_to_explicitly_clear_inherited_tag_filters(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("TOPICS", raising=False)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "outputs"))
+    monkeypatch.setenv("PUBLISH_TARGETS", json.dumps(["markdown"]))
+    monkeypatch.setenv("ALLOW_TAGS", json.dumps(["never-match"]))
+    monkeypatch.setenv("DENY_TAGS", json.dumps(["agents"]))
+    monkeypatch.setenv(
+        "TOPIC_STREAMS",
+        json.dumps(
+            [
+                {
+                    "name": "agents_lab",
+                    "topics": ["agents"],
+                    "allow_tags": [],
+                    "deny_tags": [],
+                }
+            ]
+        ),
+    )
+
+    settings, repository = _build_runtime()
+    streams = settings.topic_stream_runtimes()
+    assert len(streams) == 1
+    assert streams[0].allow_tags == []
+    assert streams[0].deny_tags == []
+
+    analyzer = _RecordingAnalyzer()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="topic-stream-empty-filters-1",
+        canonical_url="https://example.com/topic-stream-empty-filters-1",
+        title="Topic Stream Empty Filters",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-topic-stream-empty-filters", drafts=[draft], limit=10)
+    service.analyze(run_id="run-topic-stream-empty-filters", limit=10)
+
+    result = service.publish(run_id="run-topic-stream-empty-filters", limit=10)
+
+    assert result.sent == 1
+    assert result.skipped == 0
+    assert (
+        tmp_path / "outputs" / "Streams" / "agents_lab" / "latest.md"
+    ).exists()
 
 
 def test_publish_writes_markdown_outputs_into_separate_topic_stream_directories(

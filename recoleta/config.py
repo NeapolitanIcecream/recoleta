@@ -88,6 +88,15 @@ def _normalize_identifier(value: Any, *, field_name: str) -> str:
     return normalized
 
 
+def _normalize_topic_stream_token(value: str) -> str:
+    lowered = str(value or "").strip().lower()
+    normalized = "".join(ch if ch.isalnum() else "_" for ch in lowered)
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    normalized = normalized.strip("_")
+    return normalized or "stream"
+
+
 def _normalize_optional_env_name(value: Any, *, field_name: str) -> str | None:
     if value is None:
         return None
@@ -161,8 +170,8 @@ class TopicStreamRuntime:
 class TopicStreamConfig(BaseModel):
     name: str
     topics: list[str] = Field(default_factory=list)
-    allow_tags: list[str] = Field(default_factory=list)
-    deny_tags: list[str] = Field(default_factory=list)
+    allow_tags: list[str] | None = None
+    deny_tags: list[str] | None = None
     publish_targets: list[str] | None = None
     markdown_output_dir: Path | None = None
     obsidian_base_folder: str | None = None
@@ -183,9 +192,9 @@ class TopicStreamConfig(BaseModel):
         mode="before",
     )
     @classmethod
-    def _parse_string_list_fields(cls, value: Any) -> Any:
+    def _parse_string_list_fields(cls, value: Any, info: Any) -> Any:
         if value is None:
-            return []
+            return [] if info.field_name == "topics" else None
         if isinstance(value, str):
             return _parse_str_list(value)
         if isinstance(value, (list, tuple)):
@@ -1052,6 +1061,23 @@ class Settings(BaseSettings):
             raise ValueError(
                 "TOPIC_STREAMS names must be unique: " + ", ".join(duplicates)
             )
+        token_names: dict[str, set[str]] = {}
+        for stream in self.topic_streams:
+            token = _normalize_topic_stream_token(stream.name)
+            token_names.setdefault(token, set()).add(stream.name)
+        colliding_names = sorted(
+            {
+                name
+                for names in token_names.values()
+                if len(names) > 1
+                for name in names
+            }
+        )
+        if colliding_names:
+            raise ValueError(
+                "TOPIC_STREAMS names collide after downstream normalization: "
+                + ", ".join(colliding_names)
+            )
         return self
 
     def topic_stream_runtimes(self) -> list[TopicStreamRuntime]:
@@ -1088,12 +1114,12 @@ class Settings(BaseSettings):
                     topics=list(stream.topics),
                     allow_tags=(
                         list(stream.allow_tags)
-                        if stream.allow_tags
+                        if stream.allow_tags is not None
                         else list(self.allow_tags)
                     ),
                     deny_tags=(
                         list(stream.deny_tags)
-                        if stream.deny_tags
+                        if stream.deny_tags is not None
                         else list(self.deny_tags)
                     ),
                     publish_targets=publish_targets,
