@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import gzip
 from io import BytesIO
+import re
+import subprocess
 import tarfile
 import time
 from typing import Any
 
 from bs4 import BeautifulSoup
-from bs4.element import Tag
+from bs4.element import NavigableString, Tag
 import httpx
 import trafilatura
 from tenacity import (
@@ -34,6 +36,7 @@ _PDF_TEXT_LAYER_MIN_CHARS = 200
 _PYPANDOC: Any | None = None
 _PANDOC_READY: bool | None = None
 _PANDOC_READY_ERROR: str | None = None
+_PANDOC_LOG_PATTERN = re.compile(r"^\[(ERROR|WARNING|INFO|DEBUG)\]\s*(.*)$")
 
 
 def _ensure_pandoc_ready() -> tuple[bool, str | None, Any | None]:
@@ -64,6 +67,111 @@ def _ensure_pandoc_ready() -> tuple[bool, str | None, Any | None]:
     _PANDOC_READY = True
     _PANDOC_READY_ERROR = None
     return _PANDOC_READY, _PANDOC_READY_ERROR, _PYPANDOC
+
+
+def _extract_tex_annotation_from_math(tag: Tag) -> str | None:
+    annotation = tag.find("annotation", attrs={"encoding": "application/x-tex"})
+    if annotation is None:
+        for candidate in tag.find_all("annotation"):
+            encoding = str(candidate.get("encoding") or "").strip().lower()
+            if "tex" in encoding:
+                annotation = candidate
+                break
+    if annotation is not None:
+        tex = annotation.get_text("", strip=True)
+        if tex:
+            return tex
+    alttext = str(tag.get("alttext") or "").strip()
+    return alttext or None
+
+
+def _prepare_html_for_pandoc_markdown(html: str) -> tuple[str, dict[str, int]]:
+    soup = BeautifulSoup(html, "html.parser")
+    math_tags = list(soup.find_all("math"))
+    inline_total = 0
+    block_total = 0
+    replaced_total = 0
+    missing_tex_total = 0
+
+    for math_tag in math_tags:
+        tex = _extract_tex_annotation_from_math(math_tag)
+        if tex is None:
+            missing_tex_total += 1
+            continue
+        is_block = str(math_tag.get("display") or "").strip().lower() == "block"
+        replacement = f"$$\n{tex}\n$$" if is_block else f"${tex}$"
+        math_tag.replace_with(NavigableString(replacement))
+        replaced_total += 1
+        if is_block:
+            block_total += 1
+        else:
+            inline_total += 1
+
+    return str(soup), {
+        "pandoc_input_math_tags": len(math_tags),
+        "pandoc_math_replaced_total": replaced_total,
+        "pandoc_math_inline_total": inline_total,
+        "pandoc_math_block_total": block_total,
+        "pandoc_math_missing_tex_total": missing_tex_total,
+    }
+
+
+def _split_pandoc_stderr_messages(raw: str) -> list[tuple[str, str]]:
+    stripped = str(raw or "").strip()
+    if not stripped:
+        return []
+
+    messages: list[tuple[str, str]] = []
+    current_level = "WARNING"
+    current_lines: list[str] = []
+    for line in stripped.splitlines():
+        match = _PANDOC_LOG_PATTERN.match(line)
+        if match is not None:
+            if current_lines:
+                messages.append((current_level, "\n".join(current_lines).strip()))
+            current_level = str(match.group(1) or "WARNING").upper()
+            current_lines = [str(match.group(2) or "")]
+            continue
+        current_lines.append(line)
+    if current_lines:
+        messages.append((current_level, "\n".join(current_lines).strip()))
+    return messages
+
+
+def _categorize_pandoc_warning(message: str) -> str:
+    normalized = " ".join(str(message or "").strip().lower().split())
+    if normalized.startswith("could not convert tex math"):
+        return "tex_math_convert_failed"
+    return "other"
+
+
+def _run_pandoc_html_to_markdown(
+    *, pandoc_path: str, html: str
+) -> tuple[str | None, str, str | None]:
+    try:
+        completed = subprocess.run(
+            [pandoc_path, "--from=html", "--to=gfm", "--wrap=none"],
+            input=html,
+            capture_output=True,
+            check=False,
+            text=True,
+            encoding="utf-8",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, "", f"pandoc_convert_failed error={type(exc).__name__}: {exc}"
+
+    stderr = str(completed.stderr or "")
+    if completed.returncode != 0:
+        excerpt = " ".join(stderr.strip().split())
+        if len(excerpt) > 280:
+            excerpt = excerpt[:280].rstrip()
+        error_text = excerpt or "unknown"
+        return (
+            None,
+            stderr,
+            f"pandoc_convert_failed exit_code={completed.returncode} error={error_text}",
+        )
+    return str(completed.stdout or ""), stderr, None
 
 
 def _should_retry_httpx(exc: BaseException) -> bool:
@@ -601,31 +709,51 @@ def convert_html_document_to_markdown(
     html: str,
     *,
     max_chars: int = _HTML_DOCUMENT_MAX_CHARS,
+    diag: dict[str, int] | None = None,
 ) -> tuple[str | None, int, str | None]:
     """Convert HTML to GitHub-flavored Markdown via Pandoc (pypandoc)."""
 
     started = time.perf_counter()
     ready, ready_error, pypandoc = _ensure_pandoc_ready()
     if (not ready) or pypandoc is None:
+        if diag is not None:
+            diag["pandoc_failed"] = 1
         return None, 0, ready_error or "pandoc_unavailable"
-    try:
-        markdown = pypandoc.convert_text(
-            html,
-            to="gfm",
-            format="html",
-            extra_args=["--wrap=none"],
-        )
-    except Exception as exc:  # noqa: BLE001
+
+    prepared_html, prepare_stats = _prepare_html_for_pandoc_markdown(html)
+    if diag is not None:
+        diag.update(prepare_stats)
+
+    pandoc_path = str(pypandoc.get_pandoc_path())
+    markdown, stderr, error = _run_pandoc_html_to_markdown(
+        pandoc_path=pandoc_path,
+        html=prepared_html,
+    )
+
+    warning_counts: dict[str, int] = {}
+    warning_count = 0
+    for level, message in _split_pandoc_stderr_messages(stderr):
+        if level != "WARNING":
+            continue
+        warning_count += 1
+        category = _categorize_pandoc_warning(message)
+        warning_counts[category] = warning_counts.get(category, 0) + 1
+    if diag is not None:
+        diag["pandoc_warning_count"] = warning_count
+        for category, count in warning_counts.items():
+            diag[f"pandoc_warning_{category}"] = count
+
+    if error is not None:
+        if diag is not None:
+            diag["pandoc_failed"] = 1
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        return (
-            None,
-            elapsed_ms,
-            f"pandoc_convert_failed error={type(exc).__name__}: {exc}",
-        )
+        return None, elapsed_ms, error
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     normalized = str(markdown or "").strip()
     if not normalized:
+        if diag is not None:
+            diag["pandoc_failed"] = 1
         return None, elapsed_ms, "empty_markdown"
     if max_chars > 0 and len(normalized) > max_chars:
         normalized = normalized[:max_chars].rstrip()
