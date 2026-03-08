@@ -95,6 +95,19 @@ def _build_settings() -> Any:
     return settings
 
 
+def _has_explicit_topic_streams(settings: Any) -> bool:
+    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
+    if not callable(runtime_builder):
+        return False
+    try:
+        runtimes = runtime_builder()
+    except Exception:
+        return False
+    if not isinstance(runtimes, list):
+        return False
+    return any(bool(getattr(stream, "explicit", False)) for stream in runtimes)
+
+
 def _parse_anchor_date_option(value: str) -> date:
     raw = str(value or "").strip()
     if not raw:
@@ -442,11 +455,23 @@ def trends(
         ),
     )
     console = console_cls(stderr=settings.log_json)
-    console.print(
-        "[green]trends completed[/green] "
-        f"doc_id={result.doc_id} granularity={result.granularity} "
-        f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
-    )
+    if len(getattr(result, "stream_results", []) or []) > 1:
+        console.print(
+            "[green]trends completed[/green] "
+            f"streams={len(result.stream_results)} granularity={result.granularity} "
+            f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+        )
+        for stream_result in result.stream_results:
+            console.print(
+                f"[cyan]{stream_result.stream}[/cyan] "
+                f"doc_id={stream_result.doc_id}"
+            )
+    else:
+        console.print(
+            "[green]trends completed[/green] "
+            f"doc_id={result.doc_id} granularity={result.granularity} "
+            f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+        )
     _print_billing_report(console=console, repository=repository, run_id=run_id)
 
 
@@ -503,11 +528,23 @@ def trends_week(
         ),
     )
     console = console_cls(stderr=settings.log_json)
-    console.print(
-        "[green]trends completed[/green] "
-        f"doc_id={result.doc_id} granularity={result.granularity} "
-        f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
-    )
+    if len(getattr(result, "stream_results", []) or []) > 1:
+        console.print(
+            "[green]trends completed[/green] "
+            f"streams={len(result.stream_results)} granularity={result.granularity} "
+            f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+        )
+        for stream_result in result.stream_results:
+            console.print(
+                f"[cyan]{stream_result.stream}[/cyan] "
+                f"doc_id={stream_result.doc_id}"
+            )
+    else:
+        console.print(
+            "[green]trends completed[/green] "
+            f"doc_id={result.doc_id} granularity={result.granularity} "
+            f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+        )
     _print_billing_report(console=console, repository=repository, run_id=run_id)
 
 
@@ -520,7 +557,7 @@ def site_build(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends.",
+        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -559,7 +596,11 @@ def site_build(
     settings = _build_settings() if resolved_input_dir is None or resolved_output_dir is None else None
     if resolved_input_dir is None:
         assert settings is not None
-        resolved_input_dir = settings.markdown_output_dir / "Trends"
+        resolved_input_dir = (
+            settings.markdown_output_dir
+            if _has_explicit_topic_streams(settings)
+            else settings.markdown_output_dir / "Trends"
+        )
     if resolved_output_dir is None:
         assert settings is not None
         resolved_output_dir = settings.markdown_output_dir / "site"
@@ -575,10 +616,16 @@ def site_build(
         if settings is not None
         else console_cls()
     )
+    stream_segment = (
+        f" streams={manifest['streams_total']}"
+        if int(manifest.get("streams_total") or 0) > 1
+        else ""
+    )
     console.print(
         "[green]site build completed[/green] "
         f"trends={manifest['trends_total']} "
         f"topics={manifest['topics_total']} "
+        f"{stream_segment}"
         f"output={resolved_output_dir}"
     )
 
@@ -592,7 +639,7 @@ def site_stage(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends.",
+        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -601,7 +648,7 @@ def site_stage(
         dir_okay=True,
         writable=True,
         resolve_path=True,
-        help="Repo-local directory to mirror trend markdown notes for deployment. Defaults to ./site-content/Trends.",
+        help="Repo-local directory to mirror trend markdown notes for deployment. Defaults to ./site-content/Trends, or ./site-content in topic-stream mode.",
     ),
     limit: int | None = typer.Option(
         None,
@@ -631,9 +678,17 @@ def site_stage(
     settings = _build_settings() if resolved_input_dir is None or resolved_output_dir is None else None
     if resolved_input_dir is None:
         assert settings is not None
-        resolved_input_dir = settings.markdown_output_dir / "Trends"
+        resolved_input_dir = (
+            settings.markdown_output_dir
+            if _has_explicit_topic_streams(settings)
+            else settings.markdown_output_dir / "Trends"
+        )
     if resolved_output_dir is None:
-        resolved_output_dir = (Path.cwd() / "site-content" / "Trends").resolve()
+        resolved_output_dir = (
+            (Path.cwd() / "site-content").resolve()
+            if settings is not None and _has_explicit_topic_streams(settings)
+            else (Path.cwd() / "site-content" / "Trends").resolve()
+        )
     manifest_path = stage_trend_site_source(
         input_dir=resolved_input_dir,
         output_dir=resolved_output_dir,
@@ -646,10 +701,16 @@ def site_stage(
         if settings is not None
         else console_cls()
     )
+    stream_segment = (
+        f" streams={manifest['streams_total']}"
+        if int(manifest.get("streams_total") or 0) > 1
+        else ""
+    )
     console.print(
         "[green]site stage completed[/green] "
         f"trends={manifest['trends_total']} "
         f"pdfs={manifest['pdf_total']} "
+        f"{stream_segment}"
         f"output={resolved_output_dir}"
     )
 

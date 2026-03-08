@@ -514,6 +514,50 @@ def write_markdown_run_index(
     return latest_path
 
 
+def write_markdown_stream_index(
+    *,
+    output_dir: Path,
+    run_id: str,
+    generated_at: datetime,
+    streams: list[tuple[str, Path]],
+) -> Path:
+    output_dir = output_dir.expanduser().resolve()
+    if output_dir.exists() and not output_dir.is_dir():
+        raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_run_id = slugify(run_id, lowercase=True) or "run"
+    runs_dir = output_dir / "Runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    run_index_path = runs_dir / f"{safe_run_id}--streams.md"
+    latest_path = output_dir / "latest.md"
+
+    lines: list[str] = [
+        "# Recoleta topic streams",
+        "",
+        f"- Run ID: `{run_id}`",
+        f"- Generated at (UTC): `{generated_at.astimezone(timezone.utc).isoformat()}`",
+        "",
+        "## Streams",
+    ]
+    if not streams:
+        lines.extend(["", "_No topic streams published in this run._", ""])
+    else:
+        for stream_name, latest_stream_path in streams:
+            rel: str
+            try:
+                rel = str(latest_stream_path.resolve().relative_to(output_dir))
+            except Exception:
+                rel = str(latest_stream_path)
+            lines.append(f"- [{stream_name}]({rel})")
+        lines.append("")
+
+    payload = "\n".join(lines).strip() + "\n"
+    run_index_path.write_text(payload, encoding="utf-8")
+    latest_path.write_text(payload, encoding="utf-8")
+    return latest_path
+
+
 def _split_yaml_frontmatter_text(text: str) -> tuple[dict[str, Any], str]:
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")

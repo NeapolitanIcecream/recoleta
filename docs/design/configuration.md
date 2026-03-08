@@ -91,10 +91,49 @@ SOURCES:
 ## Topic and ranking configuration
 
 - `TOPICS`: list of user topics (strings). These are used for LLM relevance scoring.
+- `TOPIC_STREAMS`: optional list of virtual topic streams. Each stream shares ingest/enrich state with the same Recoleta instance, but runs its own analyze/publish path.
+  - Use `TOPIC_STREAMS` when one user wants multiple topic domains to be processed and delivered independently.
+  - Do not set `TOPICS` together with `TOPIC_STREAMS`.
+  - Each stream supports:
+    - `name`: stable stream identifier (used in metrics, DB scope, and default output paths)
+    - `topics`: list of topics for that stream
+    - `allow_tags` / `deny_tags`: optional stream-local publish filters
+    - `publish_targets`: optional override for `markdown|obsidian|telegram`
+    - `markdown_output_dir`: optional absolute output dir override
+    - `obsidian_base_folder`: optional Obsidian subfolder override
+    - `min_relevance_score`, `max_deliveries_per_day`: optional per-stream overrides
+    - `telegram_bot_token_env`, `telegram_chat_id_env`: optional env var names for stream-local Telegram credentials
+  - Default stream output locations:
+    - Markdown: `MARKDOWN_OUTPUT_DIR/Streams/<name>/`
+    - Obsidian: `OBSIDIAN_BASE_FOLDER/Streams/<name>/`
+  - Existing single-stream behavior is unchanged when `TOPIC_STREAMS` is omitted.
+  - Trend generation follows the same split:
+    - `recoleta trends` indexes item documents per stream scope
+    - generated trend docs are stored per stream scope
+    - Markdown/Obsidian trend notes are written under each stream's output root
 - `MIN_RELEVANCE_SCORE`: float (default 0.6)
 - `MAX_DELIVERIES_PER_DAY`: int (default 10)
 - `TITLE_DEDUP_THRESHOLD`: float (default 92.0 for rapidfuzz ratio)
 - `TITLE_DEDUP_MAX_CANDIDATES`: int (default 500)
+
+Example:
+
+```yaml
+TOPIC_STREAMS:
+  - name: agents_lab
+    topics:
+      - agents
+      - tool-use
+    publish_targets:
+      - markdown
+      - telegram
+    telegram_bot_token_env: AGENTS_LAB_TELEGRAM_BOT_TOKEN
+    telegram_chat_id_env: AGENTS_LAB_TELEGRAM_CHAT_ID
+  - name: biology_watch
+    topics:
+      - biology
+      - therapeutics
+```
 
 ### Semantic triage (pre-ranking before LLM) (optional)
 
@@ -147,6 +186,7 @@ Notes:
 - Telegram trend delivery uses browser rendering first and falls back to the Story renderer when browser launch or browser PDF export fails.
 - `recoleta trends --debug-pdf` is a CLI flag, not a persistent config setting. It exports a per-render debug bundle under `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/`.
 - `recoleta site build --input-dir ... --output-dir ...` and `recoleta site stage --input-dir ... --output-dir ...` intentionally work without loading the full runtime config so CI can build from staged trend notes only.
+- In `TOPIC_STREAMS` mode, `recoleta site build` auto-discovers `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` and `recoleta site stage` mirrors them under `./site-content/Streams/<stream>/Trends/` by default.
 
 ## Logging and diagnostics
 

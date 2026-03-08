@@ -101,9 +101,9 @@ Deployment uses a staged content snapshot rather than building from the operator
 Flow:
 
 1. Generate/update canonical trend notes locally.
-2. Run `recoleta site stage` to mirror trend markdown/PDF artifacts into `site-content/Trends/`.
+2. Run `recoleta site stage` to mirror trend markdown/PDF artifacts into `site-content/`.
 3. Commit the staged snapshot.
-4. GitHub Actions builds the public site from `site-content/Trends/`.
+4. GitHub Actions builds the public site from `site-content/`.
 
 Why this shape:
 

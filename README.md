@@ -23,7 +23,7 @@ Recoleta is a **research intelligence funnel** that ingests noisy sources, runs 
 <a id="recoleta-overview"></a>
 ## 👀 Overview
 
-Recoleta is local-first and single-user by design: it stores durable state in a local **SQLite** index and treats notes/messages as derived artifacts.
+Recoleta is local-first: it stores durable state in a local **SQLite** index and treats notes/messages as derived artifacts. A single instance can now run one or more **topic streams** so different topic domains can share ingest/enrich state while keeping analyze/publish outputs isolated.
 
 ```mermaid
 flowchart LR
@@ -44,6 +44,7 @@ flowchart LR
 - **Multi-source ingestion**: arXiv, Hacker News RSS, Hugging Face Daily Papers, OpenReview, and custom RSS feeds.
 - **Incremental & idempotent pipeline**: SQLite-backed state machine prevents duplicates and re-sends.
 - **Structured LLM outputs**: JSON-only analysis validated by Pydantic (summary/tags/scores).
+- **Topic streams**: one Recoleta instance can host multiple virtual topic-specific pipelines with separate analysis scopes and delivery sinks.
 - **Semantic triage before LLM (optional)**: pre-rank (and optionally filter) candidates by topic similarity to improve LLM ROI under backlog.
 - **Outputs where you read**: local Markdown output (default) + optional Obsidian notes + optional curated Telegram digest.
 - **Trend surfaces**: trend markdown notes can be republished as browser-rendered PDFs and as a deployable static website.
@@ -111,6 +112,17 @@ topics:
   - agents
   - ml-systems
 
+# Optional: instead of one global topic list, define multiple topic streams.
+# topic_streams:
+#   - name: agents_lab
+#     topics: ["agents", "tooling"]
+#     publish_targets: ["markdown", "telegram"]
+#     telegram_bot_token_env: "AGENTS_LAB_TELEGRAM_BOT_TOKEN"
+#     telegram_chat_id_env: "AGENTS_LAB_TELEGRAM_CHAT_ID"
+#   - name: bio_watch
+#     topics: ["biology", "therapeutics"]
+#     publish_targets: ["markdown"]
+
 sources:
   hn:
     enabled: true
@@ -166,6 +178,8 @@ Command intent:
 Where to look next:
 
 - **Local Markdown**: `MARKDOWN_OUTPUT_DIR/latest.md` and `MARKDOWN_OUTPUT_DIR/Inbox/`
+- **Topic streams**: when `topic_streams` is configured, Markdown output defaults to `MARKDOWN_OUTPUT_DIR/Streams/<stream>/`
+- **Topic stream trends**: trend notes also follow stream-local output roots, e.g. `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`
 - **Obsidian notes (optional)**: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
 - **Telegram (optional)**: messages are sent to `TELEGRAM_CHAT_ID`
 - **SQLite index**: `RECOLETA_DB_PATH` (safe to re-run; deliveries are idempotent)
@@ -228,6 +242,12 @@ Outputs:
 - **Obsidian** (when `PUBLISH_TARGETS` includes `obsidian`): `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Trends/`
 - **Telegram PDF** (when `PUBLISH_TARGETS` includes `telegram` and the corpus is non-empty): `<trend-note>.pdf`, rendered from the canonical markdown note
 
+When `topic_streams` is configured, `recoleta trends` and `recoleta trends-week` run once per stream. Their outputs move under each stream root instead:
+
+- Markdown: `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`
+- Obsidian: `OBSIDIAN_BASE_FOLDER/Streams/<stream>/Trends/`
+- CLI summary: one aggregate line plus one `stream -> doc_id` line per stream
+
 Optional knobs (env or config):
 
 - `RAG_LANCEDB_DIR`: where semantic vectors are stored (default: platform user data dir + `/lancedb`)
@@ -236,7 +256,7 @@ Optional knobs (env or config):
 
 PDF behavior:
 
-- Telegram trend delivery renders the PDF from the canonical markdown note under `MARKDOWN_OUTPUT_DIR/Trends/`.
+- Telegram trend delivery renders the PDF from the canonical markdown note under `MARKDOWN_OUTPUT_DIR/Trends/`, or `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` in topic-stream mode.
 - The renderer uses `backend="auto"`: browser rendering via Playwright/Chromium first, then a `PyMuPDF Story` fallback if browser rendering is unavailable.
 - Telegram uses a browser-rendered `continuous` page mode by default to avoid A4 page breaks in the mobile reading surface.
 - `uv run recoleta trends --granularity day --debug-pdf` writes a debug bundle to `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/<pdf-stem>/` containing the source markdown, normalized markdown, HTML, CSS, manifest, and per-page PNG previews.
@@ -246,7 +266,7 @@ PDF behavior:
 Recoleta can turn trend notes into a deployable static website:
 
 ```bash
-# Build a local preview from MARKDOWN_OUTPUT_DIR/Trends
+# Build a local preview from trend markdown notes
 uv run recoleta site build
 
 # Stage trend markdown/PDF artifacts into the repo for deployment
@@ -256,25 +276,27 @@ uv run recoleta site stage
 Behavior:
 
 - `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
-- `recoleta site stage` mirrors trend markdown notes into `./site-content/Trends` by default so they can be committed and deployed.
+- `recoleta site stage` mirrors trend markdown notes into `./site-content/Trends` by default, or `./site-content/Streams/<stream>/Trends/` in topic-stream mode.
+- In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory.
+- The static site now exposes a `Streams` navigation surface so mixed-domain trend notes are not silently flattened together.
 - Both commands treat the output directory as a managed artifact and clear stale files before writing.
 
 For CI or GitHub Pages, you can pass explicit directories and avoid depending on a full Recoleta config:
 
 ```bash
 uv run recoleta site build \
-  --input-dir site-content/Trends \
+  --input-dir site-content \
   --output-dir site-dist
 ```
 
 GitHub Pages flow:
 
 1. Run `uv run recoleta site stage` after generating new trend notes.
-2. Commit `site-content/Trends/` to the repo.
+2. Commit `site-content/` to the repo.
 3. In the GitHub repository settings, set **Pages** to **GitHub Actions**.
 4. Push to `main`.
 
-The included workflow `.github/workflows/site-pages.yml` builds `site-dist/` from `site-content/Trends/` and deploys it to Pages.
+The included workflow `.github/workflows/site-pages.yml` builds `site-dist/` from `site-content/` and deploys it to Pages.
 
 ### 🗓️ Run continuously (built-in scheduler)
 
@@ -413,7 +435,7 @@ Recoleta ships a small CLI surface:
 - `recoleta trends --granularity week --date 2026-03-02`: generate a trend note (day/week/month)
 - `recoleta trends --granularity day --debug-pdf`: generate a trend note and export a PDF debug bundle for the rendered Telegram PDF
 - `recoleta site build`: render a static site from trend markdown notes
-- `recoleta site stage`: mirror trend markdown/PDF artifacts into `site-content/Trends/` for deployment
+- `recoleta site stage`: mirror trend markdown/PDF artifacts into `site-content/` while preserving topic-stream layout
 
 ### Further reading
 

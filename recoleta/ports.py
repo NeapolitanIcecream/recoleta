@@ -58,18 +58,38 @@ class RepositoryPort(Protocol):
         artifact_path: str | None = None,
     ) -> tuple[Content, bool]: ...
 
-    def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis: ...
+    def list_items_for_stream_analysis(
+        self, *, stream: str, limit: int, selected_only: bool = False
+    ) -> list[Item]: ...
+
+    def save_analysis(
+        self,
+        *,
+        item_id: int,
+        result: AnalysisResult,
+        scope: str = "default",
+        mirror_item_state: bool = True,
+    ) -> Analysis: ...
 
     def mark_item_enriched(self, *, item_id: int) -> None: ...
 
     def mark_item_triaged(self, *, item_id: int) -> None: ...
+
+    def mark_item_stream_state(
+        self,
+        *,
+        item_id: int,
+        stream: str,
+        state: str,
+        mirror_item_state: bool = False,
+    ) -> None: ...
 
     def mark_item_failed(self, *, item_id: int) -> None: ...
 
     def mark_item_retryable_failed(self, *, item_id: int) -> None: ...
 
     def list_items_for_publish(
-        self, *, limit: int, min_relevance_score: float
+        self, *, limit: int, min_relevance_score: float, scope: str = "default"
     ) -> list[tuple[Item, Analysis]]: ...
 
     def has_sent_delivery(

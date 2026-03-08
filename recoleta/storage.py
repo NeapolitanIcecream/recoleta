@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from rapidfuzz import fuzz
 from sqlalchemy import desc, event, func, text
+from sqlalchemy import and_, or_
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from recoleta.models import (
@@ -23,6 +25,7 @@ from recoleta.models import (
     Delivery,
     Document,
     DocumentChunk,
+    ItemStreamState,
     Item,
     Metric,
     Run,
@@ -39,7 +42,13 @@ from recoleta.models import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCEEDED,
 )
-from recoleta.types import AnalysisResult, ItemDraft, sha256_hex, utc_now
+from recoleta.types import (
+    AnalysisResult,
+    DEFAULT_TOPIC_STREAM,
+    ItemDraft,
+    sha256_hex,
+    utc_now,
+)
 
 
 def _to_json(value: object) -> str:
@@ -143,7 +152,199 @@ class Repository:
 
     def init_schema(self) -> None:
         SQLModel.metadata.create_all(self.engine)
+        self._migrate_analyses_add_scope()
+        self._migrate_documents_add_scope()
+        SQLModel.metadata.create_all(self.engine)
+        self._backfill_default_stream_states()
         self._ensure_chunk_fts()
+
+    def _table_columns(self, table_name: str) -> set[str]:
+        statement = text(f"PRAGMA table_info({table_name})")
+        with self.engine.begin() as conn:
+            rows = conn.execute(statement).fetchall()
+        columns: set[str] = set()
+        for row in rows:
+            if len(row) >= 2:
+                columns.add(str(row[1]))
+        return columns
+
+    def _migrate_analyses_add_scope(self) -> None:
+        columns = self._table_columns("analyses")
+        if not columns or "scope" in columns:
+            return
+
+        ddl = [
+            """
+            CREATE TABLE analyses__new (
+                id INTEGER PRIMARY KEY,
+                item_id INTEGER NOT NULL,
+                scope VARCHAR(64) NOT NULL DEFAULT 'default',
+                model VARCHAR(128) NOT NULL,
+                provider VARCHAR(64) NOT NULL,
+                summary TEXT NOT NULL,
+                topics_json TEXT NOT NULL DEFAULT '[]',
+                relevance_score FLOAT NOT NULL DEFAULT 0.0,
+                novelty_score FLOAT,
+                cost_usd FLOAT,
+                latency_ms INTEGER,
+                created_at DATETIME NOT NULL,
+                FOREIGN KEY(item_id) REFERENCES items (id)
+            );
+            """,
+            """
+            INSERT INTO analyses__new (
+                id,
+                item_id,
+                scope,
+                model,
+                provider,
+                summary,
+                topics_json,
+                relevance_score,
+                novelty_score,
+                cost_usd,
+                latency_ms,
+                created_at
+            )
+            SELECT
+                id,
+                item_id,
+                'default',
+                model,
+                provider,
+                summary,
+                topics_json,
+                relevance_score,
+                novelty_score,
+                cost_usd,
+                latency_ms,
+                created_at
+            FROM analyses;
+            """,
+            "DROP TABLE analyses;",
+            "ALTER TABLE analyses__new RENAME TO analyses;",
+            "CREATE INDEX IF NOT EXISTS ix_analyses_item_id ON analyses (item_id);",
+            "CREATE INDEX IF NOT EXISTS ix_analyses_scope ON analyses (scope);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_analyses_item_scope ON analyses (item_id, scope);",
+        ]
+        with self.engine.begin() as conn:
+            for statement in ddl:
+                conn.execute(text(statement))
+
+    def _migrate_documents_add_scope(self) -> None:
+        columns = self._table_columns("documents")
+        if not columns or "scope" in columns:
+            return
+
+        ddl = [
+            """
+            CREATE TABLE documents__new (
+                id INTEGER PRIMARY KEY,
+                doc_type VARCHAR(16) NOT NULL,
+                scope VARCHAR(64) NOT NULL DEFAULT 'default',
+                item_id INTEGER,
+                source VARCHAR(32),
+                canonical_url TEXT,
+                title TEXT,
+                published_at DATETIME,
+                granularity VARCHAR(16),
+                period_start DATETIME,
+                period_end DATETIME,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                FOREIGN KEY(item_id) REFERENCES items (id)
+            );
+            """,
+            """
+            INSERT INTO documents__new (
+                id,
+                doc_type,
+                scope,
+                item_id,
+                source,
+                canonical_url,
+                title,
+                published_at,
+                granularity,
+                period_start,
+                period_end,
+                created_at,
+                updated_at
+            )
+            SELECT
+                id,
+                doc_type,
+                'default',
+                item_id,
+                source,
+                canonical_url,
+                title,
+                published_at,
+                granularity,
+                period_start,
+                period_end,
+                created_at,
+                updated_at
+            FROM documents;
+            """,
+            "DROP TABLE documents;",
+            "ALTER TABLE documents__new RENAME TO documents;",
+            "CREATE INDEX IF NOT EXISTS ix_documents_doc_type ON documents (doc_type);",
+            "CREATE INDEX IF NOT EXISTS ix_documents_scope ON documents (scope);",
+            "CREATE INDEX IF NOT EXISTS ix_documents_item_id ON documents (item_id);",
+            "CREATE INDEX IF NOT EXISTS ix_documents_published_at ON documents (published_at);",
+            "CREATE INDEX IF NOT EXISTS ix_documents_granularity ON documents (granularity);",
+            "CREATE INDEX IF NOT EXISTS ix_documents_period_start ON documents (period_start);",
+            "CREATE INDEX IF NOT EXISTS ix_documents_period_end ON documents (period_end);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_type_item_scope ON documents (doc_type, item_id, scope);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_type_scope_granularity_period ON documents (doc_type, scope, granularity, period_start, period_end);",
+        ]
+        with self.engine.begin() as conn:
+            for statement in ddl:
+                conn.execute(text(statement))
+
+    def _backfill_default_stream_states(self) -> None:
+        statement = """
+        INSERT INTO item_stream_states (
+            item_id,
+            stream,
+            state,
+            created_at,
+            updated_at
+        )
+        SELECT
+            items.id,
+            :stream,
+            items.state,
+            items.created_at,
+            items.updated_at
+        FROM items
+        WHERE items.state IN (
+            :triaged_state,
+            :analyzed_state,
+            :published_state,
+            :retryable_failed_state,
+            :failed_state
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM item_stream_states stream_states
+            WHERE stream_states.item_id = items.id
+              AND stream_states.stream = :stream
+        );
+        """
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(statement),
+                {
+                    "stream": DEFAULT_TOPIC_STREAM,
+                    "triaged_state": ITEM_STATE_TRIAGED,
+                    "analyzed_state": ITEM_STATE_ANALYZED,
+                    "published_state": ITEM_STATE_PUBLISHED,
+                    "retryable_failed_state": ITEM_STATE_RETRYABLE_FAILED,
+                    "failed_state": ITEM_STATE_FAILED,
+                },
+            )
 
     def _ensure_chunk_fts(self) -> None:
         # FTS5 is not created by SQLModel metadata.
@@ -594,14 +795,98 @@ class Repository:
             session.refresh(content)
             return content, True
 
-    def save_analysis(self, *, item_id: int, result: AnalysisResult) -> Analysis:
+    def _upsert_item_stream_state(
+        self,
+        *,
+        session: Session,
+        item_id: int,
+        stream: str,
+        state: str,
+    ) -> ItemStreamState:
+        existing = session.exec(
+            select(ItemStreamState).where(
+                ItemStreamState.item_id == item_id,
+                ItemStreamState.stream == stream,
+            )
+        ).first()
+        now = utc_now()
+        if existing is None:
+            existing = ItemStreamState(
+                item_id=item_id,
+                stream=stream,
+                state=state,
+                created_at=now,
+                updated_at=now,
+            )
+        else:
+            existing.state = state
+            existing.updated_at = now
+        session.add(existing)
+        return existing
+
+    def list_items_for_stream_analysis(
+        self,
+        *,
+        stream: str,
+        limit: int,
+        selected_only: bool = False,
+    ) -> list[Item]:
+        stream_state = aliased(ItemStreamState)
+        with Session(self.engine) as session:
+            statement = (
+                select(Item)
+                .outerjoin(
+                    stream_state,
+                    and_(
+                        cast(Any, stream_state.item_id) == cast(Any, Item.id),
+                        cast(Any, stream_state.stream) == stream,
+                    ),
+                )
+                .where(
+                    cast(Any, Item.state).in_(
+                        [ITEM_STATE_ENRICHED, ITEM_STATE_RETRYABLE_FAILED]
+                    )
+                )
+                .order_by(
+                    desc(cast(Any, Item.updated_at)),
+                    desc(cast(Any, Item.created_at)),
+                )
+                .limit(limit)
+            )
+            if selected_only:
+                statement = statement.where(
+                    cast(Any, stream_state.state).in_(
+                        [ITEM_STATE_TRIAGED, ITEM_STATE_RETRYABLE_FAILED]
+                    )
+                )
+            else:
+                statement = statement.where(
+                    or_(
+                        cast(Any, stream_state.id).is_(None),
+                        cast(Any, stream_state.state) == ITEM_STATE_RETRYABLE_FAILED,
+                    )
+                )
+            return list(session.exec(statement))
+
+    def save_analysis(
+        self,
+        *,
+        item_id: int,
+        result: AnalysisResult,
+        scope: str = DEFAULT_TOPIC_STREAM,
+        mirror_item_state: bool = True,
+    ) -> Analysis:
         with Session(self.engine) as session:
             analysis = session.exec(
-                select(Analysis).where(Analysis.item_id == item_id)
+                select(Analysis).where(
+                    Analysis.item_id == item_id,
+                    Analysis.scope == scope,
+                )
             ).first()
             if analysis is None:
                 analysis = Analysis(
                     item_id=item_id,
+                    scope=scope,
                     model=result.model,
                     provider=result.provider,
                     summary=result.summary,
@@ -621,11 +906,18 @@ class Repository:
                 analysis.cost_usd = result.cost_usd
                 analysis.latency_ms = result.latency_ms
 
-            item = session.get(Item, item_id)
-            if item is not None:
-                item.state = ITEM_STATE_ANALYZED
-                item.updated_at = utc_now()
-                session.add(item)
+            self._upsert_item_stream_state(
+                session=session,
+                item_id=item_id,
+                stream=scope,
+                state=ITEM_STATE_ANALYZED,
+            )
+            if mirror_item_state:
+                item = session.get(Item, item_id)
+                if item is not None:
+                    item.state = ITEM_STATE_ANALYZED
+                    item.updated_at = utc_now()
+                    session.add(item)
 
             session.add(analysis)
             self._commit(session)
@@ -652,6 +944,29 @@ class Repository:
             session.add(item)
             self._commit(session)
 
+    def mark_item_stream_state(
+        self,
+        *,
+        item_id: int,
+        stream: str,
+        state: str,
+        mirror_item_state: bool = False,
+    ) -> None:
+        with Session(self.engine) as session:
+            self._upsert_item_stream_state(
+                session=session,
+                item_id=item_id,
+                stream=stream,
+                state=state,
+            )
+            if mirror_item_state:
+                item = session.get(Item, item_id)
+                if item is not None:
+                    item.state = state
+                    item.updated_at = utc_now()
+                    session.add(item)
+            self._commit(session)
+
     def mark_item_failed(self, *, item_id: int) -> None:
         with Session(self.engine) as session:
             item = session.get(Item, item_id)
@@ -673,15 +988,28 @@ class Repository:
             self._commit(session)
 
     def list_items_for_publish(
-        self, *, limit: int, min_relevance_score: float
+        self,
+        *,
+        limit: int,
+        min_relevance_score: float,
+        scope: str = DEFAULT_TOPIC_STREAM,
     ) -> list[tuple[Item, Analysis]]:
+        stream_state = aliased(ItemStreamState)
         with Session(self.engine) as session:
             statement = (
                 select(Item, Analysis)
                 .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
+                .join(
+                    stream_state,
+                    and_(
+                        cast(Any, stream_state.item_id) == cast(Any, Item.id),
+                        cast(Any, stream_state.stream) == scope,
+                    ),
+                )
                 .where(
-                    Item.state == ITEM_STATE_ANALYZED,
-                    Analysis.relevance_score >= min_relevance_score,
+                    cast(Any, Analysis.scope) == scope,
+                    cast(Any, stream_state.state) == ITEM_STATE_ANALYZED,
+                    cast(Any, Analysis.relevance_score) >= min_relevance_score,
                 )
                 .order_by(
                     desc(cast(Any, Analysis.relevance_score)),
@@ -841,6 +1169,12 @@ class Repository:
             item.state = ITEM_STATE_PUBLISHED
             item.updated_at = utc_now()
             session.add(item)
+            self._upsert_item_stream_state(
+                session=session,
+                item_id=item_id,
+                stream=DEFAULT_TOPIC_STREAM,
+                state=ITEM_STATE_PUBLISHED,
+            )
             self._commit(session)
 
     def list_analyzed_items_in_period(
@@ -850,11 +1184,13 @@ class Repository:
         period_end: datetime,
         limit: int,
         offset: int = 0,
+        scope: str = DEFAULT_TOPIC_STREAM,
     ) -> list[tuple[Item, Analysis]]:
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
         if normalized_limit <= 0:
             return []
+        stream_state = aliased(ItemStreamState)
         with Session(self.engine) as session:
             event_at = func.coalesce(
                 cast(Any, Item.published_at), cast(Any, Item.created_at)
@@ -862,8 +1198,16 @@ class Repository:
             statement = (
                 select(Item, Analysis)
                 .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
+                .join(
+                    stream_state,
+                    and_(
+                        cast(Any, stream_state.item_id) == cast(Any, Item.id),
+                        cast(Any, stream_state.stream) == scope,
+                    ),
+                )
                 .where(
-                    cast(Any, Item.state).in_(
+                    cast(Any, Analysis.scope) == scope,
+                    cast(Any, stream_state.state).in_(
                         [ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED]
                     ),
                     event_at >= period_start,
@@ -875,7 +1219,9 @@ class Repository:
             )
             return list(session.exec(statement))
 
-    def upsert_document_for_item(self, *, item: Item) -> Document:
+    def upsert_document_for_item(
+        self, *, item: Item, scope: str = DEFAULT_TOPIC_STREAM
+    ) -> Document:
         raw_item_id = getattr(item, "id", None)
         if raw_item_id is None:
             raise ValueError("item must have an id")
@@ -888,11 +1234,13 @@ class Repository:
                 select(Document).where(
                     Document.doc_type == "item",
                     Document.item_id == item_id,
+                    cast(Any, Document.scope) == scope,
                 )
             ).first()
             if existing is None:
                 doc = Document(
                     doc_type="item",
+                    scope=scope,
                     item_id=item_id,
                     source=str(getattr(item, "source", "") or "").strip() or None,
                     canonical_url=str(getattr(item, "canonical_url", "") or "").strip()
@@ -924,6 +1272,7 @@ class Repository:
         period_start: datetime,
         period_end: datetime,
         title: str,
+        scope: str = DEFAULT_TOPIC_STREAM,
     ) -> Document:
         normalized_granularity = str(granularity or "").strip().lower()
         if normalized_granularity not in {"day", "week", "month"}:
@@ -933,6 +1282,7 @@ class Repository:
             existing = session.exec(
                 select(Document).where(
                     Document.doc_type == "trend",
+                    cast(Any, Document.scope) == scope,
                     Document.granularity == normalized_granularity,
                     Document.period_start == period_start,
                     Document.period_end == period_end,
@@ -941,6 +1291,7 @@ class Repository:
             if existing is None:
                 doc = Document(
                     doc_type="trend",
+                    scope=scope,
                     granularity=normalized_granularity,
                     period_start=period_start,
                     period_end=period_end,
@@ -1153,6 +1504,7 @@ class Repository:
         period_start: datetime,
         period_end: datetime,
         granularity: str | None = None,
+        scope: str = DEFAULT_TOPIC_STREAM,
         order_by: str = "event_desc",
         offset: int = 0,
         limit: int = 50,
@@ -1163,7 +1515,10 @@ class Repository:
         if normalized_limit <= 0:
             return []
         with Session(self.engine) as session:
-            statement = select(Document).where(Document.doc_type == normalized_type)
+            statement = select(Document).where(
+                Document.doc_type == normalized_type,
+                cast(Any, Document.scope) == scope,
+            )
             if normalized_type == "item":
                 statement = statement.where(
                     cast(Any, Document.published_at).is_not(None),
@@ -1246,6 +1601,7 @@ class Repository:
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
+        scope: str = DEFAULT_TOPIC_STREAM,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         normalized_query = str(query or "").strip()
@@ -1272,6 +1628,7 @@ class Repository:
         params = {
             "query": fts_query,
             "doc_type": normalized_type,
+            "scope": scope,
             "period_start": period_start,
             "period_end": period_end,
             "limit": normalized_limit,
@@ -1298,6 +1655,7 @@ class Repository:
         WHERE
             chunk_fts MATCH :query
             AND d.doc_type = :doc_type
+            AND d.scope = :scope
             AND {period_pred}
             {"AND " + " AND ".join(extra_predicates) if extra_predicates else ""}
         ORDER BY rank ASC
@@ -1338,6 +1696,7 @@ class Repository:
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
+        scope: str = DEFAULT_TOPIC_STREAM,
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]:
@@ -1355,6 +1714,7 @@ class Repository:
                 )
                 .where(
                     Document.doc_type == normalized_type,
+                    cast(Any, Document.scope) == scope,
                     DocumentChunk.kind == "summary",
                 )
             )
@@ -1388,6 +1748,7 @@ class Repository:
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
+        scope: str = DEFAULT_TOPIC_STREAM,
         limit: int = 500,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -1407,6 +1768,7 @@ class Repository:
                 )
                 .where(
                     Document.doc_type == normalized_type,
+                    cast(Any, Document.scope) == scope,
                     DocumentChunk.kind == "summary",
                 )
             )

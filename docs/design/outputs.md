@@ -87,13 +87,13 @@ This keeps the canonical markdown unchanged while giving a reproducible record o
 The static site exporter turns trend markdown notes into a standalone website:
 
 - `recoleta site build`: render a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default
-- `recoleta site stage`: mirror trend markdown/PDF artifacts to `./site-content/Trends` by default for repository-based deployment
+- `recoleta site stage`: mirror trend markdown/PDF artifacts to `./site-content/Trends` by default, or `./site-content/Streams/<stream>/Trends` in topic-stream mode
 
 Important behavior:
 
 - Both commands treat their output directories as managed artifacts and clear stale files before writing.
 - When `--input-dir` and `--output-dir` are passed explicitly, they do not require a full Recoleta runtime config. This is intentional so CI and GitHub Pages can build from a staged content snapshot.
-- The default GitHub Pages workflow builds `site-dist/` from `site-content/Trends/`.
+- The default GitHub Pages workflow builds `site-dist/` from `site-content/`, so it works for both single-stream and topic-stream staged layouts.
 
 ## CLI UX
 
