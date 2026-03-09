@@ -1,0 +1,620 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import html
+import re
+from typing import Any
+
+from bs4 import BeautifulSoup, Tag
+from slugify import slugify
+import yaml
+
+
+def _trend_date_token(*, granularity: str, period_start: datetime) -> str:
+    normalized = str(granularity or "").strip().lower()
+    if normalized == "day":
+        return period_start.strftime("%Y-%m-%d")
+    if normalized == "week":
+        iso = period_start.isocalendar()
+        return f"{iso.year}-W{iso.week:02d}"
+    if normalized == "month":
+        return period_start.strftime("%Y-%m")
+    return period_start.strftime("%Y-%m-%d")
+
+
+def _split_yaml_frontmatter_text(text: str) -> tuple[dict[str, Any], str]:
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = normalized.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return {}, normalized
+
+    end_idx: int | None = None
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            end_idx = idx
+            break
+    if end_idx is None:
+        return {}, normalized
+
+    raw = "\n".join(lines[1:end_idx]).strip()
+    body = "\n".join(lines[end_idx + 1 :]).lstrip("\n")
+    if not raw:
+        return {}, body
+
+    try:
+        loaded = yaml.safe_load(raw)
+    except Exception:
+        return {}, body
+    if isinstance(loaded, dict):
+        return loaded, body
+    return {}, body
+
+
+def _normalize_obsidian_callouts_for_pdf(text: str) -> str:
+    lines = str(text or "").splitlines()
+    if not lines:
+        return ""
+
+    normalized: list[str] = []
+    idx = 0
+    while idx < len(lines):
+        match = re.match(r"^\s*>\s*\[!([^\]]+)\][-+]?\s*(.*)$", lines[idx])
+        if match is None:
+            normalized.append(lines[idx])
+            idx += 1
+            continue
+
+        callout_kind = str(match.group(1) or "").strip().replace("-", " ")
+        title = str(match.group(2) or "").strip() or callout_kind.title()
+        body_lines: list[str] = []
+        idx += 1
+        while idx < len(lines):
+            current = lines[idx]
+            if not current.lstrip().startswith(">"):
+                break
+            body_lines.append(re.sub(r"^\s*>\s?", "", current))
+            idx += 1
+
+        normalized.extend(["", f"## {title}", ""])
+        normalized.extend(body_lines)
+        if body_lines and body_lines[-1].strip():
+            normalized.append("")
+    return "\n".join(normalized).strip() + "\n"
+
+
+def _trend_pdf_period_label(frontmatter: dict[str, Any]) -> str:
+    granularity = str(frontmatter.get("granularity") or "").strip().lower()
+    raw_period_start = str(frontmatter.get("period_start") or "").strip()
+    raw_period_end = str(frontmatter.get("period_end") or "").strip()
+    if granularity and raw_period_start:
+        try:
+            period_start = datetime.fromisoformat(raw_period_start)
+            if period_start.tzinfo is None:
+                period_start = period_start.replace(tzinfo=timezone.utc)
+            token = _trend_date_token(
+                granularity=granularity,
+                period_start=period_start,
+            )
+            if raw_period_end:
+                period_end = datetime.fromisoformat(raw_period_end)
+                if period_end.tzinfo is None:
+                    period_end = period_end.replace(tzinfo=timezone.utc)
+                return (
+                    f"{token} ({period_start.date().isoformat()} "
+                    f"to {period_end.date().isoformat()})"
+                )
+            return token
+        except Exception:
+            return raw_period_start
+    return raw_period_start or "Current window"
+
+
+def _trend_pdf_topics_summary(frontmatter: dict[str, Any]) -> str:
+    topics = frontmatter.get("topics")
+    if not isinstance(topics, list) or not topics:
+        return "No tracked topics"
+    cleaned = [str(topic).strip() for topic in topics if str(topic).strip()]
+    if not cleaned:
+        return "No tracked topics"
+    if len(cleaned) <= 3:
+        return ", ".join(cleaned)
+    return f"{len(cleaned)} tracked topics"
+
+
+def _trend_pdf_meta_rows(frontmatter: dict[str, Any]) -> list[tuple[str, str]]:
+    granularity = str(frontmatter.get("granularity") or "").strip().lower() or "trend"
+    topics = frontmatter.get("topics")
+    topic_count = 0
+    if isinstance(topics, list):
+        topic_count = len(
+            [str(topic).strip() for topic in topics if str(topic).strip()]
+        )
+    return [
+        ("Window", granularity.title()),
+        ("Period", _trend_pdf_period_label(frontmatter)),
+        ("Coverage", "Telegram-ready PDF brief"),
+        ("Topics", str(topic_count) if topic_count > 0 else "None"),
+    ]
+
+
+def _trend_pdf_hero_dek(frontmatter: dict[str, Any]) -> str:
+    granularity = str(frontmatter.get("granularity") or "").strip().lower() or "trend"
+    return (
+        f"{granularity.title()} brief tuned for quick scanning, stronger hierarchy, "
+        f"and compact delivery in Telegram."
+    )
+
+
+@dataclass(slots=True)
+class TrendPdfSection:
+    heading: str
+    slug: str
+    inner_html: str
+
+
+def _normalize_section_heading(heading: str) -> str:
+    return str(heading or "").strip().lower()
+
+
+def _section_matches(heading: str, *patterns: str) -> bool:
+    normalized = _normalize_section_heading(heading)
+    return any(pattern in normalized for pattern in patterns)
+
+
+def _is_primary_trend_section_heading(heading: str) -> bool:
+    return _section_matches(
+        heading,
+        "tl;dr",
+        "summary",
+        "overview",
+        "must-read",
+        "topics",
+        "clusters",
+        "highlight",
+    )
+
+
+def _build_topic_grid(soup: BeautifulSoup, topics: list[str]) -> Tag:
+    table = soup.new_tag("table", attrs={"class": "topic-grid"})
+    tbody = soup.new_tag("tbody")
+    table.append(tbody)
+    cleaned = [topic for topic in topics if topic]
+    for idx in range(0, len(cleaned), 4):
+        row = soup.new_tag("tr")
+        for offset in range(4):
+            cell = soup.new_tag("td")
+            value = cleaned[idx + offset] if idx + offset < len(cleaned) else ""
+            cell["class"] = "topic-cell topic-cell-empty" if not value else "topic-cell"
+            cell.string = value
+            row.append(cell)
+        tbody.append(row)
+    return table
+
+
+def _extract_trend_pdf_sections(*, body_html: str) -> tuple[str, list[TrendPdfSection]]:
+    soup = BeautifulSoup(body_html, "html.parser")
+    title = "Trend"
+
+    first_h1 = soup.find("h1")
+    if first_h1 is not None:
+        extracted_title = first_h1.get_text(" ", strip=True)
+        if extracted_title:
+            title = extracted_title
+        first_h1.decompose()
+
+    sections: list[TrendPdfSection] = []
+    current_heading = "Preface"
+    current_nodes: list[str] = []
+
+    for node in list(soup.contents):
+        extracted = node.extract()
+        if not str(extracted).strip():
+            continue
+        if isinstance(extracted, Tag) and extracted.name == "h2":
+            next_heading = extracted.get_text(" ", strip=True) or "Section"
+            if (
+                current_nodes == []
+                and _is_primary_trend_section_heading(current_heading)
+                and not _is_primary_trend_section_heading(next_heading)
+            ):
+                extracted.name = "h3"
+                current_nodes.append(str(extracted))
+                continue
+            if current_nodes:
+                sections.append(
+                    TrendPdfSection(
+                        heading=current_heading,
+                        slug=slugify(current_heading) or "section",
+                        inner_html="".join(current_nodes).strip(),
+                    )
+                )
+            current_heading = next_heading
+            current_nodes = []
+            continue
+        current_nodes.append(str(extracted))
+
+    if current_nodes:
+        sections.append(
+            TrendPdfSection(
+                heading=current_heading,
+                slug=slugify(current_heading) or "section",
+                inner_html="".join(current_nodes).strip(),
+            )
+        )
+
+    return title, sections
+
+
+def _render_section_label_html(heading: str) -> str:
+    return f"<h2 class='section-label'>{html.escape(heading)}</h2>"
+
+
+def _extract_topic_items(*, section: TrendPdfSection) -> list[str]:
+    soup = BeautifulSoup(section.inner_html, "html.parser")
+    bullet_list = soup.find("ul")
+    if bullet_list is None:
+        return []
+    return [
+        item.get_text(" ", strip=True)
+        for item in bullet_list.find_all("li")
+        if item.get_text(" ", strip=True)
+    ]
+
+
+def _extract_cluster_entries(*, section: TrendPdfSection) -> list[tuple[str, str]]:
+    soup = BeautifulSoup(section.inner_html, "html.parser")
+    clusters: list[tuple[str, str]] = []
+    current_title: str | None = None
+    current_nodes: list[str] = []
+
+    for node in list(soup.contents):
+        extracted = node.extract()
+        if not str(extracted).strip():
+            continue
+        if isinstance(extracted, Tag) and extracted.name == "h3":
+            if current_title is not None:
+                clusters.append((current_title, "".join(current_nodes).strip()))
+            current_title = extracted.get_text(" ", strip=True) or "Cluster"
+            current_nodes = []
+            continue
+        current_nodes.append(str(extracted))
+
+    if current_title is not None:
+        clusters.append((current_title, "".join(current_nodes).strip()))
+    return clusters
+
+
+def _render_topics_section_html(*, section: TrendPdfSection) -> str:
+    soup = BeautifulSoup(section.inner_html, "html.parser")
+    topics = _extract_topic_items(section=section)
+    grid = str(_build_topic_grid(soup, topics)) if topics else "<p>(none)</p>"
+    return (
+        "<section class='topics-section'>"
+        f"{_render_section_label_html(section.heading)}"
+        f"{grid}"
+        "</section>"
+    )
+
+
+def _render_summary_panel_html(*, section: TrendPdfSection, modifier: str) -> str:
+    return (
+        f"<td class='summary-panel {modifier}'>"
+        f"{_render_section_label_html(section.heading)}"
+        f"<div class='summary-panel-body'>{section.inner_html}</div>"
+        "</td>"
+    )
+
+
+def _render_cluster_grid_html(*, section: TrendPdfSection) -> str:
+    clusters = _extract_cluster_entries(section=section)
+    if not clusters:
+        return (
+            "<section class='clusters-section'>"
+            f"{_render_section_label_html(section.heading)}"
+            "<p>(none)</p>"
+            "</section>"
+        )
+
+    rows: list[str] = []
+    for idx in range(0, len(clusters), 2):
+        row_cells: list[str] = []
+        for offset in range(2):
+            if idx + offset >= len(clusters):
+                row_cells.append("<td class='cluster-cell cluster-cell-empty'></td>")
+                continue
+            cluster_title, cluster_html = clusters[idx + offset]
+            row_cells.append(
+                "<td class='cluster-cell'>"
+                "<div class='cluster-card'>"
+                f"<div class='cluster-title'>{html.escape(cluster_title)}</div>"
+                f"<div class='cluster-body'>{cluster_html}</div>"
+                "</div>"
+                "</td>"
+            )
+        rows.append("<tr>" + "".join(row_cells) + "</tr>")
+
+    return (
+        "<section class='clusters-section'>"
+        f"{_render_section_label_html(section.heading)}"
+        "<table class='cluster-grid'>"
+        + "".join(rows)
+        + "</table>"
+        "</section>"
+    )
+
+
+def _render_generic_section_html(*, section: TrendPdfSection, compact: bool = False) -> str:
+    modifier = " section-compact" if compact else ""
+    return (
+        f"<section class='content-section{modifier} section-{section.slug}'>"
+        f"{_render_section_label_html(section.heading)}"
+        f"<div class='content-prose'>{section.inner_html}</div>"
+        "</section>"
+    )
+
+
+def _decorate_trend_pdf_body_html(*, body_html: str) -> tuple[str, str]:
+    title, sections = _extract_trend_pdf_sections(body_html=body_html)
+    used: set[str] = set()
+    rendered: list[str] = []
+
+    summary_sections: list[tuple[TrendPdfSection, str]] = []
+    for section in sections:
+        if _section_matches(section.heading, "tl;dr", "summary"):
+            summary_sections.append((section, "summary-primary"))
+            used.add(section.slug)
+        elif _section_matches(section.heading, "must-read"):
+            summary_sections.append((section, "summary-secondary"))
+            used.add(section.slug)
+
+    if summary_sections:
+        cells = "".join(
+            _render_summary_panel_html(section=section, modifier=modifier)
+            for section, modifier in summary_sections[:2]
+        )
+        rendered.append(
+            "<section class='summary-grid-wrap'>"
+            "<table class='summary-grid'><tr>"
+            f"{cells}"
+            "</tr></table>"
+            "</section>"
+        )
+
+    for section in sections:
+        if section.slug in used:
+            continue
+        if _section_matches(section.heading, "overview"):
+            rendered.append(_render_generic_section_html(section=section))
+            used.add(section.slug)
+        elif _section_matches(section.heading, "topics"):
+            rendered.append(_render_topics_section_html(section=section))
+            used.add(section.slug)
+        elif _section_matches(section.heading, "clusters"):
+            rendered.append(_render_cluster_grid_html(section=section))
+            used.add(section.slug)
+        elif _section_matches(section.heading, "highlight"):
+            rendered.append(_render_generic_section_html(section=section, compact=True))
+            used.add(section.slug)
+
+    for section in sections:
+        if section.slug in used:
+            continue
+        rendered.append(_render_generic_section_html(section=section))
+
+    return "<div class='brief-flow'>" + "".join(rendered) + "</div>", title
+
+
+def _build_trend_pdf_html(
+    *,
+    body_html: str,
+    frontmatter: dict[str, Any],
+    title: str,
+) -> str:
+    meta_rows = _trend_pdf_meta_rows(frontmatter)
+    meta_cells = []
+    for label, value in meta_rows:
+        meta_cells.append(
+            "<td>"
+            f"<div class='meta-label'>{html.escape(label)}</div>"
+            f"<div class='meta-value'>{html.escape(value)}</div>"
+            "</td>"
+        )
+
+    meta_rows_html = "<tr>" + "".join(meta_cells) + "</tr>"
+
+    return (
+        "<html>"
+        "<body>"
+        "<div class='page-shell'>"
+        "<div class='hero'>"
+        "<div class='hero-kicker'>Recoleta Trend Brief</div>"
+        f"<div class='hero-title'>{html.escape(title)}</div>"
+        f"<div class='hero-dek'>{html.escape(_trend_pdf_hero_dek(frontmatter))}</div>"
+        f"<div class='hero-summary'>{html.escape(_trend_pdf_topics_summary(frontmatter))}</div>"
+        "<table class='meta-grid'>"
+        f"{meta_rows_html}"
+        "</table>"
+        "</div>"
+        f"<div class='content'>{body_html}</div>"
+        "</div>"
+        "</body>"
+        "</html>"
+    )
+
+
+def _render_browser_section_label_html(heading: str) -> str:
+    return f"<h2 class='section-label'>{html.escape(heading)}</h2>"
+
+
+def _render_browser_content_card_html(
+    *,
+    heading: str,
+    inner_html: str,
+    card_classes: str = "surface-card section-card",
+    prose_class: str = "prose",
+) -> str:
+    return (
+        f"<section class='{card_classes}'>"
+        f"{_render_browser_section_label_html(heading)}"
+        f"<div class='{prose_class}'>{inner_html}</div>"
+        "</section>"
+    )
+
+
+def _render_browser_topics_section_html(*, section: TrendPdfSection) -> str:
+    topics = _extract_topic_items(section=section)
+    if not topics:
+        return _render_browser_content_card_html(
+            heading=section.heading,
+            inner_html="<p>(none)</p>",
+        )
+
+    pills = "".join(
+        f"<span class='topic-pill'>{html.escape(topic)}</span>" for topic in topics
+    )
+    return (
+        "<section class='surface-card section-card topics-card'>"
+        f"{_render_browser_section_label_html(section.heading)}"
+        f"<div class='topic-grid'>{pills}</div>"
+        "</section>"
+    )
+
+
+def _render_browser_clusters_section_html(*, section: TrendPdfSection) -> str:
+    clusters = _extract_cluster_entries(section=section)
+    if not clusters:
+        return _render_browser_content_card_html(
+            heading=section.heading,
+            inner_html="<p>(none)</p>",
+        )
+
+    cards = "".join(
+        "<article class='cluster-card'>"
+        f"<h3>{html.escape(cluster_title)}</h3>"
+        f"<div class='cluster-body'>{cluster_html}</div>"
+        "</article>"
+        for cluster_title, cluster_html in clusters
+    )
+    return (
+        "<section class='surface-card section-card cluster-section'>"
+        f"{_render_browser_section_label_html(section.heading)}"
+        f"<div class='cluster-columns'>{cards}</div>"
+        "</section>"
+    )
+
+
+def _build_trend_browser_body_html(*, sections: list[TrendPdfSection]) -> str:
+    used: set[str] = set()
+    rendered: list[str] = []
+
+    summary_cards: list[str] = []
+    for section in sections:
+        if _section_matches(section.heading, "tl;dr", "summary"):
+            summary_cards.append(
+                _render_browser_content_card_html(
+                    heading=section.heading,
+                    inner_html=section.inner_html,
+                    card_classes="surface-card section-card summary-card summary-card-primary",
+                )
+            )
+            used.add(section.slug)
+        elif _section_matches(section.heading, "must-read"):
+            summary_cards.append(
+                _render_browser_content_card_html(
+                    heading=section.heading,
+                    inner_html=section.inner_html,
+                    card_classes="surface-card section-card summary-card summary-card-secondary",
+                )
+            )
+            used.add(section.slug)
+
+    if summary_cards:
+        rendered.append(
+            "<section class='summary-grid'>"
+            + "".join(summary_cards[:2])
+            + "</section>"
+        )
+
+    for section in sections:
+        if section.slug in used:
+            continue
+        if _section_matches(section.heading, "overview"):
+            rendered.append(
+                _render_browser_content_card_html(
+                    heading=section.heading,
+                    inner_html=section.inner_html,
+                )
+            )
+            used.add(section.slug)
+        elif _section_matches(section.heading, "topics"):
+            rendered.append(_render_browser_topics_section_html(section=section))
+            used.add(section.slug)
+        elif _section_matches(section.heading, "clusters"):
+            rendered.append(_render_browser_clusters_section_html(section=section))
+            used.add(section.slug)
+        elif _section_matches(section.heading, "highlight"):
+            rendered.append(
+                _render_browser_content_card_html(
+                    heading=section.heading,
+                    inner_html=section.inner_html,
+                    card_classes="surface-card section-card highlight-card",
+                )
+            )
+            used.add(section.slug)
+
+    for section in sections:
+        if section.slug in used:
+            continue
+        rendered.append(
+            _render_browser_content_card_html(
+                heading=section.heading,
+                inner_html=section.inner_html,
+            )
+        )
+
+    return "<div class='document-flow'>" + "".join(rendered) + "</div>"
+
+
+def _build_trend_browser_pdf_html(
+    *,
+    frontmatter: dict[str, Any],
+    title: str,
+    sections: list[TrendPdfSection],
+) -> str:
+    meta_items = "".join(
+        "<div class='meta-item'>"
+        f"<div class='meta-label'>{html.escape(label)}</div>"
+        f"<div class='meta-value'>{html.escape(value)}</div>"
+        "</div>"
+        for label, value in _trend_pdf_meta_rows(frontmatter)
+    )
+    body_html = _build_trend_browser_body_html(sections=sections)
+    return (
+        "<!doctype html>"
+        "<html lang='zh-CN'>"
+        "<head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>{html.escape(title)}</title>"
+        "</head>"
+        "<body>"
+        "<main class='page-shell'>"
+        "<section class='hero'>"
+        "<div class='hero-grid'>"
+        "<div class='hero-main'>"
+        "<div class='hero-kicker'>Recoleta Trend Brief</div>"
+        f"<h1 class='hero-title'>{html.escape(title)}</h1>"
+        f"<p class='hero-dek'>{html.escape(_trend_pdf_hero_dek(frontmatter))}</p>"
+        f"<div class='hero-summary'>{html.escape(_trend_pdf_topics_summary(frontmatter))}</div>"
+        "</div>"
+        "<div class='hero-meta'>"
+        f"{meta_items}"
+        "</div>"
+        "</div>"
+        "</section>"
+        f"{body_html}"
+        "</main>"
+        "</body>"
+        "</html>"
+    )

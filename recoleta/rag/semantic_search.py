@@ -7,9 +7,9 @@ from typing import Any
 from loguru import logger
 
 from recoleta.llm_connection import LLMConnectionConfig
+from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.embeddings import LiteLLMEmbedder, iter_embedding_batches
 from recoleta.rag.vector_store import LanceVectorStore, VectorRow
-from recoleta.storage import Repository
 
 
 @dataclass(slots=True)
@@ -28,7 +28,7 @@ def _sanitize_where_string(value: str) -> str:
 
 def ensure_summary_vectors_for_period(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     vector_store: LanceVectorStore,
     run_id: str,
     doc_type: str,
@@ -242,7 +242,7 @@ def ensure_summary_vectors_for_period(
 
 def semantic_search_summaries_in_period(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     vector_store: LanceVectorStore,
     run_id: str,
     doc_type: str,

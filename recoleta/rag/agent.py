@@ -9,15 +9,15 @@ from loguru import logger
 from pydantic_ai import Agent, RunContext
 
 from recoleta.llm_connection import LLMConnectionConfig
+from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.storage import Repository
 from recoleta.trends import TrendCluster, TrendPayload
 
 
 @dataclass(slots=True)
 class TrendAgentDeps:
-    repository: Repository
+    repository: TrendRepositoryPort
     vector_store: LanceVectorStore
     run_id: str
     period_start: datetime
@@ -629,7 +629,7 @@ def build_trend_prompt_payload(
 
 def generate_trend_payload(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     vector_store: LanceVectorStore,
     run_id: str,
     llm_model: str,
@@ -653,11 +653,13 @@ def generate_trend_payload(
     llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     log = logger.bind(module="rag.trend_agent", run_id=run_id)
-    agent = build_trend_agent(
-        llm_model=llm_model,
-        output_language=output_language,
-        llm_connection=llm_connection,
-    )
+    agent_kwargs: dict[str, Any] = {
+        "llm_model": llm_model,
+        "output_language": output_language,
+    }
+    if llm_connection is not None:
+        agent_kwargs["llm_connection"] = llm_connection
+    agent = build_trend_agent(**agent_kwargs)
     deps = TrendAgentDeps(
         repository=repository,
         vector_store=vector_store,

@@ -88,6 +88,14 @@ def get_rich_console() -> Console:
 
     global _RICH_CONSOLE
     if _RICH_CONSOLE is not None:
+        current_file = getattr(_RICH_CONSOLE, "file", None)
+        if current_file is sys.stderr and not bool(
+            getattr(current_file, "closed", False)
+        ):
+            return _RICH_CONSOLE
+        _RICH_CONSOLE = None
+
+    if _RICH_CONSOLE is not None:
         return _RICH_CONSOLE
 
     enable_ansi = _stream_supports_ansi(sys.stderr)

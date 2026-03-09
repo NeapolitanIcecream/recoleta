@@ -11,7 +11,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from recoleta.llm_connection import LLMConnectionConfig
-from recoleta.storage import Repository
+from recoleta.ports import TrendRepositoryPort
 
 
 @dataclass(slots=True)
@@ -31,7 +31,7 @@ def ensure_summary_embeddings_for_period(*_, **__: Any) -> dict[str, Any]:
 
 def semantic_search_summaries_in_period(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     lancedb_dir: Path,
     run_id: str,
     doc_type: str,
@@ -193,7 +193,7 @@ def _truncate_chars(value: str, *, max_chars: int) -> tuple[str, bool]:
 
 
 def build_overview_pack_md(
-    repository: Repository,
+    repository: TrendRepositoryPort,
     plan: TrendGenerationPlan,
     *,
     overview_pack_max_chars: int,
@@ -439,7 +439,7 @@ def _chunk_text_segments(
 
 def index_items_as_documents(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     run_id: str,
     period_start: datetime,
     period_end: datetime,
@@ -553,7 +553,7 @@ def index_items_as_documents(
 
 def generate_trend_via_tools(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     run_id: str,
     llm_model: str,
     output_language: str | None = None,
@@ -614,7 +614,7 @@ def generate_trend_via_tools(
 
 def persist_trend_payload(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     granularity: str,
     period_start: datetime,
     period_end: datetime,

@@ -17,7 +17,7 @@ from loguru import logger
 from markdown_it import MarkdownIt
 from slugify import slugify
 
-from recoleta.publish import (
+from recoleta.publish.trend_render_shared import (
     _build_trend_browser_body_html,
     _extract_trend_pdf_sections,
     _normalize_obsidian_callouts_for_pdf,
