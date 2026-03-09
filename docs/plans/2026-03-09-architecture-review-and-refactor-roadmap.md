@@ -58,7 +58,7 @@ What is still not fully at the target shape:
 
 - `recoleta/pipeline/service.py` still contains a large `PipelineService` implementation and has not yet been split into topic-stream, artifact, and metrics collaborators
 - `recoleta/storage/facade.py` is still broader than the eventual `schema/runs/leases/analyses/deliveries/maintenance` split
-- `recoleta/cli/__init__.py` still hosts most command wiring instead of command-area modules
+- `recoleta/cli/__init__.py` is now mostly runtime/helper and wrapper code, but command registration still lives there instead of a smaller app-assembly entrypoint
 - `ScopedTrendsRepository` still exists inside `recoleta/pipeline/trends_stage.py`
 - `PublishRepositoryPort` and `AnalysisRepositoryPort` have not been introduced as separate real ports yet
 
@@ -305,7 +305,8 @@ Current implementation status against this shape:
   - `scheduler.py` has not been split out
 - `cli/`: partially aligned
   - package exists
-  - command modules by area do not yet exist
+  - command modules now exist for ingest, analyze, publish, trends, site, rag, db, maintenance, and run
+  - `__init__.py` still owns app assembly and shared helper/runtime glue
 - `pipeline/`: partially aligned
   - package exists
   - `publish_stage.py` and `trends_stage.py` exist
@@ -479,8 +480,9 @@ This is mainly a maintainability pass.
 Current status note:
 
 - `recoleta.cli` is now a real package and managed-run helpers live under `recoleta.app.runtime`
+- command implementations now live in dedicated modules under `recoleta/cli/`
 - top-level `recoleta/cli.py` is now a compatibility shim
-- command-level CLI modules are still combined inside `recoleta/cli/__init__.py`
+- package entry wiring is still combined inside `recoleta/cli/__init__.py`
 
 ## Breaking Change Decision Gate
 
