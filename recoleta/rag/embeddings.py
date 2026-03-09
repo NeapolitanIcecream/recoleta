@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import Any, Protocol
 
+from recoleta.llm_connection import LLMConnectionConfig
+
 
 def iter_embedding_batches(
     inputs: list[str],
@@ -140,6 +142,9 @@ def _get_embedding() -> Any:
 
 
 class LiteLLMEmbedder:
+    def __init__(self, *, llm_connection: LLMConnectionConfig | None = None) -> None:
+        self.llm_connection = llm_connection or LLMConnectionConfig()
+
     def embed(
         self,
         *,
@@ -151,6 +156,7 @@ class LiteLLMEmbedder:
         kwargs: dict[str, Any] = {"model": model, "input": inputs}
         if dimensions is not None:
             kwargs["dimensions"] = int(dimensions)
+        kwargs.update(self.llm_connection.litellm_embedding_kwargs())
         response = _get_embedding()(**kwargs)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         vectors = extract_embeddings(response)
@@ -197,4 +203,7 @@ class LiteLLMEmbedder:
             "tokens_estimated": tokens_estimated,
             "cost_usd": cost_usd,
         }
+        connection_overrides = self.llm_connection.debug_payload()
+        if connection_overrides:
+            debug["connection_overrides"] = connection_overrides
         return vectors, debug

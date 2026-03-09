@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt
 from tenacity.wait import wait_base, wait_exponential_jitter
 
+from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.observability import collect_environment_secrets, scrub_secrets
 from recoleta.types import AnalysisResult, AnalyzeDebug
 
@@ -109,10 +110,12 @@ class LiteLLMAnalyzer:
         model: str,
         output_language: str | None = None,
         content_max_chars: int = 5000,
+        llm_connection: LLMConnectionConfig | None = None,
     ) -> None:
         self.model = model
         self.output_language = output_language
         self.content_max_chars = max(0, int(content_max_chars))
+        self.llm_connection = llm_connection or LLMConnectionConfig()
 
     def analyze(
         self,
@@ -172,6 +175,7 @@ class LiteLLMAnalyzer:
                 model=self.model,
                 messages=messages,
                 response_format={"type": "json_object"},
+                **self.llm_connection.litellm_completion_kwargs(),
             )
             raw_content = _extract_content(response)
             try:
@@ -231,6 +235,9 @@ class LiteLLMAnalyzer:
             "messages": messages,
             "response_format": {"type": "json_object"},
         }
+        connection_overrides = self.llm_connection.debug_payload()
+        if connection_overrides:
+            request_debug["connection_overrides"] = connection_overrides
         response_debug: dict[str, Any] = {
             "elapsed_ms": elapsed_ms,
             "content": raw_content,

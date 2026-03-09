@@ -11,6 +11,8 @@ import respx
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SOURCES", raising=False)
     monkeypatch.delenv("RECOLETA_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("RECOLETA_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("RECOLETA_LLM_BASE_URL", raising=False)
     # Avoid network fetches for model pricing in tests.
     monkeypatch.setenv("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 

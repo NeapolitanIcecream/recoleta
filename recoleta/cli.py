@@ -1120,6 +1120,7 @@ def rag_sync_vectors(
                     getattr(settings, "trends_embedding_max_errors", 0) or 0
                 ),
                 page_size=page_size,
+                llm_connection=settings.llm_connection_config(),
             )
         heartbeat_monitor.raise_if_failed()
         repository.finish_run(run_id, success=True)

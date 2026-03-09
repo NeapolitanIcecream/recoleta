@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent, RunContext
 
+from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.storage import Repository
@@ -28,6 +29,7 @@ class TrendAgentDeps:
     embedding_batch_max_chars: int
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
+    llm_connection: LLMConnectionConfig | None = None
 
 
 def _build_trend_instructions(*, output_language: str | None) -> str:
@@ -128,11 +130,14 @@ def _doc_event_sort_key(doc: Any) -> tuple[float, int]:
 
 
 def build_trend_agent(
-    *, llm_model: str, output_language: str | None = None
+    *,
+    llm_model: str,
+    output_language: str | None = None,
+    llm_connection: LLMConnectionConfig | None = None,
 ) -> Agent[TrendAgentDeps, TrendPayload]:
     from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
 
-    model = build_pydantic_ai_model(llm_model)
+    model = build_pydantic_ai_model(llm_model, llm_connection=llm_connection)
     agent: Agent[TrendAgentDeps, TrendPayload] = Agent(
         model,
         deps_type=TrendAgentDeps,
@@ -357,6 +362,7 @@ def build_trend_agent(
                 embedding_max_errors=int(deps.embedding_max_errors or 0),
                 limit=normalized_limit,
                 metric_namespace="pipeline.trends",
+                llm_connection=deps.llm_connection,
             )
             for hit in rows:
                 try:
@@ -644,9 +650,14 @@ def generate_trend_payload(
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
     include_debug: bool = False,
+    llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     log = logger.bind(module="rag.trend_agent", run_id=run_id)
-    agent = build_trend_agent(llm_model=llm_model, output_language=output_language)
+    agent = build_trend_agent(
+        llm_model=llm_model,
+        output_language=output_language,
+        llm_connection=llm_connection,
+    )
     deps = TrendAgentDeps(
         repository=repository,
         vector_store=vector_store,
@@ -660,6 +671,7 @@ def generate_trend_payload(
         embedding_batch_max_chars=embedding_batch_max_chars,
         embedding_failure_mode=str(embedding_failure_mode or "continue"),
         embedding_max_errors=int(embedding_max_errors or 0),
+        llm_connection=llm_connection,
     )
 
     prompt = json.dumps(
@@ -710,6 +722,7 @@ def generate_trend_payload(
                 embedding_max_errors=int(embedding_max_errors or 0),
                 limit=int(n),
                 metric_namespace="pipeline.trends",
+                llm_connection=llm_connection,
             )
         ],
         max_reps=6,

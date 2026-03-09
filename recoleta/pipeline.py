@@ -33,6 +33,7 @@ from recoleta.extract import (
     fetch_url_bytes,
     fetch_url_html,
 )
+from recoleta.llm_connection import llm_connection_from_settings
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
     DELIVERY_STATUS_FAILED,
@@ -250,8 +251,12 @@ class PipelineService:
             scrub_candidates.append(settings.telegram_bot_token.get_secret_value())
         if settings.telegram_chat_id is not None:
             scrub_candidates.append(settings.telegram_chat_id.get_secret_value())
+        llm_api_key = getattr(settings, "llm_api_key", None)
+        if llm_api_key is not None:
+            scrub_candidates.append(llm_api_key.get_secret_value())
         scrub_candidates.extend(collect_environment_secrets())
         self._scrub_secrets = tuple(dict.fromkeys(scrub_candidates))
+        self._llm_connection = llm_connection_from_settings(settings)
         self._progress_console = get_rich_console()
         runtime_builder = getattr(settings, "topic_stream_runtimes", None)
         self._topic_streams: list[TopicStreamRuntime]
@@ -292,10 +297,12 @@ class PipelineService:
             model=settings.llm_model,
             output_language=settings.llm_output_language,
             content_max_chars=settings.analyze_content_max_chars,
+            llm_connection=self._llm_connection,
         )
         self.semantic_triage = triage or SemanticTriage(
             embedding_batch_max_inputs=settings.triage_embedding_batch_max_inputs,
             embedding_batch_max_chars=settings.triage_embedding_batch_max_chars,
+            llm_connection=self._llm_connection,
         )
         self.telegram_sender = telegram_sender
         self._telegram_senders: dict[str, Any] = {}
@@ -3883,6 +3890,7 @@ class PipelineService:
                     ranking_n=ranking_n,
                     rep_source_doc_type=rep_source_doc_type,
                     include_debug=include_debug,
+                    llm_connection=self._llm_connection,
                 )
                 if isinstance(debug, dict):
                     usage = debug.get("usage")
@@ -4038,6 +4046,7 @@ class PipelineService:
                             or 0
                         ),
                         limit=limit,
+                        llm_connection=self._llm_connection,
                     )
                 except Exception:
                     return []

@@ -6,6 +6,7 @@ from typing import Any
 
 from loguru import logger
 
+from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.rag.embeddings import LiteLLMEmbedder, iter_embedding_batches
 from recoleta.rag.vector_store import LanceVectorStore, VectorRow
 from recoleta.storage import Repository
@@ -42,6 +43,7 @@ def ensure_summary_vectors_for_period(
     embedding_max_errors: int = 0,
     limit: int = 500,
     offset: int = 0,
+    llm_connection: LLMConnectionConfig | None = None,
 ) -> dict[str, Any]:
     """Ensure summary chunks in period have vectors in LanceDB (idempotent by text_hash)."""
 
@@ -121,7 +123,7 @@ def ensure_summary_vectors_for_period(
             "embedding_max_errors": normalized_max_errors,
         }
 
-    embedder = LiteLLMEmbedder()
+    embedder = LiteLLMEmbedder(llm_connection=llm_connection)
     embedding_calls_total = 0
     embedding_errors_total = 0
     embedded_total = 0
@@ -257,6 +259,7 @@ def semantic_search_summaries_in_period(
     limit: int = 10,
     corpus_limit: int = 500,
     metric_namespace: str | None = None,
+    llm_connection: LLMConnectionConfig | None = None,
 ) -> list[SemanticSearchHit]:
     log = logger.bind(module="rag.semantic_search", run_id=run_id, doc_type=doc_type)
     normalized_query = str(query or "").strip()
@@ -279,6 +282,7 @@ def semantic_search_summaries_in_period(
         embedding_max_errors=embedding_max_errors,
         limit=corpus_limit,
         offset=0,
+        llm_connection=llm_connection,
     )
     candidate_chunk_ids = [
         int(raw_id)
@@ -289,7 +293,7 @@ def semantic_search_summaries_in_period(
         log.info("Semantic search skipped: empty candidate corpus")
         return []
 
-    embedder = LiteLLMEmbedder()
+    embedder = LiteLLMEmbedder(llm_connection=llm_connection)
     query_vecs, query_debug = embedder.embed(
         model=str(embedding_model).strip(),
         inputs=[f"Query: {normalized_query}"],

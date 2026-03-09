@@ -10,6 +10,7 @@ from typing import Any, cast
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.storage import Repository
 
 
@@ -46,6 +47,7 @@ def semantic_search_summaries_in_period(
     embedding_max_errors: int = 0,
     limit: int = 10,
     corpus_limit: int = 500,
+    llm_connection: LLMConnectionConfig | None = None,
 ) -> list[SemanticSearchHit]:
     from recoleta.rag.semantic_search import (
         semantic_search_summaries_in_period as _semantic_search,
@@ -75,6 +77,7 @@ def semantic_search_summaries_in_period(
         embedding_max_errors=embedding_max_errors,
         limit=limit,
         corpus_limit=corpus_limit,
+        llm_connection=llm_connection,
     )
     return [
         SemanticSearchHit(
@@ -571,6 +574,7 @@ def generate_trend_via_tools(
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
     include_debug: bool = False,
+    llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     from recoleta.rag.agent import generate_trend_payload
     from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
@@ -604,6 +608,7 @@ def generate_trend_via_tools(
         ranking_n=ranking_n,
         rep_source_doc_type=rep_source_doc_type,
         include_debug=include_debug,
+        llm_connection=llm_connection,
     )
 
 

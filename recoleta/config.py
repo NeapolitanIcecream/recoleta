@@ -18,6 +18,7 @@ from pydantic_settings import (
 )
 import yaml
 
+from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
@@ -260,6 +261,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "RECOLETA_DB_PATH": "recoleta_db_path",
         "LLM_MODEL": "llm_model",
         "LLM_OUTPUT_LANGUAGE": "llm_output_language",
+        "RECOLETA_LLM_BASE_URL": "llm_base_url",
         "SOURCES": "sources",
         "TOPICS": "topics",
         "TOPIC_STREAMS": "topic_streams",
@@ -311,8 +313,10 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
         "TELEGRAM_CHAT_ID",
+        "RECOLETA_LLM_API_KEY",
         "telegram_bot_token",
         "telegram_chat_id",
+        "llm_api_key",
     }
 
     def __init__(self, settings_cls: type[BaseSettings]) -> None:
@@ -564,6 +568,12 @@ class Settings(BaseSettings):
     llm_output_language: str | None = Field(
         default=None, validation_alias="LLM_OUTPUT_LANGUAGE"
     )
+    llm_api_key: SecretStr | None = Field(
+        default=None, validation_alias="RECOLETA_LLM_API_KEY"
+    )
+    llm_base_url: str | None = Field(
+        default=None, validation_alias="RECOLETA_LLM_BASE_URL"
+    )
 
     obsidian_vault_path: Path | None = Field(
         default=None, validation_alias="OBSIDIAN_VAULT_PATH"
@@ -783,6 +793,37 @@ class Settings(BaseSettings):
             raise ValueError("LLM_OUTPUT_LANGUAGE must be a single-line value")
         if len(normalized) > 64:
             raise ValueError("LLM_OUTPUT_LANGUAGE must be <= 64 characters")
+        return normalized
+
+    @field_validator("llm_api_key", mode="before")
+    @classmethod
+    def _normalize_llm_api_key(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            normalized = value.get_secret_value().strip()
+        else:
+            normalized = str(value).strip()
+        if not normalized:
+            return None
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("RECOLETA_LLM_API_KEY must be a single-line value")
+        if len(normalized) > 4096:
+            raise ValueError("RECOLETA_LLM_API_KEY must be <= 4096 characters")
+        return normalized
+
+    @field_validator("llm_base_url", mode="before")
+    @classmethod
+    def _normalize_llm_base_url(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("RECOLETA_LLM_BASE_URL must be a single-line value")
+        if len(normalized) > 2048:
+            raise ValueError("RECOLETA_LLM_BASE_URL must be <= 2048 characters")
         return normalized
 
     @field_validator("topics", mode="before")
@@ -1160,7 +1201,18 @@ class Settings(BaseSettings):
 
     def safe_fingerprint(self) -> str:
         payload = self.model_dump(mode="json")
+        payload["llm_api_key"] = "***"
         payload["telegram_bot_token"] = "***"
         payload["telegram_chat_id"] = "***"
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    def llm_connection_config(self) -> LLMConnectionConfig:
+        return LLMConnectionConfig(
+            api_key=(
+                self.llm_api_key.get_secret_value()
+                if self.llm_api_key is not None
+                else None
+            ),
+            base_url=self.llm_base_url,
+        )

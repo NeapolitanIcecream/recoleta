@@ -450,9 +450,9 @@ def test_publish_sanitizes_secrets_in_delivery_error(
     chat = settings.telegram_chat_id.get_secret_value()
     token_encoded = quote(token, safe="")
     chat_encoded = quote(chat, safe="")
-    openai_key = "sk-test-openai-key"
-    monkeypatch.setenv("OPENAI_API_KEY", openai_key)
-    openai_key_encoded = quote(openai_key, safe="")
+    recoleta_llm_key = "sk-test-recoleta-llm-key"
+    monkeypatch.setenv("RECOLETA_LLM_API_KEY", recoleta_llm_key)
+    recoleta_llm_key_encoded = quote(recoleta_llm_key, safe="")
 
     class ExplodingTelegramSender:
         def send(self, text: str) -> str:  # noqa: ARG002
@@ -463,8 +463,8 @@ def test_publish_sanitizes_secrets_in_delivery_error(
                         f"token_encoded={token_encoded}",
                         f"chat={chat}",
                         f"chat_encoded={chat_encoded}",
-                        f"openai_key={openai_key}",
-                        f"openai_key_encoded={openai_key_encoded}",
+                        f"recoleta_llm_key={recoleta_llm_key}",
+                        f"recoleta_llm_key_encoded={recoleta_llm_key_encoded}",
                     ]
                 )
             )
@@ -496,11 +496,11 @@ def test_publish_sanitizes_secrets_in_delivery_error(
         assert token_encoded not in (delivery.error or "")
         assert chat not in (delivery.error or "")
         assert chat_encoded not in (delivery.error or "")
-        assert openai_key not in (delivery.error or "")
-        assert openai_key_encoded not in (delivery.error or "")
+        assert recoleta_llm_key not in (delivery.error or "")
+        assert recoleta_llm_key_encoded not in (delivery.error or "")
         assert mask_value(token) in (delivery.error or "")
         assert mask_value(chat) in (delivery.error or "")
-        assert mask_value(openai_key) in (delivery.error or "")
+        assert mask_value(recoleta_llm_key) in (delivery.error or "")
 
 
 def test_publish_does_not_crash_when_debug_artifact_write_fails(

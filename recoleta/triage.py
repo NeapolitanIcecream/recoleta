@@ -9,6 +9,7 @@ from typing import Any, Sequence
 
 from rapidfuzz import fuzz
 
+from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.models import Item
 from recoleta.rag.embeddings import Embedder, LiteLLMEmbedder, iter_embedding_batches
 
@@ -66,8 +67,9 @@ class SemanticTriage:
         embedder: Embedder | None = None,
         embedding_batch_max_inputs: int = _DEFAULT_EMBEDDING_BATCH_MAX_INPUTS,
         embedding_batch_max_chars: int = _DEFAULT_EMBEDDING_BATCH_MAX_CHARS,
+        llm_connection: LLMConnectionConfig | None = None,
     ) -> None:
-        self.embedder = embedder or LiteLLMEmbedder()
+        self.embedder = embedder or LiteLLMEmbedder(llm_connection=llm_connection)
         self.embedding_batch_max_inputs = max(1, int(embedding_batch_max_inputs))
         self.embedding_batch_max_chars = max(1, int(embedding_batch_max_chars))
 

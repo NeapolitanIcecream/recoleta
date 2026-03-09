@@ -223,8 +223,12 @@ Create a `.env` file for secrets and the config pointer.
 cat <<'ENV' > .env
 RECOLETA_CONFIG_PATH="./recoleta.yaml"
 
-# LLM provider credentials (depends on your llm_model)
-OPENAI_API_KEY="sk-replace-me"
+# Preferred: Recoleta-scoped LLM connection overrides
+RECOLETA_LLM_API_KEY="sk-replace-me"
+# RECOLETA_LLM_BASE_URL="http://localhost:4000/v1"
+
+# Backward-compatible provider credentials (still supported)
+# OPENAI_API_KEY="sk-replace-me"
 
 # Optional: Telegram publishing (env-only)
 # TELEGRAM_BOT_TOKEN="123456789:replace-me"
@@ -499,7 +503,7 @@ Recoleta loads typed settings from:
 4. **Config file** pointed to by `RECOLETA_CONFIG_PATH` (`.yaml`/`.yml`/`.json`)
 5. Defaults (for optional fields)
 
-**Secrets rule**: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are forbidden in the config file and must come from environment variables only.
+**Secrets rule**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `RECOLETA_LLM_API_KEY` are forbidden in the config file and must come from environment variables only.
 
 ### Settings reference
 
@@ -518,6 +522,9 @@ Conditionally required:
 
 Common optional knobs:
 
+- **Recoleta-scoped LLM connection**:
+  - `RECOLETA_LLM_API_KEY` (env-only)
+  - `RECOLETA_LLM_BASE_URL` / `llm_base_url`
 - **LLM output language**:
   - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary` and trend notes; JSON keys and `topics` stay English)
 - **Sources**: `SOURCES` / `sources`
@@ -575,13 +582,20 @@ Common optional knobs:
 
 ### LiteLLM provider credentials
 
-Recoleta delegates LLM calls to LiteLLM. You must provide provider credentials via environment variables. Common examples:
+Recoleta delegates LLM calls to LiteLLM and PydanticAI. Preferred configuration is to use Recoleta-scoped overrides:
+
+- `RECOLETA_LLM_API_KEY`
+- `RECOLETA_LLM_BASE_URL`
+
+These overrides are passed directly into Recoleta's own LLM calls and avoid collisions with other tools in the same shell session that also use `OPENAI_API_KEY` or `OPENAI_BASE_URL`.
+
+Backward-compatible provider envs remain supported:
 
 - OpenAI: `OPENAI_API_KEY`
 - Anthropic: `ANTHROPIC_API_KEY`
 - OpenRouter: `OPENROUTER_API_KEY`
-- Custom OpenAI-compatible endpoints (including LiteLLM Proxy): set `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) to the endpoint base URL.
-- Custom OpenRouter endpoints: set `OPENROUTER_API_BASE` (or `OPENROUTER_BASE_URL`) to the endpoint base URL.
+- Custom OpenAI-compatible endpoints (including LiteLLM Proxy): `OPENAI_API_BASE` or `OPENAI_BASE_URL`
+- Custom OpenRouter endpoints: `OPENROUTER_API_BASE` or `OPENROUTER_BASE_URL`
 
 ### Debug artifacts & metrics (optional)
 

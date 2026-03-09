@@ -14,7 +14,7 @@ Precedence:
 
 Secrets:
 
-- `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are **forbidden** in the config file and must come from environment variables.
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `RECOLETA_LLM_API_KEY` are **forbidden** in the config file and must come from environment variables.
 
 ## Required settings
 
@@ -31,6 +31,8 @@ Secrets:
 
 Optional LLM behavior:
 
+- `RECOLETA_LLM_API_KEY`: Recoleta-scoped API key override for LiteLLM / PydanticAI calls (env-only).
+- `RECOLETA_LLM_BASE_URL`: Recoleta-scoped base URL override for OpenAI-compatible or OpenRouter endpoints.
 - `LLM_OUTPUT_LANGUAGE`: preferred output language for LLM-generated `summary`.
   - JSON keys remain English.
   - `topics` remain concise English tags for downstream allow/deny filtering.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from recoleta.llm_connection import LLMConnectionConfig
+
 
 def _non_empty_env(*keys: str) -> str | None:
     for key in keys:
@@ -46,7 +48,9 @@ def _split_provider(llm_model: str) -> tuple[str, str | None]:
     return "", None
 
 
-def build_pydantic_ai_model(llm_model: str) -> Any:
+def build_pydantic_ai_model(
+    llm_model: str, *, llm_connection: LLMConnectionConfig | None = None
+) -> Any:
     """Build a PydanticAI model (or model-id string) from Recoleta's LLM config.
 
     Design goal: keep PydanticAI on native providers, but ensure OpenRouter base URL
@@ -56,6 +60,7 @@ def build_pydantic_ai_model(llm_model: str) -> Any:
     normalized = str(llm_model or "").strip()
     if not normalized:
         raise ValueError("llm_model must not be empty")
+    llm_connection = llm_connection or LLMConnectionConfig()
 
     provider, rest = _split_provider(normalized)
     if provider.lower() == "openrouter":
@@ -70,12 +75,37 @@ def build_pydantic_ai_model(llm_model: str) -> Any:
         class _EnvOpenRouterProvider(OpenRouterProvider):
             @property
             def base_url(self) -> str:  # type: ignore[override]
+                if llm_connection.base_url:
+                    return llm_connection.base_url.rstrip("/")
                 # Keep compatibility with common OpenRouter env names used in OpenAI-compatible stacks.
                 env_url = _non_empty_env("OPENROUTER_API_BASE", "OPENROUTER_BASE_URL")
                 if env_url:
                     return env_url.rstrip("/")
                 return super().base_url
 
-        return OpenRouterModel(rest, provider=_EnvOpenRouterProvider())
+        if llm_connection.api_key is not None:
+            provider = _EnvOpenRouterProvider(api_key=llm_connection.api_key)
+        else:
+            provider = _EnvOpenRouterProvider()
+        return OpenRouterModel(rest, provider=provider)
+
+    if provider.lower() == "openai" and (
+        llm_connection.api_key is not None or llm_connection.base_url is not None
+    ):
+        if not rest:
+            raise ValueError(
+                "OpenAI model must be in the form 'openai/<model>' or 'openai:<model>'"
+            )
+
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        return OpenAIChatModel(
+            rest,
+            provider=OpenAIProvider(
+                base_url=llm_connection.base_url,
+                api_key=llm_connection.api_key,
+            ),
+        )
 
     return normalize_pydantic_ai_model_id(normalized)

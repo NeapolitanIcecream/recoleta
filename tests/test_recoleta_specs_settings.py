@@ -173,6 +173,19 @@ def test_settings_loads_llm_output_language_from_env(
     assert settings.llm_output_language == "zh-CN"
 
 
+def test_settings_loads_recoleta_llm_connection_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RECOLETA_LLM_API_KEY", "  sk-recoleta-test  ")
+    monkeypatch.setenv("RECOLETA_LLM_BASE_URL", "  http://llm.local/v1/  ")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.llm_api_key is not None
+    assert settings.llm_api_key.get_secret_value() == "sk-recoleta-test"
+    assert settings.llm_base_url == "http://llm.local/v1/"
+
+
 def test_settings_rejects_multiline_llm_output_language(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -351,6 +364,29 @@ def test_settings_rejects_secrets_in_config_file(
     monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+    with pytest.raises(
+        ValueError, match="Secrets must come from environment variables only"
+    ):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_recoleta_llm_api_key_in_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                'RECOLETA_LLM_API_KEY: "do-not-allow"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
 
     with pytest.raises(
         ValueError, match="Secrets must come from environment variables only"
