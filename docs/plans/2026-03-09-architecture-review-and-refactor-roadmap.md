@@ -56,7 +56,7 @@ In practical terms, the roadmap is now mostly achieved for the first-wave goals 
 
 What is still not fully at the target shape:
 
-- `recoleta/pipeline/__init__.py` still contains a large `PipelineService` implementation instead of only package assembly
+- `recoleta/pipeline/service.py` still contains a large `PipelineService` implementation and has not yet been split into topic-stream, artifact, and metrics collaborators
 - `recoleta/storage/facade.py` is still broader than the eventual `schema/runs/leases/analyses/deliveries/maintenance` split
 - `recoleta/cli/__init__.py` still hosts most command wiring instead of command-area modules
 - `ScopedTrendsRepository` still exists inside `recoleta/pipeline/trends_stage.py`
@@ -309,7 +309,8 @@ Current implementation status against this shape:
 - `pipeline/`: partially aligned
   - package exists
   - `publish_stage.py` and `trends_stage.py` exist
-  - `service.py` is still only a thin re-export, while the large implementation still lives in `pipeline/__init__.py`
+  - `service.py` now hosts the real `PipelineService` implementation
+  - `__init__.py` is now only package export glue
 - `publish/`: largely aligned
   - package exists
   - item notes, trend notes, Telegram formatting, shared rendering, and PDF rendering are split out
