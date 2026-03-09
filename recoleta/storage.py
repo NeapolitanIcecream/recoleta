@@ -2677,11 +2677,20 @@ class Repository:
         if not source_db_path.exists():
             raise ValueError(f"Backup database does not exist: {source_db_path}")
 
-        schema_version = int(manifest.get("schema_version") or 0)
-        if schema_version > CURRENT_SCHEMA_VERSION:
+        manifest_schema_version = int(manifest.get("schema_version") or 0)
+        if manifest_schema_version > CURRENT_SCHEMA_VERSION:
             raise SchemaVersionError(
                 "Backup bundle uses newer schema version "
-                f"{schema_version}; current supported version is {CURRENT_SCHEMA_VERSION}."
+                f"{manifest_schema_version}; current supported version is {CURRENT_SCHEMA_VERSION}."
+            )
+
+        with sqlite3.connect(str(source_db_path)) as source_conn:
+            row = source_conn.execute("PRAGMA user_version").fetchone()
+            source_schema_version = int(row[0]) if row and row[0] is not None else 0
+        if source_schema_version > CURRENT_SCHEMA_VERSION:
+            raise SchemaVersionError(
+                "Backup database uses newer schema version "
+                f"{source_schema_version}; current supported version is {CURRENT_SCHEMA_VERSION}."
             )
 
         resolved_db_path = db_path.expanduser().resolve()
@@ -2710,7 +2719,7 @@ class Repository:
         return DatabaseRestoreResult(
             bundle_dir=resolved_bundle_dir,
             database_path=resolved_db_path,
-            schema_version=schema_version,
+            schema_version=source_schema_version,
         )
 
     @staticmethod

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -358,6 +359,55 @@ def test_restore_rejects_bundle_with_newer_schema_version(tmp_path: Path) -> Non
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+    restore_result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "restore",
+            "--db-path",
+            str(db_path),
+            "--bundle",
+            str(bundle_dir),
+            "--yes",
+        ],
+    )
+
+    assert restore_result.exit_code == 1
+    assert "newer schema version" in restore_result.stdout
+
+
+def test_restore_rejects_bundle_when_database_file_uses_newer_schema(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "backups"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="restore-db-schema-item-1",
+        canonical_url="https://example.com/restore-db-schema-item-1",
+        title="Restore DB Schema Item",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+        published_at=datetime(2026, 3, 1, tzinfo=UTC),
+    )
+    repository.upsert_item(draft)
+
+    backup_result = runner.invoke(
+        recoleta.cli.app,
+        ["backup", "--db-path", str(db_path), "--output-dir", str(backup_root)],
+    )
+    assert backup_result.exit_code == 0
+    bundle_dir = next(path for path in backup_root.iterdir() if path.is_dir())
+    manifest_path = bundle_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    bundle_db_path = bundle_dir / str(manifest["database_filename"])
+
+    with sqlite3.connect(bundle_db_path) as conn:
+        conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION + 1}")
+        conn.commit()
 
     restore_result = runner.invoke(
         recoleta.cli.app,
