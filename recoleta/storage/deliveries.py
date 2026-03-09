@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, cast
+
+from sqlalchemy import func
+from sqlmodel import Session, select
+
+from recoleta.models import (
+    Delivery,
+    TrendDelivery,
+    DELIVERY_STATUS_SENT,
+)
+from recoleta.types import utc_now
+
+
+class DeliveryStoreMixin:
+    engine: Any
+
+    def _commit(self, session: Session) -> None: ...
+
+    def has_sent_delivery(
+        self, *, item_id: int, channel: str, destination: str
+    ) -> bool:
+        with Session(self.engine) as session:
+            statement = select(Delivery).where(
+                Delivery.item_id == item_id,
+                Delivery.channel == channel,
+                Delivery.destination == destination,
+                Delivery.status == DELIVERY_STATUS_SENT,
+            )
+            return session.exec(statement).first() is not None
+
+    def count_sent_deliveries_since(
+        self, *, channel: str, destination: str, since: datetime
+    ) -> int:
+        with Session(self.engine) as session:
+            item_statement = select(func.count(cast(Any, Delivery.id))).where(
+                Delivery.channel == channel,
+                Delivery.destination == destination,
+                Delivery.status == DELIVERY_STATUS_SENT,
+                cast(Any, Delivery.sent_at).is_not(None),
+                cast(Any, Delivery.sent_at) >= since,
+            )
+            trend_statement = select(func.count(cast(Any, TrendDelivery.id))).where(
+                TrendDelivery.channel == channel,
+                TrendDelivery.destination == destination,
+                TrendDelivery.status == DELIVERY_STATUS_SENT,
+                cast(Any, TrendDelivery.sent_at).is_not(None),
+                cast(Any, TrendDelivery.sent_at) >= since,
+            )
+            return int(session.exec(item_statement).one()) + int(
+                session.exec(trend_statement).one()
+            )
+
+    def upsert_delivery(
+        self,
+        *,
+        item_id: int,
+        channel: str,
+        destination: str,
+        message_id: str | None,
+        status: str,
+        error: str | None = None,
+    ) -> Delivery:
+        now = utc_now()
+        with Session(self.engine) as session:
+            existing = session.exec(
+                select(Delivery).where(
+                    Delivery.item_id == item_id,
+                    Delivery.channel == channel,
+                    Delivery.destination == destination,
+                )
+            ).first()
+            if existing is None:
+                delivery = Delivery(
+                    item_id=item_id,
+                    channel=channel,
+                    destination=destination,
+                    message_id=message_id,
+                    status=status,
+                    error=error,
+                    sent_at=now if status == DELIVERY_STATUS_SENT else None,
+                )
+                session.add(delivery)
+                self._commit(session)
+                session.refresh(delivery)
+                return delivery
+
+            existing.message_id = message_id
+            existing.status = status
+            existing.error = error
+            if status == DELIVERY_STATUS_SENT:
+                existing.sent_at = now
+            session.add(existing)
+            self._commit(session)
+            session.refresh(existing)
+            return existing
+
+    def has_sent_trend_delivery(
+        self,
+        *,
+        doc_id: int,
+        channel: str,
+        destination: str,
+        content_hash: str,
+    ) -> bool:
+        with Session(self.engine) as session:
+            statement = select(TrendDelivery).where(
+                TrendDelivery.doc_id == doc_id,
+                TrendDelivery.channel == channel,
+                TrendDelivery.destination == destination,
+                TrendDelivery.content_hash == content_hash,
+                TrendDelivery.status == DELIVERY_STATUS_SENT,
+            )
+            return session.exec(statement).first() is not None
+
+    def upsert_trend_delivery(
+        self,
+        *,
+        doc_id: int,
+        channel: str,
+        destination: str,
+        content_hash: str,
+        message_id: str | None,
+        status: str,
+        error: str | None = None,
+    ) -> TrendDelivery:
+        now = utc_now()
+        with Session(self.engine) as session:
+            existing = session.exec(
+                select(TrendDelivery).where(
+                    TrendDelivery.doc_id == doc_id,
+                    TrendDelivery.channel == channel,
+                    TrendDelivery.destination == destination,
+                )
+            ).first()
+            if existing is None:
+                delivery = TrendDelivery(
+                    doc_id=doc_id,
+                    channel=channel,
+                    destination=destination,
+                    content_hash=content_hash,
+                    message_id=message_id,
+                    status=status,
+                    error=error,
+                    sent_at=now if status == DELIVERY_STATUS_SENT else None,
+                )
+                session.add(delivery)
+                self._commit(session)
+                session.refresh(delivery)
+                return delivery
+
+            existing.content_hash = content_hash
+            existing.message_id = message_id
+            existing.status = status
+            existing.error = error
+            existing.sent_at = now if status == DELIVERY_STATUS_SENT else None
+            session.add(existing)
+            self._commit(session)
+            session.refresh(existing)
+            return existing

@@ -6,14 +6,15 @@ from typing import Any
 from loguru import logger
 
 from recoleta.llm_connection import LLMConnectionConfig
+from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import ensure_summary_vectors_for_period
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.storage import Repository
+from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 def sync_summary_vectors_in_period(
     *,
-    repository: Repository,
+    repository: TrendRepositoryPort,
     vector_store: LanceVectorStore,
     run_id: str,
     doc_type: str,
@@ -27,6 +28,7 @@ def sync_summary_vectors_in_period(
     embedding_max_errors: int = 0,
     page_size: int = 500,
     max_pages: int = 10_000,
+    scope: str = DEFAULT_TOPIC_STREAM,
     llm_connection: LLMConnectionConfig | None = None,
 ) -> dict[str, Any]:
     """Rebuild/sync vectors by paging through the SQLite corpus window."""
@@ -58,6 +60,7 @@ def sync_summary_vectors_in_period(
             embedding_max_errors=embedding_max_errors,
             limit=normalized_page,
             offset=offset,
+            scope=scope,
             llm_connection=llm_connection,
         )
         page_chunks = int(stats.get("chunks_total") or 0)

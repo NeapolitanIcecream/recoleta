@@ -5,6 +5,7 @@ import sys
 
 from loguru import logger
 
+import recoleta.observability as observability
 from recoleta.observability import configure_process_logging
 
 
@@ -34,3 +35,29 @@ def test_configure_process_logging_strips_raw_ansi_sequences_from_sink_output(
         assert "[0m" not in output
     finally:
         logger.remove()
+
+
+def test_get_rich_console_rebuilds_when_cached_stderr_is_closed(
+    monkeypatch,
+) -> None:
+    """Regression: cached Console must not keep writing to a closed pytest capture stream."""
+
+    class _CapturingStderr(io.StringIO):
+        def isatty(self) -> bool:
+            return False
+
+    first_stream = _CapturingStderr()
+    second_stream = _CapturingStderr()
+    monkeypatch.setattr(sys, "stderr", first_stream)
+    monkeypatch.setattr(observability, "_RICH_CONSOLE", None)
+
+    first_console = observability.get_rich_console()
+    first_stream.close()
+
+    monkeypatch.setattr(sys, "stderr", second_stream)
+    second_console = observability.get_rich_console()
+    second_console.print("hello")
+
+    assert second_console is not first_console
+    assert second_console.file is second_stream
+    assert "hello" in second_stream.getvalue()

@@ -360,10 +360,12 @@ def test_trends_generate_separate_stream_local_documents_for_topic_streams(
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
         period_start = kwargs["period_start"]
         period_end = kwargs["period_end"]
+        scope = kwargs["scope"]
         docs = kwargs["repository"].list_documents(
             doc_type="item",
             period_start=period_start,
             period_end=period_end,
+            scope=scope,
             limit=10,
         )
         assert len(docs) == 1
@@ -442,3 +444,75 @@ def test_trends_generate_separate_stream_local_documents_for_topic_streams(
 
     assert list((tmp_path / "outputs" / "Streams" / "agents_lab" / "Trends").glob("*.md"))
     assert list((tmp_path / "outputs" / "Streams" / "bio_watch" / "Trends").glob("*.md"))
+
+
+def test_trends_emit_stream_scoped_metrics_for_topic_streams(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: trend metrics stay stream-scoped for explicit topic streams."""
+
+    _configure_topic_stream_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    settings, repository = _build_runtime()
+    analyzer = _RecordingAnalyzer()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="topic-stream-trend-metrics-1",
+        canonical_url="https://example.com/topic-stream-trend-metrics-1",
+        title="Topic Stream Trend Metrics",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-topic-stream-trend-metrics", drafts=[draft], limit=10)
+    service.analyze(run_id="run-topic-stream-trend-metrics", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+    metric_namespaces: list[str] = []
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        metric_namespaces.append(str(kwargs["metric_namespace"]))
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        return (
+            TrendPayload(
+                title="Scoped Stream Trend",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                overview_md="- scoped",
+                topics=["stream-local"],
+                clusters=[],
+                highlights=["scoped"],
+            ),
+            {"tool_calls_total": 0},
+        )
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    _ = service.trends(
+        run_id="run-topic-stream-trend-metrics",
+        granularity="day",
+        anchor_date=utc_now().date(),
+        llm_model="test/fake-model",
+    )
+
+    metrics = repository.list_metrics(run_id="run-topic-stream-trend-metrics")
+    metric_names = {metric.name for metric in metrics}
+
+    assert "pipeline.trends.stream.agents_lab.duration_ms" in metric_names
+    assert "pipeline.trends.stream.bio_watch.duration_ms" in metric_names
+    assert "pipeline.trends.stream.agents_lab.tool_calls_total" in metric_names
+    assert "pipeline.trends.stream.bio_watch.tool_calls_total" in metric_names
+    assert "pipeline.trends.streams_total" in metric_names
+    assert set(metric_namespaces) == {
+        "pipeline.trends.stream.agents_lab",
+        "pipeline.trends.stream.bio_watch",
+    }
