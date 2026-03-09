@@ -37,13 +37,15 @@ def _trend_metric_stream_token(scope: str) -> str:
 def _trend_metric_name(name: str, *, scope: str) -> str:
     normalized_name = str(name or "").strip()
     normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
-    if (
-        normalized_scope == DEFAULT_TOPIC_STREAM
-        or not normalized_name.startswith("pipeline.trends.")
-    ):
+    if normalized_scope == DEFAULT_TOPIC_STREAM:
+        return normalized_name
+    stream_prefix = f"pipeline.trends.stream.{_trend_metric_stream_token(normalized_scope)}"
+    if normalized_name == "pipeline.trends":
+        return stream_prefix
+    if not normalized_name.startswith("pipeline.trends."):
         return normalized_name
     suffix = normalized_name.removeprefix("pipeline.trends.")
-    return f"pipeline.trends.stream.{_trend_metric_stream_token(normalized_scope)}.{suffix}"
+    return f"{stream_prefix}.{suffix}"
 
 
 class TrendStageService(Protocol):

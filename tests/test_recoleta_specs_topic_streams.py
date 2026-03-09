@@ -475,8 +475,10 @@ def test_trends_emit_stream_scoped_metrics_for_topic_streams(
     service.analyze(run_id="run-topic-stream-trend-metrics", limit=10)
 
     from recoleta.rag import agent as rag_agent
+    metric_namespaces: list[str] = []
 
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        metric_namespaces.append(str(kwargs["metric_namespace"]))
         period_start = kwargs["period_start"]
         period_end = kwargs["period_end"]
         return (
@@ -510,3 +512,7 @@ def test_trends_emit_stream_scoped_metrics_for_topic_streams(
     assert "pipeline.trends.stream.agents_lab.tool_calls_total" in metric_names
     assert "pipeline.trends.stream.bio_watch.tool_calls_total" in metric_names
     assert "pipeline.trends.streams_total" in metric_names
+    assert set(metric_namespaces) == {
+        "pipeline.trends.stream.agents_lab",
+        "pipeline.trends.stream.bio_watch",
+    }
