@@ -33,9 +33,24 @@ class Run(SQLModel, table=True):
 
     id: str = Field(primary_key=True, max_length=64)
     started_at: datetime = Field(default_factory=utc_now)
+    heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
     finished_at: datetime | None = None
     status: str = Field(default=RUN_STATUS_RUNNING, max_length=24, index=True)
     config_fingerprint: str = Field(max_length=128)
+
+
+class WorkspaceLease(SQLModel, table=True):
+    __tablename__ = "workspace_leases"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+
+    name: str = Field(primary_key=True, max_length=64)
+    owner_token: str = Field(max_length=128)
+    run_id: str | None = Field(default=None, max_length=64, index=True)
+    pid: int | None = Field(default=None)
+    hostname: str | None = Field(default=None, max_length=255)
+    command: str = Field(max_length=128)
+    acquired_at: datetime = Field(default_factory=utc_now)
+    heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
+    expires_at: datetime = Field(index=True)
 
 
 class Item(SQLModel, table=True):

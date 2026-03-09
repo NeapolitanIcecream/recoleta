@@ -1,0 +1,22 @@
+services:
+  recoleta:
+    build:
+      context: .
+      # Switch to `runtime-full` if this container needs browser/PDF-capable trend surfaces.
+      target: runtime
+    image: recoleta:runtime
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/data
+      - ./config:/config:ro
+    command: ["run"]
+    healthcheck:
+      test: ["CMD", "recoleta", "doctor", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

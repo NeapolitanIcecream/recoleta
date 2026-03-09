@@ -15,6 +15,7 @@ Recoleta is a **research intelligence funnel** that ingests noisy sources, runs 
 - [Overview](#recoleta-overview)
 - [Features](#recoleta-features)
 - [Installation](#recoleta-installation)
+- [Docker / Compose](#recoleta-docker)
 - [Usage](#recoleta-usage)
 - [Configuration & CLI API](#recoleta-configuration)
 - [Contributing](#recoleta-contributing)
@@ -72,6 +73,82 @@ cd recoleta
 uv sync
 uv run recoleta --help
 ```
+
+<a id="recoleta-docker"></a>
+## 🐳 Docker / Compose
+
+Recoleta now ships an official multi-target `Dockerfile`.
+
+- `runtime`: core CLI image for `ingest`, `analyze`, `publish`, `run`, `gc`, `backup`, and `doctor`
+- `runtime-full`: extends `runtime` with Pandoc and Chromium for richer trend PDF / browser-rendered surfaces
+
+The Docker build uses `uv.lock` plus BuildKit cache mounts, so rebuilds should be materially faster after the first dependency sync when only application code changes.
+
+The official container filesystem contract is:
+
+- `/data/recoleta.db`
+- `/data/outputs/`
+- `/data/artifacts/`
+- `/data/lancedb/`
+- `/config/recoleta.yaml`
+
+These are already wired through the image defaults:
+
+```bash
+RECOLETA_DB_PATH=/data/recoleta.db
+MARKDOWN_OUTPUT_DIR=/data/outputs
+ARTIFACTS_DIR=/data/artifacts
+RAG_LANCEDB_DIR=/data/lancedb
+RECOLETA_CONFIG_PATH=/config/recoleta.yaml
+```
+
+Build the core image:
+
+```bash
+docker build --target runtime -t recoleta:runtime .
+```
+
+Build the richer PDF/browser image:
+
+```bash
+docker build --target runtime-full -t recoleta:runtime-full .
+```
+
+`runtime-full` is intentionally much heavier because it installs Chromium. In practice, `runtime` is the better default for regular local/CI verification, while `runtime-full` fits release-time or explicitly manual builds.
+
+Run a one-shot pipeline:
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -v "$(pwd)/data:/data" \
+  -v "$(pwd)/config:/config:ro" \
+  recoleta:runtime run --once
+```
+
+Or use the included Compose example:
+
+```bash
+mkdir -p config data
+cp recoleta.example.yaml config/recoleta.yaml
+docker compose up -d
+```
+
+`.env` is optional for Compose itself, but is still the recommended place to provide LLM and delivery secrets.
+
+The Compose service defaults to `recoleta run` and uses the read-only healthcheck:
+
+```bash
+recoleta doctor --healthcheck
+```
+
+For a read-only operational snapshot, use:
+
+```bash
+recoleta stats --json
+```
+
+If the container needs browser/PDF-capable trend surfaces, change the Compose build target from `runtime` to `runtime-full`.
 
 <a id="recoleta-usage"></a>
 ## 🧰 Usage
@@ -310,11 +387,104 @@ Tune the intervals via:
 - `ANALYZE_INTERVAL_MINUTES`
 - `PUBLISH_INTERVAL_MINUTES`
 
-### 🧪 Run manually (cron/launchd-friendly)
+### 🧪 Run manually (cron / launchd / systemd-friendly)
 
 ```bash
-uv run recoleta ingest && uv run recoleta analyze && uv run recoleta publish
+uv run recoleta run --once
 ```
+
+Use explicit stage commands only when you intentionally want per-stage control:
+
+```bash
+uv run recoleta ingest
+uv run recoleta analyze
+uv run recoleta publish
+```
+
+Read-only operator checks:
+
+```bash
+# healthcheck-style contract; add freshness gating when needed
+uv run recoleta doctor --healthcheck --max-success-age-minutes 180
+
+# machine-readable backlog / lease / size snapshot
+uv run recoleta stats --json
+```
+
+### 🧱 Deployment recipes
+
+Recommended deployment split:
+
+- use `uv run recoleta run` for a local always-on process
+- use `uv run recoleta run --once` for cron, launchd, systemd timers, and scheduled containers
+- use `uv run recoleta doctor --healthcheck` for supervisor/container liveness checks
+- use `uv run recoleta stats --json` for dashboards, ad hoc inspections, or periodic snapshots
+
+Minimal cron example:
+
+```bash
+*/15 * * * * cd /path/to/recoleta && /path/to/uv run recoleta run --once >> /var/log/recoleta.log 2>&1
+```
+
+Minimal systemd pattern:
+
+```ini
+# /etc/systemd/system/recoleta.service
+[Unit]
+Description=Recoleta one-shot pipeline
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/recoleta
+Environment=RECOLETA_CONFIG_PATH=/path/to/recoleta.yaml
+ExecStart=/path/to/uv run recoleta run --once
+```
+
+```ini
+# /etc/systemd/system/recoleta.timer
+[Unit]
+Description=Run Recoleta every 15 minutes
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=15m
+Unit=recoleta.service
+
+[Install]
+WantedBy=timers.target
+```
+
+### 🧹 Maintenance and recovery
+
+Routine maintenance commands:
+
+```bash
+# prune expired debug artifacts, old runs, and old metrics
+uv run recoleta gc
+
+# additionally prune rebuildable caches such as inactive vector tables and derived PDFs
+uv run recoleta gc --prune-caches
+
+# compact the SQLite file after large cleanup windows
+uv run recoleta vacuum
+```
+
+DB-scoped backup and restore:
+
+```bash
+# create a timestamped bundle under <db-dir>/backups/ by default
+uv run recoleta backup
+
+# restore from a specific bundle; requires explicit confirmation
+uv run recoleta restore --bundle /path/to/backup-bundle --yes
+```
+
+Scope notes:
+
+- `backup` / `restore` operate on the SQLite state store only
+- markdown outputs, artifacts, and LanceDB directories should still be protected by normal filesystem backups when they matter
+- default GC is conservative; cache pruning is explicit so old canonical notes are not deleted by surprise
 
 <a id="recoleta-configuration"></a>
 ## ⚙️ Configuration & CLI API

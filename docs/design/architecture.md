@@ -2,6 +2,8 @@
 
 This document describes the proposed architecture for Recoleta v0: modules, data flow, scheduling, and operational concerns.
 
+For long-running runtime, retention, migration, and deployment concerns, see `docs/design/long-running-operations.md`.
+
 ## Runtime shape
 
 Recoleta is a CLI-first application with a small set of commands:
@@ -11,7 +13,7 @@ Recoleta is a CLI-first application with a small set of commands:
 - `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram).
 - `recoleta trends`: generate day/week/month trend documents from analyzed items or lower-granularity trend documents.
 - `recoleta site`: build and stage a static site from canonical trend markdown notes.
-- `recoleta run`: schedule ingest/analyze/publish periodically (optional; can also be done by cron/launchd).
+- `recoleta run`: schedule ingest/analyze/publish periodically (optional; external scheduling can also use `run --once`).
 
 ## Module boundaries
 
@@ -155,7 +157,7 @@ This keeps Stage 3/3.5 cache-friendly and makes Stage 4 a clean, lazy compute bo
 
 Two supported modes:
 
-- **External scheduler**: run `recoleta ingest && recoleta analyze && recoleta publish` via cron/launchd.  
+- **External scheduler**: run `recoleta run --once` via cron/launchd/systemd, or use explicit stage commands when finer control is needed.  
   (`ingest` now means prepare: Stage 1 + Stage 3 + Stage 3.5)
 - **Internal scheduler**: `recoleta run` uses APScheduler to run jobs on intervals with the same stage mapping.
 

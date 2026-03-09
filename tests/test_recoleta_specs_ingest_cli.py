@@ -19,8 +19,26 @@ class _FakeRepo:
         self.metrics = metrics
         self.finished: list[tuple[str, bool]] = []
 
-    def create_run(self, *, config_fingerprint: str) -> _FakeRun:  # noqa: ARG002
+    def acquire_workspace_lease(self, **_: object) -> None:
+        return None
+
+    def mark_stale_runs_failed(self, **_: object) -> int:
+        return 0
+
+    def create_run(
+        self, *, config_fingerprint: str, run_id: str | None = None
+    ) -> _FakeRun:  # noqa: ARG002
+        _ = run_id
         return _FakeRun("run-ingest")
+
+    def heartbeat_run(self, run_id: str) -> None:
+        _ = run_id
+
+    def renew_workspace_lease(self, **_: object) -> None:
+        return None
+
+    def release_workspace_lease(self, **_: object) -> bool:
+        return True
 
     def finish_run(self, run_id: str, *, success: bool) -> None:
         self.finished.append((run_id, bool(success)))

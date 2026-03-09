@@ -19,8 +19,26 @@ class _FakeRepository:
     def __init__(self) -> None:
         self.finished: list[tuple[str, bool]] = []
 
-    def create_run(self, *, config_fingerprint: str) -> _FakeRun:  # noqa: ARG002
+    def acquire_workspace_lease(self, **_: Any) -> None:
+        return None
+
+    def mark_stale_runs_failed(self, **_: Any) -> int:
+        return 0
+
+    def create_run(
+        self, *, config_fingerprint: str, run_id: str | None = None
+    ) -> _FakeRun:  # noqa: ARG002
+        _ = run_id
         return _FakeRun("run-1")
+
+    def heartbeat_run(self, run_id: str) -> None:
+        _ = run_id
+
+    def renew_workspace_lease(self, **_: Any) -> None:
+        return None
+
+    def release_workspace_lease(self, **_: Any) -> bool:
+        return True
 
     def finish_run(self, run_id: str, *, success: bool) -> None:
         self.finished.append((run_id, success))
