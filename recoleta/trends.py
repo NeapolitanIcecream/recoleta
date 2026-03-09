@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
+from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
@@ -47,6 +48,8 @@ def semantic_search_summaries_in_period(
     embedding_max_errors: int = 0,
     limit: int = 10,
     corpus_limit: int = 500,
+    scope: str = DEFAULT_TOPIC_STREAM,
+    metric_namespace: str | None = None,
     llm_connection: LLMConnectionConfig | None = None,
 ) -> list[SemanticSearchHit]:
     from recoleta.rag.semantic_search import (
@@ -77,6 +80,8 @@ def semantic_search_summaries_in_period(
         embedding_max_errors=embedding_max_errors,
         limit=limit,
         corpus_limit=corpus_limit,
+        scope=scope,
+        metric_namespace=metric_namespace,
         llm_connection=llm_connection,
     )
     return [
@@ -199,6 +204,7 @@ def build_overview_pack_md(
     overview_pack_max_chars: int,
     item_overview_top_k: int,
     item_overview_item_max_chars: int,
+    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> tuple[str, dict[str, Any]]:
     strategy = str(getattr(plan, "overview_pack_strategy", "") or "").strip().lower()
     stats: dict[str, Any] = {"strategy": strategy, "truncated": False}
@@ -219,6 +225,7 @@ def build_overview_pack_md(
             granularity=prev_level or None,
             period_start=period_start,
             period_end=period_end,
+            scope=scope,
             order_by="event_asc",
             limit=500,
         )
@@ -286,6 +293,7 @@ def build_overview_pack_md(
                 period_start=period_start,
                 period_end=period_end,
                 limit=candidate_limit,
+                scope=scope,
             )
 
             def event_at_ts(item: Any) -> float:
@@ -446,12 +454,16 @@ def index_items_as_documents(
     limit: int = 2000,
     content_chunk_chars: int = 1200,
     max_content_chunks_per_item: int = 8,
+    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> dict[str, Any]:
     """Index analyzed items into documents + chunks (summary first, content optional)."""
     log = logger.bind(module="trends.index_items", run_id=run_id)
     started = time.perf_counter()
     pairs = repository.list_analyzed_items_in_period(
-        period_start=period_start, period_end=period_end, limit=limit
+        period_start=period_start,
+        period_end=period_end,
+        limit=limit,
+        scope=scope,
     )
     docs_upserted = 0
     chunks_upserted = 0
@@ -467,7 +479,7 @@ def index_items_as_documents(
     ]
     for item, analysis in pairs:
         try:
-            doc = repository.upsert_document_for_item(item=item)
+            doc = repository.upsert_document_for_item(item=item, scope=scope)
             docs_upserted += 1
             doc_id = int(getattr(doc, "id"))
             repository.upsert_document_chunk(
@@ -574,6 +586,8 @@ def generate_trend_via_tools(
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
     include_debug: bool = False,
+    scope: str = DEFAULT_TOPIC_STREAM,
+    metric_namespace: str = "pipeline.trends",
     llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     from recoleta.rag.agent import generate_trend_payload
@@ -608,6 +622,8 @@ def generate_trend_via_tools(
         ranking_n=ranking_n,
         rep_source_doc_type=rep_source_doc_type,
         include_debug=include_debug,
+        scope=scope,
+        metric_namespace=metric_namespace,
         llm_connection=llm_connection,
     )
 
@@ -619,6 +635,7 @@ def persist_trend_payload(
     period_start: datetime,
     period_end: datetime,
     payload: TrendPayload,
+    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> int:
     title = str(payload.title or "").strip() or "Trend"
     doc = repository.upsert_document_for_trend(
@@ -626,6 +643,7 @@ def persist_trend_payload(
         period_start=period_start,
         period_end=period_end,
         title=title,
+        scope=scope,
     )
     doc_id = int(getattr(doc, "id"))
 

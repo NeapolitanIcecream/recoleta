@@ -32,10 +32,10 @@ Status as of 2026-03-09 after the first refactor wave:
 
 - Phase 0 is complete.
 - Phase 1 is complete.
-- Phase 2 is partially complete.
-- Phase 3 is largely complete.
-- Phase 4 is partially complete.
-- Phase 5 is partially complete.
+- Phase 2 is largely complete.
+- Phase 3 is complete.
+- Phase 4 is largely complete.
+- Phase 5 is complete.
 
 Validated on the current tree with:
 
@@ -44,7 +44,7 @@ Validated on the current tree with:
 
 Latest verification result at update time:
 
-- `209 passed`
+- `210 passed`
 - no new type errors
 
 In practical terms, the roadmap is now mostly achieved for the first-wave goals and for the main package-direction changes:
@@ -53,14 +53,16 @@ In practical terms, the roadmap is now mostly achieved for the first-wave goals 
 - the old top-level entry modules are compatibility shims or thin facades
 - site rendering depends on shared publish helpers instead of private publish internals
 - trend and RAG code now depend on `TrendRepositoryPort` rather than concrete `Repository`
+- stream-local trend scope is passed explicitly through trends/RAG instead of through a repository proxy
+- storage internals now have real `schema`, `runs`, `leases`, `analyses`, `deliveries`, `documents`, and `maintenance` modules behind the facade
+- CLI command registration now lives in `recoleta/cli/app.py`, with `recoleta/cli/__init__.py` reduced to runtime/helper glue
+- pipeline helper modules for topic streams, artifacts, and stream metrics now exist under `recoleta/pipeline/`
 
 What is still not fully at the target shape:
 
-- `recoleta/pipeline/service.py` still contains a large `PipelineService` implementation and has not yet been split into topic-stream, artifact, and metrics collaborators
-- `recoleta/storage/facade.py` is still broader than the eventual `schema/runs/leases/analyses/deliveries/maintenance` split
-- `recoleta/cli/__init__.py` is now mostly runtime/helper and wrapper code, but command registration still lives there instead of a smaller app-assembly entrypoint
-- `ScopedTrendsRepository` still exists inside `recoleta/pipeline/trends_stage.py`
-- `PublishRepositoryPort` and `AnalysisRepositoryPort` have not been introduced as separate real ports yet
+- `recoleta/pipeline/service.py` is still large and still contains the ingest/enrich/triage/analyze orchestration body
+- `AnalysisRepositoryPort` exists, but `PipelineService` still uses the broader facade port at the top-level service boundary for compatibility
+- some target-shape niceties such as `scheduler.py` and finer PDF renderer module splits remain optional cleanup rather than blockers for this roadmap
 
 ## Current State
 
@@ -123,7 +125,7 @@ Strong refactor signals:
 
 - `publish()` and `_publish_topic_streams()` duplicate the same delivery workflow with only scope differences.
 - `trends()` owns indexing, backfill control flow, corpus readiness checks, trend generation, persistence, PDF export, and metrics.
-- `_ScopedTrendsRepository` exists as an adapter inside `pipeline.py`, which is a sign that trends needs a dedicated boundary but does not have one yet.
+- stream/topic-runtime helpers, artifact writing, and stream metrics were concentrated inside `PipelineService` before extraction.
 
 Verdict: this file should be split first.
 
@@ -188,9 +190,8 @@ Verdict: extract shared trend HTML/render helpers and make both publish and site
 
 Examples:
 
-- `recoleta/trends.py` depends on `Repository` directly
-- `recoleta/rag/agent.py` depends on `Repository` directly
-- `_ScopedTrendsRepository` in `recoleta/pipeline.py` uses `__getattr__` passthrough
+- the top-level `RepositoryPort` is intentionally still broad for compatibility with `PipelineService`
+- narrower ports are now real, but not every stage entrypoint has switched to the narrowest possible facade yet
 
 This means the code has architectural intent but not yet an enforced dependency rule.
 
@@ -306,22 +307,24 @@ Current implementation status against this shape:
 - `cli/`: partially aligned
   - package exists
   - command modules now exist for ingest, analyze, publish, trends, site, rag, db, maintenance, and run
-  - `__init__.py` still owns app assembly and shared helper/runtime glue
+  - `app.py` now owns Typer app assembly and command registration
+  - `__init__.py` is now shared helper/runtime glue plus compatibility exports
 - `pipeline/`: partially aligned
   - package exists
   - `publish_stage.py` and `trends_stage.py` exist
+  - `topic_streams.py`, `artifacts.py`, and `metrics.py` now exist
   - `service.py` now hosts the real `PipelineService` implementation
   - `__init__.py` is now only package export glue
 - `publish/`: largely aligned
   - package exists
   - item notes, trend notes, Telegram formatting, shared rendering, and PDF rendering are split out
   - browser/story/debug PDF internals are not yet split into separate modules
-- `storage/`: partially aligned
-  - package exists with `facade.py`, `common.py`, `runtime.py`, `items.py`, and `documents.py`
-  - `schema.py`, `runs.py`, `leases.py`, `analyses.py`, `deliveries.py`, and `maintenance.py` are not yet separated
+- `storage/`: aligned for the current roadmap wave
+  - package exists with `facade.py`, `common.py`, `runtime.py`, `schema.py`, `runs.py`, `leases.py`, `items.py`, `analyses.py`, `deliveries.py`, `documents.py`, and `maintenance.py`
+  - `runtime.py` remains as a compatibility mixin that composes `runs.py` and `leases.py`
 - `ports/`: partially aligned in intent, not in package shape
-  - `TrendRepositoryPort` exists in `recoleta/ports.py`
-  - the ports package split and additional narrow ports are still pending
+  - `TrendRepositoryPort`, `PublishRepositoryPort`, `AnalysisRepositoryPort`, and `TrendStageRepositoryPort` exist in `recoleta/ports.py`
+  - the dedicated `ports/` package split is still optional cleanup, not a blocker
 
 ## Phased Roadmap
 
@@ -374,7 +377,7 @@ Do not change:
 
 ### Phase 2: Split `PipelineService` by stage
 
-Status: partial.
+Status: largely complete.
 
 Keep a thin `PipelineService` facade so the CLI and tests do not need to move all at once.
 
@@ -403,12 +406,14 @@ Do not change:
 Current status note:
 
 - publish-stage and trends-stage logic have been extracted into dedicated modules
+- topic-stream runtime helpers, debug-artifact writing, and stream metrics have been extracted into dedicated modules
 - a thin external `recoleta.pipeline` facade is preserved for compatibility
-- the remaining `PipelineService` implementation is still too concentrated and has not yet been split into topic-stream, artifact, and metrics collaborators
+- explicit trend scope now flows through trends/RAG calls without a repository proxy
+- the remaining `PipelineService` implementation is still concentrated around ingest/enrich/triage/analyze orchestration
 
 ### Phase 3: Split `Repository` internally
 
-Status: largely complete.
+Status: complete.
 
 Keep `Repository` as a facade initially. Move implementation into focused collaborators.
 
@@ -436,12 +441,12 @@ Do not change:
 
 Current status note:
 
-- the repository now has a stable facade with internal `runtime`, `items`, and `documents` modules
-- the storage package shape is real, but operational concerns are not yet fully split into narrower files
+- the repository now has a stable facade with internal `schema`, `runs`, `leases`, `items`, `analyses`, `deliveries`, `documents`, and `maintenance` modules
+- the storage package shape is real and externally compatible
 
 ### Phase 4: Introduce real narrow ports
 
-Status: partial.
+Status: largely complete.
 
 After the services and repository internals are split, define ports around actual usage patterns.
 
@@ -462,12 +467,14 @@ This phase should follow decomposition. Doing it earlier would mostly move compl
 Current status note:
 
 - `TrendRepositoryPort` is in place and is used by `trends.py` and the RAG modules
-- scoped trend behavior still relies on a dedicated adapter inside the pipeline trends stage
-- publish and analysis ports remain to be introduced
+- `PublishRepositoryPort` and `AnalysisRepositoryPort` now exist in `recoleta/ports.py`
+- `PublishStageService` and trend-stage protocols now depend on narrow ports instead of `Any`
+- scoped trend behavior now uses explicit `scope` plumbing, and `_ScopedTrendsRepository` is gone
+- the remaining compatibility choice is that `PipelineService` itself still accepts the broader facade port
 
 ### Phase 5: Split CLI wiring
 
-Status: partial.
+Status: complete.
 
 After the application services settle:
 
@@ -482,7 +489,8 @@ Current status note:
 - `recoleta.cli` is now a real package and managed-run helpers live under `recoleta.app.runtime`
 - command implementations now live in dedicated modules under `recoleta/cli/`
 - top-level `recoleta/cli.py` is now a compatibility shim
-- package entry wiring is still combined inside `recoleta/cli/__init__.py`
+- `recoleta/cli/app.py` now owns app assembly and command registration
+- `recoleta/cli/__init__.py` is now helper/runtime glue plus compatibility exports
 
 ## Breaking Change Decision Gate
 

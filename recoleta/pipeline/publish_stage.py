@@ -20,6 +20,7 @@ from recoleta.models import (
     DELIVERY_STATUS_SENT,
     ITEM_STATE_PUBLISHED,
 )
+from recoleta.ports import PublishRepositoryPort
 from recoleta.publish import (
     build_telegram_message,
     write_markdown_note,
@@ -32,11 +33,13 @@ from recoleta.types import PublishResult, utc_now
 
 class PublishStageService(Protocol):
     settings: Any
-    repository: Any
     telegram_sender: Any | None
     _progress_console: Any
     _topic_streams: list[TopicStreamRuntime]
     _explicit_topic_streams: bool
+
+    @property
+    def repository(self) -> PublishRepositoryPort: ...
 
     def _telegram_delivery_budget(self) -> tuple[str, int, int]: ...
 

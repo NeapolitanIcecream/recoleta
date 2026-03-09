@@ -10,6 +10,7 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.embeddings import LiteLLMEmbedder, iter_embedding_batches
 from recoleta.rag.vector_store import LanceVectorStore, VectorRow
+from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
@@ -43,6 +44,7 @@ def ensure_summary_vectors_for_period(
     embedding_max_errors: int = 0,
     limit: int = 500,
     offset: int = 0,
+    scope: str = DEFAULT_TOPIC_STREAM,
     llm_connection: LLMConnectionConfig | None = None,
 ) -> dict[str, Any]:
     """Ensure summary chunks in period have vectors in LanceDB (idempotent by text_hash)."""
@@ -70,6 +72,7 @@ def ensure_summary_vectors_for_period(
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
+        scope=scope,
         limit=limit,
         offset=offset,
     )
@@ -258,6 +261,7 @@ def semantic_search_summaries_in_period(
     embedding_max_errors: int = 0,
     limit: int = 10,
     corpus_limit: int = 500,
+    scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str | None = None,
     llm_connection: LLMConnectionConfig | None = None,
 ) -> list[SemanticSearchHit]:
@@ -282,6 +286,7 @@ def semantic_search_summaries_in_period(
         embedding_max_errors=embedding_max_errors,
         limit=corpus_limit,
         offset=0,
+        scope=scope,
         llm_connection=llm_connection,
     )
     candidate_chunk_ids = [

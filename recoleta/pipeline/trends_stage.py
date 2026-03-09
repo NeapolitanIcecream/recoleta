@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -17,7 +17,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
-from recoleta.ports import RepositoryPort
+from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
 from recoleta.publish import (
     build_telegram_trend_document_caption,
     export_trend_note_pdf_debug_bundle,
@@ -26,163 +26,37 @@ from recoleta.publish import (
     write_obsidian_trend_note,
 )
 from recoleta import trends
-from recoleta.types import TrendResult, utc_now
+from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
 
 
-class ScopedTrendsRepository:
-    def __init__(self, *, repository: Any, scope: str) -> None:
-        self._repository = repository
-        self._scope = scope
+def _trend_metric_stream_token(scope: str) -> str:
+    normalized_scope = str(scope or "").strip().lower()
+    return "".join(ch if ch.isalnum() else "_" for ch in normalized_scope).strip("_") or "unknown"
 
-    @property
-    def engine(self) -> Any:
-        return getattr(self._repository, "engine", None)
 
-    def record_metric(
-        self, *, run_id: str, name: str, value: float, unit: str | None = None
-    ) -> None:
-        normalized_name = str(name or "").strip()
-        if normalized_name.startswith("pipeline.trends."):
-            suffix = normalized_name.removeprefix("pipeline.trends.")
-            stream_token = "".join(
-                ch if ch.isalnum() else "_" for ch in self._scope.lower().strip()
-            ).strip("_") or "unknown"
-            normalized_name = f"pipeline.trends.stream.{stream_token}.{suffix}"
-        self._repository.record_metric(
-            run_id=run_id,
-            name=normalized_name,
-            value=value,
-            unit=unit,
-        )
-
-    def list_analyzed_items_in_period(
-        self,
-        *,
-        period_start: datetime,
-        period_end: datetime,
-        limit: int,
-        offset: int = 0,
-    ) -> list[tuple[Any, Any]]:
-        return self._repository.list_analyzed_items_in_period(
-            period_start=period_start,
-            period_end=period_end,
-            limit=limit,
-            offset=offset,
-            scope=self._scope,
-        )
-
-    def upsert_document_for_item(self, *, item: Any) -> Any:
-        return self._repository.upsert_document_for_item(item=item, scope=self._scope)
-
-    def upsert_document_for_trend(
-        self,
-        *,
-        granularity: str,
-        period_start: datetime,
-        period_end: datetime,
-        title: str,
-    ) -> Any:
-        return self._repository.upsert_document_for_trend(
-            granularity=granularity,
-            period_start=period_start,
-            period_end=period_end,
-            title=title,
-            scope=self._scope,
-        )
-
-    def list_documents(
-        self,
-        *,
-        doc_type: str,
-        period_start: datetime,
-        period_end: datetime,
-        granularity: str | None = None,
-        order_by: str = "event_desc",
-        offset: int = 0,
-        limit: int = 50,
-    ) -> list[Any]:
-        return self._repository.list_documents(
-            doc_type=doc_type,
-            period_start=period_start,
-            period_end=period_end,
-            granularity=granularity,
-            scope=self._scope,
-            order_by=order_by,
-            offset=offset,
-            limit=limit,
-        )
-
-    def search_chunks_text(
-        self,
-        *,
-        query: str,
-        doc_type: str,
-        granularity: str | None = None,
-        period_start: datetime,
-        period_end: datetime,
-        limit: int = 10,
-    ) -> list[dict[str, Any]]:
-        return self._repository.search_chunks_text(
-            query=query,
-            doc_type=doc_type,
-            granularity=granularity,
-            period_start=period_start,
-            period_end=period_end,
-            scope=self._scope,
-            limit=limit,
-        )
-
-    def list_summary_chunks_in_period(
-        self,
-        *,
-        doc_type: str,
-        period_start: datetime,
-        period_end: datetime,
-        limit: int = 500,
-        offset: int = 0,
-    ) -> list[Any]:
-        return self._repository.list_summary_chunks_in_period(
-            doc_type=doc_type,
-            period_start=period_start,
-            period_end=period_end,
-            scope=self._scope,
-            limit=limit,
-            offset=offset,
-        )
-
-    def list_summary_chunk_index_rows_in_period(
-        self,
-        *,
-        doc_type: str,
-        granularity: str | None = None,
-        period_start: datetime,
-        period_end: datetime,
-        limit: int = 500,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        return self._repository.list_summary_chunk_index_rows_in_period(
-            doc_type=doc_type,
-            granularity=granularity,
-            period_start=period_start,
-            period_end=period_end,
-            scope=self._scope,
-            limit=limit,
-            offset=offset,
-        )
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._repository, name)
+def _trend_metric_name(name: str, *, scope: str) -> str:
+    normalized_name = str(name or "").strip()
+    normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
+    if (
+        normalized_scope == DEFAULT_TOPIC_STREAM
+        or not normalized_name.startswith("pipeline.trends.")
+    ):
+        return normalized_name
+    suffix = normalized_name.removeprefix("pipeline.trends.")
+    return f"pipeline.trends.stream.{_trend_metric_stream_token(normalized_scope)}.{suffix}"
 
 
 class TrendStageService(Protocol):
     settings: Any
-    repository: Any
     analyzer: Any
     semantic_triage: Any
     telegram_sender: Any | None
     _topic_streams: list[TopicStreamRuntime]
     _explicit_topic_streams: bool
     _llm_connection: Any
+
+    @property
+    def repository(self) -> TrendStageRepositoryPort: ...
 
     def trends(
         self,
@@ -229,6 +103,7 @@ def run_trends_stage(
     backfill: bool = False,
     backfill_mode: str = "missing",
     debug_pdf: bool = False,
+    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> TrendResult:
     if service._explicit_topic_streams:
         return run_trends_topic_streams_stage(
@@ -242,6 +117,7 @@ def run_trends_stage(
             debug_pdf=debug_pdf,
         )
     log = logger.bind(module="pipeline.trends", run_id=run_id)
+    metric_namespace = _trend_metric_name("pipeline.trends", scope=scope)
     started = time.perf_counter()
     normalized_granularity = str(granularity or "").strip().lower()
     if normalized_granularity not in {"day", "week", "month"}:
@@ -249,6 +125,14 @@ def run_trends_stage(
     anchor = anchor_date or utc_now().date()
 
     index_stats: dict[str, Any] = {}
+    def record_metric(*, name: str, value: float, unit: str | None = None) -> None:
+        service.repository.record_metric(
+            run_id=run_id,
+            name=_trend_metric_name(name, scope=scope),
+            value=value,
+            unit=unit,
+        )
+
     try:
         include_debug = bool(
             service.settings.write_debug_artifacts
@@ -256,32 +140,27 @@ def run_trends_stage(
         )
 
         def _record_index_metrics(stats: dict[str, Any], *, failed: bool) -> None:
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.index.items_total",
                 value=float(stats.get("items_total") or 0),
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.index.docs_upserted_total",
                 value=float(stats.get("docs_upserted") or 0),
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.index.chunks_upserted_total",
                 value=float(stats.get("chunks_upserted") or 0),
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.index.duration_ms",
                 value=float(stats.get("duration_ms") or 0),
                 unit="ms",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.index.failed_total",
                 value=1 if failed else 0,
                 unit="count",
@@ -294,6 +173,7 @@ def run_trends_stage(
                     run_id=run_id,
                     period_start=period_start,
                     period_end=period_end,
+                    scope=scope,
                 )
             except Exception as exc:
                 failed_stats = {
@@ -361,6 +241,7 @@ def run_trends_stage(
                         granularity="day",
                         period_start=day_start,
                         period_end=day_end,
+                        scope=scope,
                         order_by="event_desc",
                         offset=0,
                         limit=1,
@@ -372,13 +253,15 @@ def run_trends_stage(
                         backfill_skipped_total += 1
                         continue
                     try:
-                        _ = service.trends(
+                        _ = run_trends_stage(
+                            service,
                             run_id=run_id,
                             granularity="day",
                             anchor_date=day,
                             llm_model=model,
                             backfill=False,
                             backfill_mode="missing",
+                            scope=scope,
                         )
                         backfill_generated_total += 1
                     except Exception as day_exc:  # noqa: BLE001
@@ -401,6 +284,7 @@ def run_trends_stage(
                         granularity="week",
                         period_start=week_start,
                         period_end=week_end,
+                        scope=scope,
                         order_by="event_desc",
                         offset=0,
                         limit=1,
@@ -413,13 +297,15 @@ def run_trends_stage(
                         cursor = (week_start + timedelta(days=7)).date()
                         continue
                     try:
-                        _ = service.trends(
+                        _ = run_trends_stage(
+                            service,
                             run_id=run_id,
                             granularity="week",
                             anchor_date=week_start.date(),
                             llm_model=model,
                             backfill=False,
                             backfill_mode="missing",
+                            scope=scope,
                         )
                         backfill_generated_total += 1
                     except Exception as week_exc:  # noqa: BLE001
@@ -444,38 +330,32 @@ def run_trends_stage(
             }
             log_label = "week" if prev_granularity == "day" else "month"
             log.info("Trends {} backfill done stats={}", log_label, backfill_stats)
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.backfill.days_total",
                 value=backfill_days_total,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.backfill.missing_total",
                 value=backfill_missing_total,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.backfill.generated_total",
                 value=backfill_generated_total,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.backfill.skipped_total",
                 value=backfill_skipped_total,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.backfill.failed_total",
                 value=backfill_failed_total,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.backfill.duration_ms",
                 value=backfill_duration_ms,
                 unit="ms",
@@ -490,14 +370,14 @@ def run_trends_stage(
                 granularity=corpus_granularity,
                 period_start=period_start,
                 period_end=period_end,
+                scope=scope,
                 order_by="event_desc",
                 offset=0,
                 limit=1,
             )
             corpus_docs_total = 1 if probe else 0
 
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.corpus.docs_total",
             value=corpus_docs_total,
             unit="count",
@@ -511,8 +391,7 @@ def run_trends_stage(
                 period_start.isoformat(),
                 period_end.isoformat(),
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.corpus.empty",
                 value=1.0,
                 unit="bool",
@@ -524,33 +403,28 @@ def run_trends_stage(
                 output_language=service.settings.llm_output_language,
             )
             debug = {"empty_corpus": True} if include_debug else None
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.llm_requests_total",
                 value=0,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.llm_input_tokens_total",
                 value=0,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.llm_output_tokens_total",
                 value=0,
                 unit="count",
             )
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.estimated_cost_usd",
                 value=0.0,
                 unit="usd",
             )
         else:
-            service.repository.record_metric(
-                run_id=run_id,
+            record_metric(
                 name="pipeline.trends.corpus.empty",
                 value=0.0,
                 unit="bool",
@@ -580,6 +454,7 @@ def run_trends_stage(
                         getattr(service.settings, "trends_item_overview_item_max_chars", 500)
                         or 500
                     ),
+                    scope=scope,
                 )
                 rag_sources = list(getattr(plan, "rag_sources", []) or [])
                 ranking_n = int(getattr(service.settings, "trends_ranking_n", 10) or 10)
@@ -587,8 +462,7 @@ def run_trends_stage(
                     getattr(plan, "rep_source_doc_type", "item") or "item"
                 ).strip()
                 if isinstance(pack_stats, dict) and bool(pack_stats.get("truncated")):
-                    service.repository.record_metric(
-                        run_id=run_id,
+                    record_metric(
                         name="pipeline.trends.overview_pack.truncated_total",
                         value=1,
                         unit="count",
@@ -619,6 +493,8 @@ def run_trends_stage(
                 ranking_n=ranking_n,
                 rep_source_doc_type=rep_source_doc_type,
                 include_debug=include_debug,
+                scope=scope,
+                metric_namespace=metric_namespace,
                 llm_connection=service._llm_connection,
             )
             if isinstance(debug, dict):
@@ -628,37 +504,32 @@ def run_trends_stage(
                     input_tokens = usage.get("input_tokens")
                     output_tokens = usage.get("output_tokens")
                     if isinstance(requests, (int, float)):
-                        service.repository.record_metric(
-                            run_id=run_id,
+                        record_metric(
                             name="pipeline.trends.llm_requests_total",
                             value=float(requests),
                             unit="count",
                         )
                     if isinstance(input_tokens, (int, float)):
-                        service.repository.record_metric(
-                            run_id=run_id,
+                        record_metric(
                             name="pipeline.trends.llm_input_tokens_total",
                             value=float(input_tokens),
                             unit="count",
                         )
                     if isinstance(output_tokens, (int, float)):
-                        service.repository.record_metric(
-                            run_id=run_id,
+                        record_metric(
                             name="pipeline.trends.llm_output_tokens_total",
                             value=float(output_tokens),
                             unit="count",
                         )
                 cost_usd = debug.get("estimated_cost_usd")
                 if isinstance(cost_usd, (int, float)):
-                    service.repository.record_metric(
-                        run_id=run_id,
+                    record_metric(
                         name="pipeline.trends.estimated_cost_usd",
                         value=float(cost_usd),
                         unit="usd",
                     )
                 else:
-                    service.repository.record_metric(
-                        run_id=run_id,
+                    record_metric(
                         name="pipeline.trends.cost_missing_total",
                         value=1,
                         unit="count",
@@ -708,6 +579,7 @@ def run_trends_stage(
                         doc_type="item",
                         period_start=period_start,
                         period_end=period_end,
+                        scope=scope,
                         limit=limit,
                     )
                 except Exception:
@@ -766,6 +638,8 @@ def run_trends_stage(
                         getattr(service.settings, "trends_embedding_max_errors", 0) or 0
                     ),
                     limit=limit,
+                    scope=scope,
+                    metric_namespace=metric_namespace,
                     llm_connection=service._llm_connection,
                 )
             except Exception:
@@ -830,20 +704,17 @@ def run_trends_stage(
                 cluster.representative_chunks = []
                 rep_failed_clusters_total += 1
 
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.rep_enforcement.dropped_non_item_total",
             value=rep_dropped_non_item_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.rep_enforcement.backfilled_total",
             value=rep_backfilled_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.rep_enforcement.failed_clusters_total",
             value=rep_failed_clusters_total,
             unit="count",
@@ -855,6 +726,7 @@ def run_trends_stage(
             period_start=period_start,
             period_end=period_end,
             payload=payload,
+            scope=scope,
         )
 
         doc_cache: dict[int, Any | None] = {}
@@ -1062,20 +934,17 @@ def run_trends_stage(
                 rewrite_doc_ids_resolved_total,
                 rewrite_doc_ids_unresolved_total,
             )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.note_doc_refs_rewrite_occurrences_total",
             value=rewrite_occurrences_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.note_doc_refs_resolved_total",
             value=rewrite_doc_ids_resolved_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.note_doc_refs_unresolved_total",
             value=rewrite_doc_ids_unresolved_total,
             unit="count",
@@ -1322,50 +1191,42 @@ def run_trends_stage(
                             sanitized_error,
                         )
 
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.pdf.generated_total",
             value=pdf_generated_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.pdf.failed_total",
             value=pdf_failed_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.pdf.debug.generated_total",
             value=pdf_debug_generated_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.pdf.debug.failed_total",
             value=pdf_debug_failed_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.pdf.browser.generated_total",
             value=pdf_browser_generated_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.pdf.story.generated_total",
             value=pdf_story_generated_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.telegram.sent_total",
             value=telegram_sent_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.telegram.failed_total",
             value=telegram_failed_total,
             unit="count",
@@ -1402,14 +1263,12 @@ def run_trends_stage(
         tool_calls_total = 0
         if isinstance(debug, dict):
             tool_calls_total = int(debug.get("tool_calls_total") or 0)
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.tool_calls_total",
             value=tool_calls_total,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.duration_ms",
             value=int((time.perf_counter() - started) * 1000),
             unit="ms",
@@ -1456,14 +1315,12 @@ def run_trends_stage(
                     "Trends error artifact record failed: {}",
                     service._sanitize_error_message(str(artifact_exc)),
                 )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.failed_total",
             value=1,
             unit="count",
         )
-        service.repository.record_metric(
-            run_id=run_id,
+        record_metric(
             name="pipeline.trends.duration_ms",
             value=int((time.perf_counter() - started) * 1000),
             unit="ms",
@@ -1487,10 +1344,6 @@ def run_trends_topic_streams_stage(
     results: list[TrendResult] = []
 
     for stream in service._topic_streams:
-        scoped_repository = ScopedTrendsRepository(
-            repository=service.repository,
-            scope=stream.name,
-        )
         stream_settings = service._settings_for_topic_stream(stream)
         stream_targets = set(stream.publish_targets)
         stream_sender: Any | None = None
@@ -1499,12 +1352,13 @@ def run_trends_topic_streams_stage(
         service_factory = cast(Any, service.__class__)
         child_service = service_factory(
             settings=stream_settings,
-            repository=cast(RepositoryPort, scoped_repository),
+            repository=cast(RepositoryPort, service.repository),
             analyzer=service.analyzer,
             triage=service.semantic_triage,
             telegram_sender=stream_sender,
         )
-        result = child_service.trends(
+        result = run_trends_stage(
+            child_service,
             run_id=run_id,
             granularity=granularity,
             anchor_date=anchor_date,
@@ -1512,6 +1366,7 @@ def run_trends_topic_streams_stage(
             backfill=backfill,
             backfill_mode=backfill_mode,
             debug_pdf=debug_pdf,
+            scope=stream.name,
         )
         result.stream = stream.name
         results.append(result)

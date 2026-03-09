@@ -13,6 +13,7 @@ from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.trends import TrendCluster, TrendPayload
+from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
@@ -27,6 +28,8 @@ class TrendAgentDeps:
     embedding_dimensions: int | None
     embedding_batch_max_inputs: int
     embedding_batch_max_chars: int
+    scope: str = DEFAULT_TOPIC_STREAM
+    metric_namespace: str = "pipeline.trends"
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
     llm_connection: LLMConnectionConfig | None = None
@@ -175,6 +178,7 @@ def build_trend_agent(
                 period_start=deps.period_start,
                 period_end=deps.period_end,
                 granularity=source_granularity,
+                scope=deps.scope,
                 order_by=normalized_order,
                 offset=0,
                 limit=normalized_limit,
@@ -298,6 +302,7 @@ def build_trend_agent(
                 granularity=source_granularity,
                 period_start=deps.period_start,
                 period_end=deps.period_end,
+                scope=deps.scope,
                 limit=normalized_limit,
             )
             for row in rows:
@@ -361,7 +366,8 @@ def build_trend_agent(
                 embedding_failure_mode=str(deps.embedding_failure_mode or "continue"),
                 embedding_max_errors=int(deps.embedding_max_errors or 0),
                 limit=normalized_limit,
-                metric_namespace="pipeline.trends",
+                scope=deps.scope,
+                metric_namespace=deps.metric_namespace,
                 llm_connection=deps.llm_connection,
             )
             for hit in rows:
@@ -650,6 +656,8 @@ def generate_trend_payload(
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
     include_debug: bool = False,
+    scope: str = DEFAULT_TOPIC_STREAM,
+    metric_namespace: str = "pipeline.trends",
     llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
     log = logger.bind(module="rag.trend_agent", run_id=run_id)
@@ -664,6 +672,8 @@ def generate_trend_payload(
         repository=repository,
         vector_store=vector_store,
         run_id=run_id,
+        scope=scope,
+        metric_namespace=metric_namespace,
         period_start=period_start,
         period_end=period_end,
         rag_sources=rag_sources,
@@ -723,7 +733,8 @@ def generate_trend_payload(
                 embedding_failure_mode=str(embedding_failure_mode or "continue"),
                 embedding_max_errors=int(embedding_max_errors or 0),
                 limit=int(n),
-                metric_namespace="pipeline.trends",
+                scope=scope,
+                metric_namespace=metric_namespace,
                 llm_connection=llm_connection,
             )
         ],
@@ -736,13 +747,13 @@ def generate_trend_payload(
         try:
             repository.record_metric(
                 run_id=run_id,
-                name="pipeline.trends.cluster_representatives_backfilled_total",
+                name=f"{metric_namespace}.cluster_representatives_backfilled_total",
                 value=int(rep_stats.get("clusters_backfilled_total") or 0),
                 unit="count",
             )
             repository.record_metric(
                 run_id=run_id,
-                name="pipeline.trends.cluster_representatives_invalid_dropped_total",
+                name=f"{metric_namespace}.cluster_representatives_invalid_dropped_total",
                 value=int(rep_stats.get("invalid_reps_dropped_total") or 0),
                 unit="count",
             )

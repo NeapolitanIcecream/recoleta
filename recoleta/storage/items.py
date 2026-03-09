@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,23 +10,17 @@ from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from recoleta.models import (
-    Analysis,
     Content,
-    Delivery,
     Item,
     ItemStreamState,
-    TrendDelivery,
-    DELIVERY_STATUS_SENT,
-    ITEM_STATE_ANALYZED,
     ITEM_STATE_ENRICHED,
     ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
-    ITEM_STATE_PUBLISHED,
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
 )
 from recoleta.storage_common import _from_json_object, _to_json
-from recoleta.types import DEFAULT_TOPIC_STREAM, AnalysisResult, ItemDraft, sha256_hex, utc_now
+from recoleta.types import ItemDraft, sha256_hex, utc_now
 
 
 class ItemStoreMixin:
@@ -176,24 +169,6 @@ class ItemStoreMixin:
                         ]
                     )
                 )
-                .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
-                .limit(limit)
-            )
-            return list(session.exec(statement))
-
-    def list_items_for_llm_analysis(
-        self, *, limit: int, triage_required: bool
-    ) -> list[Item]:
-        states = [ITEM_STATE_RETRYABLE_FAILED]
-        if triage_required:
-            states.append(ITEM_STATE_TRIAGED)
-        else:
-            states.append(ITEM_STATE_ENRICHED)
-
-        with Session(self.engine) as session:
-            statement = (
-                select(Item)
-                .where(cast(Any, Item.state).in_(states))
                 .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
                 .limit(limit)
             )
@@ -493,62 +468,6 @@ class ItemStoreMixin:
                 )
             return list(session.exec(statement))
 
-    def save_analysis(
-        self,
-        *,
-        item_id: int,
-        result: AnalysisResult,
-        scope: str = DEFAULT_TOPIC_STREAM,
-        mirror_item_state: bool = True,
-    ) -> Analysis:
-        with Session(self.engine) as session:
-            analysis = session.exec(
-                select(Analysis).where(
-                    Analysis.item_id == item_id,
-                    Analysis.scope == scope,
-                )
-            ).first()
-            if analysis is None:
-                analysis = Analysis(
-                    item_id=item_id,
-                    scope=scope,
-                    model=result.model,
-                    provider=result.provider,
-                    summary=result.summary,
-                    topics_json=_to_json(result.topics),
-                    relevance_score=result.relevance_score,
-                    novelty_score=result.novelty_score,
-                    cost_usd=result.cost_usd,
-                    latency_ms=result.latency_ms,
-                )
-            else:
-                analysis.model = result.model
-                analysis.provider = result.provider
-                analysis.summary = result.summary
-                analysis.topics_json = _to_json(result.topics)
-                analysis.relevance_score = result.relevance_score
-                analysis.novelty_score = result.novelty_score
-                analysis.cost_usd = result.cost_usd
-                analysis.latency_ms = result.latency_ms
-
-            self._upsert_item_stream_state(
-                session=session,
-                item_id=item_id,
-                stream=scope,
-                state=ITEM_STATE_ANALYZED,
-            )
-            if mirror_item_state:
-                item = session.get(Item, item_id)
-                if item is not None:
-                    item.state = ITEM_STATE_ANALYZED
-                    item.updated_at = utc_now()
-                    session.add(item)
-
-            session.add(analysis)
-            self._commit(session)
-            session.refresh(analysis)
-            return analysis
-
     def mark_item_enriched(self, *, item_id: int) -> None:
         with Session(self.engine) as session:
             item = session.get(Item, item_id)
@@ -611,233 +530,3 @@ class ItemStoreMixin:
             item.updated_at = utc_now()
             session.add(item)
             self._commit(session)
-
-    def list_items_for_publish(
-        self,
-        *,
-        limit: int,
-        min_relevance_score: float,
-        scope: str = DEFAULT_TOPIC_STREAM,
-    ) -> list[tuple[Item, Analysis]]:
-        stream_state = aliased(ItemStreamState)
-        with Session(self.engine) as session:
-            statement = (
-                select(Item, Analysis)
-                .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
-                .join(
-                    stream_state,
-                    and_(
-                        cast(Any, stream_state.item_id) == cast(Any, Item.id),
-                        cast(Any, stream_state.stream) == scope,
-                    ),
-                )
-                .where(
-                    cast(Any, Analysis.scope) == scope,
-                    cast(Any, stream_state.state) == ITEM_STATE_ANALYZED,
-                    cast(Any, Analysis.relevance_score) >= min_relevance_score,
-                )
-                .order_by(
-                    desc(cast(Any, Analysis.relevance_score)),
-                    desc(cast(Any, Analysis.novelty_score)),
-                )
-                .limit(limit)
-            )
-            return list(session.exec(statement))
-
-    def has_sent_delivery(
-        self, *, item_id: int, channel: str, destination: str
-    ) -> bool:
-        with Session(self.engine) as session:
-            statement = select(Delivery).where(
-                Delivery.item_id == item_id,
-                Delivery.channel == channel,
-                Delivery.destination == destination,
-                Delivery.status == DELIVERY_STATUS_SENT,
-            )
-            return session.exec(statement).first() is not None
-
-    def count_sent_deliveries_since(
-        self, *, channel: str, destination: str, since: datetime
-    ) -> int:
-        with Session(self.engine) as session:
-            item_statement = select(func.count(cast(Any, Delivery.id))).where(
-                Delivery.channel == channel,
-                Delivery.destination == destination,
-                Delivery.status == DELIVERY_STATUS_SENT,
-                cast(Any, Delivery.sent_at).is_not(None),
-                cast(Any, Delivery.sent_at) >= since,
-            )
-            trend_statement = select(func.count(cast(Any, TrendDelivery.id))).where(
-                TrendDelivery.channel == channel,
-                TrendDelivery.destination == destination,
-                TrendDelivery.status == DELIVERY_STATUS_SENT,
-                cast(Any, TrendDelivery.sent_at).is_not(None),
-                cast(Any, TrendDelivery.sent_at) >= since,
-            )
-            return int(session.exec(item_statement).one()) + int(
-                session.exec(trend_statement).one()
-            )
-
-    def upsert_delivery(
-        self,
-        *,
-        item_id: int,
-        channel: str,
-        destination: str,
-        message_id: str | None,
-        status: str,
-        error: str | None = None,
-    ) -> Delivery:
-        now = utc_now()
-        with Session(self.engine) as session:
-            existing = session.exec(
-                select(Delivery).where(
-                    Delivery.item_id == item_id,
-                    Delivery.channel == channel,
-                    Delivery.destination == destination,
-                )
-            ).first()
-            if existing is None:
-                delivery = Delivery(
-                    item_id=item_id,
-                    channel=channel,
-                    destination=destination,
-                    message_id=message_id,
-                    status=status,
-                    error=error,
-                    sent_at=now if status == DELIVERY_STATUS_SENT else None,
-                )
-                session.add(delivery)
-                self._commit(session)
-                session.refresh(delivery)
-                return delivery
-
-            existing.message_id = message_id
-            existing.status = status
-            existing.error = error
-            if status == DELIVERY_STATUS_SENT:
-                existing.sent_at = now
-            session.add(existing)
-            self._commit(session)
-            session.refresh(existing)
-            return existing
-
-    def has_sent_trend_delivery(
-        self,
-        *,
-        doc_id: int,
-        channel: str,
-        destination: str,
-        content_hash: str,
-    ) -> bool:
-        with Session(self.engine) as session:
-            statement = select(TrendDelivery).where(
-                TrendDelivery.doc_id == doc_id,
-                TrendDelivery.channel == channel,
-                TrendDelivery.destination == destination,
-                TrendDelivery.content_hash == content_hash,
-                TrendDelivery.status == DELIVERY_STATUS_SENT,
-            )
-            return session.exec(statement).first() is not None
-
-    def upsert_trend_delivery(
-        self,
-        *,
-        doc_id: int,
-        channel: str,
-        destination: str,
-        content_hash: str,
-        message_id: str | None,
-        status: str,
-        error: str | None = None,
-    ) -> TrendDelivery:
-        now = utc_now()
-        with Session(self.engine) as session:
-            existing = session.exec(
-                select(TrendDelivery).where(
-                    TrendDelivery.doc_id == doc_id,
-                    TrendDelivery.channel == channel,
-                    TrendDelivery.destination == destination,
-                )
-            ).first()
-            if existing is None:
-                delivery = TrendDelivery(
-                    doc_id=doc_id,
-                    channel=channel,
-                    destination=destination,
-                    content_hash=content_hash,
-                    message_id=message_id,
-                    status=status,
-                    error=error,
-                    sent_at=now if status == DELIVERY_STATUS_SENT else None,
-                )
-                session.add(delivery)
-                self._commit(session)
-                session.refresh(delivery)
-                return delivery
-
-            existing.content_hash = content_hash
-            existing.message_id = message_id
-            existing.status = status
-            existing.error = error
-            existing.sent_at = now if status == DELIVERY_STATUS_SENT else None
-            session.add(existing)
-            self._commit(session)
-            session.refresh(existing)
-            return existing
-
-    def mark_item_published(self, *, item_id: int) -> None:
-        with Session(self.engine) as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                return
-            item.state = ITEM_STATE_PUBLISHED
-            item.updated_at = utc_now()
-            session.add(item)
-            self._upsert_item_stream_state(
-                session=session,
-                item_id=item_id,
-                stream=DEFAULT_TOPIC_STREAM,
-                state=ITEM_STATE_PUBLISHED,
-            )
-            self._commit(session)
-
-    def list_analyzed_items_in_period(
-        self,
-        *,
-        period_start: datetime,
-        period_end: datetime,
-        limit: int,
-        offset: int = 0,
-        scope: str = DEFAULT_TOPIC_STREAM,
-    ) -> list[tuple[Item, Analysis]]:
-        normalized_limit = max(0, int(limit))
-        normalized_offset = max(0, int(offset))
-        if normalized_limit <= 0:
-            return []
-        stream_state = aliased(ItemStreamState)
-        with Session(self.engine) as session:
-            event_at = func.coalesce(cast(Any, Item.published_at), cast(Any, Item.created_at))
-            statement = (
-                select(Item, Analysis)
-                .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
-                .join(
-                    stream_state,
-                    and_(
-                        cast(Any, stream_state.item_id) == cast(Any, Item.id),
-                        cast(Any, stream_state.stream) == scope,
-                    ),
-                )
-                .where(
-                    cast(Any, Analysis.scope) == scope,
-                    cast(Any, stream_state.state).in_(
-                        [ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED]
-                    ),
-                    event_at >= period_start,
-                    event_at < period_end,
-                )
-                .order_by(desc(cast(Any, event_at)), desc(cast(Any, Item.id)))
-                .offset(normalized_offset)
-                .limit(normalized_limit)
-            )
-            return list(session.exec(statement))

@@ -4,13 +4,12 @@ import hashlib
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable, cast
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import orjson
 from loguru import logger
 from rich.progress import (
     BarColumn,
@@ -34,7 +33,6 @@ from recoleta.extract import (
 )
 from recoleta.llm_connection import llm_connection_from_settings
 from recoleta.models import (
-    DELIVERY_CHANNEL_TELEGRAM,
     ITEM_STATE_ENRICHED,
     ITEM_STATE_FAILED,
     ITEM_STATE_RETRYABLE_FAILED,
@@ -43,13 +41,14 @@ from recoleta.models import (
 from recoleta.observability import (
     collect_environment_secrets,
     get_rich_console,
-    mask_value,
-    scrub_secrets,
 )
+from recoleta.pipeline import artifacts as pipeline_artifacts
+from recoleta.pipeline import metrics as pipeline_metrics
 from recoleta.pipeline.publish_stage import (
     run_publish_stage,
     run_publish_topic_streams_stage,
 )
+from recoleta.pipeline import topic_streams as pipeline_topic_streams
 from recoleta.pipeline.trends_stage import (
     run_trends_stage,
     run_trends_topic_streams_stage,
@@ -64,7 +63,6 @@ from recoleta.types import (
     ItemDraft,
     PublishResult,
     TrendResult,
-    utc_now,
 )
 
 _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
@@ -203,117 +201,56 @@ class PipelineService:
         )
 
     def _telegram_delivery_destination(self) -> str:
-        if self.settings.telegram_chat_id is not None:
-            return mask_value(self.settings.telegram_chat_id.get_secret_value())
-        return "__telegram_sender__"
+        return pipeline_topic_streams.telegram_delivery_destination(self.settings)
 
     def _metric_token(self, value: str, *, max_len: int = 48) -> str:
-        lowered = value.lower().strip()
-        if not lowered:
-            return "unknown"
-        normalized = "".join(ch if ch.isalnum() else "_" for ch in lowered)
-        while "__" in normalized:
-            normalized = normalized.replace("__", "_")
-        normalized = normalized.strip("_")
-        if not normalized:
-            return "unknown"
-        return normalized[:max_len]
+        return pipeline_metrics.metric_token(value, max_len=max_len)
 
     def _stream_metric_name(self, *, stage: str, stream: str, suffix: str) -> str:
-        stream_token = self._metric_token(stream, max_len=32)
-        return f"pipeline.{stage}.stream.{stream_token}.{suffix}"
+        return pipeline_metrics.stream_metric_name(
+            stage=stage,
+            stream=stream,
+            suffix=suffix,
+        )
 
     def _telegram_destination_for_stream(self, stream: TopicStreamRuntime) -> str:
-        if stream.telegram_chat_id is not None:
-            return mask_value(stream.telegram_chat_id.get_secret_value())
-        return "__telegram_sender__"
+        return pipeline_topic_streams.telegram_destination_for_stream(stream)
 
     def _telegram_sender_for_stream(self, stream: TopicStreamRuntime) -> Any:
-        if isinstance(self.telegram_sender, dict):
-            sender = self.telegram_sender.get(stream.name)
-            if sender is not None:
-                return sender
-            sender = self.telegram_sender.get(DEFAULT_TOPIC_STREAM)
-            if sender is not None:
-                return sender
-        elif self.telegram_sender is not None:
-            return self.telegram_sender
-
-        if stream.name in self._telegram_senders:
-            return self._telegram_senders[stream.name]
-        if stream.telegram_bot_token is None or stream.telegram_chat_id is None:
-            raise ValueError(
-                f"Telegram credentials are required for topic stream '{stream.name}'"
-            )
-        sender = TelegramSender(
-            token=stream.telegram_bot_token.get_secret_value(),
-            chat_id=stream.telegram_chat_id.get_secret_value(),
-        )
-        self._telegram_senders[stream.name] = sender
-        return sender
+        return pipeline_topic_streams.telegram_sender_for_stream(self, stream)
 
     def _telegram_delivery_budget_for_stream(
         self, stream: TopicStreamRuntime
     ) -> tuple[str, int, int]:
-        destination = self._telegram_destination_for_stream(stream)
-        now = utc_now()
-        midnight_utc = datetime(
-            year=now.year,
-            month=now.month,
-            day=now.day,
-            tzinfo=now.tzinfo,
+        return pipeline_topic_streams.telegram_delivery_budget_for_stream(
+            repository=self.repository,
+            stream=stream,
         )
-        sent_today = self.repository.count_sent_deliveries_since(
-            channel=DELIVERY_CHANNEL_TELEGRAM,
-            destination=destination,
-            since=midnight_utc,
-        )
-        remaining_today = max(0, stream.max_deliveries_per_day - sent_today)
-        return destination, sent_today, remaining_today
 
     def _record_stream_metric(
         self, *, run_id: str, stage: str, stream: str, suffix: str, value: float, unit: str
     ) -> None:
-        self.repository.record_metric(
+        pipeline_metrics.record_stream_metric(
+            repository=self.repository,
             run_id=run_id,
-            name=self._stream_metric_name(stage=stage, stream=stream, suffix=suffix),
+            stage=stage,
+            stream=stream,
+            suffix=suffix,
             value=value,
             unit=unit,
         )
 
     def _settings_for_topic_stream(self, stream: TopicStreamRuntime) -> Settings:
-        return self.settings.model_copy(
-            update={
-                "topics": list(stream.topics),
-                "topic_streams": [],
-                "allow_tags": list(stream.allow_tags),
-                "deny_tags": list(stream.deny_tags),
-                "publish_targets": list(stream.publish_targets),
-                "markdown_output_dir": stream.markdown_output_dir,
-                "obsidian_base_folder": stream.obsidian_base_folder,
-                "min_relevance_score": float(stream.min_relevance_score),
-                "max_deliveries_per_day": int(stream.max_deliveries_per_day),
-                "telegram_bot_token": stream.telegram_bot_token,
-                "telegram_chat_id": stream.telegram_chat_id,
-            }
+        return pipeline_topic_streams.settings_for_topic_stream(
+            settings=self.settings,
+            stream=stream,
         )
 
     def _telegram_delivery_budget(self) -> tuple[str, int, int]:
-        destination = self._telegram_delivery_destination()
-        now = utc_now()
-        midnight_utc = datetime(
-            year=now.year,
-            month=now.month,
-            day=now.day,
-            tzinfo=now.tzinfo,
+        return pipeline_topic_streams.telegram_delivery_budget(
+            repository=self.repository,
+            settings=self.settings,
         )
-        sent_today = self.repository.count_sent_deliveries_since(
-            channel=DELIVERY_CHANNEL_TELEGRAM,
-            destination=destination,
-            since=midnight_utc,
-        )
-        remaining_today = max(0, self.settings.max_deliveries_per_day - sent_today)
-        return destination, sent_today, remaining_today
 
     def ingest(
         self, *, run_id: str, drafts: list[ItemDraft] | None = None
@@ -2884,64 +2821,14 @@ class PipelineService:
         kind: str,
         payload: dict[str, Any],
     ) -> Path | None:
-        if (
-            not self.settings.write_debug_artifacts
-            or self.settings.artifacts_dir is None
-        ):
-            return None
-        try:
-
-            def sanitize_segment(
-                value: str, *, max_len: int = 72, fallback: str = "unknown"
-            ) -> str:
-                cleaned = value.strip()
-                normalized = "".join(
-                    ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned
-                )
-                while "__" in normalized:
-                    normalized = normalized.replace("__", "_")
-                normalized = normalized.strip("_")
-                if not normalized:
-                    return fallback
-                return normalized[:max_len]
-
-            safe_run_id = sanitize_segment(run_id, fallback="run")
-            safe_kind = sanitize_segment(kind, fallback="artifact")
-            item_segment = str(item_id) if item_id is not None else "no-item"
-            kind_to_name = {
-                "error_context": "error-context.json",
-                "llm_request": "llm-request.json",
-                "llm_response": "llm-response.json",
-                "embedding_request": "embedding-request.json",
-                "embedding_response": "embedding-response.json",
-                "triage_summary": "triage-summary.json",
-            }
-            file_name = kind_to_name.get(kind, f"{safe_kind.replace('_', '-')}.json")
-            relative_path = Path(safe_run_id) / item_segment / file_name
-
-            base_dir = self.settings.artifacts_dir.expanduser().resolve()
-            absolute_path = (base_dir / relative_path).resolve()
-            if not absolute_path.is_relative_to(base_dir):
-                raise ValueError("Debug artifact path escapes artifacts_dir")
-            absolute_path.parent.mkdir(parents=True, exist_ok=True)
-
-            raw_json = orjson.dumps(
-                payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS
-            )
-            scrubbed = scrub_secrets(
-                raw_json.decode("utf-8"),
-                secrets=self._scrub_secrets,
-            )
-            absolute_path.write_text(scrubbed + "\n", encoding="utf-8")
-            return absolute_path.relative_to(base_dir)
-        except Exception as exc:
-            logger.bind(
-                module="pipeline.artifacts", run_id=run_id, item_id=item_id
-            ).warning(
-                "Debug artifact write failed: {}",
-                self._sanitize_error_message(str(exc)),
-            )
-            return None
+        return pipeline_artifacts.write_debug_artifact(
+            settings=self.settings,
+            scrub_secrets_values=self._scrub_secrets,
+            run_id=run_id,
+            item_id=item_id,
+            kind=kind,
+            payload=payload,
+        )
 
     def _build_triage_candidates(
         self, *, items: list[Any]
@@ -3075,25 +2962,14 @@ class PipelineService:
         return candidates, content_fetch_failed, content_fetch_error
 
     def _sanitize_error_message(self, message: str) -> str:
-        return scrub_secrets(
-            message,
+        return pipeline_artifacts.sanitize_error_message(
+            message=message,
             secrets=self._scrub_secrets,
         )
 
     @staticmethod
     def _classify_exception(exc: BaseException) -> dict[str, Any]:
-        if isinstance(exc, httpx.HTTPStatusError):
-            status = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
-            return {
-                "error_category": "http_status",
-                "retryable": status >= 500 or status == 429,
-                "http_status": status,
-            }
-        if isinstance(exc, httpx.RequestError):
-            return {"error_category": "http_request", "retryable": True}
-        if isinstance(exc, ValueError):
-            return {"error_category": "validation", "retryable": False}
-        return {"error_category": "unknown", "retryable": False}
+        return pipeline_artifacts.classify_exception(exc)
 
     @staticmethod
     def _classify_arxiv_html_document_fallback_reason(exc: BaseException) -> str:
