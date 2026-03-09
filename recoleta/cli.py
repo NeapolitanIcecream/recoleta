@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import importlib
 import json
+import os
 from pathlib import Path
 import signal
+import shutil
+import socket
+from threading import Event, Thread
 from typing import Any, NoReturn
+from uuid import uuid4
 
 _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
     "http_404",
@@ -20,6 +25,11 @@ _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
     "empty_document",
     "other",
 )
+
+_WORKSPACE_LEASE_TIMEOUT_SECONDS = 90
+_RUN_HEARTBEAT_INTERVAL_SECONDS = 15
+_GC_DEBUG_RETENTION_DAYS = 14
+_GC_OPERATIONAL_RETENTION_DAYS = 60
 
 
 def _import_symbol(module_name: str, *, attr_name: str | None = None) -> Any:
@@ -60,21 +70,28 @@ def _runtime_symbols() -> dict[str, Any]:
             attr_name="configure_process_logging",
         ),
         "Repository": _import_symbol("recoleta.storage", attr_name="Repository"),
+        "WorkspaceLeaseHeldError": _import_symbol(
+            "recoleta.storage", attr_name="WorkspaceLeaseHeldError"
+        ),
+        "WorkspaceLeaseLostError": _import_symbol(
+            "recoleta.storage", attr_name="WorkspaceLeaseLostError"
+        ),
     }
     return _RUNTIME_SYMBOLS
 
 
-def _build_runtime() -> tuple[Any, Any, Any]:
+def _build_runtime(
+    *,
+    config_path: Path | None = None,
+    db_path: Path | None = None,
+) -> tuple[Any, Any, Any]:
     symbols = _runtime_symbols()
-    settings_cls = symbols["Settings"]
-    configure_process_logging = symbols["configure_process_logging"]
     repository_cls = symbols["Repository"]
     pipeline_service_cls = _import_symbol(
         "recoleta.pipeline", attr_name="PipelineService"
     )
 
-    settings = settings_cls()  # pyright: ignore[reportCallIssue]
-    configure_process_logging(level=settings.log_level, log_json=settings.log_json)
+    settings = _build_settings(config_path=config_path, db_path=db_path)
     repository = repository_cls(
         db_path=settings.recoleta_db_path,
         title_dedup_threshold=settings.title_dedup_threshold,
@@ -85,12 +102,21 @@ def _build_runtime() -> tuple[Any, Any, Any]:
     return settings, repository, service
 
 
-def _build_settings() -> Any:
+def _build_settings(
+    *,
+    config_path: Path | None = None,
+    db_path: Path | None = None,
+) -> Any:
     symbols = _runtime_symbols()
     settings_cls = symbols["Settings"]
     configure_process_logging = symbols["configure_process_logging"]
 
-    settings = settings_cls()  # pyright: ignore[reportCallIssue]
+    init_kwargs: dict[str, Any] = {}
+    if config_path is not None:
+        init_kwargs["config_path"] = config_path.expanduser().resolve()
+    if db_path is not None:
+        init_kwargs["recoleta_db_path"] = db_path.expanduser().resolve()
+    settings = settings_cls(**init_kwargs)  # pyright: ignore[reportCallIssue]
     configure_process_logging(level=settings.log_level, log_json=settings.log_json)
     return settings
 
@@ -278,25 +304,249 @@ def _raise_typer_exit_for_interrupt(
     raise typer.Exit(code=exit_code) from None
 
 
+def _raise_typer_exit_for_workspace_lock(
+    *,
+    console: Any,
+    log: Any,
+    exc: Any,
+) -> NoReturn:
+    expires_at = getattr(exc, "expires_at", None)
+    log.warning(
+        "Workspace lease blocked command requested_run_id={} holder_run_id={} holder_command={} holder_hostname={} holder_pid={} expires_at={}",
+        getattr(exc, "requested_run_id", None),
+        getattr(exc, "holder_run_id", None),
+        getattr(exc, "holder_command", None),
+        getattr(exc, "holder_hostname", None),
+        getattr(exc, "holder_pid", None),
+        expires_at.isoformat() if expires_at is not None else None,
+    )
+    details = [
+        f"holder_command={getattr(exc, 'holder_command', None)}"
+        if getattr(exc, "holder_command", None)
+        else "",
+        f"holder_hostname={getattr(exc, 'holder_hostname', None)}"
+        if getattr(exc, "holder_hostname", None)
+        else "",
+        f"holder_pid={getattr(exc, 'holder_pid', None)}"
+        if getattr(exc, "holder_pid", None) is not None
+        else "",
+    ]
+    detail_text = " ".join(part for part in details if part)
+    console.print(
+        "[red]workspace is locked[/red]"
+        + (f" {detail_text}" if detail_text else "")
+    )
+    raise typer.Exit(code=1) from None
+
+
+class _LeaseHeartbeatMonitor:
+    def __init__(
+        self,
+        *,
+        repository: Any,
+        run_id: str | None,
+        owner_token: str,
+        lease_timeout_seconds: int,
+        interval_seconds: int,
+        log: Any,
+        lease_lost_error_cls: type[BaseException],
+        thread_name: str,
+    ) -> None:
+        self._repository = repository
+        self._run_id = run_id
+        self._owner_token = owner_token
+        self._lease_timeout_seconds = lease_timeout_seconds
+        self._interval_seconds = max(1, int(interval_seconds))
+        self._log = log
+        self._lease_lost_error_cls = lease_lost_error_cls
+        self._thread_name = thread_name
+        self._stop_event = Event()
+        self._thread: Thread | None = None
+        self._fatal_error: BaseException | None = None
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = Thread(
+            target=self._run,
+            name=self._thread_name,
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is None:
+            return
+        self._thread.join(timeout=self._interval_seconds + 1)
+
+    def raise_if_failed(self) -> None:
+        if self._fatal_error is not None:
+            raise self._fatal_error
+
+    def _run(self) -> None:
+        while not self._stop_event.wait(self._interval_seconds):
+            try:
+                self._repository.renew_workspace_lease(
+                    owner_token=self._owner_token,
+                    lease_timeout_seconds=self._lease_timeout_seconds,
+                )
+                if self._run_id is not None:
+                    self._repository.heartbeat_run(self._run_id)
+            except self._lease_lost_error_cls as exc:
+                self._fatal_error = exc
+                self._log.warning(
+                    "Run heartbeat stopped because workspace lease was lost error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
+                self._stop_event.set()
+                return
+            except Exception as exc:  # noqa: BLE001
+                self._log.warning(
+                    "Run heartbeat update failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
+
+
+def _begin_managed_run(
+    *,
+    command: str,
+    log_module: str,
+) -> tuple[Any, Any, Any, Any, str, str, Any, _LeaseHeartbeatMonitor]:
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    console_cls = symbols["Console"]
+    workspace_lease_held_error = symbols["WorkspaceLeaseHeldError"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+
+    settings, repository, service = _build_runtime()
+    console = console_cls(stderr=bool(getattr(settings, "log_json", False)))
+    run_id = str(uuid4())
+    owner_token = str(uuid4())
+    lock_log = logger.bind(
+        module="cli.runtime.lock",
+        command=command,
+        requested_run_id=run_id,
+    )
+    try:
+        repository.acquire_workspace_lease(
+            run_id=run_id,
+            command=command,
+            owner_token=owner_token,
+            lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+            hostname=socket.gethostname(),
+            pid=os.getpid(),
+        )
+    except workspace_lease_held_error as exc:
+        _raise_typer_exit_for_workspace_lock(
+            console=console,
+            log=lock_log,
+            exc=exc,
+        )
+
+    try:
+        recovered_total = repository.mark_stale_runs_failed(
+            stale_after_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS
+        )
+        if int(recovered_total or 0) > 0:
+            lock_log.warning(
+                "Recovered stale runs recovered_total={}",
+                int(recovered_total),
+            )
+        run = repository.create_run(
+            config_fingerprint=settings.safe_fingerprint(),
+            run_id=run_id,
+        )
+        command_log = logger.bind(module=log_module, run_id=run.id)
+        heartbeat_monitor = _LeaseHeartbeatMonitor(
+            repository=repository,
+            run_id=run.id,
+            owner_token=owner_token,
+            lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+            interval_seconds=_RUN_HEARTBEAT_INTERVAL_SECONDS,
+            log=logger.bind(module="cli.runtime.heartbeat", command=command, run_id=run.id),
+            lease_lost_error_cls=workspace_lease_lost_error,
+            thread_name=f"recoleta-heartbeat-{run.id}",
+        )
+        heartbeat_monitor.start()
+        return (
+            settings,
+            repository,
+            service,
+            console,
+            run.id,
+            owner_token,
+            command_log,
+            heartbeat_monitor,
+        )
+    except Exception:
+        try:
+            repository.release_workspace_lease(owner_token=owner_token)
+        except Exception:
+            lock_log.exception("Workspace lease release failed during startup")
+        raise
+
+
+def _cleanup_managed_run(
+    *,
+    repository: Any,
+    owner_token: str,
+    heartbeat_monitor: _LeaseHeartbeatMonitor,
+    log: Any,
+) -> None:
+    heartbeat_monitor.stop()
+    try:
+        repository.release_workspace_lease(owner_token=owner_token)
+    except Exception:
+        log.exception("Workspace lease release failed")
+
+
+def _cleanup_workspace_lease(
+    *,
+    repository: Any,
+    owner_token: str,
+    heartbeat_monitor: _LeaseHeartbeatMonitor,
+    log: Any,
+) -> None:
+    heartbeat_monitor.stop()
+    try:
+        repository.release_workspace_lease(owner_token=owner_token)
+    except Exception:
+        log.exception("Workspace lease release failed")
+
+
 def _execute_stage(
     *,
     stage_name: str,
     stage_runner: Callable[[Any, str], Any],
 ) -> tuple[Any, Any, str, Any]:
     symbols = _runtime_symbols()
-    logger = symbols["logger"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
 
-    settings, repository, service = _build_runtime()
-    run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
-    stage_log = logger.bind(module=f"cli.{stage_name}", run_id=run.id)
+    (
+        settings,
+        repository,
+        service,
+        _console,
+        run_id,
+        owner_token,
+        stage_log,
+        heartbeat_monitor,
+    ) = _begin_managed_run(
+        command=stage_name,
+        log_module=f"cli.{stage_name}",
+    )
     try:
         with _graceful_shutdown_signals():
-            result = stage_runner(service, run.id)
-        repository.finish_run(run.id, success=True)
-        return settings, repository, run.id, result
+            result = stage_runner(service, run_id)
+        heartbeat_monitor.raise_if_failed()
+        repository.finish_run(run_id, success=True)
+        return settings, repository, run_id, result
     except KeyboardInterrupt as exc:
         try:
-            repository.finish_run(run.id, success=False)
+            repository.finish_run(run_id, success=False)
         except Exception:
             stage_log.exception("Run finish failed during interrupt")
         _raise_typer_exit_for_interrupt(
@@ -304,10 +554,28 @@ def _execute_stage(
             message="Stage interrupted",
             exc=exc,
         )
+    except workspace_lease_lost_error as exc:
+        try:
+            repository.finish_run(run_id, success=False)
+        except Exception:
+            stage_log.exception("Run finish failed after lease loss")
+        stage_log.warning(
+            "Stage stopped because workspace lease was lost error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        raise typer.Exit(code=1) from None
     except Exception:
-        repository.finish_run(run.id, success=False)
+        repository.finish_run(run_id, success=False)
         stage_log.exception("Stage execution failed")
         raise
+    finally:
+        _cleanup_managed_run(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=stage_log,
+        )
 
 
 @app.command()
@@ -604,18 +872,42 @@ def site_build(
     if resolved_output_dir is None:
         assert settings is not None
         resolved_output_dir = settings.markdown_output_dir / "site"
-    manifest_path = export_trend_static_site(
-        input_dir=resolved_input_dir,
-        output_dir=resolved_output_dir,
-        limit=limit,
-    )
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-
     console = (
         console_cls(stderr=settings.log_json)
         if settings is not None
         else console_cls()
     )
+    lease_repository, lease_owner_token, lease_log, lease_heartbeat_monitor = (
+        _maybe_acquire_workspace_lease_for_settings(
+            settings=settings,
+            console=console,
+            command="site build",
+            log_module="cli.site.build",
+        )
+    )
+    try:
+        manifest_path = export_trend_static_site(
+            input_dir=resolved_input_dir,
+            output_dir=resolved_output_dir,
+            limit=limit,
+        )
+        if lease_heartbeat_monitor is not None:
+            lease_heartbeat_monitor.raise_if_failed()
+    finally:
+        if (
+            lease_repository is not None
+            and lease_owner_token is not None
+            and lease_log is not None
+            and lease_heartbeat_monitor is not None
+        ):
+            _cleanup_workspace_lease(
+                repository=lease_repository,
+                owner_token=lease_owner_token,
+                heartbeat_monitor=lease_heartbeat_monitor,
+                log=lease_log,
+            )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     stream_segment = (
         f" streams={manifest['streams_total']}"
         if int(manifest.get("streams_total") or 0) > 1
@@ -689,18 +981,42 @@ def site_stage(
             if settings is not None and _has_explicit_topic_streams(settings)
             else (Path.cwd() / "site-content" / "Trends").resolve()
         )
-    manifest_path = stage_trend_site_source(
-        input_dir=resolved_input_dir,
-        output_dir=resolved_output_dir,
-        limit=limit,
-    )
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-
     console = (
         console_cls(stderr=settings.log_json)
         if settings is not None
         else console_cls()
     )
+    lease_repository, lease_owner_token, lease_log, lease_heartbeat_monitor = (
+        _maybe_acquire_workspace_lease_for_settings(
+            settings=settings,
+            console=console,
+            command="site stage",
+            log_module="cli.site.stage",
+        )
+    )
+    try:
+        manifest_path = stage_trend_site_source(
+            input_dir=resolved_input_dir,
+            output_dir=resolved_output_dir,
+            limit=limit,
+        )
+        if lease_heartbeat_monitor is not None:
+            lease_heartbeat_monitor.raise_if_failed()
+    finally:
+        if (
+            lease_repository is not None
+            and lease_owner_token is not None
+            and lease_log is not None
+            and lease_heartbeat_monitor is not None
+        ):
+            _cleanup_workspace_lease(
+                repository=lease_repository,
+                owner_token=lease_owner_token,
+                heartbeat_monitor=lease_heartbeat_monitor,
+                log=lease_log,
+            )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     stream_segment = (
         f" streams={manifest['streams_total']}"
         if int(manifest.get("streams_total") or 0) > 1
@@ -739,11 +1055,21 @@ def rag_sync_vectors(
     """Sync/rebuild summary vectors from SQLite corpus into LanceDB."""
 
     symbols = _runtime_symbols()
-    logger = symbols["logger"]
-    console_cls = symbols["Console"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
 
-    settings, repository, _ = _build_runtime()
-    console = console_cls(stderr=settings.log_json)
+    (
+        settings,
+        repository,
+        _service,
+        console,
+        run_id,
+        owner_token,
+        log,
+        heartbeat_monitor,
+    ) = _begin_managed_run(
+        command="rag sync-vectors",
+        log_module="cli.rag.sync_vectors",
+    )
 
     try:
         start_dt = datetime.fromisoformat(str(period_start).strip())
@@ -764,9 +1090,6 @@ def rag_sync_vectors(
             "[red]invalid datetime range[/red] period_end must be > period_start"
         )
         raise typer.Exit(code=2)
-
-    run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
-    log = logger.bind(module="cli.rag.sync_vectors", run_id=run.id)
     try:
         with _graceful_shutdown_signals():
             from recoleta.rag.sync import sync_summary_vectors_in_period
@@ -782,7 +1105,7 @@ def rag_sync_vectors(
             stats = sync_summary_vectors_in_period(
                 repository=repository,
                 vector_store=store,
-                run_id=run.id,
+                run_id=run_id,
                 doc_type=str(doc_type).strip().lower(),
                 period_start=start_dt,
                 period_end=end_dt,
@@ -798,11 +1121,12 @@ def rag_sync_vectors(
                 ),
                 page_size=page_size,
             )
-        repository.finish_run(run.id, success=True)
+        heartbeat_monitor.raise_if_failed()
+        repository.finish_run(run_id, success=True)
         console.print(f"[green]rag sync completed[/green] stats={stats}")
     except KeyboardInterrupt as exc:
         try:
-            repository.finish_run(run.id, success=False)
+            repository.finish_run(run_id, success=False)
         except Exception:
             log.exception("Run finish failed during interrupt")
         _raise_typer_exit_for_interrupt(
@@ -810,10 +1134,28 @@ def rag_sync_vectors(
             message="RAG sync interrupted",
             exc=exc,
         )
+    except workspace_lease_lost_error as exc:
+        try:
+            repository.finish_run(run_id, success=False)
+        except Exception:
+            log.exception("Run finish failed after lease loss")
+        log.warning(
+            "RAG sync stopped because workspace lease was lost error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        raise typer.Exit(code=1) from None
     except Exception:
-        repository.finish_run(run.id, success=False)
+        repository.finish_run(run_id, success=False)
         log.exception("RAG sync failed")
         raise
+    finally:
+        _cleanup_managed_run(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
 
 
 @rag_app.command("build-index")
@@ -857,14 +1199,21 @@ def rag_build_index(
     """Build/rebuild indices for the current embedding table in LanceDB."""
 
     symbols = _runtime_symbols()
-    logger = symbols["logger"]
-    console_cls = symbols["Console"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
 
-    settings, repository, _ = _build_runtime()
-    console = console_cls(stderr=settings.log_json)
-
-    run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
-    log = logger.bind(module="cli.rag.build_index", run_id=run.id)
+    (
+        settings,
+        repository,
+        _service,
+        console,
+        run_id,
+        owner_token,
+        log,
+        heartbeat_monitor,
+    ) = _begin_managed_run(
+        command="rag build-index",
+        log_module="cli.rag.build_index",
+    )
     try:
         with _graceful_shutdown_signals():
             from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
@@ -886,22 +1235,23 @@ def rag_build_index(
                 replace=True,
                 strict=bool(strict),
             )
+        heartbeat_monitor.raise_if_failed()
         errors = stats.get("errors") or []
         table_exists = bool(stats.get("table_exists"))
 
         if not table_exists:
-            repository.finish_run(run.id, success=True)
+            repository.finish_run(run_id, success=True)
             console.print(
                 "[yellow]rag build-index skipped[/yellow] table not found (run `recoleta rag sync-vectors` first)"
             )
             return
 
         if strict and errors:
-            repository.finish_run(run.id, success=False)
+            repository.finish_run(run_id, success=False)
             console.print(f"[red]rag build-index failed[/red] stats={stats}")
             raise typer.Exit(code=1)
 
-        repository.finish_run(run.id, success=True)
+        repository.finish_run(run_id, success=True)
         if errors:
             console.print(
                 f"[yellow]rag build-index completed with errors[/yellow] stats={stats}"
@@ -910,7 +1260,7 @@ def rag_build_index(
             console.print(f"[green]rag build-index completed[/green] stats={stats}")
     except KeyboardInterrupt as exc:
         try:
-            repository.finish_run(run.id, success=False)
+            repository.finish_run(run_id, success=False)
         except Exception:
             log.exception("Run finish failed during interrupt")
         _raise_typer_exit_for_interrupt(
@@ -918,12 +1268,30 @@ def rag_build_index(
             message="RAG build-index interrupted",
             exc=exc,
         )
+    except workspace_lease_lost_error as exc:
+        try:
+            repository.finish_run(run_id, success=False)
+        except Exception:
+            log.exception("Run finish failed after lease loss")
+        log.warning(
+            "RAG build-index stopped because workspace lease was lost error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        raise typer.Exit(code=1) from None
     except typer.Exit:
         raise
     except Exception:
-        repository.finish_run(run.id, success=False)
+        repository.finish_run(run_id, success=False)
         log.exception("RAG build-index failed")
         raise
+    finally:
+        _cleanup_managed_run(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
 
 
 def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:
@@ -977,6 +1345,275 @@ def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:
             "Config does not define recoleta_db_path (or RECOLETA_DB_PATH)."
         )
     return Path(candidate_str).expanduser().resolve()
+
+
+def _build_repository_for_db_path(*, db_path: Path) -> Any:
+    symbols = _runtime_symbols()
+    repository_cls = symbols["Repository"]
+    return repository_cls(db_path=db_path.expanduser().resolve())
+
+
+def _acquire_workspace_lease_for_command(
+    *,
+    repository: Any,
+    console: Any,
+    command: str,
+    log_module: str,
+) -> tuple[str, Any, _LeaseHeartbeatMonitor]:
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    workspace_lease_held_error = symbols["WorkspaceLeaseHeldError"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+
+    owner_token = str(uuid4())
+    lock_log = logger.bind(module=log_module, command=command)
+    try:
+        repository.acquire_workspace_lease(
+            owner_token=owner_token,
+            command=command,
+            lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+            hostname=socket.gethostname(),
+            pid=os.getpid(),
+        )
+    except workspace_lease_held_error as exc:
+        _raise_typer_exit_for_workspace_lock(
+            console=console,
+            log=lock_log,
+            exc=exc,
+        )
+    heartbeat_monitor = _LeaseHeartbeatMonitor(
+        repository=repository,
+        run_id=None,
+        owner_token=owner_token,
+        lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+        interval_seconds=_RUN_HEARTBEAT_INTERVAL_SECONDS,
+        log=logger.bind(module="cli.runtime.heartbeat", command=command),
+        lease_lost_error_cls=workspace_lease_lost_error,
+        thread_name=f"recoleta-lease-{command.replace(' ', '-')}",
+    )
+    heartbeat_monitor.start()
+    return owner_token, lock_log, heartbeat_monitor
+
+
+def _maybe_acquire_workspace_lease_for_settings(
+    *,
+    settings: Any | None,
+    console: Any,
+    command: str,
+    log_module: str,
+) -> tuple[Any | None, str | None, Any | None, _LeaseHeartbeatMonitor | None]:
+    if settings is None:
+        return None, None, None, None
+    db_path = getattr(settings, "recoleta_db_path", None)
+    if not isinstance(db_path, Path):
+        return None, None, None, None
+    repository = _build_repository_for_db_path(db_path=db_path)
+    repository.init_schema()
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
+        repository=repository,
+        console=console,
+        command=command,
+        log_module=log_module,
+    )
+    return repository, owner_token, log, heartbeat_monitor
+
+
+def _should_attempt_settings_load(
+    *,
+    db_path_option: Path | None,
+    config_path_option: Path | None,
+) -> bool:
+    if config_path_option is not None:
+        return True
+    if str(os.getenv("RECOLETA_CONFIG_PATH", "")).strip():
+        return True
+    return db_path_option is None
+
+
+def _maybe_load_settings(
+    *,
+    db_path_option: Path | None,
+    config_path_option: Path | None,
+    resolved_db_path: Path,
+) -> Any | None:
+    if not _should_attempt_settings_load(
+        db_path_option=db_path_option,
+        config_path_option=config_path_option,
+    ):
+        return None
+    return _build_settings(config_path=config_path_option, db_path=resolved_db_path)
+
+
+def _is_accessible_path(path: Path) -> bool:
+    candidate = path.expanduser().resolve()
+    if candidate.exists():
+        if candidate.is_dir():
+            return os.access(candidate, os.R_OK | os.W_OK | os.X_OK)
+        return os.access(candidate, os.R_OK | os.W_OK)
+    parent = candidate.parent
+    return parent.exists() and os.access(parent, os.R_OK | os.W_OK | os.X_OK)
+
+
+def _normalize_utc_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _path_size_bytes(path: Path) -> int | None:
+    candidate = path.expanduser().resolve()
+    if not candidate.exists():
+        return 0
+    try:
+        if candidate.is_file():
+            return int(candidate.stat().st_size)
+    except OSError:
+        return None
+
+    total = 0
+    try:
+        for child in candidate.rglob("*"):
+            try:
+                if child.is_file():
+                    total += int(child.stat().st_size)
+            except OSError:
+                return None
+    except OSError:
+        return None
+    return total
+
+
+def _workspace_bytes_from_settings(settings: Any) -> dict[str, int | None]:
+    workspace_bytes: dict[str, int | None] = {
+        "markdown_output_dir": _path_size_bytes(Path(settings.markdown_output_dir)),
+        "artifacts_dir": None,
+        "rag_lancedb_dir": _path_size_bytes(Path(settings.rag_lancedb_dir)),
+    }
+    artifacts_dir = getattr(settings, "artifacts_dir", None)
+    if artifacts_dir is not None:
+        workspace_bytes["artifacts_dir"] = _path_size_bytes(Path(artifacts_dir))
+    return workspace_bytes
+
+
+def _delete_path_if_present(*, path: Path, dry_run: bool = False) -> bool:
+    if not path.exists():
+        return False
+    if dry_run:
+        return True
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+    return True
+
+
+def _collect_markdown_output_dirs(settings: Any) -> set[Path]:
+    dirs: set[Path] = {Path(settings.markdown_output_dir).expanduser().resolve()}
+    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
+    if callable(runtime_builder):
+        try:
+            runtimes = runtime_builder()
+        except Exception:
+            runtimes = []
+        if isinstance(runtimes, list):
+            for runtime in runtimes:
+                raw_dir = getattr(runtime, "markdown_output_dir", None)
+                if raw_dir is None:
+                    continue
+                dirs.add(Path(raw_dir).expanduser().resolve())
+    return dirs
+
+
+def _prune_expired_pdf_debug_dirs(
+    *,
+    settings: Any,
+    older_than: datetime | None = None,
+    dry_run: bool = False,
+) -> int:
+    deleted = 0
+    for markdown_root in _collect_markdown_output_dirs(settings):
+        debug_root = markdown_root / "Trends" / ".pdf-debug"
+        if not debug_root.exists() or not debug_root.is_dir():
+            continue
+        for child in list(debug_root.iterdir()):
+            if older_than is not None:
+                try:
+                    modified_at = datetime.fromtimestamp(child.stat().st_mtime, tz=UTC)
+                except Exception:
+                    continue
+                if modified_at >= older_than:
+                    continue
+            if _delete_path_if_present(path=child, dry_run=dry_run):
+                deleted += 1
+    return deleted
+
+
+def _prune_trend_pdfs(
+    *,
+    settings: Any,
+    dry_run: bool = False,
+) -> int:
+    deleted = 0
+    for markdown_root in _collect_markdown_output_dirs(settings):
+        trends_dir = markdown_root / "Trends"
+        if not trends_dir.exists() or not trends_dir.is_dir():
+            continue
+        for pdf_path in trends_dir.glob("*.pdf"):
+            if _delete_path_if_present(path=pdf_path, dry_run=dry_run):
+                deleted += 1
+    return deleted
+
+
+def _prune_managed_site_outputs(
+    *,
+    settings: Any,
+    dry_run: bool = False,
+) -> int:
+    deleted = 0
+    candidate_paths: set[Path] = {Path(settings.markdown_output_dir).resolve() / "site"}
+    for markdown_root in _collect_markdown_output_dirs(settings):
+        candidate_paths.add(markdown_root / "site")
+    for path in candidate_paths:
+        if _delete_path_if_present(path=path, dry_run=dry_run):
+            deleted += 1
+    return deleted
+
+
+def _prune_inactive_lancedb_tables(
+    *,
+    settings: Any,
+    dry_run: bool = False,
+) -> int:
+    lancedb_dir = Path(settings.rag_lancedb_dir).expanduser().resolve()
+    if not lancedb_dir.exists():
+        return 0
+
+    from recoleta.rag.vector_store import embedding_table_name
+
+    active_table = embedding_table_name(
+        embedding_model=settings.trends_embedding_model,
+        embedding_dimensions=settings.trends_embedding_dimensions,
+    )
+
+    import lancedb
+
+    db = lancedb.connect(str(lancedb_dir))
+    deleted = 0
+    for table_name in list(db.list_tables(limit=10_000).tables or []):
+        normalized = str(table_name or "").strip()
+        if not normalized.startswith("chunk_vectors_"):
+            continue
+        if normalized == active_table:
+            continue
+        if not dry_run:
+            try:
+                db.drop_table(normalized)
+            except Exception:
+                continue
+        deleted += 1
+    return deleted
 
 
 @db_app.command("clear")
@@ -1040,6 +1677,820 @@ def db_clear(
         )
     else:
         console.print(f"[green]db already empty[/green] path={resolved}")
+
+
+@app.command("gc")
+def gc(
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path.",
+    ),
+    prune_caches: bool = typer.Option(
+        False,
+        "--prune-caches",
+        help="Also prune rebuildable caches such as chunk indices, inactive LanceDB tables, trend PDFs, and managed site output.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report what would be deleted without mutating the workspace.",
+    ),
+) -> None:
+    """Prune expired debug material and operational history."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    console = console_cls()
+
+    try:
+        resolved = _resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]db path resolution failed[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    if not resolved.exists():
+        console.print(
+            "[green]gc completed[/green] "
+            f"deleted_artifacts=0 deleted_runs=0 path={resolved}"
+        )
+        return
+
+    repository = _build_repository_for_db_path(db_path=resolved)
+    repository.init_schema()
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
+        repository=repository,
+        console=console,
+        command="gc",
+        log_module="cli.gc",
+    )
+    try:
+        settings: Any | None = None
+        filesystem_cache_pruning = "available"
+        try:
+            settings = _maybe_load_settings(
+                db_path_option=db_path,
+                config_path_option=config_path,
+                resolved_db_path=resolved,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "GC settings unavailable; filesystem cache pruning skipped error_type={} error={}",
+                type(exc).__name__,
+                str(exc),
+            )
+            settings = None
+            filesystem_cache_pruning = "skipped"
+        else:
+            if prune_caches and settings is None:
+                filesystem_cache_pruning = "skipped"
+
+        reference_now = datetime.now(UTC)
+        debug_cutoff = reference_now - timedelta(days=_GC_DEBUG_RETENTION_DAYS)
+        operational_cutoff = reference_now - timedelta(
+            days=_GC_OPERATIONAL_RETENTION_DAYS
+        )
+
+        artifact_result = repository.prune_artifacts_older_than(
+            older_than=debug_cutoff,
+            dry_run=dry_run,
+        )
+        operational_result = repository.prune_operational_history_older_than(
+            older_than=operational_cutoff,
+            dry_run=dry_run,
+        )
+        pdf_debug_deleted = (
+            _prune_expired_pdf_debug_dirs(
+                settings=settings,
+                older_than=(None if prune_caches else debug_cutoff),
+                dry_run=dry_run,
+            )
+            if settings is not None
+            else 0
+        )
+
+        chunk_cache_result = (
+            repository.clear_document_chunk_cache(dry_run=dry_run)
+            if prune_caches
+            else None
+        )
+        lancedb_tables_deleted = (
+            _prune_inactive_lancedb_tables(settings=settings, dry_run=dry_run)
+            if prune_caches and settings is not None
+            else 0
+        )
+        trend_pdfs_deleted = (
+            _prune_trend_pdfs(settings=settings, dry_run=dry_run)
+            if prune_caches and settings is not None
+            else 0
+        )
+        site_outputs_deleted = (
+            _prune_managed_site_outputs(settings=settings, dry_run=dry_run)
+            if prune_caches and settings is not None
+            else 0
+        )
+
+        counter_prefix = "would_delete" if dry_run else "deleted"
+        heartbeat_monitor.raise_if_failed()
+        log.info(
+            "GC completed artifact_rows={} artifact_paths={} missing_artifact_paths={} run_rows={} metric_rows={} pdf_debug_dirs={} document_chunks={} chunk_embeddings={} chunk_fts_rows={} lancedb_tables={} trend_pdfs={} site_outputs={} dry_run={}",
+            artifact_result.artifact_rows,
+            artifact_result.deleted_paths,
+            artifact_result.missing_paths,
+            operational_result.run_rows,
+            operational_result.metric_rows,
+            pdf_debug_deleted,
+            int((chunk_cache_result.document_chunks if chunk_cache_result else 0)),
+            int((chunk_cache_result.chunk_embeddings if chunk_cache_result else 0)),
+            int((chunk_cache_result.chunk_fts_rows if chunk_cache_result else 0)),
+            lancedb_tables_deleted,
+            trend_pdfs_deleted,
+            site_outputs_deleted,
+            dry_run,
+        )
+        filesystem_segment = (
+            f" filesystem_cache_pruning={filesystem_cache_pruning}"
+            if prune_caches
+            else ""
+        )
+        console.print(
+            f"[green]gc completed[/green] "
+            f"{counter_prefix}_artifacts={artifact_result.artifact_rows} "
+            f"{counter_prefix}_artifact_paths={artifact_result.deleted_paths} "
+            f"{counter_prefix}_missing_artifact_paths={artifact_result.missing_paths} "
+            f"{counter_prefix}_runs={operational_result.run_rows} "
+            f"{counter_prefix}_metrics={operational_result.metric_rows} "
+            f"{counter_prefix}_pdf_debug_dirs={pdf_debug_deleted} "
+            f"{counter_prefix}_document_chunks={int((chunk_cache_result.document_chunks if chunk_cache_result else 0))} "
+            f"{counter_prefix}_chunk_embeddings={int((chunk_cache_result.chunk_embeddings if chunk_cache_result else 0))} "
+            f"{counter_prefix}_chunk_fts_rows={int((chunk_cache_result.chunk_fts_rows if chunk_cache_result else 0))} "
+            f"{counter_prefix}_lancedb_tables={lancedb_tables_deleted} "
+            f"{counter_prefix}_trend_pdfs={trend_pdfs_deleted} "
+            f"{counter_prefix}_site_outputs={site_outputs_deleted} "
+            f"{filesystem_segment}"
+            f"path={resolved}"
+        )
+    finally:
+        _cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
+
+
+@app.command("vacuum")
+def vacuum(
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path.",
+    ),
+) -> None:
+    """Run SQLite VACUUM on the configured database."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    console = console_cls()
+    try:
+        resolved = _resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]db path resolution failed[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    if not resolved.exists():
+        console.print(f"[red]db does not exist[/red] path={resolved}")
+        raise typer.Exit(code=2)
+
+    repository = _build_repository_for_db_path(db_path=resolved)
+    repository.init_schema()
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
+        repository=repository,
+        console=console,
+        command="vacuum",
+        log_module="cli.vacuum",
+    )
+    try:
+        repository.vacuum()
+        heartbeat_monitor.raise_if_failed()
+        log.info("VACUUM completed path={}", str(resolved))
+        console.print(f"[green]vacuum completed[/green] path={resolved}")
+    finally:
+        _cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
+
+
+@app.command("backup")
+def backup(
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Directory where timestamped backup bundles should be created. Defaults to <db-dir>/backups.",
+    ),
+) -> None:
+    """Create a DB-scoped backup bundle with manifest metadata."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    console = console_cls()
+    try:
+        resolved = _resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]db path resolution failed[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    if not resolved.exists():
+        console.print(f"[red]db does not exist[/red] path={resolved}")
+        raise typer.Exit(code=2)
+
+    repository = _build_repository_for_db_path(db_path=resolved)
+    repository.init_schema()
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
+        repository=repository,
+        console=console,
+        command="backup",
+        log_module="cli.backup",
+    )
+    try:
+        bundle_root = (
+            output_dir.expanduser().resolve()
+            if output_dir is not None
+            else (resolved.parent / "backups").resolve()
+        )
+        result = repository.backup_database(output_dir=bundle_root)
+        heartbeat_monitor.raise_if_failed()
+        log.info(
+            "Backup completed bundle_dir={} manifest_path={} schema_version={}",
+            str(result.bundle_dir),
+            str(result.manifest_path),
+            result.schema_version,
+        )
+        console.print(
+            "[green]backup completed[/green] "
+            f"bundle={result.bundle_dir} schema_version={result.schema_version}"
+        )
+    finally:
+        _cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
+
+
+@app.command("restore")
+def restore(
+    bundle: Path = typer.Option(
+        ...,
+        "--bundle",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Path to a backup bundle directory created by `recoleta backup`.",
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm replacing the target DB.",
+    ),
+) -> None:
+    """Restore the SQLite DB from a backup bundle."""
+
+    if not yes:
+        typer.echo("refusing to restore db without --yes")
+        raise typer.Exit(code=2)
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    logger = symbols["logger"]
+    console = console_cls()
+    log = logger.bind(module="cli.restore")
+
+    try:
+        resolved = _resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]db path resolution failed[/red] {exc}")
+        raise typer.Exit(code=2) from exc
+
+    lease_repository: Any | None = None
+    lease_owner_token: str | None = None
+    lease_heartbeat_monitor: _LeaseHeartbeatMonitor | None = None
+    try:
+        if resolved.exists():
+            lease_repository = _build_repository_for_db_path(db_path=resolved)
+            assert lease_repository is not None
+            lease_repository.init_schema()
+            lease_owner_token, _, lease_heartbeat_monitor = _acquire_workspace_lease_for_command(
+                repository=lease_repository,
+                console=console,
+                command="restore",
+                log_module="cli.restore",
+            )
+        result = _build_repository_for_db_path(db_path=resolved).restore_database(
+            bundle_dir=bundle,
+            db_path=resolved,
+        )
+        if lease_heartbeat_monitor is not None:
+            lease_heartbeat_monitor.raise_if_failed()
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "Restore failed bundle={} path={} error_type={} error={}",
+            str(bundle),
+            str(resolved),
+            type(exc).__name__,
+            str(exc),
+        )
+        console.print(f"[red]restore failed[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        if (
+            lease_repository is not None
+            and lease_owner_token is not None
+            and lease_heartbeat_monitor is not None
+        ):
+            _cleanup_workspace_lease(
+                repository=lease_repository,
+                owner_token=lease_owner_token,
+                heartbeat_monitor=lease_heartbeat_monitor,
+                log=log,
+            )
+
+    log.info(
+        "Restore completed bundle_dir={} path={} schema_version={}",
+        str(result.bundle_dir),
+        str(result.database_path),
+        result.schema_version,
+    )
+    console.print(
+        "[green]restore completed[/green] "
+        f"bundle={result.bundle_dir} path={result.database_path} schema_version={result.schema_version}"
+    )
+
+
+@app.command("stats")
+def stats(
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON output.",
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path.",
+    ),
+) -> None:
+    """Summarize read-only workspace operational state."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    logger = symbols["logger"]
+    console = console_cls()
+    log = logger.bind(module="cli.stats", json=json_output)
+
+    def _exit_with_error(message: str, *, code: int = 1) -> NoReturn:
+        log.warning("Stats failed db_path={} error={}", resolved_db_path, message)
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {"status": "error", "error": message},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+        else:
+            console.print(f"[red]stats failed[/red] {message}")
+        raise typer.Exit(code=code)
+
+    resolved_db_path: Path | None = None
+    try:
+        resolved_db_path = _resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        message = f"db path resolution failed: {exc}"
+        log.warning(message)
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {"status": "error", "error": message},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+        else:
+            console.print(f"[red]stats failed[/red] {message}")
+        raise typer.Exit(code=1) from exc
+
+    if not resolved_db_path.exists():
+        _exit_with_error(f"db does not exist: {resolved_db_path}")
+
+    settings: Any | None = None
+    settings_status = "skipped"
+    workspace_bytes: dict[str, int | None] = {}
+    if _should_attempt_settings_load(
+        db_path_option=db_path,
+        config_path_option=config_path,
+    ):
+        try:
+            settings = _build_settings(
+                config_path=config_path,
+                db_path=resolved_db_path,
+            )
+            settings_status = "ok"
+            workspace_bytes = _workspace_bytes_from_settings(settings)
+        except Exception as exc:  # noqa: BLE001
+            settings_status = "failed"
+            log.warning(
+                "Stats settings load failed db_path={} error_type={} error={}",
+                resolved_db_path,
+                type(exc).__name__,
+                str(exc),
+            )
+
+    repository = _build_repository_for_db_path(db_path=resolved_db_path)
+    try:
+        schema_version = repository.ensure_schema_current()
+    except Exception as exc:
+        _exit_with_error(str(exc))
+
+    reference_now = datetime.now(UTC)
+    snapshot = repository.collect_workspace_stats(
+        stale_after_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+        now=reference_now,
+    )
+    lease_state = "unavailable"
+    lease_payload: dict[str, Any] = {
+        "state": "unavailable",
+        "holder_command": None,
+        "holder_run_id": None,
+        "holder_pid": None,
+        "holder_hostname": None,
+        "expires_at": None,
+    }
+    if repository.has_table("workspace_leases"):
+        lease = repository.get_workspace_lease()
+        if lease is None:
+            lease_state = "free"
+            lease_payload["state"] = lease_state
+        else:
+            lease_state = "held"
+            lease_payload = {
+                "state": lease_state,
+                "holder_command": lease.command,
+                "holder_run_id": lease.run_id,
+                "holder_pid": lease.pid,
+                "holder_hostname": lease.hostname,
+                "expires_at": (
+                    lease.expires_at.isoformat()
+                    if lease.expires_at is not None
+                    else None
+                ),
+            }
+
+    oldest_unfinished_at = _normalize_utc_datetime(snapshot.oldest_unfinished_at)
+    oldest_unfinished_age_seconds: int | None = None
+    if oldest_unfinished_at is not None:
+        oldest_unfinished_age_seconds = max(
+            0,
+            int((reference_now - oldest_unfinished_at).total_seconds()),
+        )
+    latest_successful_run_at = _normalize_utc_datetime(
+        snapshot.latest_successful_run_at
+    )
+    latest_successful_run_age_seconds: int | None = None
+    if latest_successful_run_at is not None:
+        latest_successful_run_age_seconds = max(
+            0,
+            int((reference_now - latest_successful_run_at).total_seconds()),
+        )
+
+    payload = {
+        "status": "ok",
+        "db_path": str(resolved_db_path),
+        "schema_version": int(schema_version),
+        "db_bytes": int(resolved_db_path.stat().st_size),
+        "settings": settings_status,
+        "items_total": int(sum(snapshot.item_state_counts.values())),
+        "items_by_state": snapshot.item_state_counts,
+        "unfinished_total": int(snapshot.unfinished_total),
+        "oldest_unfinished_age_seconds": oldest_unfinished_age_seconds,
+        "runs_by_status": snapshot.run_status_counts,
+        "stale_running_runs": int(snapshot.stale_running_runs),
+        "latest_successful_run_id": snapshot.latest_successful_run_id,
+        "latest_successful_run_at": (
+            latest_successful_run_at.isoformat()
+            if latest_successful_run_at is not None
+            else None
+        ),
+        "latest_successful_run_age_seconds": latest_successful_run_age_seconds,
+        "lease": lease_payload,
+        "workspace_bytes": workspace_bytes,
+    }
+
+    if json_output:
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
+
+    item_parts = [
+        f"{state}={count}"
+        for state, count in payload["items_by_state"].items()
+        if int(count) > 0
+    ]
+    run_parts = [
+        f"{state}={count}"
+        for state, count in payload["runs_by_status"].items()
+        if int(count) > 0
+    ]
+    console.print("[green]stats ok[/green]")
+    console.print(f"db={payload['db_path']}")
+    console.print(
+        f"schema_version={payload['schema_version']} db_bytes={payload['db_bytes']}"
+    )
+    console.print(f"settings={payload['settings']}")
+    console.print(
+        f"items_total={payload['items_total']} unfinished_total={payload['unfinished_total']}"
+    )
+    console.print("items_by_state=" + (" ".join(item_parts) if item_parts else "none"))
+    console.print(
+        "oldest_unfinished_age_seconds="
+        + (
+            str(payload["oldest_unfinished_age_seconds"])
+            if payload["oldest_unfinished_age_seconds"] is not None
+            else "none"
+        )
+    )
+    console.print("runs_by_status=" + (" ".join(run_parts) if run_parts else "none"))
+    console.print(f"stale_running_runs={payload['stale_running_runs']}")
+    console.print(
+        "latest_successful_run="
+        + (
+            " ".join(
+                [
+                    str(payload["latest_successful_run_id"]),
+                    str(payload["latest_successful_run_at"]),
+                    f"age_seconds={payload['latest_successful_run_age_seconds']}",
+                ]
+            )
+            if payload["latest_successful_run_id"] is not None
+            else "none"
+        )
+    )
+    console.print(
+        f"lease={lease_state}"
+        + (
+            " "
+            + " ".join(
+                part
+                for part in (
+                    f"holder_command={lease_payload['holder_command']}"
+                    if lease_payload["holder_command"]
+                    else "",
+                    f"holder_run_id={lease_payload['holder_run_id']}"
+                    if lease_payload["holder_run_id"]
+                    else "",
+                    f"holder_pid={lease_payload['holder_pid']}"
+                    if lease_payload["holder_pid"] is not None
+                    else "",
+                )
+                if part
+            )
+            if lease_state == "held"
+            else ""
+        )
+    )
+    if payload["workspace_bytes"]:
+        workspace_parts = [
+            f"{name}={size if size is not None else 'unavailable'}"
+            for name, size in payload["workspace_bytes"].items()
+        ]
+        console.print("workspace_bytes=" + " ".join(workspace_parts))
+
+
+@app.command("doctor")
+def doctor(
+    healthcheck: bool = typer.Option(
+        False,
+        "--healthcheck",
+        help="Run a read-only healthcheck suitable for supervisors and containers.",
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path.",
+    ),
+    max_success_age_minutes: int | None = typer.Option(
+        None,
+        "--max-success-age-minutes",
+        min=1,
+        help="Fail if the latest successful run is older than this many minutes.",
+    ),
+) -> None:
+    """Run read-only diagnostics for the current workspace."""
+
+    symbols = _runtime_symbols()
+    console_cls = symbols["Console"]
+    logger = symbols["logger"]
+    console = console_cls()
+    log = logger.bind(module="cli.doctor", healthcheck=healthcheck)
+
+    resolved_db_path: Path
+    try:
+        resolved_db_path = _resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        message = f"db path resolution failed: {exc}"
+        log.warning(message)
+        console.print(
+            f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+        )
+        raise typer.Exit(code=1) from exc
+
+    settings: Any | None = None
+    settings_status = "skipped"
+    if _should_attempt_settings_load(
+        db_path_option=db_path,
+        config_path_option=config_path,
+    ):
+        try:
+            settings = _build_settings(
+                config_path=config_path,
+                db_path=resolved_db_path,
+            )
+            settings_status = "ok"
+        except Exception as exc:  # noqa: BLE001
+            message = f"settings load failed: {exc}"
+            log.warning(message)
+            console.print(
+                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+            )
+            raise typer.Exit(code=1) from exc
+
+    if not resolved_db_path.exists():
+        message = f"db does not exist: {resolved_db_path}"
+        log.warning(message)
+        console.print(
+            f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+        )
+        raise typer.Exit(code=1)
+
+    repository = _build_repository_for_db_path(db_path=resolved_db_path)
+    try:
+        schema_version = repository.ensure_schema_current()
+    except Exception as exc:
+        message = str(exc)
+        log.warning("Schema compatibility check failed error={}", message)
+        console.print(
+            f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+        )
+        raise typer.Exit(code=1) from exc
+
+    path_status = "ok"
+    if settings is not None:
+        paths_to_check = [
+            Path(settings.markdown_output_dir),
+            Path(settings.rag_lancedb_dir),
+        ]
+        artifacts_dir = getattr(settings, "artifacts_dir", None)
+        if artifacts_dir is not None:
+            paths_to_check.append(Path(artifacts_dir))
+        failed_paths = [path for path in paths_to_check if not _is_accessible_path(path)]
+        if failed_paths:
+            message = "path access failed: " + ", ".join(str(path) for path in failed_paths)
+            log.warning(message)
+            console.print(
+                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+            )
+            raise typer.Exit(code=1)
+    else:
+        path_status = "skipped"
+
+    lease_state = "unavailable"
+    lease_details = ""
+    if repository.has_table("workspace_leases"):
+        lease = repository.get_workspace_lease()
+        if lease is None:
+            lease_state = "free"
+        else:
+            lease_state = "held"
+            details = [
+                f"holder_command={lease.command}" if lease.command else "",
+                f"holder_run_id={lease.run_id}" if lease.run_id else "",
+                f"holder_pid={lease.pid}" if lease.pid is not None else "",
+            ]
+            lease_details = " ".join(part for part in details if part)
+
+    latest_run_state = "none"
+    latest_successful_run_at: datetime | None = None
+    if repository.has_table("runs"):
+        snapshot = repository.collect_workspace_stats(
+            stale_after_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+            now=datetime.now(UTC),
+        )
+        latest_successful_run_at = _normalize_utc_datetime(
+            snapshot.latest_successful_run_at
+        )
+        runs = repository.list_recent_runs(limit=1)
+        if runs:
+            latest_run = runs[0]
+            latest_run_state = (
+                f"{latest_run.status}:{latest_run.id}"
+            )
+
+    if max_success_age_minutes is not None:
+        threshold_seconds = int(max_success_age_minutes) * 60
+        if latest_successful_run_at is None:
+            message = (
+                "latest successful run is too old: "
+                "no successful runs recorded"
+            )
+            log.warning(message)
+            console.print(
+                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+            )
+            raise typer.Exit(code=1)
+        age_seconds = max(
+            0,
+            int((datetime.now(UTC) - latest_successful_run_at).total_seconds()),
+        )
+        if age_seconds > threshold_seconds:
+            message = (
+                "latest successful run is too old: "
+                f"age_seconds={age_seconds} threshold_seconds={threshold_seconds}"
+            )
+            log.warning(message)
+            console.print(
+                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+            )
+            raise typer.Exit(code=1)
+
+    if healthcheck:
+        console.print(
+            "[green]healthcheck ok[/green] "
+            f"schema_version={schema_version} "
+            f"settings={settings_status} "
+            f"paths={path_status} "
+            f"lease={lease_state} "
+            f"latest_run={latest_run_state}"
+            + (f" {lease_details}" if lease_details else "")
+        )
+        return
+
+    console.print("[green]doctor ok[/green]")
+    console.print(f"db={resolved_db_path}")
+    console.print(f"schema_version={schema_version}")
+    console.print(f"settings={settings_status}")
+    console.print(f"paths={path_status}")
+    console.print(f"lease={lease_state}" + (f" {lease_details}" if lease_details else ""))
+    console.print(f"latest_run={latest_run_state}")
 
 
 @db_app.command("reset")
@@ -1241,23 +2692,34 @@ def _run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None
     """Run prepare -> analyze -> publish once under one run_id."""
 
     symbols = _runtime_symbols()
-    logger = symbols["logger"]
-    console_cls = symbols["Console"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
 
-    settings, repository, service = _build_runtime()
-    console = console_cls(stderr=settings.log_json)
-    run = repository.create_run(config_fingerprint=settings.safe_fingerprint())
-    log = logger.bind(module="cli.run.once", run_id=run.id)
+    (
+        settings,
+        repository,
+        service,
+        console,
+        run_id,
+        owner_token,
+        log,
+        heartbeat_monitor,
+    ) = _begin_managed_run(
+        command="run --once",
+        log_module="cli.run.once",
+    )
 
     try:
         with _graceful_shutdown_signals():
-            ingest_result = service.prepare(run_id=run.id)
-            analyze_result = service.analyze(run_id=run.id, limit=analyze_limit)
-            publish_result = service.publish(run_id=run.id, limit=publish_limit)
-        repository.finish_run(run.id, success=True)
+            ingest_result = service.prepare(run_id=run_id)
+            heartbeat_monitor.raise_if_failed()
+            analyze_result = service.analyze(run_id=run_id, limit=analyze_limit)
+            heartbeat_monitor.raise_if_failed()
+            publish_result = service.publish(run_id=run_id, limit=publish_limit)
+        heartbeat_monitor.raise_if_failed()
+        repository.finish_run(run_id, success=True)
     except KeyboardInterrupt as exc:
         try:
-            repository.finish_run(run.id, success=False)
+            repository.finish_run(run_id, success=False)
         except Exception:
             log.exception("Run finish failed during interrupt")
         _raise_typer_exit_for_interrupt(
@@ -1265,8 +2727,19 @@ def _run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None
             message="Run interrupted",
             exc=exc,
         )
+    except workspace_lease_lost_error as exc:
+        try:
+            repository.finish_run(run_id, success=False)
+        except Exception:
+            log.exception("Run finish failed after lease loss")
+        log.warning(
+            "Run stopped because workspace lease was lost error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        raise typer.Exit(code=1) from None
     except Exception:
-        repository.finish_run(run.id, success=False)
+        repository.finish_run(run_id, success=False)
         log.exception("Run failed")
         raise
     else:
@@ -1291,7 +2764,13 @@ def _run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None
                 f"[cyan]obsidian notes[/cyan] {settings.obsidian_vault_path / settings.obsidian_base_folder / 'Inbox'}"
             )
     finally:
-        _print_billing_report(console=console, repository=repository, run_id=run.id)
+        _print_billing_report(console=console, repository=repository, run_id=run_id)
+        _cleanup_managed_run(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
 
 
 def main() -> None:

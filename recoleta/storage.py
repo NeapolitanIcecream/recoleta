@@ -4,8 +4,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
+import sqlite3
 import re
-from datetime import UTC, datetime
+import shutil
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any, cast
@@ -30,6 +32,7 @@ from recoleta.models import (
     Metric,
     Run,
     TrendDelivery,
+    WorkspaceLease,
     DELIVERY_STATUS_SENT,
     ITEM_STATE_ANALYZED,
     ITEM_STATE_ENRICHED,
@@ -49,6 +52,60 @@ from recoleta.types import (
     sha256_hex,
     utc_now,
 )
+
+
+CURRENT_SCHEMA_VERSION = 1
+WORKSPACE_LEASE_NAME = "workspace"
+
+
+class SchemaVersionError(RuntimeError):
+    """Raised when the on-disk schema is incompatible with this binary."""
+
+
+class WorkspaceLeaseError(RuntimeError):
+    """Raised when workspace lease operations fail."""
+
+
+class WorkspaceLeaseHeldError(WorkspaceLeaseError):
+    def __init__(
+        self,
+        *,
+        lease_name: str,
+        holder_run_id: str | None,
+        holder_command: str | None,
+        holder_hostname: str | None,
+        holder_pid: int | None,
+        expires_at: datetime | None,
+        requested_run_id: str | None,
+    ) -> None:
+        self.lease_name = lease_name
+        self.holder_run_id = holder_run_id
+        self.holder_command = holder_command
+        self.holder_hostname = holder_hostname
+        self.holder_pid = holder_pid
+        self.expires_at = expires_at
+        self.requested_run_id = requested_run_id
+        expires_text = expires_at.isoformat() if isinstance(expires_at, datetime) else ""
+        details = " ".join(
+            part
+            for part in (
+                f"lease={lease_name}",
+                f"holder_run_id={holder_run_id}" if holder_run_id else "",
+                f"holder_command={holder_command}" if holder_command else "",
+                f"holder_hostname={holder_hostname}" if holder_hostname else "",
+                f"holder_pid={holder_pid}" if holder_pid is not None else "",
+                f"expires_at={expires_text}" if expires_text else "",
+            )
+            if part
+        )
+        super().__init__(f"workspace lease is held {details}".strip())
+
+
+class WorkspaceLeaseLostError(WorkspaceLeaseError):
+    def __init__(self, *, lease_name: str, owner_token: str) -> None:
+        self.lease_name = lease_name
+        self.owner_token = owner_token
+        super().__init__(f"workspace lease lost lease={lease_name}")
 
 
 def _to_json(value: object) -> str:
@@ -93,6 +150,53 @@ class SqlDiagnostics:
     commits_total: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class ArtifactPruneResult:
+    artifact_rows: int = 0
+    deleted_paths: int = 0
+    missing_paths: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class OperationalPruneResult:
+    run_rows: int = 0
+    metric_rows: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkCachePruneResult:
+    document_chunks: int = 0
+    chunk_embeddings: int = 0
+    chunk_fts_rows: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DatabaseBackupResult:
+    bundle_dir: Path
+    database_path: Path
+    manifest_path: Path
+    schema_version: int
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class DatabaseRestoreResult:
+    bundle_dir: Path
+    database_path: Path
+    schema_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceStatsResult:
+    item_state_counts: dict[str, int]
+    unfinished_total: int
+    oldest_unfinished_at: datetime | None
+    run_status_counts: dict[str, int]
+    stale_running_runs: int
+    latest_successful_run_id: str | None
+    latest_successful_run_at: datetime | None
+
+
 class Repository:
     def __init__(
         self,
@@ -106,7 +210,7 @@ class Repository:
         self.engine = create_engine(
             f"sqlite:///{self.db_path}",
             echo=False,
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30},
         )
         self.title_dedup_threshold = float(title_dedup_threshold)
         self.title_dedup_max_candidates = max(0, int(title_dedup_max_candidates))
@@ -151,12 +255,78 @@ class Repository:
         session.commit()
 
     def init_schema(self) -> None:
+        user_version = self._get_user_version()
+        if user_version > CURRENT_SCHEMA_VERSION:
+            raise SchemaVersionError(
+                "Database uses newer schema version "
+                f"{user_version}; current supported version is {CURRENT_SCHEMA_VERSION}."
+            )
         SQLModel.metadata.create_all(self.engine)
-        self._migrate_analyses_add_scope()
-        self._migrate_documents_add_scope()
+        if user_version < CURRENT_SCHEMA_VERSION:
+            self._apply_startup_safe_migrations()
         SQLModel.metadata.create_all(self.engine)
         self._backfill_default_stream_states()
         self._ensure_chunk_fts()
+        if user_version < CURRENT_SCHEMA_VERSION:
+            self._set_user_version(CURRENT_SCHEMA_VERSION)
+
+    def _apply_startup_safe_migrations(self) -> None:
+        self._migrate_analyses_add_scope()
+        self._migrate_documents_add_scope()
+        self._migrate_runs_add_heartbeat()
+
+    def _get_user_version(self) -> int:
+        with self.engine.begin() as conn:
+            row = conn.execute(text("PRAGMA user_version")).fetchone()
+        if not row:
+            return 0
+        try:
+            return int(row[0])
+        except Exception:
+            return 0
+
+    def _set_user_version(self, version: int) -> None:
+        normalized = max(0, int(version))
+        with self.engine.begin() as conn:
+            conn.execute(text(f"PRAGMA user_version = {normalized}"))
+
+    def schema_version(self) -> int:
+        return self._get_user_version()
+
+    def ensure_schema_compatible(self) -> int:
+        version = self.schema_version()
+        if version > CURRENT_SCHEMA_VERSION:
+            raise SchemaVersionError(
+                "Database uses newer schema version "
+                f"{version}; current supported version is {CURRENT_SCHEMA_VERSION}."
+            )
+        return version
+
+    def ensure_schema_current(self) -> int:
+        version = self.ensure_schema_compatible()
+        if version < CURRENT_SCHEMA_VERSION:
+            raise SchemaVersionError(
+                "Database uses older schema version "
+                f"{version}; current supported version is {CURRENT_SCHEMA_VERSION}. "
+                "Run a write-capable command to apply startup-safe migrations first."
+            )
+        return version
+
+    def has_table(self, table_name: str) -> bool:
+        normalized_name = str(table_name or "").strip()
+        if not normalized_name:
+            return False
+        statement = text(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = :name
+            LIMIT 1;
+            """
+        )
+        with self.engine.begin() as conn:
+            row = conn.execute(statement, {"name": normalized_name}).fetchone()
+        return row is not None
 
     def _table_columns(self, table_name: str) -> set[str]:
         statement = text(f"PRAGMA table_info({table_name})")
@@ -303,6 +473,24 @@ class Repository:
             for statement in ddl:
                 conn.execute(text(statement))
 
+    def _migrate_runs_add_heartbeat(self) -> None:
+        columns = self._table_columns("runs")
+        if not columns or "heartbeat_at" in columns:
+            return
+
+        ddl = [
+            "ALTER TABLE runs ADD COLUMN heartbeat_at DATETIME;",
+            """
+            UPDATE runs
+            SET heartbeat_at = COALESCE(finished_at, started_at)
+            WHERE heartbeat_at IS NULL;
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_runs_heartbeat_at ON runs (heartbeat_at);",
+        ]
+        with self.engine.begin() as conn:
+            for statement in ddl:
+                conn.execute(text(statement))
+
     def _backfill_default_stream_states(self) -> None:
         statement = """
         INSERT INTO item_stream_states (
@@ -360,8 +548,11 @@ class Repository:
             conn.execute(text(ddl))
 
     def create_run(self, config_fingerprint: str, run_id: str | None = None) -> Run:
+        now = utc_now()
         run = Run(
             id=run_id or str(uuid4()),
+            started_at=now,
+            heartbeat_at=now,
             status=RUN_STATUS_RUNNING,
             config_fingerprint=config_fingerprint,
         )
@@ -373,14 +564,346 @@ class Repository:
 
     def finish_run(self, run_id: str, success: bool) -> None:
         final_status = RUN_STATUS_SUCCEEDED if success else RUN_STATUS_FAILED
+        finished_at = utc_now()
         with Session(self.engine) as session:
             run = session.get(Run, run_id)
             if run is None:
                 return
             run.status = final_status
-            run.finished_at = utc_now()
+            run.finished_at = finished_at
+            run.heartbeat_at = finished_at
             session.add(run)
             self._commit(session)
+
+    def heartbeat_run(self, run_id: str, *, now: datetime | None = None) -> None:
+        heartbeat_at = now or utc_now()
+        statement = text(
+            """
+            UPDATE runs
+            SET heartbeat_at = :heartbeat_at
+            WHERE id = :run_id
+              AND status = :running_status;
+            """
+        )
+        with self.engine.begin() as conn:
+            conn.execute(
+                statement,
+                {
+                    "heartbeat_at": heartbeat_at,
+                    "run_id": run_id,
+                    "running_status": RUN_STATUS_RUNNING,
+                },
+            )
+
+    def mark_stale_runs_failed(
+        self,
+        *,
+        stale_after_seconds: int,
+        now: datetime | None = None,
+    ) -> int:
+        reference_now = now or utc_now()
+        cutoff = reference_now - timedelta(seconds=max(1, int(stale_after_seconds)))
+        statement = text(
+            """
+            UPDATE runs
+            SET status = :failed_status,
+                finished_at = :finished_at,
+                heartbeat_at = :finished_at
+            WHERE status = :running_status
+              AND COALESCE(heartbeat_at, started_at) < :cutoff;
+            """
+        )
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                statement,
+                {
+                    "failed_status": RUN_STATUS_FAILED,
+                    "finished_at": reference_now,
+                    "running_status": RUN_STATUS_RUNNING,
+                    "cutoff": cutoff,
+                },
+            )
+        return int(result.rowcount or 0)
+
+    def acquire_workspace_lease(
+        self,
+        *,
+        owner_token: str,
+        command: str,
+        lease_timeout_seconds: int,
+        run_id: str | None = None,
+        hostname: str | None = None,
+        pid: int | None = None,
+        name: str = WORKSPACE_LEASE_NAME,
+        now: datetime | None = None,
+    ) -> WorkspaceLease:
+        acquired_at = now or utc_now()
+        expires_at = acquired_at + timedelta(
+            seconds=max(1, int(lease_timeout_seconds))
+        )
+        statement = text(
+            """
+            INSERT INTO workspace_leases (
+                name,
+                owner_token,
+                run_id,
+                pid,
+                hostname,
+                command,
+                acquired_at,
+                heartbeat_at,
+                expires_at
+            )
+            VALUES (
+                :name,
+                :owner_token,
+                :run_id,
+                :pid,
+                :hostname,
+                :command,
+                :acquired_at,
+                :heartbeat_at,
+                :expires_at
+            )
+            ON CONFLICT(name) DO UPDATE SET
+                owner_token = excluded.owner_token,
+                run_id = excluded.run_id,
+                pid = excluded.pid,
+                hostname = excluded.hostname,
+                command = excluded.command,
+                acquired_at = excluded.acquired_at,
+                heartbeat_at = excluded.heartbeat_at,
+                expires_at = excluded.expires_at
+            WHERE workspace_leases.expires_at <= :acquired_at
+               OR workspace_leases.owner_token = :owner_token;
+            """
+        )
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                statement,
+                {
+                    "name": name,
+                    "owner_token": owner_token,
+                    "run_id": run_id,
+                    "pid": pid,
+                    "hostname": hostname,
+                    "command": command,
+                    "acquired_at": acquired_at,
+                    "heartbeat_at": acquired_at,
+                    "expires_at": expires_at,
+                },
+            )
+        lease = self.get_workspace_lease(name=name)
+        if int(result.rowcount or 0) <= 0 or lease is None:
+            raise self._workspace_lease_held_error(
+                name=name,
+                requested_run_id=run_id,
+            )
+        return lease
+
+    def renew_workspace_lease(
+        self,
+        *,
+        owner_token: str,
+        lease_timeout_seconds: int,
+        name: str = WORKSPACE_LEASE_NAME,
+        now: datetime | None = None,
+    ) -> WorkspaceLease:
+        heartbeat_at = now or utc_now()
+        expires_at = heartbeat_at + timedelta(
+            seconds=max(1, int(lease_timeout_seconds))
+        )
+        statement = text(
+            """
+            UPDATE workspace_leases
+            SET heartbeat_at = :heartbeat_at,
+                expires_at = :expires_at
+            WHERE name = :name
+              AND owner_token = :owner_token;
+            """
+        )
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                statement,
+                {
+                    "heartbeat_at": heartbeat_at,
+                    "expires_at": expires_at,
+                    "name": name,
+                    "owner_token": owner_token,
+                },
+            )
+        if int(result.rowcount or 0) <= 0:
+            raise WorkspaceLeaseLostError(
+                lease_name=name,
+                owner_token=owner_token,
+            )
+        lease = self.get_workspace_lease(name=name)
+        if lease is None:
+            raise WorkspaceLeaseLostError(
+                lease_name=name,
+                owner_token=owner_token,
+            )
+        return lease
+
+    def release_workspace_lease(
+        self,
+        *,
+        owner_token: str,
+        name: str = WORKSPACE_LEASE_NAME,
+    ) -> bool:
+        statement = text(
+            """
+            DELETE FROM workspace_leases
+            WHERE name = :name
+              AND owner_token = :owner_token;
+            """
+        )
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                statement,
+                {
+                    "name": name,
+                    "owner_token": owner_token,
+                },
+            )
+        return int(result.rowcount or 0) > 0
+
+    def get_workspace_lease(
+        self, *, name: str = WORKSPACE_LEASE_NAME
+    ) -> WorkspaceLease | None:
+        with Session(self.engine) as session:
+            return session.get(WorkspaceLease, name)
+
+    def list_recent_runs(self, *, limit: int = 5) -> list[Run]:
+        normalized_limit = max(0, int(limit))
+        if normalized_limit <= 0:
+            return []
+        with Session(self.engine) as session:
+            statement = (
+                select(Run)
+                .order_by(
+                    desc(cast(Any, Run.started_at)),
+                    desc(cast(Any, Run.id)),
+                )
+                .limit(normalized_limit)
+                )
+            return list(session.exec(statement))
+
+    def collect_workspace_stats(
+        self,
+        *,
+        stale_after_seconds: int,
+        now: datetime | None = None,
+    ) -> WorkspaceStatsResult:
+        reference_now = now or utc_now()
+        cutoff = reference_now - timedelta(seconds=max(1, int(stale_after_seconds)))
+        item_state_counts = {
+            ITEM_STATE_INGESTED: 0,
+            ITEM_STATE_ENRICHED: 0,
+            ITEM_STATE_TRIAGED: 0,
+            ITEM_STATE_ANALYZED: 0,
+            ITEM_STATE_PUBLISHED: 0,
+            ITEM_STATE_RETRYABLE_FAILED: 0,
+            ITEM_STATE_FAILED: 0,
+        }
+        run_status_counts = {
+            RUN_STATUS_RUNNING: 0,
+            RUN_STATUS_SUCCEEDED: 0,
+            RUN_STATUS_FAILED: 0,
+        }
+
+        with Session(self.engine) as session:
+            item_counts_statement = select(
+                Item.state,
+                func.count(cast(Any, Item.id)),
+            ).group_by(Item.state)
+            for state, count in session.exec(item_counts_statement):
+                normalized_state = str(state or "").strip()
+                if not normalized_state:
+                    continue
+                item_state_counts[normalized_state] = int(count or 0)
+
+            oldest_unfinished_statement = select(
+                func.min(cast(Any, Item.created_at))
+            ).where(
+                ~cast(Any, Item.state).in_(
+                    [
+                        ITEM_STATE_PUBLISHED,
+                        ITEM_STATE_FAILED,
+                    ]
+                )
+            )
+            oldest_unfinished_at = session.exec(oldest_unfinished_statement).one()
+
+            run_counts_statement = select(
+                Run.status,
+                func.count(cast(Any, Run.id)),
+            ).group_by(Run.status)
+            for status, count in session.exec(run_counts_statement):
+                normalized_status = str(status or "").strip()
+                if not normalized_status:
+                    continue
+                run_status_counts[normalized_status] = int(count or 0)
+
+            stale_running_statement = select(func.count(cast(Any, Run.id))).where(
+                Run.status == RUN_STATUS_RUNNING,
+                func.coalesce(Run.heartbeat_at, Run.started_at) < cutoff,
+            )
+            stale_running_runs = int(session.exec(stale_running_statement).one())
+
+            latest_successful_statement = (
+                select(Run)
+                .where(Run.status == RUN_STATUS_SUCCEEDED)
+                .order_by(
+                    desc(cast(Any, Run.finished_at)),
+                    desc(cast(Any, Run.started_at)),
+                    desc(cast(Any, Run.id)),
+                )
+                .limit(1)
+            )
+            latest_successful_run = session.exec(latest_successful_statement).first()
+
+        unfinished_total = sum(
+            count
+            for state, count in item_state_counts.items()
+            if state not in {ITEM_STATE_PUBLISHED, ITEM_STATE_FAILED}
+        )
+        latest_successful_run_at = None
+        latest_successful_run_id = None
+        if latest_successful_run is not None:
+            latest_successful_run_id = latest_successful_run.id
+            latest_successful_run_at = (
+                latest_successful_run.finished_at
+                or latest_successful_run.heartbeat_at
+                or latest_successful_run.started_at
+            )
+
+        return WorkspaceStatsResult(
+            item_state_counts=item_state_counts,
+            unfinished_total=unfinished_total,
+            oldest_unfinished_at=oldest_unfinished_at,
+            run_status_counts=run_status_counts,
+            stale_running_runs=stale_running_runs,
+            latest_successful_run_id=latest_successful_run_id,
+            latest_successful_run_at=latest_successful_run_at,
+        )
+
+    def _workspace_lease_held_error(
+        self,
+        *,
+        name: str,
+        requested_run_id: str | None,
+    ) -> WorkspaceLeaseHeldError:
+        lease = self.get_workspace_lease(name=name)
+        return WorkspaceLeaseHeldError(
+            lease_name=name,
+            holder_run_id=(lease.run_id if lease is not None else None),
+            holder_command=(lease.command if lease is not None else None),
+            holder_hostname=(lease.hostname if lease is not None else None),
+            holder_pid=(lease.pid if lease is not None else None),
+            expires_at=(lease.expires_at if lease is not None else None),
+            requested_run_id=requested_run_id,
+        )
 
     def record_metric(
         self, *, run_id: str, name: str, value: float, unit: str | None = None
@@ -1954,6 +2477,241 @@ class Repository:
         with Session(self.engine) as session:
             session.add(artifact)
             self._commit(session)
+
+    def prune_artifacts_older_than(
+        self,
+        *,
+        older_than: datetime,
+        dry_run: bool = False,
+    ) -> ArtifactPruneResult:
+        with Session(self.engine) as session:
+            rows = list(
+                session.exec(
+                    select(Artifact).where(cast(Any, Artifact.created_at) < older_than)
+                )
+            )
+            if not rows:
+                return ArtifactPruneResult()
+
+            unique_paths: list[Path] = []
+            seen_paths: set[str] = set()
+            for row in rows:
+                raw_path = str(getattr(row, "path", "") or "").strip()
+                if not raw_path or raw_path in seen_paths:
+                    continue
+                seen_paths.add(raw_path)
+                unique_paths.append(Path(raw_path).expanduser())
+
+            deleted_paths = 0
+            missing_paths = 0
+            for path in unique_paths:
+                if not path.exists():
+                    missing_paths += 1
+                    continue
+                if dry_run:
+                    deleted_paths += 1
+                    continue
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                deleted_paths += 1
+
+            if not dry_run:
+                for row in rows:
+                    session.delete(row)
+                self._commit(session)
+
+        return ArtifactPruneResult(
+            artifact_rows=len(rows),
+            deleted_paths=deleted_paths,
+            missing_paths=missing_paths,
+        )
+
+    def prune_operational_history_older_than(
+        self,
+        *,
+        older_than: datetime,
+        dry_run: bool = False,
+    ) -> OperationalPruneResult:
+        with Session(self.engine) as session:
+            runs = list(
+                session.exec(
+                    select(Run).where(
+                        cast(Any, Run.status).in_(
+                            [RUN_STATUS_SUCCEEDED, RUN_STATUS_FAILED]
+                        ),
+                        cast(Any, Run.finished_at).is_not(None),
+                        cast(Any, Run.finished_at) < older_than,
+                    )
+                )
+            )
+            if not runs:
+                return OperationalPruneResult()
+
+            run_ids = [str(run.id) for run in runs if str(getattr(run, "id", "") or "")]
+            metrics = (
+                list(
+                    session.exec(
+                        select(Metric).where(cast(Any, Metric.run_id).in_(run_ids))
+                    )
+                )
+                if run_ids
+                else []
+            )
+
+            if not dry_run:
+                for metric in metrics:
+                    session.delete(metric)
+                for run in runs:
+                    session.delete(run)
+                self._commit(session)
+
+        return OperationalPruneResult(
+            run_rows=len(runs),
+            metric_rows=len(metrics),
+        )
+
+    def clear_document_chunk_cache(
+        self,
+        *,
+        dry_run: bool = False,
+    ) -> ChunkCachePruneResult:
+        chunk_count_statement = text(
+            "SELECT COUNT(*) FROM document_chunks"
+        )
+        embedding_count_statement = text(
+            "SELECT COUNT(*) FROM chunk_embeddings"
+        )
+        fts_count_statement = text("SELECT COUNT(*) FROM chunk_fts")
+        with self.engine.begin() as conn:
+            document_chunks = int(conn.execute(chunk_count_statement).scalar() or 0)
+            chunk_embeddings = int(conn.execute(embedding_count_statement).scalar() or 0)
+            chunk_fts_rows = int(conn.execute(fts_count_statement).scalar() or 0)
+            if not dry_run:
+                conn.execute(text("DELETE FROM chunk_embeddings"))
+                conn.execute(text("DELETE FROM chunk_fts"))
+                conn.execute(text("DELETE FROM document_chunks"))
+        return ChunkCachePruneResult(
+            document_chunks=document_chunks,
+            chunk_embeddings=chunk_embeddings,
+            chunk_fts_rows=chunk_fts_rows,
+        )
+
+    def vacuum(self) -> None:
+        self.engine.dispose()
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute("VACUUM")
+
+    def backup_database(
+        self,
+        *,
+        output_dir: Path,
+        created_at: datetime | None = None,
+    ) -> DatabaseBackupResult:
+        if not self.db_path.exists():
+            raise ValueError(f"Database does not exist: {self.db_path}")
+
+        timestamp = (created_at or utc_now()).astimezone(UTC)
+        resolved_output_dir = output_dir.expanduser().resolve()
+        resolved_output_dir.mkdir(parents=True, exist_ok=True)
+
+        bundle_name = f"recoleta-backup-{timestamp.strftime('%Y%m%dT%H%M%SZ')}"
+        bundle_dir = resolved_output_dir / bundle_name
+        suffix = 1
+        while bundle_dir.exists():
+            suffix += 1
+            bundle_dir = resolved_output_dir / f"{bundle_name}-{suffix}"
+        bundle_dir.mkdir(parents=True, exist_ok=False)
+
+        database_path = bundle_dir / self.db_path.name
+        manifest_path = bundle_dir / "manifest.json"
+
+        self.engine.dispose()
+        with sqlite3.connect(str(self.db_path)) as source_conn:
+            source_conn.execute("PRAGMA wal_checkpoint(FULL)")
+            with sqlite3.connect(str(database_path)) as dest_conn:
+                source_conn.backup(dest_conn)
+
+        schema_version = self.schema_version()
+        manifest = {
+            "kind": "recoleta-db-backup",
+            "created_at": timestamp.isoformat(),
+            "schema_version": schema_version,
+            "database_filename": database_path.name,
+            "source_db_filename": self.db_path.name,
+            "database_size_bytes": database_path.stat().st_size,
+        }
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return DatabaseBackupResult(
+            bundle_dir=bundle_dir,
+            database_path=database_path,
+            manifest_path=manifest_path,
+            schema_version=schema_version,
+            created_at=timestamp,
+        )
+
+    @staticmethod
+    def restore_database(
+        *,
+        bundle_dir: Path,
+        db_path: Path,
+    ) -> DatabaseRestoreResult:
+        resolved_bundle_dir = bundle_dir.expanduser().resolve()
+        manifest_path = resolved_bundle_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise ValueError(f"Backup manifest does not exist: {manifest_path}")
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("Backup manifest must contain a JSON object")
+
+        database_filename = str(manifest.get("database_filename") or "").strip()
+        if not database_filename:
+            raise ValueError("Backup manifest is missing database_filename")
+
+        source_db_path = resolved_bundle_dir / database_filename
+        if not source_db_path.exists():
+            raise ValueError(f"Backup database does not exist: {source_db_path}")
+
+        schema_version = int(manifest.get("schema_version") or 0)
+        if schema_version > CURRENT_SCHEMA_VERSION:
+            raise SchemaVersionError(
+                "Backup bundle uses newer schema version "
+                f"{schema_version}; current supported version is {CURRENT_SCHEMA_VERSION}."
+            )
+
+        resolved_db_path = db_path.expanduser().resolve()
+        resolved_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        temp_target_path = resolved_db_path.with_name(
+            f"{resolved_db_path.name}.restore-{uuid4().hex}.tmp"
+        )
+        if temp_target_path.exists():
+            temp_target_path.unlink()
+
+        with sqlite3.connect(str(source_db_path)) as source_conn:
+            with sqlite3.connect(str(temp_target_path)) as dest_conn:
+                source_conn.backup(dest_conn)
+
+        for sidecar in (
+            resolved_db_path,
+            Path(f"{resolved_db_path}-wal"),
+            Path(f"{resolved_db_path}-shm"),
+            Path(f"{resolved_db_path}-journal"),
+        ):
+            if sidecar.exists():
+                sidecar.unlink()
+
+        temp_target_path.replace(resolved_db_path)
+        return DatabaseRestoreResult(
+            bundle_dir=resolved_bundle_dir,
+            database_path=resolved_db_path,
+            schema_version=schema_version,
+        )
 
     @staticmethod
     def decode_list(value: str | None) -> list[str]:

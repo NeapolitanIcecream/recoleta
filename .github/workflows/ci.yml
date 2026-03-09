@@ -47,3 +47,30 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+  docker-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          load: true
+          tags: recoleta:runtime-ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke CLI entrypoint
+        run: docker run --rm recoleta:runtime-ci --help
+
+      - name: Smoke doctor entrypoint
+        run: docker run --rm recoleta:runtime-ci doctor --help

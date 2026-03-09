@@ -84,10 +84,76 @@ Optional alternatives (not required for v0):
 
 - `orjson`: fast JSON for debug artifacts (when enabled).
 
+## Long-running operations additions
+
+The current long-running design should stay conservative about new dependencies. The preference order is:
+
+- use the standard library when it is sufficient
+- reuse existing dependencies when they already solve the problem cleanly
+- add one focused dependency only when it clearly replaces fragile custom code
+
+### Runtime lock
+
+Current selected direction for the current stage:
+
+- use a SQLite-backed lease and keep the coordination logic in the existing state store
+
+Fallback direction if that proves awkward in practice:
+
+- `filelock`
+
+Why `filelock` is a reasonable candidate:
+
+- mainstream and lightweight
+- actively used in Python tooling ecosystems
+- much smaller design surface than introducing a broader coordination stack
+
+Why not choose something heavier yet:
+
+- the project is still single-user and single-writer
+- we do not need distributed coordination semantics
+
+### Backup and maintenance
+
+Preferred direction:
+
+- standard library first
+
+Examples:
+
+- SQLite backup APIs and file copies for backup/restore
+- `shutil`, `pathlib`, and normal filesystem operations for pruning/cache cleanup
+
+No extra maintenance dependency is justified yet.
+
+### Migration support
+
+Preferred direction for the current stage:
+
+- no migration framework dependency yet
+- use SQLite `PRAGMA user_version` before introducing any migration-specific library
+
+Rationale:
+
+- the immediate need is schema versioning and incompatibility detection, not a full migration ecosystem
+- `alembic` is mainstream and modern enough, but still heavier than the current stage requires
+
+Revisit `alembic` when:
+
+- schema rewrites become frequent
+- hand-maintained migration code becomes error-prone
+- the project begins to need a real migration history rather than a small compatibility layer
+
+### Container packaging
+
+Preferred direction for the current stage:
+
+- no extra Python runtime dependency for container support
+- rely on Docker multi-target builds rather than introducing an in-app deployment abstraction
+
 ## Dev dependencies
 
 - `pytest`, `pytest-asyncio`: testing async ingestion and delivery code paths.
 - `respx`: mock `httpx` requests in tests.
 - `ruff`: linting and formatting.
-- `alembic` (optional): schema migrations if/when the SQLite schema evolves.
-
+- `alembic` (deferred optional): reconsider only if schema evolution outgrows a lightweight in-repo approach.
