@@ -302,6 +302,16 @@ class Repository:
             )
         return version
 
+    def ensure_schema_current(self) -> int:
+        version = self.ensure_schema_compatible()
+        if version < CURRENT_SCHEMA_VERSION:
+            raise SchemaVersionError(
+                "Database uses older schema version "
+                f"{version}; current supported version is {CURRENT_SCHEMA_VERSION}. "
+                "Run a write-capable command to apply startup-safe migrations first."
+            )
+        return version
+
     def has_table(self, table_name: str) -> bool:
         normalized_name = str(table_name or "").strip()
         if not normalized_name:
@@ -2667,6 +2677,13 @@ class Repository:
         if not source_db_path.exists():
             raise ValueError(f"Backup database does not exist: {source_db_path}")
 
+        schema_version = int(manifest.get("schema_version") or 0)
+        if schema_version > CURRENT_SCHEMA_VERSION:
+            raise SchemaVersionError(
+                "Backup bundle uses newer schema version "
+                f"{schema_version}; current supported version is {CURRENT_SCHEMA_VERSION}."
+            )
+
         resolved_db_path = db_path.expanduser().resolve()
         resolved_db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2693,7 +2710,7 @@ class Repository:
         return DatabaseRestoreResult(
             bundle_dir=resolved_bundle_dir,
             database_path=resolved_db_path,
-            schema_version=int(manifest.get("schema_version") or 0),
+            schema_version=schema_version,
         )
 
     @staticmethod

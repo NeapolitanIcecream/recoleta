@@ -145,6 +145,26 @@ def test_stats_json_failure_emits_log_for_missing_db(tmp_path: Path) -> None:
     assert str(missing_db_path) in stream.getvalue()
 
 
+def test_stats_json_fails_when_db_uses_older_schema(tmp_path: Path) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "older.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    with repository.engine.begin() as conn:
+        conn.exec_driver_sql("PRAGMA user_version = 0")
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["stats", "--db-path", str(db_path), "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "error"
+    assert "older schema version" in payload["error"]
+
+
 def test_stats_json_reports_workspace_directory_sizes_when_settings_are_available(
     configured_env: Path,
     monkeypatch,

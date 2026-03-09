@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import io
 import sqlite3
 from pathlib import Path
+import time
 
 from loguru import logger as loguru_logger
 import pytest
@@ -121,6 +122,55 @@ def test_mark_stale_runs_failed_marks_expired_running_run(tmp_path: Path) -> Non
         assert row is not None
         assert row.status == RUN_STATUS_FAILED
         assert row.finished_at == now
+
+
+def test_command_workspace_lease_monitor_renews_until_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    competing_repository = Repository(db_path=repository.db_path)
+    competing_repository.init_schema()
+
+    monkeypatch.setattr(recoleta.cli, "_WORKSPACE_LEASE_TIMEOUT_SECONDS", 2)
+    monkeypatch.setattr(recoleta.cli, "_RUN_HEARTBEAT_INTERVAL_SECONDS", 1)
+
+    owner_token, log, heartbeat_monitor = recoleta.cli._acquire_workspace_lease_for_command(
+        repository=repository,
+        console=object(),
+        command="gc",
+        log_module="test.lease",
+    )
+
+    try:
+        time.sleep(3.2)
+        with pytest.raises(WorkspaceLeaseHeldError):
+            competing_repository.acquire_workspace_lease(
+                run_id="run-2",
+                command="publish",
+                owner_token="token-2",
+                lease_timeout_seconds=2,
+                hostname="host-b",
+                pid=202,
+            )
+        heartbeat_monitor.raise_if_failed()
+    finally:
+        recoleta.cli._cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
+
+    competing_repository.acquire_workspace_lease(
+        run_id="run-2",
+        command="publish",
+        owner_token="token-2",
+        lease_timeout_seconds=2,
+        hostname="host-b",
+        pid=202,
+    )
 
 
 @dataclass(slots=True)

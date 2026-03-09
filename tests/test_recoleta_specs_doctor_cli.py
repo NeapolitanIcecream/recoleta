@@ -60,6 +60,24 @@ def test_doctor_healthcheck_fails_when_db_is_missing(tmp_path: Path) -> None:
     assert "healthcheck failed" in result.stdout
 
 
+def test_doctor_healthcheck_fails_when_db_uses_older_schema(tmp_path: Path) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "older.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    with repository.engine.begin() as conn:
+        conn.exec_driver_sql("PRAGMA user_version = 0")
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["doctor", "--healthcheck", "--db-path", str(db_path)],
+    )
+
+    assert result.exit_code == 1
+    assert "older schema version" in result.stdout
+
+
 def test_doctor_healthcheck_fails_when_latest_success_is_too_old(
     configured_env: Path,
     monkeypatch,

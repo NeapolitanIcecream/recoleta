@@ -328,6 +328,53 @@ def test_restore_exits_when_workspace_lock_is_held(tmp_path: Path) -> None:
     assert "workspace is locked" in restore_result.stdout
 
 
+def test_restore_rejects_bundle_with_newer_schema_version(tmp_path: Path) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "backups"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="restore-newer-schema-item-1",
+        canonical_url="https://example.com/restore-newer-schema-item-1",
+        title="Restore Newer Schema Item",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+        published_at=datetime(2026, 3, 1, tzinfo=UTC),
+    )
+    repository.upsert_item(draft)
+
+    backup_result = runner.invoke(
+        recoleta.cli.app,
+        ["backup", "--db-path", str(db_path), "--output-dir", str(backup_root)],
+    )
+    assert backup_result.exit_code == 0
+    bundle_dir = next(path for path in backup_root.iterdir() if path.is_dir())
+    manifest_path = bundle_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = CURRENT_SCHEMA_VERSION + 1
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    restore_result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "restore",
+            "--db-path",
+            str(db_path),
+            "--bundle",
+            str(bundle_dir),
+            "--yes",
+        ],
+    )
+
+    assert restore_result.exit_code == 1
+    assert "newer schema version" in restore_result.stdout
+
+
 def test_vacuum_exits_when_workspace_lock_is_held(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"

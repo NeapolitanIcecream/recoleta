@@ -344,12 +344,13 @@ class _LeaseHeartbeatMonitor:
         self,
         *,
         repository: Any,
-        run_id: str,
+        run_id: str | None,
         owner_token: str,
         lease_timeout_seconds: int,
         interval_seconds: int,
         log: Any,
         lease_lost_error_cls: type[BaseException],
+        thread_name: str,
     ) -> None:
         self._repository = repository
         self._run_id = run_id
@@ -358,6 +359,7 @@ class _LeaseHeartbeatMonitor:
         self._interval_seconds = max(1, int(interval_seconds))
         self._log = log
         self._lease_lost_error_cls = lease_lost_error_cls
+        self._thread_name = thread_name
         self._stop_event = Event()
         self._thread: Thread | None = None
         self._fatal_error: BaseException | None = None
@@ -367,7 +369,7 @@ class _LeaseHeartbeatMonitor:
             return
         self._thread = Thread(
             target=self._run,
-            name=f"recoleta-heartbeat-{self._run_id}",
+            name=self._thread_name,
             daemon=True,
         )
         self._thread.start()
@@ -389,7 +391,8 @@ class _LeaseHeartbeatMonitor:
                     owner_token=self._owner_token,
                     lease_timeout_seconds=self._lease_timeout_seconds,
                 )
-                self._repository.heartbeat_run(self._run_id)
+                if self._run_id is not None:
+                    self._repository.heartbeat_run(self._run_id)
             except self._lease_lost_error_cls as exc:
                 self._fatal_error = exc
                 self._log.warning(
@@ -465,6 +468,7 @@ def _begin_managed_run(
             interval_seconds=_RUN_HEARTBEAT_INTERVAL_SECONDS,
             log=logger.bind(module="cli.runtime.heartbeat", command=command, run_id=run.id),
             lease_lost_error_cls=workspace_lease_lost_error,
+            thread_name=f"recoleta-heartbeat-{run.id}",
         )
         heartbeat_monitor.start()
         return (
@@ -486,6 +490,20 @@ def _begin_managed_run(
 
 
 def _cleanup_managed_run(
+    *,
+    repository: Any,
+    owner_token: str,
+    heartbeat_monitor: _LeaseHeartbeatMonitor,
+    log: Any,
+) -> None:
+    heartbeat_monitor.stop()
+    try:
+        repository.release_workspace_lease(owner_token=owner_token)
+    except Exception:
+        log.exception("Workspace lease release failed")
+
+
+def _cleanup_workspace_lease(
     *,
     repository: Any,
     owner_token: str,
@@ -859,7 +877,7 @@ def site_build(
         if settings is not None
         else console_cls()
     )
-    lease_repository, lease_owner_token, lease_log = (
+    lease_repository, lease_owner_token, lease_log, lease_heartbeat_monitor = (
         _maybe_acquire_workspace_lease_for_settings(
             settings=settings,
             console=console,
@@ -873,13 +891,21 @@ def site_build(
             output_dir=resolved_output_dir,
             limit=limit,
         )
+        if lease_heartbeat_monitor is not None:
+            lease_heartbeat_monitor.raise_if_failed()
     finally:
-        if lease_repository is not None and lease_owner_token is not None:
-            try:
-                lease_repository.release_workspace_lease(owner_token=lease_owner_token)
-            except Exception:
-                if lease_log is not None:
-                    lease_log.exception("Workspace lease release failed")
+        if (
+            lease_repository is not None
+            and lease_owner_token is not None
+            and lease_log is not None
+            and lease_heartbeat_monitor is not None
+        ):
+            _cleanup_workspace_lease(
+                repository=lease_repository,
+                owner_token=lease_owner_token,
+                heartbeat_monitor=lease_heartbeat_monitor,
+                log=lease_log,
+            )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     stream_segment = (
@@ -960,7 +986,7 @@ def site_stage(
         if settings is not None
         else console_cls()
     )
-    lease_repository, lease_owner_token, lease_log = (
+    lease_repository, lease_owner_token, lease_log, lease_heartbeat_monitor = (
         _maybe_acquire_workspace_lease_for_settings(
             settings=settings,
             console=console,
@@ -974,13 +1000,21 @@ def site_stage(
             output_dir=resolved_output_dir,
             limit=limit,
         )
+        if lease_heartbeat_monitor is not None:
+            lease_heartbeat_monitor.raise_if_failed()
     finally:
-        if lease_repository is not None and lease_owner_token is not None:
-            try:
-                lease_repository.release_workspace_lease(owner_token=lease_owner_token)
-            except Exception:
-                if lease_log is not None:
-                    lease_log.exception("Workspace lease release failed")
+        if (
+            lease_repository is not None
+            and lease_owner_token is not None
+            and lease_log is not None
+            and lease_heartbeat_monitor is not None
+        ):
+            _cleanup_workspace_lease(
+                repository=lease_repository,
+                owner_token=lease_owner_token,
+                heartbeat_monitor=lease_heartbeat_monitor,
+                log=lease_log,
+            )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     stream_segment = (
@@ -1325,10 +1359,11 @@ def _acquire_workspace_lease_for_command(
     console: Any,
     command: str,
     log_module: str,
-) -> tuple[str, Any]:
+) -> tuple[str, Any, _LeaseHeartbeatMonitor]:
     symbols = _runtime_symbols()
     logger = symbols["logger"]
     workspace_lease_held_error = symbols["WorkspaceLeaseHeldError"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
 
     owner_token = str(uuid4())
     lock_log = logger.bind(module=log_module, command=command)
@@ -1346,7 +1381,18 @@ def _acquire_workspace_lease_for_command(
             log=lock_log,
             exc=exc,
         )
-    return owner_token, lock_log
+    heartbeat_monitor = _LeaseHeartbeatMonitor(
+        repository=repository,
+        run_id=None,
+        owner_token=owner_token,
+        lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+        interval_seconds=_RUN_HEARTBEAT_INTERVAL_SECONDS,
+        log=logger.bind(module="cli.runtime.heartbeat", command=command),
+        lease_lost_error_cls=workspace_lease_lost_error,
+        thread_name=f"recoleta-lease-{command.replace(' ', '-')}",
+    )
+    heartbeat_monitor.start()
+    return owner_token, lock_log, heartbeat_monitor
 
 
 def _maybe_acquire_workspace_lease_for_settings(
@@ -1355,21 +1401,21 @@ def _maybe_acquire_workspace_lease_for_settings(
     console: Any,
     command: str,
     log_module: str,
-) -> tuple[Any | None, str | None, Any | None]:
+) -> tuple[Any | None, str | None, Any | None, _LeaseHeartbeatMonitor | None]:
     if settings is None:
-        return None, None, None
+        return None, None, None, None
     db_path = getattr(settings, "recoleta_db_path", None)
     if not isinstance(db_path, Path):
-        return None, None, None
+        return None, None, None, None
     repository = _build_repository_for_db_path(db_path=db_path)
     repository.init_schema()
-    owner_token, log = _acquire_workspace_lease_for_command(
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
         repository=repository,
         console=console,
         command=command,
         log_module=log_module,
     )
-    return repository, owner_token, log
+    return repository, owner_token, log, heartbeat_monitor
 
 
 def _should_attempt_settings_load(
@@ -1677,7 +1723,7 @@ def gc(
 
     repository = _build_repository_for_db_path(db_path=resolved)
     repository.init_schema()
-    owner_token, log = _acquire_workspace_lease_for_command(
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
         repository=repository,
         console=console,
         command="gc",
@@ -1750,6 +1796,7 @@ def gc(
         )
 
         counter_prefix = "would_delete" if dry_run else "deleted"
+        heartbeat_monitor.raise_if_failed()
         log.info(
             "GC completed artifact_rows={} artifact_paths={} missing_artifact_paths={} run_rows={} metric_rows={} pdf_debug_dirs={} document_chunks={} chunk_embeddings={} chunk_fts_rows={} lancedb_tables={} trend_pdfs={} site_outputs={} dry_run={}",
             artifact_result.artifact_rows,
@@ -1789,10 +1836,12 @@ def gc(
             f"path={resolved}"
         )
     finally:
-        try:
-            repository.release_workspace_lease(owner_token=owner_token)
-        except Exception:
-            log.exception("Workspace lease release failed")
+        _cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
 
 
 @app.command("vacuum")
@@ -1825,7 +1874,7 @@ def vacuum(
 
     repository = _build_repository_for_db_path(db_path=resolved)
     repository.init_schema()
-    owner_token, log = _acquire_workspace_lease_for_command(
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
         repository=repository,
         console=console,
         command="vacuum",
@@ -1833,13 +1882,16 @@ def vacuum(
     )
     try:
         repository.vacuum()
+        heartbeat_monitor.raise_if_failed()
         log.info("VACUUM completed path={}", str(resolved))
         console.print(f"[green]vacuum completed[/green] path={resolved}")
     finally:
-        try:
-            repository.release_workspace_lease(owner_token=owner_token)
-        except Exception:
-            log.exception("Workspace lease release failed")
+        _cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
 
 
 @app.command("backup")
@@ -1881,7 +1933,7 @@ def backup(
 
     repository = _build_repository_for_db_path(db_path=resolved)
     repository.init_schema()
-    owner_token, log = _acquire_workspace_lease_for_command(
+    owner_token, log, heartbeat_monitor = _acquire_workspace_lease_for_command(
         repository=repository,
         console=console,
         command="backup",
@@ -1894,6 +1946,7 @@ def backup(
             else (resolved.parent / "backups").resolve()
         )
         result = repository.backup_database(output_dir=bundle_root)
+        heartbeat_monitor.raise_if_failed()
         log.info(
             "Backup completed bundle_dir={} manifest_path={} schema_version={}",
             str(result.bundle_dir),
@@ -1905,10 +1958,12 @@ def backup(
             f"bundle={result.bundle_dir} schema_version={result.schema_version}"
         )
     finally:
-        try:
-            repository.release_workspace_lease(owner_token=owner_token)
-        except Exception:
-            log.exception("Workspace lease release failed")
+        _cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )
 
 
 @app.command("restore")
@@ -1960,12 +2015,13 @@ def restore(
 
     lease_repository: Any | None = None
     lease_owner_token: str | None = None
+    lease_heartbeat_monitor: _LeaseHeartbeatMonitor | None = None
     try:
         if resolved.exists():
             lease_repository = _build_repository_for_db_path(db_path=resolved)
             assert lease_repository is not None
             lease_repository.init_schema()
-            lease_owner_token, _ = _acquire_workspace_lease_for_command(
+            lease_owner_token, _, lease_heartbeat_monitor = _acquire_workspace_lease_for_command(
                 repository=lease_repository,
                 console=console,
                 command="restore",
@@ -1975,6 +2031,8 @@ def restore(
             bundle_dir=bundle,
             db_path=resolved,
         )
+        if lease_heartbeat_monitor is not None:
+            lease_heartbeat_monitor.raise_if_failed()
     except Exception as exc:  # noqa: BLE001
         log.warning(
             "Restore failed bundle={} path={} error_type={} error={}",
@@ -1986,11 +2044,17 @@ def restore(
         console.print(f"[red]restore failed[/red] {exc}")
         raise typer.Exit(code=1) from exc
     finally:
-        if lease_repository is not None and lease_owner_token is not None:
-            try:
-                lease_repository.release_workspace_lease(owner_token=lease_owner_token)
-            except Exception:
-                log.exception("Workspace lease release failed")
+        if (
+            lease_repository is not None
+            and lease_owner_token is not None
+            and lease_heartbeat_monitor is not None
+        ):
+            _cleanup_workspace_lease(
+                repository=lease_repository,
+                owner_token=lease_owner_token,
+                heartbeat_monitor=lease_heartbeat_monitor,
+                log=log,
+            )
 
     log.info(
         "Restore completed bundle_dir={} path={} schema_version={}",
@@ -2090,7 +2154,7 @@ def stats(
 
     repository = _build_repository_for_db_path(db_path=resolved_db_path)
     try:
-        schema_version = repository.ensure_schema_compatible()
+        schema_version = repository.ensure_schema_current()
     except Exception as exc:
         _exit_with_error(str(exc))
 
@@ -2320,7 +2384,7 @@ def doctor(
 
     repository = _build_repository_for_db_path(db_path=resolved_db_path)
     try:
-        schema_version = repository.ensure_schema_compatible()
+        schema_version = repository.ensure_schema_current()
     except Exception as exc:
         message = str(exc)
         log.warning("Schema compatibility check failed error={}", message)
