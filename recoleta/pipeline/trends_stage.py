@@ -697,18 +697,32 @@ def run_trends_stage(
                     break
             return reps
 
+        def _rep_chunk_key(rep: Any) -> tuple[int, int] | None:
+            try:
+                doc_id_int = int(getattr(rep, "doc_id"))
+                chunk_index_int = int(getattr(rep, "chunk_index"))
+            except Exception:
+                return None
+            if doc_id_int <= 0 or chunk_index_int < 0:
+                return None
+            return doc_id_int, chunk_index_int
+
         max_reps = 6
         for cluster in list(getattr(payload, "clusters", []) or []):
             cleaned: list[Any] = []
+            seen_rep_keys: set[tuple[int, int]] = set()
             for rep in list(getattr(cluster, "representative_chunks", []) or []):
-                try:
-                    doc_id_int = int(getattr(rep, "doc_id"))
-                except Exception:
+                rep_key = _rep_chunk_key(rep)
+                if rep_key is None:
                     continue
+                doc_id_int, _chunk_index_int = rep_key
                 doc_type = _doc_type_for_doc_id(doc_id_int)
                 if doc_type != "item":
                     rep_dropped_non_item_total += 1
                     continue
+                if rep_key in seen_rep_keys:
+                    continue
+                seen_rep_keys.add(rep_key)
                 cleaned.append(rep)
             cluster.representative_chunks = cleaned[:max_reps]
             if cluster.representative_chunks:
@@ -901,6 +915,7 @@ def run_trends_stage(
                 )
                 reps = cluster_dict.get("representative_chunks") or []
                 enriched_reps: list[dict[str, Any]] = []
+                seen_rep_keys: set[tuple[int, int]] = set()
                 if isinstance(reps, list) and reps:
                     for rep in reps:
                         if not isinstance(rep, dict):
@@ -911,11 +926,15 @@ def run_trends_stage(
                             continue
                         try:
                             doc_id_int = int(raw_doc_id)
-                            _ = int(raw_chunk_index)
+                            chunk_index_int = int(raw_chunk_index)
                         except Exception:
                             continue
-                        if doc_id_int <= 0:
+                        if doc_id_int <= 0 or chunk_index_int < 0:
                             continue
+                        rep_key = (doc_id_int, chunk_index_int)
+                        if rep_key in seen_rep_keys:
+                            continue
+                        seen_rep_keys.add(rep_key)
                         doc = _get_doc(doc_id_int)
                         if doc is None:
                             continue
