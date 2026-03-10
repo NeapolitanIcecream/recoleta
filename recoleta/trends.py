@@ -9,8 +9,10 @@ from typing import Any, cast
 
 from loguru import logger
 from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
 from recoleta.llm_connection import LLMConnectionConfig
+from recoleta.models import Document
 from recoleta.ports import TrendRepositoryPort
 from recoleta.types import DEFAULT_TOPIC_STREAM
 
@@ -197,6 +199,79 @@ def _truncate_chars(value: str, *, max_chars: int) -> tuple[str, bool]:
     return value[:cap], True
 
 
+def _analysis_relevance_score(analysis: Any) -> float:
+    raw = getattr(analysis, "relevance_score", 0.0)
+    try:
+        return float(raw)
+    except Exception:
+        return 0.0
+
+
+def _filter_pairs_by_min_relevance(
+    pairs: list[tuple[Any, Any]],
+    *,
+    min_relevance_score: float,
+) -> tuple[list[tuple[Any, Any]], int]:
+    threshold = float(min_relevance_score or 0.0)
+    if threshold <= 0.0:
+        return pairs, 0
+    kept = [
+        (item, analysis)
+        for item, analysis in pairs
+        if _analysis_relevance_score(analysis) >= threshold
+    ]
+    return kept, max(0, len(pairs) - len(kept))
+
+
+def _prune_item_documents_for_period(
+    *,
+    repository: TrendRepositoryPort,
+    period_start: datetime,
+    period_end: datetime,
+    scope: str,
+    keep_item_ids: set[int],
+) -> int:
+    with Session(repository.engine) as session:
+        docs = list(
+            session.exec(
+                select(Document).where(
+                    Document.doc_type == "item",
+                    cast(Any, Document.scope) == scope,
+                    cast(Any, Document.published_at).is_not(None),
+                    cast(Any, Document.published_at) >= period_start,
+                    cast(Any, Document.published_at) < period_end,
+                )
+            )
+        )
+        stale_docs: list[Document] = []
+        for doc in docs:
+            raw_item_id = getattr(doc, "item_id", None)
+            try:
+                item_id = int(raw_item_id) if raw_item_id is not None else 0
+            except Exception:
+                item_id = 0
+            if item_id > 0 and item_id in keep_item_ids:
+                continue
+            stale_docs.append(doc)
+
+        if not stale_docs:
+            return 0
+
+        for doc in stale_docs:
+            raw_doc_id = getattr(doc, "id", None)
+            try:
+                doc_id = int(raw_doc_id) if raw_doc_id is not None else 0
+            except Exception:
+                doc_id = 0
+            if doc_id > 0:
+                repository.delete_document_chunks(doc_id=doc_id)
+
+        for doc in stale_docs:
+            session.delete(doc)
+        session.commit()
+        return len(stale_docs)
+
+
 def build_overview_pack_md(
     repository: TrendRepositoryPort,
     plan: TrendGenerationPlan,
@@ -204,6 +279,7 @@ def build_overview_pack_md(
     overview_pack_max_chars: int,
     item_overview_top_k: int,
     item_overview_item_max_chars: int,
+    min_relevance_score: float = 0.0,
     scope: str = DEFAULT_TOPIC_STREAM,
 ) -> tuple[str, dict[str, Any]]:
     strategy = str(getattr(plan, "overview_pack_strategy", "") or "").strip().lower()
@@ -295,6 +371,11 @@ def build_overview_pack_md(
                 limit=candidate_limit,
                 scope=scope,
             )
+            pairs, filtered_out_total = _filter_pairs_by_min_relevance(
+                pairs,
+                min_relevance_score=min_relevance_score,
+            )
+            stats["filtered_out_total"] = filtered_out_total
 
             def event_at_ts(item: Any) -> float:
                 raw = getattr(item, "published_at", None) or getattr(
@@ -313,13 +394,6 @@ def build_overview_pack_md(
                 except Exception:
                     return -1.0
 
-            def relevance_score(analysis: Any) -> float:
-                raw = getattr(analysis, "relevance_score", 0.0)
-                try:
-                    return float(raw)
-                except Exception:
-                    return 0.0
-
             def item_id_value(item: Any) -> int:
                 raw = getattr(item, "id", 0)
                 try:
@@ -336,7 +410,7 @@ def build_overview_pack_md(
             sorted_pairs = sorted(
                 pairs,
                 key=lambda pair: (
-                    -relevance_score(pair[1]),
+                    -_analysis_relevance_score(pair[1]),
                     -novelty_score(pair[1]),
                     -event_at_ts(pair[0]),
                     -item_id_value(pair[0]),
@@ -454,6 +528,7 @@ def index_items_as_documents(
     limit: int = 2000,
     content_chunk_chars: int = 1200,
     max_content_chunks_per_item: int = 8,
+    min_relevance_score: float = 0.0,
     scope: str = DEFAULT_TOPIC_STREAM,
 ) -> dict[str, Any]:
     """Index analyzed items into documents + chunks (summary first, content optional)."""
@@ -464,6 +539,22 @@ def index_items_as_documents(
         period_end=period_end,
         limit=limit,
         scope=scope,
+    )
+    pairs, filtered_out_total = _filter_pairs_by_min_relevance(
+        pairs,
+        min_relevance_score=min_relevance_score,
+    )
+    keep_item_ids = {
+        int(getattr(item, "id") or 0)
+        for item, _analysis in pairs
+        if getattr(item, "id", None) is not None
+    }
+    docs_deleted = _prune_item_documents_for_period(
+        repository=repository,
+        period_start=period_start,
+        period_end=period_end,
+        scope=scope,
+        keep_item_ids=keep_item_ids,
     )
     docs_upserted = 0
     chunks_upserted = 0
@@ -553,7 +644,9 @@ def index_items_as_documents(
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     stats = {
         "items_total": len(pairs),
+        "items_filtered_out": filtered_out_total,
         "docs_upserted": docs_upserted,
+        "docs_deleted": docs_deleted,
         "chunks_upserted": chunks_upserted,
         "content_chunks_upserted": content_chunks_upserted,
         "content_chunks_deleted": content_chunks_deleted,

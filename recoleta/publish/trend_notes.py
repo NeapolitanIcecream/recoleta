@@ -7,7 +7,10 @@ from typing import Any
 import yaml
 from slugify import slugify
 
-from recoleta.publish.trend_render_shared import _trend_date_token
+from recoleta.publish.trend_render_shared import (
+    _trend_date_token,
+    sanitize_trend_overview_markdown,
+)
 
 __all__ = [
     "write_markdown_run_index",
@@ -59,6 +62,7 @@ def _render_trend_note_lines(
     highlights: list[str] | None,
 ) -> list[str]:
     _ = highlights
+    overview_md = sanitize_trend_overview_markdown(overview_md)
     tags = ["recoleta/trend"]
     for topic in topics or []:
         normalized = _sanitize_obsidian_tag(topic)

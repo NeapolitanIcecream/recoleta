@@ -10,8 +10,12 @@ from sqlmodel import Session, select
 
 from recoleta.models import Document, DocumentChunk
 from recoleta.pipeline import PipelineService
-from recoleta.trends import day_period_bounds, semantic_search_summaries_in_period
-from recoleta.types import ItemDraft, TrendResult, utc_now
+from recoleta.trends import (
+    day_period_bounds,
+    index_items_as_documents,
+    semantic_search_summaries_in_period,
+)
+from recoleta.types import AnalysisResult, ItemDraft, TrendResult, utc_now
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
@@ -192,6 +196,153 @@ def test_trends_index_items_clears_stale_content_chunks_when_content_shrinks(
             )
         ).first()
         assert stale is None
+
+
+def test_index_items_as_documents_excludes_low_relevance_items(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: trend item docs should respect min_relevance_score."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    _, repository = _build_runtime()
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+
+    for source_item_id, title, relevance in [
+        ("trend-high", "High Signal Paper", 0.95),
+        ("trend-low", "Low Signal Paper", 0.35),
+    ]:
+        draft = ItemDraft.from_values(
+            source="rss",
+            source_item_id=source_item_id,
+            canonical_url=f"https://example.com/{source_item_id}",
+            title=title,
+            authors=["Alice"],
+            published_at=period_start,
+            raw_metadata={"source": "test"},
+        )
+        item, _ = repository.upsert_item(draft)
+        assert item.id is not None
+        _ = repository.save_analysis(
+            item_id=int(item.id),
+            result=AnalysisResult(
+                model="test/fake-model",
+                provider="test",
+                summary=f"Summary for {title}",
+                topics=["agents"],
+                relevance_score=relevance,
+                novelty_score=0.5,
+                cost_usd=0.0,
+                latency_ms=1,
+            ),
+        )
+
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-trend-min-relevance",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+        min_relevance_score=0.8,
+    )
+
+    docs = repository.list_documents(
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    assert [str(getattr(doc, "title") or "") for doc in docs] == ["High Signal Paper"]
+
+
+def test_index_items_as_documents_prunes_stale_low_relevance_docs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: trend item docs should be removed when an item's relevance drops below the threshold."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    _, repository = _build_runtime()
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-prune",
+        canonical_url="https://example.com/trend-prune",
+        title="Prunable Paper",
+        authors=["Alice"],
+        published_at=period_start,
+        raw_metadata={"source": "test"},
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    item_id = int(item.id)
+
+    _ = repository.save_analysis(
+        item_id=item_id,
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary="High relevance summary",
+            topics=["agents"],
+            relevance_score=0.95,
+            novelty_score=0.5,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-trend-prune-1",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+        min_relevance_score=0.8,
+    )
+    assert repository.list_documents(
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+
+    _ = repository.save_analysis(
+        item_id=item_id,
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary="Low relevance summary",
+            topics=["agents"],
+            relevance_score=0.2,
+            novelty_score=0.5,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-trend-prune-2",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+        min_relevance_score=0.8,
+    )
+
+    assert repository.list_documents(
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    ) == []
 
 
 def test_trends_text_search_can_find_summary_chunks(

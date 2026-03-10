@@ -23,6 +23,93 @@ def _trend_date_token(*, granularity: str, period_start: datetime) -> str:
     return period_start.strftime("%Y-%m-%d")
 
 
+_OVERVIEW_HEADING_PATTERN = re.compile(
+    r"^\s{0,3}#{1,6}\s*(overview|总览|概览|日度概览|周度概览|月度概览)\s*$",
+    re.IGNORECASE,
+)
+_TOP_N_HEADING_PATTERN = re.compile(
+    r"^(?P<heading>\s{0,3}#{1,6})\s+Top[- ]?(?P<count>\d+)(?P<suffix>\b.*)$",
+    re.IGNORECASE,
+)
+_ORDERED_LIST_ITEM_PATTERN = re.compile(r"^\s{0,3}\d+\.\s+")
+_REPRESENTATIVE_SNIPPET_PATTERN = re.compile(
+    r"(?:[。.;；]\s*)?"
+    r"(?:代表片段|Representative snippet|Representative excerpt)\s*[:：].*$",
+    re.IGNORECASE,
+)
+_STANDALONE_REPRESENTATIVE_SNIPPET_LINE_PATTERN = re.compile(
+    r"^\s*(?:[-*]\s*)?"
+    r"(?:代表片段|Representative snippet|Representative excerpt)\s*[:：].*$",
+    re.IGNORECASE,
+)
+_REDUNDANT_REFERENCE_BULLET_PATTERN = re.compile(
+    r"^\s*-\s*(?:参考|Reference|Link)\s*[:：]",
+    re.IGNORECASE,
+)
+_MARKDOWN_LINK_PATTERN = re.compile(r"\[[^\]]+\]\((?P<url>[^)]+)\)")
+_TRAILING_PARENTHESES_LINK_PATTERN = re.compile(
+    r"\s*[（(]\[[^\]]+\]\((?P<url>[^)]+)\)[）)]\s*$"
+)
+
+
+def sanitize_trend_overview_markdown(value: str) -> str:
+    normalized = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not normalized.strip():
+        return ""
+
+    lines = normalized.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and _OVERVIEW_HEADING_PATTERN.match(lines[0].strip()):
+        lines.pop(0)
+        while lines and not lines[0].strip():
+            lines.pop(0)
+
+    for idx, line in enumerate(lines):
+        if _REDUNDANT_REFERENCE_BULLET_PATTERN.match(line):
+            lines[idx] = ""
+            continue
+        if _STANDALONE_REPRESENTATIVE_SNIPPET_LINE_PATTERN.match(line):
+            lines[idx] = ""
+            continue
+        if not _ORDERED_LIST_ITEM_PATTERN.match(line):
+            continue
+        cleaned = _REPRESENTATIVE_SNIPPET_PATTERN.sub("", line).rstrip()
+        first_link = _MARKDOWN_LINK_PATTERN.search(cleaned)
+        trailing_link = _TRAILING_PARENTHESES_LINK_PATTERN.search(cleaned)
+        if (
+            first_link is not None
+            and trailing_link is not None
+            and first_link.group("url").strip() == trailing_link.group("url").strip()
+            and first_link.start() < trailing_link.start()
+        ):
+            cleaned = cleaned[: trailing_link.start()].rstrip()
+        lines[idx] = cleaned
+
+    idx = 0
+    while idx < len(lines):
+        match = _TOP_N_HEADING_PATTERN.match(lines[idx])
+        if match is None:
+            idx += 1
+            continue
+
+        item_total = 0
+        look_ahead = idx + 1
+        while look_ahead < len(lines):
+            current = lines[look_ahead]
+            if re.match(r"^\s{0,3}#{1,6}\s+", current):
+                break
+            if _ORDERED_LIST_ITEM_PATTERN.match(current):
+                item_total += 1
+            look_ahead += 1
+        if item_total > 0:
+            lines[idx] = f"{match.group('heading')} Top-{item_total} 必读"
+        idx = look_ahead
+
+    sanitized = "\n".join(lines).strip()
+    return sanitized
+
+
 def _split_yaml_frontmatter_text(text: str) -> tuple[dict[str, Any], str]:
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
     lines = normalized.split("\n")

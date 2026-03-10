@@ -68,6 +68,31 @@ class _FailingOnTopicAnalyzer(_RecordingAnalyzer):
         )
 
 
+class _SelectiveRelevanceAnalyzer(_RecordingAnalyzer):
+    def analyze(
+        self,
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None = None,  # noqa: ARG002
+        include_debug: bool = False,
+    ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+        self.calls.append(list(user_topics))
+        relevance = 0.95 if "High" in title else 0.35
+        result = AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary=f"Summary for {title} via {','.join(user_topics)}",
+            topics=user_topics[:1] or ["general"],
+            relevance_score=relevance,
+            novelty_score=0.55,
+            cost_usd=0.0,
+            latency_ms=1,
+        )
+        return result, None
+
+
 def _configure_topic_stream_env(
     *,
     monkeypatch: pytest.MonkeyPatch,
@@ -444,6 +469,84 @@ def test_trends_generate_separate_stream_local_documents_for_topic_streams(
 
     assert list((tmp_path / "outputs" / "Streams" / "agents_lab" / "Trends").glob("*.md"))
     assert list((tmp_path / "outputs" / "Streams" / "bio_watch" / "Trends").glob("*.md"))
+
+
+def test_trends_only_index_high_relevance_items_for_topic_streams(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: low-relevance analyzed items must not enter a topic stream trend corpus."""
+
+    _configure_topic_stream_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=_SelectiveRelevanceAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    for idx, title in enumerate(
+        ["High Signal Topic Stream Trend", "Low Signal Topic Stream Trend"],
+        start=1,
+    ):
+        draft = ItemDraft.from_values(
+            source="rss",
+            source_item_id=f"topic-stream-trend-quality-{idx}",
+            canonical_url=f"https://example.com/topic-stream-trend-quality-{idx}",
+            title=title,
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+        service.prepare(
+            run_id=f"run-topic-stream-trend-quality-prepare-{idx}",
+            drafts=[draft],
+            limit=10,
+        )
+
+    service.analyze(run_id="run-topic-stream-trend-quality-analyze", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        scope = kwargs["scope"]
+        docs = kwargs["repository"].list_documents(
+            doc_type="item",
+            period_start=period_start,
+            period_end=period_end,
+            scope=scope,
+            limit=10,
+        )
+        assert [str(getattr(doc, "title") or "") for doc in docs] == [
+            "High Signal Topic Stream Trend"
+        ]
+        return (
+            TrendPayload(
+                title=f"Trend for {scope}",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                overview_md="- ok",
+                topics=["stream-local"],
+                clusters=[],
+                highlights=[],
+            ),
+            {"tool_calls_total": 0},
+        )
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-topic-stream-trend-quality",
+        granularity="day",
+        anchor_date=utc_now().date(),
+        llm_model="test/fake-model",
+    )
+
+    assert len(result.stream_results) == 2
 
 
 def test_trends_emit_stream_scoped_metrics_for_topic_streams(

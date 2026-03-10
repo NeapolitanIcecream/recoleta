@@ -154,3 +154,98 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_representatives(
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in md
     assert "— Alice" in md
     assert result.doc_id > 0
+
+
+def test_trends_day_rewrites_doc_id_space_form_and_chunk_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: published trend notes should rewrite `doc_id 84, chunk 0` style references."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    published_at = datetime(2026, 3, 9, 1, 0, tzinfo=UTC)
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-regression-2",
+        canonical_url="https://example.com/agentic-testing",
+        title="Human-AI Collaboration for Scaling Agile Regression Testing",
+        authors=["Alice"],
+        published_at=published_at,
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-regression-2", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-regression-2", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        repo = kwargs["repository"]
+        pstart = kwargs["period_start"]
+        pend = kwargs["period_end"]
+        docs = repo.list_documents(
+            doc_type="item",
+            period_start=pstart,
+            period_end=pend,
+            granularity=None,
+            order_by="event_desc",
+            offset=0,
+            limit=1,
+        )
+        assert docs and docs[0].id is not None
+        doc_id = int(docs[0].id)
+        payload = {
+            "title": "Daily Trend",
+            "granularity": "day",
+            "period_start": pstart.isoformat(),
+            "period_end": pend.isoformat(),
+            "overview_md": (
+                "## 日度概览\n\n"
+                f"工业测试论文（doc_id {doc_id}, chunk 0）最有代表性。\n\n"
+                "## Top-10 必读\n"
+                f"1. **doc_id {doc_id}** — 值得优先阅读。"
+            ),
+            "topics": ["agentic-ai"],
+            "clusters": [
+                {
+                    "name": "C",
+                    "description": f"Ref doc_id {doc_id}, chunk 0.",
+                    "representative_doc_ids": [],
+                    "representative_chunks": [{"doc_id": doc_id, "chunk_index": 0}],
+                }
+            ],
+            "highlights": [f"Hit doc_id {doc_id}, chunk 0"],
+        }
+        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-trend-regression-2",
+        granularity="day",
+        anchor_date=date(2026, 3, 9),
+        llm_model="test/fake-model",
+    )
+    trends_dir = (settings.markdown_output_dir / "Trends").resolve()
+    matches = list(trends_dir.glob("day--2026-03-09--trend--*.md"))
+    assert len(matches) == 1
+
+    md = matches[0].read_text(encoding="utf-8")
+    assert re.search(r"\bdoc_id\b", md) is None
+    assert re.search(r"\bchunk(?:_index)?\b", md, flags=re.I) is None
+    assert "[Human-AI Collaboration for Scaling Agile Regression Testing](" in md
+    assert "## Top-1 必读" in md
+    assert result.doc_id > 0

@@ -48,6 +48,11 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "If ranking_n is provided in the prompt, use it as N."
     )
     base += (
+        " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
+        "If fewer than N items are available, label the must-read section with the actual item count. "
+        "Inside must-read list items, do not append 'representative snippet' / '代表片段' text after a title or link."
+    )
+    base += (
         " Prioritize readability over compression: use short sentences, avoid long multi-clause lines, "
         "and avoid stacking many technical terms in a single sentence. "
         "Introduce acronyms once with a brief explanation in the output language, then reuse them. "

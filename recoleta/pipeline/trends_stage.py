@@ -25,6 +25,7 @@ from recoleta.publish import (
     write_markdown_trend_note,
     write_obsidian_trend_note,
 )
+from recoleta.publish.trend_render_shared import sanitize_trend_overview_markdown
 from recoleta import trends
 from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
 
@@ -153,8 +154,18 @@ def run_trends_stage(
                 unit="count",
             )
             record_metric(
+                name="pipeline.trends.index.docs_deleted_total",
+                value=float(stats.get("docs_deleted") or 0),
+                unit="count",
+            )
+            record_metric(
                 name="pipeline.trends.index.chunks_upserted_total",
                 value=float(stats.get("chunks_upserted") or 0),
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.index.items_filtered_out_total",
+                value=float(stats.get("items_filtered_out") or 0),
                 unit="count",
             )
             record_metric(
@@ -175,6 +186,9 @@ def run_trends_stage(
                     run_id=run_id,
                     period_start=period_start,
                     period_end=period_end,
+                    min_relevance_score=float(
+                        getattr(service.settings, "min_relevance_score", 0.0) or 0.0
+                    ),
                     scope=scope,
                 )
             except Exception as exc:
@@ -455,6 +469,9 @@ def run_trends_stage(
                     item_overview_item_max_chars=int(
                         getattr(service.settings, "trends_item_overview_item_max_chars", 500)
                         or 500
+                    ),
+                    min_relevance_score=float(
+                        getattr(service.settings, "min_relevance_score", 0.0) or 0.0
                     ),
                     scope=scope,
                 )
@@ -785,10 +802,16 @@ def run_trends_stage(
                 return f"[{label}]({url})"
             return label
 
-        doc_ref_pattern = re.compile(r"\bdoc_id\s*[:=]\s*([0-9][0-9,\s]*)\b")
-        doc_short_pattern = re.compile(r"\bdoc\s+(\d+)\b")
+        doc_ref_pattern = re.compile(
+            r"\bdoc_id\s*(?:[:=#-]\s*|\s+)([0-9][0-9,\s]*)\b",
+            re.IGNORECASE,
+        )
+        doc_short_pattern = re.compile(
+            r"\bdoc\s*(?:[:=#-]\s*|\s+)(\d+)\b",
+            re.IGNORECASE,
+        )
         chunk_suffix_pattern = re.compile(
-            r"\s*[,;，；]?\s*chunk(?:_index)?\s*[:=]\s*\d+",
+            r"\s*[,;，；]?\s*chunk(?:_index)?\s*(?:[:=]\s*|\s+)\d+",
             re.IGNORECASE,
         )
 
@@ -859,7 +882,9 @@ def run_trends_stage(
             return rewritten
 
         title_for_notes = _rewrite_doc_refs(str(payload.title))
-        overview_md_for_notes = _rewrite_doc_refs(str(payload.overview_md))
+        overview_md_for_notes = sanitize_trend_overview_markdown(
+            _rewrite_doc_refs(str(payload.overview_md))
+        )
         highlights_for_notes = [
             _rewrite_doc_refs(str(h)) for h in (list(payload.highlights) or [])
         ]
