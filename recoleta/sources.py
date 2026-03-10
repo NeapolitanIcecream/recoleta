@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, cast
+from urllib.parse import urljoin
 
 import arxiv
 from bs4 import BeautifulSoup
@@ -68,6 +69,81 @@ def _first_non_empty_str(*values: object) -> str | None:
     return None
 
 
+def _discover_feed_url_from_html(*, page_url: str, html: str) -> str | None:
+    soup = BeautifulSoup(html, "html.parser")
+    search_root = soup.head if soup.head is not None else soup
+    candidates: list[tuple[int, str]] = []
+    for link in search_root.find_all("link"):
+        href = str(link.get("href") or "").strip()
+        if not href:
+            continue
+        rel_value = link.get("rel")
+        rel_tokens = (
+            [str(token).strip().lower() for token in rel_value]
+            if isinstance(rel_value, list)
+            else [str(rel_value).strip().lower()]
+            if rel_value is not None
+            else []
+        )
+        if "alternate" not in rel_tokens:
+            continue
+        type_value = str(link.get("type") or "").strip().lower()
+        if "rss" in type_value:
+            priority = 0
+        elif "atom" in type_value:
+            priority = 1
+        elif "xml" in type_value:
+            priority = 2
+        else:
+            continue
+        title_value = str(link.get("title") or "").strip().lower()
+        href_value = str(href).strip().lower()
+        if "comment" in title_value or "comment" in href_value:
+            priority += 10
+        candidates.append((priority, urljoin(page_url, href)))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda entry: (entry[0], entry[1]))
+    return candidates[0][1]
+
+
+def _normalize_hf_paper_href(href: str | None) -> str | None:
+    raw_href = str(href or "").strip()
+    if not raw_href.startswith("/papers/"):
+        return None
+    normalized = raw_href.split("#", 1)[0].strip()
+    if not normalized or normalized in {"/papers", "/papers/"}:
+        return None
+    if normalized.startswith("/papers/date/") or normalized == "/papers/trending":
+        return None
+    parts = [part for part in normalized.split("/") if part]
+    if len(parts) != 2:
+        return None
+    return normalized
+
+
+def _iter_hf_paper_title_candidates(soup: BeautifulSoup) -> list[tuple[str, str]]:
+    candidates: list[tuple[str, str]] = []
+    for article in soup.find_all("article"):
+        heading_anchors = article.select(
+            "h1 a[href^='/papers/'], h2 a[href^='/papers/'], h3 a[href^='/papers/'], h4 a[href^='/papers/']"
+        )
+        anchor_iterable = heading_anchors or article.select("a[href^='/papers/']")
+        for anchor in anchor_iterable:
+            href_value = anchor.get("href")
+            normalized_href = _normalize_hf_paper_href(
+                href_value if isinstance(href_value, str) else None
+            )
+            if normalized_href is None:
+                continue
+            title = anchor.get_text(" ", strip=True)
+            if not title or title.isdigit():
+                continue
+            candidates.append((normalized_href, title))
+            break
+    return candidates
+
+
 def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
     drafts: list[ItemDraft] = []
     if max_items <= 0:
@@ -83,26 +159,31 @@ def fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
     ) as client:
         html = _fetch_feed_text(client, index_url)
     soup = BeautifulSoup(html, "html.parser")
-    anchors = soup.select('a[href^="/papers/"]')
     seen: set[str] = set()
-    for anchor in anchors:
-        href = anchor.get("href")
-        if not isinstance(href, str):
-            continue
-        stripped_href = href.strip()
-        if not stripped_href or stripped_href in seen:
-            continue
-        seen.add(stripped_href)
+    candidates = _iter_hf_paper_title_candidates(soup)
+    if not candidates:
+        for anchor in soup.select('a[href^="/papers/"]'):
+            href_value = anchor.get("href")
+            normalized_href = _normalize_hf_paper_href(
+                href_value if isinstance(href_value, str) else None
+            )
+            if normalized_href is None:
+                continue
+            title = anchor.get_text(" ", strip=True)
+            if not title or title.isdigit():
+                continue
+            candidates.append((normalized_href, title))
 
-        title = anchor.get_text(" ", strip=True)
-        if not title:
+    for normalized_href, title in candidates:
+        if normalized_href in seen:
             continue
+        seen.add(normalized_href)
 
-        canonical_url = f"{base_url}{stripped_href}"
+        canonical_url = f"{base_url}{normalized_href}"
         drafts.append(
             ItemDraft.from_values(
                 source="hf_daily",
-                source_item_id=stripped_href.lstrip("/"),
+                source_item_id=normalized_href.lstrip("/"),
                 canonical_url=canonical_url,
                 title=title,
                 authors=[],
@@ -268,16 +349,36 @@ def fetch_rss_drafts(
     drafts: list[ItemDraft] = []
     timeout = httpx.Timeout(10.0, connect=5.0)
     headers = {"User-Agent": "recoleta/0.1"}
+    resolved_feed_urls: set[str] = set()
     with httpx.Client(
         timeout=timeout, headers=headers, follow_redirects=True
     ) as client:
         for feed_url in feed_urls:
-            feed_text = _fetch_feed_text(client, feed_url)
+            resolved_feed_url = feed_url
+            discovered_from: str | None = None
+            feed_text = _fetch_feed_text(client, resolved_feed_url)
             parsed = cast(Any, feedparser.parse(feed_text))
-            feed = cast(Mapping[str, Any], getattr(parsed, "feed", {}) or {})
+            parsed_version = str(getattr(parsed, "version", "") or "").strip()
             entries = cast(
                 list[Mapping[str, Any]], getattr(parsed, "entries", []) or []
             )
+            if not entries and not parsed_version:
+                discovered = _discover_feed_url_from_html(
+                    page_url=resolved_feed_url,
+                    html=feed_text,
+                )
+                if discovered and discovered != resolved_feed_url:
+                    resolved_feed_url = discovered
+                    discovered_from = feed_url
+                    feed_text = _fetch_feed_text(client, resolved_feed_url)
+                    parsed = cast(Any, feedparser.parse(feed_text))
+                    entries = cast(
+                        list[Mapping[str, Any]], getattr(parsed, "entries", []) or []
+                    )
+            if resolved_feed_url in resolved_feed_urls:
+                continue
+            resolved_feed_urls.add(resolved_feed_url)
+            feed = cast(Mapping[str, Any], getattr(parsed, "feed", {}) or {})
             feed_title = _get_str(feed, "title")
             for entry in entries[:max_items_per_feed]:
                 link = _get_str(entry, "link")
@@ -310,8 +411,13 @@ def fetch_rss_drafts(
                         authors=authors,
                         published_at=_parse_entry_datetime(entry),
                         raw_metadata={
-                            "feed_url": feed_url,
+                            "feed_url": resolved_feed_url,
                             "feed_title": feed_title,
+                            **(
+                                {"feed_discovered_from": discovered_from}
+                                if discovered_from is not None
+                                else {}
+                            ),
                         },
                     )
                 )

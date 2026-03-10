@@ -56,6 +56,50 @@ def test_settings_loads_nested_source_configuration(configured_env) -> None:
     assert settings.topics == ["agents", "ml-systems"]
 
 
+def test_settings_loads_source_scale_controls(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                    "max_results_per_run": 2,
+                },
+                "hn": {
+                    "enabled": True,
+                    "rss_urls": ["https://news.ycombinator.com/rss"],
+                    "max_items_per_feed": 1,
+                },
+                "rss": {
+                    "enabled": True,
+                    "feeds": ["https://jack.example/"],
+                    "max_items_per_feed": 3,
+                },
+                "hf_daily": {
+                    "enabled": True,
+                    "max_items_per_run": 4,
+                },
+                "openreview": {
+                    "enabled": True,
+                    "venues": ["ICLR.cc/2026/Conference"],
+                    "max_results_per_venue": 5,
+                },
+            }
+        ),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.sources.arxiv.max_results_per_run == 2
+    assert settings.sources.hn.max_items_per_feed == 1
+    assert settings.sources.rss.max_items_per_feed == 3
+    assert settings.sources.hf_daily.max_items_per_run == 4
+    assert settings.sources.openreview.max_results_per_venue == 5
+
+
 def test_settings_loads_arxiv_enrich_configuration(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

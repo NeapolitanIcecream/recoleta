@@ -200,3 +200,87 @@ def test_stats_json_reports_workspace_directory_sizes_when_settings_are_availabl
     assert payload["workspace_bytes"]["markdown_output_dir"] == 5
     assert payload["workspace_bytes"]["artifacts_dir"] == 3
     assert payload["workspace_bytes"]["rag_lancedb_dir"] == 7
+
+
+def test_stats_json_reports_latest_source_diagnostics(
+    configured_env: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-source-diag", run_id="run-source-diag")
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.drafts_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.pull_failed_total",
+        value=0,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.hn.drafts_total",
+        value=0,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.hn.pull_failed_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.processed_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.skipped_total",
+        value=0,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.failed_total",
+        value=0,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.content_chars_sum",
+        value=1234,
+        unit="chars",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.content_type.html_maintext_total",
+        value=1,
+        unit="count",
+    )
+    repository.finish_run(run.id, success=False)
+
+    result = runner.invoke(recoleta.cli.app, ["stats", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    diagnostics = payload["source_diagnostics"]
+    assert diagnostics["run_id"] == "run-source-diag"
+    assert diagnostics["run_status"] == "failed"
+    assert diagnostics["sources"]["rss"]["status"] == "ok"
+    assert diagnostics["sources"]["rss"]["pipeline_completed"] is True
+    assert diagnostics["sources"]["rss"]["ingest"]["drafts_total"] == 1
+    assert diagnostics["sources"]["rss"]["enrich"]["processed_total"] == 1
+    assert diagnostics["sources"]["rss"]["enrich"]["content_types"] == {
+        "html_maintext": 1
+    }
+    assert diagnostics["sources"]["hn"]["status"] == "pull_failed"
+    assert diagnostics["sources"]["hn"]["pipeline_completed"] is False
+    assert diagnostics["sources"]["hn"]["ingest"]["pull_failed_total"] == 1

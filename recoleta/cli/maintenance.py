@@ -8,6 +8,172 @@ from typing import Any, NoReturn
 import recoleta.cli as cli
 
 
+_SOURCE_DIAGNOSTIC_NAMES = ("arxiv", "hn", "hf_daily", "openreview", "rss")
+
+
+def _default_source_diagnostic_entry(*, enabled: bool | None) -> dict[str, Any]:
+    return {
+        "enabled": enabled,
+        "status": "disabled" if enabled is False else "not_run",
+        "pipeline_completed": False,
+        "ingest": {
+            "drafts_total": 0,
+            "pull_failed_total": 0,
+            "pull_duration_ms": 0,
+        },
+        "enrich": {
+            "processed_total": 0,
+            "skipped_total": 0,
+            "failed_total": 0,
+            "item_duration_ms_total": 0,
+            "fetch_ms_sum": 0,
+            "extract_ms_sum": 0,
+            "db_read_ms_sum": 0,
+            "db_write_ms_sum": 0,
+            "input_bytes_sum": 0,
+            "content_chars_sum": 0,
+            "short_content_total": 0,
+            "content_types": {},
+            "pdf_backends": {},
+        },
+    }
+
+
+def _source_enabled_map(settings: Any | None) -> dict[str, bool | None]:
+    if settings is None:
+        return {source_name: None for source_name in _SOURCE_DIAGNOSTIC_NAMES}
+    sources = getattr(settings, "sources", None)
+    if sources is None:
+        return {source_name: None for source_name in _SOURCE_DIAGNOSTIC_NAMES}
+    enabled: dict[str, bool | None] = {}
+    for source_name in _SOURCE_DIAGNOSTIC_NAMES:
+        source_config = getattr(sources, source_name, None)
+        enabled[source_name] = (
+            bool(getattr(source_config, "enabled", False))
+            if source_config is not None
+            else None
+        )
+    return enabled
+
+
+def _build_source_diagnostics_payload(
+    *,
+    repository: Any,
+    settings: Any | None,
+    reference_now: datetime,
+) -> dict[str, Any] | None:
+    enabled_by_source = _source_enabled_map(settings)
+    recent_runs = repository.list_recent_runs(limit=20)
+    for run in recent_runs:
+        metrics = repository.list_metrics(run_id=run.id)
+        if not any(
+            str(getattr(metric, "name", "") or "").startswith("pipeline.ingest.source.")
+            or str(getattr(metric, "name", "") or "").startswith(
+                "pipeline.enrich.source."
+            )
+            for metric in metrics
+        ):
+            continue
+
+        sources_payload: dict[str, dict[str, Any]] = {
+            source_name: _default_source_diagnostic_entry(
+                enabled=enabled_by_source.get(source_name)
+            )
+            for source_name in _SOURCE_DIAGNOSTIC_NAMES
+        }
+
+        def _source_entry(source_name: str) -> dict[str, Any]:
+            normalized = str(source_name or "").strip().lower() or "unknown"
+            if normalized not in sources_payload:
+                sources_payload[normalized] = _default_source_diagnostic_entry(
+                    enabled=enabled_by_source.get(normalized)
+                )
+            return sources_payload[normalized]
+
+        for metric in metrics:
+            metric_name = str(getattr(metric, "name", "") or "")
+            metric_value = int(float(getattr(metric, "value", 0) or 0))
+            if metric_name.startswith("pipeline.ingest.source."):
+                remainder = metric_name.removeprefix("pipeline.ingest.source.")
+                source_name, _, metric_key = remainder.partition(".")
+                if not metric_key:
+                    continue
+                entry = _source_entry(source_name)
+                ingest_payload = entry["ingest"]
+                if metric_key in ingest_payload:
+                    ingest_payload[metric_key] = metric_value
+                continue
+            if not metric_name.startswith("pipeline.enrich.source."):
+                continue
+            remainder = metric_name.removeprefix("pipeline.enrich.source.")
+            source_name, _, metric_key = remainder.partition(".")
+            if not metric_key:
+                continue
+            entry = _source_entry(source_name)
+            enrich_payload = entry["enrich"]
+            if metric_key.startswith("content_type.") and metric_key.endswith("_total"):
+                content_type = metric_key[len("content_type.") : -len("_total")]
+                if content_type:
+                    enrich_payload["content_types"][content_type] = metric_value
+                continue
+            if metric_key.startswith("pdf_backend.") and metric_key.endswith("_total"):
+                backend = metric_key[len("pdf_backend.") : -len("_total")]
+                if backend:
+                    enrich_payload["pdf_backends"][backend] = metric_value
+                continue
+            if metric_key in enrich_payload:
+                enrich_payload[metric_key] = metric_value
+
+        for entry in sources_payload.values():
+            enabled = entry.get("enabled")
+            ingest_payload = entry["ingest"]
+            enrich_payload = entry["enrich"]
+            enrich_success_total = int(enrich_payload["processed_total"]) + int(
+                enrich_payload["skipped_total"]
+            )
+            observed = (
+                int(ingest_payload["drafts_total"]) > 0
+                or int(ingest_payload["pull_failed_total"]) > 0
+                or enrich_success_total > 0
+                or int(enrich_payload["failed_total"]) > 0
+            )
+            if enabled is False and not observed:
+                status = "disabled"
+            elif (
+                int(ingest_payload["pull_failed_total"]) > 0
+                and int(ingest_payload["drafts_total"]) <= 0
+                and enrich_success_total <= 0
+                and int(enrich_payload["failed_total"]) <= 0
+            ):
+                status = "pull_failed"
+            elif int(enrich_payload["failed_total"]) > 0:
+                status = "enrich_failed"
+            elif enrich_success_total > 0:
+                status = "ok"
+            elif int(ingest_payload["drafts_total"]) > 0:
+                status = "ingested_only"
+            else:
+                status = "not_run"
+            entry["status"] = status
+            entry["pipeline_completed"] = bool(status == "ok")
+
+        started_at = cli._normalize_utc_datetime(getattr(run, "started_at", None))
+        age_seconds: int | None = None
+        if started_at is not None:
+            age_seconds = max(
+                0,
+                int((reference_now - started_at).total_seconds()),
+            )
+        return {
+            "run_id": run.id,
+            "run_status": str(getattr(run, "status", "") or ""),
+            "started_at": started_at.isoformat() if started_at is not None else None,
+            "age_seconds": age_seconds,
+            "sources": sources_payload,
+        }
+    return None
+
+
 def run_gc_command(
     *,
     db_path: Path | None,
@@ -451,6 +617,11 @@ def run_stats_command(
             0,
             int((reference_now - latest_successful_run_at).total_seconds()),
         )
+    source_diagnostics = _build_source_diagnostics_payload(
+        repository=repository,
+        settings=settings,
+        reference_now=reference_now,
+    )
 
     payload = {
         "status": "ok",
@@ -471,6 +642,7 @@ def run_stats_command(
             else None
         ),
         "latest_successful_run_age_seconds": latest_successful_run_age_seconds,
+        "source_diagnostics": source_diagnostics,
         "lease": lease_payload,
         "workspace_bytes": workspace_bytes,
     }
@@ -552,6 +724,19 @@ def run_stats_command(
             for name, size in payload["workspace_bytes"].items()
         ]
         console.print("workspace_bytes=" + " ".join(workspace_parts))
+    if payload["source_diagnostics"] is not None:
+        source_payload = payload["source_diagnostics"]
+        console.print(
+            "source_diagnostics_run="
+            + f"{source_payload['run_id']} status={source_payload['run_status']}"
+        )
+        source_parts = [
+            f"{source_name}={entry['status']}"
+            for source_name, entry in source_payload["sources"].items()
+            if entry["status"] not in {"disabled", "not_run"}
+        ]
+        if source_parts:
+            console.print("sources=" + " ".join(source_parts))
 
 
 def run_doctor_command(
