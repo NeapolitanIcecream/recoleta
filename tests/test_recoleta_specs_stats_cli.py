@@ -284,3 +284,55 @@ def test_stats_json_reports_latest_source_diagnostics(
     assert diagnostics["sources"]["hn"]["status"] == "pull_failed"
     assert diagnostics["sources"]["hn"]["pipeline_completed"] is False
     assert diagnostics["sources"]["hn"]["ingest"]["pull_failed_total"] == 1
+
+
+def test_stats_json_reports_pull_failed_when_backlog_enrich_succeeds(
+    configured_env: Path,
+) -> None:
+    """Regression: backlog enrich must not hide an active source pull failure."""
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-source-diag", run_id="run-source-diag-backlog")
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.drafts_total",
+        value=0,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.pull_failed_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.processed_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.skipped_total",
+        value=0,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.enrich.source.rss.failed_total",
+        value=0,
+        unit="count",
+    )
+    repository.finish_run(run.id, success=False)
+
+    result = runner.invoke(recoleta.cli.app, ["stats", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    diagnostics = payload["source_diagnostics"]
+    assert diagnostics["run_id"] == "run-source-diag-backlog"
+    assert diagnostics["sources"]["rss"]["status"] == "pull_failed"
+    assert diagnostics["sources"]["rss"]["pipeline_completed"] is False

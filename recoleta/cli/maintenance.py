@@ -142,7 +142,6 @@ def _build_source_diagnostics_payload(
             elif (
                 int(ingest_payload["pull_failed_total"]) > 0
                 and int(ingest_payload["drafts_total"]) <= 0
-                and enrich_success_total <= 0
                 and int(enrich_payload["failed_total"]) <= 0
             ):
                 status = "pull_failed"
