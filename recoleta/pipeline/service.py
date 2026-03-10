@@ -76,6 +76,8 @@ _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
     "empty_document",
     "other",
 )
+_SOURCE_DIAGNOSTIC_NAMES = ("arxiv", "hn", "hf_daily", "openreview", "rss")
+_SHORT_CONTENT_DENSE_CHAR_THRESHOLD = 200
 
 
 class PipelineService:
@@ -164,6 +166,60 @@ class PipelineService:
                     token=settings.telegram_bot_token.get_secret_value(),
                     chat_id=settings.telegram_chat_id.get_secret_value(),
                 )
+
+    @staticmethod
+    def _dense_char_count(text: str) -> int:
+        return len("".join(str(text or "").split()))
+
+    @staticmethod
+    def _empty_source_pull_stats() -> dict[str, dict[str, int]]:
+        return {
+            source_name: {
+                "drafts_total": 0,
+                "pull_failed_total": 0,
+                "pull_duration_ms": 0,
+            }
+            for source_name in _SOURCE_DIAGNOSTIC_NAMES
+        }
+
+    @staticmethod
+    def _new_source_enrich_bucket() -> dict[str, Any]:
+        return {
+            "processed_total": 0,
+            "skipped_total": 0,
+            "failed_total": 0,
+            "item_duration_ms_total": 0,
+            "fetch_ms_sum": 0,
+            "extract_ms_sum": 0,
+            "db_read_ms_sum": 0,
+            "db_write_ms_sum": 0,
+            "input_bytes_sum": 0,
+            "content_chars_sum": 0,
+            "short_content_total": 0,
+            "content_types": {},
+            "pdf_backends": {},
+        }
+
+    @classmethod
+    def _annotate_content_diag(
+        cls,
+        diag: dict[str, Any] | None,
+        *,
+        content_type: str,
+        content_text: str,
+        pdf_backend: str | None = None,
+    ) -> None:
+        if diag is None:
+            return
+        diag["content_type"] = str(content_type).strip().lower()
+        diag["content_chars"] = len(content_text)
+        diag["short_content"] = (
+            1
+            if cls._dense_char_count(content_text) < _SHORT_CONTENT_DENSE_CHAR_THRESHOLD
+            else 0
+        )
+        if pdf_backend:
+            diag["pdf_backend"] = str(pdf_backend).strip().lower()
 
     def _log_html_document_md_conversion_skipped(
         self,
@@ -260,6 +316,7 @@ class PipelineService:
         ingest_result = IngestResult()
         source_failures_total = 0
         source_drafts = drafts
+        source_stats = self._empty_source_pull_stats()
         with Progress(
             TextColumn("{task.description}"),
             BarColumn(),
@@ -270,9 +327,23 @@ class PipelineService:
             progress_task_id = progress.add_task("Ingesting items", total=None)
 
             if source_drafts is None:
-                source_drafts, source_failures_total = self._pull_source_drafts(
+                source_drafts, source_failures_total, source_stats = self._pull_source_drafts(
                     run_id=run_id, log=log
                 )
+            else:
+                for draft in source_drafts or []:
+                    source_name = str(draft.source or "").strip().lower()
+                    if not source_name:
+                        continue
+                    bucket = source_stats.setdefault(
+                        source_name,
+                        {
+                            "drafts_total": 0,
+                            "pull_failed_total": 0,
+                            "pull_duration_ms": 0,
+                        },
+                    )
+                    bucket["drafts_total"] += 1
 
             source_drafts = source_drafts or []
             progress.update(progress_task_id, total=len(source_drafts), completed=0)
@@ -357,6 +428,26 @@ class PipelineService:
             value=int((time.perf_counter() - started) * 1000),
             unit="ms",
         )
+        for source_name in sorted(source_stats):
+            bucket = source_stats[source_name]
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.drafts_total",
+                value=int(bucket.get("drafts_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.pull_failed_total",
+                value=int(bucket.get("pull_failed_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.pull_duration_ms",
+                value=int(bucket.get("pull_duration_ms") or 0),
+                unit="ms",
+            )
         log.info(
             "Ingest completed with inserted={} updated={} failed={} source_failures={}",
             ingest_result.inserted,
@@ -421,6 +512,17 @@ class PipelineService:
             }
             html_document_db_read_ms_sum = 0
             html_document_db_write_ms_sum = 0
+            source_enrich_stats: dict[str, dict[str, Any]] = {
+                source_name: self._new_source_enrich_bucket()
+                for source_name in _SOURCE_DIAGNOSTIC_NAMES
+            }
+
+            def _source_enrich_bucket(source_name: str) -> dict[str, Any]:
+                normalized = str(source_name or "").strip().lower() or "unknown"
+                return source_enrich_stats.setdefault(
+                    normalized,
+                    self._new_source_enrich_bucket(),
+                )
 
             def write_and_record_artifact(
                 *, item_id: int | None, kind: str, payload: dict[str, Any]
@@ -499,7 +601,7 @@ class PipelineService:
                         "diag": {},
                     }
                 item_id = int(raw_item_id)
-                diag: dict[str, int] = {}
+                diag: dict[str, Any] = {}
                 try:
                     _, stored_new_content = self._ensure_item_content(
                         client=client,
@@ -582,13 +684,24 @@ class PipelineService:
                     nonlocal html_document_db_read_ms_sum, html_document_db_write_ms_sum
 
                     status = result.get("status")
+                    source = str(result.get("source") or "").strip().lower()
+                    source_bucket = _source_enrich_bucket(source)
                     if status == "ok":
                         if result.get("stored_new"):
                             enrich_processed += 1
+                            source_bucket["processed_total"] = int(
+                                source_bucket.get("processed_total") or 0
+                            ) + 1
                         else:
                             enrich_skipped += 1
+                            source_bucket["skipped_total"] = int(
+                                source_bucket.get("skipped_total") or 0
+                            ) + 1
                     else:
                         enrich_failed += 1
+                        source_bucket["failed_total"] = int(
+                            source_bucket.get("failed_total") or 0
+                        ) + 1
                         item_id = result.get("item_id")
                         arxiv_method = result.get("arxiv_method")
                         if isinstance(arxiv_method, str) and arxiv_method:
@@ -620,8 +733,47 @@ class PipelineService:
                         )
 
                     diag = result.get("diag") or {}
-                    source = str(result.get("source") or "").strip().lower()
                     arxiv_method = result.get("arxiv_method")
+                    source_bucket["item_duration_ms_total"] = int(
+                        source_bucket.get("item_duration_ms_total") or 0
+                    ) + int(item_elapsed_ms)
+                    source_bucket["fetch_ms_sum"] = int(
+                        source_bucket.get("fetch_ms_sum") or 0
+                    ) + int(diag.get("fetch_ms") or 0)
+                    source_bucket["extract_ms_sum"] = int(
+                        source_bucket.get("extract_ms_sum") or 0
+                    ) + int(diag.get("extract_ms") or 0)
+                    source_bucket["db_read_ms_sum"] = int(
+                        source_bucket.get("db_read_ms_sum") or 0
+                    ) + int(diag.get("db_read_ms") or 0)
+                    source_bucket["db_write_ms_sum"] = int(
+                        source_bucket.get("db_write_ms_sum") or 0
+                    ) + int(diag.get("db_write_ms") or 0)
+                    source_bucket["input_bytes_sum"] = int(
+                        source_bucket.get("input_bytes_sum") or 0
+                    ) + int(diag.get("input_bytes") or 0)
+                    source_bucket["content_chars_sum"] = int(
+                        source_bucket.get("content_chars_sum") or 0
+                    ) + int(diag.get("content_chars") or 0)
+                    source_bucket["short_content_total"] = int(
+                        source_bucket.get("short_content_total") or 0
+                    ) + int(diag.get("short_content") or 0)
+                    content_type = str(diag.get("content_type") or "").strip().lower()
+                    if content_type:
+                        content_type_totals = cast(
+                            dict[str, int], source_bucket["content_types"]
+                        )
+                        content_type_totals[content_type] = (
+                            content_type_totals.get(content_type, 0) + 1
+                        )
+                    pdf_backend = str(diag.get("pdf_backend") or "").strip().lower()
+                    if pdf_backend:
+                        pdf_backend_totals = cast(
+                            dict[str, int], source_bucket["pdf_backends"]
+                        )
+                        pdf_backend_totals[pdf_backend] = (
+                            pdf_backend_totals.get(pdf_backend, 0) + 1
+                        )
                     if (
                         source == "arxiv"
                         and isinstance(arxiv_method, str)
@@ -942,6 +1094,45 @@ class PipelineService:
                 value=html_document_db_write_ms_sum,
                 unit="ms",
             )
+            for source_name in sorted(source_enrich_stats):
+                source_bucket = source_enrich_stats[source_name]
+                for metric_name, unit in (
+                    ("processed_total", "count"),
+                    ("skipped_total", "count"),
+                    ("failed_total", "count"),
+                    ("item_duration_ms_total", "ms"),
+                    ("fetch_ms_sum", "ms"),
+                    ("extract_ms_sum", "ms"),
+                    ("db_read_ms_sum", "ms"),
+                    ("db_write_ms_sum", "ms"),
+                    ("input_bytes_sum", "bytes"),
+                    ("content_chars_sum", "chars"),
+                    ("short_content_total", "count"),
+                ):
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name=f"pipeline.enrich.source.{source_name}.{metric_name}",
+                        value=int(source_bucket.get(metric_name) or 0),
+                        unit=unit,
+                    )
+                for content_type, count in sorted(
+                    cast(dict[str, int], source_bucket["content_types"]).items()
+                ):
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name=f"pipeline.enrich.source.{source_name}.content_type.{content_type}_total",
+                        value=count,
+                        unit="count",
+                    )
+                for pdf_backend, count in sorted(
+                    cast(dict[str, int], source_bucket["pdf_backends"]).items()
+                ):
+                    self.repository.record_metric(
+                        run_id=run_id,
+                        name=f"pipeline.enrich.source.{source_name}.pdf_backend.{pdf_backend}_total",
+                        value=count,
+                        unit="count",
+                    )
             log.info(
                 "Enrich completed with processed={} skipped={} failed={}",
                 enrich_processed,
@@ -2253,7 +2444,7 @@ class PipelineService:
         client: httpx.Client,
         item: Any,
         log: Any,
-        diag: dict[str, int] | None = None,
+        diag: dict[str, Any] | None = None,
         arxiv_html_throttle: Callable[[], None] | None = None,
     ) -> tuple[str, bool]:
         raw_item_id = getattr(item, "id", None)
@@ -2282,12 +2473,14 @@ class PipelineService:
                 canonical_url=canonical_url,
                 source_item_id=source_item_id,
                 log=log,
+                diag=diag,
             )
         else:
             content_text, stored_new_content = self._ensure_html_maintext_content(
                 client=client,
                 item_id=item_id,
                 canonical_url=canonical_url,
+                diag=diag,
             )
 
         if not content_text.strip():
@@ -2302,7 +2495,7 @@ class PipelineService:
         canonical_url: str,
         source_item_id: str | None,
         log: Any,
-        diag: dict[str, int] | None = None,
+        diag: dict[str, Any] | None = None,
         arxiv_html_throttle: Callable[[], None] | None = None,
     ) -> tuple[str, bool]:
         method = self.settings.sources.arxiv.enrich_method
@@ -2315,6 +2508,7 @@ class PipelineService:
                 canonical_url=canonical_url,
                 source_item_id=source_item_id,
                 log=log,
+                diag=diag,
             )
 
         if method == "latex_source":
@@ -2324,6 +2518,7 @@ class PipelineService:
                     item_id=item_id,
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
+                    diag=diag,
                 )
             except Exception as method_exc:
                 if failure_mode == "strict":
@@ -2340,6 +2535,7 @@ class PipelineService:
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
                     log=log,
+                    diag=diag,
                 )
 
         if method == "html_document":
@@ -2377,6 +2573,7 @@ class PipelineService:
                     canonical_url=canonical_url,
                     source_item_id=source_item_id,
                     log=log,
+                    diag=diag,
                 )
 
         raise ValueError(f"Unsupported arXiv enrich_method: {method}")
@@ -2388,11 +2585,22 @@ class PipelineService:
         item_id: int,
         canonical_url: str,
         source_item_id: str | None,
+        diag: dict[str, Any] | None = None,
     ) -> tuple[str, bool]:
+        db_read_started = time.perf_counter()
         existing_latex = self._get_latest_content_text(
             item_id=item_id, content_type="latex_source"
         )
+        if diag is not None:
+            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int(
+                (time.perf_counter() - db_read_started) * 1000
+            )
         if existing_latex is not None:
+            self._annotate_content_diag(
+                diag,
+                content_type="latex_source",
+                content_text=existing_latex,
+            )
             return existing_latex, False
         source_url = self._build_arxiv_source_url(
             canonical_url=canonical_url,
@@ -2400,14 +2608,35 @@ class PipelineService:
         )
         if not source_url:
             raise ValueError("missing arXiv source url")
+        fetch_started = time.perf_counter()
         source_bytes = fetch_url_bytes(client, source_url)
+        if diag is not None:
+            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
+                (time.perf_counter() - fetch_started) * 1000
+            )
+            diag["input_bytes"] = diag.get("input_bytes", 0) + len(source_bytes)
+        extract_started = time.perf_counter()
         extracted_source = extract_arxiv_latex_source(source_bytes)
+        if diag is not None:
+            diag["extract_ms"] = diag.get("extract_ms", 0) + int(
+                (time.perf_counter() - extract_started) * 1000
+            )
         if extracted_source is None:
             raise RuntimeError("empty arXiv latex source extraction")
+        db_write_started = time.perf_counter()
         self.repository.upsert_content(
             item_id=item_id,
             content_type="latex_source",
             text=extracted_source,
+        )
+        if diag is not None:
+            diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+                (time.perf_counter() - db_write_started) * 1000
+            )
+        self._annotate_content_diag(
+            diag,
+            content_type="latex_source",
+            content_text=extracted_source,
         )
         return extracted_source, True
 
@@ -2419,7 +2648,7 @@ class PipelineService:
         canonical_url: str,
         source_item_id: str | None,
         log: Any,
-        diag: dict[str, int] | None = None,
+        diag: dict[str, Any] | None = None,
         arxiv_html_throttle: Callable[[], None] | None = None,
     ) -> tuple[str, bool]:
         parallel_mode = (
@@ -2472,6 +2701,11 @@ class PipelineService:
             and existing_md is not None
             and existing_refs is not None
         ):
+            self._annotate_content_diag(
+                diag,
+                content_type="html_document",
+                content_text=existing_document,
+            )
             return existing_document, False
         stored_new = False
         if existing_document is not None:
@@ -2479,10 +2713,10 @@ class PipelineService:
             cleaned_document, references_html, stats = (
                 extract_html_document_cleaned_with_references(existing_document)
             )
+            cleanup_elapsed_ms = int((time.perf_counter() - cleanup_started) * 1000)
             if diag is not None:
-                diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + int(
-                    (time.perf_counter() - cleanup_started) * 1000
-                )
+                diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + cleanup_elapsed_ms
+                diag["extract_ms"] = diag.get("extract_ms", 0) + cleanup_elapsed_ms
             pending_upserts: dict[str, str] = {}
             if cleaned_document is not None and cleaned_document != existing_document:
                 pending_upserts["html_document"] = cleaned_document
@@ -2496,6 +2730,9 @@ class PipelineService:
                 )
                 if diag is not None:
                     diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
+                    diag["extract_ms"] = diag.get("extract_ms", 0) + int(
+                        elapsed_ms or 0
+                    )
                 if markdown is not None:
                     pending_upserts["html_document_md"] = markdown
                     _log_info_or_debug(
@@ -2539,6 +2776,11 @@ class PipelineService:
                         (time.perf_counter() - db_write_started) * 1000
                     )
                 stored_new = stored_new or (inserted > 0)
+            self._annotate_content_diag(
+                diag,
+                content_type="html_document",
+                content_text=existing_document,
+            )
             return existing_document, stored_new
         html_url = self._build_arxiv_html_url(
             canonical_url=canonical_url,
@@ -2552,14 +2794,17 @@ class PipelineService:
             diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000
             )
+            diag["input_bytes"] = diag.get("input_bytes", 0) + len(
+                html.encode("utf-8")
+            )
         cleanup_started = time.perf_counter()
         cleaned_document, references_html, stats = (
             extract_html_document_cleaned_with_references(html)
         )
+        cleanup_elapsed_ms = int((time.perf_counter() - cleanup_started) * 1000)
         if diag is not None:
-            diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + int(
-                (time.perf_counter() - cleanup_started) * 1000
-            )
+            diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + cleanup_elapsed_ms
+            diag["extract_ms"] = diag.get("extract_ms", 0) + cleanup_elapsed_ms
         if cleaned_document is None:
             raise RuntimeError("empty arXiv html document extraction")
         pending_upserts_new: dict[str, str] = {"html_document": cleaned_document}
@@ -2571,6 +2816,7 @@ class PipelineService:
         )
         if diag is not None:
             diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
+            diag["extract_ms"] = diag.get("extract_ms", 0) + int(elapsed_ms or 0)
         if markdown is not None:
             pending_upserts_new["html_document_md"] = markdown
             _log_info_or_debug(
@@ -2615,6 +2861,11 @@ class PipelineService:
                     (time.perf_counter() - db_write_started) * 1000
                 )
             stored_new = stored_new or (inserted > 0)
+        self._annotate_content_diag(
+            diag,
+            content_type="html_document",
+            content_text=cleaned_document,
+        )
         return cleaned_document, bool(stored_new)
 
     def _ensure_pdf_content(
@@ -2626,11 +2877,22 @@ class PipelineService:
         canonical_url: str,
         source_item_id: str | None,
         log: Any,
+        diag: dict[str, Any] | None = None,
     ) -> tuple[str, bool]:
+        db_read_started = time.perf_counter()
         existing_pdf = self._get_latest_content_text(
             item_id=item_id, content_type="pdf_text"
         )
+        if diag is not None:
+            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int(
+                (time.perf_counter() - db_read_started) * 1000
+            )
         if existing_pdf is not None:
+            self._annotate_content_diag(
+                diag,
+                content_type="pdf_text",
+                content_text=existing_pdf,
+            )
             return existing_pdf, False
         pdf_url = self._build_pdf_url(
             source=source,
@@ -2640,15 +2902,41 @@ class PipelineService:
         if not pdf_url:
             raise ValueError("missing pdf url")
 
+        fetch_started = time.perf_counter()
         pdf_bytes = fetch_url_bytes(client, pdf_url)
-        extracted_pdf = extract_pdf_text(pdf_bytes)
+        if diag is not None:
+            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
+                (time.perf_counter() - fetch_started) * 1000
+            )
+            diag["input_bytes"] = diag.get("input_bytes", 0) + len(pdf_bytes)
+        extract_started = time.perf_counter()
+        pdf_diag: dict[str, Any] = {}
+        extracted_pdf = extract_pdf_text(pdf_bytes, diag=pdf_diag)
+        if diag is not None:
+            diag["extract_ms"] = diag.get("extract_ms", 0) + int(
+                (time.perf_counter() - extract_started) * 1000
+            )
+            pdf_backend = str(pdf_diag.get("pdf_backend") or "").strip().lower()
+            if pdf_backend:
+                diag["pdf_backend"] = pdf_backend
         if extracted_pdf is None:
             raise RuntimeError("empty pdf text extraction")
 
+        db_write_started = time.perf_counter()
         self.repository.upsert_content(
             item_id=item_id,
             content_type="pdf_text",
             text=extracted_pdf,
+        )
+        if diag is not None:
+            diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+                (time.perf_counter() - db_write_started) * 1000
+            )
+        self._annotate_content_diag(
+            diag,
+            content_type="pdf_text",
+            content_text=extracted_pdf,
+            pdf_backend=str(pdf_diag.get("pdf_backend") or "").strip().lower() or None,
         )
         return extracted_pdf, True
 
@@ -2658,20 +2946,54 @@ class PipelineService:
         client: httpx.Client,
         item_id: int,
         canonical_url: str,
+        diag: dict[str, Any] | None = None,
     ) -> tuple[str, bool]:
+        db_read_started = time.perf_counter()
         existing_html = self._get_latest_content_text(
             item_id=item_id, content_type="html_maintext"
         )
+        if diag is not None:
+            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int(
+                (time.perf_counter() - db_read_started) * 1000
+            )
         if existing_html is not None:
+            self._annotate_content_diag(
+                diag,
+                content_type="html_maintext",
+                content_text=existing_html,
+            )
             return existing_html, False
+        fetch_started = time.perf_counter()
         html = fetch_url_html(client, canonical_url)
+        if diag is not None:
+            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
+                (time.perf_counter() - fetch_started) * 1000
+            )
+            diag["input_bytes"] = diag.get("input_bytes", 0) + len(
+                html.encode("utf-8")
+            )
+        extract_started = time.perf_counter()
         extracted = extract_html_maintext(html)
+        if diag is not None:
+            diag["extract_ms"] = diag.get("extract_ms", 0) + int(
+                (time.perf_counter() - extract_started) * 1000
+            )
         if extracted is None:
             raise RuntimeError("empty html maintext extraction")
+        db_write_started = time.perf_counter()
         self.repository.upsert_content(
             item_id=item_id,
             content_type="html_maintext",
             text=extracted,
+        )
+        if diag is not None:
+            diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+                (time.perf_counter() - db_write_started) * 1000
+            )
+        self._annotate_content_diag(
+            diag,
+            content_type="html_maintext",
+            content_text=extracted,
         )
         return extracted, True
 
@@ -2727,7 +3049,7 @@ class PipelineService:
 
     def _pull_source_drafts(
         self, *, run_id: str, log: Any
-    ) -> tuple[list[ItemDraft], int]:
+    ) -> tuple[list[ItemDraft], int, dict[str, dict[str, int]]]:
         hn_urls = (
             list(dict.fromkeys(self.settings.sources.hn.rss_urls))
             if bool(self.settings.sources.hn.enabled)
@@ -2750,13 +3072,26 @@ class PipelineService:
         )
         drafts: list[ItemDraft] = []
         source_failures_total = 0
+        source_stats = self._empty_source_pull_stats()
 
         def pull(source_name: str, fn: Any) -> None:
             nonlocal source_failures_total
+            started = time.perf_counter()
+            bucket = source_stats.setdefault(
+                source_name,
+                {
+                    "drafts_total": 0,
+                    "pull_failed_total": 0,
+                    "pull_duration_ms": 0,
+                },
+            )
             try:
-                drafts.extend(fn())
+                pulled = list(fn() or [])
+                drafts.extend(pulled)
+                bucket["drafts_total"] += len(pulled)
             except Exception as exc:
                 source_failures_total += 1
+                bucket["pull_failed_total"] += 1
                 sanitized_error = self._sanitize_error_message(str(exc))
                 artifact_path = self._write_debug_artifact(
                     run_id=run_id,
@@ -2786,15 +3121,35 @@ class PipelineService:
                 log.bind(source=source_name).warning(
                     "Source pull failed: {}", sanitized_error
                 )
+            finally:
+                bucket["pull_duration_ms"] += int(
+                    (time.perf_counter() - started) * 1000
+                )
 
         if self.settings.sources.hf_daily.enabled:
-            pull("hf_daily", lambda: sources.fetch_hf_daily_papers_drafts(max_items=50))
+            pull(
+                "hf_daily",
+                lambda: sources.fetch_hf_daily_papers_drafts(
+                    max_items=self.settings.sources.hf_daily.max_items_per_run
+                ),
+            )
         if hn_urls:
-            pull("hn", lambda: sources.fetch_rss_drafts(feed_urls=hn_urls, source="hn"))
+            pull(
+                "hn",
+                lambda: sources.fetch_rss_drafts(
+                    feed_urls=hn_urls,
+                    source="hn",
+                    max_items_per_feed=self.settings.sources.hn.max_items_per_feed,
+                ),
+            )
         if rss_urls:
             pull(
                 "rss",
-                lambda: sources.fetch_rss_drafts(feed_urls=rss_urls, source="rss"),
+                lambda: sources.fetch_rss_drafts(
+                    feed_urls=rss_urls,
+                    source="rss",
+                    max_items_per_feed=self.settings.sources.rss.max_items_per_feed,
+                ),
             )
         if arxiv_queries:
             pull(
@@ -2808,10 +3163,11 @@ class PipelineService:
             pull(
                 "openreview",
                 lambda: sources.fetch_openreview_drafts(
-                    venues=openreview_venues, max_results_per_venue=50
+                    venues=openreview_venues,
+                    max_results_per_venue=self.settings.sources.openreview.max_results_per_venue,
                 ),
             )
-        return drafts, source_failures_total
+        return drafts, source_failures_total, source_stats
 
     def _write_debug_artifact(
         self,

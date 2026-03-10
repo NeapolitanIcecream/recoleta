@@ -93,6 +93,126 @@ def test_ingest_pulls_all_configured_sources_without_network(
     assert repository.count_items() == 3
 
 
+def test_ingest_passes_configured_source_pull_limits_to_connectors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                    "max_results_per_run": 2,
+                },
+                "hn": {
+                    "enabled": True,
+                    "rss_urls": ["https://news.ycombinator.com/rss"],
+                    "max_items_per_feed": 1,
+                },
+                "rss": {
+                    "enabled": True,
+                    "feeds": ["https://jack.example/"],
+                    "max_items_per_feed": 3,
+                },
+                "hf_daily": {"enabled": True, "max_items_per_run": 4},
+                "openreview": {
+                    "enabled": True,
+                    "venues": ["ICLR.cc/2026/Conference"],
+                    "max_results_per_venue": 5,
+                },
+            }
+        ),
+    )
+
+    import recoleta.sources as source_connectors
+
+    calls: dict[str, object] = {}
+
+    def fake_fetch_hf_daily_papers_drafts(
+        *, max_items: int = 50
+    ) -> list[ItemDraft]:
+        calls["hf_daily"] = max_items
+        return []
+
+    def fake_fetch_rss_drafts(
+        *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
+    ) -> list[ItemDraft]:
+        calls[source] = {
+            "feed_urls": list(feed_urls),
+            "max_items_per_feed": max_items_per_feed,
+        }
+        return []
+
+    def fake_fetch_arxiv_drafts(
+        *, queries: list[str], max_results_per_run: int = 50
+    ) -> list[ItemDraft]:
+        calls["arxiv"] = {
+            "queries": list(queries),
+            "max_results_per_run": max_results_per_run,
+        }
+        return []
+
+    def fake_fetch_openreview_drafts(
+        *, venues: list[str], max_results_per_venue: int = 50
+    ) -> list[ItemDraft]:
+        calls["openreview"] = {
+            "venues": list(venues),
+            "max_results_per_venue": max_results_per_venue,
+        }
+        return []
+
+    monkeypatch.setattr(
+        source_connectors,
+        "fetch_hf_daily_papers_drafts",
+        fake_fetch_hf_daily_papers_drafts,
+    )
+    monkeypatch.setattr(source_connectors, "fetch_rss_drafts", fake_fetch_rss_drafts)
+    monkeypatch.setattr(source_connectors, "fetch_arxiv_drafts", fake_fetch_arxiv_drafts)
+    monkeypatch.setattr(
+        source_connectors, "fetch_openreview_drafts", fake_fetch_openreview_drafts
+    )
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    result = service.ingest(run_id="run-ingest-source-limits")
+
+    assert result.inserted == 0
+    assert calls["hf_daily"] == 4
+    assert calls["hn"] == {
+        "feed_urls": ["https://news.ycombinator.com/rss"],
+        "max_items_per_feed": 1,
+    }
+    assert calls["rss"] == {
+        "feed_urls": ["https://jack.example/"],
+        "max_items_per_feed": 3,
+    }
+    assert calls["arxiv"] == {
+        "queries": ["cat:cs.AI"],
+        "max_results_per_run": 2,
+    }
+    assert calls["openreview"] == {
+        "venues": ["ICLR.cc/2026/Conference"],
+        "max_results_per_venue": 5,
+    }
+
+
 def test_ingest_does_not_crash_on_source_failure_and_records_metric(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -134,6 +254,11 @@ def test_ingest_does_not_crash_on_source_failure_and_records_metric(
     ]
     assert len(source_failures) == 1
     assert source_failures[0].value == 1
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.ingest.source.hn.pull_failed_total"].value == 1
+    assert by_name["pipeline.ingest.source.hn.drafts_total"].value == 0
+    assert by_name["pipeline.ingest.source.rss.pull_failed_total"].value == 0
+    assert by_name["pipeline.ingest.source.rss.drafts_total"].value == 1
 
 
 def test_ingest_progress_starts_before_source_pull_and_sets_total(

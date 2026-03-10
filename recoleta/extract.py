@@ -709,7 +709,7 @@ def convert_html_document_to_markdown(
     html: str,
     *,
     max_chars: int = _HTML_DOCUMENT_MAX_CHARS,
-    diag: dict[str, int] | None = None,
+    diag: dict[str, Any] | None = None,
 ) -> tuple[str | None, int, str | None]:
     """Convert HTML to GitHub-flavored Markdown via Pandoc (pypandoc)."""
 

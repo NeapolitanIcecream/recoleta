@@ -474,6 +474,7 @@ class HNSourceConfig(BaseModel):
     rss_urls: list[str] = Field(
         default_factory=lambda: ["https://news.ycombinator.com/rss"]
     )
+    max_items_per_feed: int = Field(default=50, ge=1, le=500)
 
     @model_validator(mode="after")
     def _validate_enabled_requires_urls(self) -> "HNSourceConfig":
@@ -495,11 +496,25 @@ class HNSourceConfig(BaseModel):
 
 class HFDailySourceConfig(BaseModel):
     enabled: bool = False
+    max_items_per_run: int = Field(default=50, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def _validate_enabled_flag(self) -> "HFDailySourceConfig":
+        fields_set = set(getattr(self, "model_fields_set", set()) or set())
+        configured_without_enable = bool(fields_set - {"enabled"}) and not bool(
+            self.enabled
+        )
+        if configured_without_enable:
+            raise ValueError(
+                "SOURCES.hf_daily is configured but disabled; set SOURCES.hf_daily.enabled=true (or remove the hf_daily block)."
+            )
+        return self
 
 
 class OpenReviewSourceConfig(BaseModel):
     enabled: bool = False
     venues: list[str] = Field(default_factory=list)
+    max_results_per_venue: int = Field(default=50, ge=1, le=500)
 
     @model_validator(mode="after")
     def _validate_enabled_requires_venues(self) -> "OpenReviewSourceConfig":
@@ -522,6 +537,7 @@ class OpenReviewSourceConfig(BaseModel):
 class RSSSourceConfig(BaseModel):
     enabled: bool = False
     feeds: list[str] = Field(default_factory=list)
+    max_items_per_feed: int = Field(default=50, ge=1, le=500)
 
     @model_validator(mode="after")
     def _validate_enabled_requires_feeds(self) -> "RSSSourceConfig":
