@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass
 import hashlib
 import inspect
 import threading
@@ -59,10 +60,15 @@ from recoleta.ports import RepositoryPort
 from recoleta import sources
 from recoleta.triage import SemanticTriage, TriageCandidate
 from recoleta.types import (
+    AnalysisResult,
+    AnalysisWrite,
+    AnalyzeDebug,
     AnalyzeResult,
     DEFAULT_TOPIC_STREAM,
     IngestResult,
     ItemDraft,
+    ItemStateUpdate,
+    MetricPoint,
     PublishResult,
     TrendResult,
 )
@@ -80,6 +86,38 @@ _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
 )
 _SOURCE_DIAGNOSTIC_NAMES = ("arxiv", "hn", "hf_daily", "openreview", "rss")
 _SHORT_CONTENT_DENSE_CHAR_THRESHOLD = 200
+
+
+@dataclass(slots=True)
+class _AnalyzeWorkItem:
+    item_id: int
+    title: str
+    canonical_url: str
+    user_topics: list[str]
+    content_text: str
+    scope: str
+    mirror_item_state: bool
+    stream_name: str | None = None
+
+
+@dataclass(slots=True)
+class _AnalyzeCallSuccess:
+    work_item: _AnalyzeWorkItem
+    result: AnalysisResult
+    debug: AnalyzeDebug | None
+
+
+@dataclass(slots=True)
+class _AnalyzeCallFailure:
+    work_item: _AnalyzeWorkItem
+    error: Exception
+
+
+@dataclass(slots=True)
+class _AnalyzeParallelismStats:
+    requested: int
+    effective: int
+    max_inflight: int
 
 
 class PipelineService:
@@ -359,28 +397,147 @@ class PipelineService:
         deferred_counts: dict[str, int],
     ) -> None:
         sources = sorted(set(candidate_counts) | set(deferred_counts))
+        metrics: list[MetricPoint] = []
         for source_name in sources:
             candidate_total = int(candidate_counts.get(source_name) or 0)
             deferred_total = int(deferred_counts.get(source_name) or 0)
             selected_total = max(0, candidate_total - deferred_total)
+            metrics.extend(
+                [
+                    MetricPoint(
+                        name=f"pipeline.{stage}.source.{source_name}.candidate_total",
+                        value=candidate_total,
+                        unit="count",
+                    ),
+                    MetricPoint(
+                        name=f"pipeline.{stage}.source.{source_name}.selected_total",
+                        value=selected_total,
+                        unit="count",
+                    ),
+                    MetricPoint(
+                        name=f"pipeline.{stage}.source.{source_name}.deferred_total",
+                        value=deferred_total,
+                        unit="count",
+                    ),
+                ]
+            )
+        self._record_metrics_batch(run_id=run_id, metrics=metrics)
+
+    def _record_metrics_batch(
+        self,
+        *,
+        run_id: str,
+        metrics: list[MetricPoint],
+    ) -> int:
+        normalized = [
+            MetricPoint(name=str(metric.name or "").strip(), value=metric.value, unit=metric.unit)
+            for metric in metrics
+            if str(metric.name or "").strip()
+        ]
+        if not normalized:
+            return 0
+        batch_recorder = getattr(self.repository, "record_metrics_batch", None)
+        if callable(batch_recorder):
+            try:
+                return cast(int, batch_recorder(run_id=run_id, metrics=normalized))
+            except TypeError:
+                pass
+        for metric in normalized:
             self.repository.record_metric(
                 run_id=run_id,
-                name=f"pipeline.{stage}.source.{source_name}.candidate_total",
-                value=candidate_total,
-                unit="count",
+                name=metric.name,
+                value=metric.value,
+                unit=metric.unit,
             )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.{stage}.source.{source_name}.selected_total",
-                value=selected_total,
-                unit="count",
+        return len(normalized)
+
+    def _save_analyses_batch(self, *, analyses: list[AnalysisWrite]) -> int:
+        normalized = [
+            AnalysisWrite(
+                item_id=int(analysis.item_id),
+                result=analysis.result,
+                scope=str(analysis.scope or DEFAULT_TOPIC_STREAM).strip()
+                or DEFAULT_TOPIC_STREAM,
+                mirror_item_state=bool(analysis.mirror_item_state),
             )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.{stage}.source.{source_name}.deferred_total",
-                value=deferred_total,
-                unit="count",
+            for analysis in analyses
+            if int(getattr(analysis, "item_id", 0) or 0) > 0
+        ]
+        if not normalized:
+            return 0
+        batch_saver = getattr(self.repository, "save_analyses_batch", None)
+        if callable(batch_saver):
+            try:
+                return cast(int, batch_saver(analyses=normalized))
+            except TypeError:
+                pass
+        for analysis in normalized:
+            self.repository.save_analysis(
+                item_id=analysis.item_id,
+                result=analysis.result,
+                scope=analysis.scope,
+                mirror_item_state=analysis.mirror_item_state,
             )
+        return len(normalized)
+
+    def _update_item_states_batch(self, *, updates: list[ItemStateUpdate]) -> int:
+        normalized = [
+            ItemStateUpdate(
+                item_id=int(update.item_id),
+                state=str(update.state or "").strip(),
+                stream=(
+                    str(update.stream).strip()
+                    if update.stream is not None and str(update.stream).strip()
+                    else None
+                ),
+                mirror_item_state=bool(update.mirror_item_state),
+            )
+            for update in updates
+            if int(getattr(update, "item_id", 0) or 0) > 0
+            and str(getattr(update, "state", "") or "").strip()
+        ]
+        if not normalized:
+            return 0
+        batch_updater = getattr(self.repository, "update_item_states_batch", None)
+        if callable(batch_updater):
+            try:
+                return cast(int, batch_updater(updates=normalized))
+            except TypeError:
+                pass
+        for update in normalized:
+            if update.stream is not None:
+                self.repository.mark_item_stream_state(
+                    item_id=update.item_id,
+                    stream=update.stream,
+                    state=update.state,
+                    mirror_item_state=update.mirror_item_state,
+                )
+            elif update.state == ITEM_STATE_RETRYABLE_FAILED:
+                self.repository.mark_item_retryable_failed(item_id=update.item_id)
+            elif update.state == ITEM_STATE_FAILED:
+                self.repository.mark_item_failed(item_id=update.item_id)
+            elif update.state == ITEM_STATE_TRIAGED:
+                self.repository.mark_item_triaged(item_id=update.item_id)
+            elif update.state == ITEM_STATE_ENRICHED:
+                self.repository.mark_item_enriched(item_id=update.item_id)
+            else:
+                self.repository.mark_item_failed(item_id=update.item_id)
+        return len(normalized)
+
+    def _requested_analyze_parallelism(self) -> int:
+        return max(1, int(self.settings.analyze_max_concurrency))
+
+    def _analyze_write_batch_size(self) -> int:
+        return max(1, int(self.settings.analyze_write_batch_size))
+
+    @staticmethod
+    def _chunked_batch_ranges(total: int, batch_size: int) -> list[tuple[int, int]]:
+        normalized_total = max(0, int(total))
+        normalized_batch_size = max(1, int(batch_size))
+        return [
+            (start, min(start + normalized_batch_size, normalized_total))
+            for start in range(0, normalized_total, normalized_batch_size)
+        ]
 
     @classmethod
     def _annotate_content_diag(
@@ -1795,6 +1952,315 @@ class PipelineService:
                 sanitized_error,
             )
 
+    def _run_analyze_calls(
+        self,
+        *,
+        work_items: list[_AnalyzeWorkItem],
+        include_debug: bool,
+        description: str,
+    ) -> tuple[
+        list[_AnalyzeCallSuccess | _AnalyzeCallFailure],
+        _AnalyzeParallelismStats,
+    ]:
+        if not work_items:
+            return [], _AnalyzeParallelismStats(requested=0, effective=0, max_inflight=0)
+
+        requested = self._requested_analyze_parallelism()
+        effective = min(requested, len(work_items))
+        outcomes: list[_AnalyzeCallSuccess | _AnalyzeCallFailure] = []
+        active = 0
+        max_inflight = 0
+        lock = threading.Lock()
+
+        def _invoke(
+            work_item: _AnalyzeWorkItem,
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            nonlocal active, max_inflight
+            with lock:
+                active += 1
+                max_inflight = max(max_inflight, active)
+            try:
+                return self.analyzer.analyze(
+                    title=work_item.title,
+                    canonical_url=work_item.canonical_url,
+                    user_topics=work_item.user_topics,
+                    content=work_item.content_text,
+                    include_debug=include_debug,
+                )
+            finally:
+                with lock:
+                    active -= 1
+
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=self._progress_console,
+        ) as progress:
+            task_id = progress.add_task(description, total=len(work_items))
+            if effective <= 1:
+                for work_item in work_items:
+                    try:
+                        result, debug = _invoke(work_item)
+                    except Exception as exc:  # noqa: BLE001
+                        outcomes.append(_AnalyzeCallFailure(work_item=work_item, error=exc))
+                    else:
+                        outcomes.append(
+                            _AnalyzeCallSuccess(
+                                work_item=work_item,
+                                result=result,
+                                debug=debug,
+                            )
+                        )
+                    progress.advance(task_id, 1)
+            else:
+                with ThreadPoolExecutor(
+                    max_workers=effective,
+                    thread_name_prefix="recoleta-analyze",
+                ) as executor:
+                    futures = {
+                        executor.submit(_invoke, work_item): work_item
+                        for work_item in work_items
+                    }
+                    for future in as_completed(futures):
+                        work_item = futures[future]
+                        try:
+                            result, debug = future.result()
+                        except Exception as exc:  # noqa: BLE001
+                            outcomes.append(
+                                _AnalyzeCallFailure(work_item=work_item, error=exc)
+                            )
+                        else:
+                            outcomes.append(
+                                _AnalyzeCallSuccess(
+                                    work_item=work_item,
+                                    result=result,
+                                    debug=debug,
+                                )
+                            )
+                        progress.advance(task_id, 1)
+
+        return outcomes, _AnalyzeParallelismStats(
+            requested=requested,
+            effective=effective,
+            max_inflight=max_inflight,
+        )
+
+    def _persist_analyze_batches(
+        self,
+        *,
+        analyses: list[AnalysisWrite],
+        state_updates: list[ItemStateUpdate],
+    ) -> tuple[int, int, int, int]:
+        batch_size = self._analyze_write_batch_size()
+        analysis_batches_total = 0
+        analysis_rows_total = 0
+        state_batches_total = 0
+        state_rows_total = 0
+
+        for start, end in self._chunked_batch_ranges(len(analyses), batch_size):
+            written = self._save_analyses_batch(analyses=analyses[start:end])
+            if written > 0:
+                analysis_batches_total += 1
+                analysis_rows_total += written
+
+        for start, end in self._chunked_batch_ranges(len(state_updates), batch_size):
+            updated = self._update_item_states_batch(updates=state_updates[start:end])
+            if updated > 0:
+                state_batches_total += 1
+                state_rows_total += updated
+
+        return (
+            analysis_batches_total,
+            analysis_rows_total,
+            state_batches_total,
+            state_rows_total,
+        )
+
+    def _build_analyze_metric_points(
+        self,
+        *,
+        analyze_result: AnalyzeResult,
+        llm_calls_total: int,
+        llm_errors_total: int,
+        missing_content_total: int,
+        llm_prompt_tokens_total: int,
+        llm_completion_tokens_total: int,
+        llm_tokens_seen: bool,
+        llm_cost_usd_total: float,
+        llm_cost_seen: bool,
+        llm_cost_missing_total: int,
+        llm_calls_by_provider_token: dict[str, int],
+        llm_errors_by_provider_token: dict[str, int],
+        llm_calls_by_model_token: dict[str, int],
+        llm_errors_by_model_token: dict[str, int],
+        duration_ms: int,
+        parallelism: _AnalyzeParallelismStats,
+        sql_queries_total: int,
+        sql_commits_total: int,
+        analysis_batches_total: int,
+        analysis_rows_total: int,
+        state_batches_total: int,
+        state_rows_total: int,
+        streams_total: int | None = None,
+        extra_metrics: list[MetricPoint] | None = None,
+    ) -> list[MetricPoint]:
+        metrics: list[MetricPoint] = []
+        if streams_total is not None:
+            metrics.append(
+                MetricPoint(
+                    name="pipeline.analyze.streams_total",
+                    value=streams_total,
+                    unit="count",
+                )
+            )
+        metrics.extend(
+            [
+                MetricPoint(
+                    name="pipeline.analyze.parallelism.requested",
+                    value=parallelism.requested,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.parallelism.effective",
+                    value=parallelism.effective,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.parallelism.max_inflight",
+                    value=parallelism.max_inflight,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.llm_calls_total",
+                    value=llm_calls_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.llm_errors_total",
+                    value=llm_errors_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.missing_content_total",
+                    value=missing_content_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.db.sql_queries_total",
+                    value=sql_queries_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.db.sql_commits_total",
+                    value=sql_commits_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.db.analysis_batches_total",
+                    value=analysis_batches_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.db.analysis_rows_total",
+                    value=analysis_rows_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.db.state_batches_total",
+                    value=state_batches_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.db.state_rows_total",
+                    value=state_rows_total,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.processed_total",
+                    value=analyze_result.processed,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.failed_total",
+                    value=analyze_result.failed,
+                    unit="count",
+                ),
+                MetricPoint(
+                    name="pipeline.analyze.duration_ms",
+                    value=duration_ms,
+                    unit="ms",
+                ),
+            ]
+        )
+        if llm_tokens_seen:
+            metrics.extend(
+                [
+                    MetricPoint(
+                        name="pipeline.analyze.llm_prompt_tokens_total",
+                        value=llm_prompt_tokens_total,
+                        unit="count",
+                    ),
+                    MetricPoint(
+                        name="pipeline.analyze.llm_completion_tokens_total",
+                        value=llm_completion_tokens_total,
+                        unit="count",
+                    ),
+                ]
+            )
+        if llm_cost_seen:
+            metrics.append(
+                MetricPoint(
+                    name="pipeline.analyze.estimated_cost_usd",
+                    value=llm_cost_usd_total,
+                    unit="usd",
+                )
+            )
+        if llm_cost_missing_total > 0:
+            metrics.append(
+                MetricPoint(
+                    name="pipeline.analyze.cost_missing_total",
+                    value=llm_cost_missing_total,
+                    unit="count",
+                )
+            )
+        for provider_token, count in llm_calls_by_provider_token.items():
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.analyze.llm_calls.provider.{provider_token}",
+                    value=count,
+                    unit="count",
+                )
+            )
+        for provider_token, count in llm_errors_by_provider_token.items():
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.analyze.llm_errors.provider.{provider_token}",
+                    value=count,
+                    unit="count",
+                )
+            )
+        for model_token, count in llm_calls_by_model_token.items():
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.analyze.llm_calls.model.{model_token}",
+                    value=count,
+                    unit="count",
+                )
+            )
+        for model_token, count in llm_errors_by_model_token.items():
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.analyze.llm_errors.model.{model_token}",
+                    value=count,
+                    unit="count",
+                )
+            )
+        if extra_metrics:
+            metrics.extend(extra_metrics)
+        return metrics
+
     def analyze(
         self,
         *,
@@ -1816,24 +2282,6 @@ class PipelineService:
             self.settings.topics
         )
         effective_limit = self._resolve_analysis_limit(limit=limit)
-        candidate_limit = self._stage_candidate_limit(limit=effective_limit)
-        items = self._invoke_repository_method(
-            "list_items_for_llm_analysis",
-            limit=candidate_limit,
-            triage_required=triage_required,
-            period_start=period_start,
-            period_end=period_end,
-        )
-        items, candidate_counts, deferred_counts = self._rebalance_items_by_source(
-            items=list(items),
-            limit=effective_limit,
-        )
-        self._record_stage_source_selection_metrics(
-            run_id=run_id,
-            stage="analyze",
-            candidate_counts=candidate_counts,
-            deferred_counts=deferred_counts,
-        )
         analyze_result = AnalyzeResult()
         llm_calls_total = 0
         llm_errors_total = 0
@@ -1909,98 +2357,148 @@ class PipelineService:
                     kind,
                     self._sanitize_error_message(str(artifact_exc)),
                 )
+        with self.repository.sql_diagnostics() as sql_diag:
+            candidate_limit = self._stage_candidate_limit(limit=effective_limit)
+            items = self._invoke_repository_method(
+                "list_items_for_llm_analysis",
+                limit=candidate_limit,
+                triage_required=triage_required,
+                period_start=period_start,
+                period_end=period_end,
+            )
+            items, candidate_counts, deferred_counts = self._rebalance_items_by_source(
+                items=list(items),
+                limit=effective_limit,
+            )
+            self._record_stage_source_selection_metrics(
+                run_id=run_id,
+                stage="analyze",
+                candidate_counts=candidate_counts,
+                deferred_counts=deferred_counts,
+            )
 
-        with Progress(
-            TextColumn("{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=self._progress_console,
-        ) as progress:
-            for item in progress.track(items, description="Analyzing items"):
+            work_items: list[_AnalyzeWorkItem] = []
+            state_updates: list[ItemStateUpdate] = []
+            analysis_writes: list[AnalysisWrite] = []
+            parallelism = _AnalyzeParallelismStats(
+                requested=self._requested_analyze_parallelism(),
+                effective=0,
+                max_inflight=0,
+            )
+
+            for item in items:
                 raw_item_id = getattr(item, "id", None)
                 if raw_item_id is None:
                     analyze_result.failed += 1
                     log.warning("Analyze skipped: item has no id")
                     continue
                 item_id = int(raw_item_id)
-                try:
-                    content_text = self._load_stored_content_for_analysis(item=item)
-                    if not content_text:
-                        missing_content_total += 1
-                        analyze_result.failed += 1
-                        try:
-                            self.repository.mark_item_retryable_failed(item_id=item_id)
-                        except Exception as mark_exc:
-                            log.bind(item_id=item_id).warning(
-                                "Analyze missing content mark_item_state failed: {}",
-                                self._sanitize_error_message(str(mark_exc)),
-                            )
-                        if include_debug:
-                            write_and_record_artifact(
-                                item_id=item_id,
-                                kind="error_context",
-                                payload={
-                                    "stage": "analyze",
-                                    "error_type": "MissingContent",
-                                    "error_message": "missing stored content before LLM analysis",
-                                    "item_id": item_id,
-                                    "error_category": "ordering",
-                                    "retryable": True,
-                                },
-                            )
-                        log.bind(item_id=item_id).warning(
-                            "Analyze failed: missing stored content"
+                content_text = self._load_stored_content_for_analysis(item=item)
+                if not content_text:
+                    missing_content_total += 1
+                    analyze_result.failed += 1
+                    state_updates.append(
+                        ItemStateUpdate(
+                            item_id=item_id,
+                            state=ITEM_STATE_RETRYABLE_FAILED,
                         )
-                        continue
-
-                    llm_calls_total += 1
-                    analysis_result, debug = self.analyzer.analyze(
+                    )
+                    if include_debug:
+                        write_and_record_artifact(
+                            item_id=item_id,
+                            kind="error_context",
+                            payload={
+                                "stage": "analyze",
+                                "error_type": "MissingContent",
+                                "error_message": "missing stored content before LLM analysis",
+                                "item_id": item_id,
+                                "error_category": "ordering",
+                                "retryable": True,
+                            },
+                        )
+                    log.bind(item_id=item_id).warning(
+                        "Analyze failed: missing stored content"
+                    )
+                    continue
+                work_items.append(
+                    _AnalyzeWorkItem(
+                        item_id=item_id,
                         title=item.title,
                         canonical_url=item.canonical_url,
-                        user_topics=self.settings.topics,
-                        content=content_text,
-                        include_debug=include_debug,
+                        user_topics=list(self.settings.topics),
+                        content_text=content_text,
+                        scope=DEFAULT_TOPIC_STREAM,
+                        mirror_item_state=True,
                     )
-                    provider_token = bucket_provider_token(analysis_result.provider)
+                )
+
+            llm_calls_total += len(work_items)
+            outcomes, parallelism = self._run_analyze_calls(
+                work_items=work_items,
+                include_debug=include_debug,
+                description="Analyzing items",
+            )
+            for outcome in outcomes:
+                item_id = outcome.work_item.item_id
+                try:
+                    if isinstance(outcome, _AnalyzeCallFailure):
+                        raise outcome.error
+
+                    analysis_result_payload = outcome.result
+                    debug = outcome.debug
+                    if include_debug and debug is None:
+                        raise RuntimeError(
+                            "Analyzer did not return debug payload while include_debug is enabled"
+                        )
+
+                    provider_token = bucket_provider_token(
+                        analysis_result_payload.provider
+                    )
                     llm_calls_by_provider_token[provider_token] = (
                         llm_calls_by_provider_token.get(provider_token, 0) + 1
                     )
-                    model_token = bucket_model_token(analysis_result.model)
+                    model_token = bucket_model_token(analysis_result_payload.model)
                     llm_calls_by_model_token[model_token] = (
                         llm_calls_by_model_token.get(model_token, 0) + 1
                     )
-                    if analysis_result.prompt_tokens is not None:
-                        llm_prompt_tokens_total += int(analysis_result.prompt_tokens)
-                        llm_tokens_seen = True
-                    if analysis_result.completion_tokens is not None:
-                        llm_completion_tokens_total += int(
-                            analysis_result.completion_tokens
+                    if analysis_result_payload.prompt_tokens is not None:
+                        llm_prompt_tokens_total += int(
+                            analysis_result_payload.prompt_tokens
                         )
                         llm_tokens_seen = True
-                    if analysis_result.cost_usd is not None:
-                        llm_cost_usd_total += float(analysis_result.cost_usd)
+                    if analysis_result_payload.completion_tokens is not None:
+                        llm_completion_tokens_total += int(
+                            analysis_result_payload.completion_tokens
+                        )
+                        llm_tokens_seen = True
+                    if analysis_result_payload.cost_usd is not None:
+                        llm_cost_usd_total += float(analysis_result_payload.cost_usd)
                         llm_cost_seen = True
                     else:
                         llm_cost_missing_total += 1
 
-                    if include_debug:
-                        if debug is None:
-                            raise RuntimeError(
-                                "Analyzer did not return debug payload while include_debug is enabled"
-                            )
+                    if include_debug and debug is not None:
                         write_and_record_artifact(
-                            item_id=item_id, kind="llm_request", payload=debug.request
+                            item_id=item_id,
+                            kind="llm_request",
+                            payload=debug.request,
                         )
                         write_and_record_artifact(
-                            item_id=item_id, kind="llm_response", payload=debug.response
+                            item_id=item_id,
+                            kind="llm_response",
+                            payload=debug.response,
                         )
 
-                    self.repository.save_analysis(
-                        item_id=item_id, result=analysis_result
+                    analysis_writes.append(
+                        AnalysisWrite(
+                            item_id=item_id,
+                            result=analysis_result_payload,
+                            scope=outcome.work_item.scope,
+                            mirror_item_state=outcome.work_item.mirror_item_state,
+                        )
                     )
                     analyze_result.processed += 1
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     analyze_result.failed += 1
                     llm_errors_total += 1
                     llm_errors_by_provider_token[configured_provider_token] = (
@@ -2012,16 +2510,16 @@ class PipelineService:
                     )
                     sanitized_error = self._sanitize_error_message(str(exc))
                     classification = self._classify_exception(exc)
-                    try:
-                        if classification.get("retryable") is True:
-                            self.repository.mark_item_retryable_failed(item_id=item_id)
-                        else:
-                            self.repository.mark_item_failed(item_id=item_id)
-                    except Exception as mark_exc:
-                        log.bind(item_id=item_id).warning(
-                            "Analyze mark_item_state failed: {}",
-                            self._sanitize_error_message(str(mark_exc)),
+                    state_updates.append(
+                        ItemStateUpdate(
+                            item_id=item_id,
+                            state=(
+                                ITEM_STATE_RETRYABLE_FAILED
+                                if classification.get("retryable") is True
+                                else ITEM_STATE_FAILED
+                            ),
                         )
+                    )
                     write_and_record_artifact(
                         item_id=item_id,
                         kind="error_context",
@@ -2037,97 +2535,41 @@ class PipelineService:
                         "Analyze failed: {}", sanitized_error
                     )
 
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.llm_calls_total",
-            value=llm_calls_total,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.llm_errors_total",
-            value=llm_errors_total,
-            unit="count",
-        )
-        if llm_tokens_seen:
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.llm_prompt_tokens_total",
-                value=llm_prompt_tokens_total,
-                unit="count",
+            (
+                analysis_batches_total,
+                analysis_rows_total,
+                state_batches_total,
+                state_rows_total,
+            ) = self._persist_analyze_batches(
+                analyses=analysis_writes,
+                state_updates=state_updates,
             )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.llm_completion_tokens_total",
-                value=llm_completion_tokens_total,
-                unit="count",
+
+            metric_points = self._build_analyze_metric_points(
+                analyze_result=analyze_result,
+                llm_calls_total=llm_calls_total,
+                llm_errors_total=llm_errors_total,
+                missing_content_total=missing_content_total,
+                llm_prompt_tokens_total=llm_prompt_tokens_total,
+                llm_completion_tokens_total=llm_completion_tokens_total,
+                llm_tokens_seen=llm_tokens_seen,
+                llm_cost_usd_total=llm_cost_usd_total,
+                llm_cost_seen=llm_cost_seen,
+                llm_cost_missing_total=llm_cost_missing_total,
+                llm_calls_by_provider_token=llm_calls_by_provider_token,
+                llm_errors_by_provider_token=llm_errors_by_provider_token,
+                llm_calls_by_model_token=llm_calls_by_model_token,
+                llm_errors_by_model_token=llm_errors_by_model_token,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                parallelism=parallelism,
+                sql_queries_total=sql_diag.queries_total,
+                sql_commits_total=sql_diag.commits_total,
+                analysis_batches_total=analysis_batches_total,
+                analysis_rows_total=analysis_rows_total,
+                state_batches_total=state_batches_total,
+                state_rows_total=state_rows_total,
             )
-        if llm_cost_seen:
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.estimated_cost_usd",
-                value=llm_cost_usd_total,
-                unit="usd",
-            )
-        if llm_cost_missing_total > 0:
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.cost_missing_total",
-                value=llm_cost_missing_total,
-                unit="count",
-            )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.missing_content_total",
-            value=missing_content_total,
-            unit="count",
-        )
-        for provider_token, count in llm_calls_by_provider_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_calls.provider.{provider_token}",
-                value=count,
-                unit="count",
-            )
-        for provider_token, count in llm_errors_by_provider_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_errors.provider.{provider_token}",
-                value=count,
-                unit="count",
-            )
-        for model_token, count in llm_calls_by_model_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_calls.model.{model_token}",
-                value=count,
-                unit="count",
-            )
-        for model_token, count in llm_errors_by_model_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_errors.model.{model_token}",
-                value=count,
-                unit="count",
-            )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.processed_total",
-            value=analyze_result.processed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.failed_total",
-            value=analyze_result.failed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.duration_ms",
-            value=int((time.perf_counter() - started) * 1000),
-            unit="ms",
-        )
+            self._record_metrics_batch(run_id=run_id, metrics=metric_points)
         log.info(
             "Analyze completed with processed={} failed={} missing_content={}",
             analyze_result.processed,
@@ -2464,31 +2906,31 @@ class PipelineService:
                     kind,
                     self._sanitize_error_message(str(artifact_exc)),
                 )
-
-        for stream in self._topic_streams:
-            stream_log = log.bind(stream=stream.name)
-            items = self._select_items_for_topic_stream_analysis(
-                run_id=run_id,
-                stream=stream,
-                limit=effective_limit,
-                include_debug=include_debug,
-                period_start=period_start,
-                period_end=period_end,
+        with self.repository.sql_diagnostics() as sql_diag:
+            analysis_writes: list[AnalysisWrite] = []
+            state_updates: list[ItemStateUpdate] = []
+            stream_metrics: list[MetricPoint] = []
+            overall_parallelism = _AnalyzeParallelismStats(
+                requested=self._requested_analyze_parallelism(),
+                effective=0,
+                max_inflight=0,
             )
-            stream_processed = 0
-            stream_failed = 0
 
-            with Progress(
-                TextColumn("{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                console=self._progress_console,
-            ) as progress:
-                for item in progress.track(
-                    items,
-                    description=f"Analyzing topic stream {stream.name}",
-                ):
+            for stream in self._topic_streams:
+                stream_log = log.bind(stream=stream.name)
+                items = self._select_items_for_topic_stream_analysis(
+                    run_id=run_id,
+                    stream=stream,
+                    limit=effective_limit,
+                    include_debug=include_debug,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+                stream_processed = 0
+                stream_failed = 0
+                work_items: list[_AnalyzeWorkItem] = []
+
+                for item in items:
                     raw_item_id = getattr(item, "id", None)
                     if raw_item_id is None:
                         stream_failed += 1
@@ -2496,80 +2938,104 @@ class PipelineService:
                         stream_log.warning("Analyze skipped: item has no id")
                         continue
                     item_id = int(raw_item_id)
-                    try:
-                        content_text = self._load_stored_content_for_analysis(item=item)
-                        if not content_text:
-                            missing_content_total += 1
-                            stream_failed += 1
-                            analyze_result.failed += 1
-                            try:
-                                self.repository.mark_item_stream_state(
-                                    item_id=item_id,
-                                    stream=stream.name,
-                                    state=ITEM_STATE_RETRYABLE_FAILED,
-                                    mirror_item_state=False,
-                                )
-                            except Exception as mark_exc:
-                                stream_log.bind(item_id=item_id).warning(
-                                    "Topic stream analyze missing content mark_item_stream_state failed: {}",
-                                    self._sanitize_error_message(str(mark_exc)),
-                                )
-                            if include_debug:
-                                write_and_record_artifact(
-                                    stream_name=stream.name,
-                                    item_id=item_id,
-                                    kind="error_context",
-                                    payload={
-                                        "stage": "analyze",
-                                        "error_type": "MissingContent",
-                                        "error_message": "missing stored content before LLM analysis",
-                                        "item_id": item_id,
-                                        "error_category": "ordering",
-                                        "retryable": True,
-                                    },
-                                )
-                            stream_log.bind(item_id=item_id).warning(
-                                "Analyze failed: missing stored content"
+                    content_text = self._load_stored_content_for_analysis(item=item)
+                    if not content_text:
+                        missing_content_total += 1
+                        stream_failed += 1
+                        analyze_result.failed += 1
+                        state_updates.append(
+                            ItemStateUpdate(
+                                item_id=item_id,
+                                state=ITEM_STATE_RETRYABLE_FAILED,
+                                stream=stream.name,
                             )
-                            continue
-
-                        llm_calls_total += 1
-                        analysis_result, debug = self.analyzer.analyze(
+                        )
+                        if include_debug:
+                            write_and_record_artifact(
+                                stream_name=stream.name,
+                                item_id=item_id,
+                                kind="error_context",
+                                payload={
+                                    "stage": "analyze",
+                                    "error_type": "MissingContent",
+                                    "error_message": "missing stored content before LLM analysis",
+                                    "item_id": item_id,
+                                    "error_category": "ordering",
+                                    "retryable": True,
+                                },
+                            )
+                        stream_log.bind(item_id=item_id).warning(
+                            "Analyze failed: missing stored content"
+                        )
+                        continue
+                    work_items.append(
+                        _AnalyzeWorkItem(
+                            item_id=item_id,
                             title=item.title,
                             canonical_url=item.canonical_url,
-                            user_topics=stream.topics,
-                            content=content_text,
-                            include_debug=include_debug,
+                            user_topics=list(stream.topics),
+                            content_text=content_text,
+                            scope=stream.name,
+                            mirror_item_state=False,
+                            stream_name=stream.name,
                         )
-                        provider_token = bucket_provider_token(analysis_result.provider)
+                    )
+
+                llm_calls_total += len(work_items)
+                outcomes, stream_parallelism = self._run_analyze_calls(
+                    work_items=work_items,
+                    include_debug=include_debug,
+                    description=f"Analyzing topic stream {stream.name}",
+                )
+                overall_parallelism.effective = max(
+                    overall_parallelism.effective,
+                    stream_parallelism.effective,
+                )
+                overall_parallelism.max_inflight = max(
+                    overall_parallelism.max_inflight,
+                    stream_parallelism.max_inflight,
+                )
+
+                for outcome in outcomes:
+                    item_id = outcome.work_item.item_id
+                    try:
+                        if isinstance(outcome, _AnalyzeCallFailure):
+                            raise outcome.error
+
+                        analysis_result_payload = outcome.result
+                        debug = outcome.debug
+                        if include_debug and debug is None:
+                            raise RuntimeError(
+                                "Analyzer did not return debug payload while include_debug is enabled"
+                            )
+
+                        provider_token = bucket_provider_token(
+                            analysis_result_payload.provider
+                        )
                         llm_calls_by_provider_token[provider_token] = (
                             llm_calls_by_provider_token.get(provider_token, 0) + 1
                         )
-                        model_token = bucket_model_token(analysis_result.model)
+                        model_token = bucket_model_token(analysis_result_payload.model)
                         llm_calls_by_model_token[model_token] = (
                             llm_calls_by_model_token.get(model_token, 0) + 1
                         )
-                        if analysis_result.prompt_tokens is not None:
+                        if analysis_result_payload.prompt_tokens is not None:
                             llm_prompt_tokens_total += int(
-                                analysis_result.prompt_tokens
+                                analysis_result_payload.prompt_tokens
                             )
                             llm_tokens_seen = True
-                        if analysis_result.completion_tokens is not None:
+                        if analysis_result_payload.completion_tokens is not None:
                             llm_completion_tokens_total += int(
-                                analysis_result.completion_tokens
+                                analysis_result_payload.completion_tokens
                             )
                             llm_tokens_seen = True
-                        if analysis_result.cost_usd is not None:
-                            llm_cost_usd_total += float(analysis_result.cost_usd)
+                        if analysis_result_payload.cost_usd is not None:
+                            llm_cost_usd_total += float(analysis_result_payload.cost_usd)
                             llm_cost_seen = True
                         else:
                             llm_cost_missing_total += 1
 
-                        if include_debug:
-                            if debug is None:
-                                raise RuntimeError(
-                                    "Analyzer did not return debug payload while include_debug is enabled"
-                                )
+                        if include_debug and debug is not None:
                             write_and_record_artifact(
                                 stream_name=stream.name,
                                 item_id=item_id,
@@ -2583,15 +3049,17 @@ class PipelineService:
                                 payload=debug.response,
                             )
 
-                        self.repository.save_analysis(
-                            item_id=item_id,
-                            result=analysis_result,
-                            scope=stream.name,
-                            mirror_item_state=False,
+                        analysis_writes.append(
+                            AnalysisWrite(
+                                item_id=item_id,
+                                result=analysis_result_payload,
+                                scope=outcome.work_item.scope,
+                                mirror_item_state=False,
+                            )
                         )
                         stream_processed += 1
                         analyze_result.processed += 1
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         stream_failed += 1
                         analyze_result.failed += 1
                         llm_errors_total += 1
@@ -2611,23 +3079,17 @@ class PipelineService:
                         )
                         sanitized_error = self._sanitize_error_message(str(exc))
                         classification = self._classify_exception(exc)
-                        state = (
-                            ITEM_STATE_RETRYABLE_FAILED
-                            if classification.get("retryable") is True
-                            else ITEM_STATE_FAILED
-                        )
-                        try:
-                            self.repository.mark_item_stream_state(
+                        state_updates.append(
+                            ItemStateUpdate(
                                 item_id=item_id,
+                                state=(
+                                    ITEM_STATE_RETRYABLE_FAILED
+                                    if classification.get("retryable") is True
+                                    else ITEM_STATE_FAILED
+                                ),
                                 stream=stream.name,
-                                state=state,
-                                mirror_item_state=False,
                             )
-                        except Exception as mark_exc:
-                            stream_log.bind(item_id=item_id).warning(
-                                "Topic stream analyze mark_item_stream_state failed: {}",
-                                self._sanitize_error_message(str(mark_exc)),
-                            )
+                        )
                         write_and_record_artifact(
                             stream_name=stream.name,
                             item_id=item_id,
@@ -2645,120 +3107,66 @@ class PipelineService:
                             sanitized_error,
                         )
 
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="analyze",
-                stream=stream.name,
-                suffix="processed_total",
-                value=stream_processed,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="analyze",
-                stream=stream.name,
-                suffix="failed_total",
-                value=stream_failed,
-                unit="count",
+                stream_metrics.extend(
+                    [
+                        MetricPoint(
+                            name=self._stream_metric_name(
+                                stage="analyze",
+                                stream=stream.name,
+                                suffix="processed_total",
+                            ),
+                            value=stream_processed,
+                            unit="count",
+                        ),
+                        MetricPoint(
+                            name=self._stream_metric_name(
+                                stage="analyze",
+                                stream=stream.name,
+                                suffix="failed_total",
+                            ),
+                            value=stream_failed,
+                            unit="count",
+                        ),
+                    ]
+                )
+
+            (
+                analysis_batches_total,
+                analysis_rows_total,
+                state_batches_total,
+                state_rows_total,
+            ) = self._persist_analyze_batches(
+                analyses=analysis_writes,
+                state_updates=state_updates,
             )
 
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.streams_total",
-            value=len(self._topic_streams),
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.llm_calls_total",
-            value=llm_calls_total,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.llm_errors_total",
-            value=llm_errors_total,
-            unit="count",
-        )
-        if llm_tokens_seen:
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.llm_prompt_tokens_total",
-                value=llm_prompt_tokens_total,
-                unit="count",
+            metric_points = self._build_analyze_metric_points(
+                analyze_result=analyze_result,
+                llm_calls_total=llm_calls_total,
+                llm_errors_total=llm_errors_total,
+                missing_content_total=missing_content_total,
+                llm_prompt_tokens_total=llm_prompt_tokens_total,
+                llm_completion_tokens_total=llm_completion_tokens_total,
+                llm_tokens_seen=llm_tokens_seen,
+                llm_cost_usd_total=llm_cost_usd_total,
+                llm_cost_seen=llm_cost_seen,
+                llm_cost_missing_total=llm_cost_missing_total,
+                llm_calls_by_provider_token=llm_calls_by_provider_token,
+                llm_errors_by_provider_token=llm_errors_by_provider_token,
+                llm_calls_by_model_token=llm_calls_by_model_token,
+                llm_errors_by_model_token=llm_errors_by_model_token,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                parallelism=overall_parallelism,
+                sql_queries_total=sql_diag.queries_total,
+                sql_commits_total=sql_diag.commits_total,
+                analysis_batches_total=analysis_batches_total,
+                analysis_rows_total=analysis_rows_total,
+                state_batches_total=state_batches_total,
+                state_rows_total=state_rows_total,
+                streams_total=len(self._topic_streams),
+                extra_metrics=stream_metrics,
             )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.llm_completion_tokens_total",
-                value=llm_completion_tokens_total,
-                unit="count",
-            )
-        if llm_cost_seen:
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.estimated_cost_usd",
-                value=llm_cost_usd_total,
-                unit="usd",
-            )
-        if llm_cost_missing_total > 0:
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.analyze.cost_missing_total",
-                value=llm_cost_missing_total,
-                unit="count",
-            )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.missing_content_total",
-            value=missing_content_total,
-            unit="count",
-        )
-        for provider_token, count in llm_calls_by_provider_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_calls.provider.{provider_token}",
-                value=count,
-                unit="count",
-            )
-        for provider_token, count in llm_errors_by_provider_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_errors.provider.{provider_token}",
-                value=count,
-                unit="count",
-            )
-        for model_token, count in llm_calls_by_model_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_calls.model.{model_token}",
-                value=count,
-                unit="count",
-            )
-        for model_token, count in llm_errors_by_model_token.items():
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.analyze.llm_errors.model.{model_token}",
-                value=count,
-                unit="count",
-            )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.processed_total",
-            value=analyze_result.processed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.failed_total",
-            value=analyze_result.failed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.analyze.duration_ms",
-            value=int((time.perf_counter() - started) * 1000),
-            unit="ms",
-        )
+            self._record_metrics_batch(run_id=run_id, metrics=metric_points)
         log.info(
             "Topic stream analyze completed with processed={} failed={} streams={}",
             analyze_result.processed,

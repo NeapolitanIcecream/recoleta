@@ -14,7 +14,7 @@ from recoleta.models import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCEEDED,
 )
-from recoleta.types import utc_now
+from recoleta.types import MetricPoint, utc_now
 
 
 class RunStoreMixin:
@@ -122,6 +122,29 @@ class RunStoreMixin:
         with Session(self.engine) as session:
             session.add(metric)
             self._commit(session)
+
+    def record_metrics_batch(
+        self, *, run_id: str, metrics: list[MetricPoint]
+    ) -> int:
+        normalized: list[Metric] = []
+        for metric in metrics:
+            name = str(metric.name or "").strip()
+            if not name:
+                continue
+            normalized.append(
+                Metric(
+                    run_id=run_id,
+                    name=name,
+                    value=float(metric.value),
+                    unit=metric.unit,
+                )
+            )
+        if not normalized:
+            return 0
+        with Session(self.engine) as session:
+            session.add_all(normalized)
+            self._commit(session)
+        return len(normalized)
 
     def list_metrics(self, *, run_id: str) -> list[Metric]:
         with Session(self.engine) as session:

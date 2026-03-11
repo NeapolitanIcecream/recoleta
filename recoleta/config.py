@@ -279,6 +279,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRIAGE_EXPLORATION_RATE": "triage_exploration_rate",
         "TRIAGE_RECENCY_FLOOR": "triage_recency_floor",
         "ANALYZE_LIMIT": "analyze_limit",
+        "ANALYZE_MAX_CONCURRENCY": "analyze_max_concurrency",
+        "ANALYZE_WRITE_BATCH_SIZE": "analyze_write_batch_size",
         "ANALYZE_CONTENT_MAX_CHARS": "analyze_content_max_chars",
         "INGEST_INTERVAL_MINUTES": "ingest_interval_minutes",
         "ANALYZE_INTERVAL_MINUTES": "analyze_interval_minutes",
@@ -666,6 +668,18 @@ class Settings(BaseSettings):
         default=5, ge=0, validation_alias="TRIAGE_RECENCY_FLOOR"
     )
     analyze_limit: int = Field(default=100, ge=1, validation_alias="ANALYZE_LIMIT")
+    analyze_max_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        validation_alias="ANALYZE_MAX_CONCURRENCY",
+    )
+    analyze_write_batch_size: int = Field(
+        default=32,
+        ge=1,
+        le=256,
+        validation_alias="ANALYZE_WRITE_BATCH_SIZE",
+    )
     analyze_content_max_chars: int = Field(
         default=32_768, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS"
     )

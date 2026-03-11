@@ -4,7 +4,13 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from recoleta.models import Analysis, Content, Delivery, Document, DocumentChunk, Item
-from recoleta.types import AnalysisResult, ItemDraft
+from recoleta.types import (
+    AnalysisResult,
+    AnalysisWrite,
+    ItemDraft,
+    ItemStateUpdate,
+    MetricPoint,
+)
 
 
 class RepositoryPort(Protocol):
@@ -15,6 +21,10 @@ class RepositoryPort(Protocol):
     def record_metric(
         self, *, run_id: str, name: str, value: float, unit: str | None = None
     ) -> None: ...
+
+    def record_metrics_batch(
+        self, *, run_id: str, metrics: list[MetricPoint]
+    ) -> int: ...
 
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]: ...
 
@@ -88,6 +98,8 @@ class RepositoryPort(Protocol):
         mirror_item_state: bool = True,
     ) -> Analysis: ...
 
+    def save_analyses_batch(self, *, analyses: list[AnalysisWrite]) -> int: ...
+
     def mark_item_enriched(self, *, item_id: int) -> None: ...
 
     def mark_item_triaged(self, *, item_id: int) -> None: ...
@@ -104,6 +116,8 @@ class RepositoryPort(Protocol):
     def mark_item_failed(self, *, item_id: int) -> None: ...
 
     def mark_item_retryable_failed(self, *, item_id: int) -> None: ...
+
+    def update_item_states_batch(self, *, updates: list[ItemStateUpdate]) -> int: ...
 
     def list_items_for_publish(
         self,
