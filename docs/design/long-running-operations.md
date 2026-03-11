@@ -17,20 +17,16 @@ These assumptions are important because they rule out a large class of designs t
 
 ## Why this exists
 
-Recoleta already has several useful building blocks:
+Recoleta's long-running operating model is now implemented around a few concrete primitives:
 
-- source-level deduplication and incremental ingest
-- stage-separated commands (`ingest`, `analyze`, `publish`, `trends`)
-- SQLite as the durable local index
-- delivery idempotency for Telegram
-- optional debug artifacts and per-run metrics
+- source-level deduplication, incremental ingest, and persisted pull state
+- stage-separated commands (`ingest`, `analyze`, `publish`, `trends`, `site`)
+- SQLite as the durable local index plus `PRAGMA user_version` compatibility checks
+- a SQLite-backed workspace lease and run heartbeat for singleton writes
+- maintenance and recovery commands (`gc`, `vacuum`, `backup`, `restore`)
+- read-only diagnostics (`doctor`, `stats`) and a documented container contract
 
-What it does not yet have is a coherent long-running operating model. In particular:
-
-- storage growth is mostly unbounded
-- schema evolution is still ad hoc
-- there is no cross-process singleton protection
-- deployment guidance is still "run from source with `uv`"
+The remaining design questions are mostly about defaults and future policy, for example retention windows, cache pruning scope, and how much schema migration machinery the project should eventually adopt.
 
 ## Goals
 
@@ -58,22 +54,22 @@ What it does not yet have is a coherent long-running operating model. In particu
 - Classify data by whether it is authoritative or rebuildable.
 - Add operational safety before adding deployment surface area.
 
-## Proposed operating model
+## Operating model
 
-Recoleta should support two long-running modes with the same execution semantics:
+Recoleta supports two long-running modes with the same execution semantics:
 
 - built-in scheduler for local always-on usage
 - external scheduler calling one-shot commands for cron/systemd/Docker-style environments
 
-Neither mode should be treated as legacy or test-only. They serve different operator environments.
+Neither mode is legacy or test-only. They serve different operator environments.
 
 ### Built-in scheduler mode
 
 `recoleta run` remains a valid primary entry point for local long-running usage.
 
-Design requirement:
+Current invariant:
 
-- scheduler-driven stage execution should obey the same locking, diagnostics, and failure semantics as one-shot runs
+- scheduler-driven stage execution obeys the same locking, diagnostics, and failure semantics as one-shot runs
 
 ### External scheduler mode
 
@@ -96,9 +92,9 @@ or explicit stage commands when the operator wants finer control.
 
 ### Single active writer
 
-For one Recoleta workspace, there should be at most one active write-capable process at a time. This applies whether the trigger is cron, systemd, Docker, or the built-in scheduler.
+For one Recoleta workspace, there is at most one active write-capable process at a time. This applies whether the trigger is cron, systemd, Docker, or the built-in scheduler.
 
-This requirement is currently operational policy only. It should become an explicit runtime invariant via a lock/lease mechanism.
+This is enforced by the SQLite-backed workspace lease described in ADR 0025.
 
 ## Design areas
 
@@ -271,9 +267,9 @@ If Alembic is adopted later, it should be because the schema has genuinely grown
 
 ### 4. Runtime safety
 
-Long-running safety should be designed before Docker support is treated as complete.
+Long-running safety is part of the current deployment model rather than a future prerequisite.
 
-Current selected direction for the first implementation slice:
+Current implementation:
 
 - use a SQLite-backed workspace lease for singleton writes
 - add `runs.heartbeat_at` and derive stale runs from heartbeat age
@@ -282,12 +278,7 @@ See `docs/adr/0025-sqlite-lease-and-run-heartbeat.md` for the focused proposal.
 
 #### Singleton protection
 
-Introduce a workspace-level lock so that only one write-capable process can run against the same database/output roots at a time.
-
-Acceptable implementations:
-
-- SQLite-backed lease row
-- lock file in the workspace/data root
+Recoleta uses a workspace-level SQLite lease so that only one write-capable process can run against the same database and output roots at a time.
 
 Requirements:
 
@@ -316,9 +307,9 @@ If a process dies unexpectedly:
 
 ### 5. Deployment shape
 
-Deployment should follow the operating model, not define it.
+Deployment follows the operating model rather than defining it.
 
-Current selected direction for the first implementation slice:
+Current implementation:
 
 - support one Dockerfile with `runtime` and `runtime-full` targets
 - standardize example container paths under `/data` and `/config`
@@ -354,7 +345,7 @@ This allows the same runtime semantics across local shells, timers, and containe
 
 #### Health and diagnostics
 
-Eventually, operators should be able to answer these questions quickly:
+Operators should be able to answer these questions quickly:
 
 - can the process read config and write to the DB?
 - is another instance holding the lock?
@@ -362,7 +353,7 @@ Eventually, operators should be able to answer these questions quickly:
 - is backlog growing unexpectedly?
 - are storage directories growing unexpectedly?
 
-That suggests two small operator-facing interfaces:
+Recoleta exposes two small operator-facing interfaces for this:
 
 - `recoleta doctor`
 - a container/system healthcheck command built on the same checks

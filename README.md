@@ -42,7 +42,7 @@ flowchart LR
 <a id="recoleta-features"></a>
 ## ✨ Features
 
-- **Multi-source ingestion**: arXiv, Hacker News RSS, Hugging Face Daily Papers, OpenReview, and custom RSS feeds.
+- **Multi-source, stateful ingestion**: arXiv, Hacker News RSS, Hugging Face Daily Papers, OpenReview, and custom RSS feeds, with saved pull state for incremental runs.
 - **Incremental & idempotent pipeline**: SQLite-backed state machine prevents duplicates and re-sends.
 - **Structured LLM outputs**: JSON-only analysis validated by Pydantic (summary/tags/scores).
 - **Topic streams**: one Recoleta instance can host multiple virtual topic-specific pipelines with separate analysis scopes and delivery sinks.
@@ -250,11 +250,26 @@ Or run the full pipeline once (no scheduler):
 uv run recoleta run --once --analyze-limit 50 --publish-limit 20
 ```
 
+For targeted catch-up or replay of one UTC day, pass `--date` to the stage command or the one-shot pipeline:
+
+```bash
+uv run recoleta ingest --date 2026-01-02
+uv run recoleta analyze --date 2026-01-02 --limit 50
+uv run recoleta publish --date 2026-01-02 --limit 20
+uv run recoleta run --once --date 2026-01-02 --analyze-limit 50 --publish-limit 20
+```
+
 Command intent:
 - `recoleta ingest`: prepare backlog (ingest + enrich + optional semantic triage)
 - `recoleta analyze`: Stage 4 only (LLM on prepared items)
 - `recoleta publish`: deliver analyzed items
- - `recoleta run --once`: run `ingest -> analyze -> publish` once and exit
+- `recoleta run --once`: run `ingest -> analyze -> publish` once and exit
+
+Incremental pull behavior:
+
+- `--date` scopes `ingest`, `analyze`, `publish`, and `run --once` to one UTC day.
+- When `--date` is omitted, source connectors reuse persisted pull state such as watermarks and conditional fetch headers where supported.
+- Source-level diagnostics are recorded in SQLite metrics, including counts like `filtered_out_total`, `in_window_total`, and `not_modified_total`.
 
 Where to look next:
 
@@ -285,7 +300,7 @@ Key behaviors:
   - `month` trends are generated from existing **week trend documents** in that month.
 - **Optional auto-backfill**: `--backfill` can auto-generate missing lower-granularity trends before generating `week`/`month` trends.
   - `week --backfill`: generates missing `day` trends for the week first.
-  - `month --backfill`: (not yet) generates missing `week` trends for the month first.
+  - `month --backfill`: generates missing `week` trends for the month first.
 - **Token-safe**: if the corpus is empty, Recoleta **skips the LLM call** and emits a placeholder trend document.
 
 Examples:
@@ -311,6 +326,9 @@ uv run recoleta trends-week --date 2026-03-02 --backfill-mode all
 
 # Monthly trend (requires weekly trends for that month)
 uv run recoleta trends --granularity month --date 2026-03-02
+
+# Monthly trend with automatic weekly backfill (missing weeks only)
+uv run recoleta trends --granularity month --date 2026-03-02 --backfill
 
 # Override the LLM model used for trend generation
 uv run recoleta trends --granularity week --model "openai/gpt-4o-mini"
@@ -358,6 +376,7 @@ Behavior:
 
 - `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
 - `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
+- `recoleta site gh-deploy` keeps the checked-out worktree on your source branch and skips the push when the generated snapshot is unchanged.
 - In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory.
 - The static site now exposes a `Streams` navigation surface so mixed-domain trend notes are not silently flattened together.
 - `recoleta site stage` remains available when you want a repo-local content snapshot for custom CI or non-GitHub hosting.
@@ -619,17 +638,22 @@ Recoleta also records lightweight, machine-readable **metrics** into the SQLite 
 
 ### CLI commands
 
-Recoleta ships a small CLI surface:
+Recoleta's current CLI surface includes:
 
-- `recoleta ingest`: prepare items for LLM (ingest + enrich + optional triage)
-- `recoleta analyze --limit 100`: run structured LLM analysis for prepared items only
-- `recoleta publish --limit 50`: write Markdown/Obsidian notes and send Telegram deliverables
+- `recoleta ingest --date 2026-01-02`: prepare one UTC day of source material (or the latest incremental backlog when `--date` is omitted)
+- `recoleta analyze --limit 100 --date 2026-01-02`: run structured LLM analysis for prepared items
+- `recoleta publish --limit 50 --date 2026-01-02`: write Markdown/Obsidian notes and send Telegram deliverables
 - `recoleta run`: schedule ingest/analyze/publish periodically
+- `recoleta run --once --date 2026-01-02`: execute a one-shot UTC-day pipeline
 - `recoleta trends --granularity week --date 2026-03-02`: generate a trend note (day/week/month)
+- `recoleta trends-week --date 2026-03-02`: shortcut for weekly trends with lower-level backfill
 - `recoleta trends --granularity day --debug-pdf`: generate a trend note and export a PDF debug bundle for the rendered Telegram PDF
 - `recoleta site build`: render a static site from trend markdown notes
 - `recoleta site gh-deploy`: build the site and push a dedicated GitHub Pages branch
 - `recoleta site stage`: mirror trend markdown/PDF artifacts into a repo-local snapshot for custom CI or non-GitHub hosting
+- `recoleta stats --json`: emit a machine-readable workspace snapshot
+- `recoleta doctor --healthcheck`: run a read-only healthcheck
+- `recoleta gc`, `recoleta vacuum`, `recoleta backup`, `recoleta restore --bundle ... --yes`: maintenance and recovery commands
 
 ### Further reading
 
@@ -649,7 +673,7 @@ Recoleta ships a small CLI surface:
 Install dev dependencies and run checks:
 
 ```bash
-uv sync --dev
+uv sync --group dev
 uv run pytest
 uv run ruff check .
 ```
