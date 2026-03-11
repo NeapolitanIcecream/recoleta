@@ -36,7 +36,12 @@ class AnalysisStoreMixin:
     ) -> ItemStreamState: ...
 
     def list_items_for_llm_analysis(
-        self, *, limit: int, triage_required: bool
+        self,
+        *,
+        limit: int,
+        triage_required: bool,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[Item]:
         states = [ITEM_STATE_RETRYABLE_FAILED]
         if triage_required:
@@ -45,12 +50,25 @@ class AnalysisStoreMixin:
             states.append(ITEM_STATE_ENRICHED)
 
         with Session(self.engine) as session:
-            statement = (
-                select(Item)
-                .where(cast(Any, Item.state).in_(states))
-                .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
-                .limit(limit)
+            event_at = func.coalesce(
+                cast(Any, Item.published_at), cast(Any, Item.created_at)
             )
+            statement = select(Item).where(cast(Any, Item.state).in_(states))
+            if period_start is not None and period_end is not None:
+                statement = statement.where(
+                    event_at >= period_start, event_at < period_end
+                )
+                statement = statement.order_by(
+                    desc(cast(Any, event_at)),
+                    desc(cast(Any, Item.updated_at)),
+                    desc(cast(Any, Item.created_at)),
+                )
+            else:
+                statement = statement.order_by(
+                    desc(cast(Any, Item.updated_at)),
+                    desc(cast(Any, Item.created_at)),
+                )
+            statement = statement.limit(limit)
             return list(session.exec(statement))
 
     def save_analysis(
@@ -172,7 +190,9 @@ class AnalysisStoreMixin:
             return []
         stream_state = aliased(ItemStreamState)
         with Session(self.engine) as session:
-            event_at = func.coalesce(cast(Any, Item.published_at), cast(Any, Item.created_at))
+            event_at = func.coalesce(
+                cast(Any, Item.published_at), cast(Any, Item.created_at)
+            )
             statement = (
                 select(Item, Analysis)
                 .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))

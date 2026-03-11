@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, cast
 from urllib.parse import parse_qs, urlparse
@@ -178,9 +179,51 @@ class PipelineService:
                 "drafts_total": 0,
                 "pull_failed_total": 0,
                 "pull_duration_ms": 0,
+                "filtered_out_total": 0,
+                "in_window_total": 0,
+                "missing_published_at_total": 0,
+                "inserted_total": 0,
+                "updated_total": 0,
             }
             for source_name in _SOURCE_DIAGNOSTIC_NAMES
         }
+
+    @staticmethod
+    def _invoke_callable_with_supported_kwargs(fn: Any, **kwargs: Any) -> Any:
+        try:
+            signature = inspect.signature(fn)
+        except Exception:
+            return fn(**kwargs)
+        accepts_var_kwargs = any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+        filtered_kwargs = (
+            kwargs
+            if accepts_var_kwargs
+            else {
+                key: value
+                for key, value in kwargs.items()
+                if key in signature.parameters
+            }
+        )
+        return fn(**filtered_kwargs)
+
+    @staticmethod
+    def _invoke_source_pull(fn: Any, **kwargs: Any) -> Any:
+        return PipelineService._invoke_callable_with_supported_kwargs(fn, **kwargs)
+
+    def _invoke_repository_method(self, method_name: str, /, **kwargs: Any) -> Any:
+        method = getattr(self.repository, method_name)
+        return self._invoke_callable_with_supported_kwargs(method, **kwargs)
+
+    @staticmethod
+    def _normalize_source_pull_result(raw: Any) -> sources.SourcePullResult:
+        if isinstance(raw, sources.SourcePullResult):
+            return raw
+        if raw is None:
+            return sources.SourcePullResult()
+        return sources.SourcePullResult(drafts=list(raw or []))
 
     @staticmethod
     def _new_source_enrich_bucket() -> dict[str, Any]:
@@ -284,7 +327,14 @@ class PipelineService:
         )
 
     def _record_stream_metric(
-        self, *, run_id: str, stage: str, stream: str, suffix: str, value: float, unit: str
+        self,
+        *,
+        run_id: str,
+        stage: str,
+        stream: str,
+        suffix: str,
+        value: float,
+        unit: str,
     ) -> None:
         pipeline_metrics.record_stream_metric(
             repository=self.repository,
@@ -309,7 +359,12 @@ class PipelineService:
         )
 
     def ingest(
-        self, *, run_id: str, drafts: list[ItemDraft] | None = None
+        self,
+        *,
+        run_id: str,
+        drafts: list[ItemDraft] | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> IngestResult:
         log = logger.bind(module="pipeline.ingest", run_id=run_id)
         started = time.perf_counter()
@@ -327,8 +382,13 @@ class PipelineService:
             progress_task_id = progress.add_task("Ingesting items", total=None)
 
             if source_drafts is None:
-                source_drafts, source_failures_total, source_stats = self._pull_source_drafts(
-                    run_id=run_id, log=log
+                source_drafts, source_failures_total, source_stats = (
+                    self._pull_source_drafts(
+                        run_id=run_id,
+                        log=log,
+                        period_start=period_start,
+                        period_end=period_end,
+                    )
                 )
             else:
                 for draft in source_drafts or []:
@@ -341,6 +401,11 @@ class PipelineService:
                             "drafts_total": 0,
                             "pull_failed_total": 0,
                             "pull_duration_ms": 0,
+                            "filtered_out_total": 0,
+                            "in_window_total": 0,
+                            "missing_published_at_total": 0,
+                            "inserted_total": 0,
+                            "updated_total": 0,
                         },
                     )
                     bucket["drafts_total"] += 1
@@ -350,10 +415,33 @@ class PipelineService:
             for draft in source_drafts:
                 try:
                     _, created = self.repository.upsert_item(draft)
+                    source_name = str(draft.source or "").strip().lower()
+                    bucket: dict[str, int] | None = None
+                    if source_name:
+                        bucket = source_stats.setdefault(
+                            source_name,
+                            self._empty_source_pull_stats().get(
+                                source_name,
+                                {
+                                    "drafts_total": 0,
+                                    "pull_failed_total": 0,
+                                    "pull_duration_ms": 0,
+                                    "filtered_out_total": 0,
+                                    "in_window_total": 0,
+                                    "missing_published_at_total": 0,
+                                    "inserted_total": 0,
+                                    "updated_total": 0,
+                                },
+                            ),
+                        )
                     if created:
                         ingest_result.inserted += 1
+                        if bucket is not None:
+                            bucket["inserted_total"] += 1
                     else:
                         ingest_result.updated += 1
+                        if bucket is not None:
+                            bucket["updated_total"] += 1
                 except Exception as exc:
                     ingest_result.failed += 1
                     sanitized_error = self._sanitize_error_message(str(exc))
@@ -448,6 +536,38 @@ class PipelineService:
                 value=int(bucket.get("pull_duration_ms") or 0),
                 unit="ms",
             )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.filtered_out_total",
+                value=int(bucket.get("filtered_out_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.in_window_total",
+                value=int(bucket.get("in_window_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=(
+                    f"pipeline.ingest.source.{source_name}.missing_published_at_total"
+                ),
+                value=int(bucket.get("missing_published_at_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.inserted_total",
+                value=int(bucket.get("inserted_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.updated_total",
+                value=int(bucket.get("updated_total") or 0),
+                unit="count",
+            )
         log.info(
             "Ingest completed with inserted={} updated={} failed={} source_failures={}",
             ingest_result.inserted,
@@ -463,18 +583,41 @@ class PipelineService:
         run_id: str,
         drafts: list[ItemDraft] | None = None,
         limit: int | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> IngestResult:
         effective_limit = self._resolve_analysis_limit(limit=limit)
         candidate_limit = self._resolve_triage_candidate_limit(limit=effective_limit)
-        ingest_result = self.ingest(run_id=run_id, drafts=drafts)
-        self.enrich(run_id=run_id, limit=candidate_limit)
+        ingest_result = self.ingest(
+            run_id=run_id,
+            drafts=drafts,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        self.enrich(
+            run_id=run_id,
+            limit=candidate_limit,
+            period_start=period_start,
+            period_end=period_end,
+        )
         if not self._explicit_topic_streams:
             self.triage(
-                run_id=run_id, limit=effective_limit, candidate_limit=candidate_limit
+                run_id=run_id,
+                limit=effective_limit,
+                candidate_limit=candidate_limit,
+                period_start=period_start,
+                period_end=period_end,
             )
         return ingest_result
 
-    def enrich(self, *, run_id: str, limit: int) -> None:
+    def enrich(
+        self,
+        *,
+        run_id: str,
+        limit: int,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> None:
         log = logger.bind(module="pipeline.enrich", run_id=run_id)
         enrich_started = time.perf_counter()
         include_debug = (
@@ -482,7 +625,12 @@ class PipelineService:
             and self.settings.artifacts_dir is not None
         )
         with self.repository.sql_diagnostics() as sql_diag:
-            items = self.repository.list_items_for_analysis(limit=limit)
+            items = self._invoke_repository_method(
+                "list_items_for_analysis",
+                limit=limit,
+                period_start=period_start,
+                period_end=period_end,
+            )
             enrich_processed = 0
             enrich_failed = 0
             enrich_skipped = 0
@@ -689,19 +837,19 @@ class PipelineService:
                     if status == "ok":
                         if result.get("stored_new"):
                             enrich_processed += 1
-                            source_bucket["processed_total"] = int(
-                                source_bucket.get("processed_total") or 0
-                            ) + 1
+                            source_bucket["processed_total"] = (
+                                int(source_bucket.get("processed_total") or 0) + 1
+                            )
                         else:
                             enrich_skipped += 1
-                            source_bucket["skipped_total"] = int(
-                                source_bucket.get("skipped_total") or 0
-                            ) + 1
+                            source_bucket["skipped_total"] = (
+                                int(source_bucket.get("skipped_total") or 0) + 1
+                            )
                     else:
                         enrich_failed += 1
-                        source_bucket["failed_total"] = int(
-                            source_bucket.get("failed_total") or 0
-                        ) + 1
+                        source_bucket["failed_total"] = (
+                            int(source_bucket.get("failed_total") or 0) + 1
+                        )
                         item_id = result.get("item_id")
                         arxiv_method = result.get("arxiv_method")
                         if isinstance(arxiv_method, str) and arxiv_method:
@@ -805,10 +953,7 @@ class PipelineService:
                         )
                         for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS:
                             html_document_fallback_reason_totals[bucket] += int(
-                                diag.get(
-                                    f"html_document_fallback_reason.{bucket}"
-                                )
-                                or 0
+                                diag.get(f"html_document_fallback_reason.{bucket}") or 0
                             )
                         html_document_db_read_ms_sum += int(diag.get("db_read_ms") or 0)
                         html_document_db_write_ms_sum += int(
@@ -1141,7 +1286,13 @@ class PipelineService:
             )
 
     def triage(
-        self, *, run_id: str, limit: int, candidate_limit: int | None = None
+        self,
+        *,
+        run_id: str,
+        limit: int,
+        candidate_limit: int | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> None:
         if self._explicit_topic_streams:
             logger.bind(module="pipeline.triage", run_id=run_id).info(
@@ -1165,9 +1316,12 @@ class PipelineService:
             and self.settings.artifacts_dir is not None
         )
         log = logger.bind(module="pipeline.triage", run_id=run_id)
-        items = self.repository.list_items_for_llm_analysis(
+        items = self._invoke_repository_method(
+            "list_items_for_llm_analysis",
             limit=normalized_candidate_limit,
             triage_required=False,
+            period_start=period_start,
+            period_end=period_end,
         )
         triage_items = [
             item
@@ -1436,7 +1590,14 @@ class PipelineService:
                 sanitized_error,
             )
 
-    def analyze(self, *, run_id: str, limit: int | None = None) -> AnalyzeResult:
+    def analyze(
+        self,
+        *,
+        run_id: str,
+        limit: int | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> AnalyzeResult:
         if self._explicit_topic_streams:
             return self._analyze_topic_streams(run_id=run_id, limit=limit)
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
@@ -1445,8 +1606,12 @@ class PipelineService:
             self.settings.topics
         )
         effective_limit = self._resolve_analysis_limit(limit=limit)
-        items = self.repository.list_items_for_llm_analysis(
-            limit=effective_limit, triage_required=triage_required
+        items = self._invoke_repository_method(
+            "list_items_for_llm_analysis",
+            limit=effective_limit,
+            triage_required=triage_required,
+            period_start=period_start,
+            period_end=period_end,
         )
         analyze_result = AnalyzeResult()
         llm_calls_total = 0
@@ -2149,7 +2314,9 @@ class PipelineService:
                             llm_calls_by_model_token.get(model_token, 0) + 1
                         )
                         if analysis_result.prompt_tokens is not None:
-                            llm_prompt_tokens_total += int(analysis_result.prompt_tokens)
+                            llm_prompt_tokens_total += int(
+                                analysis_result.prompt_tokens
+                            )
                             llm_tokens_seen = True
                         if analysis_result.completion_tokens is not None:
                             llm_completion_tokens_total += int(
@@ -2794,9 +2961,7 @@ class PipelineService:
             diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000
             )
-            diag["input_bytes"] = diag.get("input_bytes", 0) + len(
-                html.encode("utf-8")
-            )
+            diag["input_bytes"] = diag.get("input_bytes", 0) + len(html.encode("utf-8"))
         cleanup_started = time.perf_counter()
         cleaned_document, references_html, stats = (
             extract_html_document_cleaned_with_references(html)
@@ -2969,9 +3134,7 @@ class PipelineService:
             diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000
             )
-            diag["input_bytes"] = diag.get("input_bytes", 0) + len(
-                html.encode("utf-8")
-            )
+            diag["input_bytes"] = diag.get("input_bytes", 0) + len(html.encode("utf-8"))
         extract_started = time.perf_counter()
         extracted = extract_html_maintext(html)
         if diag is not None:
@@ -3048,7 +3211,12 @@ class PipelineService:
         )
 
     def _pull_source_drafts(
-        self, *, run_id: str, log: Any
+        self,
+        *,
+        run_id: str,
+        log: Any,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> tuple[list[ItemDraft], int, dict[str, dict[str, int]]]:
         hn_urls = (
             list(dict.fromkeys(self.settings.sources.hn.rss_urls))
@@ -3074,7 +3242,7 @@ class PipelineService:
         source_failures_total = 0
         source_stats = self._empty_source_pull_stats()
 
-        def pull(source_name: str, fn: Any) -> None:
+        def pull(source_name: str, fn: Any, **call_kwargs: Any) -> None:
             nonlocal source_failures_total
             started = time.perf_counter()
             bucket = source_stats.setdefault(
@@ -3083,12 +3251,29 @@ class PipelineService:
                     "drafts_total": 0,
                     "pull_failed_total": 0,
                     "pull_duration_ms": 0,
+                    "filtered_out_total": 0,
+                    "in_window_total": 0,
+                    "missing_published_at_total": 0,
+                    "inserted_total": 0,
+                    "updated_total": 0,
                 },
             )
             try:
-                pulled = list(fn() or [])
-                drafts.extend(pulled)
-                bucket["drafts_total"] += len(pulled)
+                raw_result = self._invoke_source_pull(
+                    fn,
+                    **call_kwargs,
+                    period_start=period_start,
+                    period_end=period_end,
+                    include_stats=True,
+                )
+                pull_result = self._normalize_source_pull_result(raw_result)
+                drafts.extend(pull_result.drafts)
+                bucket["drafts_total"] += len(pull_result.drafts)
+                bucket["filtered_out_total"] += int(pull_result.filtered_out_total or 0)
+                bucket["in_window_total"] += int(pull_result.in_window_total or 0)
+                bucket["missing_published_at_total"] += int(
+                    pull_result.missing_published_at_total or 0
+                )
             except Exception as exc:
                 source_failures_total += 1
                 bucket["pull_failed_total"] += 1
@@ -3129,43 +3314,38 @@ class PipelineService:
         if self.settings.sources.hf_daily.enabled:
             pull(
                 "hf_daily",
-                lambda: sources.fetch_hf_daily_papers_drafts(
-                    max_items=self.settings.sources.hf_daily.max_items_per_run
-                ),
+                sources.fetch_hf_daily_papers_drafts,
+                max_items=self.settings.sources.hf_daily.max_items_per_run,
             )
         if hn_urls:
             pull(
                 "hn",
-                lambda: sources.fetch_rss_drafts(
-                    feed_urls=hn_urls,
-                    source="hn",
-                    max_items_per_feed=self.settings.sources.hn.max_items_per_feed,
-                ),
+                sources.fetch_rss_drafts,
+                feed_urls=hn_urls,
+                source="hn",
+                max_items_per_feed=self.settings.sources.hn.max_items_per_feed,
             )
         if rss_urls:
             pull(
                 "rss",
-                lambda: sources.fetch_rss_drafts(
-                    feed_urls=rss_urls,
-                    source="rss",
-                    max_items_per_feed=self.settings.sources.rss.max_items_per_feed,
-                ),
+                sources.fetch_rss_drafts,
+                feed_urls=rss_urls,
+                source="rss",
+                max_items_per_feed=self.settings.sources.rss.max_items_per_feed,
             )
         if arxiv_queries:
             pull(
                 "arxiv",
-                lambda: sources.fetch_arxiv_drafts(
-                    queries=arxiv_queries,
-                    max_results_per_run=self.settings.sources.arxiv.max_results_per_run,
-                ),
+                sources.fetch_arxiv_drafts,
+                queries=arxiv_queries,
+                max_results_per_run=self.settings.sources.arxiv.max_results_per_run,
             )
         if openreview_venues:
             pull(
                 "openreview",
-                lambda: sources.fetch_openreview_drafts(
-                    venues=openreview_venues,
-                    max_results_per_venue=self.settings.sources.openreview.max_results_per_venue,
-                ),
+                sources.fetch_openreview_drafts,
+                venues=openreview_venues,
+                max_results_per_venue=self.settings.sources.openreview.max_results_per_venue,
             )
         return drafts, source_failures_total, source_stats
 

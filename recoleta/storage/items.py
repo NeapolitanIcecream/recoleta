@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,6 +30,58 @@ class ItemStoreMixin:
     title_dedup_max_candidates: int
 
     def _commit(self, session: Session) -> None: ...
+
+    @staticmethod
+    def _normalize_published_at(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        return (
+            value.replace(tzinfo=timezone.utc)
+            if value.tzinfo is None
+            else value.astimezone(timezone.utc)
+        )
+
+    @classmethod
+    def _merge_published_at(
+        cls, *, existing: datetime | None, incoming: datetime | None
+    ) -> datetime | None:
+        normalized_existing = cls._normalize_published_at(existing)
+        normalized_incoming = cls._normalize_published_at(incoming)
+        if normalized_existing is None:
+            return normalized_incoming
+        if normalized_incoming is None:
+            return normalized_existing
+        return (
+            normalized_incoming
+            if normalized_incoming < normalized_existing
+            else normalized_existing
+        )
+
+    @classmethod
+    def _merge_raw_metadata_values(cls, existing: Any, incoming: Any) -> Any:
+        if incoming is None:
+            return existing
+        if isinstance(existing, dict) and isinstance(incoming, dict):
+            merged = dict(existing)
+            for key, value in incoming.items():
+                merged[key] = cls._merge_raw_metadata_values(merged.get(key), value)
+            return merged
+        if isinstance(existing, list) and isinstance(incoming, list):
+            merged = list(existing)
+            for value in incoming:
+                if value not in merged:
+                    merged.append(value)
+            return merged
+        return incoming
+
+    @classmethod
+    def _merge_raw_metadata(
+        cls, *, existing: dict[str, Any], incoming: dict[str, Any]
+    ) -> dict[str, Any]:
+        merged = dict(existing)
+        for key, value in incoming.items():
+            merged[key] = cls._merge_raw_metadata_values(merged.get(key), value)
+        return merged
 
     def count_items(self) -> int:
         with Session(self.engine) as session:
@@ -132,15 +185,26 @@ class ItemStoreMixin:
                 )
                 current_metadata["dedup_events"] = dedup_events[-20:]
                 existing.raw_metadata_json = _to_json(current_metadata)
-                if existing.published_at is None and draft.published_at is not None:
-                    existing.published_at = draft.published_at
+                existing.published_at = self._merge_published_at(
+                    existing=existing.published_at,
+                    incoming=draft.published_at,
+                )
             else:
                 existing.canonical_url = draft.canonical_url
                 existing.canonical_url_hash = draft.canonical_url_hash
                 existing.title = draft.title
                 existing.authors = _to_json(draft.authors)
-                existing.published_at = draft.published_at
-                existing.raw_metadata_json = _to_json(draft.raw_metadata)
+                existing.published_at = self._merge_published_at(
+                    existing=existing.published_at,
+                    incoming=draft.published_at,
+                )
+                existing_metadata = _from_json_object(existing.raw_metadata_json)
+                existing.raw_metadata_json = _to_json(
+                    self._merge_raw_metadata(
+                        existing=existing_metadata,
+                        incoming=draft.raw_metadata,
+                    )
+                )
             if previous_state in {ITEM_STATE_FAILED, ITEM_STATE_RETRYABLE_FAILED}:
                 existing.state = ITEM_STATE_INGESTED
             existing.updated_at = utc_now()
@@ -156,22 +220,41 @@ class ItemStoreMixin:
             session.refresh(existing)
             return existing, False
 
-    def list_items_for_analysis(self, *, limit: int) -> list[Item]:
+    def list_items_for_analysis(
+        self,
+        *,
+        limit: int,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> list[Item]:
         with Session(self.engine) as session:
-            statement = (
-                select(Item)
-                .where(
-                    cast(Any, Item.state).in_(
-                        [
-                            ITEM_STATE_INGESTED,
-                            ITEM_STATE_ENRICHED,
-                            ITEM_STATE_RETRYABLE_FAILED,
-                        ]
-                    )
-                )
-                .order_by(desc(cast(Any, Item.updated_at)), desc(cast(Any, Item.created_at)))
-                .limit(limit)
+            event_at = func.coalesce(
+                cast(Any, Item.published_at), cast(Any, Item.created_at)
             )
+            statement = select(Item).where(
+                cast(Any, Item.state).in_(
+                    [
+                        ITEM_STATE_INGESTED,
+                        ITEM_STATE_ENRICHED,
+                        ITEM_STATE_RETRYABLE_FAILED,
+                    ]
+                )
+            )
+            if period_start is not None and period_end is not None:
+                statement = statement.where(
+                    event_at >= period_start, event_at < period_end
+                )
+                statement = statement.order_by(
+                    desc(cast(Any, event_at)),
+                    desc(cast(Any, Item.updated_at)),
+                    desc(cast(Any, Item.created_at)),
+                )
+            else:
+                statement = statement.order_by(
+                    desc(cast(Any, Item.updated_at)),
+                    desc(cast(Any, Item.created_at)),
+                )
+            statement = statement.limit(limit)
             return list(session.exec(statement))
 
     def get_latest_content(self, *, item_id: int, content_type: str) -> Content | None:
@@ -207,7 +290,9 @@ class ItemStoreMixin:
                 ctype = str(getattr(content, "content_type", "") or "").strip()
                 if ctype in wanted and out.get(ctype) is None:
                     text = getattr(content, "text", None)
-                    out[ctype] = text if isinstance(text, str) and text.strip() else None
+                    out[ctype] = (
+                        text if isinstance(text, str) and text.strip() else None
+                    )
                     wanted.discard(ctype)
                     if not wanted:
                         break
@@ -430,9 +515,14 @@ class ItemStoreMixin:
         stream: str,
         limit: int,
         selected_only: bool = False,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[Item]:
         stream_state = aliased(ItemStreamState)
         with Session(self.engine) as session:
+            event_at = func.coalesce(
+                cast(Any, Item.published_at), cast(Any, Item.created_at)
+            )
             statement = (
                 select(Item)
                 .outerjoin(
@@ -447,12 +537,21 @@ class ItemStoreMixin:
                         [ITEM_STATE_ENRICHED, ITEM_STATE_RETRYABLE_FAILED]
                     )
                 )
-                .order_by(
+            )
+            if period_start is not None and period_end is not None:
+                statement = statement.where(
+                    event_at >= period_start, event_at < period_end
+                )
+                statement = statement.order_by(
+                    desc(cast(Any, event_at)),
                     desc(cast(Any, Item.updated_at)),
                     desc(cast(Any, Item.created_at)),
                 )
-                .limit(limit)
-            )
+            else:
+                statement = statement.order_by(
+                    desc(cast(Any, Item.updated_at)),
+                    desc(cast(Any, Item.created_at)),
+                )
             if selected_only:
                 statement = statement.where(
                     cast(Any, stream_state.state).in_(
@@ -466,6 +565,7 @@ class ItemStoreMixin:
                         cast(Any, stream_state.state) == ITEM_STATE_RETRYABLE_FAILED,
                     )
                 )
+            statement = statement.limit(limit)
             return list(session.exec(statement))
 
     def mark_item_enriched(self, *, item_id: int) -> None:
