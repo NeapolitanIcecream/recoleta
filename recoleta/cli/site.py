@@ -171,3 +171,106 @@ def run_site_stage_command(
         f"{stream_segment}"
         f"output={resolved_output_dir}"
     )
+
+
+def run_site_gh_deploy_command(
+    *,
+    input_dir: Path | None,
+    repo_dir: Path | None,
+    remote: str,
+    branch: str,
+    limit: int | None,
+    commit_message: str | None,
+    cname: str | None,
+    pages_config: str,
+    force: bool,
+) -> None:
+    symbols = cli._runtime_symbols()
+    console_cls = symbols["Console"]
+    deploy_trend_static_site_to_github_pages = cli._import_symbol(
+        "recoleta.site_deploy",
+        attr_name="deploy_trend_static_site_to_github_pages",
+    )
+
+    resolved_input_dir = (
+        input_dir.expanduser().resolve() if input_dir is not None else None
+    )
+    resolved_repo_dir = (
+        repo_dir.expanduser().resolve() if repo_dir is not None else Path.cwd().resolve()
+    )
+    settings = cli._build_settings() if resolved_input_dir is None else None
+    if resolved_input_dir is None:
+        assert settings is not None
+        resolved_input_dir = (
+            settings.markdown_output_dir
+            if cli._has_explicit_topic_streams(settings)
+            else settings.markdown_output_dir / "Trends"
+        )
+    console = (
+        console_cls(stderr=settings.log_json) if settings is not None else console_cls()
+    )
+    lease_repository, lease_owner_token, lease_log, lease_heartbeat_monitor = (
+        cli._maybe_acquire_workspace_lease_for_settings(
+            settings=settings,
+            console=console,
+            command="site gh-deploy",
+            log_module="cli.site.gh_deploy",
+        )
+    )
+    try:
+        result = deploy_trend_static_site_to_github_pages(
+            input_dir=resolved_input_dir,
+            repo_dir=resolved_repo_dir,
+            remote=remote,
+            branch=branch,
+            limit=limit,
+            commit_message=commit_message,
+            cname=cname,
+            pages_config_mode=pages_config,
+            force=force,
+        )
+        if lease_heartbeat_monitor is not None:
+            lease_heartbeat_monitor.raise_if_failed()
+    finally:
+        if (
+            lease_repository is not None
+            and lease_owner_token is not None
+            and lease_log is not None
+            and lease_heartbeat_monitor is not None
+        ):
+            cli._cleanup_workspace_lease(
+                repository=lease_repository,
+                owner_token=lease_owner_token,
+                heartbeat_monitor=lease_heartbeat_monitor,
+                log=lease_log,
+            )
+
+    stream_segment = (
+        f"streams={result.streams_total}" if int(result.streams_total or 0) > 1 else None
+    )
+    status_segment = "no changes" if result.skipped else "pushed"
+    commit_segment = (
+        f"commit={result.commit_sha[:12]}" if result.commit_sha is not None else None
+    )
+    summary_parts = [
+        f"status={status_segment}",
+        f"trends={result.trends_total}",
+        f"topics={result.topics_total}",
+    ]
+    if stream_segment is not None:
+        summary_parts.append(stream_segment)
+    summary_parts.append(f"branch={result.branch}")
+    summary_parts.append(f"remote={result.remote}")
+    if commit_segment is not None:
+        summary_parts.append(commit_segment)
+    console.print(
+        "[green]site gh-deploy completed[/green] " + " ".join(summary_parts)
+    )
+    if result.pages_source.site_url:
+        console.print(f"[cyan]pages url[/cyan] {result.pages_source.site_url}")
+    if result.pages_source.status == "configured":
+        console.print(f"[cyan]pages source[/cyan] {result.pages_source.detail}")
+    elif result.pages_source.status == "failed":
+        console.print(f"[yellow]pages source unchanged[/yellow] {result.pages_source.detail}")
+    else:
+        console.print(f"[yellow]pages source skipped[/yellow] {result.pages_source.detail}")

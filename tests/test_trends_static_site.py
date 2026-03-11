@@ -265,3 +265,71 @@ def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
     assert manifest["trends_total"] == 2
     assert manifest["pdf_total"] == 1
     assert manifest["streams_total"] == 2
+
+
+def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_streams_exist(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    legacy_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=111,
+        title="Legacy Daily Watch",
+        granularity="day",
+        period_start=datetime(2026, 2, 27, tzinfo=UTC),
+        period_end=datetime(2026, 2, 28, tzinfo=UTC),
+        run_id="run-mixed-stage-1",
+        overview_md="## TL;DR\n\n- Legacy single-stream trend note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Legacy note stays visible in the staged site."],
+    )
+    legacy_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
+
+    stream_root = notes_root / "Streams" / "agents_lab"
+    stream_note = write_markdown_trend_note(
+        output_dir=stream_root,
+        trend_doc_id=112,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 2, 28, tzinfo=UTC),
+        period_end=datetime(2026, 3, 1, tzinfo=UTC),
+        run_id="run-mixed-stage-2",
+        overview_md="## Overview\n\nStream-local trend note.\n",
+        topics=["agents", "tooling"],
+        clusters=[],
+        highlights=["Stream note should stay under Streams/<name>/Trends."],
+    )
+    stream_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
+
+    staged_root = tmp_path / "site-content"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root,
+        output_dir=staged_root,
+    )
+
+    assert manifest_path == staged_root / "manifest.json"
+    assert (staged_root / "Trends" / legacy_note.name).exists()
+    assert (staged_root / "Trends" / legacy_note.with_suffix(".pdf").name).exists()
+    assert (
+        staged_root / "Streams" / "agents_lab" / "Trends" / stream_note.name
+    ).exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert "Trends/" + legacy_note.name in manifest["files"]["markdown"]
+    assert (
+        "Streams/agents_lab/Trends/" + stream_note.name
+        in manifest["files"]["markdown"]
+    )
+
+    site_dir = tmp_path / "site"
+    built_manifest_path = export_trend_static_site(
+        input_dir=staged_root,
+        output_dir=site_dir,
+    )
+
+    assert built_manifest_path == site_dir / "manifest.json"
+    built_manifest = json.loads(built_manifest_path.read_text(encoding="utf-8"))
+    assert built_manifest["trends_total"] == 2
+    assert (site_dir / "trends" / f"{legacy_note.stem}.html").exists()
+    assert (site_dir / "trends" / f"{stream_note.stem}.html").exists()

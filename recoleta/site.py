@@ -1796,6 +1796,9 @@ def stage_trend_site_source(
         input_dirs=resolved_input_dirs,
         limit=limit,
     )
+    has_stream_documents = any(
+        bool(source_document.stream) for source_document in source_documents
+    )
     staged_markdown_files: list[str] = []
     staged_pdf_files: list[str] = []
 
@@ -1803,7 +1806,11 @@ def stage_trend_site_source(
         target_dir = (
             resolved_output_dir / "Streams" / source_document.stream / "Trends"
             if source_document.stream
-            else resolved_output_dir
+            else (
+                resolved_output_dir / "Trends"
+                if has_stream_documents
+                else resolved_output_dir
+            )
         )
         target_dir.mkdir(parents=True, exist_ok=True)
         staged_markdown_path = target_dir / source_document.markdown_path.name

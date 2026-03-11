@@ -20,7 +20,11 @@ from recoleta.cli.rag import (
     run_rag_sync_vectors_command,
 )
 from recoleta.cli.run import run_scheduler_command
-from recoleta.cli.site import run_site_build_command, run_site_stage_command
+from recoleta.cli.site import (
+    run_site_build_command,
+    run_site_gh_deploy_command,
+    run_site_stage_command,
+)
 from recoleta.cli.trends import run_trends_command, run_trends_week_command
 
 app = typer.Typer(
@@ -196,6 +200,75 @@ def site_stage(
 ) -> None:
     """Stage trend markdown notes into a repo-local directory for deployment."""
     run_site_stage_command(input_dir=input_dir, output_dir=output_dir, limit=limit)
+
+
+@site_app.command("gh-deploy")
+def site_gh_deploy(
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
+    ),
+    repo_dir: Path | None = typer.Option(
+        None,
+        "--repo-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Git repository used to resolve the deployment remote. Defaults to the current working directory.",
+    ),
+    remote: str = typer.Option(
+        "origin",
+        "--remote",
+        help="Git remote that will receive the deployment branch.",
+    ),
+    branch: str = typer.Option(
+        "gh-pages",
+        "--branch",
+        help="Deployment branch used by GitHub Pages.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally deploy only the latest N trend notes.",
+    ),
+    commit_message: str | None = typer.Option(
+        None,
+        "--message",
+        help="Optional git commit message for the deployment branch update.",
+    ),
+    cname: str | None = typer.Option(
+        None,
+        "--cname",
+        help="Optional custom domain written to the deployment branch CNAME file.",
+    ),
+    pages_config: str = typer.Option(
+        "auto",
+        "--pages-config",
+        help="How to configure the GitHub Pages source after pushing. Allowed: auto, always, never.",
+    ),
+    force: bool = typer.Option(
+        True,
+        "--force/--no-force",
+        help="Force-push the deployment branch. Defaults to force for derived site output.",
+    ),
+) -> None:
+    """Build the static site and push it to a dedicated GitHub Pages branch."""
+    run_site_gh_deploy_command(
+        input_dir=input_dir,
+        repo_dir=repo_dir,
+        remote=remote,
+        branch=branch,
+        limit=limit,
+        commit_message=commit_message,
+        cname=cname,
+        pages_config=pages_config,
+        force=force,
+    )
 
 
 @rag_app.command("sync-vectors")

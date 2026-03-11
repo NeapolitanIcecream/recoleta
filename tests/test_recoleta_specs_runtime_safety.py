@@ -273,6 +273,7 @@ def test_ingest_cli_exits_when_workspace_lock_is_held(
     [
         (["site", "build"], "site build"),
         (["site", "stage"], "site stage"),
+        (["site", "gh-deploy", "--pages-config", "never"], "site gh-deploy"),
     ],
 )
 def test_site_cli_defaults_exit_when_workspace_lock_is_held(
