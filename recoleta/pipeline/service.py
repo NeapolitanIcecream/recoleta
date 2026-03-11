@@ -1804,7 +1804,12 @@ class PipelineService:
         period_end: datetime | None = None,
     ) -> AnalyzeResult:
         if self._explicit_topic_streams:
-            return self._analyze_topic_streams(run_id=run_id, limit=limit)
+            return self._analyze_topic_streams(
+                run_id=run_id,
+                limit=limit,
+                period_start=period_start,
+                period_end=period_end,
+            )
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
         started = time.perf_counter()
         triage_required = bool(self.settings.triage_enabled) and bool(
@@ -2138,21 +2143,29 @@ class PipelineService:
         stream: TopicStreamRuntime,
         limit: int,
         include_debug: bool,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[Any]:
         triage_enabled = bool(self.settings.triage_enabled) and bool(stream.topics)
         if not triage_enabled:
-            return self.repository.list_items_for_stream_analysis(
+            return self._invoke_repository_method(
+                "list_items_for_stream_analysis",
                 stream=stream.name,
                 limit=limit,
                 selected_only=False,
+                period_start=period_start,
+                period_end=period_end,
             )
 
         log = logger.bind(module="pipeline.triage", run_id=run_id, stream=stream.name)
         candidate_limit = self._resolve_triage_candidate_limit(limit=limit)
-        items = self.repository.list_items_for_stream_analysis(
+        items = self._invoke_repository_method(
+            "list_items_for_stream_analysis",
             stream=stream.name,
             limit=candidate_limit,
             selected_only=False,
+            period_start=period_start,
+            period_end=period_end,
         )
         triage_items = [
             item
@@ -2372,7 +2385,12 @@ class PipelineService:
             return fallback_items
 
     def _analyze_topic_streams(
-        self, *, run_id: str, limit: int | None = None
+        self,
+        *,
+        run_id: str,
+        limit: int | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> AnalyzeResult:
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
         started = time.perf_counter()
@@ -2454,6 +2472,8 @@ class PipelineService:
                 stream=stream,
                 limit=effective_limit,
                 include_debug=include_debug,
+                period_start=period_start,
+                period_end=period_end,
             )
             stream_processed = 0
             stream_failed = 0

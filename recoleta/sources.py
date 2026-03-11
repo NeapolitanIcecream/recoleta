@@ -371,12 +371,13 @@ def fetch_hf_daily_papers_drafts(
         remaining = max_items - len(drafts)
         if remaining <= 0:
             break
+        fetch_limit = remaining + 1
         index_url = (
             f"{base_url}/papers/date/{requested_date}"
             if requested_date is not None
             else f"{base_url}/papers"
         )
-        papers = hf_api.list_daily_papers(date=requested_date, limit=remaining)
+        papers = hf_api.list_daily_papers(date=requested_date, limit=fetch_limit)
         for paper in papers:
             draft = _paper_info_to_draft(
                 paper=paper,

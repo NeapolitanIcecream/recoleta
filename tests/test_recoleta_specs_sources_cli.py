@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import subprocess
 import sys
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 import respx
@@ -17,6 +18,7 @@ from recoleta.sources import (
     fetch_hf_daily_papers_drafts,
     fetch_openreview_drafts,
     fetch_rss_drafts,
+    SourcePullResult,
     SourcePullStateSnapshot,
 )
 
@@ -269,7 +271,7 @@ def test_fetch_hf_daily_papers_drafts_uses_hf_api_and_preserves_daily_submission
 
     drafts = fetch_hf_daily_papers_drafts(max_items=1)
 
-    assert calls == [{"date": None, "limit": 1}]
+    assert calls == [{"date": None, "limit": 2}]
     assert len(drafts) == 1
     assert drafts[0].source_item_id == "1605.08386"
     assert drafts[0].title == "Attention Is All You Need"
@@ -333,6 +335,64 @@ def test_fetch_hf_daily_papers_drafts_fetches_each_day_in_requested_window(
         "2025-01-20",
         "2025-01-21",
     ]
+
+
+def test_fetch_hf_daily_papers_drafts_keeps_watermark_when_limit_hides_backlog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_limits: list[int | None] = []
+    watermark = datetime(2025, 1, 20, 12, tzinfo=UTC)
+    papers = [
+        PaperInfo(
+            id="paper-1",
+            title="Paper 1",
+            paper={"authors": [{"name": "Alice"}]},
+            submittedOnDailyAt="2025-01-21T09:00:00Z",
+        ),
+        PaperInfo(
+            id="paper-2",
+            title="Paper 2",
+            paper={"authors": [{"name": "Bob"}]},
+            submittedOnDailyAt="2025-01-21T08:00:00Z",
+        ),
+    ]
+
+    def fake_list_daily_papers(
+        self,
+        *,
+        date=None,
+        limit=None,
+        **kwargs,  # type: ignore[no-untyped-def]
+    ):
+        _ = self, date, kwargs
+        observed_limits.append(limit if limit is None else int(limit))
+        visible = len(papers) if limit is None else int(limit)
+        return iter(papers[:visible])
+
+    monkeypatch.setattr(HfApi, "list_daily_papers", fake_list_daily_papers)
+
+    result = cast(
+        SourcePullResult,
+        fetch_hf_daily_papers_drafts(
+            max_items=1,
+            include_stats=True,
+            pull_state_lookup=lambda scope_kind, scope_key: (
+                SourcePullStateSnapshot(
+                    scope_kind=scope_kind,
+                    scope_key=scope_key,
+                    watermark_published_at=watermark,
+                )
+                if scope_kind == "global" and scope_key == "daily"
+                else None
+            ),
+        ),
+    )
+
+    assert observed_limits == [2]
+    assert [draft.source_item_id for draft in result.drafts] == ["paper-1"]
+    assert result.deferred_total == 1
+    assert len(result.state_updates) == 1
+    assert result.state_updates[0].watermark_published_at == watermark
 
 
 def test_fetch_arxiv_drafts_adds_submitted_date_range_when_window_requested(
