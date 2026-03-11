@@ -156,6 +156,64 @@ def test_gh_deploy_skips_push_when_snapshot_is_unchanged(tmp_path: Path) -> None
     assert first_head == second_head
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
+def test_gh_deploy_prefers_push_url_when_remote_endpoints_diverge(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=303,
+        title="Push URL Deploy",
+        granularity="day",
+        period_start=datetime(2026, 3, 3, tzinfo=UTC),
+        period_end=datetime(2026, 3, 4, tzinfo=UTC),
+        run_id="run-gh-deploy-3",
+        overview_md="## Overview\n\nDeployment should use the push remote.\n",
+        topics=["git"],
+        clusters=[],
+        highlights=["Push URLs may differ from fetch URLs."],
+    )
+    trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
+
+    push_remote_repo = tmp_path / "push-remote.git"
+    _run_git("init", "--bare", str(push_remote_repo), cwd=tmp_path)
+
+    local_repo = tmp_path / "repo"
+    local_repo.mkdir(parents=True, exist_ok=True)
+    _run_git("init", "-b", "main", cwd=local_repo)
+    _run_git("config", "user.name", "Recoleta Tester", cwd=local_repo)
+    _run_git("config", "user.email", "tester@example.com", cwd=local_repo)
+    (local_repo / "README.md").write_text("# repo\n", encoding="utf-8")
+    _run_git("add", "README.md", cwd=local_repo)
+    _run_git("commit", "-m", "init", cwd=local_repo)
+    _run_git("remote", "add", "origin", str(tmp_path / "fetch-remote-does-not-exist.git"), cwd=local_repo)
+    _run_git("remote", "set-url", "--push", "origin", str(push_remote_repo), cwd=local_repo)
+
+    result = deploy_trend_static_site_to_github_pages(
+        input_dir=notes_root / "Trends",
+        repo_dir=local_repo,
+        remote="origin",
+        branch="gh-pages",
+        pages_config_mode="never",
+        force=True,
+    )
+
+    assert result.skipped is False
+    assert Path(result.remote_url) == push_remote_repo.resolve()
+
+    published = tmp_path / "published"
+    _run_git(
+        "clone",
+        "--branch",
+        "gh-pages",
+        str(push_remote_repo),
+        str(published),
+        cwd=tmp_path,
+    )
+    assert (published / "trends" / f"{trend_note.stem}.html").exists()
+
+
 @dataclass(slots=True)
 class _FakeSettings:
     log_json: bool = False

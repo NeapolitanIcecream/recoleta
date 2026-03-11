@@ -138,12 +138,35 @@ def _parse_git_remote(url: str, *, name: str) -> GitRemoteInfo:
     )
 
 
-def _resolve_git_remote(*, repo_root: Path, remote_name: str) -> GitRemoteInfo:
+def _git_remote_url(*, repo_root: Path, remote_name: str, push: bool) -> str | None:
+    args = ["remote", "get-url"]
+    if push:
+        args.append("--push")
+    args.append(remote_name)
     completed = _run_git(
-        ["remote", "get-url", remote_name],
+        args,
         cwd=repo_root,
+        check=False,
     )
-    return _parse_git_remote(completed.stdout.strip(), name=remote_name)
+    normalized = completed.stdout.strip()
+    if completed.returncode != 0 or not normalized:
+        return None
+    return normalized
+
+
+def _resolve_git_remote(*, repo_root: Path, remote_name: str) -> GitRemoteInfo:
+    remote_url = _git_remote_url(
+        repo_root=repo_root,
+        remote_name=remote_name,
+        push=True,
+    )
+    if remote_url is None:
+        completed = _run_git(
+            ["remote", "get-url", remote_name],
+            cwd=repo_root,
+        )
+        remote_url = completed.stdout.strip()
+    return _parse_git_remote(remote_url, name=remote_name)
 
 
 def _git_config_value(*, repo_root: Path, key: str) -> str | None:
