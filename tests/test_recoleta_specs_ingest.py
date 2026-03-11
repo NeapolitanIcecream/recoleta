@@ -10,7 +10,11 @@ from sqlmodel import Session, select
 from recoleta.config import Settings
 from recoleta.models import ITEM_STATE_ANALYZED, Item
 from recoleta.pipeline.service import PipelineService
-from recoleta.sources import SourcePullResult
+from recoleta.sources import (
+    SourcePullResult,
+    SourcePullStateSnapshot,
+    SourcePullStateUpdate,
+)
 from recoleta.types import ItemDraft
 from tests.spec_support import (
     ExplodingRepository,
@@ -116,22 +120,26 @@ def test_ingest_passes_configured_source_pull_limits_to_connectors(
                     "enabled": True,
                     "queries": ["cat:cs.AI"],
                     "max_results_per_run": 2,
+                    "max_total_per_run": 3,
                 },
                 "hn": {
                     "enabled": True,
                     "rss_urls": ["https://news.ycombinator.com/rss"],
                     "max_items_per_feed": 1,
+                    "max_total_per_run": 2,
                 },
                 "rss": {
                     "enabled": True,
                     "feeds": ["https://jack.example/"],
                     "max_items_per_feed": 3,
+                    "max_total_per_run": 4,
                 },
                 "hf_daily": {"enabled": True, "max_items_per_run": 4},
                 "openreview": {
                     "enabled": True,
                     "venues": ["ICLR.cc/2026/Conference"],
                     "max_results_per_venue": 5,
+                    "max_total_per_run": 6,
                 },
             }
         ),
@@ -145,30 +153,56 @@ def test_ingest_passes_configured_source_pull_limits_to_connectors(
         calls["hf_daily"] = max_items
         return []
 
+    def fake_fetch_hn_drafts(
+        *,
+        feed_urls: list[str],
+        max_items_per_feed: int = 50,
+        max_total_items: int | None = None,
+    ) -> list[ItemDraft]:
+        calls["hn"] = {
+            "feed_urls": list(feed_urls),
+            "max_items_per_feed": max_items_per_feed,
+            "max_total_items": max_total_items,
+        }
+        return []
+
     def fake_fetch_rss_drafts(
-        *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
+        *,
+        feed_urls: list[str],
+        source: str,
+        max_items_per_feed: int = 50,
+        max_total_items: int | None = None,
     ) -> list[ItemDraft]:
         calls[source] = {
             "feed_urls": list(feed_urls),
             "max_items_per_feed": max_items_per_feed,
+            "max_total_items": max_total_items,
         }
         return []
 
     def fake_fetch_arxiv_drafts(
-        *, queries: list[str], max_results_per_run: int = 50
+        *,
+        queries: list[str],
+        max_results_per_run: int = 50,
+        max_total_items: int | None = None,
     ) -> list[ItemDraft]:
         calls["arxiv"] = {
             "queries": list(queries),
             "max_results_per_run": max_results_per_run,
+            "max_total_items": max_total_items,
         }
         return []
 
     def fake_fetch_openreview_drafts(
-        *, venues: list[str], max_results_per_venue: int = 50
+        *,
+        venues: list[str],
+        max_results_per_venue: int = 50,
+        max_total_items: int | None = None,
     ) -> list[ItemDraft]:
         calls["openreview"] = {
             "venues": list(venues),
             "max_results_per_venue": max_results_per_venue,
+            "max_total_items": max_total_items,
         }
         return []
 
@@ -177,6 +211,7 @@ def test_ingest_passes_configured_source_pull_limits_to_connectors(
         "fetch_hf_daily_papers_drafts",
         fake_fetch_hf_daily_papers_drafts,
     )
+    monkeypatch.setattr(source_connectors, "fetch_hn_drafts", fake_fetch_hn_drafts)
     monkeypatch.setattr(source_connectors, "fetch_rss_drafts", fake_fetch_rss_drafts)
     monkeypatch.setattr(
         source_connectors, "fetch_arxiv_drafts", fake_fetch_arxiv_drafts
@@ -200,18 +235,22 @@ def test_ingest_passes_configured_source_pull_limits_to_connectors(
     assert calls["hn"] == {
         "feed_urls": ["https://news.ycombinator.com/rss"],
         "max_items_per_feed": 1,
+        "max_total_items": 2,
     }
     assert calls["rss"] == {
         "feed_urls": ["https://jack.example/"],
         "max_items_per_feed": 3,
+        "max_total_items": 4,
     }
     assert calls["arxiv"] == {
         "queries": ["cat:cs.AI"],
         "max_results_per_run": 2,
+        "max_total_items": 3,
     }
     assert calls["openreview"] == {
         "venues": ["ICLR.cc/2026/Conference"],
         "max_results_per_venue": 5,
+        "max_total_items": 6,
     }
 
 
@@ -286,6 +325,23 @@ def test_ingest_passes_target_period_to_connectors(
         }
         return []
 
+    def fake_fetch_hn_drafts(
+        *,
+        feed_urls: list[str],
+        max_items_per_feed: int = 50,
+        period_start=None,  # noqa: ANN001
+        period_end=None,  # noqa: ANN001
+        max_total_items: int | None = None,
+    ) -> list[ItemDraft]:
+        calls["hn"] = {
+            "feed_urls": list(feed_urls),
+            "max_items_per_feed": max_items_per_feed,
+            "period_start": period_start,
+            "period_end": period_end,
+            "max_total_items": max_total_items,
+        }
+        return []
+
     def fake_fetch_arxiv_drafts(
         *,
         queries: list[str],
@@ -321,6 +377,7 @@ def test_ingest_passes_target_period_to_connectors(
         "fetch_hf_daily_papers_drafts",
         fake_fetch_hf_daily_papers_drafts,
     )
+    monkeypatch.setattr(source_connectors, "fetch_hn_drafts", fake_fetch_hn_drafts)
     monkeypatch.setattr(source_connectors, "fetch_rss_drafts", fake_fetch_rss_drafts)
     monkeypatch.setattr(
         source_connectors, "fetch_arxiv_drafts", fake_fetch_arxiv_drafts
@@ -372,13 +429,17 @@ def test_ingest_does_not_crash_on_source_failure_and_records_metric(
         title="Source Failure Still Ingests",
     )
 
+    def fake_fetch_hn_drafts(
+        *, feed_urls: list[str], max_items_per_feed: int = 50
+    ) -> list[ItemDraft]:  # noqa: ARG001
+        raise RuntimeError("simulated HN connector failure")
+
     def fake_fetch_rss_drafts(
         *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
     ) -> list[ItemDraft]:  # noqa: ARG001
-        if source == "hn":
-            raise RuntimeError("simulated HN connector failure")
         return [draft_rss]
 
+    monkeypatch.setattr(source_connectors, "fetch_hn_drafts", fake_fetch_hn_drafts)
     monkeypatch.setattr(source_connectors, "fetch_rss_drafts", fake_fetch_rss_drafts)
 
     service = PipelineService(
@@ -462,6 +523,92 @@ def test_ingest_records_source_window_diagnostics(
     assert by_name["pipeline.ingest.source.arxiv.inserted_total"].value == 1
 
 
+def test_ingest_persists_source_pull_state_between_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vault_path = tmp_path / "vault"
+    vault_path.mkdir(parents=True)
+
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault_path))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    import recoleta.sources as source_connectors
+
+    watermark = datetime(2025, 1, 20, 12, tzinfo=UTC)
+    first_draft = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id="arxiv-1",
+        canonical_url="https://arxiv.org/abs/2501.00001",
+        title="First Arxiv Item",
+        published_at=watermark,
+    )
+    phases = {"count": 0}
+
+    def fake_fetch_arxiv_drafts(  # type: ignore[no-untyped-def]
+        *,
+        queries,
+        pull_state_lookup=None,
+        **kwargs,
+    ):
+        _ = queries, kwargs
+        phases["count"] += 1
+        if phases["count"] == 1:
+            return SourcePullResult(
+                drafts=[first_draft],
+                state_updates=[
+                    SourcePullStateUpdate(
+                        scope_kind="query",
+                        scope_key="cat:cs.AI",
+                        watermark_published_at=watermark,
+                    )
+                ],
+            )
+        assert pull_state_lookup is not None
+        restored = pull_state_lookup("query", "cat:cs.AI")
+        assert restored == SourcePullStateSnapshot(
+            scope_kind="query",
+            scope_key="cat:cs.AI",
+            watermark_published_at=watermark,
+        )
+        return []
+
+    monkeypatch.setattr(
+        source_connectors,
+        "fetch_arxiv_drafts",
+        fake_fetch_arxiv_drafts,
+    )
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    first = service.ingest(run_id="run-source-state-first")
+    second = service.ingest(run_id="run-source-state-second")
+
+    assert first.inserted == 1
+    assert second.inserted == 0
+
+
 def test_ingest_progress_starts_before_source_pull_and_sets_total(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -501,6 +648,19 @@ def test_ingest_progress_starts_before_source_pull_and_sets_total(
 
     monkeypatch.setattr(pipeline_module, "Progress", FakeProgress, raising=False)
 
+    def fake_fetch_hn_drafts(
+        *, feed_urls: list[str], max_items_per_feed: int = 50
+    ) -> list[ItemDraft]:  # noqa: ARG001
+        timeline.append("source_pull_hn")
+        return [
+            ItemDraft.from_values(
+                source="hn",
+                source_item_id="hn-1",
+                canonical_url="https://example.com/hn-1",
+                title="hn item",
+            )
+        ]
+
     def fake_fetch_rss_drafts(
         *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
     ) -> list[ItemDraft]:  # noqa: ARG001
@@ -514,6 +674,7 @@ def test_ingest_progress_starts_before_source_pull_and_sets_total(
             )
         ]
 
+    monkeypatch.setattr(source_connectors, "fetch_hn_drafts", fake_fetch_hn_drafts)
     monkeypatch.setattr(source_connectors, "fetch_rss_drafts", fake_fetch_rss_drafts)
 
     settings, repository = _build_runtime()

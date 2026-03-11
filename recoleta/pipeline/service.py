@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 import hashlib
 import inspect
 import threading
@@ -182,6 +183,11 @@ class PipelineService:
                 "filtered_out_total": 0,
                 "in_window_total": 0,
                 "missing_published_at_total": 0,
+                "deduped_total": 0,
+                "deferred_total": 0,
+                "not_modified_total": 0,
+                "oldest_published_at_unix": 0,
+                "newest_published_at_unix": 0,
                 "inserted_total": 0,
                 "updated_total": 0,
             }
@@ -217,6 +223,42 @@ class PipelineService:
         method = getattr(self.repository, method_name)
         return self._invoke_callable_with_supported_kwargs(method, **kwargs)
 
+    def _lookup_source_pull_state(
+        self,
+        *,
+        source: str,
+        scope_kind: str,
+        scope_key: str,
+    ) -> sources.SourcePullStateSnapshot | None:
+        getter = getattr(self.repository, "get_source_pull_state", None)
+        if not callable(getter):
+            return None
+        result = self._invoke_callable_with_supported_kwargs(
+            getter,
+            source=source,
+            scope_kind=scope_kind,
+            scope_key=scope_key,
+        )
+        return result if isinstance(result, sources.SourcePullStateSnapshot) else None
+
+    def _persist_source_pull_state_updates(
+        self,
+        *,
+        source: str,
+        updates: list[sources.SourcePullStateUpdate],
+    ) -> None:
+        upsert = getattr(self.repository, "upsert_source_pull_state", None)
+        if not callable(upsert):
+            return
+        for update in updates:
+            if not isinstance(update, sources.SourcePullStateUpdate):
+                continue
+            self._invoke_callable_with_supported_kwargs(
+                upsert,
+                source=source,
+                update=update,
+            )
+
     @staticmethod
     def _normalize_source_pull_result(raw: Any) -> sources.SourcePullResult:
         if isinstance(raw, sources.SourcePullResult):
@@ -242,6 +284,103 @@ class PipelineService:
             "content_types": {},
             "pdf_backends": {},
         }
+
+    def _configured_source_names(self) -> list[str]:
+        settings_sources = getattr(self.settings, "sources", None)
+        if settings_sources is None:
+            return []
+        configured: list[str] = []
+        for source_name in _SOURCE_DIAGNOSTIC_NAMES:
+            source_settings = getattr(settings_sources, source_name, None)
+            if source_settings is None:
+                continue
+            enabled = getattr(source_settings, "enabled", None)
+            if enabled is None or bool(enabled):
+                configured.append(source_name)
+        return configured
+
+    def _stage_candidate_limit(self, *, limit: int) -> int:
+        normalized_limit = max(1, int(limit))
+        enabled_sources = self._configured_source_names()
+        if len(enabled_sources) <= 1:
+            return normalized_limit
+        return min(normalized_limit * len(enabled_sources), normalized_limit * 5)
+
+    @staticmethod
+    def _rebalance_items_by_source(
+        *,
+        items: list[Any],
+        limit: int,
+    ) -> tuple[list[Any], dict[str, int], dict[str, int]]:
+        normalized_limit = max(0, int(limit))
+        if normalized_limit <= 0 or not items:
+            return [], {}, {}
+
+        queues: dict[str, deque[Any]] = {}
+        source_order: list[str] = []
+        for item in items:
+            source_name = (
+                str(getattr(item, "source", "") or "").strip().lower() or "unknown"
+            )
+            queue = queues.get(source_name)
+            if queue is None:
+                queue = deque()
+                queues[source_name] = queue
+                source_order.append(source_name)
+            queue.append(item)
+
+        candidate_counts = {
+            source_name: len(queue) for source_name, queue in queues.items()
+        }
+        selected: list[Any] = []
+        while len(selected) < normalized_limit:
+            progressed = False
+            for source_name in source_order:
+                queue = queues[source_name]
+                if not queue:
+                    continue
+                selected.append(queue.popleft())
+                progressed = True
+                if len(selected) >= normalized_limit:
+                    break
+            if not progressed:
+                break
+        deferred_counts = {
+            source_name: len(queue) for source_name, queue in queues.items() if queue
+        }
+        return selected, candidate_counts, deferred_counts
+
+    def _record_stage_source_selection_metrics(
+        self,
+        *,
+        run_id: str,
+        stage: str,
+        candidate_counts: dict[str, int],
+        deferred_counts: dict[str, int],
+    ) -> None:
+        sources = sorted(set(candidate_counts) | set(deferred_counts))
+        for source_name in sources:
+            candidate_total = int(candidate_counts.get(source_name) or 0)
+            deferred_total = int(deferred_counts.get(source_name) or 0)
+            selected_total = max(0, candidate_total - deferred_total)
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.{stage}.source.{source_name}.candidate_total",
+                value=candidate_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.{stage}.source.{source_name}.selected_total",
+                value=selected_total,
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.{stage}.source.{source_name}.deferred_total",
+                value=deferred_total,
+                unit="count",
+            )
 
     @classmethod
     def _annotate_content_diag(
@@ -404,6 +543,11 @@ class PipelineService:
                             "filtered_out_total": 0,
                             "in_window_total": 0,
                             "missing_published_at_total": 0,
+                            "deduped_total": 0,
+                            "deferred_total": 0,
+                            "not_modified_total": 0,
+                            "oldest_published_at_unix": 0,
+                            "newest_published_at_unix": 0,
                             "inserted_total": 0,
                             "updated_total": 0,
                         },
@@ -429,6 +573,11 @@ class PipelineService:
                                     "filtered_out_total": 0,
                                     "in_window_total": 0,
                                     "missing_published_at_total": 0,
+                                    "deduped_total": 0,
+                                    "deferred_total": 0,
+                                    "not_modified_total": 0,
+                                    "oldest_published_at_unix": 0,
+                                    "newest_published_at_unix": 0,
                                     "inserted_total": 0,
                                     "updated_total": 0,
                                 },
@@ -558,6 +707,40 @@ class PipelineService:
             )
             self.repository.record_metric(
                 run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.deduped_total",
+                value=int(bucket.get("deduped_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.deferred_total",
+                value=int(bucket.get("deferred_total") or 0),
+                unit="count",
+            )
+            self.repository.record_metric(
+                run_id=run_id,
+                name=f"pipeline.ingest.source.{source_name}.not_modified_total",
+                value=int(bucket.get("not_modified_total") or 0),
+                unit="count",
+            )
+            oldest_published_at_unix = int(bucket.get("oldest_published_at_unix") or 0)
+            if oldest_published_at_unix > 0:
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name=f"pipeline.ingest.source.{source_name}.oldest_published_at_unix",
+                    value=oldest_published_at_unix,
+                    unit="unix",
+                )
+            newest_published_at_unix = int(bucket.get("newest_published_at_unix") or 0)
+            if newest_published_at_unix > 0:
+                self.repository.record_metric(
+                    run_id=run_id,
+                    name=f"pipeline.ingest.source.{source_name}.newest_published_at_unix",
+                    value=newest_published_at_unix,
+                    unit="unix",
+                )
+            self.repository.record_metric(
+                run_id=run_id,
                 name=f"pipeline.ingest.source.{source_name}.inserted_total",
                 value=int(bucket.get("inserted_total") or 0),
                 unit="count",
@@ -625,11 +808,22 @@ class PipelineService:
             and self.settings.artifacts_dir is not None
         )
         with self.repository.sql_diagnostics() as sql_diag:
+            candidate_limit = self._stage_candidate_limit(limit=limit)
             items = self._invoke_repository_method(
                 "list_items_for_analysis",
-                limit=limit,
+                limit=candidate_limit,
                 period_start=period_start,
                 period_end=period_end,
+            )
+            items, candidate_counts, deferred_counts = self._rebalance_items_by_source(
+                items=list(items),
+                limit=limit,
+            )
+            self._record_stage_source_selection_metrics(
+                run_id=run_id,
+                stage="enrich",
+                candidate_counts=candidate_counts,
+                deferred_counts=deferred_counts,
             )
             enrich_processed = 0
             enrich_failed = 0
@@ -1316,12 +1510,23 @@ class PipelineService:
             and self.settings.artifacts_dir is not None
         )
         log = logger.bind(module="pipeline.triage", run_id=run_id)
+        selection_limit = self._stage_candidate_limit(limit=normalized_candidate_limit)
         items = self._invoke_repository_method(
             "list_items_for_llm_analysis",
-            limit=normalized_candidate_limit,
+            limit=selection_limit,
             triage_required=False,
             period_start=period_start,
             period_end=period_end,
+        )
+        items, candidate_counts, deferred_counts = self._rebalance_items_by_source(
+            items=list(items),
+            limit=normalized_candidate_limit,
+        )
+        self._record_stage_source_selection_metrics(
+            run_id=run_id,
+            stage="triage",
+            candidate_counts=candidate_counts,
+            deferred_counts=deferred_counts,
         )
         triage_items = [
             item
@@ -1606,12 +1811,23 @@ class PipelineService:
             self.settings.topics
         )
         effective_limit = self._resolve_analysis_limit(limit=limit)
+        candidate_limit = self._stage_candidate_limit(limit=effective_limit)
         items = self._invoke_repository_method(
             "list_items_for_llm_analysis",
-            limit=effective_limit,
+            limit=candidate_limit,
             triage_required=triage_required,
             period_start=period_start,
             period_end=period_end,
+        )
+        items, candidate_counts, deferred_counts = self._rebalance_items_by_source(
+            items=list(items),
+            limit=effective_limit,
+        )
+        self._record_stage_source_selection_metrics(
+            run_id=run_id,
+            stage="analyze",
+            candidate_counts=candidate_counts,
+            deferred_counts=deferred_counts,
         )
         analyze_result = AnalyzeResult()
         llm_calls_total = 0
@@ -3160,8 +3376,21 @@ class PipelineService:
         )
         return extracted, True
 
-    def publish(self, *, run_id: str, limit: int = 50) -> PublishResult:
-        return run_publish_stage(self, run_id=run_id, limit=limit)
+    def publish(
+        self,
+        *,
+        run_id: str,
+        limit: int = 50,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> PublishResult:
+        return run_publish_stage(
+            self,
+            run_id=run_id,
+            limit=limit,
+            period_start=period_start,
+            period_end=period_end,
+        )
 
     def _publish_topic_streams(self, *, run_id: str, limit: int = 50) -> PublishResult:
         return run_publish_topic_streams_stage(self, run_id=run_id, limit=limit)
@@ -3254,6 +3483,11 @@ class PipelineService:
                     "filtered_out_total": 0,
                     "in_window_total": 0,
                     "missing_published_at_total": 0,
+                    "deduped_total": 0,
+                    "deferred_total": 0,
+                    "not_modified_total": 0,
+                    "oldest_published_at_unix": 0,
+                    "newest_published_at_unix": 0,
                     "inserted_total": 0,
                     "updated_total": 0,
                 },
@@ -3264,6 +3498,13 @@ class PipelineService:
                     **call_kwargs,
                     period_start=period_start,
                     period_end=period_end,
+                    pull_state_lookup=lambda scope_kind, scope_key: (
+                        self._lookup_source_pull_state(
+                            source=source_name,
+                            scope_kind=scope_kind,
+                            scope_key=scope_key,
+                        )
+                    ),
                     include_stats=True,
                 )
                 pull_result = self._normalize_source_pull_result(raw_result)
@@ -3273,6 +3514,23 @@ class PipelineService:
                 bucket["in_window_total"] += int(pull_result.in_window_total or 0)
                 bucket["missing_published_at_total"] += int(
                     pull_result.missing_published_at_total or 0
+                )
+                bucket["deduped_total"] += int(pull_result.deduped_total or 0)
+                bucket["deferred_total"] += int(pull_result.deferred_total or 0)
+                bucket["not_modified_total"] += int(pull_result.not_modified_total or 0)
+                if pull_result.oldest_published_at is not None:
+                    candidate_oldest = int(pull_result.oldest_published_at.timestamp())
+                    current_oldest = int(bucket.get("oldest_published_at_unix") or 0)
+                    if current_oldest <= 0 or candidate_oldest < current_oldest:
+                        bucket["oldest_published_at_unix"] = candidate_oldest
+                if pull_result.newest_published_at is not None:
+                    candidate_newest = int(pull_result.newest_published_at.timestamp())
+                    current_newest = int(bucket.get("newest_published_at_unix") or 0)
+                    if candidate_newest > current_newest:
+                        bucket["newest_published_at_unix"] = candidate_newest
+                self._persist_source_pull_state_updates(
+                    source=source_name,
+                    updates=list(pull_result.state_updates),
                 )
             except Exception as exc:
                 source_failures_total += 1
@@ -3320,10 +3578,10 @@ class PipelineService:
         if hn_urls:
             pull(
                 "hn",
-                sources.fetch_rss_drafts,
+                sources.fetch_hn_drafts,
                 feed_urls=hn_urls,
-                source="hn",
                 max_items_per_feed=self.settings.sources.hn.max_items_per_feed,
+                max_total_items=self.settings.sources.hn.max_total_per_run,
             )
         if rss_urls:
             pull(
@@ -3332,6 +3590,7 @@ class PipelineService:
                 feed_urls=rss_urls,
                 source="rss",
                 max_items_per_feed=self.settings.sources.rss.max_items_per_feed,
+                max_total_items=self.settings.sources.rss.max_total_per_run,
             )
         if arxiv_queries:
             pull(
@@ -3339,6 +3598,7 @@ class PipelineService:
                 sources.fetch_arxiv_drafts,
                 queries=arxiv_queries,
                 max_results_per_run=self.settings.sources.arxiv.max_results_per_run,
+                max_total_items=self.settings.sources.arxiv.max_total_per_run,
             )
         if openreview_venues:
             pull(
@@ -3346,6 +3606,7 @@ class PipelineService:
                 sources.fetch_openreview_drafts,
                 venues=openreview_venues,
                 max_results_per_venue=self.settings.sources.openreview.max_results_per_venue,
+                max_total_items=self.settings.sources.openreview.max_total_per_run,
             )
         return drafts, source_failures_total, source_stats
 

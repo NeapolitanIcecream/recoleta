@@ -72,9 +72,14 @@ def publish(
     limit: int = typer.Option(
         50, min=1, help="Max number of analyzed items published."
     ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day to publish (YYYY-MM-DD or YYYYMMDD). Defaults to latest analyzed backlog behavior.",
+    ),
 ) -> None:
     """Publish outputs to configured targets (markdown/obsidian/telegram)."""
-    run_publish_command(limit=limit)
+    run_publish_command(limit=limit, anchor_date=anchor_date)
 
 
 @app.command()
@@ -610,12 +615,18 @@ def run_scheduler(
         min=1,
         help="Max number of analyzed items published in the one-off run.",
     ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day for a one-off run (YYYY-MM-DD or YYYYMMDD). Requires --once.",
+    ),
 ) -> None:
     """Run periodic ingest/analyze/publish jobs with APScheduler (or run once)."""
     run_scheduler_command(
         once=once,
         analyze_limit=analyze_limit,
         publish_limit=publish_limit,
+        anchor_date=anchor_date,
     )
 
 

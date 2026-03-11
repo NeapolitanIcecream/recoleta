@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 import signal
 from types import SimpleNamespace
@@ -95,6 +96,40 @@ class _FakeService:
     def publish(self, *, run_id: str, limit: int):  # type: ignore[no-untyped-def]
         self.calls.append(("publish", (run_id, limit)))
         return type("PublishResult", (), {"sent": 4, "skipped": 0, "failed": 0})()
+
+
+class _WindowedFakeService(_FakeService):
+    def prepare(  # type: ignore[no-untyped-def]
+        self,
+        *,
+        run_id: str,
+        period_start=None,
+        period_end=None,
+    ):
+        self.calls.append(("prepare", (run_id, period_start, period_end)))
+        return type("IngestResult", (), {"inserted": 1, "updated": 0, "failed": 0})()
+
+    def analyze(  # type: ignore[no-untyped-def]
+        self,
+        *,
+        run_id: str,
+        limit=None,
+        period_start=None,
+        period_end=None,
+    ):
+        self.calls.append(("analyze", (run_id, limit, period_start, period_end)))
+        return type("AnalyzeResult", (), {"processed": 1, "failed": 0})()
+
+    def publish(  # type: ignore[no-untyped-def]
+        self,
+        *,
+        run_id: str,
+        limit: int,
+        period_start=None,
+        period_end=None,
+    ):
+        self.calls.append(("publish", (run_id, limit, period_start, period_end)))
+        return type("PublishResult", (), {"sent": 1, "skipped": 0, "failed": 0})()
 
 
 class _InterruptingService(_FakeService):
@@ -204,3 +239,65 @@ def test_run_once_preserves_sigterm_exit_code(
     assert result.exit_code == 143
     assert "Billing report" in result.stdout
     assert fake_repo.finished == [("run-1", False)]
+
+
+def test_run_once_passes_target_day_window_through_pipeline(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _FakeRepo()
+    fake_service = _WindowedFakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "run",
+            "--once",
+            "--date",
+            "2026-01-02",
+            "--analyze-limit",
+            "7",
+            "--publish-limit",
+            "9",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_repo.finished == [("run-1", True)]
+    assert fake_service.calls == [
+        (
+            "prepare",
+            (
+                "run-1",
+                datetime(2026, 1, 2, tzinfo=UTC),
+                datetime(2026, 1, 3, tzinfo=UTC),
+            ),
+        ),
+        (
+            "analyze",
+            (
+                "run-1",
+                7,
+                datetime(2026, 1, 2, tzinfo=UTC),
+                datetime(2026, 1, 3, tzinfo=UTC),
+            ),
+        ),
+        (
+            "publish",
+            (
+                "run-1",
+                9,
+                datetime(2026, 1, 2, tzinfo=UTC),
+                datetime(2026, 1, 3, tzinfo=UTC),
+            ),
+        ),
+    ]

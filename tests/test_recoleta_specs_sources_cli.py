@@ -7,14 +7,17 @@ from types import SimpleNamespace
 
 import pytest
 import respx
+import httpx
 from huggingface_hub import HfApi
 from huggingface_hub.hf_api import PaperInfo
 
 from recoleta.sources import (
     fetch_arxiv_drafts,
+    fetch_hn_drafts,
     fetch_hf_daily_papers_drafts,
     fetch_openreview_drafts,
     fetch_rss_drafts,
+    SourcePullStateSnapshot,
 )
 
 
@@ -193,6 +196,43 @@ def test_fetch_rss_drafts_filters_to_requested_event_window_before_limit(
     assert len(drafts) == 1
     assert drafts[0].source_item_id == "guid-window-match"
     assert drafts[0].canonical_url == "https://example.com/window-match"
+
+
+def test_fetch_rss_drafts_uses_conditional_headers_from_pull_state(
+    respx_mock: respx.Router,
+) -> None:
+    observed_headers: dict[str, str] = {}
+
+    def capture_request(request):  # type: ignore[no-untyped-def]
+        observed_headers["if-none-match"] = request.headers.get("if-none-match", "")
+        observed_headers["if-modified-since"] = request.headers.get(
+            "if-modified-since", ""
+        )
+        return httpx.Response(status_code=304)
+
+    respx_mock.get("https://example.com/feed.xml").mock(side_effect=capture_request)
+
+    drafts = fetch_rss_drafts(
+        feed_urls=["https://example.com/feed.xml"],
+        source="rss",
+        max_items_per_feed=10,
+        pull_state_lookup=lambda scope_kind, scope_key: (
+            SourcePullStateSnapshot(
+                scope_kind=scope_kind,
+                scope_key=scope_key,
+                etag='"feed-etag"',
+                last_modified="Wed, 22 Jan 2025 00:00:00 GMT",
+            )
+            if scope_kind == "feed" and scope_key == "https://example.com/feed.xml"
+            else None
+        ),
+    )
+
+    assert len(drafts) == 0
+    assert observed_headers == {
+        "if-none-match": '"feed-etag"',
+        "if-modified-since": "Wed, 22 Jan 2025 00:00:00 GMT",
+    }
 
 
 def test_fetch_hf_daily_papers_drafts_uses_hf_api_and_preserves_daily_submission_time(
@@ -386,6 +426,92 @@ def test_fetch_openreview_drafts_uses_window_filters_and_excludes_future_notes(
     )
     assert calls[0]["sort"] == "tcdate:desc"
     assert [draft.source_item_id for draft in drafts] == ["window-note"]
+
+
+def test_fetch_hn_drafts_uses_algolia_search_for_requested_window(
+    respx_mock: respx.Router,
+) -> None:
+    observed_queries: list[dict[str, str]] = []
+    respx_mock.get("https://hn.algolia.com/api/v1/search_by_date").mock(
+        side_effect=lambda request: (
+            observed_queries.append(dict(request.url.params.multi_items())),
+            httpx.Response(
+                200,
+                json={
+                    "hits": [
+                        {
+                            "objectID": "hn-1",
+                            "title": "Windowed HN Story",
+                            "author": "dang",
+                            "created_at_i": int(
+                                datetime(2025, 1, 20, 12, tzinfo=UTC).timestamp()
+                            ),
+                            "url": "https://example.com/windowed-hn-story",
+                        }
+                    ],
+                    "nbPages": 1,
+                    "page": 0,
+                },
+            ),
+        )[1]
+    )
+
+    drafts = fetch_hn_drafts(
+        feed_urls=["https://news.ycombinator.com/rss"],
+        max_items_per_feed=5,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert len(drafts) == 1
+    assert drafts[0].source_item_id == "hn-1"
+    assert drafts[0].canonical_url == "https://example.com/windowed-hn-story"
+    assert drafts[0].authors == ["dang"]
+    assert observed_queries[0]["tags"] == "story"
+    assert "created_at_i>=" in observed_queries[0]["numericFilters"]
+    assert "created_at_i<" in observed_queries[0]["numericFilters"]
+
+
+def test_fetch_arxiv_drafts_uses_saved_watermark_when_no_window_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    searches: list[dict[str, object]] = []
+
+    class FakeSearch:
+        def __init__(self, *, query, max_results, sort_by):  # type: ignore[no-untyped-def]
+            searches.append(
+                {
+                    "query": query,
+                    "max_results": max_results,
+                    "sort_by": sort_by,
+                }
+            )
+
+    class FakeClient:
+        def results(self, search):  # noqa: ANN001
+            _ = search
+            return iter([])
+
+    import recoleta.sources as source_module
+
+    monkeypatch.setattr(source_module.arxiv, "Search", FakeSearch)
+    monkeypatch.setattr(source_module.arxiv, "Client", FakeClient)
+
+    fetch_arxiv_drafts(
+        queries=["cat:cs.AI"],
+        max_results_per_run=5,
+        pull_state_lookup=lambda scope_kind, scope_key: (
+            SourcePullStateSnapshot(
+                scope_kind=scope_kind,
+                scope_key=scope_key,
+                watermark_published_at=datetime(2025, 1, 20, 12, 34, tzinfo=UTC),
+            )
+            if scope_kind == "query" and scope_key == "cat:cs.AI"
+            else None
+        ),
+    )
+
+    assert searches and "submittedDate:[202501201234 TO " in str(searches[0]["query"])
 
 
 def test_cli_import_does_not_eager_load_runtime_modules() -> None:

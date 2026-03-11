@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 
@@ -53,6 +54,57 @@ def test_publish_writes_note_and_prevents_duplicate_delivery(configured_env) -> 
     assert second_publish.sent == 0
     assert len(sender.messages) == 1
     assert first_publish.note_paths[0].exists()
+
+
+def test_publish_filters_to_requested_event_window(configured_env) -> None:
+    settings, repository = _build_runtime()
+    sender = FakeTelegramSender()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=sender,
+    )
+
+    service.prepare(
+        run_id="run-publish-window",
+        drafts=[
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="publish-window-old",
+                canonical_url="https://example.com/publish-window-old",
+                title="Publish Window Old",
+                authors=["Alice"],
+                published_at=datetime(2025, 1, 19, 12, tzinfo=UTC),
+            ),
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="publish-window-target",
+                canonical_url="https://example.com/publish-window-target",
+                title="Publish Window Target",
+                authors=["Bob"],
+                published_at=datetime(2025, 1, 20, 12, tzinfo=UTC),
+            ),
+        ],
+        limit=10,
+    )
+    service.analyze(run_id="run-publish-window", limit=10)
+
+    result = service.publish(
+        run_id="run-publish-window",
+        limit=10,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert result.sent == 1
+    assert len(sender.messages) == 1
+
+    with Session(repository.engine) as session:
+        items = list(session.exec(select(Item)))
+    by_source_item_id = {item.source_item_id: item for item in items}
+    assert by_source_item_id["publish-window-target"].state == ITEM_STATE_PUBLISHED
+    assert by_source_item_id["publish-window-old"].state == ITEM_STATE_ANALYZED
 
 
 def test_publish_does_not_skip_markdown_when_telegram_delivery_already_sent(

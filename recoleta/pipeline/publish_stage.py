@@ -41,6 +41,26 @@ class PublishStageService(Protocol):
     @property
     def repository(self) -> PublishRepositoryPort: ...
 
+    def _invoke_repository_method(self, method_name: str, /, **kwargs: Any) -> Any: ...
+
+    def _stage_candidate_limit(self, *, limit: int) -> int: ...
+
+    @staticmethod
+    def _rebalance_items_by_source(
+        *,
+        items: list[Any],
+        limit: int,
+    ) -> tuple[list[Any], dict[str, int], dict[str, int]]: ...
+
+    def _record_stage_source_selection_metrics(
+        self,
+        *,
+        run_id: str,
+        stage: str,
+        candidate_counts: dict[str, int],
+        deferred_counts: dict[str, int],
+    ) -> None: ...
+
     def _telegram_delivery_budget(self) -> tuple[str, int, int]: ...
 
     def _telegram_sender_for_stream(self, stream: TopicStreamRuntime) -> Any: ...
@@ -80,9 +100,17 @@ def run_publish_stage(
     *,
     run_id: str,
     limit: int = 50,
+    period_start: Any = None,
+    period_end: Any = None,
 ) -> PublishResult:
     if service._explicit_topic_streams:
-        return run_publish_topic_streams_stage(service, run_id=run_id, limit=limit)
+        return run_publish_topic_streams_stage(
+            service,
+            run_id=run_id,
+            limit=limit,
+            period_start=period_start,
+            period_end=period_end,
+        )
     log = logger.bind(module="pipeline.publish", run_id=run_id)
     started = time.perf_counter()
     publish_result = PublishResult()
@@ -127,10 +155,26 @@ def run_publish_stage(
                 service.settings.max_deliveries_per_day,
             )
 
-    effective_limit = min(limit, remaining_today) if remaining_today is not None else limit
-    candidates = service.repository.list_items_for_publish(
-        limit=effective_limit,
+    effective_limit = (
+        min(limit, remaining_today) if remaining_today is not None else limit
+    )
+    candidate_limit = service._stage_candidate_limit(limit=effective_limit)
+    candidates = service._invoke_repository_method(
+        "list_items_for_publish",
+        limit=candidate_limit,
         min_relevance_score=service.settings.min_relevance_score,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    candidates, candidate_counts, deferred_counts = service._rebalance_items_by_source(
+        items=list(candidates),
+        limit=effective_limit,
+    )
+    service._record_stage_source_selection_metrics(
+        run_id=run_id,
+        stage="publish",
+        candidate_counts=candidate_counts,
+        deferred_counts=deferred_counts,
     )
     allow_tags = {
         tag.strip().lower() for tag in service.settings.allow_tags if tag.strip()
@@ -146,7 +190,9 @@ def run_publish_stage(
         TimeElapsedColumn(),
         console=service._progress_console,
     ) as progress:
-        for item, analysis in progress.track(candidates, description="Publishing items"):
+        for item, analysis in progress.track(
+            candidates, description="Publishing items"
+        ):
             if item.id is None:
                 continue
             telegram_already_sent = False
@@ -209,7 +255,11 @@ def run_publish_stage(
                     )
                     markdown_notes.append((item.title, md_note_path))
                     note_paths.append(md_note_path)
-                if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                if (
+                    enable_telegram
+                    and destination_hash is not None
+                    and not telegram_already_sent
+                ):
                     message_text = build_telegram_message(
                         title=item.title,
                         summary=analysis.summary,
@@ -256,7 +306,11 @@ def run_publish_stage(
                             "Publish debug artifact record failed: {}",
                             service._sanitize_error_message(str(artifact_exc)),
                         )
-                if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                if (
+                    enable_telegram
+                    and destination_hash is not None
+                    and not telegram_already_sent
+                ):
                     service.repository.upsert_delivery(
                         item_id=item.id,
                         channel=DELIVERY_CHANNEL_TELEGRAM,
@@ -333,6 +387,8 @@ def run_publish_topic_streams_stage(
     *,
     run_id: str,
     limit: int = 50,
+    period_start: Any = None,
+    period_end: Any = None,
 ) -> PublishResult:
     log = logger.bind(module="pipeline.publish", run_id=run_id)
     started = time.perf_counter()
@@ -373,11 +429,29 @@ def run_publish_topic_streams_stage(
                     stream.max_deliveries_per_day,
                 )
 
-        effective_limit = min(limit, remaining_today) if remaining_today is not None else limit
-        candidates = service.repository.list_items_for_publish(
-            limit=effective_limit,
+        effective_limit = (
+            min(limit, remaining_today) if remaining_today is not None else limit
+        )
+        candidate_limit = service._stage_candidate_limit(limit=effective_limit)
+        candidates = service._invoke_repository_method(
+            "list_items_for_publish",
+            limit=candidate_limit,
             min_relevance_score=stream.min_relevance_score,
             scope=stream.name,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        candidates, candidate_counts, deferred_counts = (
+            service._rebalance_items_by_source(
+                items=list(candidates),
+                limit=effective_limit,
+            )
+        )
+        service._record_stage_source_selection_metrics(
+            run_id=run_id,
+            stage="publish",
+            candidate_counts=candidate_counts,
+            deferred_counts=deferred_counts,
         )
         allow_tags = {tag.strip().lower() for tag in stream.allow_tags if tag.strip()}
         deny_tags = {tag.strip().lower() for tag in stream.deny_tags if tag.strip()}
@@ -459,7 +533,11 @@ def run_publish_topic_streams_stage(
                         )
                         markdown_notes.append((item.title, md_note_path))
                         note_paths.append(md_note_path)
-                    if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                    if (
+                        enable_telegram
+                        and destination_hash is not None
+                        and not telegram_already_sent
+                    ):
                         if telegram_sender is None:
                             raise RuntimeError("telegram sender is not configured")
                         message_text = build_telegram_message(
@@ -512,7 +590,11 @@ def run_publish_topic_streams_stage(
                                 "Topic stream publish debug artifact record failed: {}",
                                 service._sanitize_error_message(str(artifact_exc)),
                             )
-                    if enable_telegram and destination_hash is not None and not telegram_already_sent:
+                    if (
+                        enable_telegram
+                        and destination_hash is not None
+                        and not telegram_already_sent
+                    ):
                         service.repository.upsert_delivery(
                             item_id=item.id,
                             channel=DELIVERY_CHANNEL_TELEGRAM,

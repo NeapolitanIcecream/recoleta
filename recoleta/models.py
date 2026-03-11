@@ -180,6 +180,29 @@ class Metric(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class SourcePullState(SQLModel, table=True):
+    __tablename__ = "source_pull_states"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "scope_kind",
+            "scope_key",
+            name="uq_source_pull_states_source_scope",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    source: str = Field(index=True, max_length=32)
+    scope_kind: str = Field(index=True, max_length=32)
+    scope_key: str = Field(index=True, max_length=512)
+    etag: str | None = Field(default=None, max_length=512)
+    last_modified: str | None = Field(default=None, max_length=512)
+    watermark_published_at: datetime | None = Field(default=None, index=True)
+    cursor_json: str = Field(default="{}", sa_type=Text)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class Artifact(SQLModel, table=True):
     __tablename__ = "artifacts"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
 

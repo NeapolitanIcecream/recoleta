@@ -106,7 +106,13 @@ class RepositoryPort(Protocol):
     def mark_item_retryable_failed(self, *, item_id: int) -> None: ...
 
     def list_items_for_publish(
-        self, *, limit: int, min_relevance_score: float, scope: str = "default"
+        self,
+        *,
+        limit: int,
+        min_relevance_score: float,
+        scope: str = "default",
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def has_sent_delivery(
@@ -315,7 +321,13 @@ class PublishRepositoryPort(Protocol):
     ) -> None: ...
 
     def list_items_for_publish(
-        self, *, limit: int, min_relevance_score: float, scope: str = "default"
+        self,
+        *,
+        limit: int,
+        min_relevance_score: float,
+        scope: str = "default",
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def has_sent_delivery(

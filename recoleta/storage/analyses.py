@@ -133,9 +133,15 @@ class AnalysisStoreMixin:
         limit: int,
         min_relevance_score: float,
         scope: str = DEFAULT_TOPIC_STREAM,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]:
         stream_state = aliased(ItemStreamState)
         with Session(self.engine) as session:
+            event_at = func.coalesce(
+                cast(Any, Item.published_at),
+                cast(Any, Item.created_at),
+            )
             statement = (
                 select(Item, Analysis)
                 .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
@@ -151,12 +157,16 @@ class AnalysisStoreMixin:
                     cast(Any, stream_state.state) == ITEM_STATE_ANALYZED,
                     cast(Any, Analysis.relevance_score) >= min_relevance_score,
                 )
-                .order_by(
-                    desc(cast(Any, Analysis.relevance_score)),
-                    desc(cast(Any, Analysis.novelty_score)),
-                )
-                .limit(limit)
             )
+            if period_start is not None and period_end is not None:
+                statement = statement.where(
+                    event_at >= period_start,
+                    event_at < period_end,
+                )
+            statement = statement.order_by(
+                desc(cast(Any, Analysis.relevance_score)),
+                desc(cast(Any, Analysis.novelty_score)),
+            ).limit(limit)
             return list(session.exec(statement))
 
     def mark_item_published(self, *, item_id: int) -> None:

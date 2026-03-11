@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import recoleta.cli as cli
+from recoleta.trends import day_period_bounds
 
 
 def run_scheduler_command(
@@ -8,6 +11,7 @@ def run_scheduler_command(
     once: bool,
     analyze_limit: int | None,
     publish_limit: int,
+    anchor_date: str | None = None,
 ) -> None:
     symbols = cli._runtime_symbols()
     logger = symbols["logger"]
@@ -16,8 +20,11 @@ def run_scheduler_command(
         run_pipeline_once(
             analyze_limit=analyze_limit,
             publish_limit=publish_limit,
+            anchor_date=anchor_date,
         )
         return
+    if anchor_date is not None and str(anchor_date).strip():
+        raise ValueError("--date requires --once")
 
     console_cls = symbols["Console"]
     settings, _, _ = cli._build_runtime()
@@ -98,9 +105,21 @@ def run_scheduler_command(
         raise cli.typer.Exit(code=cli._interrupt_exit_code(exc)) from None
 
 
-def run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None:
+def run_pipeline_once(
+    *,
+    analyze_limit: int | None,
+    publish_limit: int,
+    anchor_date: str | None = None,
+) -> None:
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    if anchor_date is not None and str(anchor_date).strip():
+        parsed_anchor = cli._parse_anchor_date_option(str(anchor_date).strip())
+        period_start, period_end = day_period_bounds(parsed_anchor)
+        period_start = period_start.astimezone(timezone.utc)
+        period_end = period_end.astimezone(timezone.utc)
 
     (
         settings,
@@ -118,11 +137,31 @@ def run_pipeline_once(*, analyze_limit: int | None, publish_limit: int) -> None:
 
     try:
         with cli._graceful_shutdown_signals():
-            ingest_result = service.prepare(run_id=run_id)
+            ingest_result = cli._invoke_service_method(
+                service,
+                "prepare",
+                run_id=run_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
             heartbeat_monitor.raise_if_failed()
-            analyze_result = service.analyze(run_id=run_id, limit=analyze_limit)
+            analyze_result = cli._invoke_service_method(
+                service,
+                "analyze",
+                run_id=run_id,
+                limit=analyze_limit,
+                period_start=period_start,
+                period_end=period_end,
+            )
             heartbeat_monitor.raise_if_failed()
-            publish_result = service.publish(run_id=run_id, limit=publish_limit)
+            publish_result = cli._invoke_service_method(
+                service,
+                "publish",
+                run_id=run_id,
+                limit=publish_limit,
+                period_start=period_start,
+                period_end=period_end,
+            )
         heartbeat_monitor.raise_if_failed()
         repository.finish_run(run_id, success=True)
     except KeyboardInterrupt as exc:

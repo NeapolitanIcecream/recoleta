@@ -20,6 +20,16 @@ def _default_source_diagnostic_entry(*, enabled: bool | None) -> dict[str, Any]:
             "drafts_total": 0,
             "pull_failed_total": 0,
             "pull_duration_ms": 0,
+            "filtered_out_total": 0,
+            "in_window_total": 0,
+            "missing_published_at_total": 0,
+            "deduped_total": 0,
+            "deferred_total": 0,
+            "not_modified_total": 0,
+            "oldest_published_at": None,
+            "newest_published_at": None,
+            "inserted_total": 0,
+            "updated_total": 0,
         },
         "enrich": {
             "processed_total": 0,
@@ -100,6 +110,17 @@ def _build_source_diagnostics_payload(
                     continue
                 entry = _source_entry(source_name)
                 ingest_payload = entry["ingest"]
+                if metric_key in {
+                    "oldest_published_at_unix",
+                    "newest_published_at_unix",
+                }:
+                    if metric_value > 0:
+                        payload_key = metric_key.removesuffix("_unix")
+                        ingest_payload[payload_key] = datetime.fromtimestamp(
+                            metric_value,
+                            tz=UTC,
+                        ).isoformat()
+                    continue
                 if metric_key in ingest_payload:
                     ingest_payload[metric_key] = metric_value
                 continue
@@ -134,11 +155,18 @@ def _build_source_diagnostics_payload(
             observed = (
                 int(ingest_payload["drafts_total"]) > 0
                 or int(ingest_payload["pull_failed_total"]) > 0
+                or int(ingest_payload["not_modified_total"]) > 0
                 or enrich_success_total > 0
                 or int(enrich_payload["failed_total"]) > 0
             )
             if enabled is False and not observed:
                 status = "disabled"
+            elif (
+                int(ingest_payload["not_modified_total"]) > 0
+                and int(ingest_payload["pull_failed_total"]) <= 0
+                and int(enrich_payload["failed_total"]) <= 0
+            ):
+                status = "not_modified"
             elif (
                 int(ingest_payload["pull_failed_total"]) > 0
                 and int(ingest_payload["drafts_total"]) <= 0
@@ -154,7 +182,7 @@ def _build_source_diagnostics_payload(
             else:
                 status = "not_run"
             entry["status"] = status
-            entry["pipeline_completed"] = bool(status == "ok")
+            entry["pipeline_completed"] = bool(status in {"ok", "not_modified"})
 
         started_at = cli._normalize_utc_datetime(getattr(run, "started_at", None))
         age_seconds: int | None = None
@@ -518,7 +546,9 @@ def run_stats_command(
 
     resolved_db_path: Path | None = None
     try:
-        resolved_db_path = cli._resolve_db_path(db_path=db_path, config_path=config_path)
+        resolved_db_path = cli._resolve_db_path(
+            db_path=db_path, config_path=config_path
+        )
     except Exception as exc:  # noqa: BLE001
         message = f"db path resolution failed: {exc}"
         log.warning(message)
@@ -753,7 +783,9 @@ def run_doctor_command(
 
     resolved_db_path: Path
     try:
-        resolved_db_path = cli._resolve_db_path(db_path=db_path, config_path=config_path)
+        resolved_db_path = cli._resolve_db_path(
+            db_path=db_path, config_path=config_path
+        )
     except Exception as exc:  # noqa: BLE001
         message = f"db path resolution failed: {exc}"
         log.warning(message)
@@ -810,9 +842,13 @@ def run_doctor_command(
         artifacts_dir = getattr(settings, "artifacts_dir", None)
         if artifacts_dir is not None:
             paths_to_check.append(Path(artifacts_dir))
-        failed_paths = [path for path in paths_to_check if not cli._is_accessible_path(path)]
+        failed_paths = [
+            path for path in paths_to_check if not cli._is_accessible_path(path)
+        ]
         if failed_paths:
-            message = "path access failed: " + ", ".join(str(path) for path in failed_paths)
+            message = "path access failed: " + ", ".join(
+                str(path) for path in failed_paths
+            )
             log.warning(message)
             console.print(
                 f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
@@ -854,10 +890,7 @@ def run_doctor_command(
     if max_success_age_minutes is not None:
         threshold_seconds = int(max_success_age_minutes) * 60
         if latest_successful_run_at is None:
-            message = (
-                "latest successful run is too old: "
-                "no successful runs recorded"
-            )
+            message = "latest successful run is too old: no successful runs recorded"
             log.warning(message)
             console.print(
                 f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
@@ -895,5 +928,7 @@ def run_doctor_command(
     console.print(f"schema_version={schema_version}")
     console.print(f"settings={settings_status}")
     console.print(f"paths={path_status}")
-    console.print(f"lease={lease_state}" + (f" {lease_details}" if lease_details else ""))
+    console.print(
+        f"lease={lease_state}" + (f" {lease_details}" if lease_details else "")
+    )
     console.print(f"latest_run={latest_run_state}")
