@@ -39,9 +39,15 @@ app.add_typer(site_app, name="site")
 
 
 @app.command()
-def ingest() -> None:
+def ingest(
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day to prepare (YYYY-MM-DD or YYYYMMDD). Defaults to latest backlog behavior.",
+    ),
+) -> None:
     """Pull sources, enrich content, and optionally pre-rank candidates."""
-    run_ingest_command()
+    run_ingest_command(anchor_date=anchor_date)
 
 
 @app.command()
@@ -51,9 +57,14 @@ def analyze(
         min=1,
         help="Max number of items analyzed in one run. Defaults to ANALYZE_LIMIT.",
     ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day to analyze (YYYY-MM-DD or YYYYMMDD). Defaults to latest prepared backlog behavior.",
+    ),
 ) -> None:
     """Run LLM analysis for prepared items."""
-    run_analyze_command(limit=limit)
+    run_analyze_command(limit=limit, anchor_date=anchor_date)
 
 
 @app.command()
@@ -61,9 +72,14 @@ def publish(
     limit: int = typer.Option(
         50, min=1, help="Max number of analyzed items published."
     ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day to publish (YYYY-MM-DD or YYYYMMDD). Defaults to latest analyzed backlog behavior.",
+    ),
 ) -> None:
     """Publish outputs to configured targets (markdown/obsidian/telegram)."""
-    run_publish_command(limit=limit)
+    run_publish_command(limit=limit, anchor_date=anchor_date)
 
 
 @app.command()
@@ -599,12 +615,18 @@ def run_scheduler(
         min=1,
         help="Max number of analyzed items published in the one-off run.",
     ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day for a one-off run (YYYY-MM-DD or YYYYMMDD). Requires --once.",
+    ),
 ) -> None:
     """Run periodic ingest/analyze/publish jobs with APScheduler (or run once)."""
     run_scheduler_command(
         once=once,
         analyze_limit=analyze_limit,
         publish_limit=publish_limit,
+        anchor_date=anchor_date,
     )
 
 

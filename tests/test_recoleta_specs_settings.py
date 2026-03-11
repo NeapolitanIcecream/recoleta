@@ -67,16 +67,19 @@ def test_settings_loads_source_scale_controls(
                     "enabled": True,
                     "queries": ["cat:cs.AI"],
                     "max_results_per_run": 2,
+                    "max_total_per_run": 3,
                 },
                 "hn": {
                     "enabled": True,
                     "rss_urls": ["https://news.ycombinator.com/rss"],
                     "max_items_per_feed": 1,
+                    "max_total_per_run": 2,
                 },
                 "rss": {
                     "enabled": True,
                     "feeds": ["https://jack.example/"],
                     "max_items_per_feed": 3,
+                    "max_total_per_run": 4,
                 },
                 "hf_daily": {
                     "enabled": True,
@@ -86,6 +89,7 @@ def test_settings_loads_source_scale_controls(
                     "enabled": True,
                     "venues": ["ICLR.cc/2026/Conference"],
                     "max_results_per_venue": 5,
+                    "max_total_per_run": 6,
                 },
             }
         ),
@@ -94,10 +98,14 @@ def test_settings_loads_source_scale_controls(
     settings = Settings()  # pyright: ignore[reportCallIssue]
 
     assert settings.sources.arxiv.max_results_per_run == 2
+    assert settings.sources.arxiv.max_total_per_run == 3
     assert settings.sources.hn.max_items_per_feed == 1
+    assert settings.sources.hn.max_total_per_run == 2
     assert settings.sources.rss.max_items_per_feed == 3
+    assert settings.sources.rss.max_total_per_run == 4
     assert settings.sources.hf_daily.max_items_per_run == 4
     assert settings.sources.openreview.max_results_per_venue == 5
+    assert settings.sources.openreview.max_total_per_run == 6
 
 
 def test_settings_loads_arxiv_enrich_configuration(

@@ -336,3 +336,63 @@ def test_stats_json_reports_pull_failed_when_backlog_enrich_succeeds(
     assert diagnostics["run_id"] == "run-source-diag-backlog"
     assert diagnostics["sources"]["rss"]["status"] == "pull_failed"
     assert diagnostics["sources"]["rss"]["pipeline_completed"] is False
+
+
+def test_stats_json_reports_extended_ingest_source_diagnostics(
+    configured_env: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-source-diag", run_id="run-source-diag-extended")
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.filtered_out_total",
+        value=2,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.deduped_total",
+        value=3,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.deferred_total",
+        value=4,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.not_modified_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.oldest_published_at_unix",
+        value=datetime(2025, 1, 20, 10, tzinfo=UTC).timestamp(),
+        unit="unix",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.rss.newest_published_at_unix",
+        value=datetime(2025, 1, 21, 11, tzinfo=UTC).timestamp(),
+        unit="unix",
+    )
+    repository.finish_run(run.id, success=True)
+
+    result = runner.invoke(recoleta.cli.app, ["stats", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    ingest_payload = payload["source_diagnostics"]["sources"]["rss"]["ingest"]
+    assert ingest_payload["filtered_out_total"] == 2
+    assert ingest_payload["deduped_total"] == 3
+    assert ingest_payload["deferred_total"] == 4
+    assert ingest_payload["not_modified_total"] == 1
+    assert ingest_payload["oldest_published_at"] == "2025-01-20T10:00:00+00:00"
+    assert ingest_payload["newest_published_at"] == "2025-01-21T11:00:00+00:00"

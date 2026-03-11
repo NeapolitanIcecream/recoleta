@@ -18,10 +18,21 @@ class RepositoryPort(Protocol):
 
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]: ...
 
-    def list_items_for_analysis(self, *, limit: int) -> list[Item]: ...
+    def list_items_for_analysis(
+        self,
+        *,
+        limit: int,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> list[Item]: ...
 
     def list_items_for_llm_analysis(
-        self, *, limit: int, triage_required: bool
+        self,
+        *,
+        limit: int,
+        triage_required: bool,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[Item]: ...
 
     def get_latest_content(
@@ -59,7 +70,13 @@ class RepositoryPort(Protocol):
     ) -> tuple[Content, bool]: ...
 
     def list_items_for_stream_analysis(
-        self, *, stream: str, limit: int, selected_only: bool = False
+        self,
+        *,
+        stream: str,
+        limit: int,
+        selected_only: bool = False,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[Item]: ...
 
     def save_analysis(
@@ -89,7 +106,13 @@ class RepositoryPort(Protocol):
     def mark_item_retryable_failed(self, *, item_id: int) -> None: ...
 
     def list_items_for_publish(
-        self, *, limit: int, min_relevance_score: float, scope: str = "default"
+        self,
+        *,
+        limit: int,
+        min_relevance_score: float,
+        scope: str = "default",
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def has_sent_delivery(
@@ -243,11 +266,22 @@ class AnalysisRepositoryPort(Protocol):
     ) -> None: ...
 
     def list_items_for_llm_analysis(
-        self, *, limit: int, triage_required: bool
+        self,
+        *,
+        limit: int,
+        triage_required: bool,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[Item]: ...
 
     def list_items_for_stream_analysis(
-        self, *, stream: str, limit: int, selected_only: bool = False
+        self,
+        *,
+        stream: str,
+        limit: int,
+        selected_only: bool = False,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[Item]: ...
 
     def get_latest_content_texts(
@@ -287,7 +321,13 @@ class PublishRepositoryPort(Protocol):
     ) -> None: ...
 
     def list_items_for_publish(
-        self, *, limit: int, min_relevance_score: float, scope: str = "default"
+        self,
+        *,
+        limit: int,
+        min_relevance_score: float,
+        scope: str = "default",
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def has_sent_delivery(

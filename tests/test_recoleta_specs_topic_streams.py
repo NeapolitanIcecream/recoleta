@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -8,8 +9,8 @@ import pytest
 from sqlmodel import Session, select
 
 from recoleta.config import Settings
-from recoleta.models import Analysis, Document, DocumentChunk, Metric
-from recoleta.pipeline import PipelineService
+from recoleta.models import Analysis, Document, DocumentChunk, Item, Metric
+from recoleta.pipeline.service import PipelineService
 from recoleta.trends import TrendPayload, day_period_bounds
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft, utc_now
 from tests.spec_support import FakeTelegramSender, _build_runtime
@@ -219,6 +220,66 @@ def test_analyze_runs_each_topic_stream_with_its_own_topics(
             "agents_lab",
             "bio_watch",
         ]
+
+
+def test_analyze_topic_streams_filters_to_requested_event_window(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_topic_stream_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    settings, repository = _build_runtime()
+    analyzer = _RecordingAnalyzer()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    service.prepare(
+        run_id="run-topic-stream-window-prepare",
+        drafts=[
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="topic-stream-window-match",
+                canonical_url="https://example.com/topic-stream-window-match",
+                title="Topic Stream Window Match",
+                authors=["Alice"],
+                published_at=datetime(2025, 1, 20, 12, tzinfo=UTC),
+            ),
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="topic-stream-window-too-new",
+                canonical_url="https://example.com/topic-stream-window-too-new",
+                title="Topic Stream Window Too New",
+                authors=["Bob"],
+                published_at=datetime(2025, 1, 21, 12, tzinfo=UTC),
+            ),
+        ],
+        limit=10,
+    )
+
+    result = service.analyze(
+        run_id="run-topic-stream-window-analyze",
+        limit=10,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert result.processed == 2
+    assert result.failed == 0
+    with Session(repository.engine) as session:
+        analyzed = list(
+            session.exec(
+                select(Item.title, Analysis.scope)
+                .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
+                .order_by(Analysis.scope)
+            )
+        )
+    assert analyzed == [
+        ("Topic Stream Window Match", "agents_lab"),
+        ("Topic Stream Window Match", "bio_watch"),
+    ]
 
 
 def test_analyze_emits_stream_scoped_failure_metric_for_topic_streams(

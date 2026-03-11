@@ -109,15 +109,11 @@ def _normalize_optional_env_name(value: Any, *, field_name: str) -> str | None:
     if len(normalized) > 128:
         raise ValueError(f"{field_name} must be <= 128 characters")
     if _ENV_NAME_RE.fullmatch(normalized) is None:
-        raise ValueError(
-            f"{field_name} must be a valid environment variable name"
-        )
+        raise ValueError(f"{field_name} must be a valid environment variable name")
     return normalized
 
 
-def _normalize_publish_targets(
-    values: list[str], *, field_name: str
-) -> list[str]:
+def _normalize_publish_targets(values: list[str], *, field_name: str) -> list[str]:
     normalized: list[str] = []
     for raw in values:
         if not isinstance(raw, str):
@@ -246,9 +242,7 @@ class TopicStreamConfig(BaseModel):
                 self.publish_targets,
                 field_name="topic_streams.publish_targets",
             )
-        if (self.telegram_bot_token_env is None) != (
-            self.telegram_chat_id_env is None
-        ):
+        if (self.telegram_bot_token_env is None) != (self.telegram_chat_id_env is None):
             raise ValueError(
                 "topic_streams.telegram_bot_token_env and topic_streams.telegram_chat_id_env must be set together"
             )
@@ -418,6 +412,7 @@ class ArxivSourceConfig(BaseModel):
     enabled: bool = False
     queries: list[str] = Field(default_factory=list)
     max_results_per_run: int = 50
+    max_total_per_run: int | None = Field(default=None, ge=1, le=2000)
     enrich_method: str = Field(default="html_document")
     enrich_failure_mode: str = Field(default="fallback")
     html_document_max_concurrency: int = Field(default=4, ge=1, le=32)
@@ -475,6 +470,7 @@ class HNSourceConfig(BaseModel):
         default_factory=lambda: ["https://news.ycombinator.com/rss"]
     )
     max_items_per_feed: int = Field(default=50, ge=1, le=500)
+    max_total_per_run: int | None = Field(default=None, ge=1, le=2000)
 
     @model_validator(mode="after")
     def _validate_enabled_requires_urls(self) -> "HNSourceConfig":
@@ -515,6 +511,7 @@ class OpenReviewSourceConfig(BaseModel):
     enabled: bool = False
     venues: list[str] = Field(default_factory=list)
     max_results_per_venue: int = Field(default=50, ge=1, le=500)
+    max_total_per_run: int | None = Field(default=None, ge=1, le=2000)
 
     @model_validator(mode="after")
     def _validate_enabled_requires_venues(self) -> "OpenReviewSourceConfig":
@@ -538,6 +535,7 @@ class RSSSourceConfig(BaseModel):
     enabled: bool = False
     feeds: list[str] = Field(default_factory=list)
     max_items_per_feed: int = Field(default=50, ge=1, le=500)
+    max_total_per_run: int | None = Field(default=None, ge=1, le=2000)
 
     @model_validator(mode="after")
     def _validate_enabled_requires_feeds(self) -> "RSSSourceConfig":
@@ -1123,12 +1121,7 @@ class Settings(BaseSettings):
             token = _normalize_topic_stream_token(stream.name)
             token_names.setdefault(token, set()).add(stream.name)
         colliding_names = sorted(
-            {
-                name
-                for names in token_names.values()
-                if len(names) > 1
-                for name in names
-            }
+            {name for names in token_names.values() if len(names) > 1 for name in names}
         )
         if colliding_names:
             raise ValueError(

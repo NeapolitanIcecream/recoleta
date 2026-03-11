@@ -146,6 +146,80 @@ def test_analyze_persists_enriched_content_and_emits_enrich_metrics(
     assert by_name["pipeline.enrich.failed_total"].value == 0
 
 
+def test_enrich_balances_sources_within_requested_window_before_limit(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    processed_sources: list[str] = []
+
+    def fake_ensure_item_content(  # type: ignore[no-untyped-def]
+        self,
+        *,
+        client,
+        item,
+        log,
+        diag,
+        arxiv_html_throttle,
+    ):
+        _ = self, client, log, arxiv_html_throttle
+        diag["content_type"] = "html_maintext"
+        diag["content_chars"] = 128
+        processed_sources.append(str(getattr(item, "source", "") or ""))
+        return None, True
+
+    monkeypatch.setattr(
+        PipelineService,
+        "_ensure_item_content",
+        fake_ensure_item_content,
+        raising=True,
+    )
+
+    service.ingest(
+        run_id="run-balance-window-ingest",
+        drafts=[
+            ItemDraft.from_values(
+                source="arxiv",
+                source_item_id="arxiv-newest",
+                canonical_url="https://arxiv.org/abs/2501.00003",
+                title="Newest Arxiv Item",
+                published_at=datetime(2025, 1, 20, 23, tzinfo=UTC),
+            ),
+            ItemDraft.from_values(
+                source="arxiv",
+                source_item_id="arxiv-second",
+                canonical_url="https://arxiv.org/abs/2501.00002",
+                title="Second Arxiv Item",
+                published_at=datetime(2025, 1, 20, 22, tzinfo=UTC),
+            ),
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="rss-windowed",
+                canonical_url="https://example.com/windowed-rss-item",
+                title="Windowed RSS Item",
+                published_at=datetime(2025, 1, 20, 21, tzinfo=UTC),
+            ),
+        ],
+    )
+
+    service.enrich(
+        run_id="run-balance-window-enrich",
+        limit=2,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert len(processed_sources) == 2
+    assert sorted(processed_sources) == ["arxiv", "rss"]
+
+
 def test_triage_skips_candidates_without_stored_content(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
