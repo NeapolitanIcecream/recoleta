@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import inspect
 import threading
@@ -118,6 +118,20 @@ class _AnalyzeParallelismStats:
     requested: int
     effective: int
     max_inflight: int
+
+
+@dataclass(slots=True)
+class _AnalyzePersistFailure:
+    analysis: AnalysisWrite
+    error: Exception
+
+
+@dataclass(slots=True)
+class _AnalyzePersistResult:
+    persisted: list[AnalysisWrite] = field(default_factory=list)
+    failed: list[_AnalyzePersistFailure] = field(default_factory=list)
+    analysis_batches_total: int = 0
+    analysis_rows_total: int = 0
 
 
 class PipelineService:
@@ -2047,36 +2061,65 @@ class PipelineService:
             max_inflight=max_inflight,
         )
 
-    def _persist_analyze_batches(
+    def _persist_analysis_writes(
         self,
         *,
         analyses: list[AnalysisWrite],
-        state_updates: list[ItemStateUpdate],
-    ) -> tuple[int, int, int, int]:
+    ) -> _AnalyzePersistResult:
         batch_size = self._analyze_write_batch_size()
-        analysis_batches_total = 0
-        analysis_rows_total = 0
-        state_batches_total = 0
-        state_rows_total = 0
+        result = _AnalyzePersistResult()
 
         for start, end in self._chunked_batch_ranges(len(analyses), batch_size):
-            written = self._save_analyses_batch(analyses=analyses[start:end])
+            batch = analyses[start:end]
+            try:
+                written = self._save_analyses_batch(analyses=batch)
+            except Exception as batch_exc:
+                if len(batch) == 1:
+                    result.failed.append(
+                        _AnalyzePersistFailure(
+                            analysis=batch[0],
+                            error=batch_exc,
+                        )
+                    )
+                    continue
+                for analysis in batch:
+                    try:
+                        written = self._save_analyses_batch(analyses=[analysis])
+                    except Exception as item_exc:
+                        result.failed.append(
+                            _AnalyzePersistFailure(
+                                analysis=analysis,
+                                error=item_exc,
+                            )
+                        )
+                        continue
+                    if written > 0:
+                        result.persisted.append(analysis)
+                        result.analysis_batches_total += 1
+                        result.analysis_rows_total += written
+                continue
             if written > 0:
-                analysis_batches_total += 1
-                analysis_rows_total += written
+                result.persisted.extend(batch)
+                result.analysis_batches_total += 1
+                result.analysis_rows_total += written
 
+        return result
+
+    def _persist_state_updates(
+        self,
+        *,
+        state_updates: list[ItemStateUpdate],
+    ) -> tuple[int, int]:
+        batch_size = self._analyze_write_batch_size()
+        state_batches_total = 0
+        state_rows_total = 0
         for start, end in self._chunked_batch_ranges(len(state_updates), batch_size):
             updated = self._update_item_states_batch(updates=state_updates[start:end])
             if updated > 0:
                 state_batches_total += 1
                 state_rows_total += updated
 
-        return (
-            analysis_batches_total,
-            analysis_rows_total,
-            state_batches_total,
-            state_rows_total,
-        )
+        return state_batches_total, state_rows_total
 
     def _build_analyze_metric_points(
         self,
@@ -2497,7 +2540,6 @@ class PipelineService:
                             mirror_item_state=outcome.work_item.mirror_item_state,
                         )
                     )
-                    analyze_result.processed += 1
                 except Exception as exc:  # noqa: BLE001
                     analyze_result.failed += 1
                     llm_errors_total += 1
@@ -2535,13 +2577,51 @@ class PipelineService:
                         "Analyze failed: {}", sanitized_error
                     )
 
-            (
-                analysis_batches_total,
-                analysis_rows_total,
-                state_batches_total,
-                state_rows_total,
-            ) = self._persist_analyze_batches(
+            persisted_analyses = self._persist_analysis_writes(
                 analyses=analysis_writes,
+            )
+            analyze_result.processed += len(persisted_analyses.persisted)
+            for failed_persist in persisted_analyses.failed:
+                item_id = failed_persist.analysis.item_id
+                analyze_result.failed += 1
+                llm_errors_total += 1
+                llm_errors_by_provider_token[configured_provider_token] = (
+                    llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
+                )
+                llm_errors_by_model_token[configured_model_token] = (
+                    llm_errors_by_model_token.get(configured_model_token, 0) + 1
+                )
+                sanitized_error = self._sanitize_error_message(
+                    str(failed_persist.error)
+                )
+                classification = self._classify_exception(failed_persist.error)
+                state_updates.append(
+                    ItemStateUpdate(
+                        item_id=item_id,
+                        state=(
+                            ITEM_STATE_RETRYABLE_FAILED
+                            if classification.get("retryable") is True
+                            else ITEM_STATE_FAILED
+                        ),
+                    )
+                )
+                write_and_record_artifact(
+                    item_id=item_id,
+                    kind="error_context",
+                    payload={
+                        "stage": "analyze",
+                        "error_type": type(failed_persist.error).__name__,
+                        "error_message": sanitized_error,
+                        "item_id": item_id,
+                        **classification,
+                    },
+                )
+                log.bind(item_id=item_id).warning(
+                    "Analyze persistence failed: {}",
+                    sanitized_error,
+                )
+
+            state_batches_total, state_rows_total = self._persist_state_updates(
                 state_updates=state_updates,
             )
 
@@ -2564,8 +2644,8 @@ class PipelineService:
                 parallelism=parallelism,
                 sql_queries_total=sql_diag.queries_total,
                 sql_commits_total=sql_diag.commits_total,
-                analysis_batches_total=analysis_batches_total,
-                analysis_rows_total=analysis_rows_total,
+                analysis_batches_total=persisted_analyses.analysis_batches_total,
+                analysis_rows_total=persisted_analyses.analysis_rows_total,
                 state_batches_total=state_batches_total,
                 state_rows_total=state_rows_total,
             )
@@ -2909,7 +2989,12 @@ class PipelineService:
         with self.repository.sql_diagnostics() as sql_diag:
             analysis_writes: list[AnalysisWrite] = []
             state_updates: list[ItemStateUpdate] = []
-            stream_metrics: list[MetricPoint] = []
+            stream_processed: dict[str, int] = {
+                stream.name: 0 for stream in self._topic_streams
+            }
+            stream_failed: dict[str, int] = {
+                stream.name: 0 for stream in self._topic_streams
+            }
             overall_parallelism = _AnalyzeParallelismStats(
                 requested=self._requested_analyze_parallelism(),
                 effective=0,
@@ -2926,14 +3011,12 @@ class PipelineService:
                     period_start=period_start,
                     period_end=period_end,
                 )
-                stream_processed = 0
-                stream_failed = 0
                 work_items: list[_AnalyzeWorkItem] = []
 
                 for item in items:
                     raw_item_id = getattr(item, "id", None)
                     if raw_item_id is None:
-                        stream_failed += 1
+                        stream_failed[stream.name] += 1
                         analyze_result.failed += 1
                         stream_log.warning("Analyze skipped: item has no id")
                         continue
@@ -2941,7 +3024,7 @@ class PipelineService:
                     content_text = self._load_stored_content_for_analysis(item=item)
                     if not content_text:
                         missing_content_total += 1
-                        stream_failed += 1
+                        stream_failed[stream.name] += 1
                         analyze_result.failed += 1
                         state_updates.append(
                             ItemStateUpdate(
@@ -3057,10 +3140,8 @@ class PipelineService:
                                 mirror_item_state=False,
                             )
                         )
-                        stream_processed += 1
-                        analyze_result.processed += 1
                     except Exception as exc:  # noqa: BLE001
-                        stream_failed += 1
+                        stream_failed[stream.name] += 1
                         analyze_result.failed += 1
                         llm_errors_total += 1
                         llm_errors_by_provider_token[configured_provider_token] = (
@@ -3107,37 +3188,86 @@ class PipelineService:
                             sanitized_error,
                         )
 
-                stream_metrics.extend(
-                    [
-                        MetricPoint(
-                            name=self._stream_metric_name(
-                                stage="analyze",
-                                stream=stream.name,
-                                suffix="processed_total",
-                            ),
-                            value=stream_processed,
-                            unit="count",
+            persisted_analyses = self._persist_analysis_writes(
+                analyses=analysis_writes,
+            )
+            analyze_result.processed += len(persisted_analyses.persisted)
+            for analysis in persisted_analyses.persisted:
+                stream_processed[analysis.scope] = (
+                    stream_processed.get(analysis.scope, 0) + 1
+                )
+            for failed_persist in persisted_analyses.failed:
+                item_id = failed_persist.analysis.item_id
+                stream_name = failed_persist.analysis.scope
+                stream_failed[stream_name] = stream_failed.get(stream_name, 0) + 1
+                analyze_result.failed += 1
+                llm_errors_total += 1
+                llm_errors_by_provider_token[configured_provider_token] = (
+                    llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
+                )
+                llm_errors_by_model_token[configured_model_token] = (
+                    llm_errors_by_model_token.get(configured_model_token, 0) + 1
+                )
+                sanitized_error = self._sanitize_error_message(
+                    str(failed_persist.error)
+                )
+                classification = self._classify_exception(failed_persist.error)
+                state_updates.append(
+                    ItemStateUpdate(
+                        item_id=item_id,
+                        state=(
+                            ITEM_STATE_RETRYABLE_FAILED
+                            if classification.get("retryable") is True
+                            else ITEM_STATE_FAILED
                         ),
-                        MetricPoint(
-                            name=self._stream_metric_name(
-                                stage="analyze",
-                                stream=stream.name,
-                                suffix="failed_total",
-                            ),
-                            value=stream_failed,
-                            unit="count",
-                        ),
-                    ]
+                        stream=stream_name,
+                    )
+                )
+                write_and_record_artifact(
+                    stream_name=stream_name,
+                    item_id=item_id,
+                    kind="error_context",
+                    payload={
+                        "stage": "analyze",
+                        "error_type": type(failed_persist.error).__name__,
+                        "error_message": sanitized_error,
+                        "item_id": item_id,
+                        **classification,
+                    },
+                )
+                log.bind(item_id=item_id, stream=stream_name).warning(
+                    "Analyze persistence failed: {}",
+                    sanitized_error,
                 )
 
-            (
-                analysis_batches_total,
-                analysis_rows_total,
-                state_batches_total,
-                state_rows_total,
-            ) = self._persist_analyze_batches(
-                analyses=analysis_writes,
+            state_batches_total, state_rows_total = self._persist_state_updates(
                 state_updates=state_updates,
+            )
+            stream_metrics = [
+                MetricPoint(
+                    name=self._stream_metric_name(
+                        stage="analyze",
+                        stream=stream.name,
+                        suffix="processed_total",
+                    ),
+                    value=stream_processed.get(stream.name, 0),
+                    unit="count",
+                )
+                for stream in self._topic_streams
+            ]
+            stream_metrics.extend(
+                [
+                    MetricPoint(
+                        name=self._stream_metric_name(
+                            stage="analyze",
+                            stream=stream.name,
+                            suffix="failed_total",
+                        ),
+                        value=stream_failed.get(stream.name, 0),
+                        unit="count",
+                    )
+                    for stream in self._topic_streams
+                ]
             )
 
             metric_points = self._build_analyze_metric_points(
@@ -3159,8 +3289,8 @@ class PipelineService:
                 parallelism=overall_parallelism,
                 sql_queries_total=sql_diag.queries_total,
                 sql_commits_total=sql_diag.commits_total,
-                analysis_batches_total=analysis_batches_total,
-                analysis_rows_total=analysis_rows_total,
+                analysis_batches_total=persisted_analyses.analysis_batches_total,
+                analysis_rows_total=persisted_analyses.analysis_rows_total,
                 state_batches_total=state_batches_total,
                 state_rows_total=state_rows_total,
                 streams_total=len(self._topic_streams),
