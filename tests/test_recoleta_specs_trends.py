@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import io
 import json
 from pathlib import Path
@@ -9,13 +9,20 @@ import pytest
 from sqlmodel import Session, select
 
 from recoleta.models import Document, DocumentChunk
-from recoleta.pipeline import PipelineService
+from recoleta.pipeline.service import PipelineService
 from recoleta.trends import (
     day_period_bounds,
     index_items_as_documents,
     semantic_search_summaries_in_period,
 )
-from recoleta.types import AnalysisResult, ItemDraft, TrendResult, utc_now
+from recoleta.types import (
+    AnalyzeResult,
+    AnalysisResult,
+    IngestResult,
+    ItemDraft,
+    TrendResult,
+    utc_now,
+)
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
@@ -99,6 +106,133 @@ def test_trends_day_indexes_items_and_persists_trend_document(
         )
         assert len(summary_chunks) == 1
         assert "Summary for" in summary_chunks[0].text
+
+
+def test_trends_day_prepares_target_period_backlog_before_indexing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    period_calls: list[tuple[str, datetime, datetime]] = []
+    item_id_holder: dict[str, int] = {}
+
+    def fake_prepare(
+        *,
+        run_id: str,
+        drafts=None,  # noqa: ANN001
+        limit=None,  # noqa: ANN001
+        period_start=None,  # noqa: ANN001
+        period_end=None,  # noqa: ANN001
+    ) -> IngestResult:
+        _ = drafts, limit
+        assert isinstance(period_start, datetime)
+        assert isinstance(period_end, datetime)
+        period_calls.append(("prepare", period_start, period_end))
+        item, _ = repository.upsert_item(
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="target-period-item",
+                canonical_url="https://example.com/target-period-item",
+                title="Target Period Item",
+                authors=["Alice"],
+                published_at=period_start,
+                raw_metadata={"source": "test"},
+            )
+        )
+        assert item.id is not None
+        item_id_holder["item_id"] = int(item.id)
+        _ = repository.upsert_content(
+            item_id=int(item.id),
+            content_type="html_maintext",
+            text="Target period content " * 20,
+        )
+        repository.mark_item_enriched(item_id=int(item.id))
+        return IngestResult(inserted=1)
+
+    def fake_analyze(
+        *,
+        run_id: str,
+        limit=None,  # noqa: ANN001
+        period_start=None,  # noqa: ANN001
+        period_end=None,  # noqa: ANN001
+    ) -> AnalyzeResult:
+        _ = run_id, limit
+        assert isinstance(period_start, datetime)
+        assert isinstance(period_end, datetime)
+        period_calls.append(("analyze", period_start, period_end))
+        repository.save_analysis(
+            item_id=item_id_holder["item_id"],
+            result=AnalysisResult(
+                model="test/fake-model",
+                provider="test",
+                summary="Summary for Target Period Item",
+                topics=["agents"],
+                relevance_score=0.95,
+                novelty_score=0.5,
+                cost_usd=0.0,
+                latency_ms=1,
+            ),
+        )
+        return AnalyzeResult(processed=1)
+
+    monkeypatch.setattr(service, "prepare", fake_prepare)
+    monkeypatch.setattr(service, "analyze", fake_analyze)
+
+    from recoleta.rag import agent as rag_agent
+    from recoleta.trends import TrendPayload
+
+    anchor = date(2026, 1, 1)
+    period_start, period_end = day_period_bounds(anchor)
+    payload = {
+        "title": "Daily Trend",
+        "granularity": "day",
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "overview_md": "- TL;DR: target period coverage",
+        "topics": ["agents"],
+        "clusters": [],
+        "highlights": ["agents"],
+    }
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-trend-target-period",
+        granularity="day",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+    )
+
+    assert result.doc_id > 0
+    assert period_calls == [
+        ("prepare", period_start, period_end),
+        ("analyze", period_start, period_end),
+    ]
+    docs = repository.list_documents(
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    assert [str(getattr(doc, "title") or "") for doc in docs] == ["Target Period Item"]
 
 
 def test_trends_index_items_clears_stale_content_chunks_when_content_shrinks(
@@ -337,12 +471,15 @@ def test_index_items_as_documents_prunes_stale_low_relevance_docs(
         min_relevance_score=0.8,
     )
 
-    assert repository.list_documents(
-        doc_type="item",
-        period_start=period_start,
-        period_end=period_end,
-        limit=10,
-    ) == []
+    assert (
+        repository.list_documents(
+            doc_type="item",
+            period_start=period_start,
+            period_end=period_end,
+            limit=10,
+        )
+        == []
+    )
 
 
 def test_trends_text_search_can_find_summary_chunks(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import inspect
 import json
 import os
 from pathlib import Path
@@ -100,6 +101,26 @@ def _execute_stage(
 ) -> tuple[Any, Any, str, Any]:
     _sync_cli_runtime_state()
     return _execute_stage_impl(stage_name=stage_name, stage_runner=stage_runner)
+
+
+def _invoke_service_method(service: Any, method_name: str, /, **kwargs: Any) -> Any:
+    method = getattr(service, method_name)
+    try:
+        signature = inspect.signature(method)
+    except TypeError, ValueError:
+        return method(**kwargs)
+
+    accepts_var_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_var_kwargs:
+        return method(**kwargs)
+
+    supported_kwargs = {
+        name: value for name, value in kwargs.items() if name in signature.parameters
+    }
+    return method(**supported_kwargs)
 
 
 def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:
@@ -422,6 +443,7 @@ def _prune_inactive_lancedb_tables(
                 continue
         deleted += 1
     return deleted
+
 
 _app_module = importlib.import_module("recoleta.cli.app")
 app = _app_module.app

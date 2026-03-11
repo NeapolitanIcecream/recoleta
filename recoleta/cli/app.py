@@ -39,9 +39,15 @@ app.add_typer(site_app, name="site")
 
 
 @app.command()
-def ingest() -> None:
+def ingest(
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day to prepare (YYYY-MM-DD or YYYYMMDD). Defaults to latest backlog behavior.",
+    ),
+) -> None:
     """Pull sources, enrich content, and optionally pre-rank candidates."""
-    run_ingest_command()
+    run_ingest_command(anchor_date=anchor_date)
 
 
 @app.command()
@@ -51,9 +57,14 @@ def analyze(
         min=1,
         help="Max number of items analyzed in one run. Defaults to ANALYZE_LIMIT.",
     ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day to analyze (YYYY-MM-DD or YYYYMMDD). Defaults to latest prepared backlog behavior.",
+    ),
 ) -> None:
     """Run LLM analysis for prepared items."""
-    run_analyze_command(limit=limit)
+    run_analyze_command(limit=limit, anchor_date=anchor_date)
 
 
 @app.command()

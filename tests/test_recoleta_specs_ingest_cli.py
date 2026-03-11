@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -66,6 +67,20 @@ class _FakeService:
         return type("IngestResult", (), {"inserted": 2, "updated": 0, "failed": 0})()
 
 
+class _WindowedFakeService:
+    def prepare(
+        self,
+        *,
+        run_id: str,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ):  # type: ignore[no-untyped-def]
+        assert run_id == "run-ingest"
+        assert period_start == datetime(2026, 1, 2, tzinfo=UTC)
+        assert period_end == datetime(2026, 1, 3, tzinfo=UTC)
+        return type("IngestResult", (), {"inserted": 1, "updated": 0, "failed": 0})()
+
+
 def test_ingest_cli_prints_arxiv_html_document_summary(
     configured_env: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -129,3 +144,24 @@ def test_ingest_cli_prints_arxiv_html_document_summary(
     assert "pdf_fallbacks=2 math_replaced=42" in result.stdout
     assert "arxiv html_document fallback reasons http_404=2" in result.stdout
     assert fake_repo.finished == [("run-ingest", True)]
+
+
+def test_ingest_cli_passes_target_day_window_to_prepare(
+    configured_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings(tmp_path=configured_env)
+    fake_repo = _FakeRepo(metrics=[])
+    fake_service = _WindowedFakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(recoleta.cli.app, ["ingest", "--date", "2026-01-02"])
+
+    assert result.exit_code == 0
+    assert "ingest completed inserted=1 updated=0 failed=0" in result.stdout

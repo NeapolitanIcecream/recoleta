@@ -32,7 +32,10 @@ from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
 
 def _trend_metric_stream_token(scope: str) -> str:
     normalized_scope = str(scope or "").strip().lower()
-    return "".join(ch if ch.isalnum() else "_" for ch in normalized_scope).strip("_") or "unknown"
+    return (
+        "".join(ch if ch.isalnum() else "_" for ch in normalized_scope).strip("_")
+        or "unknown"
+    )
 
 
 def _trend_metric_name(name: str, *, scope: str) -> str:
@@ -40,7 +43,9 @@ def _trend_metric_name(name: str, *, scope: str) -> str:
     normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
     if normalized_scope == DEFAULT_TOPIC_STREAM:
         return normalized_name
-    stream_prefix = f"pipeline.trends.stream.{_trend_metric_stream_token(normalized_scope)}"
+    stream_prefix = (
+        f"pipeline.trends.stream.{_trend_metric_stream_token(normalized_scope)}"
+    )
     if normalized_name == "pipeline.trends":
         return stream_prefix
     if not normalized_name.startswith("pipeline.trends."):
@@ -92,6 +97,22 @@ class TrendStageService(Protocol):
         payload: dict[str, Any],
     ) -> Path | None: ...
 
+    def prepare(
+        self,
+        *,
+        run_id: str,
+        period_start: Any = None,
+        period_end: Any = None,
+    ) -> Any: ...
+
+    def analyze(
+        self,
+        *,
+        run_id: str,
+        period_start: Any = None,
+        period_end: Any = None,
+    ) -> Any: ...
+
     @staticmethod
     def _classify_exception(exc: BaseException) -> dict[str, Any]: ...
 
@@ -128,6 +149,7 @@ def run_trends_stage(
     anchor = anchor_date or utc_now().date()
 
     index_stats: dict[str, Any] = {}
+
     def record_metric(*, name: str, value: float, unit: str | None = None) -> None:
         service.repository.record_metric(
             run_id=run_id,
@@ -213,20 +235,35 @@ def run_trends_stage(
             _record_index_metrics(stats, failed=False)
             return stats
 
+        def _prepare_period_backlog() -> None:
+            service.prepare(
+                run_id=run_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
+            service.analyze(
+                run_id=run_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
+
         if normalized_granularity == "day":
             period_start, period_end = trends.day_period_bounds(anchor)
             corpus_doc_type = "item"
             corpus_granularity: str | None = None
+            _prepare_period_backlog()
             index_stats = _index_items_for_period(required=True)
         elif normalized_granularity == "week":
             period_start, period_end = trends.week_period_bounds(anchor)
             corpus_doc_type = "trend"
             corpus_granularity = "day"
+            _prepare_period_backlog()
             index_stats = _index_items_for_period(required=False)
         else:
             period_start, period_end = trends.month_period_bounds(anchor)
             corpus_doc_type = "trend"
             corpus_granularity = "week"
+            _prepare_period_backlog()
             index_stats = _index_items_for_period(required=False)
 
         model = llm_model or service.settings.llm_model
@@ -459,7 +496,9 @@ def run_trends_stage(
                     cast(Any, service.repository),
                     plan,
                     overview_pack_max_chars=int(
-                        getattr(service.settings, "trends_overview_pack_max_chars", 8000)
+                        getattr(
+                            service.settings, "trends_overview_pack_max_chars", 8000
+                        )
                         or 8000
                     ),
                     item_overview_top_k=int(
@@ -467,7 +506,9 @@ def run_trends_stage(
                         or 20
                     ),
                     item_overview_item_max_chars=int(
-                        getattr(service.settings, "trends_item_overview_item_max_chars", 500)
+                        getattr(
+                            service.settings, "trends_item_overview_item_max_chars", 500
+                        )
                         or 500
                     ),
                     min_relevance_score=float(
@@ -565,7 +606,9 @@ def run_trends_stage(
             if normalized_doc_id <= 0:
                 return None
             if normalized_doc_id not in rep_doc_type_cache:
-                doc = cast(Any, service.repository).get_document(doc_id=normalized_doc_id)
+                doc = cast(Any, service.repository).get_document(
+                    doc_id=normalized_doc_id
+                )
                 if doc is None:
                     rep_doc_type_cache[normalized_doc_id] = None
                 else:
@@ -690,7 +733,9 @@ def run_trends_stage(
                     trends.TrendCluster.RepresentativeChunk(
                         doc_id=doc_id_int,
                         chunk_index=chunk_index_int,
-                        score=round(score_value, 6) if score_value is not None else None,
+                        score=round(score_value, 6)
+                        if score_value is not None
+                        else None,
                     )
                 )
                 if len(reps) >= limit:
@@ -951,7 +996,9 @@ def run_trends_stage(
                         if doc_type == "item":
                             raw_item_id = getattr(doc, "item_id", None)
                             try:
-                                item_id_int = int(raw_item_id) if raw_item_id is not None else 0
+                                item_id_int = (
+                                    int(raw_item_id) if raw_item_id is not None else 0
+                                )
                             except Exception:
                                 item_id_int = 0
                             if item_id_int > 0:
@@ -961,7 +1008,9 @@ def run_trends_stage(
                                     ).get_item(item_id=item_id_int)
                                 item = item_cache.get(item_id_int)
                                 if item is not None:
-                                    authors = _parse_authors(getattr(item, "authors", None))
+                                    authors = _parse_authors(
+                                        getattr(item, "authors", None)
+                                    )
 
                         enriched = dict(rep)
                         enriched["title"] = title
@@ -1171,7 +1220,11 @@ def run_trends_stage(
                             raise RuntimeError(
                                 "trend markdown note is unavailable for PDF debug export"
                             )
-                        debug_dir = markdown_note_path.parent / ".pdf-debug" / trend_pdf_path.stem
+                        debug_dir = (
+                            markdown_note_path.parent
+                            / ".pdf-debug"
+                            / trend_pdf_path.stem
+                        )
                         export_trend_note_pdf_debug_bundle(
                             markdown_path=markdown_note_path,
                             pdf_path=trend_pdf_path,
