@@ -155,10 +155,17 @@ a {
   flex-wrap: wrap;
   gap: 10px;
 }
+.hero-actions {
+  margin-top: 18px;
+}
 .hero-stats,
 .detail-hero-side {
   display: grid;
   gap: 10px;
+}
+.detail-hero-main {
+  display: grid;
+  align-content: start;
 }
 .detail-stream-row {
   margin-bottom: 10px;
@@ -209,6 +216,9 @@ a {
   font-size: 28px;
   letter-spacing: -0.03em;
 }
+.page-section-title {
+  margin-bottom: 18px;
+}
 .trend-grid,
 .topic-card-grid {
   display: grid;
@@ -218,7 +228,7 @@ a {
 .trend-card,
 .topic-card,
 .pager-card {
-  display: block;
+  display: grid;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -263,6 +273,7 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 16px;
 }
 .topic-pill-link:hover,
 .stream-pill-link:hover,
@@ -292,6 +303,12 @@ a {
   margin: 0 0 14px;
   color: #4f647a;
   line-height: 1.62;
+}
+.trend-card .card-actions,
+.detail-actions {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 .action-link {
   display: inline-flex;
@@ -327,7 +344,7 @@ a {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   padding: 0 12px;
   border-radius: 999px;
   background: rgba(29, 103, 194, 0.09);
@@ -516,11 +533,6 @@ a {
 .topic-card-meta {
   color: #6b8098;
   font-size: 13px;
-}
-.site-footer {
-  margin-top: 18px;
-  color: #6e8298;
-  font-size: 12px;
 }
 .empty-card {
   padding: 24px;
