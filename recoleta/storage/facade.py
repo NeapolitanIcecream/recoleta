@@ -75,7 +75,7 @@ class Repository(
         self.title_dedup_threshold = float(title_dedup_threshold)
         self.title_dedup_max_candidates = max(0, int(title_dedup_max_candidates))
         self._sql_diag_lock = Lock()
-        self._sql_diag_active: SqlDiagnostics | None = None
+        self._sql_diag_active: list[SqlDiagnostics] = []
         self._sql_diag_installed = False
 
     def _ensure_sql_diagnostics_installed(self) -> None:
@@ -83,11 +83,9 @@ class Repository(
             return
 
         def _before_cursor_execute(*_: Any, **__: Any) -> None:
-            active = self._sql_diag_active
-            if active is None:
-                return
             with self._sql_diag_lock:
-                active.queries_total += 1
+                for active in self._sql_diag_active:
+                    active.queries_total += 1
 
         event.listen(self.engine, "before_cursor_execute", _before_cursor_execute)
         self._sql_diag_installed = True
@@ -99,17 +97,18 @@ class Repository(
         self._ensure_sql_diagnostics_installed()
         diag = SqlDiagnostics()
         with self._sql_diag_lock:
-            previous = self._sql_diag_active
-            self._sql_diag_active = diag
+            self._sql_diag_active.append(diag)
         try:
             yield diag
         finally:
             with self._sql_diag_lock:
-                self._sql_diag_active = previous
+                if self._sql_diag_active and self._sql_diag_active[-1] is diag:
+                    self._sql_diag_active.pop()
+                elif diag in self._sql_diag_active:
+                    self._sql_diag_active.remove(diag)
 
     def _commit(self, session: Session) -> None:
-        active = self._sql_diag_active
-        if active is not None:
-            with self._sql_diag_lock:
+        with self._sql_diag_lock:
+            for active in self._sql_diag_active:
                 active.commits_total += 1
         session.commit()

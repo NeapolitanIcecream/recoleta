@@ -80,6 +80,29 @@ class AnalyzeDebug:
 
 
 @dataclass(slots=True)
+class AnalysisWrite:
+    item_id: int
+    result: AnalysisResult
+    scope: str = DEFAULT_TOPIC_STREAM
+    mirror_item_state: bool = True
+
+
+@dataclass(slots=True)
+class ItemStateUpdate:
+    item_id: int
+    state: str
+    stream: str | None = None
+    mirror_item_state: bool = False
+
+
+@dataclass(slots=True)
+class MetricPoint:
+    name: str
+    value: float
+    unit: str | None = None
+
+
+@dataclass(slots=True)
 class IngestResult:
     inserted: int = 0
     updated: int = 0

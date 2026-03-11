@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import threading
+import time
 from typing import Any, cast
 
 import pytest
 from sqlmodel import Session, select
 
 from recoleta.models import (
+    Analysis,
     ITEM_STATE_ANALYZED,
     ITEM_STATE_ENRICHED,
+    ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
@@ -18,9 +22,78 @@ from recoleta.models import (
     Item,
     Metric,
 )
-from recoleta.pipeline import PipelineService
+from recoleta.pipeline.service import PipelineService
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
+
+
+class _SlowConcurrentAnalyzer:
+    def __init__(self, *, sleep_s: float = 0.1) -> None:
+        self.sleep_s = sleep_s
+        self._lock = threading.Lock()
+        self._active = 0
+        self.max_active = 0
+
+    def analyze(
+        self,
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None = None,  # noqa: ARG002
+        include_debug: bool = False,  # noqa: ARG002
+    ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+        with self._lock:
+            self._active += 1
+            self.max_active = max(self.max_active, self._active)
+        try:
+            time.sleep(self.sleep_s)
+            return (
+                AnalysisResult(
+                    model="test/fake-model",
+                    provider="test",
+                    summary=f"summary for {title}",
+                    topics=user_topics[:2] or ["general"],
+                    relevance_score=0.91,
+                    novelty_score=0.42,
+                    cost_usd=0.0,
+                    latency_ms=int(self.sleep_s * 1000),
+                ),
+                None,
+            )
+        finally:
+            with self._lock:
+                self._active -= 1
+
+
+class _PartiallyInvalidPersistenceAnalyzer:
+    def analyze(
+        self,
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None = None,  # noqa: ARG002
+        include_debug: bool = False,  # noqa: ARG002
+    ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+        topics: list[str]
+        if "Invalid Persistence" in title:
+            topics = cast(list[str], [object()])
+        else:
+            topics = list(user_topics[:2] or ["general"])
+        return (
+            AnalysisResult(
+                model="test/fake-model",
+                provider="test",
+                summary=f"summary for {title}",
+                topics=topics,
+                relevance_score=0.91,
+                novelty_score=0.42,
+                cost_usd=0.0,
+                latency_ms=1,
+            ),
+            None,
+        )
 
 
 def test_analyze_failure_emits_failure_metric(configured_env) -> None:
@@ -51,6 +124,9 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     assert analyze_result.failed == 1
     assert len(failed_metric) == 1
     assert failed_metric[0].value == 1
+    assert any(
+        metric.name == "pipeline.analyze.parallelism.requested" for metric in metrics
+    )
 
 
 def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
@@ -144,6 +220,144 @@ def test_analyze_persists_enriched_content_and_emits_enrich_metrics(
     assert by_name["pipeline.enrich.processed_total"].value == 1
     assert by_name["pipeline.enrich.skipped_total"].value == 0
     assert by_name["pipeline.enrich.failed_total"].value == 0
+
+
+def test_analyze_uses_bounded_concurrency_when_enabled(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANALYZE_MAX_CONCURRENCY", "4")
+    settings, repository = _build_runtime()
+    analyzer = _SlowConcurrentAnalyzer(sleep_s=0.1)
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    titles = [
+        "Asymmetric cache invalidation for rover swarms",
+        "Genome token routing under sparse supervision",
+        "Photonic scheduler benchmarks with adaptive queues",
+        "Compiler provenance graphs for incremental diffs",
+    ]
+    drafts = [
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id=f"item-concurrency-{idx}",
+            canonical_url=f"https://example.com/concurrency-{idx}",
+            title=title,
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+        for idx, title in enumerate(titles)
+    ]
+    service.prepare(run_id="run-analyze-concurrency", drafts=drafts, limit=10)
+
+    result = service.analyze(run_id="run-analyze-concurrency", limit=4)
+    metrics = repository.list_metrics(run_id="run-analyze-concurrency")
+    by_name = {metric.name: metric for metric in metrics}
+
+    assert result.processed == 4
+    assert result.failed == 0
+    assert analyzer.max_active >= 2
+    assert by_name["pipeline.analyze.parallelism.requested"].value == 4
+    assert by_name["pipeline.analyze.parallelism.effective"].value >= 2
+    assert by_name["pipeline.analyze.parallelism.max_inflight"].value >= 2
+
+
+def test_analyze_batches_persistence_to_reduce_sql_commits(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: analyze should not commit once per successful item plus once per metric."""
+
+    monkeypatch.setenv("ANALYZE_MAX_CONCURRENCY", "1")
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    titles = [
+        "Sparse retrieval control plane for edge clusters",
+        "Nonlinear benchmark harness for Bayesian parsers",
+        "Molecular lab notebook synthesis with agents",
+        "Thermal routing diagnostics in compiler pipelines",
+    ]
+    drafts = [
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id=f"item-batch-{idx}",
+            canonical_url=f"https://example.com/batch-{idx}",
+            title=title,
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+        for idx, title in enumerate(titles)
+    ]
+    service.prepare(run_id="run-analyze-batch", drafts=drafts, limit=10)
+
+    with repository.sql_diagnostics() as sql_diag:
+        result = service.analyze(run_id="run-analyze-batch", limit=4)
+
+    assert result.processed == 4
+    assert result.failed == 0
+    assert sql_diag.queries_total > 0
+    assert sql_diag.commits_total > 0
+    assert sql_diag.commits_total <= 4
+
+
+def test_analyze_falls_back_to_item_level_failure_when_batch_persistence_breaks(
+    configured_env,
+) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=_PartiallyInvalidPersistenceAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    drafts = [
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="item-persist-good",
+            canonical_url="https://example.com/persist-good",
+            title="Valid Persistence",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        ),
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="item-persist-bad",
+            canonical_url="https://example.com/persist-bad",
+            title="Invalid Persistence",
+            authors=["Bob"],
+            raw_metadata={"source": "test"},
+        ),
+    ]
+    service.prepare(run_id="run-analyze-persist-fallback", drafts=drafts, limit=10)
+
+    result = service.analyze(run_id="run-analyze-persist-fallback", limit=10)
+    metrics = repository.list_metrics(run_id="run-analyze-persist-fallback")
+    by_name = {metric.name: metric for metric in metrics}
+
+    assert result.processed == 1
+    assert result.failed == 1
+    assert by_name["pipeline.analyze.processed_total"].value == 1
+    assert by_name["pipeline.analyze.failed_total"].value == 1
+    assert by_name["pipeline.analyze.llm_errors_total"].value == 1
+
+    with Session(repository.engine) as session:
+        items = list(session.exec(select(Item).order_by(Item.title)))
+        analyses = list(session.exec(select(Analysis)))
+
+    assert [item.state for item in items] == [ITEM_STATE_FAILED, ITEM_STATE_ANALYZED]
+    assert len(analyses) == 1
 
 
 def test_enrich_balances_sources_within_requested_window_before_limit(

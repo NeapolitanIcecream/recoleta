@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+import threading
 from typing import Any, cast
+import time
 
 import pytest
 from sqlmodel import Session, select
@@ -92,6 +94,40 @@ class _SelectiveRelevanceAnalyzer(_RecordingAnalyzer):
             latency_ms=1,
         )
         return result, None
+
+
+class _SlowConcurrentRecordingAnalyzer(_RecordingAnalyzer):
+    def __init__(self, *, sleep_s: float = 0.1) -> None:
+        super().__init__()
+        self.sleep_s = sleep_s
+        self._lock = threading.Lock()
+        self._active = 0
+        self.max_active = 0
+
+    def analyze(
+        self,
+        *,
+        title: str,
+        canonical_url: str,
+        user_topics: list[str],
+        content: str | None = None,  # noqa: ARG002
+        include_debug: bool = False,  # noqa: ARG002
+    ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+        with self._lock:
+            self._active += 1
+            self.max_active = max(self.max_active, self._active)
+        try:
+            time.sleep(self.sleep_s)
+            return super().analyze(
+                title=title,
+                canonical_url=canonical_url,
+                user_topics=user_topics,
+                content=content,
+                include_debug=include_debug,
+            )
+        finally:
+            with self._lock:
+                self._active -= 1
 
 
 def _configure_topic_stream_env(
@@ -315,6 +351,53 @@ def test_analyze_emits_stream_scoped_failure_metric_for_topic_streams(
     assert by_name["pipeline.analyze.stream.agents_lab.processed_total"].value == 1
     assert by_name["pipeline.analyze.stream.bio_watch.failed_total"].value == 1
     assert by_name["pipeline.analyze.streams_total"].value == 2
+
+
+def test_analyze_topic_streams_use_bounded_concurrency_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_topic_stream_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    monkeypatch.setenv("ANALYZE_MAX_CONCURRENCY", "4")
+    settings, repository = _build_runtime()
+    analyzer = _SlowConcurrentRecordingAnalyzer(sleep_s=0.1)
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    service.prepare(
+        run_id="run-topic-stream-concurrency-prepare",
+        drafts=[
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="topic-stream-concurrency-1",
+                canonical_url="https://example.com/topic-stream-concurrency-1",
+                title="Adaptive genome index rollover",
+                authors=["Alice"],
+            ),
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="topic-stream-concurrency-2",
+                canonical_url="https://example.com/topic-stream-concurrency-2",
+                title="Distributed robotics memory ledger",
+                authors=["Bob"],
+            ),
+        ],
+        limit=10,
+    )
+
+    result = service.analyze(run_id="run-topic-stream-concurrency", limit=10)
+    metrics = repository.list_metrics(run_id="run-topic-stream-concurrency")
+    by_name = {metric.name: metric for metric in metrics}
+
+    assert result.processed == 4
+    assert result.failed == 0
+    assert analyzer.max_active >= 2
+    assert by_name["pipeline.analyze.parallelism.requested"].value == 4
+    assert by_name["pipeline.analyze.parallelism.effective"].value >= 2
 
 
 def test_publish_allows_topic_stream_to_explicitly_clear_inherited_tag_filters(

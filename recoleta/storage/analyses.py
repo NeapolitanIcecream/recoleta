@@ -18,7 +18,12 @@ from recoleta.models import (
     ITEM_STATE_TRIAGED,
 )
 from recoleta.storage_common import _to_json
-from recoleta.types import DEFAULT_TOPIC_STREAM, AnalysisResult, utc_now
+from recoleta.types import (
+    DEFAULT_TOPIC_STREAM,
+    AnalysisResult,
+    AnalysisWrite,
+    utc_now,
+)
 
 
 class AnalysisStoreMixin:
@@ -33,6 +38,7 @@ class AnalysisStoreMixin:
         item_id: int,
         stream: str,
         state: str,
+        existing_states: dict[tuple[int, str], ItemStreamState] | None = None,
     ) -> ItemStreamState: ...
 
     def list_items_for_llm_analysis(
@@ -126,6 +132,120 @@ class AnalysisStoreMixin:
             self._commit(session)
             session.refresh(analysis)
             return analysis
+
+    def save_analyses_batch(self, *, analyses: list[AnalysisWrite]) -> int:
+        normalized: list[AnalysisWrite] = []
+        seen: dict[tuple[int, str], int] = {}
+        for analysis in analyses:
+            try:
+                item_id = int(analysis.item_id)
+            except Exception:
+                continue
+            if item_id <= 0:
+                continue
+            scope = str(analysis.scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
+            key = (item_id, scope)
+            normalized_write = AnalysisWrite(
+                item_id=item_id,
+                result=analysis.result,
+                scope=scope,
+                mirror_item_state=bool(analysis.mirror_item_state),
+            )
+            existing_index = seen.get(key)
+            if existing_index is None:
+                seen[key] = len(normalized)
+                normalized.append(normalized_write)
+            else:
+                normalized[existing_index] = normalized_write
+        if not normalized:
+            return 0
+
+        item_ids = sorted({analysis.item_id for analysis in normalized})
+        scopes = sorted({analysis.scope for analysis in normalized})
+        mirror_item_ids = sorted(
+            {
+                analysis.item_id
+                for analysis in normalized
+                if analysis.mirror_item_state
+            }
+        )
+        with Session(self.engine) as session:
+            existing_by_key: dict[tuple[int, str], Analysis] = {}
+            statement = select(Analysis).where(
+                cast(Any, Analysis.item_id).in_(item_ids),
+                cast(Any, Analysis.scope).in_(scopes),
+            )
+            for analysis in session.exec(statement):
+                existing_by_key[(analysis.item_id, analysis.scope)] = analysis
+
+            existing_states: dict[tuple[int, str], ItemStreamState] = {}
+            stream_state_statement = select(ItemStreamState).where(
+                cast(Any, ItemStreamState.item_id).in_(item_ids),
+                cast(Any, ItemStreamState.stream).in_(scopes),
+            )
+            for stream_state in session.exec(stream_state_statement):
+                existing_states[(stream_state.item_id, stream_state.stream)] = (
+                    stream_state
+                )
+
+            items_by_id: dict[int, Item] = {}
+            if mirror_item_ids:
+                item_statement = select(Item).where(cast(Any, Item.id).in_(mirror_item_ids))
+                items_by_id = {
+                    int(item.id): item
+                    for item in session.exec(item_statement)
+                    if item.id is not None
+                }
+
+            applied = 0
+            for analysis_write in normalized:
+                key = (analysis_write.item_id, analysis_write.scope)
+                existing = existing_by_key.get(key)
+                result = analysis_write.result
+                if existing is None:
+                    existing = Analysis(
+                        item_id=analysis_write.item_id,
+                        scope=analysis_write.scope,
+                        model=result.model,
+                        provider=result.provider,
+                        summary=result.summary,
+                        topics_json=_to_json(result.topics),
+                        relevance_score=result.relevance_score,
+                        novelty_score=result.novelty_score,
+                        cost_usd=result.cost_usd,
+                        latency_ms=result.latency_ms,
+                    )
+                    existing_by_key[key] = existing
+                else:
+                    existing.model = result.model
+                    existing.provider = result.provider
+                    existing.summary = result.summary
+                    existing.topics_json = _to_json(result.topics)
+                    existing.relevance_score = result.relevance_score
+                    existing.novelty_score = result.novelty_score
+                    existing.cost_usd = result.cost_usd
+                    existing.latency_ms = result.latency_ms
+
+                self._upsert_item_stream_state(
+                    session=session,
+                    item_id=analysis_write.item_id,
+                    stream=analysis_write.scope,
+                    state=ITEM_STATE_ANALYZED,
+                    existing_states=existing_states,
+                )
+                if analysis_write.mirror_item_state:
+                    item = items_by_id.get(analysis_write.item_id)
+                    if item is not None:
+                        item.state = ITEM_STATE_ANALYZED
+                        item.updated_at = utc_now()
+                        session.add(item)
+
+                session.add(existing)
+                applied += 1
+
+            if applied > 0:
+                self._commit(session)
+            return applied
 
     def list_items_for_publish(
         self,
