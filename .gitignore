@@ -214,6 +214,8 @@ recoleta-bench-*.db
 bench-perf*/
 .codex-debug/
 .DS_Store
+site-content/
+site-dist/
 
 # Git worktrees (project-local)
 .worktrees/

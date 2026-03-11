@@ -350,34 +350,43 @@ Recoleta can turn trend notes into a deployable static website:
 # Build a local preview from trend markdown notes
 uv run recoleta site build
 
-# Stage trend markdown/PDF artifacts into the repo for deployment
-uv run recoleta site stage
+# Push a dedicated GitHub Pages branch without polluting main
+uv run recoleta site gh-deploy
 ```
 
 Behavior:
 
 - `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
-- `recoleta site stage` mirrors trend markdown notes into `./site-content/Trends` by default, or `./site-content/Streams/<stream>/Trends/` in topic-stream mode.
+- `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
 - In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory.
 - The static site now exposes a `Streams` navigation surface so mixed-domain trend notes are not silently flattened together.
-- Both commands treat the output directory as a managed artifact and clear stale files before writing.
+- `recoleta site stage` remains available when you want a repo-local content snapshot for custom CI or non-GitHub hosting.
+- All three commands treat their output directories as managed artifacts and clear stale files before writing.
 
-For CI or GitHub Pages, you can pass explicit directories and avoid depending on a full Recoleta config:
+Recommended GitHub Pages flow:
 
 ```bash
-uv run recoleta site build \
-  --input-dir site-content \
-  --output-dir site-dist
+uv run recoleta site gh-deploy \
+  --branch gh-pages \
+  --pages-config auto
 ```
 
-GitHub Pages flow:
+What `gh-deploy` does:
 
-1. Run `uv run recoleta site stage` after generating new trend notes.
-2. Commit `site-content/` to the repo.
-3. In the GitHub repository settings, set **Pages** to **GitHub Actions**.
-4. Push to `main`.
+1. Builds the public site from your current trend markdown notes.
+2. Creates or updates a dedicated deployment branch (default: `gh-pages`).
+3. Force-pushes that derived branch by default, similar to `mkdocs gh-deploy`.
+4. Tries to configure the repository Pages source to that branch when `gh` is authenticated or `GH_TOKEN` / `GITHUB_TOKEN` is available.
 
-The included workflow `.github/workflows/site-pages.yml` builds `site-dist/` from `site-content/` and deploys it to Pages.
+This keeps `main` free of `site-content/` snapshots and Pages-specific workflow YAML.
+
+If you want explicit control over Pages configuration:
+
+- `--pages-config auto`: best-effort; skip configuration if GitHub API credentials are unavailable
+- `--pages-config always`: require automatic Pages source configuration, or fail
+- `--pages-config never`: only push the deployment branch
+
+If you prefer custom CI or another static host, `recoleta site stage` and `recoleta site build --input-dir ... --output-dir ...` still work with explicit paths and without loading the full runtime config.
 
 ### 🗓️ Run continuously (built-in scheduler)
 
@@ -619,7 +628,8 @@ Recoleta ships a small CLI surface:
 - `recoleta trends --granularity week --date 2026-03-02`: generate a trend note (day/week/month)
 - `recoleta trends --granularity day --debug-pdf`: generate a trend note and export a PDF debug bundle for the rendered Telegram PDF
 - `recoleta site build`: render a static site from trend markdown notes
-- `recoleta site stage`: mirror trend markdown/PDF artifacts into `site-content/` while preserving topic-stream layout
+- `recoleta site gh-deploy`: build the site and push a dedicated GitHub Pages branch
+- `recoleta site stage`: mirror trend markdown/PDF artifacts into a repo-local snapshot for custom CI or non-GitHub hosting
 
 ### Further reading
 

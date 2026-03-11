@@ -96,20 +96,22 @@ Design constraints:
 
 ## Deployment strategy
 
-Deployment uses a staged content snapshot rather than building from the operator's personal runtime directory on CI.
+GitHub Pages deployment now prefers a derived branch workflow, similar to `mkdocs gh-deploy`, rather than storing a staged content snapshot on `main`.
 
 Flow:
 
 1. Generate/update canonical trend notes locally.
-2. Run `recoleta site stage` to mirror trend markdown/PDF artifacts into `site-content/`.
-3. Commit the staged snapshot.
-4. GitHub Actions builds the public site from `site-content/`.
+2. Run `recoleta site gh-deploy`.
+3. Recoleta builds the public site in a temporary directory.
+4. Recoleta commits that derived output to a dedicated deployment branch such as `gh-pages`.
+5. GitHub Pages publishes directly from that branch.
 
 Why this shape:
 
-- CI does not need access to local Recoleta state, local config files, or private output directories.
-- The exact content being deployed is reviewable in git.
-- `site build` and `site stage` can run in CI with explicit paths and no full runtime settings load.
+- `main` stays free of `site-content/` snapshots and Pages-specific workflow files.
+- Deployment does not require CI access to local Recoleta state, local config files, or private output directories.
+- The deployment branch remains an explicit, inspectable public artifact, but it is clearly segregated from source code.
+- `site build` and `site stage` still exist for custom CI or non-GitHub static hosts when an explicit repo-local snapshot is useful.
 
 ## Observability
 
@@ -127,5 +129,5 @@ The static site exporter also writes a manifest describing the generated files a
 ## Tradeoffs
 
 - Markdown remains canonical even though the browser HTML surface is visually richer. This intentionally favors inspectability and portability over a pure web-first content model.
-- Site deployment is snapshot-based, so publishing new content requires committing staged trend notes. This adds one manual step but keeps deployment deterministic.
+- Branch deployment rewrites a derived branch by default. This is appropriate for generated output, but it means branch history is operational rather than authorial.
 - Browser PDF rendering improves layout quality but introduces a browser runtime dependency. The Story fallback absorbs that risk.
