@@ -49,6 +49,9 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
+        "The opening overview prose must stay under 200 Chinese characters or 200 words before any later sub-sections. "
+        "Keep topics only in the topics field; do not add a Topics/主题 section inside overview_md. "
+        "Make the title direct and specific to the content; do not prepend dates or generic labels such as Daily Trend/研究趋势日报/每日趋势. "
         "If fewer than N items are available, label the must-read section with the actual item count. "
         "Inside must-read list items, do not append 'representative snippet' / '代表片段' text after a title or link."
     )
@@ -623,6 +626,8 @@ def build_trend_prompt_payload(
             "Use tools to cite representative doc_id/chunk_index in clusters.",
             "Optimize for readability: short sentences, minimal jargon pile-ups, no repetitive filler.",
             "Keep claims grounded in the local corpus.",
+            "Keep the title specific and remove date/generic prefixes.",
+            "Keep topics only in metadata, not in overview_md body sections.",
         ],
     }
     if overview_pack_md is not None:

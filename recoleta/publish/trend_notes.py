@@ -9,6 +9,7 @@ from slugify import slugify
 
 from recoleta.publish.trend_render_shared import (
     _trend_date_token,
+    sanitize_trend_title,
     sanitize_trend_overview_markdown,
 )
 
@@ -62,6 +63,7 @@ def _render_trend_note_lines(
     highlights: list[str] | None,
 ) -> list[str]:
     _ = highlights
+    title = sanitize_trend_title(title)
     overview_md = sanitize_trend_overview_markdown(overview_md)
     tags = ["recoleta/trend"]
     for topic in topics or []:
@@ -95,14 +97,8 @@ def _render_trend_note_lines(
         [
             "## Overview",
             (overview_md or "").strip(),
-            "",
-            "## Topics",
         ]
     )
-    if topics:
-        lines.extend([f"- {t}" for t in topics])
-    else:
-        lines.append("- (none)")
 
     lines.extend(["", "## Clusters"])
     clusters = clusters or []

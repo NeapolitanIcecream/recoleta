@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 
 import pytest
 
@@ -60,24 +61,24 @@ def test_overview_pack_week_includes_7_day_entries_with_placeholders(
     assert stats.get("truncated") is False
     assert "doc_id" not in md
 
-    lines = [line for line in md.splitlines() if line.startswith("- day ")]
-    assert len(lines) == 7
+    headings = [line for line in md.splitlines() if line.startswith("### day ")]
+    assert len(headings) == 7
 
     def extract_date(line: str) -> str:
-        assert line.startswith("- day ")
-        rest = line[len("- day ") :]
-        return rest.split(" |", 1)[0].strip()
+        assert line.startswith("### day ")
+        return line[len("### day ") :].strip()
 
-    got_dates = [extract_date(line) for line in lines]
+    got_dates = [extract_date(line) for line in headings]
     expected_dates = [
         (week_start + timedelta(days=i)).date().isoformat() for i in range(7)
     ]
     assert got_dates == expected_dates
 
     # Placeholders exist for missing days, and existing days include their overviews.
-    assert any("| missing |" in line for line in lines)
-    assert any("overview-0" in line for line in lines)
-    assert any("overview-3" in line for line in lines)
+    assert md.count("- status=missing") >= 5
+    assert "- status=summary_fallback" in md
+    assert "- overview=overview-0" in md
+    assert "- overview=overview-3" in md
 
 
 def test_overview_pack_week_marks_missing_chunk_when_trend_doc_has_no_summary_chunk(
@@ -111,7 +112,88 @@ def test_overview_pack_week_marks_missing_chunk_when_trend_doc_has_no_summary_ch
         item_overview_item_max_chars=200,
     )
     assert "doc_id" not in md
-    assert f"- day {day_start.date().isoformat()} | missing_chunk |" in md
+    assert f"### day {day_start.date().isoformat()}" in md
+    assert "- status=missing_chunk" in md
+
+
+def test_overview_pack_week_prefers_structured_trend_payload_meta_chunks(
+    configured_env,
+) -> None:
+    _ = configured_env
+    _, repository = _build_runtime()
+
+    anchor = datetime(2026, 3, 2, tzinfo=UTC).date()  # Monday
+    week_start, week_end = week_period_bounds(anchor)
+    plan = TrendGenerationPlan(
+        target_granularity="week", period_start=week_start, period_end=week_end
+    )
+
+    item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="meta-pack-item-1",
+            canonical_url="https://example.com/meta-pack-item-1",
+            title="Representative Paper",
+            authors=["Alice"],
+            published_at=week_start,
+            raw_metadata={"source": "test"},
+        )
+    )
+    assert item.id is not None
+    item_doc = repository.upsert_document_for_item(item=item)
+    assert item_doc.id is not None
+
+    day_start = week_start
+    day_end = day_start + timedelta(days=1)
+    doc = repository.upsert_document_for_trend(
+        granularity="day",
+        period_start=day_start,
+        period_end=day_end,
+        title="Day placeholder",
+    )
+    assert doc.id is not None
+    repository.upsert_document_chunk(
+        doc_id=int(doc.id),
+        chunk_index=1,
+        kind="meta",
+        text_value=json.dumps(
+            {
+                "title": "2026-03-02 研究趋势日报：Agent systems get tighter loops",
+                "overview_md": (
+                    "Agent systems are getting tighter loops.\n\n"
+                    "## Top-1 must-read\n"
+                    "1. [Must Read Paper](https://example.com/must-read)\n"
+                ),
+                "clusters": [
+                    {
+                        "name": "Loop closing",
+                        "description": "Systems are getting more grounded.",
+                        "representative_chunks": [
+                            {"doc_id": int(item_doc.id), "chunk_index": 0}
+                        ],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_payload_json",
+    )
+
+    md, _ = build_overview_pack_md(
+        repository,
+        plan,
+        overview_pack_max_chars=10_000,
+        item_overview_top_k=20,
+        item_overview_item_max_chars=200,
+    )
+
+    assert "研究趋势日报" not in md
+    assert "- title=Agent systems get tighter loops" in md
+    assert "- must_read=[Must Read Paper](https://example.com/must-read)" in md
+    assert "- cluster=Loop closing" in md
+    assert "- representative=[Representative Paper](https://example.com/meta-pack-item-1)" in md
 
 
 def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> None:
@@ -178,12 +260,16 @@ def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> 
     assert "title=Item Middle" in md
     assert "title=Item Oldest" not in md
 
-    item_lines = [line for line in md.splitlines() if line.startswith("- rank=")]
+    item_lines = [line for line in md.splitlines() if line.startswith("### item rank=")]
     assert len(item_lines) == 2
-    for line in item_lines:
-        assert "| summary=" in line
-        summary = line.split("| summary=", 1)[1].strip()
-        assert len(summary) <= 5
+    for line in md.splitlines():
+        if not any(
+            line.startswith(prefix)
+            for prefix in ("- summary=", "- problem=", "- approach=", "- results=")
+        ):
+            continue
+        value = line.split("=", 1)[1].strip()
+        assert len(value) <= 5
 
 
 def test_overview_pack_day_item_top_k_deduplicates_duplicate_urls(
@@ -253,7 +339,7 @@ def test_overview_pack_day_item_top_k_deduplicates_duplicate_urls(
     )
     assert stats.get("truncated") is False
 
-    item_lines = [line for line in md.splitlines() if line.startswith("- rank=")]
+    item_lines = [line for line in md.splitlines() if line.startswith("### item rank=")]
     assert len(item_lines) == 2
     assert md.count("url=https://example.com/overview-item-dup-a") == 1
     assert md.count("url=https://example.com/overview-item-dup-b") == 1

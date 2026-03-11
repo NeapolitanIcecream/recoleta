@@ -13,6 +13,7 @@ from tenacity.wait import wait_base, wait_exponential_jitter
 
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.observability import collect_environment_secrets, scrub_secrets
+from recoleta.item_summary import normalize_item_summary_markdown
 from recoleta.types import AnalysisResult, AnalyzeDebug
 
 completion: Any | None = None
@@ -217,7 +218,7 @@ class LiteLLMAnalyzer:
         result = AnalysisResult(
             model=self.model,
             provider=provider,
-            summary=payload.summary,
+            summary=normalize_item_summary_markdown(payload.summary),
             topics=payload.topics,
             relevance_score=payload.relevance_score,
             novelty_score=payload.novelty_score,
@@ -273,15 +274,19 @@ class LiteLLMAnalyzer:
             "\n"
             "Hard requirements (must follow):\n"
             "- Output MUST be strict JSON only. No markdown outside JSON, no extra keys, no code fences.\n"
-            "- summary: a high-signal TL;DR in Markdown (inside the string).\n"
+            "- summary: Markdown only (inside the JSON string), using exactly these four H2 sections in order:\n"
+            "    ## Summary\n"
+            "    ## Problem\n"
+            "    ## Approach\n"
+            "    ## Results\n"
             "  - Answer these questions explicitly:\n"
             "    1) What problem does it solve, and why does it matter?\n"
             "    2) What is the core method/mechanism? Explain in the simplest possible terms.\n"
             "    3) What breakthrough results does it claim? Include numbers when available (metric/dataset/baseline/comparison).\n"
-            "  - Use this structure:\n"
-            "    - TL;DR: one sentence\n"
-            "    - Problem: 1-3 bullets\n"
-            "    - Approach: 2-5 bullets\n"
+            "  - Section requirements:\n"
+            "    - Summary: 1-2 short sentences, no bullets.\n"
+            "    - Problem: 1-3 bullets.\n"
+            "    - Approach: 2-5 bullets.\n"
             "    - Results: 2-6 bullets with numbers; if the provided text has no quantitative results, say so and list the strongest concrete claims.\n"
             "- topics: 3 to 6 concise English tags in lower-kebab-case. No spaces.\n"
             "- relevance_score and novelty_score in [0,1].\n"

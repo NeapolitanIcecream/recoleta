@@ -20,7 +20,7 @@ def test_render_trend_note_pdf_preserves_title_and_sections(tmp_path: Path) -> N
     note_path = write_markdown_trend_note(
         output_dir=tmp_path,
         trend_doc_id=7,
-        title="Weekly Trend",
+        title="Agentic tooling shifts into evaluation loops",
         granularity="week",
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 9, tzinfo=UTC),
@@ -54,7 +54,7 @@ def test_render_trend_note_pdf_preserves_title_and_sections(tmp_path: Path) -> N
     with fitz.open(pdf_path) as document:
         text = "\n".join(str(page.get_text()) for page in document)
 
-    assert "Weekly Trend" in text
+    assert "Agentic tooling shifts into evaluation loops" in text
     assert "Overview" in text
     assert "Representative papers" in text
 
@@ -65,7 +65,7 @@ def test_render_trend_note_pdf_debug_bundle_exports_intermediate_files(
     note_path = write_markdown_trend_note(
         output_dir=tmp_path,
         trend_doc_id=8,
-        title="Weekly Trend",
+        title="Agentic tooling shifts into evaluation loops",
         granularity="week",
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 9, tzinfo=UTC),
@@ -90,7 +90,7 @@ def test_render_trend_note_pdf_debug_bundle_exports_intermediate_files(
     manifest = json.loads((debug_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["page_count"] >= 1
     assert manifest["pdf_path"].endswith(".pdf")
-    assert manifest["title"] == "Weekly Trend"
+    assert manifest["title"] == "Agentic tooling shifts into evaluation loops"
 
 
 def test_render_trend_note_pdf_browser_renderer_uses_continuous_page(
@@ -100,7 +100,7 @@ def test_render_trend_note_pdf_browser_renderer_uses_continuous_page(
     note_path = write_markdown_trend_note(
         output_dir=tmp_path,
         trend_doc_id=18,
-        title="Weekly Trend",
+        title="Agentic tooling shifts into evaluation loops",
         granularity="week",
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 9, tzinfo=UTC),
@@ -193,7 +193,7 @@ def test_prepare_trend_pdf_browser_css_uses_raster_card_gradients(
     note_path = write_markdown_trend_note(
         output_dir=tmp_path,
         trend_doc_id=20,
-        title="Weekly Trend",
+        title="Agentic tooling shifts into evaluation loops",
         granularity="week",
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 9, tzinfo=UTC),
@@ -224,7 +224,7 @@ def test_render_trend_note_pdf_auto_falls_back_to_story_renderer(
     note_path = write_markdown_trend_note(
         output_dir=tmp_path,
         trend_doc_id=19,
-        title="Weekly Trend",
+        title="Agentic tooling shifts into evaluation loops",
         granularity="week",
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 9, tzinfo=UTC),
@@ -307,7 +307,7 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
     from recoleta.rag import agent as rag_agent
 
     payload = TrendPayload(
-        title="Daily Trend",
+        title="Agents bundle retrieval, tools, and planning",
         granularity="day",
         period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
         period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
@@ -340,7 +340,9 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
     document_payload = sender.documents[0]
     assert document_payload["filename"].endswith(".pdf")
     assert document_payload["content"].startswith(b"%PDF")
-    assert "Daily Trend" in str(document_payload["caption"] or "")
+    assert "Agents bundle retrieval, tools, and planning" in str(
+        document_payload["caption"] or ""
+    )
     assert "Overview" in str(document_payload["caption"] or "")
 
     trends_dir = settings.markdown_output_dir / "Trends"
@@ -353,7 +355,8 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
     with fitz.open(stream=document_payload["content"], filetype="pdf") as document:
         text = "\n".join(str(page.get_text()) for page in document)
 
-    assert "Daily Trend" in text
+    normalized_text = " ".join(text.split())
+    assert "Agents bundle retrieval, tools, and planning" in normalized_text
 
     metrics = repository.list_metrics(run_id="run-trend-telegram")
     by_name = {metric.name: metric for metric in metrics}
@@ -407,7 +410,7 @@ def test_trends_telegram_publish_respects_daily_delivery_cap(
     from recoleta.rag import agent as rag_agent
 
     payload = TrendPayload(
-        title="Daily Trend",
+        title="Agents bundle retrieval, tools, and planning",
         granularity="day",
         period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
         period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
@@ -480,7 +483,7 @@ def test_publish_counts_trend_delivery_toward_telegram_daily_cap(
     from recoleta.rag import agent as rag_agent
 
     payload = TrendPayload(
-        title="Daily Trend",
+        title="Agents bundle retrieval, tools, and planning",
         granularity="day",
         period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
         period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
@@ -550,7 +553,7 @@ def test_trends_telegram_publish_debug_pdf_exports_preview_bundle(
     from recoleta.rag import agent as rag_agent
 
     payload = TrendPayload(
-        title="Daily Trend",
+        title="Agents bundle retrieval, tools, and planning",
         granularity="day",
         period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
         period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
@@ -627,7 +630,7 @@ def test_trends_telegram_publish_debug_pdf_failure_is_non_fatal(
     from recoleta.rag import agent as rag_agent
 
     payload = TrendPayload(
-        title="Daily Trend",
+        title="Agents bundle retrieval, tools, and planning",
         granularity="day",
         period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
         period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
@@ -703,7 +706,7 @@ def test_trends_telegram_publish_skips_duplicate_delivery_for_unchanged_period(
     from recoleta.rag import agent as rag_agent
 
     payload = TrendPayload(
-        title="Daily Trend",
+        title="Agents bundle retrieval, tools, and planning",
         granularity="day",
         period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
         period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
@@ -825,7 +828,7 @@ def test_trends_telegram_publish_uses_injected_sender_without_telegram_credentia
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
         return (
             TrendPayload(
-                title="Daily Trend",
+                title="Agents bundle retrieval, tools, and planning",
                 granularity="day",
                 period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
                 period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),
@@ -906,7 +909,7 @@ def test_trends_telegram_publish_records_failure_metric_when_document_send_fails
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
         return (
             TrendPayload(
-                title="Daily Trend",
+                title="Agents bundle retrieval, tools, and planning",
                 granularity="day",
                 period_start=datetime(2026, 3, 5, tzinfo=UTC).isoformat(),
                 period_end=datetime(2026, 3, 6, tzinfo=UTC).isoformat(),

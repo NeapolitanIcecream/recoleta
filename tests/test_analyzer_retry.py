@@ -7,6 +7,7 @@ import pytest
 from litellm.exceptions import RateLimitError
 
 from recoleta.analyzer import LiteLLMAnalyzer
+from recoleta.item_summary import normalize_item_summary_markdown
 
 
 def _valid_response_content() -> str:
@@ -49,7 +50,7 @@ def test_analyzer_retries_on_rate_limit_and_succeeds(
     )
 
     assert calls == 2
-    assert result.summary == "Short summary"
+    assert result.summary == normalize_item_summary_markdown("Short summary")
     assert debug is not None
     retry = debug.response.get("retry") or {}
     assert retry.get("attempts_total") == 2
@@ -83,7 +84,7 @@ def test_analyzer_retries_on_invalid_json_and_succeeds(
     )
 
     assert calls == 2
-    assert result.summary == "Short summary"
+    assert result.summary == normalize_item_summary_markdown("Short summary")
     assert debug is not None
     retry = debug.response.get("retry") or {}
     assert retry.get("attempts_total") == 2

@@ -13,6 +13,8 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "Use Chinese (Simplified) for all natural language fields" in instructions
     assert "Keep all JSON keys in English" in instructions
     assert "keep topics as concise English tags" in instructions
+    assert "under 200 Chinese characters or 200 words" in instructions
+    assert "do not add a Topics/主题 section inside overview_md" in instructions
 
 
 def test_trends_empty_payload_localizes_for_chinese() -> None:
@@ -24,5 +26,5 @@ def test_trends_empty_payload_localizes_for_chinese() -> None:
         period_end=period_end,
         output_language="zh-CN",
     )
-    assert payload.title == "每日趋势"
+    assert payload.title == "本期暂无可发布研究趋势"
     assert "没有可用文档" in payload.overview_md

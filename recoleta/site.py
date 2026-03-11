@@ -26,6 +26,7 @@ from recoleta.publish.trend_render_shared import (
     _trend_pdf_hero_dek,
     _trend_pdf_meta_rows,
     _trend_pdf_topics_summary,
+    sanitize_trend_title,
 )
 
 
@@ -262,6 +263,7 @@ def _site_page_shell(
     body_class: str,
     active_nav: str,
     content_html: str,
+    show_page_hero: bool = False,
 ) -> str:
     stylesheet_path = output_dir / "assets" / "site.css"
     stylesheet_href = _site_href(from_page=page_path, to_page=stylesheet_path)
@@ -276,6 +278,20 @@ def _site_page_shell(
     def nav_link(label: str, href: str, key: str) -> str:
         class_name = "nav-link is-active" if key == active_nav else "nav-link"
         return f"<a class='{class_name}' href='{href}'>{label}</a>"
+
+    nav_caption_html = (
+        f"<div class='nav-caption'>{html.escape(page_subtitle)}</div>"
+        if page_subtitle
+        else ""
+    )
+    page_hero_html = (
+        "<section class='page-hero'>"
+        f"<div class='hero-kicker'>{html.escape(page_subtitle)}</div>"
+        f"<h1 class='page-title'>{html.escape(page_heading)}</h1>"
+        "</section>"
+        if show_page_hero
+        else ""
+    )
 
     return (
         "<!doctype html>"
@@ -293,7 +309,7 @@ def _site_page_shell(
         "<header class='site-header'>"
         "<div class='nav-brand-wrap'>"
         f"<a class='nav-brand' href='{index_href}'>Recoleta Trends</a>"
-        f"<div class='nav-caption'>{html.escape(page_subtitle)}</div>"
+        f"{nav_caption_html}"
         "</div>"
         "<nav class='nav-links'>"
         f"{nav_link('Home', index_href, 'home')}"
@@ -303,15 +319,9 @@ def _site_page_shell(
         "</nav>"
         "</header>"
         "<main class='site-main'>"
-        "<section class='page-hero'>"
-        f"<div class='hero-kicker'>{html.escape(page_subtitle)}</div>"
-        f"<h1 class='page-title'>{html.escape(page_heading)}</h1>"
-        "</section>"
+        f"{page_hero_html}"
         f"{content_html}"
         "</main>"
-        "<footer class='site-footer'>"
-        "<span>Static export generated from Recoleta trend notes.</span>"
-        "</footer>"
         "</div>"
         "</body>"
         "</html>"
@@ -537,7 +547,7 @@ def _render_detail_page(
         page_path=document.page_path,
         output_dir=output_dir,
         page_heading=document.title,
-        page_subtitle=f"{document.granularity.title()} brief",
+        page_subtitle="",
         body_class="page-detail",
         active_nav="archive",
         content_html=content_html,
@@ -621,7 +631,7 @@ def _render_home_page(
     if documents:
         newest = documents[0].period_token
         oldest = documents[-1].period_token
-        generated_span = f"{newest} to {oldest}"
+        generated_span = f"{oldest} to {newest}"
 
     stream_section_html = (
         "<section class='home-section'>"
@@ -636,12 +646,11 @@ def _render_home_page(
     content_html = (
         "<section class='home-hero-card'>"
         "<div class='home-hero-copy'>"
-        "<div class='hero-kicker'>Research dispatches, not raw system output</div>"
-        "<h1 class='home-title'>A lighter-weight way to browse Recoleta trends.</h1>"
+        "<div class='hero-kicker'>Browse trend briefs</div>"
+        "<h1 class='home-title'>Latest research trends</h1>"
         "<p class='home-dek'>"
-        "This site turns trend notes into a single, navigable reading surface."
-        " Readers can scan the latest briefs, jump by topic or stream, and open a single trend page"
-        " without carrying the full workflow context."
+        "Scan recent briefs, jump by topic or stream, and open the full note when"
+        " needed."
         "</p>"
         "<div class='hero-actions'>"
         f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'archive.html')}'>Open archive</a>"
@@ -678,7 +687,7 @@ def _render_home_page(
         page_path=page_path,
         output_dir=output_dir,
         page_heading="Recoleta Trends",
-        page_subtitle="Static trend site",
+        page_subtitle="",
         body_class="page-home",
         active_nav="home",
         content_html=content_html,
@@ -720,7 +729,7 @@ def _render_topics_index_page(
 
     content_html = (
         "<section class='home-section'>"
-        "<h2 class='section-title'>All tracked topics</h2>"
+        "<h1 class='section-title page-section-title'>All tracked topics</h1>"
         f"<div class='topic-card-grid'>{cards or '<div class=\"empty-card\">No topics available yet.</div>'}</div>"
         "</section>"
     )
@@ -730,7 +739,7 @@ def _render_topics_index_page(
         page_path=page_path,
         output_dir=output_dir,
         page_heading="Topics",
-        page_subtitle="Topic navigation",
+        page_subtitle="",
         body_class="page-topics",
         active_nav="topics",
         content_html=content_html,
@@ -769,7 +778,7 @@ def _render_streams_index_page(
 
     content_html = (
         "<section class='home-section'>"
-        "<h2 class='section-title'>Topic streams</h2>"
+        "<h1 class='section-title page-section-title'>Topic streams</h1>"
         f"<div class='topic-card-grid'>{cards or '<div class=\"empty-card\">No topic streams available yet.</div>'}</div>"
         "</section>"
     )
@@ -779,7 +788,7 @@ def _render_streams_index_page(
         page_path=page_path,
         output_dir=output_dir,
         page_heading="Streams",
-        page_subtitle="Topic stream navigation",
+        page_subtitle="",
         body_class="page-streams",
         active_nav="streams",
         content_html=content_html,
@@ -808,7 +817,7 @@ def _render_topic_page(
     content_html = (
         "<section class='home-section'>"
         "<div class='section-heading-row'>"
-        f"<h2 class='section-title'>{html.escape(topic)}</h2>"
+        f"<h1 class='section-title page-section-title'>{html.escape(topic)}</h1>"
         f"<span class='meta-date'>{len(documents)} briefs</span>"
         "</div>"
         f"<div class='trend-grid'>{cards}</div>"
@@ -819,7 +828,7 @@ def _render_topic_page(
         page_path=page_path,
         output_dir=output_dir,
         page_heading=topic,
-        page_subtitle="Topic page",
+        page_subtitle="",
         body_class="page-topic",
         active_nav="topics",
         content_html=content_html,
@@ -848,7 +857,7 @@ def _render_stream_page(
     content_html = (
         "<section class='home-section'>"
         "<div class='section-heading-row'>"
-        f"<h2 class='section-title'>{html.escape(stream)}</h2>"
+        f"<h1 class='section-title page-section-title'>{html.escape(stream)}</h1>"
         f"<span class='meta-date'>{len(documents)} briefs</span>"
         "</div>"
         f"<div class='trend-grid'>{cards}</div>"
@@ -859,7 +868,7 @@ def _render_stream_page(
         page_path=page_path,
         output_dir=output_dir,
         page_heading=stream,
-        page_subtitle="Topic stream page",
+        page_subtitle="",
         body_class="page-stream",
         active_nav="streams",
         content_html=content_html,
@@ -870,7 +879,7 @@ def _render_archive_page(*, documents: list[TrendSiteDocument], output_dir: Path
     page_path = output_dir / "archive.html"
     content_html = (
         "<section class='home-section'>"
-        "<h2 class='section-title'>Archive</h2>"
+        "<h1 class='section-title page-section-title'>Archive</h1>"
         f"{_render_archive_rows(documents=documents, from_page=page_path)}"
         "</section>"
     )
@@ -879,7 +888,7 @@ def _render_archive_page(*, documents: list[TrendSiteDocument], output_dir: Path
         page_path=page_path,
         output_dir=output_dir,
         page_heading="Archive",
-        page_subtitle="Trend timeline",
+        page_subtitle="",
         body_class="page-archive",
         active_nav="archive",
         content_html=content_html,
@@ -1044,10 +1053,17 @@ a {
   flex-wrap: wrap;
   gap: 10px;
 }
+.hero-actions {
+  margin-top: 18px;
+}
 .hero-stats,
 .detail-hero-side {
   display: grid;
   gap: 10px;
+}
+.detail-hero-main {
+  display: grid;
+  align-content: start;
 }
 .detail-stream-row {
   margin-bottom: 10px;
@@ -1098,6 +1114,9 @@ a {
   font-size: 28px;
   letter-spacing: -0.03em;
 }
+.page-section-title {
+  margin-bottom: 18px;
+}
 .trend-grid,
 .topic-card-grid {
   display: grid;
@@ -1107,7 +1126,7 @@ a {
 .trend-card,
 .topic-card,
 .pager-card {
-  display: block;
+  display: grid;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -1152,6 +1171,7 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 16px;
 }
 .topic-pill-link:hover,
 .stream-pill-link:hover,
@@ -1181,6 +1201,12 @@ a {
   margin: 0 0 14px;
   color: #4f647a;
   line-height: 1.62;
+}
+.trend-card .card-actions,
+.detail-actions {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 .action-link {
   display: inline-flex;
@@ -1216,7 +1242,7 @@ a {
   display: inline-flex;
   align-items: center;
   min-height: 34px;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   padding: 0 12px;
   border-radius: 999px;
   background: rgba(29, 103, 194, 0.09);
@@ -1406,11 +1432,6 @@ a {
   color: #6b8098;
   font-size: 13px;
 }
-.site-footer {
-  margin-top: 18px;
-  color: #6e8298;
-  font-size: 12px;
-}
 .empty-card {
   padding: 24px;
   border: 1px dashed rgba(17, 41, 71, 0.16);
@@ -1547,6 +1568,7 @@ def _load_trend_site_documents(
             normalized_markdown = "# Trend\n"
         body_html = markdown.render(normalized_markdown)
         title, sections = _extract_trend_pdf_sections(body_html=body_html)
+        title = sanitize_trend_title(title, fallback="Trend")
         excerpt = _section_excerpt(sections)
         browser_body_html = _build_trend_browser_body_html(sections=sections)
 

@@ -7,6 +7,8 @@ from typing import Any
 import yaml
 from slugify import slugify
 
+from recoleta.item_summary import normalize_item_summary_markdown
+
 __all__ = ["write_markdown_note", "write_obsidian_note"]
 
 
@@ -69,6 +71,7 @@ def _render_item_note_lines(
     run_id: str,
     summary: str,
 ) -> list[str]:
+    normalized_summary = normalize_item_summary_markdown(summary)
     frontmatter = {
         "source": source,
         "url": canonical_url,
@@ -85,11 +88,10 @@ def _render_item_note_lines(
         "",
         f"# {title}",
         "",
-        "## Summary",
-        summary.strip(),
+        normalized_summary,
         "",
-        "## Links",
-        f"- Canonical: {canonical_url}",
+        "## Link",
+        f"- [{canonical_url}]({canonical_url})",
         "",
     ]
 

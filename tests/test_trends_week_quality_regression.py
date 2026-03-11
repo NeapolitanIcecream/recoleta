@@ -174,7 +174,14 @@ def test_trends_week_published_markdown_locks_quality_signals(
         re.search(r"^#{2,6}\s+Top-\d+\s+must-?read\b", md, flags=re.M | re.I)
         is not None
     )
-    assert re.search(r"^#\s+Weekly Trend\b", md, flags=re.M) is not None
+    title_match = re.search(r"^#\s+(.+)$", md, flags=re.M)
+    assert title_match is not None
+    title_line = title_match.group(1)
+    assert "Weekly Trend" not in title_line
+    assert "doc_id" not in title_line
+    assert "chunk" not in title_line
+    assert "[" not in title_line
+    assert "]" not in title_line
     assert re.search(r"^#{2,6}\s+Representative\b", md, flags=re.M | re.I) is not None
     link_total = len(re.findall(r"\[[^\]]+\]\(https?://", md)) + len(
         re.findall(r"<https?://", md)

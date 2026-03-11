@@ -25,7 +25,10 @@ from recoleta.publish import (
     write_markdown_trend_note,
     write_obsidian_trend_note,
 )
-from recoleta.publish.trend_render_shared import sanitize_trend_overview_markdown
+from recoleta.publish.trend_render_shared import (
+    clamp_trend_overview_markdown,
+    sanitize_trend_title,
+)
 from recoleta import trends
 from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
 
@@ -798,15 +801,6 @@ def run_trends_stage(
             unit="count",
         )
 
-        doc_id = trends.persist_trend_payload(
-            repository=cast(Any, service.repository),
-            granularity=normalized_granularity,
-            period_start=period_start,
-            period_end=period_end,
-            payload=payload,
-            scope=scope,
-        )
-
         doc_cache: dict[int, Any | None] = {}
         item_cache: dict[int, Any | None] = {}
 
@@ -940,9 +934,13 @@ def run_trends_stage(
             rewritten = chunk_suffix_pattern.sub("", rewritten)
             return rewritten
 
-        title_for_notes = _rewrite_doc_refs(str(payload.title))
-        overview_md_for_notes = sanitize_trend_overview_markdown(
-            _rewrite_doc_refs(str(payload.overview_md))
+        title_for_notes = sanitize_trend_title(
+            _rewrite_doc_refs(str(payload.title)),
+            fallback="Trend",
+        )
+        overview_md_for_notes = clamp_trend_overview_markdown(
+            _rewrite_doc_refs(str(payload.overview_md)),
+            output_language=service.settings.llm_output_language,
         )
         highlights_for_notes = [
             _rewrite_doc_refs(str(h)) for h in (list(payload.highlights) or [])
@@ -1021,6 +1019,22 @@ def run_trends_stage(
                         enriched_reps.append(enriched)
                 cluster_dict["representative_chunks"] = enriched_reps
                 clusters_for_notes.append(cluster_dict)
+
+        payload.title = title_for_notes
+        payload.overview_md = overview_md_for_notes
+        payload.highlights = highlights_for_notes
+        payload.clusters = [
+            trends.TrendCluster.model_validate(cluster_dict)
+            for cluster_dict in clusters_for_notes
+        ]
+        doc_id = trends.persist_trend_payload(
+            repository=cast(Any, service.repository),
+            granularity=normalized_granularity,
+            period_start=period_start,
+            period_end=period_end,
+            payload=payload,
+            scope=scope,
+        )
 
         if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
             log.info(

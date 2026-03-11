@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -12,8 +13,13 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from recoleta.llm_connection import LLMConnectionConfig
+from recoleta.item_summary import extract_item_summary_sections
 from recoleta.models import Document
 from recoleta.ports import TrendRepositoryPort
+from recoleta.publish.trend_render_shared import (
+    clamp_trend_overview_markdown,
+    sanitize_trend_title,
+)
 from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
@@ -190,6 +196,127 @@ def _sanitize_inline_text(value: str) -> str:
     return normalized.replace("|", "\\|")
 
 
+def _summary_field_line(
+    sections: dict[str, str],
+    *,
+    field_name: str,
+    max_chars: int,
+) -> str:
+    raw = _sanitize_inline_text(str(sections.get(field_name) or ""))
+    if max_chars > 0:
+        raw = raw[:max_chars]
+    return raw
+
+
+def _extract_markdown_links(value: str, *, limit: int) -> list[str]:
+    links: list[str] = []
+    seen: set[str] = set()
+    for title, url in re.findall(r"\[([^\]]+)\]\((https?://[^)]+)\)", str(value or "")):
+        normalized = f"[{title}]({url})"
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        links.append(normalized)
+        if len(links) >= limit:
+            break
+    return links
+
+
+def _trend_payload_summary_lines(
+    *,
+    repository: TrendRepositoryPort,
+    doc: Any,
+    token: str,
+    entry_label: str,
+) -> list[str]:
+    doc_id = int(getattr(doc, "id", 0) or 0)
+    heading = f"### {entry_label} {token}"
+    if doc_id <= 0:
+        return [heading, "- status=missing"]
+
+    meta_chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=1)
+    if meta_chunk is not None:
+        try:
+            payload = json.loads(str(getattr(meta_chunk, "text", "") or ""))
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            title = sanitize_trend_title(
+                str(payload.get("title") or getattr(doc, "title", "") or "").strip(),
+                fallback="Trend",
+            )
+            overview_md = clamp_trend_overview_markdown(
+                str(payload.get("overview_md") or "").strip()
+            )
+            clusters = payload.get("clusters") or []
+            representative_links: list[str] = []
+            cluster_names: list[str] = []
+            if isinstance(clusters, list):
+                for cluster in clusters:
+                    if not isinstance(cluster, dict):
+                        continue
+                    cluster_name = _sanitize_inline_text(
+                        str(cluster.get("name") or "").strip()
+                    )
+                    if cluster_name and cluster_name not in cluster_names:
+                        cluster_names.append(cluster_name)
+                    reps = cluster.get("representative_chunks") or []
+                    if not isinstance(reps, list):
+                        continue
+                    for rep in reps:
+                        if not isinstance(rep, dict):
+                            continue
+                        try:
+                            rep_doc_id = int(rep.get("doc_id") or 0)
+                        except Exception:
+                            continue
+                        if rep_doc_id <= 0:
+                            continue
+                        rep_doc = repository.get_document(doc_id=rep_doc_id)
+                        if rep_doc is None:
+                            continue
+                        rep_title = str(getattr(rep_doc, "title", "") or "").strip()
+                        rep_url = str(getattr(rep_doc, "canonical_url", "") or "").strip()
+                        if not rep_title or not rep_url:
+                            continue
+                        representative_links.append(f"[{rep_title}]({rep_url})")
+            lines = [heading, "- status=ok", f"- title={_sanitize_inline_text(title)}"]
+            if overview_md:
+                overview_text, _ = _truncate_chars(
+                    _sanitize_inline_text(overview_md),
+                    max_chars=280,
+                )
+                lines.append(
+                    f"- overview={overview_text}"
+                )
+            for link in _extract_markdown_links(overview_md, limit=3):
+                lines.append(f"- must_read={link}")
+            for cluster_name in cluster_names[:3]:
+                lines.append(f"- cluster={cluster_name}")
+            seen_representatives: set[str] = set()
+            for representative_link in representative_links:
+                if representative_link in seen_representatives:
+                    continue
+                seen_representatives.add(representative_link)
+                lines.append(f"- representative={representative_link}")
+                if len(seen_representatives) >= 3:
+                    break
+            return lines
+
+    chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=0)
+    if chunk is None:
+        return [heading, "- status=missing_chunk"]
+    overview = _sanitize_inline_text(str(getattr(chunk, "text", "") or ""))
+    if not overview:
+        return [heading, "- status=empty"]
+    return [
+        heading,
+        "- status=summary_fallback",
+        f"- title={_sanitize_inline_text(sanitize_trend_title(str(getattr(doc, 'title', '') or '').strip(), fallback='Trend'))}",
+        f"- overview={overview}",
+    ]
+
+
 def _truncate_chars(value: str, *, max_chars: int) -> tuple[str, bool]:
     cap = int(max_chars)
     if cap <= 0:
@@ -321,20 +448,16 @@ def build_overview_pack_md(
                 token = day_start.date().isoformat()
                 doc = docs_by_start.get(day_start)
                 if doc is None:
-                    lines.append(f"- day {token} | missing | (missing)")
+                    lines.extend([f"### day {token}", "- status=missing"])
                     continue
-
-                doc_id = int(getattr(doc, "id", 0) or 0)
-                chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=0)
-                if chunk is None:
-                    lines.append(f"- day {token} | missing_chunk | (missing chunk)")
-                    continue
-                overview = _sanitize_inline_text(str(getattr(chunk, "text", "") or ""))
-                status = "ok"
-                if not overview:
-                    overview = "(empty)"
-                    status = "empty"
-                lines.append(f"- day {token} | {status} | {overview}")
+                lines.extend(
+                    _trend_payload_summary_lines(
+                        repository=repository,
+                        doc=doc,
+                        token=token,
+                        entry_label="day",
+                    )
+                )
         else:
             for doc in docs:
                 raw_start = getattr(doc, "period_start", None)
@@ -344,19 +467,16 @@ def build_overview_pack_md(
                     else None
                 )
                 token = start.date().isoformat() if isinstance(start, datetime) else "-"
-                doc_id = int(getattr(doc, "id", 0) or 0)
-                chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=0)
-                if chunk is None:
-                    lines.append(f"- {prev_level} {token} | missing_chunk | (missing chunk)")
-                    continue
-                overview = _sanitize_inline_text(str(getattr(chunk, "text", "") or ""))
-                status = "ok"
-                if not overview:
-                    overview = "(empty)"
-                    status = "empty"
-                lines.append(f"- {prev_level} {token} | {status} | {overview}")
+                lines.extend(
+                    _trend_payload_summary_lines(
+                        repository=repository,
+                        doc=doc,
+                        token=token,
+                        entry_label=prev_level or "trend",
+                    )
+                )
             if not docs:
-                lines.append(f"- {prev_level or 'trend'} - | missing | (no docs)")
+                lines.extend([f"### {prev_level or 'trend'} -", "- status=missing"])
 
     elif strategy == "item_top_k":
         top_k = max(0, int(item_overview_top_k))
@@ -438,12 +558,19 @@ def build_overview_pack_md(
                     _sanitize_inline_text(str(getattr(item, "canonical_url", "") or ""))
                     or "-"
                 )
-                summary_raw = _sanitize_inline_text(
+                sections = extract_item_summary_sections(
                     str(getattr(analysis, "summary", "") or "")
                 )
-                summary = summary_raw[:item_max_chars] if item_max_chars > 0 else ""
-                lines.append(
-                    f"- rank={rank} | title={title} | url={url} | summary={summary}"
+                lines.extend(
+                    [
+                        f"### item rank={rank}",
+                        f"- title={title}",
+                        f"- url={url}",
+                        f"- summary={_summary_field_line(sections, field_name='summary', max_chars=item_max_chars)}",
+                        f"- problem={_summary_field_line(sections, field_name='problem', max_chars=item_max_chars)}",
+                        f"- approach={_summary_field_line(sections, field_name='approach', max_chars=item_max_chars)}",
+                        f"- results={_summary_field_line(sections, field_name='results', max_chars=item_max_chars)}",
+                    ]
                 )
 
     else:
@@ -474,20 +601,10 @@ def build_empty_trend_payload(
 ) -> TrendPayload:
     normalized_granularity = str(granularity or "").strip().lower() or "day"
     if _is_chinese_output_language(output_language):
-        title_map = {
-            "day": "每日趋势",
-            "week": "每周趋势",
-            "month": "每月趋势",
-        }
-        title = title_map.get(normalized_granularity, "趋势")
+        title = "本期暂无可发布研究趋势"
         overview_md = "- 该周期没有可用文档。"
     else:
-        title_map = {
-            "day": "Daily Trend",
-            "week": "Weekly Trend",
-            "month": "Monthly Trend",
-        }
-        title = title_map.get(normalized_granularity, "Trend")
+        title = "No publishable research trend for this period"
         overview_md = "- No documents available for this period."
     return TrendPayload(
         title=title,
@@ -730,7 +847,7 @@ def persist_trend_payload(
     payload: TrendPayload,
     scope: str = DEFAULT_TOPIC_STREAM,
 ) -> int:
-    title = str(payload.title or "").strip() or "Trend"
+    title = sanitize_trend_title(str(payload.title or "").strip(), fallback="Trend")
     doc = repository.upsert_document_for_trend(
         granularity=granularity,
         period_start=period_start,
@@ -744,7 +861,8 @@ def persist_trend_payload(
         doc_id=doc_id,
         chunk_index=0,
         kind="summary",
-        text_value=str(payload.overview_md or "").strip() or "(empty)",
+        text_value=clamp_trend_overview_markdown(str(payload.overview_md or "").strip())
+        or "(empty)",
         start_char=0,
         end_char=None,
         source_content_type="trend_overview",

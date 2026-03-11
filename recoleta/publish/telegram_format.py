@@ -6,6 +6,7 @@ import html
 import re
 from urllib.parse import urlparse
 
+from recoleta.item_summary import normalize_item_summary_markdown
 from recoleta.publish.trend_render_shared import _trend_date_token
 
 
@@ -158,24 +159,16 @@ def _link_label(value: str) -> str:
 
 def build_telegram_message(*, title: str, summary: str, url: str) -> str:
     title_raw = str(title or "").strip() or "Untitled"
-    summary_raw = str(summary or "").strip()
+    summary_raw = normalize_item_summary_markdown(summary)
     url_raw = str(url or "").strip()
+    link_md = f"## Link\n[{_link_label(url_raw)}]({url_raw})" if url_raw else "## Link"
 
     def _render(summary_text: str) -> str:
         safe_title = html.escape(title_raw)
-        safe_summary = _format_telegram_markdownish_html(summary_text)
-        safe_url_attr = html.escape(url_raw, quote=True)
-        safe_label = html.escape(_link_label(url_raw))
-        return "\n".join(
-            [
-                f"<b>{safe_title}</b>",
-                "",
-                "<b>Summary:</b>",
-                safe_summary,
-                "",
-                f'<b>Link:</b> <a href="{safe_url_attr}">{safe_label}</a>',
-            ]
-        ).strip()
+        safe_summary = _format_telegram_markdownish_html(
+            "\n\n".join(part for part in [summary_text.strip(), link_md] if part).strip()
+        )
+        return "\n".join([f"<b>{safe_title}</b>", "", safe_summary]).strip()
 
     return _truncate_telegram_text(raw_text=summary_raw, max_chars=4096, render=_render)
 

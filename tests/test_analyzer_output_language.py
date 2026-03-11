@@ -11,7 +11,16 @@ from recoleta.analyzer import LiteLLMAnalyzer
 def _mock_response_content() -> str:
     return json.dumps(
         {
-            "summary": "Short summary",
+            "summary": (
+                "## Summary\n"
+                "Short summary.\n\n"
+                "## Problem\n"
+                "- Hard setup.\n\n"
+                "## Approach\n"
+                "- Use a structured agent.\n\n"
+                "## Results\n"
+                "- +12% on eval.\n"
+            ),
             "topics": ["agents", "llm"],
             "relevance_score": 0.9,
             "novelty_score": 0.4,
@@ -42,14 +51,19 @@ def test_analyzer_system_message_includes_output_language(
         include_debug=True,
     )
 
-    assert result.summary == "Short summary"
+    assert result.summary.startswith("## Summary")
     assert debug is not None
     system_message = captured_messages[0]["content"]
+    user_message = captured_messages[1]["content"]
     assert "Use Chinese (Simplified) for the summary value." in system_message
     assert (
         "Keep all JSON keys in English and keep topics as concise English tags."
         in system_message
     )
+    assert "## Summary" in user_message
+    assert "## Problem" in user_message
+    assert "## Approach" in user_message
+    assert "## Results" in user_message
 
 
 def test_analyzer_system_message_defaults_when_output_language_missing(
@@ -72,7 +86,7 @@ def test_analyzer_system_message_defaults_when_output_language_missing(
         content="Sample content",
     )
 
-    assert result.summary == "Short summary"
+    assert result.summary.startswith("## Summary")
     assert (
         captured_messages[0]["content"]
         == "You are a research signal analyst. Return strict JSON only."
@@ -102,7 +116,7 @@ def test_analyzer_uses_model_default_temperature_gh_gpt52(
         include_debug=True,
     )
 
-    assert result.summary == "Short summary"
+    assert result.summary.startswith("## Summary")
     assert "temperature" not in captured_kwargs
     assert debug is not None
     assert "temperature" not in debug.request

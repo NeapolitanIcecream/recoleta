@@ -70,16 +70,24 @@ def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
     assert "Recoleta Trends" in index_html
     assert "Agent Systems" in index_html
     assert "Embodied Systems" in index_html
+    assert "Static trend site" not in index_html
+    assert "A lighter-weight way to browse Recoleta trends." not in index_html
+    assert "Research dispatches, not raw system output" not in index_html
+    assert "<section class='page-hero'>" not in index_html
 
     topic_html = (site_dir / "topics" / "agents.html").read_text(encoding="utf-8")
     assert "Agent Systems" in topic_html
     assert "Embodied Systems" in topic_html
+    assert "<section class='page-hero'>" not in topic_html
 
     detail_html = (site_dir / "trends" / f"{note_one.stem}.html").read_text(
         encoding="utf-8"
     )
     assert "Source markdown" in detail_html
     assert "Download PDF" in detail_html
+    assert "Telegram-ready PDF brief" not in detail_html
+    assert "section-label'>Topics<" not in detail_html
+    assert "<section class='page-hero'>" not in detail_html
 
 
 def test_stage_trend_site_source_mirrors_notes_and_cleans_stale_files(
@@ -133,6 +141,43 @@ def test_stage_trend_site_source_mirrors_notes_and_cleans_stale_files(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["trends_total"] == 2
     assert manifest["pdf_total"] == 1
+
+
+def test_export_trend_static_site_hides_legacy_topics_body_section(
+    tmp_path: Path,
+) -> None:
+    notes_dir = tmp_path / "notes" / "Trends"
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    legacy_note = notes_dir / "day--2026-03-01--trend--1.md"
+    legacy_note.write_text(
+        "---\n"
+        "kind: trend\n"
+        "granularity: day\n"
+        "period_start: 2026-03-01T00:00:00+00:00\n"
+        "period_end: 2026-03-02T00:00:00+00:00\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# 2026-03-01 研究趋势日报：Agent systems get tighter loops\n\n"
+        "## Overview\n\n"
+        "Tighter loops.\n\n"
+        "## Topics\n\n"
+        "- agents\n\n"
+        "## Clusters\n\n"
+        "### Loop closing\n\n"
+        "Grounded execution.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=notes_dir, output_dir=site_dir)
+
+    detail_html = (site_dir / "trends" / "day--2026-03-01--trend--1.html").read_text(
+        encoding="utf-8"
+    )
+    assert "研究趋势日报" not in detail_html
+    assert "Agent systems get tighter loops" in detail_html
+    assert "section-label'>Topics<" not in detail_html
 
 
 def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stream_pages(

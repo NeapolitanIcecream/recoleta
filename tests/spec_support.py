@@ -30,7 +30,16 @@ class FakeAnalyzer:
         result = AnalysisResult(
             model="test/fake-model",
             provider="test",
-            summary=f"Summary for {title}",
+            summary=(
+                "## Summary\n"
+                f"Summary for {title}\n\n"
+                "## Problem\n"
+                "- Existing workflows are brittle.\n\n"
+                "## Approach\n"
+                "- Use a structured pipeline.\n\n"
+                "## Results\n"
+                "- Stronger grounding on the benchmark.\n"
+            ),
             topics=user_topics[:2] or ["general"],
             relevance_score=0.92,
             novelty_score=0.55,

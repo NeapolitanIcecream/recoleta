@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from recoleta.analyzer import LiteLLMAnalyzer
+from recoleta.item_summary import normalize_item_summary_markdown
 from recoleta.llm_connection import LLMConnectionConfig
 
 
@@ -49,7 +50,7 @@ def test_analyzer_passes_recoleta_llm_connection_overrides(
         include_debug=True,
     )
 
-    assert result.summary == "Short summary"
+    assert result.summary == normalize_item_summary_markdown("Short summary")
     assert captured_kwargs["api_key"] == "sk-recoleta-test"
     assert captured_kwargs["base_url"] == "http://llm.local/v1"
     assert debug is not None

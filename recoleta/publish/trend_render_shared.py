@@ -50,6 +50,31 @@ _MARKDOWN_LINK_PATTERN = re.compile(r"\[[^\]]+\]\((?P<url>[^)]+)\)")
 _TRAILING_PARENTHESES_LINK_PATTERN = re.compile(
     r"\s*[（(]\[[^\]]+\]\((?P<url>[^)]+)\)[）)]\s*$"
 )
+_TREND_DATE_PREFIX_PATTERN = (
+    r"(?:\d{4}-\d{2}-\d{2}|\d{4}-W\d{2}|\d{4}-\d{2}(?!-\d{2}))"
+)
+_GENERIC_TREND_TITLE_PREFIX_RE = re.compile(
+    r"^\s*(?:"
+    + _TREND_DATE_PREFIX_PATTERN
+    + r"\s*"
+    r"(?:[|｜:：\-—]\s*)?"
+    r")?"
+    r"(?:"
+    r"研究趋势日报|研究趋势周报|研究趋势月报|趋势日报|趋势周报|趋势月报|"
+    r"每日趋势|每周趋势|每月趋势|"
+    r"daily trend|weekly trend|monthly trend|trend brief|research trend(?:s)?"
+    r")"
+    r"\s*(?:[|｜:：\-—]\s*)*",
+    re.IGNORECASE,
+)
+_DATE_ONLY_PREFIX_RE = re.compile(
+    r"^\s*"
+    + _TREND_DATE_PREFIX_PATTERN
+    + r"\s*(?:[|｜:：\-—]\s*)+"
+)
+_TOP_LEVEL_H2_RE = re.compile(r"^\s{0,3}##\s+")
+_MARKDOWN_STRIP_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_MARKDOWN_STRIP_DECORATION_RE = re.compile(r"[`*_>#]")
 
 
 def sanitize_trend_overview_markdown(value: str) -> str:
@@ -108,6 +133,92 @@ def sanitize_trend_overview_markdown(value: str) -> str:
 
     sanitized = "\n".join(lines).strip()
     return sanitized
+
+
+def sanitize_trend_title(value: str, *, fallback: str = "Trend") -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized:
+        return fallback
+    cleaned = _DATE_ONLY_PREFIX_RE.sub("", normalized).strip()
+    cleaned = _GENERIC_TREND_TITLE_PREFIX_RE.sub("", cleaned).strip()
+    cleaned = re.sub(r"^[|｜:：\-—\s]+", "", cleaned).strip()
+    cleaned = _markdownish_plain_text(cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or fallback
+
+
+def _split_trend_overview_prelude(value: str) -> tuple[str, str]:
+    lines = str(value or "").splitlines()
+    prelude: list[str] = []
+    suffix: list[str] = []
+    in_suffix = False
+    for line in lines:
+        if _TOP_LEVEL_H2_RE.match(line):
+            in_suffix = True
+        if in_suffix:
+            suffix.append(line)
+        else:
+            prelude.append(line)
+    return "\n".join(prelude).strip(), "\n".join(suffix).strip()
+
+
+def _markdownish_plain_text(value: str) -> str:
+    normalized = str(value or "")
+    normalized = _MARKDOWN_STRIP_LINK_RE.sub(r"\1", normalized)
+    normalized = _MARKDOWN_STRIP_DECORATION_RE.sub(" ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _truncate_visible_text(value: str, *, chinese_output: bool) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized:
+        return ""
+    if chinese_output:
+        compact = re.sub(r"\s+", "", normalized)
+        if len(compact) <= 199:
+            return compact
+        boundary = 199
+        for idx in range(0, min(len(compact), 199)):
+            if compact[idx] in "。！？；.!?;":
+                boundary = idx + 1
+        return compact[:boundary].strip()
+
+    words = normalized.split()
+    if len(words) <= 199:
+        return normalized
+    candidate = " ".join(words[:199]).strip()
+    boundary = max(candidate.rfind(". "), candidate.rfind("! "), candidate.rfind("? "))
+    if boundary >= 80:
+        candidate = candidate[: boundary + 1].strip()
+    return candidate
+
+
+def clamp_trend_overview_markdown(
+    value: str,
+    *,
+    output_language: str | None = None,
+) -> str:
+    sanitized = sanitize_trend_overview_markdown(value)
+    if not sanitized:
+        return ""
+    prelude, suffix = _split_trend_overview_prelude(sanitized)
+    if not prelude:
+        return sanitized
+    chinese_output = False
+    normalized_language = str(output_language or "").strip().lower()
+    if normalized_language:
+        chinese_output = normalized_language.startswith("zh") or (
+            "chinese" in normalized_language
+        )
+    truncated_prelude = _truncate_visible_text(
+        _markdownish_plain_text(prelude),
+        chinese_output=chinese_output,
+    )
+    parts = [truncated_prelude.strip()] if truncated_prelude.strip() else []
+    if suffix:
+        parts.append(suffix)
+    return "\n\n".join(part for part in parts if part).strip()
 
 
 def _split_yaml_frontmatter_text(text: str) -> tuple[dict[str, Any], str]:
@@ -220,17 +331,13 @@ def _trend_pdf_meta_rows(frontmatter: dict[str, Any]) -> list[tuple[str, str]]:
     return [
         ("Window", granularity.title()),
         ("Period", _trend_pdf_period_label(frontmatter)),
-        ("Coverage", "Telegram-ready PDF brief"),
         ("Topics", str(topic_count) if topic_count > 0 else "None"),
     ]
 
 
 def _trend_pdf_hero_dek(frontmatter: dict[str, Any]) -> str:
     granularity = str(frontmatter.get("granularity") or "").strip().lower() or "trend"
-    return (
-        f"{granularity.title()} brief tuned for quick scanning, stronger hierarchy, "
-        f"and compact delivery in Telegram."
-    )
+    return f"{granularity.title()} trend brief with overview, must-read papers, and cluster notes."
 
 
 @dataclass(slots=True)
@@ -475,7 +582,6 @@ def _decorate_trend_pdf_body_html(*, body_html: str) -> tuple[str, str]:
             rendered.append(_render_generic_section_html(section=section))
             used.add(section.slug)
         elif _section_matches(section.heading, "topics"):
-            rendered.append(_render_topics_section_html(section=section))
             used.add(section.slug)
         elif _section_matches(section.heading, "clusters"):
             rendered.append(_render_cluster_grid_html(section=section))
@@ -635,7 +741,6 @@ def _build_trend_browser_body_html(*, sections: list[TrendPdfSection]) -> str:
             )
             used.add(section.slug)
         elif _section_matches(section.heading, "topics"):
-            rendered.append(_render_browser_topics_section_html(section=section))
             used.add(section.slug)
         elif _section_matches(section.heading, "clusters"):
             rendered.append(_render_browser_clusters_section_html(section=section))
