@@ -1267,7 +1267,9 @@ def generate_trend_payload(
                 str(metric_exc),
             )
     usage = result.usage()
-    messages = result.all_messages()
+    messages_getter = getattr(result, "all_messages", None)
+    raw_messages = messages_getter() if callable(messages_getter) else None
+    messages: list[Any] = raw_messages if isinstance(raw_messages, list) else []
     tool_calls_total, tool_call_breakdown = _summarize_tool_calls(messages)
     usage_dict = {
         "input_tokens": getattr(usage, "input_tokens", None),
