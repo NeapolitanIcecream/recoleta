@@ -245,7 +245,7 @@ def materialize_trend_note_payload(
         )
         reps = cluster_dict.get("representative_chunks") or []
         enriched_reps: list[dict[str, Any]] = []
-        seen_rep_keys: set[tuple[int, int]] = set()
+        seen_rep_doc_ids: set[int] = set()
         if isinstance(reps, list):
             for rep in reps:
                 if not isinstance(rep, dict):
@@ -261,10 +261,9 @@ def materialize_trend_note_payload(
                     continue
                 if doc_id_int <= 0 or chunk_index_int < 0:
                     continue
-                rep_key = (doc_id_int, chunk_index_int)
-                if rep_key in seen_rep_keys:
+                if doc_id_int in seen_rep_doc_ids:
                     continue
-                seen_rep_keys.add(rep_key)
+                seen_rep_doc_ids.add(doc_id_int)
 
                 doc = _get_doc(doc_id_int)
                 if doc is None:

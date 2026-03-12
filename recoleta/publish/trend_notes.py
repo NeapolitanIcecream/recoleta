@@ -113,6 +113,7 @@ def _render_trend_note_lines(
             reps = cluster.get("representative_chunks") or []
             if isinstance(reps, list) and reps:
                 lines.append("#### Representative papers")
+                seen_rep_targets: set[str] = set()
                 for rep in reps[:6]:
                     if not isinstance(rep, dict):
                         continue
@@ -128,6 +129,10 @@ def _render_trend_note_lines(
                             str(a).strip() for a in authors_raw if str(a).strip()
                         ]
                     author_suffix = _format_author_suffix(authors, max_authors=6)
+                    rep_target = note_href or url or rep_title
+                    if rep_target in seen_rep_targets:
+                        continue
+                    seen_rep_targets.add(rep_target)
                     if note_href:
                         lines.append(f"- [{rep_title}]({note_href}){author_suffix}")
                     elif url:

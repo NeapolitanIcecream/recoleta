@@ -345,3 +345,95 @@ def test_trends_day_deduplicates_representative_papers(
     assert "https://example.com/deduped-paper" not in md
     assert md.count("[Representative Paper Should Appear Once](") == 1
     assert result.doc_id > 0
+
+
+def test_trends_day_deduplicates_representatives_from_same_doc_across_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: one item should not appear twice just because multiple chunks matched."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    published_at = datetime(2026, 3, 9, 1, 0, tzinfo=UTC)
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-regression-4",
+        canonical_url="https://example.com/deduped-paper-across-chunks",
+        title="Representative Paper Should Appear Once Across Chunks",
+        authors=["Alice"],
+        published_at=published_at,
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-trend-regression-4", drafts=[draft], limit=10)
+    service.analyze(run_id="run-trend-regression-4", limit=10)
+
+    from recoleta.rag import agent as rag_agent
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        repo = kwargs["repository"]
+        pstart = kwargs["period_start"]
+        pend = kwargs["period_end"]
+        docs = repo.list_documents(
+            doc_type="item",
+            period_start=pstart,
+            period_end=pend,
+            granularity=None,
+            order_by="event_desc",
+            offset=0,
+            limit=1,
+        )
+        assert docs and docs[0].id is not None
+        doc_id = int(docs[0].id)
+        payload = {
+            "title": "Daily Trend",
+            "granularity": "day",
+            "period_start": pstart.isoformat(),
+            "period_end": pend.isoformat(),
+            "overview_md": "- ok",
+            "topics": ["agents"],
+            "clusters": [
+                {
+                    "name": "C",
+                    "description": "Repeated representative refs from multiple chunks.",
+                    "representative_doc_ids": [],
+                    "representative_chunks": [
+                        {"doc_id": doc_id, "chunk_index": 1, "score": 0.96},
+                        {"doc_id": doc_id, "chunk_index": 2, "score": 0.93},
+                    ],
+                }
+            ],
+            "highlights": [],
+        }
+        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-trend-regression-4",
+        granularity="day",
+        anchor_date=date(2026, 3, 9),
+        llm_model="test/fake-model",
+    )
+    trends_dir = (settings.markdown_output_dir / "Trends").resolve()
+    matches = list(trends_dir.glob("day--2026-03-09--trend--*.md"))
+    assert len(matches) == 1
+
+    md = matches[0].read_text(encoding="utf-8")
+    assert "../Inbox/" in md
+    assert "https://example.com/deduped-paper-across-chunks" not in md
+    assert md.count("[Representative Paper Should Appear Once Across Chunks](") == 1
+    assert result.doc_id > 0

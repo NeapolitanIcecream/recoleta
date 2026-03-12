@@ -585,3 +585,42 @@ def test_stage_trend_site_source_stages_item_notes_next_to_trends(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["items_total"] == 1
     assert f"Inbox/{item_note.name}" in manifest["files"]["items_markdown"]
+
+
+def test_stage_trend_site_source_preserves_unrelated_parent_files_for_trends_output_dir(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=118,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-stage-root-guard-1",
+        overview_md="## Overview\n\nA compact trend note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    stage_root = tmp_path / "site-content"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    keep_path = stage_root / "keep.txt"
+    keep_path.write_text("keep\n", encoding="utf-8")
+    stale_inbox_path = stage_root / "Inbox" / "stale.md"
+    stale_inbox_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_inbox_path.write_text("stale\n", encoding="utf-8")
+
+    staged_trends_dir = stage_root / "Trends"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root / "Trends",
+        output_dir=staged_trends_dir,
+    )
+
+    assert manifest_path == staged_trends_dir / "manifest.json"
+    assert keep_path.exists()
+    assert keep_path.read_text(encoding="utf-8") == "keep\n"
+    assert not stale_inbox_path.exists()
+    assert (staged_trends_dir / trend_note.name).exists()

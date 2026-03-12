@@ -194,6 +194,25 @@ def _reset_directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def _remove_managed_stage_path(path: Path) -> None:
+    if not path.exists():
+        return
+    if path.is_dir():
+        shutil.rmtree(path)
+        return
+    path.unlink()
+
+
+def _reset_stage_output_root(*, stage_root: Path, trends_output_dir: Path) -> None:
+    if stage_root == trends_output_dir:
+        _reset_directory(trends_output_dir)
+        return
+    _remove_managed_stage_path(trends_output_dir)
+    _remove_managed_stage_path(stage_root / "Inbox")
+    _remove_managed_stage_path(stage_root / "Streams")
+    trends_output_dir.mkdir(parents=True, exist_ok=True)
+
+
 def _coerce_site_input_paths(input_dir: Path | Sequence[Path]) -> list[Path]:
     raw_inputs = [input_dir] if isinstance(input_dir, Path) else list(input_dir)
     if not raw_inputs:
@@ -2292,9 +2311,10 @@ def stage_trend_site_source(
             raise ValueError(
                 "Trend site stage output directory must not overlap the input directory"
             )
-    _reset_directory(stage_root)
-    if stage_root != resolved_output_dir:
-        resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    _reset_stage_output_root(
+        stage_root=stage_root,
+        trends_output_dir=resolved_output_dir,
+    )
 
     source_documents = _load_trend_source_documents(
         input_dirs=resolved_input_dirs,
