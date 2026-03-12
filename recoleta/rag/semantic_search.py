@@ -118,6 +118,10 @@ def _clone_summary_index_stats(
     return cloned
 
 
+def _should_cache_summary_index_stats(stats: dict[str, Any]) -> bool:
+    return int(stats.get("embedding_errors_total") or 0) <= 0
+
+
 def ensure_summary_vectors_for_period(
     *,
     repository: TrendRepositoryPort,
@@ -404,14 +408,15 @@ def semantic_search_summaries_in_period(
             scope=scope,
             llm_connection=llm_connection,
         )
-        with _summary_corpus_cache_lock:
-            _summary_corpus_cache[cache_key] = _clone_summary_index_stats(
-                fresh_index_stats,
-                cache_hit=False,
-            )
-            _summary_corpus_cache.move_to_end(cache_key)
-            while len(_summary_corpus_cache) > _SUMMARY_CORPUS_CACHE_MAX_KEYS:
-                _summary_corpus_cache.popitem(last=False)
+        if _should_cache_summary_index_stats(fresh_index_stats):
+            with _summary_corpus_cache_lock:
+                _summary_corpus_cache[cache_key] = _clone_summary_index_stats(
+                    fresh_index_stats,
+                    cache_hit=False,
+                )
+                _summary_corpus_cache.move_to_end(cache_key)
+                while len(_summary_corpus_cache) > _SUMMARY_CORPUS_CACHE_MAX_KEYS:
+                    _summary_corpus_cache.popitem(last=False)
         index_stats = _clone_summary_index_stats(fresh_index_stats, cache_hit=False)
     candidate_chunk_ids = [
         int(raw_id)
