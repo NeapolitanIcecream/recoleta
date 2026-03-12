@@ -10,17 +10,18 @@ from typing import Any, cast
 
 from loguru import logger
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.item_summary import extract_item_summary_sections
-from recoleta.models import Document
+from recoleta.models import Document, DocumentChunk
 from recoleta.ports import TrendRepositoryPort
 from recoleta.publish.trend_render_shared import (
     clamp_trend_overview_markdown,
     sanitize_trend_title,
 )
-from recoleta.types import DEFAULT_TOPIC_STREAM
+from recoleta.types import DEFAULT_TOPIC_STREAM, sha256_hex, utc_now
 
 
 @dataclass(slots=True)
@@ -636,55 +637,84 @@ def _chunk_text_segments(
     return segments
 
 
-def index_items_as_documents(
+def _commit_trend_session(*, repository: TrendRepositoryPort, session: Session) -> None:
+    commit_fn = getattr(repository, "_commit", None)
+    if callable(commit_fn):
+        commit_fn(session)
+        return
+    session.commit()
+
+
+def _load_latest_content_texts_for_items(
     *,
     repository: TrendRepositoryPort,
-    run_id: str,
-    period_start: datetime,
-    period_end: datetime,
-    limit: int = 2000,
-    content_chunk_chars: int = 1200,
-    max_content_chunks_per_item: int = 8,
-    min_relevance_score: float = 0.0,
-    scope: str = DEFAULT_TOPIC_STREAM,
-) -> dict[str, Any]:
-    """Index analyzed items into documents + chunks (summary first, content optional)."""
-    log = logger.bind(module="trends.index_items", run_id=run_id)
-    started = time.perf_counter()
-    pairs = repository.list_analyzed_items_in_period(
-        period_start=period_start,
-        period_end=period_end,
-        limit=limit,
-        scope=scope,
-    )
-    pairs, filtered_out_total = _filter_pairs_by_min_relevance(
-        pairs,
-        min_relevance_score=min_relevance_score,
-    )
-    keep_item_ids = {
-        int(getattr(item, "id") or 0)
-        for item, _analysis in pairs
-        if getattr(item, "id", None) is not None
+    item_ids: list[int],
+    content_types: list[str],
+) -> dict[int, dict[str, str | None]]:
+    normalized_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for raw_item_id in item_ids:
+        try:
+            item_id = int(raw_item_id)
+        except Exception:
+            continue
+        if item_id <= 0 or item_id in seen_ids:
+            continue
+        seen_ids.add(item_id)
+        normalized_ids.append(item_id)
+
+    normalized_types = [str(content_type or "").strip() for content_type in content_types]
+    normalized_types = [content_type for content_type in normalized_types if content_type]
+    if not normalized_ids or not normalized_types:
+        return {}
+
+    out: dict[int, dict[str, str | None]] = {
+        item_id: {content_type: None for content_type in normalized_types}
+        for item_id in normalized_ids
     }
-    docs_deleted = _prune_item_documents_for_period(
-        repository=repository,
-        period_start=period_start,
-        period_end=period_end,
-        scope=scope,
-        keep_item_ids=keep_item_ids,
-    )
+    batch_getter = getattr(repository, "get_latest_contents", None)
+    if callable(batch_getter):
+        for content_type in normalized_types:
+            contents = cast(
+                dict[int, Any],
+                batch_getter(item_ids=normalized_ids, content_type=content_type),
+            )
+            for item_id, content in contents.items():
+                text_value = getattr(content, "text", None)
+                bucket = out.setdefault(
+                    item_id,
+                    {ctype: None for ctype in normalized_types},
+                )
+                bucket[content_type] = (
+                    text_value
+                    if isinstance(text_value, str) and text_value.strip()
+                    else None
+                )
+        return out
+
+    for item_id in normalized_ids:
+        out[item_id] = repository.get_latest_content_texts(
+            item_id=item_id,
+            content_types=normalized_types,
+        )
+    return out
+
+
+def _index_items_as_documents_itemwise(
+    *,
+    repository: TrendRepositoryPort,
+    pairs: list[tuple[Any, Any]],
+    content_types: list[str],
+    content_chunk_chars: int,
+    max_content_chunks_per_item: int,
+    scope: str,
+    log: Any,
+) -> dict[str, int]:
     docs_upserted = 0
     chunks_upserted = 0
     content_chunks_upserted = 0
     content_chunks_deleted = 0
 
-    content_types = [
-        "pdf_text",
-        "html_maintext",
-        "html_document_md",
-        "html_document",
-        "latex_source",
-    ]
     for item, analysis in pairs:
         try:
             doc = repository.upsert_document_for_item(item=item, scope=scope)
@@ -706,11 +736,11 @@ def index_items_as_documents(
             texts = repository.get_latest_content_texts(
                 item_id=int(getattr(item, "id")), content_types=content_types
             )
-            for ctype in content_types:
-                candidate = texts.get(ctype)
+            for content_type in content_types:
+                candidate = texts.get(content_type)
                 if isinstance(candidate, str) and candidate.strip():
                     chosen = candidate
-                    chosen_type = ctype
+                    chosen_type = content_type
                     break
             if not chosen or chosen_type is None:
                 content_chunks_deleted += repository.delete_document_chunks(
@@ -758,15 +788,371 @@ def index_items_as_documents(
                 str(exc),
             )
 
+    return {
+        "docs_upserted": docs_upserted,
+        "chunks_upserted": chunks_upserted,
+        "content_chunks_upserted": content_chunks_upserted,
+        "content_chunks_deleted": content_chunks_deleted,
+    }
+
+
+def _index_items_as_documents_batched(
+    *,
+    repository: TrendRepositoryPort,
+    pairs: list[tuple[Any, Any]],
+    content_types: list[str],
+    content_chunk_chars: int,
+    max_content_chunks_per_item: int,
+    scope: str,
+) -> dict[str, int]:
+    item_ids = [
+        int(raw_id)
+        for item, _analysis in pairs
+        if (raw_id := getattr(item, "id", None)) is not None and int(raw_id) > 0
+    ]
+    if not item_ids:
+        return {
+            "docs_upserted": 0,
+            "chunks_upserted": 0,
+            "content_chunks_upserted": 0,
+            "content_chunks_deleted": 0,
+        }
+
+    texts_by_item_id = _load_latest_content_texts_for_items(
+        repository=repository,
+        item_ids=item_ids,
+        content_types=content_types,
+    )
+
+    with Session(repository.engine) as session:
+        existing_docs = list(
+            session.exec(
+                select(Document).where(
+                    Document.doc_type == "item",
+                    cast(Any, Document.scope) == scope,
+                    cast(Any, Document.item_id).in_(item_ids),
+                )
+            )
+        )
+        docs_by_item_id: dict[int, Document] = {}
+        for doc in existing_docs:
+            raw_item_id = getattr(doc, "item_id", None)
+            if raw_item_id is None:
+                continue
+            item_id = int(raw_item_id)
+            if item_id > 0:
+                docs_by_item_id[item_id] = doc
+
+        docs_upserted = 0
+        for item, _analysis in pairs:
+            raw_item_id = getattr(item, "id", None)
+            if raw_item_id is None:
+                continue
+            item_id = int(raw_item_id)
+            if item_id <= 0:
+                continue
+            event_at = getattr(item, "published_at", None) or getattr(
+                item, "created_at", None
+            )
+            existing = docs_by_item_id.get(item_id)
+            if existing is None:
+                existing = Document(
+                    doc_type="item",
+                    scope=scope,
+                    item_id=item_id,
+                    source=str(getattr(item, "source", "") or "").strip() or None,
+                    canonical_url=(
+                        str(getattr(item, "canonical_url", "") or "").strip() or None
+                    ),
+                    title=str(getattr(item, "title", "") or "").strip() or None,
+                    published_at=event_at,
+                )
+                session.add(existing)
+                docs_by_item_id[item_id] = existing
+            else:
+                existing.source = (
+                    str(getattr(item, "source", "") or "").strip() or None
+                )
+                existing.canonical_url = (
+                    str(getattr(item, "canonical_url", "") or "").strip() or None
+                )
+                existing.title = str(getattr(item, "title", "") or "").strip() or None
+                existing.published_at = event_at
+                existing.updated_at = utc_now()
+                session.add(existing)
+            docs_upserted += 1
+
+        session.flush()
+
+        doc_ids = [
+            int(raw_doc_id)
+            for raw_doc_id in (getattr(doc, "id", None) for doc in docs_by_item_id.values())
+            if raw_doc_id is not None and int(raw_doc_id) > 0
+        ]
+        existing_chunks = (
+            list(
+                session.exec(
+                    select(DocumentChunk).where(
+                        cast(Any, DocumentChunk.doc_id).in_(doc_ids),
+                        cast(Any, DocumentChunk.kind).in_(["summary", "content"]),
+                    )
+                )
+            )
+            if doc_ids
+            else []
+        )
+        existing_chunks_by_key: dict[tuple[int, int], DocumentChunk] = {}
+        for chunk in existing_chunks:
+            existing_chunks_by_key[
+                (int(getattr(chunk, "doc_id")), int(getattr(chunk, "chunk_index")))
+            ] = chunk
+
+        target_rows: dict[tuple[int, int], dict[str, Any]] = {}
+        content_cutoffs: dict[int, int | None] = {}
+        content_chunks_upserted = 0
+        for item, analysis in pairs:
+            raw_item_id = getattr(item, "id", None)
+            if raw_item_id is None:
+                continue
+            item_id = int(raw_item_id)
+            doc = docs_by_item_id.get(item_id)
+            if doc is None or getattr(doc, "id", None) is None:
+                continue
+            doc_id = int(getattr(doc, "id"))
+            summary_text = str(getattr(analysis, "summary", "") or "").strip()
+            if not summary_text:
+                raise ValueError("chunk text must not be empty")
+            target_rows[(doc_id, 0)] = {
+                "doc_id": doc_id,
+                "chunk_index": 0,
+                "kind": "summary",
+                "text": summary_text,
+                "start_char": 0,
+                "end_char": None,
+                "text_hash": sha256_hex(summary_text),
+                "source_content_type": "analysis_summary",
+            }
+
+            chosen: str | None = None
+            chosen_type: str | None = None
+            texts = texts_by_item_id.get(item_id, {})
+            for content_type in content_types:
+                candidate = texts.get(content_type)
+                if isinstance(candidate, str) and candidate.strip():
+                    chosen = candidate
+                    chosen_type = content_type
+                    break
+            if not chosen or chosen_type is None:
+                content_cutoffs[doc_id] = None
+                continue
+
+            max_written_index: int | None = None
+            for seg_idx, (start_char, end_char, seg) in enumerate(
+                _chunk_text_segments(chosen, chunk_chars=content_chunk_chars)[
+                    : max(0, int(max_content_chunks_per_item))
+                ],
+                start=1,
+            ):
+                target_rows[(doc_id, seg_idx)] = {
+                    "doc_id": doc_id,
+                    "chunk_index": seg_idx,
+                    "kind": "content",
+                    "text": seg,
+                    "start_char": start_char,
+                    "end_char": end_char,
+                    "text_hash": sha256_hex(seg),
+                    "source_content_type": chosen_type,
+                }
+                content_chunks_upserted += 1
+                max_written_index = seg_idx
+            content_cutoffs[doc_id] = max_written_index
+
+        changed_chunks: list[DocumentChunk] = []
+        for (doc_id, chunk_index), payload in target_rows.items():
+            existing = existing_chunks_by_key.get((doc_id, chunk_index))
+            if existing is None:
+                chunk = DocumentChunk(
+                    doc_id=doc_id,
+                    chunk_index=chunk_index,
+                    kind=str(payload["kind"]),
+                    text=str(payload["text"]),
+                    start_char=payload["start_char"],
+                    end_char=payload["end_char"],
+                    text_hash=str(payload["text_hash"]),
+                    source_content_type=(
+                        str(payload["source_content_type"]).strip()
+                        if payload.get("source_content_type")
+                        else None
+                    ),
+                )
+                session.add(chunk)
+                changed_chunks.append(chunk)
+                continue
+
+            if str(getattr(existing, "text_hash", "") or "") == str(
+                payload["text_hash"]
+            ):
+                continue
+            existing.kind = str(payload["kind"])
+            existing.text = str(payload["text"])
+            existing.start_char = payload["start_char"]
+            existing.end_char = payload["end_char"]
+            existing.text_hash = str(payload["text_hash"])
+            existing.source_content_type = (
+                str(payload["source_content_type"]).strip()
+                if payload.get("source_content_type")
+                else None
+            )
+            session.add(existing)
+            changed_chunks.append(existing)
+
+        stale_chunks: list[DocumentChunk] = []
+        for chunk in existing_chunks:
+            if str(getattr(chunk, "kind", "") or "").strip().lower() != "content":
+                continue
+            doc_id = int(getattr(chunk, "doc_id"))
+            max_written_index = content_cutoffs.get(doc_id)
+            threshold = 1 if max_written_index is None else max_written_index + 1
+            if int(getattr(chunk, "chunk_index")) >= threshold:
+                stale_chunks.append(chunk)
+
+        session.flush()
+        conn = session.connection()
+
+        changed_fts_rows = [
+            {
+                "rowid": int(raw_chunk_id),
+                "text": str(getattr(chunk, "text")),
+                "doc_id": int(getattr(chunk, "doc_id")),
+                "chunk_index": int(getattr(chunk, "chunk_index")),
+                "kind": str(getattr(chunk, "kind")),
+            }
+            for chunk in changed_chunks
+            if (raw_chunk_id := getattr(chunk, "id", None)) is not None
+            and int(raw_chunk_id) > 0
+        ]
+        if changed_fts_rows:
+            conn.execute(
+                text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
+                [{"rowid": row["rowid"]} for row in changed_fts_rows],
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO chunk_fts(rowid, text, doc_id, chunk_index, kind) "
+                    "VALUES(:rowid, :text, :doc_id, :chunk_index, :kind)"
+                ),
+                changed_fts_rows,
+            )
+
+        stale_ids = [
+            int(raw_chunk_id)
+            for raw_chunk_id in (getattr(chunk, "id", None) for chunk in stale_chunks)
+            if raw_chunk_id is not None and int(raw_chunk_id) > 0
+        ]
+        if stale_ids:
+            conn.execute(
+                text("DELETE FROM chunk_embeddings WHERE chunk_id = :chunk_id"),
+                [{"chunk_id": chunk_id} for chunk_id in stale_ids],
+            )
+            conn.execute(
+                text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
+                [{"rowid": chunk_id} for chunk_id in stale_ids],
+            )
+        for chunk in stale_chunks:
+            session.delete(chunk)
+
+        _commit_trend_session(repository=repository, session=session)
+        return {
+            "docs_upserted": docs_upserted,
+            "chunks_upserted": len(target_rows),
+            "content_chunks_upserted": content_chunks_upserted,
+            "content_chunks_deleted": len(stale_chunks),
+        }
+
+
+def index_items_as_documents(
+    *,
+    repository: TrendRepositoryPort,
+    run_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    limit: int = 2000,
+    content_chunk_chars: int = 1200,
+    max_content_chunks_per_item: int = 8,
+    min_relevance_score: float = 0.0,
+    scope: str = DEFAULT_TOPIC_STREAM,
+) -> dict[str, Any]:
+    """Index analyzed items into documents + chunks (summary first, content optional)."""
+    log = logger.bind(module="trends.index_items", run_id=run_id)
+    started = time.perf_counter()
+    pairs = repository.list_analyzed_items_in_period(
+        period_start=period_start,
+        period_end=period_end,
+        limit=limit,
+        scope=scope,
+    )
+    pairs, filtered_out_total = _filter_pairs_by_min_relevance(
+        pairs,
+        min_relevance_score=min_relevance_score,
+    )
+    keep_item_ids = {
+        int(getattr(item, "id") or 0)
+        for item, _analysis in pairs
+        if getattr(item, "id", None) is not None
+    }
+    docs_deleted = _prune_item_documents_for_period(
+        repository=repository,
+        period_start=period_start,
+        period_end=period_end,
+        scope=scope,
+        keep_item_ids=keep_item_ids,
+    )
+
+    content_types = [
+        "pdf_text",
+        "html_maintext",
+        "html_document_md",
+        "html_document",
+        "latex_source",
+    ]
+    write_mode = "batched"
+    try:
+        write_stats = _index_items_as_documents_batched(
+            repository=repository,
+            pairs=pairs,
+            content_types=content_types,
+            content_chunk_chars=content_chunk_chars,
+            max_content_chunks_per_item=max_content_chunks_per_item,
+            scope=scope,
+        )
+    except Exception as exc:  # noqa: BLE001
+        write_mode = "itemwise_fallback"
+        log.warning(
+            "Batch document indexing failed; falling back to itemwise writes "
+            "error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+        write_stats = _index_items_as_documents_itemwise(
+            repository=repository,
+            pairs=pairs,
+            content_types=content_types,
+            content_chunk_chars=content_chunk_chars,
+            max_content_chunks_per_item=max_content_chunks_per_item,
+            scope=scope,
+            log=log,
+        )
+
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     stats = {
         "items_total": len(pairs),
         "items_filtered_out": filtered_out_total,
-        "docs_upserted": docs_upserted,
+        "docs_upserted": write_stats["docs_upserted"],
         "docs_deleted": docs_deleted,
-        "chunks_upserted": chunks_upserted,
-        "content_chunks_upserted": content_chunks_upserted,
-        "content_chunks_deleted": content_chunks_deleted,
+        "chunks_upserted": write_stats["chunks_upserted"],
+        "content_chunks_upserted": write_stats["content_chunks_upserted"],
+        "content_chunks_deleted": write_stats["content_chunks_deleted"],
+        "write_mode": write_mode,
         "duration_ms": elapsed_ms,
     }
     log.info("Index items done stats={}", stats)

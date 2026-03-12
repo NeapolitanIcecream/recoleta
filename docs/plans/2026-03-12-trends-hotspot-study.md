@@ -97,6 +97,31 @@ Priority order after this study:
 3. Defer representative-enforcement removal unless production metrics show
    non-trivial `rep_enforcement.backfilled_total` or frequent non-item reps.
 
+## Post-Implementation Validation
+
+After landing the first two optimizations on `codex/trends-hotspot-study`, the
+same benchmark command was rerun against production code.
+
+### Semantic Corpus Cache
+
+- Production result still matches the study outcome: `29 ms -> 19 ms` median
+  wall time and `6 -> 1` SQL queries across 6 repeated semantic queries.
+- This confirms the run-local cache is removing repeated corpus warm-up work in
+  the real code path, not only in a prototype.
+
+### Item Index Batching
+
+- Current production indexer now measures `27 ms` median wall time, `459` SQL
+  queries, and `1` commit on the same 64-item cold path.
+- The old batched prototype now measures `34 ms`, `513` SQL queries, and
+  `1` commit, so production is at least as good as the study target.
+
+Interpretation:
+
+- The indexing hotspot is materially resolved for the studied cold path.
+- The semantic cache preserves the originally measured `~34%` wall-time win and
+  `~83%` query reduction for repeated search-heavy runs.
+
 ## Caveats
 
 - The batching benchmark is a cold-path prototype, not a production-faithful

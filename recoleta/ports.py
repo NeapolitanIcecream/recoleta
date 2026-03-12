@@ -53,10 +53,6 @@ class RepositoryPort(Protocol):
         self, *, item_id: int, content_types: list[str]
     ) -> dict[str, str | None]: ...
 
-    def get_latest_contents(
-        self, *, item_ids: list[int], content_type: str
-    ) -> dict[int, Content]: ...
-
     def upsert_contents_texts(
         self, *, item_id: int, texts_by_type: dict[str, str]
     ) -> int: ...
@@ -488,6 +484,10 @@ class TrendRepositoryPort(Protocol):
     def get_latest_content_texts(
         self, *, item_id: int, content_types: list[str]
     ) -> dict[str, str | None]: ...
+
+    def get_latest_contents(
+        self, *, item_ids: list[int], content_type: str
+    ) -> dict[int, Content]: ...
 
 
 class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
