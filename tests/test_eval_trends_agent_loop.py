@@ -104,3 +104,28 @@ def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
     assert "# trends agent eval manifest" in report
     assert "month-agents" in report
     assert "uv run recoleta trends --granularity month --date 2026-03-15 --backfill" in report
+
+
+def test_render_eval_runbook_sh_includes_window_commands(tmp_path: Path) -> None:
+    windows = [
+        harness.EvalWindow(
+            window_id="week-agents",
+            granularity="week",
+            anchor_date="2026-03-05",
+            stream="default",
+            topics=["agents"],
+            notes="weekly baseline",
+        )
+    ]
+    manifest = harness.build_eval_manifest(
+        fixtures_path=tmp_path / "windows.json",
+        out_dir=tmp_path / "bench-out",
+        windows=windows,
+    )
+
+    runbook = harness.render_eval_runbook_sh(manifest=manifest)
+
+    assert "#!/usr/bin/env bash" in runbook
+    assert 'mkdir -p "' in runbook
+    assert 'uv run recoleta trends --granularity week --date 2026-03-05 --backfill' in runbook
+    assert 'tee "' in runbook
