@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from recoleta.pipeline import PipelineService
+from recoleta.pipeline.service import PipelineService
 from recoleta.trends import TrendPayload
 from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
@@ -24,7 +25,7 @@ def test_trends_stage_records_per_tool_metrics(
     settings, repository = _build_runtime()
     service = PipelineService(
         settings=settings,
-        repository=repository,
+        repository=cast(Any, repository),
         analyzer=FakeAnalyzer(),
         telegram_sender=FakeTelegramSender(),
     )

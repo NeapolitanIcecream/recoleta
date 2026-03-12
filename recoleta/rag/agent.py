@@ -170,9 +170,12 @@ def _decode_item_authors(
     decode_list = getattr(repository, "decode_list", None)
     if callable(decode_list):
         try:
+            decoded = decode_list(raw_authors)
+            if not isinstance(decoded, list):
+                return []
             return [
                 str(author).strip()
-                for author in decode_list(raw_authors)
+                for author in decoded
                 if str(author).strip()
             ]
         except Exception:

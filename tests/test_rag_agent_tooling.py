@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from typing import Any, cast
 
 
 rag_agent = importlib.import_module("recoleta.rag.agent")
@@ -144,19 +145,22 @@ def test_search_text_backoff_recovers_hits_for_long_conjunctive_query(
 
     agent = build_trend_agent(llm_model="openai/gpt-4o-mini")
     tool = agent._function_toolset.tools["search_text"].function
-    ctx = SimpleNamespace(
-        deps=TrendAgentDeps(
-            repository=repository,
-            vector_store=LanceVectorStore(db_dir=tmp_path / "lancedb"),
-            run_id="run-search-text-backoff",
-            period_start=period_start,
-            period_end=period_end,
-            rag_sources=[{"doc_type": "item", "granularity": None}],
-            embedding_model="test/embed",
-            embedding_dimensions=None,
-            embedding_batch_max_inputs=64,
-            embedding_batch_max_chars=40_000,
-        )
+    ctx = cast(
+        Any,
+        SimpleNamespace(
+            deps=TrendAgentDeps(
+                repository=repository,
+                vector_store=LanceVectorStore(db_dir=tmp_path / "lancedb"),
+                run_id="run-search-text-backoff",
+                period_start=period_start,
+                period_end=period_end,
+                rag_sources=[{"doc_type": "item", "granularity": None}],
+                embedding_model="test/embed",
+                embedding_dimensions=None,
+                embedding_batch_max_inputs=64,
+                embedding_batch_max_chars=40_000,
+            )
+        ),
     )
 
     result = tool(
@@ -253,19 +257,22 @@ def test_get_doc_bundle_returns_summary_sections_and_content_chunks(
 
     agent = build_trend_agent(llm_model="openai/gpt-4o-mini")
     tool = agent._function_toolset.tools["get_doc_bundle"].function
-    ctx = SimpleNamespace(
-        deps=TrendAgentDeps(
-            repository=repository,
-            vector_store=LanceVectorStore(db_dir=tmp_path / "lancedb"),
-            run_id="run-doc-bundle",
-            period_start=period_start,
-            period_end=period_end,
-            rag_sources=[{"doc_type": "item", "granularity": None}],
-            embedding_model="test/embed",
-            embedding_dimensions=None,
-            embedding_batch_max_inputs=64,
-            embedding_batch_max_chars=40_000,
-        )
+    ctx = cast(
+        Any,
+        SimpleNamespace(
+            deps=TrendAgentDeps(
+                repository=repository,
+                vector_store=LanceVectorStore(db_dir=tmp_path / "lancedb"),
+                run_id="run-doc-bundle",
+                period_start=period_start,
+                period_end=period_end,
+                rag_sources=[{"doc_type": "item", "granularity": None}],
+                embedding_model="test/embed",
+                embedding_dimensions=None,
+                embedding_batch_max_inputs=64,
+                embedding_batch_max_chars=40_000,
+            )
+        ),
     )
 
     result = tool(ctx, doc_id=int(doc.id), content_limit=2, content_chars=120)
@@ -353,19 +360,22 @@ def test_get_doc_bundle_parses_inline_legacy_summary_sections(
 
     agent = build_trend_agent(llm_model="openai/gpt-4o-mini")
     tool = agent._function_toolset.tools["get_doc_bundle"].function
-    ctx = SimpleNamespace(
-        deps=TrendAgentDeps(
-            repository=repository,
-            vector_store=LanceVectorStore(db_dir=tmp_path / "lancedb"),
-            run_id="run-doc-bundle-inline",
-            period_start=period_start,
-            period_end=period_end,
-            rag_sources=[{"doc_type": "item", "granularity": None}],
-            embedding_model="test/embed",
-            embedding_dimensions=None,
-            embedding_batch_max_inputs=64,
-            embedding_batch_max_chars=40_000,
-        )
+    ctx = cast(
+        Any,
+        SimpleNamespace(
+            deps=TrendAgentDeps(
+                repository=repository,
+                vector_store=LanceVectorStore(db_dir=tmp_path / "lancedb"),
+                run_id="run-doc-bundle-inline",
+                period_start=period_start,
+                period_end=period_end,
+                rag_sources=[{"doc_type": "item", "granularity": None}],
+                embedding_model="test/embed",
+                embedding_dimensions=None,
+                embedding_batch_max_inputs=64,
+                embedding_batch_max_chars=40_000,
+            )
+        ),
     )
 
     result = tool(ctx, doc_id=int(doc.id), content_limit=1, content_chars=120)
