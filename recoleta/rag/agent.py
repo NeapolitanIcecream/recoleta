@@ -38,6 +38,7 @@ class TrendAgentDeps:
 
 
 _SEARCH_TEXT_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+_SEARCH_TEXT_BACKOFF_MAX_CANDIDATES = 24
 _INLINE_SUMMARY_SECTION_RE = re.compile(
     r"(?is)(summary|problem|approach|results)\s*[:：]\s*(.*?)(?=(summary|problem|approach|results)\s*[:：]|$)"
 )
@@ -294,7 +295,21 @@ def _candidate_text_queries(query: str) -> list[tuple[str, int]]:
             continue
         seen_queries.add(candidate)
         candidates.append((candidate, total - size))
-    return candidates
+    if len(candidates) <= _SEARCH_TEXT_BACKOFF_MAX_CANDIDATES:
+        return candidates
+
+    capped_candidates: list[tuple[str, int]] = []
+    max_index = len(candidates) - 1
+    for ordinal in range(_SEARCH_TEXT_BACKOFF_MAX_CANDIDATES):
+        if _SEARCH_TEXT_BACKOFF_MAX_CANDIDATES == 1:
+            index = 0
+        else:
+            index = (ordinal * max_index) // (_SEARCH_TEXT_BACKOFF_MAX_CANDIDATES - 1)
+        candidate = candidates[index]
+        if candidate in capped_candidates:
+            continue
+        capped_candidates.append(candidate)
+    return capped_candidates
 
 
 def _collect_text_hits_with_backoff(

@@ -178,6 +178,35 @@ def test_search_text_backoff_recovers_hits_for_long_conjunctive_query(
     assert hit["backoff_depth"] == 1
 
 
+def test_search_text_backoff_caps_candidate_budget_for_long_queries() -> None:
+    from datetime import UTC, datetime
+
+    seen_queries: list[str] = []
+
+    class _FakeRepository:
+        def search_chunks_text(self, **kwargs):  # type: ignore[no-untyped-def]
+            seen_queries.append(str(kwargs.get("query") or ""))
+            return []
+
+    hits, matched_queries = rag_agent._collect_text_hits_with_backoff(
+        repository=cast(Any, _FakeRepository()),
+        query=" ".join(f"term{i}" for i in range(40)),
+        doc_type="item",
+        granularity=None,
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
+        scope="agents_lab",
+        limit=5,
+    )
+
+    assert hits == []
+    assert matched_queries == []
+    assert len(seen_queries) == rag_agent._SEARCH_TEXT_BACKOFF_MAX_CANDIDATES
+    token_counts = [len(query.split()) for query in seen_queries]
+    assert max(token_counts) == 40
+    assert min(token_counts) <= 3
+
+
 def test_get_doc_bundle_returns_summary_sections_and_content_chunks(
     monkeypatch,
     tmp_path,
