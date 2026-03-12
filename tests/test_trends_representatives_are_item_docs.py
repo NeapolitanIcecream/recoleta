@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from recoleta.pipeline import PipelineService
+from recoleta.pipeline.service import PipelineService
 from recoleta.trends import (
     TrendCluster,
     TrendPayload,
@@ -35,7 +35,7 @@ def test_trends_week_enforces_item_level_representatives(
     settings, repository = _build_runtime()
     service = PipelineService(
         settings=settings,
-        repository=repository,
+        repository=cast(Any, repository),
         analyzer=FakeAnalyzer(),
         telegram_sender=FakeTelegramSender(),
     )
