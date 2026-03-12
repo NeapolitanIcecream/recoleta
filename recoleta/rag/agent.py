@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
@@ -8,6 +9,7 @@ from typing import Any, cast
 from loguru import logger
 from pydantic_ai import Agent, RunContext
 
+from recoleta.item_summary import extract_item_summary_sections
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
@@ -35,6 +37,12 @@ class TrendAgentDeps:
     llm_connection: LLMConnectionConfig | None = None
 
 
+_SEARCH_TEXT_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
+_INLINE_SUMMARY_SECTION_RE = re.compile(
+    r"(?is)(summary|problem|approach|results)\s*[:：]\s*(.*?)(?=(summary|problem|approach|results)\s*[:：]|$)"
+)
+
+
 def _build_trend_instructions(*, output_language: str | None) -> str:
     base = (
         "You are a research trend analyst. Use tools to explore the local corpus. "
@@ -43,7 +51,7 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " Start with search_hybrid when you need to discover themes quickly, "
-        "then use get_doc and read_chunk to verify the most important evidence."
+        "then use get_doc_bundle to inspect promising evidence bundles before falling back to get_doc or read_chunk."
     )
     base += (
         " When available, use trend documents (doc_type=trend) for synthesis and higher-level themes, "
@@ -206,6 +214,175 @@ def _serialize_document(
         else None,
         "authors": _decode_item_authors(repository=repository, item_id=item_id),
     }
+
+
+def _truncate_text(value: str, *, max_chars: int) -> str:
+    normalized = str(value or "").strip()
+    cap = max(0, int(max_chars))
+    if cap <= 0 or len(normalized) <= cap:
+        return normalized
+    return normalized[:cap].rstrip()
+
+
+def _clean_summary_section_value(value: str) -> str:
+    normalized = str(value or "").strip()
+    if normalized.startswith("- "):
+        return normalized[2:].strip()
+    if normalized.startswith("* "):
+        return normalized[2:].strip()
+    return normalized
+
+
+def _normalize_summary_sections(value: str) -> dict[str, str]:
+    sections = extract_item_summary_sections(value)
+    if (
+        str(sections.get("summary") or "").strip()
+        and not str(sections.get("problem") or "").strip()
+        and not str(sections.get("approach") or "").strip()
+        and not str(sections.get("results") or "").strip()
+    ):
+        inline_sections = {key: "" for key in ("summary", "problem", "approach", "results")}
+        matches = list(_INLINE_SUMMARY_SECTION_RE.finditer(str(value or "")))
+        if matches:
+            for match in matches:
+                key = str(match.group(1) or "").strip().lower()
+                body = _clean_summary_section_value(str(match.group(2) or "").strip())
+                if key in inline_sections and body:
+                    inline_sections[key] = body
+            if any(
+                str(inline_sections.get(key) or "").strip()
+                for key in ("problem", "approach", "results")
+            ):
+                return inline_sections
+    return {
+        key: _clean_summary_section_value(section_value)
+        for key, section_value in sections.items()
+    }
+
+
+def _candidate_text_queries(query: str) -> list[tuple[str, int]]:
+    tokens: list[str] = []
+    seen_tokens: set[str] = set()
+    for token in _SEARCH_TEXT_TOKEN_RE.findall(str(query or "")):
+        normalized = str(token or "").strip()
+        lowered = normalized.lower()
+        if not lowered or lowered in seen_tokens:
+            continue
+        seen_tokens.add(lowered)
+        tokens.append(normalized)
+    if not tokens:
+        return []
+
+    candidates: list[tuple[str, int]] = []
+    seen_queries: set[str] = set()
+    total = len(tokens)
+    for size in range(total, 0, -1):
+        for start in range(0, total - size + 1):
+            candidate = " ".join(tokens[start : start + size]).strip()
+            if not candidate or candidate in seen_queries:
+                continue
+            seen_queries.add(candidate)
+            candidates.append((candidate, total - size))
+
+    longest_tokens = sorted(tokens, key=lambda token: (-len(token), token.lower()))
+    for size in range(min(3, total), 0, -1):
+        candidate = " ".join(longest_tokens[:size]).strip()
+        if not candidate or candidate in seen_queries:
+            continue
+        seen_queries.add(candidate)
+        candidates.append((candidate, total - size))
+    return candidates
+
+
+def _collect_text_hits_with_backoff(
+    *,
+    repository: TrendRepositoryPort,
+    query: str,
+    doc_type: str,
+    granularity: str | None,
+    period_start: datetime,
+    period_end: datetime,
+    scope: str,
+    limit: int,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    normalized_limit = max(1, int(limit or 1))
+    hits: list[dict[str, Any]] = []
+    seen_hits: set[tuple[int, int]] = set()
+    matched_queries: list[str] = []
+
+    for candidate_query, backoff_depth in _candidate_text_queries(query):
+        rows = repository.search_chunks_text(
+            query=candidate_query,
+            doc_type=doc_type,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            scope=scope,
+            limit=normalized_limit,
+        )
+        matched_in_candidate = False
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = _search_hit_key(row)
+            if key is None or key in seen_hits:
+                continue
+            seen_hits.add(key)
+            enriched = dict(row)
+            enriched["matched_query"] = candidate_query
+            enriched["backoff_depth"] = int(backoff_depth)
+            hits.append(enriched)
+            matched_in_candidate = True
+            if len(hits) >= normalized_limit:
+                break
+        if matched_in_candidate:
+            matched_queries.append(candidate_query)
+        if len(hits) >= normalized_limit:
+            break
+    return hits, matched_queries
+
+
+def _read_doc_content_chunks(
+    *,
+    repository: TrendRepositoryPort,
+    doc_id: int,
+    limit: int,
+    text_max_chars: int,
+) -> list[dict[str, Any]]:
+    normalized_limit = max(0, int(limit or 0))
+    if normalized_limit <= 0:
+        return []
+    out: list[dict[str, Any]] = []
+    consecutive_misses = 0
+    chunk_index = 1
+    while len(out) < normalized_limit and consecutive_misses < 2 and chunk_index <= 12:
+        chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=chunk_index)
+        if chunk is None:
+            consecutive_misses += 1
+            chunk_index += 1
+            continue
+        consecutive_misses = 0
+        if str(getattr(chunk, "kind", "") or "").strip().lower() != "content":
+            chunk_index += 1
+            continue
+        text_value = _truncate_text(str(getattr(chunk, "text", "") or ""), max_chars=text_max_chars)
+        if not text_value:
+            chunk_index += 1
+            continue
+        out.append(
+            {
+                "chunk_id": int(getattr(chunk, "id")),
+                "doc_id": int(getattr(chunk, "doc_id")),
+                "chunk_index": int(getattr(chunk, "chunk_index")),
+                "kind": str(getattr(chunk, "kind") or ""),
+                "start_char": getattr(chunk, "start_char", None),
+                "end_char": getattr(chunk, "end_char", None),
+                "source_content_type": str(getattr(chunk, "source_content_type") or ""),
+                "text": text_value,
+            }
+        )
+        chunk_index += 1
+    return out
 
 
 def _attach_doc_metadata(
@@ -405,6 +582,57 @@ def build_trend_agent(
         return {"doc": _serialize_document(repository=deps.repository, doc=doc)}
 
     @agent.tool
+    def get_doc_bundle(
+        ctx: RunContext[TrendAgentDeps],
+        doc_id: int,
+        content_limit: int = 2,
+        content_chars: int = 600,
+    ) -> dict[str, Any]:
+        """Fetch a compact evidence bundle for one document.
+
+        Args:
+            doc_id: Document identifier returned by list/search tools.
+            content_limit: Maximum number of content chunks to include after the summary.
+            content_chars: Maximum characters to keep per content chunk preview.
+        """
+        deps = ctx.deps
+        doc = deps.repository.get_document(doc_id=int(doc_id or 0))
+        if doc is None:
+            return {"bundle": None}
+
+        normalized_doc_id = int(getattr(doc, "id"))
+        summary_chunk = deps.repository.read_document_chunk(
+            doc_id=normalized_doc_id,
+            chunk_index=0,
+        )
+        summary_text = str(getattr(summary_chunk, "text", "") or "").strip()
+        content_chunks = _read_doc_content_chunks(
+            repository=deps.repository,
+            doc_id=normalized_doc_id,
+            limit=content_limit,
+            text_max_chars=content_chars,
+        )
+        return {
+            "bundle": {
+                "doc": _serialize_document(repository=deps.repository, doc=doc),
+                "summary": {
+                    "chunk_id": int(getattr(summary_chunk, "id"))
+                    if summary_chunk is not None and getattr(summary_chunk, "id", None) is not None
+                    else None,
+                    "doc_id": normalized_doc_id,
+                    "chunk_index": 0,
+                    "kind": str(getattr(summary_chunk, "kind", "") or ""),
+                    "source_content_type": str(
+                        getattr(summary_chunk, "source_content_type", "") or ""
+                    ),
+                    "text": summary_text,
+                },
+                "summary_sections": _normalize_summary_sections(summary_text),
+                "content_chunks": content_chunks,
+            }
+        }
+
+    @agent.tool
     def read_chunk(
         ctx: RunContext[TrendAgentDeps], doc_id: int, chunk_index: int
     ) -> dict[str, Any]:
@@ -457,12 +685,14 @@ def build_trend_agent(
         )
         normalized_limit = max(1, int(limit or 10))
         if not requested_sources:
-            return {"hits": [], "returned": 0}
+            return {"hits": [], "returned": 0, "matched_queries": []}
 
         hits: list[dict[str, Any]] = []
         seen_hits: set[tuple[int, int]] = set()
+        matched_queries: list[str] = []
         for source_doc_type, source_granularity in requested_sources:
-            rows = deps.repository.search_chunks_text(
+            rows, matched_for_source = _collect_text_hits_with_backoff(
+                repository=deps.repository,
                 query=str(query or ""),
                 doc_type=source_doc_type,
                 granularity=source_granularity,
@@ -471,22 +701,20 @@ def build_trend_agent(
                 scope=deps.scope,
                 limit=normalized_limit,
             )
+            for matched_query in matched_for_source:
+                if matched_query not in matched_queries:
+                    matched_queries.append(matched_query)
             for row in rows:
                 if not isinstance(row, dict):
                     continue
-                try:
-                    key = (
-                        int(row.get("doc_id") or 0),
-                        int(row.get("chunk_index") or -1),
-                    )
-                except Exception:
-                    continue
-                if key[0] <= 0 or key[1] < 0 or key in seen_hits:
+                key = _search_hit_key(row)
+                if key is None or key in seen_hits:
                     continue
                 seen_hits.add(key)
                 hits.append(row)
         hits.sort(
             key=lambda row: (
+                int(row.get("backoff_depth") or 0),
                 float(row.get("rank") or 0.0),
                 int(row.get("doc_id") or 0),
                 int(row.get("chunk_index") or 0),
@@ -496,7 +724,11 @@ def build_trend_agent(
             repository=deps.repository,
             rows=hits[:normalized_limit],
         )
-        return {"hits": hits, "returned": len(hits)}
+        return {
+            "hits": hits,
+            "returned": len(hits),
+            "matched_queries": matched_queries,
+        }
 
     @agent.tool
     def search_semantic(

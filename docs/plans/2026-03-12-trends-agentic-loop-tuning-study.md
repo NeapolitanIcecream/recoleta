@@ -143,23 +143,28 @@ Observed behavior:
 1. `search_text` can return useful `content`-chunk snippets when the query is
    short and lexical, for example `retrieval`, `memory loop`, or
    `retrieval coordinator`.
-2. `search_text` is brittle for long conjunctive queries. On the local sample,
-   `agent memory retrieval loops` returned zero hits despite an obviously
-   relevant document.
+2. Plain conjunctive lexical search was brittle for long queries. After adding
+   lexical backoff, the same local sample query
+   `agent memory retrieval loops` recovered relevant hits via narrower fallback
+   queries such as `agent memory retrieval`.
 3. `search_semantic` was much more robust for theme discovery, but it only
    returned summary-chunk previews, not deeper evidence.
 4. `search_hybrid` therefore improved the entry-point behavior, but in cases
-   where lexical search misses entirely it still collapses to semantic-only
-   retrieval.
-5. `get_doc` plus `read_chunk` provided enough follow-up evidence, but it still
-   required multiple tool hops to inspect one promising paper.
+   where lexical search contributes useful hits it now produces much better
+   overlap signals than either tool alone.
+5. A dedicated `get_doc_bundle` tool produces a much better follow-up evidence
+   shape than repeated `get_doc + read_chunk` hops because it packages document
+   metadata, normalized summary sections, and bounded content-chunk previews in
+   one call.
 
 Interpretation:
 
 - `search_text` is useful as a precision tool, not as the only discovery tool.
 - `search_semantic` is useful as a recall tool, but its evidence is too shallow.
-- `search_hybrid` is the right direction, but the next step should be better
-  lexical backoff / query rewriting plus a higher-level `get_doc_bundle` tool.
+- `search_hybrid` is the right direction, and lexical backoff materially
+  improves its usefulness on long queries.
+- higher-level evidence bundles are more promising than more primitive
+  navigation tools.
 
 ## Changes Landed In This Pass
 
@@ -173,21 +178,30 @@ This study landed a first tranche of low-risk loop improvements:
    Added `search_hybrid`, which fuses lexical and semantic results with
    reciprocal-rank fusion and returns richer document metadata on hits.
 
-3. Richer retrieval payloads
+3. Lexical backoff for text search
+   `search_text` now retries narrower lexical queries when the original
+   conjunctive query is too strict, and returns matched-query diagnostics.
+
+4. Document bundles
+   Added `get_doc_bundle`, which returns document metadata, normalized summary
+   sections, and bounded content-chunk previews in one tool call.
+
+5. Richer retrieval payloads
    Search hits now carry document metadata such as title, canonical URL, and
    authors when available. This lowers the need for follow-up probing calls.
 
-4. Default-on tool diagnostics
+6. Default-on tool diagnostics
    Tool-call totals are now computed for normal runs, not only when debug
    artifacts are enabled.
 
-5. Per-tool metrics
+7. Per-tool metrics
    The pipeline now records low-cardinality metrics such as:
    - `pipeline.trends.tool.search_hybrid.calls_total`
    - `pipeline.trends.tool.search_text.calls_total`
+   - `pipeline.trends.tool.get_doc_bundle.calls_total`
    - `pipeline.trends.tool.read_chunk.calls_total`
 
-6. Prompt budget signals
+8. Prompt budget signals
    The pipeline now records:
    - `pipeline.trends.prompt_chars`
    - `pipeline.trends.overview_pack.chars`
@@ -352,7 +366,7 @@ Priority order for the next tuning cycle:
 
 1. `get_doc_bundle`
 2. explicit agent budget settings
-3. lexical-backoff improvements for `search_text`
+3. stronger query rewriting / semantic expansion beyond simple lexical backoff
 4. selective content-chunk semantic retrieval
 5. offline eval harness
 
