@@ -57,6 +57,16 @@ Deliverables:
 - a lightweight scoring rubric for grounding, distinctness, representative
   quality, readability, and cost/latency
 
+Current scaffold status on this branch:
+
+- `scripts/eval_trends_agent_loop.py` now writes `eval-manifest.json`,
+  `eval-manifest.md`, and `run-eval.sh`
+- the same script also has an opt-in `--capture-baseline` mode that runs the
+  current loop and stores per-window `payload.json`, `tool-trace.json`,
+  `report.md`, and `capture-summary.json`
+- prompt capture is still a stub artifact, so prompt-level analysis remains a
+  follow-up rather than a completed deliverable in this PR
+
 Exit criteria:
 
 - we can compare two loop variants on the same windows without manual setup
