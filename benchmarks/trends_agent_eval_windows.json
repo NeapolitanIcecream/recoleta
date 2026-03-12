@@ -16,14 +16,6 @@
       "stream": "default",
       "topics": ["agents", "evaluation"],
       "notes": "Weekly self-similar trend window for the agents stream."
-    },
-    {
-      "id": "month-2026-03-15-default",
-      "granularity": "month",
-      "anchor_date": "2026-03-15",
-      "stream": "default",
-      "topics": ["agents", "evaluation"],
-      "notes": "Monthly synthesis window used for phase-2 loop comparisons."
     }
   ]
 }

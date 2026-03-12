@@ -78,7 +78,7 @@ def test_default_eval_fixture_is_valid() -> None:
 
     windows = harness.load_eval_windows(fixture_path)
 
-    assert [window.granularity for window in windows] == ["day", "week", "month"]
+    assert [window.granularity for window in windows] == ["day", "week"]
     assert all(window.stream == "default" for window in windows)
 
 

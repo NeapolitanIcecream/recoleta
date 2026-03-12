@@ -39,6 +39,16 @@ Related note:
 
 Build a fixed-window evaluation set for `day|week|month` trend generation.
 
+Current live-fixture constraint:
+
+- the default live eval fixture should only include `day` and `week` windows for
+  now
+- `month` remains supported by the harness, but it should stay disabled in the
+  default fixture until one calendar month has enough real weekly coverage to
+  make quality judgments meaningful
+- as of 2026-03-12, the live corpus only has week `2026-W10`, so month scoring
+  would mostly measure sparse backfill behavior rather than report quality
+
 Deliverables:
 
 - a small benchmark set of representative historical windows

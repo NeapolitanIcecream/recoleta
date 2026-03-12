@@ -213,6 +213,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Build a fixed-window eval manifest for trends agent loop research."
     )
+    # The default fixture intentionally excludes live month windows for now.
+    # As of 2026-03-12 the real corpus only has week 2026-W10 coverage, which
+    # is not enough to treat month-level report scoring as meaningful.
     parser.add_argument(
         "--fixtures",
         type=Path,
