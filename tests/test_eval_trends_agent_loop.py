@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from scripts import eval_trends_agent_loop as harness
+from recoleta.storage import Repository
 
 
 def test_load_eval_windows_normalizes_topics(tmp_path: Path) -> None:
@@ -81,7 +83,7 @@ def test_default_eval_fixture_is_valid() -> None:
     windows = harness.load_eval_windows(fixture_path)
 
     assert [window.granularity for window in windows] == ["day", "week"]
-    assert all(window.stream == "default" for window in windows)
+    assert all(window.stream == "software_intelligence" for window in windows)
 
 
 def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
@@ -188,6 +190,7 @@ def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Pa
             "tool_calls_total": 3,
             "tool_call_breakdown": {"search_hybrid": 1, "get_doc_bundle": 2},
         },
+        capture_metadata={"capture_mode": "pipeline"},
     )
 
     artifact_dir = Path(window_manifest["artifact_dir"])
@@ -197,6 +200,92 @@ def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Pa
     assert json.loads((artifact_dir / "rubric.json").read_text(encoding="utf-8"))["status"] == "pending_manual_review"
     prompt_payload = json.loads((artifact_dir / "prompt.json").read_text(encoding="utf-8"))
     assert prompt_payload["status"] == "not_captured_yet"
+    capture_summary = json.loads(
+        (artifact_dir / "capture-summary.json").read_text(encoding="utf-8")
+    )
+    assert capture_summary["capture_mode"] == "pipeline"
+
+
+def test_capture_existing_trends_baseline_reuses_existing_docs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import recoleta.cli as cli
+
+    manifest = harness.build_eval_manifest(
+        fixtures_path=tmp_path / "windows.json",
+        out_dir=tmp_path / "bench-out",
+        windows=[
+            harness.EvalWindow(
+                window_id="week-2026-w10-software-intelligence",
+                granularity="week",
+                anchor_date="2026-03-05",
+                stream="software_intelligence",
+                topics=["agents"],
+                notes="weekly baseline",
+            )
+        ],
+    )
+
+    fake_document = SimpleNamespace(
+        id=285,
+        scope="software_intelligence",
+        granularity="week",
+        period_start=datetime(2026, 3, 2),
+        period_end=datetime(2026, 3, 9),
+        title="Weekly Trend",
+    )
+    fake_repository = SimpleNamespace(
+        list_documents=lambda **kwargs: [fake_document],  # noqa: ARG005
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "_build_settings",
+        lambda: SimpleNamespace(
+            recoleta_db_path=tmp_path / "source.db",
+            rag_lancedb_dir=tmp_path / "source-lancedb",
+            llm_output_language="Chinese (Simplified)",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_build_repository_for_db_path",
+        lambda *, db_path: fake_repository,  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        harness,
+        "_load_payload_json",
+        lambda *, repository, doc_id: {"title": "Weekly Trend", "clusters": []},  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        harness,
+        "_render_report_markdown",
+        lambda **kwargs: "# Weekly Trend\n\nExisting doc baseline.\n",
+    )
+    monkeypatch.setattr(
+        cli,
+        "_execute_stage",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("pipeline should not run")),
+    )
+
+    summary = harness.capture_eval_baseline(
+        manifest=manifest,
+        llm_model=None,
+        isolate_runtime=True,
+        capture_mode="existing-trends",
+    )
+
+    assert summary["capture_mode"] == "existing-trends"
+    assert summary["runtime"]["mode"] == "existing_docs"
+    artifact_dir = Path(manifest["windows"][0]["artifact_dir"])
+    tool_trace = json.loads((artifact_dir / "tool-trace.json").read_text(encoding="utf-8"))
+    assert tool_trace["trace_status"] == "unavailable_from_existing_doc"
+    capture_summary = json.loads(
+        (artifact_dir / "capture-summary.json").read_text(encoding="utf-8")
+    )
+    assert capture_summary["capture_mode"] == "existing-trends"
+    assert capture_summary["source_document"]["doc_id"] == 285
 
 
 def test_write_window_capture_failure_artifacts_records_error_context(tmp_path: Path) -> None:
@@ -298,11 +387,41 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
         "_load_debug_payload",
         lambda *, artifact_dir, run_id: {"debug": {"tool_calls_total": 2}},  # noqa: ARG005
     )
+    monkeypatch.setattr(
+        harness,
+        "prepare_isolated_eval_runtime",
+        lambda *, out_dir: {
+            "mode": "isolated_copy",
+            "source_db_path": str(tmp_path / "source.db"),
+            "active_db_path": str(tmp_path / "isolated.db"),
+            "source_lancedb_dir": str(tmp_path / "source-lancedb"),
+            "active_lancedb_dir": str(tmp_path / "isolated-lancedb"),
+            "backup_bundle_dir": str(tmp_path / "backup"),
+        },
+    )
 
-    summary = harness.capture_eval_baseline(manifest=manifest, llm_model="test/fake-model")
+    def _assert_runtime_overrides(*, stage_name: str, stage_runner: Any) -> Any:  # noqa: ARG001
+        assert str(harness.os.environ["RECOLETA_DB_PATH"]).endswith("isolated.db")
+        assert str(harness.os.environ["RAG_LANCEDB_DIR"]).endswith("isolated-lancedb")
+        return (
+            fake_settings,
+            fake_repository,
+            "run-week-baseline",
+            fake_result,
+        )
+
+    monkeypatch.setattr(cli, "_execute_stage", _assert_runtime_overrides)
+
+    summary = harness.capture_eval_baseline(
+        manifest=manifest,
+        llm_model="test/fake-model",
+        isolate_runtime=True,
+        capture_mode="pipeline",
+    )
 
     assert summary["captured_total"] == 1
     assert summary["failed_total"] == 0
+    assert summary["runtime"]["mode"] == "isolated_copy"
     artifact_dir = Path(manifest["windows"][0]["artifact_dir"])
     assert json.loads((artifact_dir / "capture-summary.json").read_text(encoding="utf-8"))["status"] == "captured"
     baseline_summary = json.loads(
@@ -337,7 +456,25 @@ def test_capture_eval_baseline_records_failed_window_when_stage_raises(
 
     monkeypatch.setattr(cli, "_execute_stage", _raise_execute_stage)
 
-    summary = harness.capture_eval_baseline(manifest=manifest, llm_model=None)
+    monkeypatch.setattr(
+        harness,
+        "prepare_isolated_eval_runtime",
+        lambda *, out_dir: {
+            "mode": "isolated_copy",
+            "source_db_path": str(tmp_path / "source.db"),
+            "active_db_path": str(tmp_path / "isolated.db"),
+            "source_lancedb_dir": str(tmp_path / "source-lancedb"),
+            "active_lancedb_dir": str(tmp_path / "isolated-lancedb"),
+            "backup_bundle_dir": str(tmp_path / "backup"),
+        },
+    )
+
+    summary = harness.capture_eval_baseline(
+        manifest=manifest,
+        llm_model=None,
+        isolate_runtime=True,
+        capture_mode="pipeline",
+    )
 
     assert summary["captured_total"] == 0
     assert summary["failed_total"] == 1
@@ -347,6 +484,45 @@ def test_capture_eval_baseline_records_failed_window_when_stage_raises(
     )
     assert capture_summary["status"] == "failed"
     assert capture_summary["error"]["type"] == "RuntimeError"
+
+
+def test_prepare_isolated_eval_runtime_clones_db_and_lancedb(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import recoleta.cli as cli
+
+    source_db_path = tmp_path / "source.db"
+    source_repository = Repository(db_path=source_db_path)
+    source_repository.init_schema()
+    source_lancedb_dir = tmp_path / "source-lancedb"
+    source_lancedb_dir.mkdir(parents=True)
+    (source_lancedb_dir / "sentinel.txt").write_text("live", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli,
+        "_build_settings",
+        lambda: SimpleNamespace(
+            recoleta_db_path=source_db_path,
+            rag_lancedb_dir=source_lancedb_dir,
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_build_repository_for_db_path",
+        lambda *, db_path: source_repository,  # noqa: ARG005
+    )
+
+    runtime = harness.prepare_isolated_eval_runtime(out_dir=tmp_path / "bench-out")
+
+    isolated_db_path = Path(runtime["active_db_path"])
+    isolated_lancedb_dir = Path(runtime["active_lancedb_dir"])
+    assert runtime["mode"] == "isolated_copy"
+    assert isolated_db_path.exists()
+    assert isolated_db_path != source_db_path
+    assert (isolated_lancedb_dir / "sentinel.txt").read_text(encoding="utf-8") == "live"
+    (isolated_lancedb_dir / "sentinel.txt").write_text("isolated", encoding="utf-8")
+    assert (source_lancedb_dir / "sentinel.txt").read_text(encoding="utf-8") == "live"
 
 
 def test_main_with_capture_baseline_emits_summary_path(
@@ -379,13 +555,19 @@ def test_main_with_capture_baseline_emits_summary_path(
         *,
         manifest: dict[str, Any],
         llm_model: str | None,
+        isolate_runtime: bool,
+        capture_mode: str,
     ) -> dict[str, Any]:
         called["manifest"] = manifest
         called["llm_model"] = llm_model
+        called["isolate_runtime"] = isolate_runtime
+        called["capture_mode"] = capture_mode
         summary = {
             "generated_at": "2026-03-12T00:00:00+00:00",
             "captured_total": 1,
             "failed_total": 0,
+            "capture_mode": "existing-trends",
+            "runtime": {"mode": "existing_docs"},
             "windows": [],
         }
         (Path(manifest["out_dir"]) / "baseline-summary.json").write_text(
@@ -410,7 +592,80 @@ def test_main_with_capture_baseline_emits_summary_path(
 
     assert exit_code == 0
     assert called["llm_model"] == "test/fake-model"
+    assert called["isolate_runtime"] is True
+    assert called["capture_mode"] == "existing-trends"
     cli_output = json.loads(capsys.readouterr().out)
     assert cli_output["baseline_summary"] == str(
         (out_dir.expanduser().resolve() / "baseline-summary.json")
     )
+
+
+def test_main_with_live_workspace_disables_runtime_isolation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    fixture_path = tmp_path / "windows.json"
+    fixture_path.write_text(
+        json.dumps(
+            {
+                "windows": [
+                    {
+                        "id": "day-agents",
+                        "granularity": "day",
+                        "anchor_date": "2026-03-05",
+                        "stream": "default",
+                        "topics": ["agents"],
+                        "notes": "daily baseline",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    called: dict[str, Any] = {}
+
+    def _fake_capture_eval_baseline(
+        *,
+        manifest: dict[str, Any],
+        llm_model: str | None,
+        isolate_runtime: bool,
+        capture_mode: str,
+    ) -> dict[str, Any]:
+        called["manifest"] = manifest
+        called["llm_model"] = llm_model
+        called["isolate_runtime"] = isolate_runtime
+        called["capture_mode"] = capture_mode
+        (Path(manifest["out_dir"]) / "baseline-summary.json").write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-12T00:00:00+00:00",
+                    "captured_total": 0,
+                    "failed_total": 0,
+                    "capture_mode": "pipeline",
+                    "runtime": {"mode": "live_workspace"},
+                    "windows": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return {}
+
+    monkeypatch.setattr(harness, "capture_eval_baseline", _fake_capture_eval_baseline)
+
+    exit_code = harness.main(
+        [
+            "--fixtures",
+            str(fixture_path),
+            "--out",
+            str(tmp_path / "bench-out"),
+            "--capture-baseline",
+            "--capture-mode",
+            "pipeline",
+            "--live-workspace",
+        ]
+    )
+
+    assert exit_code == 0
+    assert called["llm_model"] is None
+    assert called["isolate_runtime"] is False
+    assert called["capture_mode"] == "pipeline"

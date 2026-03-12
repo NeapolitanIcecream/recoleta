@@ -61,9 +61,15 @@ Current scaffold status on this branch:
 
 - `scripts/eval_trends_agent_loop.py` now writes `eval-manifest.json`,
   `eval-manifest.md`, and `run-eval.sh`
-- the same script also has an opt-in `--capture-baseline` mode that runs the
-  current loop and stores per-window `payload.json`, `tool-trace.json`,
-  `report.md`, and `capture-summary.json`
+- the same script also has an opt-in `--capture-baseline` mode; it should
+  default to `existing-trends`, which reuses already-generated trend docs from
+  the configured database and stores per-window `payload.json`,
+  `tool-trace.json`, `report.md`, and `capture-summary.json`
+- a slower `pipeline` capture mode remains available when we explicitly want to
+  regenerate trends with real model calls
+- pipeline capture should clone the configured SQLite + LanceDB workspace under
+  the eval output root by default, so real model calls do not write runs,
+  metrics, or trend docs back into the live workspace
 - prompt capture is still a stub artifact, so prompt-level analysis remains a
   follow-up rather than a completed deliverable in this PR
 

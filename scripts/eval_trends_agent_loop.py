@@ -7,10 +7,12 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 import os
 from pathlib import Path
+import shutil
 from typing import Any, cast
 
 
 _ALLOWED_GRANULARITIES = {"day", "week", "month"}
+_ALLOWED_CAPTURE_MODES = {"existing-trends", "pipeline"}
 
 
 @dataclass(slots=True)
@@ -32,6 +34,16 @@ class EvalCaptureResult:
     artifact_dir: str
     error_type: str | None = None
     error_message: str | None = None
+
+
+@dataclass(slots=True)
+class EvalRuntimeSnapshot:
+    mode: str
+    source_db_path: str
+    active_db_path: str
+    source_lancedb_dir: str | None
+    active_lancedb_dir: str
+    backup_bundle_dir: str | None = None
 
 
 def _normalize_string(value: Any, *, field_name: str) -> str:
@@ -328,6 +340,7 @@ def write_window_capture_artifacts(
     report_markdown: str,
     payload_json: dict[str, Any],
     tool_trace: dict[str, Any],
+    capture_metadata: dict[str, Any] | None = None,
 ) -> None:
     artifacts = cast(dict[str, str], window_manifest["artifacts"])
     artifact_dir = Path(str(window_manifest["artifact_dir"]))
@@ -356,6 +369,7 @@ def write_window_capture_artifacts(
             "doc_id": doc_id,
             "window_id": str(window_manifest.get("id", "") or ""),
             "granularity": str(window_manifest.get("granularity", "") or ""),
+            **(capture_metadata or {}),
         },
     )
 
@@ -482,20 +496,289 @@ def _temporary_env(overrides: dict[str, str]) -> Any:
                 os.environ[key] = previous_value
 
 
-def capture_eval_baseline(
+def _describe_workspace_runtime(*, mode: str) -> dict[str, Any]:
+    import recoleta.cli as cli
+
+    settings = cli._build_settings()
+    source_lancedb_dir = Path(settings.rag_lancedb_dir).expanduser().resolve()
+    return asdict(
+        EvalRuntimeSnapshot(
+            mode=mode,
+            source_db_path=str(Path(settings.recoleta_db_path).expanduser().resolve()),
+            active_db_path=str(Path(settings.recoleta_db_path).expanduser().resolve()),
+            source_lancedb_dir=str(source_lancedb_dir),
+            active_lancedb_dir=str(source_lancedb_dir),
+        )
+    )
+
+
+def describe_live_eval_runtime() -> dict[str, Any]:
+    return _describe_workspace_runtime(mode="live_workspace")
+
+
+def prepare_isolated_eval_runtime(*, out_dir: Path) -> dict[str, Any]:
+    import recoleta.cli as cli
+
+    settings = cli._build_settings()
+    source_db_path = Path(settings.recoleta_db_path).expanduser().resolve()
+    source_lancedb_dir = Path(settings.rag_lancedb_dir).expanduser().resolve()
+    runtime_root = out_dir.expanduser().resolve() / "_runtime"
+    runtime_root.mkdir(parents=True, exist_ok=True)
+
+    source_repository = cli._build_repository_for_db_path(db_path=source_db_path)
+    backup_result = source_repository.backup_database(output_dir=runtime_root / "db-backups")
+
+    isolated_db_path = runtime_root / "recoleta-eval.db"
+    type(source_repository).restore_database(
+        bundle_dir=backup_result.bundle_dir,
+        db_path=isolated_db_path,
+    )
+
+    isolated_lancedb_dir = runtime_root / "lancedb"
+    if isolated_lancedb_dir.exists():
+        shutil.rmtree(isolated_lancedb_dir)
+    if source_lancedb_dir.exists():
+        shutil.copytree(source_lancedb_dir, isolated_lancedb_dir)
+    else:
+        isolated_lancedb_dir.mkdir(parents=True, exist_ok=True)
+
+    return asdict(
+        EvalRuntimeSnapshot(
+            mode="isolated_copy",
+            source_db_path=str(source_db_path),
+            active_db_path=str(isolated_db_path),
+            source_lancedb_dir=str(source_lancedb_dir),
+            active_lancedb_dir=str(isolated_lancedb_dir),
+            backup_bundle_dir=str(backup_result.bundle_dir),
+        )
+    )
+
+
+def _serialize_capture_source_document(document: Any) -> dict[str, Any]:
+    period_start = getattr(document, "period_start", None)
+    period_end = getattr(document, "period_end", None)
+    return {
+        "doc_id": int(getattr(document, "id") or 0),
+        "scope": str(getattr(document, "scope", "") or ""),
+        "granularity": str(getattr(document, "granularity", "") or ""),
+        "title": str(getattr(document, "title", "") or ""),
+        "period_start": period_start.isoformat()
+        if isinstance(period_start, datetime)
+        else None,
+        "period_end": period_end.isoformat() if isinstance(period_end, datetime) else None,
+    }
+
+
+def _normalize_period_bound(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _find_existing_trend_document(
+    *,
+    repository: Any,
+    granularity: str,
+    anchor_date: str,
+    scope: str,
+) -> tuple[Any, datetime, datetime]:
+    period_start, period_end = _period_bounds(
+        granularity=granularity,
+        anchor_date=anchor_date,
+    )
+    documents = repository.list_documents(
+        doc_type="trend",
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        scope=scope,
+        limit=10,
+    )
+    exact_matches = [
+        document
+        for document in documents
+        if _normalize_period_bound(getattr(document, "period_start", None)) == period_start
+        and _normalize_period_bound(getattr(document, "period_end", None)) == period_end
+    ]
+    if not exact_matches:
+        raise ValueError(
+            "No existing trend document found for "
+            f"scope={scope} granularity={granularity} period_start={period_start.isoformat()}"
+        )
+    selected = sorted(
+        exact_matches,
+        key=lambda document: int(getattr(document, "id") or 0),
+        reverse=True,
+    )[0]
+    return selected, period_start, period_end
+
+
+def capture_existing_trends_baseline(
+    *,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    import recoleta.cli as cli
+
+    runtime = _describe_workspace_runtime(mode="existing_docs")
+    repository = cli._build_repository_for_db_path(
+        db_path=Path(str(runtime["active_db_path"]))
+    )
+    results: list[dict[str, Any]] = []
+    out_dir = Path(str(manifest["out_dir"]))
+    windows = cast(list[dict[str, Any]], manifest.get("windows", []))
+    for window_manifest in windows:
+        granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
+        anchor_date = str(window_manifest.get("anchor_date", "") or "").strip()
+        artifact_dir = Path(str(window_manifest.get("artifact_dir", "") or ""))
+        scope = str(window_manifest.get("stream", "") or "").strip() or "default"
+        try:
+            document, period_start, period_end = _find_existing_trend_document(
+                repository=repository,
+                granularity=granularity,
+                anchor_date=anchor_date,
+                scope=scope,
+            )
+            doc_id = int(getattr(document, "id") or 0)
+            payload_json = _load_payload_json(repository=repository, doc_id=doc_id)
+            report_markdown = _render_report_markdown(
+                repository=repository,
+                payload_json=payload_json,
+                doc_id=doc_id,
+                run_id=f"eval-existing-trends-{window_manifest['id']}",
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+                output_dir=artifact_dir / "rendered-note",
+                output_language=cli._build_settings().llm_output_language,
+            )
+            tool_trace = {
+                "trace_status": "unavailable_from_existing_doc",
+                "notes": (
+                    "Existing trend documents do not retain the originating run_id, "
+                    "so metrics-derived tool traces are unavailable without rerunning the pipeline."
+                ),
+                "source_document": _serialize_capture_source_document(document),
+            }
+            write_window_capture_artifacts(
+                window_manifest=window_manifest,
+                run_id=f"existing-trend-doc-{doc_id}",
+                doc_id=doc_id,
+                report_markdown=report_markdown,
+                payload_json=payload_json,
+                tool_trace=tool_trace,
+                capture_metadata={
+                    "capture_mode": "existing-trends",
+                    "source_document": _serialize_capture_source_document(document),
+                },
+            )
+            results.append(
+                asdict(
+                    EvalCaptureResult(
+                        window_id=str(window_manifest.get("id", "") or ""),
+                        status="captured",
+                        run_id=None,
+                        doc_id=doc_id,
+                        artifact_dir=str(artifact_dir),
+                    )
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            write_window_capture_failure_artifacts(
+                window_manifest=window_manifest,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
+            results.append(
+                asdict(
+                    EvalCaptureResult(
+                        window_id=str(window_manifest.get("id", "") or ""),
+                        status="failed",
+                        run_id=None,
+                        doc_id=None,
+                        artifact_dir=str(artifact_dir),
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                )
+            )
+    baseline_summary = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "capture_mode": "existing-trends",
+        "runtime": runtime,
+        "captured_total": sum(1 for row in results if row["status"] == "captured"),
+        "failed_total": sum(1 for row in results if row["status"] == "failed"),
+        "windows": results,
+    }
+    _json_dump(out_dir / "baseline-summary.json", baseline_summary)
+    return baseline_summary
+
+
+def capture_pipeline_baseline(
     *,
     manifest: dict[str, Any],
     llm_model: str | None,
+    isolate_runtime: bool,
 ) -> dict[str, Any]:
     import recoleta.cli as cli
 
     results: list[dict[str, Any]] = []
-    for window_manifest in cast(list[dict[str, Any]], manifest.get("windows", [])):
+    runtime: dict[str, Any]
+    out_dir = Path(str(manifest["out_dir"]))
+    windows = cast(list[dict[str, Any]], manifest.get("windows", []))
+    try:
+        runtime = (
+            prepare_isolated_eval_runtime(out_dir=out_dir)
+            if isolate_runtime
+            else describe_live_eval_runtime()
+        )
+    except Exception as exc:  # noqa: BLE001
+        for window_manifest in windows:
+            write_window_capture_failure_artifacts(
+                window_manifest=window_manifest,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+            )
+            results.append(
+                asdict(
+                    EvalCaptureResult(
+                        window_id=str(window_manifest.get("id", "") or ""),
+                        status="failed",
+                        run_id=None,
+                        doc_id=None,
+                        artifact_dir=str(window_manifest.get("artifact_dir", "") or ""),
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                )
+            )
+        baseline_summary = {
+            "generated_at": datetime.now(tz=UTC).isoformat(),
+            "capture_mode": "pipeline",
+            "runtime": {
+                "mode": "isolated_copy" if isolate_runtime else "live_workspace",
+                "status": "failed",
+                "error": {"type": type(exc).__name__, "message": str(exc)},
+            },
+            "captured_total": 0,
+            "failed_total": len(results),
+            "windows": results,
+        }
+        _json_dump(out_dir / "baseline-summary.json", baseline_summary)
+        return baseline_summary
+
+    runtime_env_overrides = {
+        "RECOLETA_DB_PATH": str(runtime["active_db_path"]),
+        "RAG_LANCEDB_DIR": str(runtime["active_lancedb_dir"]),
+    }
+    for window_manifest in windows:
         granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
         anchor_date = str(window_manifest.get("anchor_date", "") or "").strip()
         artifact_dir = Path(str(window_manifest.get("artifact_dir", "") or ""))
         artifact_dir.mkdir(parents=True, exist_ok=True)
         env_overrides = {
+            **runtime_env_overrides,
             "PUBLISH_TARGETS": "markdown",
             "MARKDOWN_OUTPUT_DIR": str(artifact_dir / "published"),
             "ARTIFACTS_DIR": str(artifact_dir / "debug-artifacts"),
@@ -543,6 +826,7 @@ def capture_eval_baseline(
                 report_markdown=report_markdown,
                 payload_json=payload_json,
                 tool_trace=tool_trace,
+                capture_metadata={"capture_mode": "pipeline"},
             )
             results.append(
                 asdict(
@@ -576,13 +860,33 @@ def capture_eval_baseline(
             )
     baseline_summary = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
+        "capture_mode": "pipeline",
+        "runtime": runtime,
         "captured_total": sum(1 for row in results if row["status"] == "captured"),
         "failed_total": sum(1 for row in results if row["status"] == "failed"),
         "windows": results,
     }
-    out_dir = Path(str(manifest["out_dir"]))
     _json_dump(out_dir / "baseline-summary.json", baseline_summary)
     return baseline_summary
+
+
+def capture_eval_baseline(
+    *,
+    manifest: dict[str, Any],
+    llm_model: str | None,
+    isolate_runtime: bool,
+    capture_mode: str,
+) -> dict[str, Any]:
+    normalized_mode = str(capture_mode or "").strip().lower()
+    if normalized_mode not in _ALLOWED_CAPTURE_MODES:
+        raise ValueError(f"unsupported capture mode: {capture_mode}")
+    if normalized_mode == "existing-trends":
+        return capture_existing_trends_baseline(manifest=manifest)
+    return capture_pipeline_baseline(
+        manifest=manifest,
+        llm_model=llm_model,
+        isolate_runtime=isolate_runtime,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -608,6 +912,25 @@ def _build_parser() -> argparse.ArgumentParser:
         "--capture-baseline",
         action="store_true",
         help="Run the current trends loop on each eval window and capture baseline artifacts.",
+    )
+    parser.add_argument(
+        "--capture-mode",
+        type=str,
+        default="existing-trends",
+        choices=sorted(_ALLOWED_CAPTURE_MODES),
+        help=(
+            "Baseline capture strategy. `existing-trends` reuses already-generated trend "
+            "documents from the configured database; `pipeline` reruns the trends stage."
+        ),
+    )
+    parser.add_argument(
+        "--live-workspace",
+        action="store_true",
+        help=(
+            "For `--capture-mode pipeline`, reuse the configured SQLite/LanceDB workspace "
+            "directly instead of cloning it under the eval output root. Unsafe: pipeline "
+            "capture runs will write into the live workspace."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -654,6 +977,8 @@ def main(argv: list[str] | None = None) -> int:
         _ = capture_eval_baseline(
             manifest=manifest,
             llm_model=str(args.model).strip() if args.model else None,
+            isolate_runtime=not bool(args.live_workspace),
+            capture_mode=str(args.capture_mode),
         )
         baseline_summary_path = str(
             resolved_out_dir.expanduser().resolve() / "baseline-summary.json"
