@@ -145,3 +145,42 @@ def test_publish_trend_note_strips_duplicate_trailing_links(
     text = note_path.read_text(encoding="utf-8")
     assert text.count("https://example.com/a") == 1
     assert text.count("https://example.com/b") == 1
+
+
+def test_publish_trend_note_prefers_item_note_links_over_source_urls(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 11, tzinfo=UTC)
+    period_end = period_start + timedelta(days=1)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=5,
+        title="Daily Trend",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="- overview",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "cluster-a",
+                "description": "desc",
+                "representative_chunks": [
+                    {
+                        "doc_id": 1,
+                        "chunk_index": 0,
+                        "title": "Paper A",
+                        "url": "https://example.com/a",
+                        "note_href": "../Inbox/2026-03-11--paper-a.md",
+                    }
+                ],
+            }
+        ],
+        highlights=["h"],
+    )
+
+    text = note_path.read_text(encoding="utf-8")
+    assert "- [Paper A](../Inbox/2026-03-11--paper-a.md)" in text
+    assert "- [Paper A](https://example.com/a)" not in text

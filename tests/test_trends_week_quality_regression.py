@@ -183,7 +183,6 @@ def test_trends_week_published_markdown_locks_quality_signals(
     assert "[" not in title_line
     assert "]" not in title_line
     assert re.search(r"^#{2,6}\s+Representative\b", md, flags=re.M | re.I) is not None
-    link_total = len(re.findall(r"\[[^\]]+\]\(https?://", md)) + len(
-        re.findall(r"<https?://", md)
-    )
-    assert link_total >= 3
+    item_link_total = len(re.findall(r"\[[^\]]+\]\(\.\./Inbox/[^)]+\.md\)", md))
+    assert item_link_total >= 3
+    assert "https://example.com/paper-" not in md

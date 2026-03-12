@@ -1,9 +1,29 @@
 from __future__ import annotations
 
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 
+from loguru import logger
+
 import recoleta.cli as cli
+
+
+class _SilentSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        _ = (format, args)
+        return None
+
+
+def _create_site_server(
+    *,
+    directory: Path,
+    host: str,
+    port: int,
+) -> ThreadingHTTPServer:
+    handler = partial(_SilentSimpleHTTPRequestHandler, directory=str(directory))
+    return ThreadingHTTPServer((host, port), handler)
 
 
 def run_site_build_command(
@@ -171,6 +191,71 @@ def run_site_stage_command(
         f"{stream_segment}"
         f"output={resolved_output_dir}"
     )
+
+
+def run_site_serve_command(
+    *,
+    input_dir: Path | None,
+    output_dir: Path | None,
+    limit: int | None,
+    host: str,
+    port: int,
+    build: bool,
+) -> None:
+    resolved_output_dir = (
+        output_dir.expanduser().resolve() if output_dir is not None else None
+    )
+    settings = (
+        cli._build_settings()
+        if resolved_output_dir is None or (build and input_dir is None)
+        else None
+    )
+    if resolved_output_dir is None:
+        assert settings is not None
+        resolved_output_dir = settings.markdown_output_dir / "site"
+
+    if build:
+        run_site_build_command(
+            input_dir=input_dir,
+            output_dir=resolved_output_dir,
+            limit=limit,
+        )
+
+    if not resolved_output_dir.exists() or not resolved_output_dir.is_dir():
+        raise ValueError(
+            f"Static site output directory must exist before serving: {resolved_output_dir}"
+        )
+
+    console_cls = cli._runtime_symbols()["Console"]
+    console = (
+        console_cls(stderr=settings.log_json) if settings is not None else console_cls()
+    )
+    log = logger.bind(
+        module="cli.site.serve",
+        host=host,
+        port=port,
+    )
+    try:
+        with _create_site_server(
+            directory=resolved_output_dir,
+            host=host,
+            port=port,
+        ) as server:
+            served_host = str(server.server_address[0])
+            served_port = int(server.server_address[1])
+            log.info("Site preview server started")
+            console.print(
+                "[green]site serve ready[/green] "
+                f"url=http://{served_host}:{served_port} "
+                f"output={resolved_output_dir}"
+            )
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                log.info("Site preview server stopped")
+    except OSError as exc:
+        log.warning("site preview server failed error={}", str(exc))
+        raise
 
 
 def run_site_gh_deploy_command(

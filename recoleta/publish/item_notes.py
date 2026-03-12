@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,12 @@ from slugify import slugify
 
 from recoleta.item_summary import normalize_item_summary_markdown
 
-__all__ = ["write_markdown_note", "write_obsidian_note"]
+__all__ = [
+    "resolve_item_note_path",
+    "resolve_item_note_href",
+    "write_markdown_note",
+    "write_obsidian_note",
+]
 
 
 def _read_yaml_frontmatter(path: Path) -> dict[str, Any] | None:
@@ -57,6 +63,43 @@ def _item_note_path(
         if existing_url != canonical_url.strip():
             note_path = note_dir / f"{date_prefix}--{slug}--{item_id}.md"
     return note_path
+
+
+def resolve_item_note_path(
+    *,
+    note_dir: Path,
+    item_id: int,
+    title: str,
+    canonical_url: str,
+    published_at: datetime | None,
+) -> Path:
+    return _item_note_path(
+        note_dir=note_dir,
+        item_id=item_id,
+        title=title,
+        canonical_url=canonical_url,
+        published_at=published_at,
+    )
+
+
+def resolve_item_note_href(
+    *,
+    note_dir: Path,
+    from_dir: Path,
+    item_id: int,
+    title: str,
+    canonical_url: str,
+    published_at: datetime | None,
+) -> str:
+    note_path = resolve_item_note_path(
+        note_dir=note_dir,
+        item_id=item_id,
+        title=title,
+        canonical_url=canonical_url,
+        published_at=published_at,
+    )
+    relative = Path(os.path.relpath(note_path, start=from_dir))
+    return relative.as_posix()
 
 
 def _render_item_note_lines(

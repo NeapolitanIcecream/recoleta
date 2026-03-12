@@ -86,13 +86,16 @@ This keeps the canonical markdown unchanged while giving a reproducible record o
 
 The static site exporter turns trend markdown notes into a standalone website:
 
+- `recoleta site serve`: build the site locally and serve it on a loopback HTTP endpoint for preview
 - `recoleta site build`: render a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default
 - `recoleta site gh-deploy`: build the public site and push a dedicated GitHub Pages branch (default: `gh-pages`)
 - `recoleta site stage`: mirror trend markdown/PDF artifacts to `./site-content/Trends` by default, or `./site-content/Streams/<stream>/Trends` in topic-stream mode
 
 Important behavior:
 
-- All three commands treat their output directories as managed artifacts and clear stale files before writing.
+- `recoleta site serve` uses Python's standard-library HTTP server; it is a preview helper, not a full dev server.
+- `recoleta materialize outputs` is the offline repair path for existing outputs: it backfills item notes and rerenders trend markdown from stored DB documents without mutating upstream ingest/analyze state, and can optionally refresh site/PDF artifacts.
+- All commands that rebuild site output treat their output directories as managed artifacts and clear stale files before writing.
 - When `--input-dir` and `--output-dir` are passed explicitly, they do not require a full Recoleta runtime config. This is intentional so CI and GitHub Pages can build from a staged content snapshot.
 - `recoleta site gh-deploy` keeps `main` free of committed site snapshots and Pages-specific workflow files by publishing a derived branch instead.
 - `recoleta site stage` remains useful for custom CI pipelines and non-GitHub static hosts when you want an explicit repo-local snapshot.
@@ -109,7 +112,7 @@ After `recoleta trends`, the CLI prints:
 - trend completion info (`doc_id`, `granularity`, `period_start`, `period_end`)
 - the billing report table
 
-After `recoleta site build` / `recoleta site stage` / `recoleta site gh-deploy`, the CLI prints:
+After `recoleta site serve` / `recoleta site build` / `recoleta site stage` / `recoleta site gh-deploy`, the CLI prints:
 
 - exported trend/topic counts
 - output directory path

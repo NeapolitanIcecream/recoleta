@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from recoleta.site import export_trend_static_site, stage_trend_site_source
-from recoleta.publish import write_markdown_trend_note
+from recoleta.publish import write_markdown_note, write_markdown_trend_note
 
 
 def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
@@ -259,6 +259,87 @@ def test_export_trend_static_site_hides_legacy_topics_body_section(
     assert "section-label'>Topics<" not in detail_html
 
 
+def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    item_note = write_markdown_note(
+        output_dir=output_dir,
+        item_id=41,
+        title="Robometer: Scaling General-Purpose Robotic Reward Models",
+        source="rss",
+        canonical_url="https://example.com/robometer",
+        published_at=datetime(2026, 3, 2, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents", "robotics"],
+        relevance_score=0.95,
+        run_id="run-item-site-1",
+        summary="## Summary\n\nReward models get a stronger comparison signal.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=74,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
+        run_id="run-site-items-1",
+        overview_md=(
+            "## Overview\n\n"
+            f"Start with [Robometer](../Inbox/{item_note.name}).\n"
+        ),
+        topics=["agents", "robotics"],
+        clusters=[
+            {
+                "name": "Reward models",
+                "description": "Trajectory comparisons are improving alignment.",
+                "representative_chunks": [
+                    {
+                        "doc_id": 41,
+                        "chunk_index": 0,
+                        "title": "Robometer: Scaling General-Purpose Robotic Reward Models",
+                        "url": "https://example.com/robometer",
+                        "note_href": f"../Inbox/{item_note.name}",
+                        "authors": ["Alice"],
+                    }
+                ],
+            }
+        ],
+        highlights=["Reward modeling is getting easier to operationalize."],
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    item_page = site_dir / "items" / f"{item_note.stem}.html"
+    assert item_page.exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["items_total"] == 1
+    assert f"items/{item_note.stem}.html" in manifest["files"]["item_pages"]
+
+    detail_html = (site_dir / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert f"../items/{item_note.stem}.html" in detail_html
+    assert "../Inbox/" not in detail_html
+    assert "https://example.com/robometer" not in detail_html
+
+    item_html = item_page.read_text(encoding="utf-8")
+    assert "Robometer: Scaling General-Purpose Robotic Reward Models" in item_html
+    assert "Open source" in item_html
+    assert "https://example.com/robometer" in item_html
+    assert "Source markdown" in item_html
+    assert "document-flow" in item_html
+    assert "<p class='detail-dek'>Reward models get a stronger comparison signal.</p>" in item_html
+    assert "summary-grid summary-grid-single" in item_html
+    assert "surface-card section-card summary-card summary-card-primary" in item_html
+    assert '>Link</h2>' in item_html
+
+
 def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stream_pages(
     tmp_path: Path,
 ) -> None:
@@ -457,3 +538,89 @@ def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_strea
     assert built_manifest["trends_total"] == 2
     assert (site_dir / "trends" / f"{legacy_note.stem}.html").exists()
     assert (site_dir / "trends" / f"{stream_note.stem}.html").exists()
+
+
+def test_stage_trend_site_source_stages_item_notes_next_to_trends(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    item_note = write_markdown_note(
+        output_dir=notes_root,
+        item_id=51,
+        title="Agentic Testing",
+        source="rss",
+        canonical_url="https://example.com/agentic-testing",
+        published_at=datetime(2026, 3, 9, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.93,
+        run_id="run-stage-item-1",
+        summary="## Summary\n\nA compact item note.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=113,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-stage-item-1",
+        overview_md=f"## Overview\n\nSee [Agentic Testing](../Inbox/{item_note.name}).\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
+
+    staged_trends_dir = tmp_path / "site-content" / "Trends"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root / "Trends",
+        output_dir=staged_trends_dir,
+    )
+
+    assert manifest_path == staged_trends_dir / "manifest.json"
+    assert (staged_trends_dir / trend_note.name).exists()
+    assert (staged_trends_dir.parent / "Inbox" / item_note.name).exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["items_total"] == 1
+    assert f"Inbox/{item_note.name}" in manifest["files"]["items_markdown"]
+
+
+def test_stage_trend_site_source_preserves_unrelated_parent_files_for_trends_output_dir(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=118,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-stage-root-guard-1",
+        overview_md="## Overview\n\nA compact trend note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    stage_root = tmp_path / "site-content"
+    stage_root.mkdir(parents=True, exist_ok=True)
+    keep_path = stage_root / "keep.txt"
+    keep_path.write_text("keep\n", encoding="utf-8")
+    stale_inbox_path = stage_root / "Inbox" / "stale.md"
+    stale_inbox_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_inbox_path.write_text("stale\n", encoding="utf-8")
+
+    staged_trends_dir = stage_root / "Trends"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root / "Trends",
+        output_dir=staged_trends_dir,
+    )
+
+    assert manifest_path == staged_trends_dir / "manifest.json"
+    assert keep_path.exists()
+    assert keep_path.read_text(encoding="utf-8") == "keep\n"
+    assert not stale_inbox_path.exists()
+    assert (staged_trends_dir / trend_note.name).exists()

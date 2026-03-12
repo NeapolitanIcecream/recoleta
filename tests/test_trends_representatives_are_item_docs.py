@@ -131,7 +131,9 @@ def test_trends_week_enforces_item_level_representatives(
     assert rep_section_start >= 0
     rep_section = note_text[rep_section_start:]
 
-    assert paper_url in rep_section
+    assert paper_title in rep_section
+    assert "../Inbox/" in rep_section
+    assert paper_url not in rep_section
     assert "Daily Trend" not in rep_section
 
     metrics = repository.list_metrics(run_id="run-week-reps-item")

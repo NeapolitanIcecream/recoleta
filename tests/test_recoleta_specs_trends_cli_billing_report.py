@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 import recoleta.cli
+import recoleta.cli.site
 import recoleta.site
 
 
@@ -104,6 +106,22 @@ class _FakeService:
             period_end=datetime(2026, 1, 2, tzinfo=UTC),
             title="Daily Trend",
         )
+
+
+class _FakeSiteServer:
+    def __init__(self, *, host: str, port: int) -> None:
+        self.server_address = (host, port)
+        self.served = False
+
+    def __enter__(self) -> _FakeSiteServer:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:  # type: ignore[no-untyped-def]
+        return False
+
+    def serve_forever(self) -> None:
+        self.served = True
+        raise KeyboardInterrupt
 
 
 def test_trends_cli_prints_billing_report_by_default(
@@ -522,3 +540,147 @@ def test_site_stage_cli_uses_repo_local_root_default_for_topic_streams(
     assert calls["output_dir"] == tmp_path / "site-content"
     assert calls["limit"] is None
     assert "site stage completed" in result.stdout
+
+
+def test_site_serve_cli_builds_then_serves_with_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_settings.markdown_output_dir = tmp_path / "output"
+    calls: dict[str, object] = {}
+    fake_server = _FakeSiteServer(host="127.0.0.1", port=8000)
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+
+    def _fake_export_trend_static_site(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+        calls["input_dir"] = input_dir
+        calls["output_dir"] = output_dir
+        calls["limit"] = limit
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "index.html").write_text("site\n", encoding="utf-8")
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            '{"trends_total": 3, "topics_total": 5}\n',
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    def _fake_create_site_server(*, directory, host, port):  # type: ignore[no-untyped-def]
+        calls["serve_directory"] = directory
+        calls["serve_host"] = host
+        calls["serve_port"] = port
+        return fake_server
+
+    monkeypatch.setattr(
+        recoleta.site,
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+    monkeypatch.setattr(
+        recoleta.cli.site,
+        "_create_site_server",
+        _fake_create_site_server,
+    )
+
+    result = runner.invoke(recoleta.cli.app, ["site", "serve"])
+
+    assert result.exit_code == 0
+    assert calls["input_dir"] == fake_settings.markdown_output_dir / "Trends"
+    assert calls["output_dir"] == fake_settings.markdown_output_dir / "site"
+    assert calls["serve_directory"] == fake_settings.markdown_output_dir / "site"
+    assert calls["serve_host"] == "127.0.0.1"
+    assert calls["serve_port"] == 8000
+    assert fake_server.served is True
+    assert "site build completed" in result.stdout
+    assert "site serve ready" in result.stdout
+
+
+def test_site_serve_cli_with_explicit_output_and_no_build_does_not_require_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    calls: dict[str, object] = {}
+    fake_server = _FakeSiteServer(host="127.0.0.1", port=9000)
+
+    def _fail_build_settings():  # type: ignore[no-untyped-def]
+        raise AssertionError("settings should not be loaded")
+
+    def _fake_create_site_server(*, directory, host, port):  # type: ignore[no-untyped-def]
+        calls["serve_directory"] = directory
+        calls["serve_host"] = host
+        calls["serve_port"] = port
+        return fake_server
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", _fail_build_settings)
+    monkeypatch.setattr(
+        recoleta.cli.site,
+        "_create_site_server",
+        _fake_create_site_server,
+    )
+
+    output_dir = tmp_path / "site"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "index.html").write_text("site\n", encoding="utf-8")
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "site",
+            "serve",
+            "--output-dir",
+            str(output_dir),
+            "--no-build",
+            "--port",
+            "9000",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["serve_directory"] == output_dir.resolve()
+    assert calls["serve_host"] == "127.0.0.1"
+    assert calls["serve_port"] == 9000
+    assert fake_server.served is True
+    assert "site build completed" not in result.stdout
+    assert "site serve ready" in result.stdout
+
+
+def test_site_serve_logs_warning_when_server_start_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from loguru import logger as loguru_logger
+
+    output_dir = tmp_path / "site"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "index.html").write_text("site\n", encoding="utf-8")
+
+    def _raise_server_error(**_: object):  # type: ignore[no-untyped-def]
+        raise OSError("address already in use")
+
+    monkeypatch.setattr(
+        recoleta.cli.site,
+        "_create_site_server",
+        _raise_server_error,
+    )
+
+    stream = io.StringIO()
+    sink_id = loguru_logger.add(stream, level="WARNING", serialize=True)
+    try:
+        with pytest.raises(OSError, match="address already in use"):
+            recoleta.cli.site.run_site_serve_command(
+                input_dir=None,
+                output_dir=output_dir,
+                limit=None,
+                host="127.0.0.1",
+                port=8000,
+                build=False,
+            )
+    finally:
+        loguru_logger.remove(sink_id)
+
+    payload = stream.getvalue()
+    assert "cli.site.serve" in payload
+    assert "site preview server failed" in payload
