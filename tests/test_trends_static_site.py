@@ -90,6 +90,85 @@ def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
     assert "<section class='page-hero'>" not in detail_html
 
 
+def test_export_trend_static_site_orders_weekly_briefs_before_latest_daily_child(
+    tmp_path: Path,
+) -> None:
+    """Regression: a weekly brief should render before the latest daily brief it summarizes."""
+    output_dir = tmp_path / "notes"
+    weekly_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=81,
+        title="Week 10 roundup",
+        granularity="week",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-weekly-first",
+        overview_md="## Overview\n\nWeekly synthesis.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Weekly synthesis lands before the child daily brief."],
+    )
+    daily_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=82,
+        title="March 8 daily",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-daily-second",
+        overview_md="## Overview\n\nDaily synthesis.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Daily brief remains visible under the weekly synthesis."],
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["files"]["trend_pages"] == [
+        f"trends/{weekly_note.stem}.html",
+        f"trends/{daily_note.stem}.html",
+    ]
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert index_html.index("Week 10 roundup") < index_html.index("March 8 daily")
+
+    archive_html = (site_dir / "archive.html").read_text(encoding="utf-8")
+    assert archive_html.index("Week 10 roundup") < archive_html.index("March 8 daily")
+
+
+def test_export_trend_static_site_keeps_mobile_shell_rules_within_viewport(
+    tmp_path: Path,
+) -> None:
+    """Regression: the generated mobile stylesheet should stack the header and keep the shell width valid."""
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=83,
+        title="Mobile layout check",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-mobile-layout",
+        overview_md="## Overview\n\nA narrow-screen regression guard.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Small screens should stay inside the viewport."],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    stylesheet = (site_dir / "assets" / "site.css").read_text(encoding="utf-8")
+    assert "width: calc(100% - 16px);" in stylesheet
+    assert "flex-direction: column;" in stylesheet
+    assert "overflow-wrap: anywhere;" in stylesheet
+
+
 def test_stage_trend_site_source_mirrors_notes_and_cleans_stale_files(
     tmp_path: Path,
 ) -> None:
