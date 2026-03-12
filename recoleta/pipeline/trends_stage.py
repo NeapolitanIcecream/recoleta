@@ -78,6 +78,7 @@ class TrendStageService(Protocol):
         backfill: bool = False,
         backfill_mode: str = "missing",
         debug_pdf: bool = False,
+        reuse_existing_corpus: bool = False,
     ) -> TrendResult: ...
 
     def _settings_for_topic_stream(self, stream: TopicStreamRuntime) -> Any: ...
@@ -130,6 +131,7 @@ def run_trends_stage(
     backfill_mode: str = "missing",
     debug_pdf: bool = False,
     scope: str = DEFAULT_TOPIC_STREAM,
+    reuse_existing_corpus: bool = False,
 ) -> TrendResult:
     if service._explicit_topic_streams:
         return run_trends_topic_streams_stage(
@@ -141,6 +143,7 @@ def run_trends_stage(
             backfill=backfill,
             backfill_mode=backfill_mode,
             debug_pdf=debug_pdf,
+            reuse_existing_corpus=reuse_existing_corpus,
         )
     log = logger.bind(module="pipeline.trends", run_id=run_id)
     metric_namespace = _trend_metric_name("pipeline.trends", scope=scope)
@@ -164,6 +167,11 @@ def run_trends_stage(
         include_debug = bool(
             service.settings.write_debug_artifacts
             and service.settings.artifacts_dir is not None
+        )
+        record_metric(
+            name="pipeline.trends.corpus.reuse_existing",
+            value=1.0 if reuse_existing_corpus else 0.0,
+            unit="bool",
         )
 
         def _record_index_metrics(stats: dict[str, Any], *, failed: bool) -> None:
@@ -249,24 +257,105 @@ def run_trends_stage(
                 period_end=period_end,
             )
 
+        def _skipped_index_stats() -> dict[str, Any]:
+            skipped_stats = {
+                "items_total": 0,
+                "docs_upserted": 0,
+                "docs_deleted": 0,
+                "chunks_upserted": 0,
+                "items_filtered_out": 0,
+                "duration_ms": 0,
+            }
+            _record_index_metrics(skipped_stats, failed=False)
+            return skipped_stats
+
         if normalized_granularity == "day":
             period_start, period_end = trends.day_period_bounds(anchor)
             corpus_doc_type = "item"
             corpus_granularity: str | None = None
-            _prepare_period_backlog()
-            index_stats = _index_items_for_period(required=True)
+            if reuse_existing_corpus:
+                record_metric(
+                    name="pipeline.trends.prepare.skipped_total",
+                    value=1,
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.index.skipped_total",
+                    value=1,
+                    unit="count",
+                )
+                index_stats = _skipped_index_stats()
+            else:
+                record_metric(
+                    name="pipeline.trends.prepare.skipped_total",
+                    value=0,
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.index.skipped_total",
+                    value=0,
+                    unit="count",
+                )
+                _prepare_period_backlog()
+                index_stats = _index_items_for_period(required=True)
         elif normalized_granularity == "week":
             period_start, period_end = trends.week_period_bounds(anchor)
             corpus_doc_type = "trend"
             corpus_granularity = "day"
-            _prepare_period_backlog()
-            index_stats = _index_items_for_period(required=False)
+            if reuse_existing_corpus:
+                record_metric(
+                    name="pipeline.trends.prepare.skipped_total",
+                    value=1,
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.index.skipped_total",
+                    value=1,
+                    unit="count",
+                )
+                index_stats = _skipped_index_stats()
+            else:
+                record_metric(
+                    name="pipeline.trends.prepare.skipped_total",
+                    value=0,
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.index.skipped_total",
+                    value=0,
+                    unit="count",
+                )
+                _prepare_period_backlog()
+                index_stats = _index_items_for_period(required=False)
         else:
             period_start, period_end = trends.month_period_bounds(anchor)
             corpus_doc_type = "trend"
             corpus_granularity = "week"
-            _prepare_period_backlog()
-            index_stats = _index_items_for_period(required=False)
+            if reuse_existing_corpus:
+                record_metric(
+                    name="pipeline.trends.prepare.skipped_total",
+                    value=1,
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.index.skipped_total",
+                    value=1,
+                    unit="count",
+                )
+                index_stats = _skipped_index_stats()
+            else:
+                record_metric(
+                    name="pipeline.trends.prepare.skipped_total",
+                    value=0,
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.index.skipped_total",
+                    value=0,
+                    unit="count",
+                )
+                _prepare_period_backlog()
+                index_stats = _index_items_for_period(required=False)
 
         model = llm_model or service.settings.llm_model
 
@@ -317,6 +406,7 @@ def run_trends_stage(
                             backfill=False,
                             backfill_mode="missing",
                             scope=scope,
+                            reuse_existing_corpus=reuse_existing_corpus,
                         )
                         backfill_generated_total += 1
                     except Exception as day_exc:  # noqa: BLE001
@@ -361,6 +451,7 @@ def run_trends_stage(
                             backfill=False,
                             backfill_mode="missing",
                             scope=scope,
+                            reuse_existing_corpus=reuse_existing_corpus,
                         )
                         backfill_generated_total += 1
                     except Exception as week_exc:  # noqa: BLE001
@@ -417,12 +508,12 @@ def run_trends_stage(
             )
 
         corpus_docs_total = 0
-        if corpus_doc_type == "item":
+        if corpus_doc_type == "item" and not reuse_existing_corpus:
             corpus_docs_total = int(index_stats.get("docs_upserted") or 0)
         else:
             probe = cast(Any, service.repository).list_documents(
-                doc_type="trend",
-                granularity=corpus_granularity,
+                doc_type=corpus_doc_type,
+                granularity=corpus_granularity if corpus_doc_type == "trend" else None,
                 period_start=period_start,
                 period_end=period_end,
                 scope=scope,
@@ -1269,6 +1360,7 @@ def run_trends_topic_streams_stage(
     backfill: bool = False,
     backfill_mode: str = "missing",
     debug_pdf: bool = False,
+    reuse_existing_corpus: bool = False,
 ) -> TrendResult:
     log = logger.bind(module="pipeline.trends", run_id=run_id)
     results: list[TrendResult] = []
@@ -1297,6 +1389,7 @@ def run_trends_topic_streams_stage(
             backfill_mode=backfill_mode,
             debug_pdf=debug_pdf,
             scope=stream.name,
+            reuse_existing_corpus=reuse_existing_corpus,
         )
         result.stream = stream.name
         results.append(result)

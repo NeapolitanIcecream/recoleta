@@ -12,7 +12,7 @@ from typing import Any, cast
 
 
 _ALLOWED_GRANULARITIES = {"day", "week", "month"}
-_ALLOWED_CAPTURE_MODES = {"existing-trends", "pipeline"}
+_ALLOWED_CAPTURE_MODES = {"existing-trends", "existing-corpus", "pipeline"}
 
 
 @dataclass(slots=True)
@@ -715,11 +715,83 @@ def capture_existing_trends_baseline(
     return baseline_summary
 
 
-def capture_pipeline_baseline(
+def _run_window_trends_capture(
+    service: Any,
+    *,
+    stage_run_id: str,
+    window_manifest: dict[str, Any],
+    llm_model: str | None,
+    reuse_existing_corpus: bool,
+    backfill: bool,
+) -> Any:
+    granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
+    anchor_date = date.fromisoformat(str(window_manifest.get("anchor_date", "") or "").strip())
+    stream = str(window_manifest.get("stream", "") or "").strip() or "default"
+    if bool(getattr(service, "_explicit_topic_streams", False)):
+        selected_stream = next(
+            (
+                stream_runtime
+                for stream_runtime in list(getattr(service, "_topic_streams", []) or [])
+                if str(getattr(stream_runtime, "name", "") or "").strip() == stream
+            ),
+            None,
+        )
+        if selected_stream is None:
+            raise ValueError(f"unknown topic stream for eval window: {stream}")
+        stream_settings = service._settings_for_topic_stream(selected_stream)
+        stream_targets = set(getattr(selected_stream, "publish_targets", []) or [])
+        stream_sender = (
+            service._telegram_sender_for_stream(selected_stream)
+            if "telegram" in stream_targets
+            else None
+        )
+        service_factory = cast(Any, service.__class__)
+        child_service = service_factory(
+            settings=stream_settings,
+            repository=service.repository,
+            analyzer=service.analyzer,
+            triage=service.semantic_triage,
+            telegram_sender=stream_sender,
+        )
+        from recoleta.pipeline.trends_stage import run_trends_stage
+
+        return run_trends_stage(
+            child_service,
+            run_id=stage_run_id,
+            granularity=granularity,
+            anchor_date=anchor_date,
+            llm_model=llm_model,
+            backfill=backfill,
+            backfill_mode="missing",
+            debug_pdf=False,
+            scope=stream,
+            reuse_existing_corpus=reuse_existing_corpus,
+        )
+    if stream != "default":
+        raise ValueError(
+            "stream-specific eval window requires explicit topic streams in settings: "
+            f"{stream}"
+        )
+    return service.trends(
+        run_id=stage_run_id,
+        granularity=granularity,
+        anchor_date=anchor_date,
+        llm_model=llm_model,
+        backfill=backfill,
+        backfill_mode="missing",
+        debug_pdf=False,
+        reuse_existing_corpus=reuse_existing_corpus,
+    )
+
+
+def capture_trends_rerun_baseline(
     *,
     manifest: dict[str, Any],
     llm_model: str | None,
     isolate_runtime: bool,
+    capture_mode: str,
+    reuse_existing_corpus: bool,
+    backfill: bool,
 ) -> dict[str, Any]:
     import recoleta.cli as cli
 
@@ -755,7 +827,7 @@ def capture_pipeline_baseline(
             )
         baseline_summary = {
             "generated_at": datetime.now(tz=UTC).isoformat(),
-            "capture_mode": "pipeline",
+            "capture_mode": capture_mode,
             "runtime": {
                 "mode": "isolated_copy" if isolate_runtime else "live_workspace",
                 "status": "failed",
@@ -788,14 +860,13 @@ def capture_pipeline_baseline(
             with _temporary_env(env_overrides):
                 settings, repository, run_id, result = cli._execute_stage(
                     stage_name="trends",
-                    stage_runner=lambda service, stage_run_id: service.trends(
-                        run_id=stage_run_id,
-                        granularity=granularity,
-                        anchor_date=date.fromisoformat(anchor_date),
+                    stage_runner=lambda service, stage_run_id: _run_window_trends_capture(
+                        service,
+                        stage_run_id=stage_run_id,
+                        window_manifest=window_manifest,
                         llm_model=llm_model,
-                        backfill=granularity in {"week", "month"},
-                        backfill_mode="missing",
-                        debug_pdf=False,
+                        reuse_existing_corpus=reuse_existing_corpus,
+                        backfill=backfill,
                     ),
                 )
             period_start, period_end = _period_bounds(
@@ -826,7 +897,10 @@ def capture_pipeline_baseline(
                 report_markdown=report_markdown,
                 payload_json=payload_json,
                 tool_trace=tool_trace,
-                capture_metadata={"capture_mode": "pipeline"},
+                capture_metadata={
+                    "capture_mode": capture_mode,
+                    "reuse_existing_corpus": reuse_existing_corpus,
+                },
             )
             results.append(
                 asdict(
@@ -860,7 +934,7 @@ def capture_pipeline_baseline(
             )
     baseline_summary = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
-        "capture_mode": "pipeline",
+        "capture_mode": capture_mode,
         "runtime": runtime,
         "captured_total": sum(1 for row in results if row["status"] == "captured"),
         "failed_total": sum(1 for row in results if row["status"] == "failed"),
@@ -882,10 +956,22 @@ def capture_eval_baseline(
         raise ValueError(f"unsupported capture mode: {capture_mode}")
     if normalized_mode == "existing-trends":
         return capture_existing_trends_baseline(manifest=manifest)
-    return capture_pipeline_baseline(
+    if normalized_mode == "existing-corpus":
+        return capture_trends_rerun_baseline(
+            manifest=manifest,
+            llm_model=llm_model,
+            isolate_runtime=isolate_runtime,
+            capture_mode="existing-corpus",
+            reuse_existing_corpus=True,
+            backfill=False,
+        )
+    return capture_trends_rerun_baseline(
         manifest=manifest,
         llm_model=llm_model,
         isolate_runtime=isolate_runtime,
+        capture_mode="pipeline",
+        reuse_existing_corpus=False,
+        backfill=True,
     )
 
 
@@ -916,20 +1002,22 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--capture-mode",
         type=str,
-        default="existing-trends",
+        default="existing-corpus",
         choices=sorted(_ALLOWED_CAPTURE_MODES),
         help=(
-            "Baseline capture strategy. `existing-trends` reuses already-generated trend "
-            "documents from the configured database; `pipeline` reruns the trends stage."
+            "Baseline capture strategy. `existing-corpus` reruns trend generation on the "
+            "existing indexed corpus, `existing-trends` snapshots already-generated trend "
+            "documents, and `pipeline` reruns the full trends stage."
         ),
     )
     parser.add_argument(
         "--live-workspace",
         action="store_true",
         help=(
-            "For `--capture-mode pipeline`, reuse the configured SQLite/LanceDB workspace "
-            "directly instead of cloning it under the eval output root. Unsafe: pipeline "
-            "capture runs will write into the live workspace."
+            "For rerun capture modes (`existing-corpus`, `pipeline`), reuse the configured "
+            "SQLite/LanceDB workspace directly instead of cloning it under the eval output "
+            "root. Unsafe: rerun capture writes runs, metrics, and trend docs into the "
+            "live workspace."
         ),
     )
     parser.add_argument(

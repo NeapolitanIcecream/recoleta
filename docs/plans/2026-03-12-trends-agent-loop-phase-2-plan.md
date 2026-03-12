@@ -62,9 +62,13 @@ Current scaffold status on this branch:
 - `scripts/eval_trends_agent_loop.py` now writes `eval-manifest.json`,
   `eval-manifest.md`, and `run-eval.sh`
 - the same script also has an opt-in `--capture-baseline` mode; it should
-  default to `existing-trends`, which reuses already-generated trend docs from
-  the configured database and stores per-window `payload.json`,
-  `tool-trace.json`, `report.md`, and `capture-summary.json`
+  default to `existing-corpus`, which reruns trend generation against the
+  current indexed corpus while skipping `prepare/analyze`; a lighter
+  `existing-trends` snapshot mode can still reuse already-generated trend docs
+  when we only need frozen reference artifacts
+- the default live fixture should target real windows that already exist in the
+  workspace corpus, so current manual eval can focus on the `software_intelligence`
+  `2026-03-05` day note and `2026-W10` week note
 - a slower `pipeline` capture mode remains available when we explicitly want to
   regenerate trends with real model calls
 - pipeline capture should clone the configured SQLite + LanceDB workspace under

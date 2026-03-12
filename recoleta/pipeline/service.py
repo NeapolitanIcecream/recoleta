@@ -3963,6 +3963,7 @@ class PipelineService:
         backfill: bool = False,
         backfill_mode: str = "missing",
         debug_pdf: bool = False,
+        reuse_existing_corpus: bool = False,
     ) -> TrendResult:
         return run_trends_stage(
             self,
@@ -3973,6 +3974,7 @@ class PipelineService:
             backfill=backfill,
             backfill_mode=backfill_mode,
             debug_pdf=debug_pdf,
+            reuse_existing_corpus=reuse_existing_corpus,
         )
 
     def _trends_topic_streams(
@@ -3985,6 +3987,7 @@ class PipelineService:
         backfill: bool = False,
         backfill_mode: str = "missing",
         debug_pdf: bool = False,
+        reuse_existing_corpus: bool = False,
     ) -> TrendResult:
         return run_trends_topic_streams_stage(
             self,
@@ -3995,6 +3998,7 @@ class PipelineService:
             backfill=backfill,
             backfill_mode=backfill_mode,
             debug_pdf=debug_pdf,
+            reuse_existing_corpus=reuse_existing_corpus,
         )
 
     def _pull_source_drafts(

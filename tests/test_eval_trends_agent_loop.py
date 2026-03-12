@@ -91,7 +91,7 @@ def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
         harness.EvalWindow(
             window_id="month-agents",
             granularity="month",
-            anchor_date="2026-03-15",
+            anchor_date="2026-03-12",
             stream="default",
             topics=["agents", "evaluation"],
             notes="monthly baseline",
@@ -107,7 +107,7 @@ def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
 
     assert "# trends agent eval manifest" in report
     assert "month-agents" in report
-    assert "uv run recoleta trends --granularity month --date 2026-03-15 --backfill" in report
+    assert "uv run recoleta trends --granularity month --date 2026-03-12 --backfill" in report
 
 
 def test_render_eval_runbook_sh_includes_window_commands(tmp_path: Path) -> None:
@@ -345,6 +345,7 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
         ],
     )
 
+    called: dict[str, Any] = {}
     fake_repository = SimpleNamespace(
         list_metrics=lambda *, run_id: [
             SimpleNamespace(
@@ -400,6 +401,13 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
         },
     )
 
+    class _FakeService:
+        _explicit_topic_streams = False
+
+        def trends(self, **kwargs: Any) -> Any:
+            called.update(kwargs)
+            return fake_result
+
     def _assert_runtime_overrides(*, stage_name: str, stage_runner: Any) -> Any:  # noqa: ARG001
         assert str(harness.os.environ["RECOLETA_DB_PATH"]).endswith("isolated.db")
         assert str(harness.os.environ["RAG_LANCEDB_DIR"]).endswith("isolated-lancedb")
@@ -407,7 +415,7 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
             fake_settings,
             fake_repository,
             "run-week-baseline",
-            fake_result,
+            stage_runner(_FakeService(), "run-week-baseline"),
         )
 
     monkeypatch.setattr(cli, "_execute_stage", _assert_runtime_overrides)
@@ -416,12 +424,15 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
         manifest=manifest,
         llm_model="test/fake-model",
         isolate_runtime=True,
-        capture_mode="pipeline",
+        capture_mode="existing-corpus",
     )
 
     assert summary["captured_total"] == 1
     assert summary["failed_total"] == 0
     assert summary["runtime"]["mode"] == "isolated_copy"
+    assert summary["capture_mode"] == "existing-corpus"
+    assert called["reuse_existing_corpus"] is True
+    assert called["backfill"] is False
     artifact_dir = Path(manifest["windows"][0]["artifact_dir"])
     assert json.loads((artifact_dir / "capture-summary.json").read_text(encoding="utf-8"))["status"] == "captured"
     baseline_summary = json.loads(
@@ -473,7 +484,7 @@ def test_capture_eval_baseline_records_failed_window_when_stage_raises(
         manifest=manifest,
         llm_model=None,
         isolate_runtime=True,
-        capture_mode="pipeline",
+        capture_mode="existing-corpus",
     )
 
     assert summary["captured_total"] == 0
@@ -484,6 +495,67 @@ def test_capture_eval_baseline_records_failed_window_when_stage_raises(
     )
     assert capture_summary["status"] == "failed"
     assert capture_summary["error"]["type"] == "RuntimeError"
+
+
+def test_run_window_trends_capture_targets_requested_topic_stream(monkeypatch) -> None:
+    from recoleta.pipeline import trends_stage as trends_stage_module
+
+    called: dict[str, Any] = {}
+
+    class _FakeService:
+        def __init__(
+            self,
+            *,
+            settings: Any | None = None,
+            repository: Any | None = None,
+            analyzer: Any | None = None,
+            triage: Any | None = None,
+            telegram_sender: Any | None = None,
+        ) -> None:
+            self.settings = settings
+            self.repository = repository or object()
+            self.analyzer = analyzer or object()
+            self.semantic_triage = triage or object()
+            self._topic_streams = [
+                SimpleNamespace(name="embodied_ai", publish_targets=["markdown"]),
+                SimpleNamespace(
+                    name="software_intelligence", publish_targets=["markdown"]
+                ),
+            ]
+            self._explicit_topic_streams = True
+            self.telegram_sender = telegram_sender
+
+        def _settings_for_topic_stream(self, stream: Any) -> Any:
+            return SimpleNamespace(scope=stream.name)
+
+        def _telegram_sender_for_stream(self, stream: Any) -> Any:  # noqa: ARG002
+            return None
+
+    def _fake_run_trends_stage(service: Any, **kwargs: Any) -> Any:
+        called["service_scope"] = getattr(service.settings, "scope", None)
+        called.update(kwargs)
+        return SimpleNamespace(doc_id=99)
+
+    monkeypatch.setattr(trends_stage_module, "run_trends_stage", _fake_run_trends_stage)
+
+    result = harness._run_window_trends_capture(
+        _FakeService(),
+        stage_run_id="run-stream-window",
+        window_manifest={
+            "granularity": "week",
+            "anchor_date": "2026-03-05",
+            "stream": "software_intelligence",
+        },
+        llm_model="test/fake-model",
+        reuse_existing_corpus=True,
+        backfill=False,
+    )
+
+    assert result.doc_id == 99
+    assert called["service_scope"] == "software_intelligence"
+    assert called["scope"] == "software_intelligence"
+    assert called["reuse_existing_corpus"] is True
+    assert called["backfill"] is False
 
 
 def test_prepare_isolated_eval_runtime_clones_db_and_lancedb(
@@ -566,8 +638,8 @@ def test_main_with_capture_baseline_emits_summary_path(
             "generated_at": "2026-03-12T00:00:00+00:00",
             "captured_total": 1,
             "failed_total": 0,
-            "capture_mode": "existing-trends",
-            "runtime": {"mode": "existing_docs"},
+            "capture_mode": "existing-corpus",
+            "runtime": {"mode": "isolated_copy"},
             "windows": [],
         }
         (Path(manifest["out_dir"]) / "baseline-summary.json").write_text(
@@ -593,7 +665,7 @@ def test_main_with_capture_baseline_emits_summary_path(
     assert exit_code == 0
     assert called["llm_model"] == "test/fake-model"
     assert called["isolate_runtime"] is True
-    assert called["capture_mode"] == "existing-trends"
+    assert called["capture_mode"] == "existing-corpus"
     cli_output = json.loads(capsys.readouterr().out)
     assert cli_output["baseline_summary"] == str(
         (out_dir.expanduser().resolve() / "baseline-summary.json")
