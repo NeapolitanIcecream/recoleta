@@ -66,6 +66,9 @@ Current scaffold status on this branch:
   current indexed corpus while skipping `prepare/analyze`; a lighter
   `existing-trends` snapshot mode can still reuse already-generated trend docs
   when we only need frozen reference artifacts
+- rerun capture should pin a small eval budget instead of inheriting production
+  defaults; the current harness clamps overview-pack and item-overview limits so
+  repeated baseline runs stay affordable and comparable
 - the default live fixture should target real windows that already exist in the
   workspace corpus, so current manual eval can focus on the `software_intelligence`
   `2026-03-05` day note and `2026-W10` week note

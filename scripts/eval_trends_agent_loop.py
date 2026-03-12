@@ -13,6 +13,13 @@ from typing import Any, cast
 
 _ALLOWED_GRANULARITIES = {"day", "week", "month"}
 _ALLOWED_CAPTURE_MODES = {"existing-trends", "existing-corpus", "pipeline"}
+# Keep eval reruns on a stable, cheaper budget than production defaults so
+# repeated baseline captures stay comparable and affordable.
+_DEFAULT_CAPTURE_BUDGET = {
+    "overview_pack_max_chars": 6000,
+    "item_overview_top_k": 12,
+    "item_overview_item_max_chars": 320,
+}
 
 
 @dataclass(slots=True)
@@ -295,6 +302,24 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     except Exception:
         return None
     return loaded if isinstance(loaded, dict) else None
+
+
+def _capture_budget_env_overrides() -> dict[str, str]:
+    return {
+        "TRENDS_OVERVIEW_PACK_MAX_CHARS": str(
+            _DEFAULT_CAPTURE_BUDGET["overview_pack_max_chars"]
+        ),
+        "TRENDS_ITEM_OVERVIEW_TOP_K": str(
+            _DEFAULT_CAPTURE_BUDGET["item_overview_top_k"]
+        ),
+        "TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS": str(
+            _DEFAULT_CAPTURE_BUDGET["item_overview_item_max_chars"]
+        ),
+    }
+
+
+def _capture_budget_summary() -> dict[str, int]:
+    return dict(_DEFAULT_CAPTURE_BUDGET)
 
 
 def _build_prompt_capture_stub(*, run_id: str | None, doc_id: int | None) -> dict[str, Any]:
@@ -797,6 +822,7 @@ def capture_trends_rerun_baseline(
 
     results: list[dict[str, Any]] = []
     runtime: dict[str, Any]
+    capture_budget = _capture_budget_summary()
     out_dir = Path(str(manifest["out_dir"]))
     windows = cast(list[dict[str, Any]], manifest.get("windows", []))
     try:
@@ -843,6 +869,7 @@ def capture_trends_rerun_baseline(
     runtime_env_overrides = {
         "RECOLETA_DB_PATH": str(runtime["active_db_path"]),
         "RAG_LANCEDB_DIR": str(runtime["active_lancedb_dir"]),
+        **_capture_budget_env_overrides(),
     }
     for window_manifest in windows:
         granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
@@ -900,6 +927,7 @@ def capture_trends_rerun_baseline(
                 capture_metadata={
                     "capture_mode": capture_mode,
                     "reuse_existing_corpus": reuse_existing_corpus,
+                    "capture_budget": capture_budget,
                 },
             )
             results.append(
@@ -935,6 +963,7 @@ def capture_trends_rerun_baseline(
     baseline_summary = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
         "capture_mode": capture_mode,
+        "capture_budget": capture_budget,
         "runtime": runtime,
         "captured_total": sum(1 for row in results if row["status"] == "captured"),
         "failed_total": sum(1 for row in results if row["status"] == "failed"),

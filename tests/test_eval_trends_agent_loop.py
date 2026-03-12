@@ -411,6 +411,9 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
     def _assert_runtime_overrides(*, stage_name: str, stage_runner: Any) -> Any:  # noqa: ARG001
         assert str(harness.os.environ["RECOLETA_DB_PATH"]).endswith("isolated.db")
         assert str(harness.os.environ["RAG_LANCEDB_DIR"]).endswith("isolated-lancedb")
+        assert harness.os.environ["TRENDS_OVERVIEW_PACK_MAX_CHARS"] == "6000"
+        assert harness.os.environ["TRENDS_ITEM_OVERVIEW_TOP_K"] == "12"
+        assert harness.os.environ["TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS"] == "320"
         return (
             fake_settings,
             fake_repository,
@@ -431,10 +434,23 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
     assert summary["failed_total"] == 0
     assert summary["runtime"]["mode"] == "isolated_copy"
     assert summary["capture_mode"] == "existing-corpus"
+    assert summary["capture_budget"] == {
+        "overview_pack_max_chars": 6000,
+        "item_overview_top_k": 12,
+        "item_overview_item_max_chars": 320,
+    }
     assert called["reuse_existing_corpus"] is True
     assert called["backfill"] is False
     artifact_dir = Path(manifest["windows"][0]["artifact_dir"])
-    assert json.loads((artifact_dir / "capture-summary.json").read_text(encoding="utf-8"))["status"] == "captured"
+    capture_summary = json.loads(
+        (artifact_dir / "capture-summary.json").read_text(encoding="utf-8")
+    )
+    assert capture_summary["status"] == "captured"
+    assert capture_summary["capture_budget"] == {
+        "overview_pack_max_chars": 6000,
+        "item_overview_top_k": 12,
+        "item_overview_item_max_chars": 320,
+    }
     baseline_summary = json.loads(
         (Path(manifest["out_dir"]) / "baseline-summary.json").read_text(encoding="utf-8")
     )
