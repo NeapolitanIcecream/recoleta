@@ -194,6 +194,16 @@ def _truncate_visible_text(value: str, *, chinese_output: bool) -> str:
     return candidate
 
 
+def _visible_text_within_limit(value: str, *, chinese_output: bool) -> bool:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized:
+        return True
+    if chinese_output:
+        compact = re.sub(r"\s+", "", normalized)
+        return len(compact) <= 199
+    return len(normalized.split()) <= 199
+
+
 def clamp_trend_overview_markdown(
     value: str,
     *,
@@ -211,10 +221,14 @@ def clamp_trend_overview_markdown(
         chinese_output = normalized_language.startswith("zh") or (
             "chinese" in normalized_language
         )
-    truncated_prelude = _truncate_visible_text(
-        _markdownish_plain_text(prelude),
-        chinese_output=chinese_output,
-    )
+    visible_plain_text = _markdownish_plain_text(prelude)
+    if _visible_text_within_limit(visible_plain_text, chinese_output=chinese_output):
+        truncated_prelude = prelude.strip()
+    else:
+        truncated_prelude = _truncate_visible_text(
+            visible_plain_text,
+            chinese_output=chinese_output,
+        )
     parts = [truncated_prelude.strip()] if truncated_prelude.strip() else []
     if suffix:
         parts.append(suffix)

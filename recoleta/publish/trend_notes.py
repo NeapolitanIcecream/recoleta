@@ -119,6 +119,7 @@ def _render_trend_note_lines(
                     rep_title = str(rep.get("title") or "").strip()
                     if not rep_title:
                         continue
+                    note_href = str(rep.get("note_href") or "").strip()
                     url = str(rep.get("url") or "").strip()
                     authors_raw = rep.get("authors")
                     authors: list[str] = []
@@ -127,7 +128,9 @@ def _render_trend_note_lines(
                             str(a).strip() for a in authors_raw if str(a).strip()
                         ]
                     author_suffix = _format_author_suffix(authors, max_authors=6)
-                    if url:
+                    if note_href:
+                        lines.append(f"- [{rep_title}]({note_href}){author_suffix}")
+                    elif url:
                         lines.append(f"- [{rep_title}]({url}){author_suffix}")
                     else:
                         lines.append(f"- {rep_title}{author_suffix}")

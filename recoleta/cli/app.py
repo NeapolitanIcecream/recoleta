@@ -6,6 +6,7 @@ from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
 from recoleta.cli.db import run_db_clear_command, run_db_reset_command
 from recoleta.cli.ingest import run_ingest_command
+from recoleta.cli.materialize import run_materialize_outputs_command
 from recoleta.cli.maintenance import (
     run_backup_command,
     run_doctor_command,
@@ -23,6 +24,7 @@ from recoleta.cli.run import run_scheduler_command
 from recoleta.cli.site import (
     run_site_build_command,
     run_site_gh_deploy_command,
+    run_site_serve_command,
     run_site_stage_command,
 )
 from recoleta.cli.trends import run_trends_command, run_trends_week_command
@@ -36,6 +38,10 @@ rag_app = typer.Typer(help="RAG utilities.", no_args_is_help=True)
 app.add_typer(rag_app, name="rag")
 site_app = typer.Typer(help="Static site utilities.", no_args_is_help=True)
 app.add_typer(site_app, name="site")
+materialize_app = typer.Typer(
+    help="Offline output materialization utilities.", no_args_is_help=True
+)
+app.add_typer(materialize_app, name="materialize")
 
 
 @app.command()
@@ -218,6 +224,60 @@ def site_stage(
     run_site_stage_command(input_dir=input_dir, output_dir=output_dir, limit=limit)
 
 
+@site_app.command("serve")
+def site_serve(
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Directory containing trend markdown notes when building before serving. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Directory containing the built static site. Defaults to MARKDOWN_OUTPUT_DIR/site.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally build only the latest N trend notes before serving.",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Host interface to bind the local preview server to.",
+    ),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        min=0,
+        max=65535,
+        help="TCP port for the local preview server. Use 0 to auto-select.",
+    ),
+    build: bool = typer.Option(
+        True,
+        "--build/--no-build",
+        help="Build the static site before serving it.",
+    ),
+) -> None:
+    """Build and serve the static site locally."""
+    run_site_serve_command(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        limit=limit,
+        host=host,
+        port=port,
+        build=build,
+    )
+
+
 @site_app.command("gh-deploy")
 def site_gh_deploy(
     input_dir: Path | None = typer.Option(
@@ -284,6 +344,74 @@ def site_gh_deploy(
         cname=cname,
         pages_config=pages_config,
         force=force,
+    )
+
+
+@materialize_app.command("outputs")
+def materialize_outputs(
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="SQLite database path. Defaults to RECOLETA_DB_PATH or the configured settings file.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Optional YAML/JSON config path used to resolve the database and default output directories.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Markdown output root to rewrite in single-stream mode. Defaults to MARKDOWN_OUTPUT_DIR or per-stream settings output roots.",
+    ),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Scope/stream name for single-stream materialization. When settings define explicit topic streams, the default rewrites every configured stream.",
+    ),
+    granularity: str | None = typer.Option(
+        None,
+        "--granularity",
+        help="Optionally rerender only day, week, or month trend notes.",
+    ),
+    pdf: bool = typer.Option(
+        False,
+        "--pdf/--no-pdf",
+        help="Regenerate trend PDFs from the rerendered markdown notes.",
+    ),
+    site: bool = typer.Option(
+        False,
+        "--site/--no-site",
+        help="Rebuild the static site after markdown outputs are materialized.",
+    ),
+    debug_pdf: bool = typer.Option(
+        False,
+        "--debug-pdf/--no-debug-pdf",
+        help="Export PDF render debug bundles beside regenerated PDFs.",
+    ),
+) -> None:
+    """Backfill item pages and rerender trend outputs without rerunning ingest/analyze."""
+    run_materialize_outputs_command(
+        db_path=db_path,
+        config_path=config_path,
+        output_dir=output_dir,
+        scope=scope,
+        granularity=granularity,
+        pdf=pdf,
+        site=site,
+        debug_pdf=debug_pdf,
     )
 
 

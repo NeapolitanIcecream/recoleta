@@ -150,6 +150,8 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_representatives(
 
     md = matches[0].read_text(encoding="utf-8")
     assert re.search(r"(?<![\\w])doc_id\\s*:", md) is None
+    assert "../Inbox/" in md
+    assert "https://example.com/robometer" not in md
     assert "[Robometer](" in md
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in md
     assert "— Alice" in md
@@ -246,6 +248,8 @@ def test_trends_day_rewrites_doc_id_space_form_and_chunk_suffix(
     md = matches[0].read_text(encoding="utf-8")
     assert re.search(r"\bdoc_id\b", md) is None
     assert re.search(r"\bchunk(?:_index)?\b", md, flags=re.I) is None
+    assert "../Inbox/" in md
+    assert "https://example.com/agentic-testing" not in md
     assert "[Human-AI Collaboration for Scaling Agile Regression Testing](" in md
     assert "## Top-1 必读" in md
     assert result.doc_id > 0
@@ -337,5 +341,7 @@ def test_trends_day_deduplicates_representative_papers(
     assert len(matches) == 1
 
     md = matches[0].read_text(encoding="utf-8")
+    assert "../Inbox/" in md
+    assert "https://example.com/deduped-paper" not in md
     assert md.count("[Representative Paper Should Appear Once](") == 1
     assert result.doc_id > 0

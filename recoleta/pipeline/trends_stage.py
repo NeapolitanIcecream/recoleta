@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -25,9 +24,9 @@ from recoleta.publish import (
     write_markdown_trend_note,
     write_obsidian_trend_note,
 )
-from recoleta.publish.trend_render_shared import (
-    clamp_trend_overview_markdown,
-    sanitize_trend_title,
+from recoleta.trend_materialize import (
+    materialize_trend_note_payload,
+    persist_materialized_trend_payload,
 )
 from recoleta import trends
 from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
@@ -801,232 +800,16 @@ def run_trends_stage(
             unit="count",
         )
 
-        doc_cache: dict[int, Any | None] = {}
-        item_cache: dict[int, Any | None] = {}
-
-        def _get_doc(doc_id_value: int) -> Any | None:
-            normalized_doc_id = int(doc_id_value)
-            if normalized_doc_id <= 0:
-                return None
-            if normalized_doc_id not in doc_cache:
-                doc_cache[normalized_doc_id] = cast(
-                    Any, service.repository
-                ).get_document(doc_id=normalized_doc_id)
-            return doc_cache.get(normalized_doc_id)
-
-        def _parse_authors(value: Any) -> list[str]:
-            if value is None:
-                return []
-            if isinstance(value, list):
-                return [str(a).strip() for a in value if str(a).strip()]
-            if isinstance(value, str):
-                raw = value.strip()
-                if not raw:
-                    return []
-                try:
-                    loaded = orjson.loads(raw)
-                except Exception:
-                    return []
-                if isinstance(loaded, list):
-                    return [str(a).strip() for a in loaded if str(a).strip()]
-            return []
-
-        def _citation_label_from_title(raw_title: str) -> str:
-            normalized = " ".join(str(raw_title or "").split()).strip()
-            if not normalized:
-                return "Paper"
-            if ":" in normalized:
-                prefix = normalized.split(":", 1)[0].strip()
-                if 2 <= len(prefix) <= 40:
-                    normalized = prefix
-            normalized = normalized.replace("[", "(").replace("]", ")")
-            if len(normalized) > 60:
-                normalized = normalized[:60].rstrip() + "…"
-            return normalized
-
-        def _citation_for_doc_id(doc_id_value: int) -> str | None:
-            doc = _get_doc(doc_id_value)
-            if doc is None:
-                return None
-            title = str(getattr(doc, "title", "") or "").strip()
-            url = str(getattr(doc, "canonical_url", "") or "").strip()
-            label = _citation_label_from_title(title)
-            if url:
-                return f"[{label}]({url})"
-            return label
-
-        doc_ref_pattern = re.compile(
-            r"\bdoc_id\s*(?:[:=#-]\s*|\s+)([0-9][0-9,\s]*)\b",
-            re.IGNORECASE,
-        )
-        doc_short_pattern = re.compile(
-            r"\bdoc\s*(?:[:=#-]\s*|\s+)(\d+)\b",
-            re.IGNORECASE,
-        )
-        chunk_suffix_pattern = re.compile(
-            r"\s*[,;，；]?\s*chunk(?:_index)?\s*(?:[:=]\s*|\s+)\d+",
-            re.IGNORECASE,
-        )
-
-        rewrite_occurrences_total = 0
-        rewrite_doc_ids_resolved_total = 0
-        rewrite_doc_ids_unresolved_total = 0
-
-        def _rewrite_doc_refs(value: str) -> str:
-            nonlocal rewrite_occurrences_total
-            nonlocal rewrite_doc_ids_resolved_total
-            nonlocal rewrite_doc_ids_unresolved_total
-
-            raw = str(value or "")
-            if not raw.strip():
-                return raw
-
-            def _replace_doc_id_match(match: re.Match[str]) -> str:
-                nonlocal rewrite_occurrences_total
-                nonlocal rewrite_doc_ids_resolved_total
-                nonlocal rewrite_doc_ids_unresolved_total
-
-                numbers = [int(x) for x in re.findall(r"\d+", match.group(1) or "")]
-                seen: set[int] = set()
-                doc_ids: list[int] = []
-                for n in numbers:
-                    if n <= 0 or n in seen:
-                        continue
-                    seen.add(n)
-                    doc_ids.append(n)
-                if not doc_ids:
-                    return match.group(0)
-
-                rewrite_occurrences_total += 1
-                citations: list[str] = []
-                for doc_id_inner in doc_ids:
-                    cite = _citation_for_doc_id(doc_id_inner)
-                    if cite is None:
-                        rewrite_doc_ids_unresolved_total += 1
-                        citations.append("Paper")
-                    else:
-                        rewrite_doc_ids_resolved_total += 1
-                        citations.append(cite)
-                return "、".join(citations)
-
-            def _replace_doc_short_match(match: re.Match[str]) -> str:
-                nonlocal rewrite_occurrences_total
-                nonlocal rewrite_doc_ids_resolved_total
-                nonlocal rewrite_doc_ids_unresolved_total
-
-                raw_id = match.group(1) or ""
-                try:
-                    doc_id_inner = int(raw_id)
-                except Exception:
-                    return match.group(0)
-                if doc_id_inner <= 0:
-                    return match.group(0)
-                cite = _citation_for_doc_id(doc_id_inner)
-                if cite is None:
-                    rewrite_doc_ids_unresolved_total += 1
-                    return match.group(0)
-                rewrite_occurrences_total += 1
-                rewrite_doc_ids_resolved_total += 1
-                return cite
-
-            rewritten = doc_ref_pattern.sub(_replace_doc_id_match, raw)
-            rewritten = doc_short_pattern.sub(_replace_doc_short_match, rewritten)
-            rewritten = chunk_suffix_pattern.sub("", rewritten)
-            return rewritten
-
-        title_for_notes = sanitize_trend_title(
-            _rewrite_doc_refs(str(payload.title)),
-            fallback="Trend",
-        )
-        overview_md_for_notes = clamp_trend_overview_markdown(
-            _rewrite_doc_refs(str(payload.overview_md)),
+        materialized = materialize_trend_note_payload(
+            repository=cast(Any, service.repository),
+            payload=payload,
+            markdown_output_dir=service.settings.markdown_output_dir,
             output_language=service.settings.llm_output_language,
         )
-        highlights_for_notes = [
-            _rewrite_doc_refs(str(h)) for h in (list(payload.highlights) or [])
-        ]
-
-        clusters_for_notes: list[dict[str, Any]] = []
-        if payload.clusters:
-            for cluster in payload.clusters:
-                cluster_dict = cluster.model_dump(mode="json")
-                cluster_dict["name"] = _rewrite_doc_refs(
-                    str(cluster_dict.get("name") or "").strip()
-                )
-                cluster_dict["description"] = _rewrite_doc_refs(
-                    str(cluster_dict.get("description") or "").strip()
-                )
-                reps = cluster_dict.get("representative_chunks") or []
-                enriched_reps: list[dict[str, Any]] = []
-                seen_rep_keys: set[tuple[int, int]] = set()
-                if isinstance(reps, list) and reps:
-                    for rep in reps:
-                        if not isinstance(rep, dict):
-                            continue
-                        raw_doc_id = rep.get("doc_id")
-                        raw_chunk_index = rep.get("chunk_index")
-                        if raw_doc_id is None or raw_chunk_index is None:
-                            continue
-                        try:
-                            doc_id_int = int(raw_doc_id)
-                            chunk_index_int = int(raw_chunk_index)
-                        except Exception:
-                            continue
-                        if doc_id_int <= 0 or chunk_index_int < 0:
-                            continue
-                        rep_key = (doc_id_int, chunk_index_int)
-                        if rep_key in seen_rep_keys:
-                            continue
-                        seen_rep_keys.add(rep_key)
-                        doc = _get_doc(doc_id_int)
-                        if doc is None:
-                            continue
-
-                        title = str(getattr(doc, "title", "") or "").strip()
-                        url = str(getattr(doc, "canonical_url", "") or "").strip()
-                        if not title:
-                            continue
-
-                        authors: list[str] = []
-                        doc_type = (
-                            str(getattr(doc, "doc_type", "") or "").strip().lower()
-                        )
-                        if doc_type == "item":
-                            raw_item_id = getattr(doc, "item_id", None)
-                            try:
-                                item_id_int = (
-                                    int(raw_item_id) if raw_item_id is not None else 0
-                                )
-                            except Exception:
-                                item_id_int = 0
-                            if item_id_int > 0:
-                                if item_id_int not in item_cache:
-                                    item_cache[item_id_int] = cast(
-                                        Any, service.repository
-                                    ).get_item(item_id=item_id_int)
-                                item = item_cache.get(item_id_int)
-                                if item is not None:
-                                    authors = _parse_authors(
-                                        getattr(item, "authors", None)
-                                    )
-
-                        enriched = dict(rep)
-                        enriched["title"] = title
-                        if url:
-                            enriched["url"] = url
-                        if authors:
-                            enriched["authors"] = authors
-                        enriched_reps.append(enriched)
-                cluster_dict["representative_chunks"] = enriched_reps
-                clusters_for_notes.append(cluster_dict)
-
-        payload.title = title_for_notes
-        payload.overview_md = overview_md_for_notes
-        payload.highlights = highlights_for_notes
-        payload.clusters = [
-            trends.TrendCluster.model_validate(cluster_dict)
-            for cluster_dict in clusters_for_notes
-        ]
+        payload = persist_materialized_trend_payload(
+            payload=payload,
+            materialized=materialized,
+        )
         doc_id = trends.persist_trend_payload(
             repository=cast(Any, service.repository),
             granularity=normalized_granularity,
@@ -1034,6 +817,12 @@ def run_trends_stage(
             period_end=period_end,
             payload=payload,
             scope=scope,
+        )
+
+        rewrite_occurrences_total = materialized.rewrite_stats.doc_ref_occurrences_total
+        rewrite_doc_ids_resolved_total = materialized.rewrite_stats.doc_ref_resolved_total
+        rewrite_doc_ids_unresolved_total = (
+            materialized.rewrite_stats.doc_ref_unresolved_total
         )
 
         if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
@@ -1062,13 +851,13 @@ def run_trends_stage(
         trend_delivery_hash = hashlib.sha256(
             orjson.dumps(
                 {
-                    "title": title_for_notes,
+                    "title": materialized.title,
                     "granularity": normalized_granularity,
                     "period_start": period_start.isoformat(),
                     "period_end": period_end.isoformat(),
-                    "overview_md": overview_md_for_notes,
+                    "overview_md": materialized.overview_md,
                     "topics": list(payload.topics),
-                    "clusters": clusters_for_notes,
+                    "clusters": materialized.clusters,
                 },
                 option=orjson.OPT_SORT_KEYS,
             )
@@ -1140,15 +929,15 @@ def run_trends_stage(
                 markdown_note_path = write_markdown_trend_note(
                     output_dir=service.settings.markdown_output_dir,
                     trend_doc_id=doc_id,
-                    title=title_for_notes,
+                    title=materialized.title,
                     granularity=normalized_granularity,
                     period_start=period_start,
                     period_end=period_end,
                     run_id=run_id,
-                    overview_md=overview_md_for_notes,
+                    overview_md=materialized.overview_md,
                     topics=list(payload.topics),
-                    clusters=clusters_for_notes,
-                    highlights=highlights_for_notes,
+                    clusters=materialized.clusters,
+                    highlights=materialized.highlights,
                 )
             except Exception as note_exc:  # noqa: BLE001
                 log.bind(module="pipeline.trends.markdown_note").warning(
@@ -1161,15 +950,15 @@ def run_trends_stage(
                     vault_path=service.settings.obsidian_vault_path,
                     base_folder=service.settings.obsidian_base_folder,
                     trend_doc_id=doc_id,
-                    title=title_for_notes,
+                    title=materialized.title,
                     granularity=normalized_granularity,
                     period_start=period_start,
                     period_end=period_end,
                     run_id=run_id,
-                    overview_md=overview_md_for_notes,
+                    overview_md=materialized.overview_md,
                     topics=list(payload.topics),
-                    clusters=clusters_for_notes,
-                    highlights=highlights_for_notes,
+                    clusters=materialized.clusters,
+                    highlights=materialized.highlights,
                 )
             except Exception as note_exc:  # noqa: BLE001
                 log.bind(module="pipeline.trends.obsidian_note").warning(
@@ -1266,8 +1055,8 @@ def run_trends_stage(
                         if service.telegram_sender is None:
                             raise RuntimeError("telegram sender is not configured")
                         caption = build_telegram_trend_document_caption(
-                            title=title_for_notes,
-                            overview_md=overview_md_for_notes,
+                            title=materialized.title,
+                            overview_md=materialized.overview_md,
                             granularity=normalized_granularity,
                             period_start=period_start,
                         )

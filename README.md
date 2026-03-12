@@ -365,8 +365,8 @@ PDF behavior:
 Recoleta can turn trend notes into a deployable static website:
 
 ```bash
-# Build a local preview from trend markdown notes
-uv run recoleta site build
+# Build and serve a local preview from trend markdown notes
+uv run recoleta site serve
 
 # Push a dedicated GitHub Pages branch without polluting main
 uv run recoleta site gh-deploy
@@ -374,13 +374,15 @@ uv run recoleta site gh-deploy
 
 Behavior:
 
+- `recoleta site serve` builds the site by default, then serves `MARKDOWN_OUTPUT_DIR/site` on `127.0.0.1:8000`.
 - `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
+- `recoleta materialize outputs` backfills `Inbox/` item notes and rerenders trend markdown from existing DB trend documents without rerunning ingest/analyze; add `--site` and/or `--pdf` when you want to refresh derived HTML/PDF outputs in the same pass.
 - `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
 - `recoleta site gh-deploy` keeps the checked-out worktree on your source branch and skips the push when the generated snapshot is unchanged.
 - In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory.
 - The static site now exposes a `Streams` navigation surface so mixed-domain trend notes are not silently flattened together.
 - `recoleta site stage` remains available when you want a repo-local content snapshot for custom CI or non-GitHub hosting.
-- All three commands treat their output directories as managed artifacts and clear stale files before writing.
+- All four commands treat their output directories as managed artifacts and clear stale files before writing when they rebuild site output.
 
 Recommended GitHub Pages flow:
 
