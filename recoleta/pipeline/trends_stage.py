@@ -583,6 +583,20 @@ def run_trends_stage(
                             value=float(output_tokens),
                             unit="count",
                         )
+                prompt_chars = debug.get("prompt_chars")
+                if isinstance(prompt_chars, (int, float)):
+                    record_metric(
+                        name="pipeline.trends.prompt_chars",
+                        value=float(prompt_chars),
+                        unit="chars",
+                    )
+                overview_pack_chars = debug.get("overview_pack_chars")
+                if isinstance(overview_pack_chars, (int, float)):
+                    record_metric(
+                        name="pipeline.trends.overview_pack.chars",
+                        value=float(overview_pack_chars),
+                        unit="chars",
+                    )
                 cost_usd = debug.get("estimated_cost_usd")
                 if isinstance(cost_usd, (int, float)):
                     record_metric(
@@ -1170,6 +1184,20 @@ def run_trends_stage(
             value=tool_calls_total,
             unit="count",
         )
+        if isinstance(debug, dict):
+            tool_call_breakdown = debug.get("tool_call_breakdown")
+            if isinstance(tool_call_breakdown, dict):
+                for raw_tool_name, raw_count in sorted(tool_call_breakdown.items()):
+                    if not isinstance(raw_count, (int, float)):
+                        continue
+                    metric_tool_name = _trend_metric_stream_token(str(raw_tool_name))
+                    if not metric_tool_name:
+                        continue
+                    record_metric(
+                        name=f"pipeline.trends.tool.{metric_tool_name}.calls_total",
+                        value=float(raw_count),
+                        unit="count",
+                    )
         record_metric(
             name="pipeline.trends.duration_ms",
             value=int((time.perf_counter() - started) * 1000),
