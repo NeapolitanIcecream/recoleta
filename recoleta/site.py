@@ -124,6 +124,25 @@ def _paths_overlap(path_a: Path, path_b: Path) -> bool:
     return path_a == path_b or path_a in path_b.parents or path_b in path_a.parents
 
 
+_TREND_GRANULARITY_SORT_PRIORITY = {
+    "month": 3,
+    "week": 2,
+    "day": 1,
+}
+
+
+def _trend_site_sort_key(
+    document: TrendSiteSourceDocument,
+) -> tuple[datetime, int, datetime, str]:
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    return (
+        document.period_end or document.period_start or floor,
+        _TREND_GRANULARITY_SORT_PRIORITY.get(document.granularity, 0),
+        document.period_start or floor,
+        document.stem,
+    )
+
+
 def _reset_directory(path: Path) -> None:
     if path.exists():
         if not path.is_dir():
@@ -928,10 +947,18 @@ body {
     radial-gradient(circle at top right, rgba(29, 103, 194, 0.10), transparent 24%),
     linear-gradient(180deg, var(--bg-top) 0%, #eaf1f7 35%, var(--bg-bottom) 100%);
   font-family: "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Segoe UI", sans-serif;
+  overflow-x: hidden;
 }
 a {
   color: var(--accent);
   text-decoration: none;
+}
+img,
+svg,
+video,
+iframe {
+  max-width: 100%;
+  height: auto;
 }
 .site-shell {
   position: relative;
@@ -974,6 +1001,7 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  min-width: 0;
 }
 .nav-link {
   padding: 10px 14px;
@@ -1053,6 +1081,15 @@ a {
   flex-wrap: wrap;
   gap: 10px;
 }
+.home-hero-copy,
+.hero-stats,
+.detail-hero-main,
+.detail-hero-side,
+.trend-card,
+.topic-card,
+.pager-card {
+  min-width: 0;
+}
 .hero-actions {
   margin-top: 18px;
 }
@@ -1106,6 +1143,7 @@ a {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 .section-title {
   margin: 0 0 12px;
@@ -1113,6 +1151,8 @@ a {
   font-family: "Songti SC", "STSong", Georgia, serif;
   font-size: 28px;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .page-section-title {
   margin-bottom: 18px;
@@ -1138,6 +1178,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .card-pill-row {
   display: flex;
@@ -1156,6 +1197,16 @@ a {
   color: #225693;
   font-size: 12px;
   font-weight: 600;
+}
+.nav-link,
+.meta-pill,
+.topic-pill,
+.action-link,
+.detail-summary {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 .stream-pill {
   border-color: rgba(21, 98, 76, 0.16);
@@ -1183,6 +1234,8 @@ a {
 .meta-date {
   color: #6e849d;
   font-size: 13px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .card-title,
 .topic-card-title {
@@ -1192,6 +1245,8 @@ a {
   font-size: 26px;
   line-height: 1.08;
   letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .card-title a,
 .topic-card-title a {
@@ -1341,9 +1396,18 @@ a {
 }
 .detail-content .prose table,
 .detail-content .cluster-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   width: 100%;
   margin: 12px 0;
   border-collapse: collapse;
+}
+.detail-content .prose pre,
+.detail-content .cluster-body pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 .detail-content .prose th,
 .detail-content .prose td,
@@ -1425,12 +1489,16 @@ a {
 .archive-item a {
   color: #162f4d;
   font-weight: 600;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .timeline-item span,
 .archive-item span,
 .topic-card-meta {
   color: #6b8098;
   font-size: 13px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .empty-card {
   padding: 24px;
@@ -1453,13 +1521,24 @@ a {
 }
 @media (max-width: 760px) {
   .site-shell {
-    width: min(100% - 16px, 100%);
+    width: calc(100% - 16px);
+    max-width: 100%;
     padding-top: 12px;
   }
   .site-header {
     position: static;
+    flex-direction: column;
+    align-items: stretch;
     border-radius: 24px;
     padding: 16px;
+  }
+  .nav-links {
+    width: 100%;
+  }
+  .nav-link {
+    flex: 1 1 calc(50% - 5px);
+    justify-content: center;
+    text-align: center;
   }
   .page-hero,
   .home-hero-card,
@@ -1472,6 +1551,18 @@ a {
   }
   .detail-content .document-flow {
     padding: 12px 0 0;
+  }
+  .section-heading-row {
+    align-items: flex-start;
+  }
+  .hero-actions .action-link,
+  .card-actions .action-link,
+  .detail-actions .action-link {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+  .detail-summary {
+    width: 100%;
   }
   .detail-content .topic-grid,
   .detail-content .cluster-columns {
@@ -1535,13 +1626,7 @@ def _load_trend_source_documents(
                 )
             )
 
-    source_documents.sort(
-        key=lambda document: (
-            document.period_start or datetime.min.replace(tzinfo=timezone.utc),
-            document.stem,
-        ),
-        reverse=True,
-    )
+    source_documents.sort(key=_trend_site_sort_key, reverse=True)
     return source_documents[:limit] if limit is not None else source_documents
 
 
