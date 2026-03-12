@@ -482,6 +482,76 @@ def test_index_items_as_documents_prunes_stale_low_relevance_docs(
     )
 
 
+def test_index_items_as_documents_batches_writes_to_reduce_sql_commits(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: indexing should not commit once per document chunk."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    _, repository = _build_runtime()
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+
+    titles = [
+        "Sparse retrieval graphs for robotic planners",
+        "Photonic compilers for wafer-scale inference",
+        "Mechanistic audits for browser agents",
+        "Dataset distillation for multimodal search",
+    ]
+
+    for idx, title in enumerate(titles):
+        draft = ItemDraft.from_values(
+            source="rss",
+            source_item_id=f"trend-batch-{idx}",
+            canonical_url=f"https://example.com/trend-batch-{idx}",
+            title=title,
+            authors=["Alice"],
+            published_at=period_start,
+            raw_metadata={"source": "test"},
+        )
+        item, _ = repository.upsert_item(draft)
+        assert item.id is not None
+        item_id = int(item.id)
+        _ = repository.save_analysis(
+            item_id=item_id,
+            result=AnalysisResult(
+                model="test/fake-model",
+                provider="test",
+                summary=f"Summary for {title}",
+                topics=["agents"],
+                relevance_score=0.9,
+                novelty_score=0.5,
+                cost_usd=0.0,
+                latency_ms=1,
+            ),
+        )
+        _ = repository.upsert_content(
+            item_id=item_id,
+            content_type="pdf_text",
+            text=(f"Item {idx} body. " * 60).strip(),
+        )
+
+    with repository.sql_diagnostics() as sql_diag:
+        stats = index_items_as_documents(
+            repository=repository,
+            run_id="run-index-batch-commits",
+            period_start=period_start,
+            period_end=period_end,
+            limit=10,
+            content_chunk_chars=200,
+            max_content_chunks_per_item=8,
+        )
+
+    assert stats["docs_upserted"] == 4
+    assert stats["content_chunks_upserted"] > 0
+    assert sql_diag.queries_total > 0
+    assert sql_diag.commits_total > 0
+    assert sql_diag.commits_total <= 4
+
+
 def test_trends_text_search_can_find_summary_chunks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -789,6 +859,235 @@ def test_trends_semantic_search_reembeds_when_text_hash_changes(
     )
     existing = refreshed.fetch_existing_hashes(chunk_ids=[int(chunk.id)])
     assert existing.get(int(chunk.id)) == str(getattr(chunk, "text_hash") or "")
+
+
+def test_trends_semantic_search_reuses_warmed_summary_corpus_within_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: repeated semantic searches in one run should not re-warm the same summary corpus."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    _, repository = _build_runtime()
+
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+
+    docs: list[int] = []
+    for idx, title, summary in [
+        (1, "Agent Systems", "Agents are great."),
+        (2, "Compiler Systems", "Systems are reliable."),
+    ]:
+        item, _ = repository.upsert_item(
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id=f"semantic-cache-{idx}",
+                canonical_url=f"https://example.com/semantic-cache-{idx}",
+                title=title,
+                authors=["Alice"],
+                published_at=period_start,
+                raw_metadata={"source": "test"},
+            )
+        )
+        assert item.id is not None
+        doc = repository.upsert_document_for_item(item=item)
+        assert doc.id is not None
+        docs.append(int(doc.id))
+        repository.upsert_document_chunk(
+            doc_id=int(doc.id),
+            chunk_index=0,
+            kind="summary",
+            text_value=summary,
+            start_char=0,
+            end_char=None,
+            source_content_type="analysis_summary",
+        )
+
+    def fake_embedding(**kwargs):  # type: ignore[no-untyped-def]
+        inputs = kwargs.get("input") or []
+        data = []
+        for text in inputs:
+            token = str(text).lower()
+            if "query:" in token:
+                if "agents" in token:
+                    data.append({"embedding": [1.0, 0.0]})
+                else:
+                    data.append({"embedding": [0.0, 1.0]})
+            elif "agents" in token:
+                data.append({"embedding": [1.0, 0.0]})
+            else:
+                data.append({"embedding": [0.0, 1.0]})
+        return {"data": data, "usage": {"inputs": len(inputs)}}
+
+    import recoleta.rag.embeddings as rag_embeddings
+    import recoleta.rag.semantic_search as rag_semantic
+
+    monkeypatch.setattr(rag_embeddings, "_embedding", fake_embedding)
+
+    ensure_calls: list[str] = []
+    original_ensure = rag_semantic.ensure_summary_vectors_for_period
+
+    def counting_ensure(**kwargs):  # type: ignore[no-untyped-def]
+        ensure_calls.append(str(kwargs.get("run_id") or ""))
+        return original_ensure(**kwargs)
+
+    monkeypatch.setattr(
+        rag_semantic,
+        "ensure_summary_vectors_for_period",
+        counting_ensure,
+    )
+
+    hits_agents = semantic_search_summaries_in_period(
+        repository=repository,
+        lancedb_dir=Path(str(tmp_path / "lancedb")),
+        run_id="run-semantic-cache",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        query="agents",
+        embedding_model="test/embed",
+        embedding_dimensions=None,
+        max_batch_inputs=64,
+        max_batch_chars=40000,
+        limit=5,
+        corpus_limit=10,
+    )
+    hits_systems = semantic_search_summaries_in_period(
+        repository=repository,
+        lancedb_dir=Path(str(tmp_path / "lancedb")),
+        run_id="run-semantic-cache",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        query="systems",
+        embedding_model="test/embed",
+        embedding_dimensions=None,
+        max_batch_inputs=64,
+        max_batch_chars=40000,
+        limit=5,
+        corpus_limit=10,
+    )
+
+    assert hits_agents
+    assert hits_systems
+    assert hits_agents[0].doc_id == docs[0]
+    assert hits_systems[0].doc_id == docs[1]
+    assert ensure_calls == ["run-semantic-cache"]
+
+
+def test_trends_semantic_search_does_not_cache_partial_warmups_after_embed_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: transient embed failures must not freeze an incomplete corpus for the rest of the run."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    _, repository = _build_runtime()
+
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+
+    for idx, title in enumerate(
+        [
+            "Robotic planners with agent memory",
+            "Compiler diagnostics for retrieval systems",
+        ]
+    ):
+        item, _ = repository.upsert_item(
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id=f"semantic-partial-{idx}",
+                canonical_url=f"https://example.com/semantic-partial-{idx}",
+                title=title,
+                authors=["Alice"],
+                published_at=period_start,
+                raw_metadata={"source": "test"},
+            )
+        )
+        assert item.id is not None
+        doc = repository.upsert_document_for_item(item=item)
+        assert doc.id is not None
+        repository.upsert_document_chunk(
+            doc_id=int(doc.id),
+            chunk_index=0,
+            kind="summary",
+            text_value=f"Agents paper {idx}",
+            start_char=0,
+            end_char=None,
+            source_content_type="analysis_summary",
+        )
+
+    import recoleta.rag.embeddings as rag_embeddings
+    import recoleta.rag.semantic_search as rag_semantic
+
+    content_embed_calls = 0
+
+    def flaky_embedding(**kwargs):  # type: ignore[no-untyped-def]
+        nonlocal content_embed_calls
+        inputs = kwargs.get("input") or []
+        token = str(inputs[0]).lower() if inputs else ""
+        if "query:" in token:
+            return {"data": [{"embedding": [1.0, 0.0]}], "usage": {"inputs": 1}}
+        content_embed_calls += 1
+        if content_embed_calls == 1:
+            raise RuntimeError("transient embedding failure")
+        return {"data": [{"embedding": [1.0, 0.0]}], "usage": {"inputs": len(inputs)}}
+
+    monkeypatch.setattr(rag_embeddings, "_embedding", flaky_embedding)
+
+    ensure_calls: list[str] = []
+    original_ensure = rag_semantic.ensure_summary_vectors_for_period
+
+    def counting_ensure(**kwargs):  # type: ignore[no-untyped-def]
+        ensure_calls.append(str(kwargs.get("run_id") or ""))
+        return original_ensure(**kwargs)
+
+    monkeypatch.setattr(
+        rag_semantic,
+        "ensure_summary_vectors_for_period",
+        counting_ensure,
+    )
+
+    first_hits = semantic_search_summaries_in_period(
+        repository=repository,
+        lancedb_dir=Path(str(tmp_path / "lancedb")),
+        run_id="run-semantic-partial",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        query="agents",
+        embedding_model="test/embed",
+        embedding_dimensions=None,
+        max_batch_inputs=1,
+        max_batch_chars=40000,
+        embedding_failure_mode="continue",
+        limit=5,
+        corpus_limit=10,
+    )
+    second_hits = semantic_search_summaries_in_period(
+        repository=repository,
+        lancedb_dir=Path(str(tmp_path / "lancedb")),
+        run_id="run-semantic-partial",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        query="agents",
+        embedding_model="test/embed",
+        embedding_dimensions=None,
+        max_batch_inputs=1,
+        max_batch_chars=40000,
+        embedding_failure_mode="continue",
+        limit=5,
+        corpus_limit=10,
+    )
+
+    assert len(first_hits) == 1
+    assert len(second_hits) == 2
+    assert ensure_calls == ["run-semantic-partial", "run-semantic-partial"]
 
 
 def test_trends_vector_sync_threshold_aborts_after_max_errors_and_emits_log(

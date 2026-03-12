@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
+from threading import Lock
 from typing import Any
 
 from loguru import logger
@@ -22,9 +24,102 @@ class SemanticSearchHit:
     text_preview: str
 
 
+@dataclass(frozen=True, slots=True)
+class _SummaryCorpusCacheKey:
+    run_id: str
+    doc_type: str
+    granularity: str
+    period_start: str
+    period_end: str
+    embedding_model: str
+    embedding_dimensions: int | None
+    max_batch_inputs: int
+    max_batch_chars: int
+    embedding_failure_mode: str
+    embedding_max_errors: int
+    limit: int
+    offset: int
+    scope: str
+    vector_store_dir: str
+    vector_store_table: str
+
+
+_SUMMARY_CORPUS_CACHE_MAX_KEYS = 64
+_summary_corpus_cache_lock = Lock()
+# Cache only within a run-local search context; the indexed corpus is expected
+# to be stable for a given trends run_id once indexing has finished.
+_summary_corpus_cache: OrderedDict[_SummaryCorpusCacheKey, dict[str, Any]] = OrderedDict()
+
+
 def _sanitize_where_string(value: str) -> str:
     # Minimal single-quote escaping for SQL-like filters.
     return str(value).replace("'", "''")
+
+
+def _summary_corpus_cache_key(
+    *,
+    vector_store: LanceVectorStore,
+    run_id: str,
+    doc_type: str,
+    granularity: str | None,
+    period_start: datetime,
+    period_end: datetime,
+    embedding_model: str,
+    embedding_dimensions: int | None,
+    max_batch_inputs: int,
+    max_batch_chars: int,
+    embedding_failure_mode: str,
+    embedding_max_errors: int,
+    limit: int,
+    offset: int,
+    scope: str,
+) -> _SummaryCorpusCacheKey:
+    return _SummaryCorpusCacheKey(
+        run_id=str(run_id or "").strip(),
+        doc_type=str(doc_type or "").strip().lower(),
+        granularity=str(granularity or "").strip().lower(),
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        embedding_model=str(embedding_model or "").strip(),
+        embedding_dimensions=(
+            int(embedding_dimensions) if embedding_dimensions is not None else None
+        ),
+        max_batch_inputs=int(max_batch_inputs),
+        max_batch_chars=int(max_batch_chars),
+        embedding_failure_mode=str(embedding_failure_mode or "").strip().lower(),
+        embedding_max_errors=int(embedding_max_errors or 0),
+        limit=int(limit),
+        offset=int(offset),
+        scope=str(scope or "").strip(),
+        vector_store_dir=str(getattr(vector_store, "db_dir", "")),
+        vector_store_table=str(getattr(vector_store, "table_name", "")),
+    )
+
+
+def _clone_summary_index_stats(
+    stats: dict[str, Any],
+    *,
+    cache_hit: bool,
+) -> dict[str, Any]:
+    cloned = dict(stats)
+    candidate_chunk_ids = list(cloned.get("candidate_chunk_ids") or [])
+    chunks_total = int(cloned.get("chunks_total") or len(candidate_chunk_ids))
+    cloned["candidate_chunk_ids"] = candidate_chunk_ids
+    cloned["corpus_cache_hit"] = cache_hit
+    if cache_hit:
+        cloned["embedded_total"] = 0
+        cloned["skipped_total"] = chunks_total
+        cloned["embedding_calls_total"] = 0
+        cloned["embedding_errors_total"] = 0
+        cloned["embedding_prompt_tokens_total"] = 0
+        cloned["embedding_prompt_tokens_missing_total"] = 0
+        cloned["embedding_cost_usd_total"] = 0.0
+        cloned["embedding_cost_missing_total"] = 0
+    return cloned
+
+
+def _should_cache_summary_index_stats(stats: dict[str, Any]) -> bool:
+    return int(stats.get("embedding_errors_total") or 0) <= 0
 
 
 def ensure_summary_vectors_for_period(
@@ -270,8 +365,7 @@ def semantic_search_summaries_in_period(
     if not normalized_query:
         return []
 
-    index_stats = ensure_summary_vectors_for_period(
-        repository=repository,
+    cache_key = _summary_corpus_cache_key(
         vector_store=vector_store,
         run_id=run_id,
         doc_type=doc_type,
@@ -287,8 +381,43 @@ def semantic_search_summaries_in_period(
         limit=corpus_limit,
         offset=0,
         scope=scope,
-        llm_connection=llm_connection,
     )
+    with _summary_corpus_cache_lock:
+        cached_stats = _summary_corpus_cache.get(cache_key)
+        if cached_stats is not None:
+            _summary_corpus_cache.move_to_end(cache_key)
+    if cached_stats is not None:
+        index_stats = _clone_summary_index_stats(cached_stats, cache_hit=True)
+    else:
+        fresh_index_stats = ensure_summary_vectors_for_period(
+            repository=repository,
+            vector_store=vector_store,
+            run_id=run_id,
+            doc_type=doc_type,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            embedding_model=embedding_model,
+            embedding_dimensions=embedding_dimensions,
+            max_batch_inputs=max_batch_inputs,
+            max_batch_chars=max_batch_chars,
+            embedding_failure_mode=embedding_failure_mode,
+            embedding_max_errors=embedding_max_errors,
+            limit=corpus_limit,
+            offset=0,
+            scope=scope,
+            llm_connection=llm_connection,
+        )
+        if _should_cache_summary_index_stats(fresh_index_stats):
+            with _summary_corpus_cache_lock:
+                _summary_corpus_cache[cache_key] = _clone_summary_index_stats(
+                    fresh_index_stats,
+                    cache_hit=False,
+                )
+                _summary_corpus_cache.move_to_end(cache_key)
+                while len(_summary_corpus_cache) > _SUMMARY_CORPUS_CACHE_MAX_KEYS:
+                    _summary_corpus_cache.popitem(last=False)
+        index_stats = _clone_summary_index_stats(fresh_index_stats, cache_hit=False)
     candidate_chunk_ids = [
         int(raw_id)
         for raw_id in list(index_stats.get("candidate_chunk_ids") or [])
@@ -362,6 +491,7 @@ def semantic_search_summaries_in_period(
             "embedding_errors_total": index_stats.get("embedding_errors_total"),
             "embedding_failure_mode": index_stats.get("embedding_failure_mode"),
             "embedding_max_errors": index_stats.get("embedding_max_errors"),
+            "corpus_cache_hit": index_stats.get("corpus_cache_hit"),
         },
     )
 
@@ -375,6 +505,7 @@ def semantic_search_summaries_in_period(
         )
         cost_usd_total = float(index_stats.get("embedding_cost_usd_total") or 0.0)
         cost_missing_total = int(index_stats.get("embedding_cost_missing_total") or 0)
+        cache_hit = bool(index_stats.get("corpus_cache_hit"))
 
         if isinstance(query_debug, dict):
             raw_prompt = query_debug.get("prompt_tokens")
@@ -403,6 +534,14 @@ def semantic_search_summaries_in_period(
             run_id=run_id,
             name=f"{prefix}.embedding_errors_total",
             value=errors_total,
+            unit="count",
+        )
+        repository.record_metric(
+            run_id=run_id,
+            name=f"{prefix}.corpus_cache_hits_total"
+            if cache_hit
+            else f"{prefix}.corpus_cache_misses_total",
+            value=1,
             unit="count",
         )
         if prompt_tokens_total > 0:

@@ -489,6 +489,10 @@ class TrendRepositoryPort(Protocol):
         self, *, item_id: int, content_types: list[str]
     ) -> dict[str, str | None]: ...
 
+    def get_latest_contents(
+        self, *, item_ids: list[int], content_type: str
+    ) -> dict[int, Content]: ...
+
 
 class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
     def add_artifact(
