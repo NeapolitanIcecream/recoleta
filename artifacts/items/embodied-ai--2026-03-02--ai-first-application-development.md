@@ -1,0 +1,42 @@
+---
+source: hn
+url: https://benkaiser.dev/ai-first-software-development/
+published_at: '2026-03-02T23:27:35'
+authors:
+- benkaiser
+topics:
+- mcp
+- ai-first-apps
+- llm-tools
+- consumer-agents
+- personal-crm
+relevance_score: 0.05
+run_id: materialize-outputs
+---
+
+# AI First Application Development
+
+## Summary
+这是一篇关于“AI 优先”应用开发的观点与产品介绍文章，主张将 MCP 服务器作为用户与应用交互的主要入口，而传统移动/网页 UI 退居次要地位。
+
+## Problem
+- 文章要解决的问题是：普通消费者目前**难以直接使用远程 MCP server**，相关能力多被限制在付费订阅、开发者模式或企业功能中。
+- 这很重要，因为如果 LLM 逐渐成为统一交互层，用户就希望在一次对话中跨日历、订票、外卖、天气、消息等多个服务完成任务，而不是反复切换应用。
+- 对开发者而言，传统 UI 开发成本高、迭代慢；作者认为若以 MCP 为主接口，可以跳过大量前端交互层负担，更快构建“AI first”应用。
+
+## Approach
+- 核心机制很简单：把应用能力封装成可远程调用的 **MCP servers**，再由一个聊天客户端让 LLM 在对话中编排多个服务完成任务。
+- 作者实现了一个消费者可用的客户端 **Joey MCP Client**：通过 OpenRouter 连接不同 LLM，用户手动配置远程 MCP servers，并为每个会话选择模型和服务器组合。
+- 客户端支持多个 MCP 同时使用、图片输入/输出、对 MCP server 的 OAuth 认证，以及源码可用、无遥测、无广告等特性。
+- 为展示“AI first application”形态，作者还构建了 **Mob CRM**：用户用自然语言描述社交互动，LLM 再通过若干工具调用自动创建联系人、关系和活动记录，替代传统 CRM 中大量手工点击录入。
+- 对开发者的论点是：MCP server 开发类似 CLI/REST 工具，输入输出更文本化、可测试、易被 LLM 理解，因此比做完整 Web/Mobile UI 更适合 AI 辅助开发。
+
+## Results
+- 文中**没有提供正式实验、数据集或基准测试结果**，因此没有可报告的定量指标、误差条或与现有方法的系统性对比。
+- 最强的具体产品性主张是：Joey MCP Client 已实现 **1 个客户端 + OpenRouter 接入 + 多个远程 MCP server 支持**，并可在单会话中组合多个服务。
+- 支持的明确功能包括 **多 MCP 同时使用、图片支持、OAuth 认证、源码可构建、无遥测、无广告**，但未给出用户规模、成功率、延迟或成本数字。
+- Mob CRM 的示例声称可把一次自然语言叙述，转换为若干次工具调用来完成联系人、关系和活动记录创建；文中只给出定性对比，称其比传统 CRM 的“**30 different clicks**”更自然、更省事，但未提供任务成功率或时间节省百分比。
+- 文章提出的前瞻性结论是：未来企业可能都需要提供 MCP server，否则在“LLM 作为入口”的世界中将失去用户触达，但这属于趋势判断而非经验证明。
+
+## Link
+- [https://benkaiser.dev/ai-first-software-development/](https://benkaiser.dev/ai-first-software-development/)

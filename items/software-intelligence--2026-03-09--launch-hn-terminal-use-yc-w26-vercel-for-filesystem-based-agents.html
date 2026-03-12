@@ -1,0 +1,30 @@
+<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Launch HN: Terminal Use (YC W26) – Vercel for filesystem-based agents · Recoleta</title><meta name='theme-color' content='#10273f'><link rel='stylesheet' href='../assets/site.css'></head><body class='page-item'><div class='site-bg'></div><div class='site-shell'><header class='site-header'><div class='nav-brand-wrap'><a class='nav-brand' href='../index.html'>Recoleta Trends</a></div><nav class='nav-links'><a class='nav-link' href='../index.html'>Home</a><a class='nav-link is-active' href='../archive.html'>Archive</a><a class='nav-link' href='../topics/index.html'>Topics</a><a class='nav-link' href='../streams/index.html'>Streams</a></nav></header><main class='site-main'><nav class='breadcrumbs'><a href='../index.html'>Home</a><span>/</span><span>Item</span></nav><section class='detail-hero'><div class='detail-hero-main'><div class='hero-kicker'>Recoleta Item Note</div><h1 class='detail-title'>Launch HN: Terminal Use (YC W26) – Vercel for filesystem-based agents</h1><p class='detail-dek'>TL;DR: Terminal Use 是一个面向“需要沙箱+文件系统”的智能体部署平台，把代码打包、沙箱运行、消息流式传输、任务状态持久化和文件读写统一成类似“Vercel for agents”的工作流，重点创新在于把文件系统做成独立于任务生命周期的一等公民。 Problem: 部署文件系统型智能体（如编码、研究、文档处理、内部工具）通常要手工拼装多个组件：打包、沙箱、消息流、状态持久化、文件上传下载，工程复杂且脆弱。…</p><div class='detail-stream-row'><a class='meta-pill stream-pill stream-pill-link' href='../streams/software-intelligence.html'>software_intelligence</a></div><div class='topic-pill-row'><span class='topic-pill'>agent-platform</span><span class='topic-pill'>filesystem-agents</span><span class='topic-pill'>sandbox-deployment</span><a class='topic-pill topic-pill-link' href='../topics/code-agents.html'>code-agents</a><span class='topic-pill'>developer-infrastructure</span></div><div class='card-actions detail-actions'><a class='action-link' href='https://news.ycombinator.com/item?id=47311657'>Open source</a><a class='action-link' href='../artifacts/items/software-intelligence--2026-03-09--launch-hn-terminal-use-yc-w26-vercel-for-filesystem-based-agents.md'>Source markdown</a></div></div><aside class='detail-hero-side'><div class='meta-panel'><div class='meta-panel-label'>Source</div><div class='meta-panel-value'>hn</div></div><div class='meta-panel'><div class='meta-panel-label'>Published</div><div class='meta-panel-value'>2026-03-09</div></div><div class='meta-panel'><div class='meta-panel-label'>Relevance</div><div class='meta-panel-value'>0.94</div></div></aside></section><section class='detail-content'><div class="document-flow"><section class="summary-grid summary-grid-single"><section class="surface-card section-card summary-card summary-card-primary"><h2 class="section-label">Summary</h2><div class="prose"><ul>
+<li>TL;DR: Terminal Use 是一个面向“需要沙箱+文件系统”的智能体部署平台，把代码打包、沙箱运行、消息流式传输、任务状态持久化和文件读写统一成类似“Vercel for agents”的工作流，重点创新在于把文件系统做成独立于任务生命周期的一等公民。</li>
+<li>Problem:
+<ul>
+<li>部署文件系统型智能体（如编码、研究、文档处理、内部工具）通常要手工拼装多个组件：打包、沙箱、消息流、状态持久化、文件上传下载，工程复杂且脆弱。</li>
+<li>传统托管方式往往把沙箱生命周期与工作区文件强绑定，导致跨轮次持续工作、多人/多智能体共享文件、版本迁移与回滚都很麻烦。</li>
+<li>这很重要，因为很多真实软件生产与代码智能体任务都依赖可持久化工作区，而不只是无状态聊天接口。</li>
+</ul>
+</li>
+<li>Approach:
+<ul>
+<li>用 <code>config.yaml</code> + <code>Dockerfile</code> 从代码仓库打包智能体，并通过 CLI 一键部署到沙箱环境，提供统一 API/SDK。</li>
+<li>定义 <code>on_create</code>、<code>on_event</code>、<code>on_cancel</code> 三个生命周期端点来驱动任务/会话执行，但不强绑定具体 agent harness。</li>
+<li>提供对 Claude Agent SDK、Codex SDK 的适配，也允许自定义 harness 接入其消息协议（兼容 Vercel AI SDK v6 类型）。</li>
+<li>核心机制是将文件系统与任务生命周期解耦：工作区可跨轮次持久化、被多个智能体共享、独立上传/下载，并可通过预签名 URL 直接传输文件而无需后端代理。</li>
+<li>在部署层支持现代开发平台能力，如 preview/production 环境、git 驱动环境切换、日志、回滚，以及任务迁移/版本固定策略。</li>
+</ul>
+</li>
+<li>Results:
+<ul>
+<li>文本未提供基准测试、实验数据或量化指标，因此没有可核验的性能/准确率提升数字。</li>
+<li>声称可将原本需要拼接的多项基础设施（打包、沙箱、流式消息、状态持久化、文件传输）收敛到单一部署流程中。</li>
+<li>声称其主要差异化在存储：文件系统被作为一等公民，可跨轮次持久化、跨智能体共享，并支持独立于沙箱活跃状态的文件上传/下载。</li>
+<li>声称支持部署后自动迁移现有任务到新版本；如遇破坏性变更，也可让旧任务继续停留在旧版本，仅新任务使用新部署。</li>
+<li>已支持 Claude Agent SDK 与 Codex SDK，并计划补齐更通用沙箱能力，如 preview URLs 与更底层的 <code>sandbox.exec(...)</code> API。</li>
+</ul>
+</li>
+</ul></div></section></section><section class="surface-card section-card"><h2 class="section-label">Links</h2><div class="prose"><ul>
+<li>Canonical: https://news.ycombinator.com/item?id=47311657</li>
+</ul></div></section></div></section></main></div></body></html>

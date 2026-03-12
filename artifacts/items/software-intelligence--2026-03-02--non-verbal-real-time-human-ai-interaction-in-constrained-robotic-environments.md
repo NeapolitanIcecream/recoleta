@@ -1,0 +1,46 @@
+---
+source: arxiv
+url: http://arxiv.org/abs/2603.01804v1
+published_at: '2026-03-02T12:38:43'
+authors:
+- Dragos Costea
+- Alina Marcu
+- Cristina Lazar
+- Marius Leordeanu
+topics:
+- human-ai-interaction
+- nonverbal-communication
+- motion-forecasting
+- edge-ai
+- emotion-recognition
+relevance_score: 0.35
+run_id: materialize-outputs
+---
+
+# Non-verbal Real-time Human-AI Interaction in Constrained Robotic Environments
+
+## Summary
+本文提出一个基于2D人体关键点的实时非语言人机交互框架，能同时预测未来1秒身体动作并识别情绪。其重点在于验证：轻量级时序模型能否在边缘设备上实现自然交互，以及合成数据预训练是否真正有用。
+
+## Problem
+- 机器人和具身AI在受限算力、能耗、隐私和连接条件下，仍需要理解并回应人的身体语言，以实现更自然、更安全的协作。
+- 现有生成式AI大多偏“离身”，擅长生成媒体内容，但不擅长持续、实时、纯非语言的身体互动；同时相关数据稀缺，细腻情绪动作难建模。
+- 还存在一个关键科学问题：AI生成的人体运动在统计上是否真正接近真人，还是只停留在表面模仿；这会直接影响模型从合成数据迁移到真实交互的效果。
+
+## Approach
+- 将任务定义为双任务学习：输入过去60帧（2秒）的17个COCO 2D关键点，输出未来30帧（1秒）动作序列，以及3类情绪分类结果（enthusiastic、laughing、happy-to-see-you）。
+- 对关键点做中心化和尺度归一化，使模型学习与人物位置和大小无关的运动模式；训练时联合最小化动作生成MSE与情绪分类交叉熵，分类损失权重为0.3。
+- 比较4种轻量架构：mlp、lstm、cnn-lstm、transformer，均使用共享编码器加两个任务头，以兼顾实时动作预测和情绪识别。
+- 使用437段真人视频，经滑窗扩展为6992个样本；再用MotionLCM生成9k/45k/90k合成骨架序列进行预训练，之后在真实数据上微调。
+- 进一步在SORA和VEO生成的视频上抽取关键点做“野外”测试，衡量从真人/合成骨架训练到前沿视频生成器输出之间的域差距。
+
+## Results
+- 实时性方面，4个模型都可在NVIDIA Orin Nano上超过实时运行：MLP 1.643 ms、LSTM 3.371 ms、CNN-LSTM 4.844 ms、Transformer 9.294 ms；最慢模型约等于100+ FPS。参数量分别为2.91M、0.35M、0.59M、3.43M。
+- 数据规模方面，真实数据为437段视频，经滑窗得到6992个训练/测试片段；合成预训练集最高达到90k样本（每类30k）。作者称随着预训练样本从9k→45k→90k增加，LSTM/CNN-LSTM/Transformer在真实测试集上的动作预测误差持续下降，而MLP收益很小甚至退化。
+- 情绪识别在人类测试集上几乎饱和：Baseline下CNN-LSTM/LSTM/Transformer均为100%，MLP为91.71%；预训练后MLP升至94.78%（+3.07个百分点），其余基本不变，说明真实集存在明显天花板效应。
+- 在SORA_Human上，预训练后的准确率分别为CNN-LSTM 38.28、LSTM 44.31、MLP 36.72、Transformer 45.98，对比Baseline的45.76、45.54、47.99、46.65，变化为-7.48、-1.23、-11.27、-0.67个百分点，说明SORA对真人骨架的重渲染会伤害迁移。
+- 在SORA_AI上，预训练对部分序列模型帮助明显：LSTM从32.66升到50.00（+17.34），Transformer从35.74升到48.15（+12.41），CNN-LSTM从31.25降到28.35（-2.90），MLP从39.96升到43.93（+3.97）。这表明当测试分布更接近MotionLCM时，预训练收益更大。
+- 在VEO上结果更接近真实分布但仍有域差：CNN-LSTM从39.27升到51.67（+12.40），LSTM从61.15降到59.48（-1.67），MLP从63.44降到55.42（-8.02），Transformer基本持平53.12→53.65（+0.53）。论文还明确指出，动作预测MAE在VEO上普遍优于SORA，说明**时间连贯性比图像逼真度更决定真实交互性能**；但文中未给出完整的MAE数值表，仅给出趋势和图示。
+
+## Link
+- [http://arxiv.org/abs/2603.01804v1](http://arxiv.org/abs/2603.01804v1)

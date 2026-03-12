@@ -1,0 +1,30 @@
+<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Long-Short Term Agents for Pure-Vision Bronchoscopy Robotic Autonomy · Recoleta</title><meta name='theme-color' content='#10273f'><link rel='stylesheet' href='../assets/site.css'></head><body class='page-item'><div class='site-bg'></div><div class='site-shell'><header class='site-header'><div class='nav-brand-wrap'><a class='nav-brand' href='../index.html'>Recoleta Trends</a></div><nav class='nav-links'><a class='nav-link' href='../index.html'>Home</a><a class='nav-link is-active' href='../archive.html'>Archive</a><a class='nav-link' href='../topics/index.html'>Topics</a><a class='nav-link' href='../streams/index.html'>Streams</a></nav></header><main class='site-main'><nav class='breadcrumbs'><a href='../index.html'>Home</a><span>/</span><span>Item</span></nav><section class='detail-hero'><div class='detail-hero-main'><div class='hero-kicker'>Recoleta Item Note</div><h1 class='detail-title'>Long-Short Term Agents for Pure-Vision Bronchoscopy Robotic Autonomy</h1><p class='detail-dek'>TL;DR: 提出一种仅用内镜视频+术前CT（无电磁/形状传感等外部定位）的分层“长-短期智能体”系统，实现机器人支气管镜的长航程自主导航，并在体模/离体/活体猪模型中达到接近专家的终点一致性。 Problem: 机器人支气管镜在深部、分叉多、视野窄且存在运动模糊/液体遮挡等伪影的气道中，长距离自主导航困难。 现有临床导航多依赖电磁跟踪或形状传感，增加硬件与流程复杂度，并受CT-体内解剖不匹配、金属干扰等影响。…</p><div class='detail-stream-row'><a class='meta-pill stream-pill stream-pill-link' href='../streams/embodied-ai.html'>embodied_ai</a></div><div class='topic-pill-row'><span class='topic-pill'>surgical-robotics</span><span class='topic-pill'>vision-only-navigation</span><span class='topic-pill'>imitation-learning</span><span class='topic-pill'>hierarchical-agents</span><span class='topic-pill'>world-model-critic</span><span class='topic-pill'>vision-language-guidance</span></div><div class='card-actions detail-actions'><a class='action-link' href='http://arxiv.org/abs/2603.07909v1'>Open source</a><a class='action-link' href='../artifacts/items/embodied-ai--2026-03-09--long-short-term-agents-for-pure-vision-bronchoscopy-robotic-autonomy.md'>Source markdown</a></div></div><aside class='detail-hero-side'><div class='meta-panel'><div class='meta-panel-label'>Source</div><div class='meta-panel-value'>arxiv</div></div><div class='meta-panel'><div class='meta-panel-label'>Published</div><div class='meta-panel-value'>2026-03-09</div></div><div class='meta-panel'><div class='meta-panel-label'>Relevance</div><div class='meta-panel-value'>0.56</div></div><div class='meta-panel'><div class='meta-panel-label'>Authors</div><div class='meta-panel-value'>Junyang Wu; Mingyi Luo; Fangfang Xie; Minghui Zhang; Hanxiao Zhang; Chunxi Zhang; …</div></div></aside></section><section class='detail-content'><div class="document-flow"><section class="summary-grid summary-grid-single"><section class="surface-card section-card summary-card summary-card-primary"><h2 class="section-label">Summary</h2><div class="prose"><ul>
+<li>TL;DR: 提出一种仅用内镜视频+术前CT（无电磁/形状传感等外部定位）的分层“长-短期智能体”系统，实现机器人支气管镜的长航程自主导航，并在体模/离体/活体猪模型中达到接近专家的终点一致性。</li>
+<li>Problem:
+<ul>
+<li>机器人支气管镜在深部、分叉多、视野窄且存在运动模糊/液体遮挡等伪影的气道中，长距离自主导航困难。</li>
+<li>现有临床导航多依赖电磁跟踪或形状传感，增加硬件与流程复杂度，并受CT-体内解剖不匹配、金属干扰等影响。</li>
+<li>需要一种“纯视觉”闭环控制方案，既能连续操控又能在分叉等歧义点做出正确决策。</li>
+</ul>
+</li>
+<li>Approach:
+<ul>
+<li>将术前CT分割气道与目标，并沿规划中心线渲染“虚拟支气管镜视图序列”，把导航变为逐个子目标的视觉对齐与自动切换。</li>
+<li>短期Reactive Agent：轻量Transformer（EfficientNet-B0编码当前帧与目标虚拟图，decoder-only Transformer输出动作），动作空间含前/后、四向弯折与“切换子目标”；用模仿学习（交叉熵）从专家演示训练，负责低延迟连续控制。</li>
+<li>长期Strategic Agent：仅在分叉/异常等关键点触发，融合两类高层指导：①基于术前中心线的几何动作建议（近10帧多数投票）；②多模态大模型(LLM)根据带方向标注的虚拟目标图+结构化提示给出高层动作序列。</li>
+<li>冲突消解：若长期建议落在短期策略top-K logits内则直接执行；若冲突来自LLM指导，则调用世界模型作为critic，对候选动作预测短期未来视觉rollout，并用LPIPS与目标虚拟视图比对，选取感知距离最小的动作。</li>
+</ul>
+</li>
+<li>Results:
+<ul>
+<li>高保真体模全肺17段：在17条轨迹上均到达规划终点（覆盖与专家一致）；平均到达代数(Generation)为5.53±1.55，优于GNM(4.24±1.60)与ViNT(3.65±1.62)。</li>
+<li>体模效率：相比专家遥操作，耗时更长但动作更少——450.7±69.5 s vs 273.5±77.5 s；动作数275.8±31.9 vs 346.8±45.9（P&lt;0.001）。文中指出主要增时来自每步强制3 s安全执行窗口，模型推理约6 ms。</li>
+<li>体模视觉对齐：终点SSIM 0.841±0.066，高于结构相近的ViNT基线0.776±0.044，强调“长-短期分层+协作”对长航程误差累积的抑制作用。</li>
+<li>视觉伪影鲁棒性（镜头涂甘油，清洁vs污染初始SSIM降至0.59）：5条轨迹完成4/5（RB2失败）；伪影下终点SSIM 0.874±0.051，与清洁条件0.878±0.033无显著差异，但动作数显著增加419.4±72.9（清洁自驾270.0±40.4）。</li>
+<li>离体猪肺（3个样本、59条轨迹）：对第8代内目标保持&gt;80%成功率；平均用时323.82±123.92 s、平均动作198.12±79.34；主要失败来自镜头被黏液持续覆盖或气泡完全遮挡导致目标不可见。</li>
+<li>活体猪（呼吸导致变形/运动伪影，7个任务）：100%成功(7/7)；与资深专家终点在CBCT坐标系下平均偏差4.90±2.64 mm（与资深-初级医生差异3.92±2.42 mm同量级）；终点视图SSIM为0.7701±0.0564（接近资深-初级0.7847±0.0401）；4个结节任务到结节最小距离6.77–20.55 mm（例：Traj1 自动6.77 mm vs 资深10.08 mm）；用时417.1±74.9 s显著慢于资深176.7±52.5 s（P=0.016），但动作数240.6±28.2与资深/初级无显著差异，作者将增时归因于每步3 s安全限制而非推理延迟。</li>
+</ul>
+</li>
+</ul></div></section></section><section class="surface-card section-card"><h2 class="section-label">Links</h2><div class="prose"><ul>
+<li>Canonical: http://arxiv.org/abs/2603.07909v1</li>
+</ul></div></section></div></section></main></div></body></html>

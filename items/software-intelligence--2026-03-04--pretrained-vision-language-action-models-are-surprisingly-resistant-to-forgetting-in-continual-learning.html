@@ -1,0 +1,39 @@
+<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Pretrained Vision-Language-Action Models are Surprisingly Resistant to Forgetting in Continual Learning · Recoleta</title><meta name='theme-color' content='#10273f'><link rel='stylesheet' href='../assets/site.css'></head><body class='page-item'><div class='site-bg'></div><div class='site-shell'><header class='site-header'><div class='nav-brand-wrap'><a class='nav-brand' href='../index.html'>Recoleta Trends</a></div><nav class='nav-links'><a class='nav-link' href='../index.html'>Home</a><a class='nav-link is-active' href='../archive.html'>Archive</a><a class='nav-link' href='../topics/index.html'>Topics</a><a class='nav-link' href='../streams/index.html'>Streams</a></nav></header><main class='site-main'><nav class='breadcrumbs'><a href='../index.html'>Home</a><span>/</span><span>Item</span></nav><section class='detail-hero'><div class='detail-hero-main'><div class='hero-kicker'>Recoleta Item Note</div><h1 class='detail-title'>Pretrained Vision-Language-Action Models are Surprisingly Resistant to Forgetting in Continual Learning</h1><p class='detail-dek'>这篇论文研究大型预训练视觉-语言-动作模型（VLA）在机器人持续学习中是否会像传统小模型一样严重遗忘。作者发现，预训练VLA配合非常简单的经验回放就能显著抑制遗忘，甚至在小回放缓存下接近零遗忘。</p><div class='detail-stream-row'><a class='meta-pill stream-pill stream-pill-link' href='../streams/software-intelligence.html'>software_intelligence</a></div><div class='topic-pill-row'><a class='topic-pill topic-pill-link' href='../topics/continual-learning.html'>continual-learning</a><span class='topic-pill'>vision-language-action</span><span class='topic-pill'>robot-learning</span><span class='topic-pill'>experience-replay</span><span class='topic-pill'>catastrophic-forgetting</span></div><div class='card-actions detail-actions'><a class='action-link' href='http://arxiv.org/abs/2603.03818v1'>Open source</a><a class='action-link' href='../artifacts/items/software-intelligence--2026-03-04--pretrained-vision-language-action-models-are-surprisingly-resistant-to-forgetting-in-continual-learning.md'>Source markdown</a></div></div><aside class='detail-hero-side'><div class='meta-panel'><div class='meta-panel-label'>Source</div><div class='meta-panel-value'>arxiv</div></div><div class='meta-panel'><div class='meta-panel-label'>Published</div><div class='meta-panel-value'>2026-03-04</div></div><div class='meta-panel'><div class='meta-panel-label'>Relevance</div><div class='meta-panel-value'>0.16</div></div><div class='meta-panel'><div class='meta-panel-label'>Authors</div><div class='meta-panel-value'>Huihan Liu; Changyeon Kim; Bo Liu; Minghuan Liu; Yuke Zhu</div></div></aside></section><section class='detail-content'><div class="document-flow"><section class="summary-grid summary-grid-single"><section class="surface-card section-card summary-card summary-card-primary"><h2 class="section-label">Summary</h2><div class="prose"><p>这篇论文研究大型预训练视觉-语言-动作模型（VLA）在机器人持续学习中是否会像传统小模型一样严重遗忘。作者发现，预训练VLA配合非常简单的经验回放就能显著抑制遗忘，甚至在小回放缓存下接近零遗忘。</p></div></section></section><section class="surface-card section-card"><h2 class="section-label">Problem</h2><div class="prose"><ul>
+<li>机器人持续学习需要按顺序学新任务，但常见策略模型在学习新任务时会<strong>灾难性遗忘</strong>旧任务。</li>
+<li>现有结论多来自<strong>从零训练的小型行为克隆模型</strong>；对于现代<strong>大规模预训练VLA</strong>，其持续学习行为缺乏系统研究。</li>
+<li>这个问题重要，因为若大模型本身更抗遗忘，就能让机器人以更简单的方法持续积累技能，而不必依赖复杂正则化或巨大回放缓存。</li>
+</ul></div></section><section class="surface-card section-card"><h2 class="section-label">Approach</h2><div class="prose"><ul>
+<li>在 <strong>LIBERO-Spatial / Object / Goal / 10</strong> 四个机器人持续学习基准上，比较两类预训练VLA（<strong>Pi0、GR00T N1.5</strong>）与多个非预训练小模型（如 <strong>BC-Transformer、BC-ViT、BC-DP</strong>）。</li>
+<li>采用最简单的<strong>Experience Replay (ER)</strong>：顺序训练任务时，只保留每个旧任务的一小部分样本，与当前任务数据混合训练。</li>
+<li>用 <strong>Success Rate (SR)</strong> 衡量整体任务成功率，用 <strong>Negative Backward Transfer (NBT)</strong> 衡量遗忘；NBT 越接近 0 越好，负值表示对旧任务还有正向回迁。</li>
+<li>为分析预训练作用，固定 Pi0 架构，比较三种初始化：<strong>VL+Action 预训练</strong>、<strong>仅VL预训练</strong>、<strong>从零训练</strong>，并改变回放缓存大小（如 10 / 100 / 1000 样本）。</li>
+<li>进一步通过<strong>组件交换与恢复实验</strong>分析“看似遗忘但知识仍保留”的现象：分别检查视觉语言骨干和动作头在继续学习后是否仍保存旧任务知识。</li>
+</ul></div></section><section class="surface-card section-card"><h2 class="section-label">Results</h2><div class="prose"><ul>
+<li>在 <strong>20% 数据/任务（sample size=1000）</strong> 设置下，预训练VLA明显优于非预训练模型：
+<ul>
+<li><strong>GR00T</strong> 平均 <strong>SR=0.919±0.011</strong>, <strong>NBT=0.027±0.021</strong>；</li>
+<li><strong>Pi0</strong> 平均 <strong>SR=0.768±0.017</strong>, <strong>NBT=-0.016±0.022</strong>；</li>
+<li>对比 <strong>BC-DP</strong> 的 <strong>SR=0.696±0.068, NBT=0.127±0.071</strong>，<strong>BC-T</strong> 的 <strong>SR=0.585±0.066, NBT=0.245±0.080</strong>，说明VLA遗忘更少且成功率更高。</li>
+</ul>
+</li>
+<li>在 <strong>LIBERO-Object</strong> 与 <strong>LIBERO-10</strong> 上，ER远优于不回放方法：
+<ul>
+<li><strong>Pi0 + ER</strong>：Object <strong>SR=0.898, NBT=-0.007</strong>；10 <strong>SR=0.586, NBT=-0.070</strong>。</li>
+<li><strong>Pi0 Sequential</strong>：Object <strong>NBT=0.696</strong>；10 <strong>NBT=0.562</strong>。</li>
+<li><strong>GR00T + ER</strong>：Object <strong>SR=0.962, NBT=0.004</strong>；而 <strong>Sequential</strong> 在 Object 上 <strong>NBT=0.752</strong>，<strong>EWC</strong> 为 <strong>0.766</strong>。</li>
+</ul>
+</li>
+<li>小缓存下预训练优势更明显：作者称在 <strong>2% 回放数据（100样本/任务）</strong> 时，预训练VLA的 <strong>NBT 约 0.1–0.2</strong>，而非预训练基线约 <strong>0.4–0.5</strong>，即后者遗忘大约 <strong>2–4 倍</strong>；有时VLA在该设置下可实现<strong>零遗忘</strong>。</li>
+<li>预训练本身是关键因素。在相同 Pi0 架构下（sample size=1000）：
+<ul>
+<li><strong>Pi0 from VL+Action</strong>：平均 <strong>SR=0.863, NBT=-0.0322</strong>；</li>
+<li><strong>Pi0 from VL</strong>：平均 <strong>SR=0.899, NBT=0.0159</strong>；</li>
+<li><strong>Pi0 from scratch</strong>：平均 <strong>SR=0.655, NBT=-0.0393</strong>；</li>
+<li><strong>BC-Transformer</strong>：平均 <strong>SR=0.678, NBT=0.191</strong>。
+这表明低遗忘不能单看 NBT；预训练同时提升<strong>前向学习能力</strong>与保持旧知识的能力。</li>
+</ul>
+</li>
+<li>论文还声称：即便某些旧任务性能下降，VLA内部仍保留相关知识，因而经过<strong>少量微调步骤</strong>即可快速恢复旧技能；摘录中未给出该恢复实验的明确数值，但这是作者关于“表面遗忘不等于知识彻底丢失”的核心结论。</li>
+</ul></div></section><section class="surface-card section-card"><h2 class="section-label">Link</h2><div class="prose"><ul>
+<li><a href="http://arxiv.org/abs/2603.03818v1">http://arxiv.org/abs/2603.03818v1</a></li>
+</ul></div></section></div></section></main></div></body></html>

@@ -1,0 +1,25 @@
+<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Human-AI Collaboration for Scaling Agile Regression Testing: An Agentic-AI Teammate from Manual to Automated Testing · Recoleta</title><meta name='theme-color' content='#10273f'><link rel='stylesheet' href='../assets/site.css'></head><body class='page-item'><div class='site-bg'></div><div class='site-shell'><header class='site-header'><div class='nav-brand-wrap'><a class='nav-brand' href='../index.html'>Recoleta Trends</a></div><nav class='nav-links'><a class='nav-link' href='../index.html'>Home</a><a class='nav-link is-active' href='../archive.html'>Archive</a><a class='nav-link' href='../topics/index.html'>Topics</a><a class='nav-link' href='../streams/index.html'>Streams</a></nav></header><main class='site-main'><nav class='breadcrumbs'><a href='../index.html'>Home</a><span>/</span><span>Item</span></nav><section class='detail-hero'><div class='detail-hero-main'><div class='hero-kicker'>Recoleta Item Note</div><h1 class='detail-title'>Human-AI Collaboration for Scaling Agile Regression Testing: An Agentic-AI Teammate from Manual to Automated Testing</h1><p class='detail-dek'>TL;DR: 该论文提出并在西门子旗下Hacon落地验证了一种“检索增强+多智能体”的代理式AI队友，将已验证的手工测试规格自动生成为可执行系统级回归测试脚本，以提升自动化产能并缩小敏捷回归测试的手工-自动化鸿沟。 Problem: 敏捷迭代中 测试规格产出速度超过自动化脚本实现速度 ，导致回归覆盖不足、手工测试负担上升与发布反馈变慢。 在大型工业系统里，测试脚本不仅要“能跑”，还必须满足…</p><div class='detail-stream-row'><a class='meta-pill stream-pill stream-pill-link' href='../streams/software-intelligence.html'>software_intelligence</a></div><div class='topic-pill-row'><span class='topic-pill'>agentic-ai</span><span class='topic-pill'>multi-agent-systems</span><span class='topic-pill'>retrieval-augmented-generation</span><span class='topic-pill'>test-automation</span><span class='topic-pill'>agile-regression-testing</span><span class='topic-pill'>human-ai-collaboration</span></div><div class='card-actions detail-actions'><a class='action-link' href='http://arxiv.org/abs/2603.08190v1'>Open source</a><a class='action-link' href='../artifacts/items/software-intelligence--2026-03-09--human-ai-collaboration-for-scaling-agile-regression-testing-an-agentic-ai-teammate-from-manual-to-automated-testing.md'>Source markdown</a></div></div><aside class='detail-hero-side'><div class='meta-panel'><div class='meta-panel-label'>Source</div><div class='meta-panel-value'>arxiv</div></div><div class='meta-panel'><div class='meta-panel-label'>Published</div><div class='meta-panel-value'>2026-03-09</div></div><div class='meta-panel'><div class='meta-panel-label'>Relevance</div><div class='meta-panel-value'>0.86</div></div><div class='meta-panel'><div class='meta-panel-label'>Authors</div><div class='meta-panel-value'>Moustapha El Outmani; Manthan Venkataramana Shenoy; Ahmad Hatahet; Andreas Rausch; Tim Niklas Kniep; Thomas Raddatz; …</div></div></aside></section><section class='detail-content'><div class="document-flow"><section class="summary-grid summary-grid-single"><section class="surface-card section-card summary-card summary-card-primary"><h2 class="section-label">Summary</h2><div class="prose"><h3>TL;DR: 该论文提出并在西门子旗下Hacon落地验证了一种“检索增强+多智能体”的代理式AI队友，将已验证的手工测试规格自动生成为可执行系统级回归测试脚本，以提升自动化产能并缩小敏捷回归测试的手工-自动化鸿沟。</h3><h3>Problem:</h3><ul>
+<li>敏捷迭代中<strong>测试规格产出速度超过自动化脚本实现速度</strong>，导致回归覆盖不足、手工测试负担上升与发布反馈变慢。</li>
+<li>在大型工业系统里，测试脚本不仅要“能跑”，还必须满足<strong>可维护性、断言/语义准确性、团队约定与治理可追踪</strong>等要求，现有学术/工具指导不足。</li>
+<li>人类测试工程师依赖大量<strong>隐性领域知识与非正式约定</strong>解读规格，但AI往往难以从规格中获得同等信息量，产生误解风险。</li>
+</ul><h3>Approach:</h3><ul>
+<li>构建“Hacon Test Automation Copilot”作为<strong>异步批处理的AI静默队友</strong>：每个Sprint开始前，从Jira导出并已人工审核的规格（JSON/Xray）进入输入目录，触发自动生成。</li>
+<li>采用<strong>RAG（检索增强生成）</strong>：从历史“规格-脚本”对中检索相似示例，辅助LLM生成候选系统测试脚本。</li>
+<li>采用<strong>有界多智能体工作流</strong>：
+<ul>
+<li>Generator 生成脚本；</li>
+<li>Jenkins 环境执行；</li>
+<li>Evaluator 基于执行日志按矩阵评估（语法正确、可执行、步骤覆盖、语义正确、改进空间）；</li>
+<li>Reporter 输出面向经理/工程师的结构化Markdown报告，并将追踪信息记录到MLflow。</li>
+</ul>
+</li>
+<li><strong>治理与协作机制</strong>：AI不得直接合入回归套件；所有产物（脚本、日志、报告、trace）可追踪；最终接受/重构/重写由人类负责，强调“AI跟随、人类主导”。</li>
+</ul><h3>Results:</h3><ul>
+<li>工业现状量化：自动化覆盖每月发布仅提升约<strong>1–2%</strong>；手工测试仍占总量<strong>82–87%</strong>，且手工测试绝对数量每次发布增长约<strong>10–20%</strong>（2025月度发布数据）。</li>
+<li>评估规模：共<strong>61</strong>条测试规格（6个功能域，平均约<strong>6</strong>步/用例，范围<strong>2–18</strong>步；工作量估算<strong>3–8</strong> story points；输入清晰度分级A–D）。</li>
+<li>人工评审数据：<strong>5</strong>名测试工程师对<strong>46</strong>个AI生成脚本进行审阅与重构，并完成Likert量表+开放反馈。</li>
+<li>生产力信号（语义审查/观察）：每个脚本中约<strong>30–50%<strong>的AI生成代码在工程师重构时</strong>保持不变</strong>，表明其可作为“初稿”显著减少从零编写工作量。</li>
+<li>质量/协作发现（定性为主，未给出更细量化指标）：即使规格被评为A–B（较清晰），AI仍会因隐性领域知识与团队约定缺失而<strong>过于字面执行/误解语义</strong>；并出现<strong>不符合团队clean code与领域API约定</strong>（如臆造方法名、结构不符合规范、报告不够可操作）的问题，强调<strong>人类复核不可替代</strong>与“人机共适应”对持续收益的重要性。</li>
+</ul></div></section></section><section class="surface-card section-card"><h2 class="section-label">Links</h2><div class="prose"><ul>
+<li>Canonical: http://arxiv.org/abs/2603.08190v1</li>
+</ul></div></section></div></section></main></div></body></html>

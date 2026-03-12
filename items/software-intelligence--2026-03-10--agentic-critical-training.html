@@ -1,0 +1,30 @@
+<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Agentic Critical Training · Recoleta</title><meta name='theme-color' content='#10273f'><link rel='stylesheet' href='../assets/site.css'></head><body class='page-item'><div class='site-bg'></div><div class='site-shell'><header class='site-header'><div class='nav-brand-wrap'><a class='nav-brand' href='../index.html'>Recoleta Trends</a></div><nav class='nav-links'><a class='nav-link' href='../index.html'>Home</a><a class='nav-link is-active' href='../archive.html'>Archive</a><a class='nav-link' href='../topics/index.html'>Topics</a><a class='nav-link' href='../streams/index.html'>Streams</a></nav></header><main class='site-main'><nav class='breadcrumbs'><a href='../index.html'>Home</a><span>/</span><span>Item</span></nav><section class='detail-hero'><div class='detail-hero-main'><div class='hero-kicker'>Recoleta Item Note</div><h1 class='detail-title'>Agentic Critical Training</h1><p class='detail-dek'>TL;DR: ACT 用强化学习直接训练语言模型代理去判断两个行动哪个更好，从而学会“为什么这样做更优”的自我反思能力，并在多个代理基准上稳定优于单纯模仿学习、常规强化学习和反思蒸馏方法。 Problem: 现有代理训练通常从模仿学习开始，只教模型“做什么”，却不教它“为什么这个动作更好”，因此缺乏对行动质量的内在判断能力。…</p><div class='detail-stream-row'><a class='meta-pill stream-pill stream-pill-link' href='../streams/software-intelligence.html'>software_intelligence</a></div><div class='topic-pill-row'><span class='topic-pill'>llm-agents</span><span class='topic-pill'>reinforcement-learning</span><span class='topic-pill'>self-reflection</span><span class='topic-pill'>agent-training</span><span class='topic-pill'>ood-generalization</span></div><div class='card-actions detail-actions'><a class='action-link' href='https://huggingface.co/papers/2603.08706'>Open source</a><a class='action-link' href='../artifacts/items/software-intelligence--2026-03-10--agentic-critical-training.md'>Source markdown</a></div></div><aside class='detail-hero-side'><div class='meta-panel'><div class='meta-panel-label'>Source</div><div class='meta-panel-value'>hf_daily</div></div><div class='meta-panel'><div class='meta-panel-label'>Published</div><div class='meta-panel-value'>Unknown</div></div><div class='meta-panel'><div class='meta-panel-label'>Relevance</div><div class='meta-panel-value'>0.87</div></div></aside></section><section class='detail-content'><div class="document-flow"><section class="summary-grid summary-grid-single"><section class="surface-card section-card summary-card summary-card-primary"><h2 class="section-label">Summary</h2><div class="prose"><ul>
+<li>TL;DR: ACT 用强化学习直接训练语言模型代理去判断两个行动哪个更好，从而学会“为什么这样做更优”的自我反思能力，并在多个代理基准上稳定优于单纯模仿学习、常规强化学习和反思蒸馏方法。</li>
+<li>Problem:
+<ul>
+<li>现有代理训练通常从模仿学习开始，只教模型“做什么”，却不教它“为什么这个动作更好”，因此缺乏对行动质量的内在判断能力。</li>
+<li>一些方法通过加入由专家/候选动作对比生成的“反思文本”来补救，但本质仍是让模型模仿现成反思，而不是自己学会评判优劣。</li>
+<li>对自主代理而言，能否识别更优动作直接影响规划、纠错、泛化和复杂任务表现，因此这个问题很重要。</li>
+</ul>
+</li>
+<li>Approach:
+<ul>
+<li>提出 <strong>Agentic Critical Training (ACT)</strong>：把训练目标从模仿动作/模仿反思，改为“在备选动作中判断哪个更好”。</li>
+<li>用强化学习按“判断是否正确”给予奖励；模型若能选对更优动作，就得到正反馈。</li>
+<li>这种机制迫使模型自己形成关于行动质量的推理，而不是复述预先构造好的反思语句。</li>
+<li>ACT 可与不同的后训练方法结合使用，作为提升代理反思与决策能力的通用训练范式。</li>
+</ul>
+</li>
+<li>Results:
+<ul>
+<li>在 <strong>3 个具有挑战性的 agent benchmark</strong> 上，ACT 与不同后训练方法结合时都能持续提升代理性能。</li>
+<li>相比 <strong>imitation learning</strong>，平均提升 <strong>5.07 points</strong>。</li>
+<li>相比已有 <strong>reinforcement learning</strong> 方法，平均提升 <strong>4.62 points</strong>。</li>
+<li>相比通过知识蒸馏注入反思能力的方法，平均提升 <strong>2.42 points</strong>。</li>
+<li>论文还声称 ACT 具有<strong>强的分布外泛化能力</strong>，并且在<strong>没有任何推理专项训练数据</strong>的情况下提升一般推理基准表现。</li>
+<li>摘要未给出具体 benchmark 名称、绝对分数或更细粒度指标，因此目前可确认的定量结果主要是上述平均点数提升。</li>
+</ul>
+</li>
+</ul></div></section></section><section class="surface-card section-card"><h2 class="section-label">Links</h2><div class="prose"><ul>
+<li>Canonical: https://huggingface.co/papers/2603.08706</li>
+</ul></div></section></div></section></main></div></body></html>
