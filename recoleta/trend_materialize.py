@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import json
 from pathlib import Path
 import re
 from typing import Any
 
 from recoleta.publish.item_notes import resolve_item_note_href
+from recoleta.types import DEFAULT_TOPIC_STREAM
 from recoleta.publish.trend_render_shared import (
     clamp_trend_overview_markdown,
     sanitize_trend_title,
 )
-from recoleta.trends import TrendCluster, TrendEvolutionSection, TrendPayload
+from recoleta.trends import (
+    TrendCluster,
+    TrendEvolutionSection,
+    TrendPayload,
+    peer_history_windows_for_period,
+)
 
 
 @dataclass(slots=True)
@@ -28,6 +35,7 @@ class MaterializedTrendNotePayload:
     overview_md: str
     topics: list[str]
     evolution: dict[str, Any] | None
+    history_window_refs: dict[str, dict[str, Any]]
     clusters: list[dict[str, Any]]
     highlights: list[str]
     rewrite_stats: TrendNoteRewriteStats
@@ -97,6 +105,7 @@ def materialize_trend_note_payload(
     markdown_output_dir: Path,
     output_language: str | None,
     item_note_href_by_url: dict[str, str] | None = None,
+    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> MaterializedTrendNotePayload:
     doc_cache: dict[int, Any | None] = {}
     item_cache: dict[int, Any | None] = {}
@@ -106,6 +115,11 @@ def materialize_trend_note_payload(
         if str(url).strip() and str(href).strip()
     }
     stats = TrendNoteRewriteStats()
+    history_window_refs: dict[str, dict[str, Any]] = {}
+    try:
+        current_period_start = datetime.fromisoformat(str(payload.period_start))
+    except Exception:
+        current_period_start = None
 
     def _get_doc(doc_id_value: int) -> Any | None:
         if doc_id_value not in doc_cache:
@@ -225,6 +239,44 @@ def materialize_trend_note_payload(
     def _rewrite_text(value: str) -> str:
         return _rewrite_canonical_item_links(_rewrite_doc_refs(value))
 
+    def _history_window_ref(window_id: str) -> dict[str, Any] | None:
+        normalized_window_id = str(window_id or "").strip().lower()
+        if not normalized_window_id or current_period_start is None:
+            return None
+        if normalized_window_id in history_window_refs:
+            return history_window_refs[normalized_window_id]
+        match = re.fullmatch(r"prev_(\d+)", normalized_window_id)
+        if match is None:
+            return None
+        index = max(1, int(match.group(1)))
+        windows = peer_history_windows_for_period(
+            granularity=payload.granularity,
+            period_start=current_period_start,
+            window_count=index,
+        )
+        if len(windows) < index:
+            return None
+        window = windows[index - 1]
+        docs = repository.list_documents(
+            doc_type="trend",
+            granularity=payload.granularity,
+            period_start=window.period_start,
+            period_end=window.period_end,
+            scope=scope,
+            order_by="event_desc",
+            limit=1,
+        )
+        doc = docs[0] if docs else None
+        ref = {
+            "window_id": window.window_id,
+            "label": window.label,
+            "granularity": payload.granularity,
+            "period_start": window.period_start.isoformat(),
+            "trend_doc_id": int(getattr(doc, "id") or 0) if doc is not None else 0,
+        }
+        history_window_refs[normalized_window_id] = ref
+        return ref
+
     title_for_notes = sanitize_trend_title(
         _rewrite_text(str(payload.title)),
         fallback="Trend",
@@ -258,6 +310,8 @@ def materialize_trend_note_payload(
                     for window in history_windows
                     if str(window).strip()
                 ]
+                for window in normalized_signal["history_windows"]:
+                    _history_window_ref(window)
             else:
                 normalized_signal["history_windows"] = []
             normalized_signals.append(normalized_signal)
@@ -337,6 +391,7 @@ def materialize_trend_note_payload(
         overview_md=overview_md_for_notes,
         topics=list(payload.topics),
         evolution=evolution_for_notes,
+        history_window_refs=history_window_refs,
         clusters=clusters_for_notes,
         highlights=highlights_for_notes,
         rewrite_stats=stats,

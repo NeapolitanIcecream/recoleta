@@ -197,3 +197,113 @@ Interpretation:
     continuing`) inside an otherwise Chinese note. This is acceptable for now
     because it preserves the machine-readable contract, but it is a clear
     presentation refinement target.
+
+## Reader-Facing Iteration (v5)
+
+This follow-up iteration targeted two practical quality issues:
+
+1. history window mentions such as `prev_1` / `prev_2` should render as
+   publish-target-friendly links inside the `Evolution` body, not only in the
+   separate `history_windows` bullet
+2. `Evolution` should become more evidence-dense by favoring named papers,
+   systems, and concrete numbers over generic temporal prose
+
+Additional changes:
+
+- render-time linkification now rewrites inline `prev_n` mentions inside
+  `Evolution.summary_md` and `Evolution.signals[].summary`
+- the trend prompt now explicitly requires named historical anchors from
+  `history_pack_md` and instructs the model to keep inline historical mentions
+  as `prev_n` tokens so publishing can linkify them
+- context budgets were raised again:
+  - app defaults:
+    - `overview_pack_max_chars=16000`
+    - `item_overview_top_k=28`
+    - `item_overview_item_max_chars=800`
+    - `peer_history_max_chars=12000`
+  - eval harness defaults:
+    - `overview_pack_max_chars=14000`
+    - `item_overview_top_k=20`
+    - `item_overview_item_max_chars=600`
+    - `peer_history_max_chars=12000`
+
+Control command:
+
+```bash
+TRENDS_PEER_HISTORY_ENABLED=false \
+uv run python scripts/eval_trends_agent_loop.py \
+  --out bench-out-peer-history-control-v5 \
+  --capture-baseline \
+  --capture-mode existing-corpus
+```
+
+Treatment command:
+
+```bash
+TRENDS_PEER_HISTORY_ENABLED=true \
+TRENDS_PEER_HISTORY_WINDOW_COUNT=3 \
+TRENDS_EVOLUTION_MAX_SIGNALS=4 \
+uv run python scripts/eval_trends_agent_loop.py \
+  --out bench-out-peer-history-treatment-v5 \
+  --capture-baseline \
+  --capture-mode existing-corpus
+```
+
+### Day window v5 audit
+
+- Control:
+  - no `## Evolution`
+  - `prompt_chars=16284`
+  - LLM usage: `input_tokens=47920`, `output_tokens=1802`, `requests=3`
+  - tool calls: `8`
+- Treatment:
+  - published note contains `## Evolution`
+  - inline history mentions are now linkified inside prose, e.g.
+    `[prev_1 (2026-03-04)](...)`, not just listed separately
+  - `Evolution` now names concrete works and metrics:
+    - CodeScout: up to `+27` resolved issues
+    - RepoLaunch: build success rate about `70%`
+    - Tool-Genesis: `gpt-5.1` SR `0.372 -> 0.604`
+    - TML-Bench: only `23/40` scaling curves monotonic
+    - OpenDev: `5` safety layers and `4` architectural layers
+  - `prompt_chars=18995`
+  - LLM usage: `input_tokens=53078`, `output_tokens=2311`, `requests=3`
+  - tool calls: `9`
+
+Interpretation:
+
+- The extra budget stayed well below the informal `100k` per-run ceiling.
+- Cost increased modestly for the day treatment, but the additional evidence
+  materially improved `Evolution` specificity and fixed the reader-facing
+  `prev_n` leakage problem from v3.
+
+### Week window v5 audit
+
+- Treatment:
+  - published note still has no `## Evolution`
+  - `prompt_chars=8161`
+  - LLM usage: `input_tokens=66157`, `output_tokens=2269`, `requests=5`
+  - tool calls: `24`
+- Control:
+  - published note has no `## Evolution`
+  - LLM usage: `input_tokens=89544`, `output_tokens=2527`, `requests=5`
+  - tool calls: `24`
+
+Interpretation:
+
+- Safe degradation remains intact even after budget increases.
+- The richer peer-history path did not inflate the week run beyond the control;
+  in this capture the control week actually used more input tokens.
+
+### Manual quality comparison
+
+- Versus v3:
+  - better: no reader-facing `Change: continuing`
+  - better: inline historical references are now clickable in body prose
+  - better: evolution paragraphs are more concrete and paper-specific
+- Versus the historical pre-evolution note:
+  - better: now expresses an actual cross-window delta instead of only a
+    same-window topical summary
+  - better: keeps claims grounded with concrete metrics
+  - tradeoff: the note is longer and the added `Evolution` section still shares
+    some vocabulary with `Overview`, so there is still room to tighten prose

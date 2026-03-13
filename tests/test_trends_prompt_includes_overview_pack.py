@@ -43,6 +43,14 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
         "shifting",
         "polarizing",
     ]
+    assert prompt_payload.get("evolution_requirements") == {
+        "avoid_generic_summary": True,
+        "prefer_concrete_titles": True,
+        "prefer_named_history_anchors": True,
+        "prefer_quantitative_details": True,
+        "render_history_window_mentions": True,
+        "use_fewer_signals_if_evidence_is_thin": True,
+    }
 
 
 def test_resolve_rag_query_sources_limits_week_trend_searches_to_day_docs() -> None:

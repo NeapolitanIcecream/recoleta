@@ -1073,6 +1073,7 @@ def run_trends_stage(
             payload=payload,
             markdown_output_dir=service.settings.markdown_output_dir,
             output_language=service.settings.llm_output_language,
+            scope=scope,
         )
         payload = persist_materialized_trend_payload(
             payload=payload,
@@ -1205,8 +1206,10 @@ def run_trends_stage(
                     overview_md=materialized.overview_md,
                     topics=list(payload.topics),
                     evolution=materialized.evolution,
+                    history_window_refs=materialized.history_window_refs,
                     clusters=materialized.clusters,
                     highlights=materialized.highlights,
+                    output_language=service.settings.llm_output_language,
                 )
             except Exception as note_exc:  # noqa: BLE001
                 log.bind(module="pipeline.trends.markdown_note").warning(
@@ -1227,8 +1230,10 @@ def run_trends_stage(
                     overview_md=materialized.overview_md,
                     topics=list(payload.topics),
                     evolution=materialized.evolution,
+                    history_window_refs=materialized.history_window_refs,
                     clusters=materialized.clusters,
                     highlights=materialized.highlights,
+                    output_language=service.settings.llm_output_language,
                 )
             except Exception as note_exc:  # noqa: BLE001
                 log.bind(module="pipeline.trends.obsidian_note").warning(

@@ -13,12 +13,13 @@ from typing import Any, cast
 
 _ALLOWED_GRANULARITIES = {"day", "week", "month"}
 _ALLOWED_CAPTURE_MODES = {"existing-trends", "existing-corpus", "pipeline"}
-# Keep eval reruns on a stable, cheaper budget than production defaults so
-# repeated baseline captures stay comparable and affordable.
+# Keep eval reruns on a stable, explicit budget so repeated captures stay
+# comparable while still exercising the richer trend context path.
 _DEFAULT_CAPTURE_BUDGET = {
-    "overview_pack_max_chars": 6000,
-    "item_overview_top_k": 12,
-    "item_overview_item_max_chars": 320,
+    "overview_pack_max_chars": 14000,
+    "item_overview_top_k": 20,
+    "item_overview_item_max_chars": 600,
+    "peer_history_max_chars": 12000,
 }
 
 
@@ -315,6 +316,9 @@ def _capture_budget_env_overrides() -> dict[str, str]:
         "TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS": str(
             _DEFAULT_CAPTURE_BUDGET["item_overview_item_max_chars"]
         ),
+        "TRENDS_PEER_HISTORY_MAX_CHARS": str(
+            _DEFAULT_CAPTURE_BUDGET["peer_history_max_chars"]
+        ),
     }
 
 
@@ -473,6 +477,7 @@ def _render_report_markdown(
     period_end: datetime,
     output_dir: Path,
     output_language: str | None,
+    scope: str,
 ) -> str:
     from recoleta.publish.trend_notes import write_markdown_trend_note
     from recoleta.trend_materialize import materialize_trend_note_payload
@@ -484,6 +489,7 @@ def _render_report_markdown(
         payload=payload,
         markdown_output_dir=output_dir,
         output_language=output_language,
+        scope=scope,
     )
     note_path = write_markdown_trend_note(
         output_dir=output_dir,
@@ -495,8 +501,11 @@ def _render_report_markdown(
         run_id=run_id,
         overview_md=materialized.overview_md,
         topics=materialized.topics,
+        evolution=materialized.evolution,
+        history_window_refs=materialized.history_window_refs,
         clusters=materialized.clusters,
         highlights=materialized.highlights,
+        output_language=output_language,
     )
     return note_path.read_text(encoding="utf-8")
 
@@ -677,6 +686,7 @@ def capture_existing_trends_baseline(
                 period_end=period_end,
                 output_dir=artifact_dir / "rendered-note",
                 output_language=cli._build_settings().llm_output_language,
+                scope=scope,
             )
             tool_trace = {
                 "trace_status": "unavailable_from_existing_doc",
@@ -936,6 +946,8 @@ def capture_trends_rerun_baseline(
                 period_end=period_end,
                 output_dir=artifact_dir / "rendered-note",
                 output_language=getattr(settings, "llm_output_language", None),
+                scope=str(window_manifest.get("stream", "") or "").strip()
+                or "default",
             )
             tool_trace = summarize_run_metrics(repository.list_metrics(run_id=run_id))
             debug_payload = _load_debug_payload(artifact_dir=artifact_dir, run_id=run_id)

@@ -80,6 +80,14 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Do not emit raw dates, ISO week/month tokens, or the current period token there."
     )
     base += (
+        " Treat evolution as an evidence-first section rather than a generic summary. "
+        "Each signal should name at least one concrete paper, benchmark, or system and include a specific factual detail or metric whenever the corpus provides one. "
+        "When comparing against history, anchor the contrast to a named historical title, cluster, or representative system from history_pack_md instead of saying only that 'previous windows emphasized X'. "
+        "If you mention a history window in prose, refer to it with the exact prev_n token so the renderer can convert it into a link. "
+        "Use tools to inspect current-window evidence before writing evolution, and prefer fewer signals over vague ones. "
+        "Do not simply restate the overview; focus on what persisted, appeared, faded, or changed across windows."
+    )
+    base += (
         " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
         "The opening overview prose must stay under 200 Chinese characters or 200 words before any later sub-sections. "
         "Keep topics only in the topics field; do not add a Topics/主题 section inside overview_md. "
@@ -1269,9 +1277,22 @@ def build_trend_prompt_payload(
                 + "."
             ),
             "If evolution is present, evolution.signals[].history_windows must use only prev_n window_id values from history_pack_md and must not repeat the current period token.",
+            "Evolution must be evidence-dense: name concrete papers, benchmarks, or systems and include specific factual details or metrics whenever available.",
+            "When comparing against history, name the historical title, cluster, or representative system from history_pack_md rather than only saying previous windows emphasized a theme.",
+            "If you mention a historical window in prose, use the exact prev_n token so publishing can render it as a link.",
+            "If you cannot ground an evolution signal concretely, emit fewer signals instead of generic prose.",
+            "Do not repeat the overview inside evolution; explain the delta across windows.",
         ],
     }
     payload["evolution_change_types"] = list(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
+    payload["evolution_requirements"] = {
+        "avoid_generic_summary": True,
+        "prefer_concrete_titles": True,
+        "prefer_named_history_anchors": True,
+        "prefer_quantitative_details": True,
+        "render_history_window_mentions": True,
+        "use_fewer_signals_if_evidence_is_thin": True,
+    }
     if overview_pack_md is not None:
         payload["overview_pack_md"] = str(overview_pack_md)
     if history_pack_md is not None:
