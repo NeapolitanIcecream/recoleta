@@ -715,6 +715,32 @@ def run_trends_stage(
                 metric_namespace=metric_namespace,
                 llm_connection=service._llm_connection,
             )
+            evolution_normalization_stats = {
+                "history_windows_normalized_total": 0,
+                "history_windows_dropped_total": 0,
+                "signals_dropped_total": 0,
+            }
+            if payload.evolution is not None and plan is not None:
+                available_window_ids = set()
+                if isinstance(history_pack_stats, dict):
+                    available_window_ids = {
+                        str(window_id).strip()
+                        for window_id in (
+                            history_pack_stats.get("available_window_ids") or []
+                        )
+                        if str(window_id).strip()
+                    }
+                payload.evolution, evolution_normalization_stats = (
+                    trends.normalize_trend_evolution(
+                        payload.evolution,
+                        granularity=normalized_granularity,
+                        period_start=period_start,
+                        history_windows=list(
+                            getattr(plan, "peer_history_windows", []) or []
+                        ),
+                        available_window_ids=available_window_ids,
+                    )
+                )
             history_windows_available = int(
                 history_pack_stats.get("available_windows") or 0
             ) if isinstance(history_pack_stats, dict) else 0
@@ -737,6 +763,7 @@ def run_trends_stage(
                     if payload.evolution is not None
                     else 0,
                     "suppressed_without_history": evolution_suppressed_without_history,
+                    "normalization": evolution_normalization_stats,
                 }
                 usage = debug.get("usage")
                 if isinstance(usage, dict):
@@ -810,6 +837,31 @@ def run_trends_stage(
             record_metric(
                 name="pipeline.trends.evolution.suppressed_without_history_total",
                 value=1 if evolution_suppressed_without_history else 0,
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.history_windows_normalized_total",
+                value=float(
+                    evolution_normalization_stats.get(
+                        "history_windows_normalized_total", 0
+                    )
+                ),
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.history_windows_dropped_total",
+                value=float(
+                    evolution_normalization_stats.get(
+                        "history_windows_dropped_total", 0
+                    )
+                ),
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.signals_dropped_total",
+                value=float(
+                    evolution_normalization_stats.get("signals_dropped_total", 0)
+                ),
                 unit="count",
             )
 

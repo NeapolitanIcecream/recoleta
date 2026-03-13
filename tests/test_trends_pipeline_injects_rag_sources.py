@@ -242,6 +242,7 @@ def test_trends_debug_artifact_captures_context_packs_when_history_enabled(
     assert debug["context_packs"]["overview_pack_md"].startswith("## Overview pack")
     assert debug["context_packs"]["history_pack_md"].startswith("## History pack")
     assert debug["history_pack_stats"]["available_windows"] == 1
+    assert debug["history_pack_stats"]["available_window_ids"] == ["prev_1"]
 
 
 def test_trends_suppresses_evolution_when_peer_history_is_unavailable(
@@ -340,3 +341,118 @@ def test_trends_suppresses_evolution_when_peer_history_is_unavailable(
         metric_values["pipeline.trends.evolution.suppressed_without_history_total"]
         == 1.0
     )
+
+
+def test_trends_normalize_evolution_history_windows_to_available_prev_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    monkeypatch.setenv("TRENDS_SELF_SIMILAR_ENABLED", "true")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_ENABLED", "true")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_WINDOW_COUNT", "2")
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    anchor = date(2026, 3, 5)
+    week_start, week_end = week_period_bounds(anchor)
+    previous_week_start, previous_week_end = week_period_bounds(date(2026, 2, 26))
+
+    day_start, day_end = day_period_bounds(week_start.date())
+    _ = persist_trend_payload(
+        repository=repository,
+        granularity="day",
+        period_start=day_start,
+        period_end=day_end,
+        payload=TrendPayload(
+            title="Daily Trend",
+            granularity="day",
+            period_start=day_start.isoformat(),
+            period_end=day_end.isoformat(),
+            overview_md="- daily",
+            topics=["agents"],
+            clusters=[],
+            highlights=[],
+        ),
+    )
+    _ = persist_trend_payload(
+        repository=repository,
+        granularity="week",
+        period_start=previous_week_start,
+        period_end=previous_week_end,
+        payload=TrendPayload(
+            title="Previous Weekly Trend",
+            granularity="week",
+            period_start=previous_week_start.isoformat(),
+            period_end=previous_week_end.isoformat(),
+            overview_md="- previous weekly trend",
+            topics=["agents"],
+            clusters=[],
+            highlights=[],
+        ),
+    )
+
+    import recoleta.trends as trends_mod
+
+    def _fake_generate_trend_via_tools(**_kwargs):  # type: ignore[no-untyped-def]
+        return (
+            TrendPayload(
+                title="Weekly Trend",
+                granularity="week",
+                period_start=week_start.isoformat(),
+                period_end=week_end.isoformat(),
+                overview_md="- weekly",
+                topics=["agents"],
+                clusters=[],
+                highlights=[],
+                evolution={
+                    "summary_md": "Execution loops are getting more explicit.",
+                    "signals": [
+                        {
+                            "theme": "Agent workflow",
+                            "change_type": "continuing",
+                            "summary": "The theme keeps maturing.",
+                            "history_windows": ["2026-W09", "2026-W10", "bogus"],
+                        }
+                    ],
+                },
+            ),
+            {"usage": {}, "tool_calls_total": 0, "tool_call_breakdown": {}},
+        )
+
+    monkeypatch.setattr(
+        trends_mod, "generate_trend_via_tools", _fake_generate_trend_via_tools
+    )
+
+    result = service.trends(
+        run_id="run-pipeline-history-normalize",
+        granularity="week",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+    )
+
+    meta_chunk = repository.read_document_chunk(doc_id=result.doc_id, chunk_index=1)
+    assert meta_chunk is not None
+    payload = json.loads(str(getattr(meta_chunk, "text", "") or ""))
+    signal = payload["evolution"]["signals"][0]
+    assert signal["history_windows"] == ["prev_1"]
+
+    metric_values = {
+        str(getattr(metric, "name", "")): float(getattr(metric, "value", 0.0))
+        for metric in repository.list_metrics(run_id="run-pipeline-history-normalize")
+    }
+    assert metric_values["pipeline.trends.evolution.history_windows_normalized_total"] == 1.0
+    assert metric_values["pipeline.trends.evolution.history_windows_dropped_total"] == 2.0
+    assert metric_values["pipeline.trends.evolution.signals_dropped_total"] == 0.0

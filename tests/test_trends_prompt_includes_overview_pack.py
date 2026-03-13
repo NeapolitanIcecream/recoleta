@@ -36,6 +36,13 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
     assert prompt_payload.get("ranking_n") == 7
     assert prompt_payload.get("rep_source_doc_type") == "item"
     assert prompt_payload.get("evolution_max_signals") == 4
+    assert prompt_payload.get("evolution_change_types") == [
+        "continuing",
+        "emerging",
+        "fading",
+        "shifting",
+        "polarizing",
+    ]
 
 
 def test_resolve_rag_query_sources_limits_week_trend_searches_to_day_docs() -> None:

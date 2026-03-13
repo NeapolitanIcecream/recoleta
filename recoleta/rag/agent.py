@@ -14,7 +14,11 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.trends import TrendCluster, TrendPayload
+from recoleta.trends import (
+    TREND_EVOLUTION_CHANGE_TYPE_VALUES,
+    TrendCluster,
+    TrendPayload,
+)
 from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
@@ -67,6 +71,13 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         " Tools only access the active target period. "
         "If historical same-granularity context is provided, it comes through history_pack_md in the prompt rather than tool calls. "
         "If no usable history is provided, leave evolution as null instead of guessing."
+    )
+    change_types = ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
+    base += (
+        " If you emit evolution.signals[].change_type, it must use one of these English enum values: "
+        f"{change_types}. "
+        "If you emit evolution.signals[].history_windows, cite only prev_n window_id values from history_pack_md sections that are not marked missing. "
+        "Do not emit raw dates, ISO week/month tokens, or the current period token there."
     )
     base += (
         " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
@@ -1252,8 +1263,15 @@ def build_trend_prompt_payload(
             "Keep topics only in metadata, not in overview_md body sections.",
             "Tools only access the active target period; use history_pack_md for same-granularity historical context when present.",
             "Leave evolution null unless history_pack_md provides usable prior-window evidence.",
+            (
+                "If evolution is present, evolution.signals[].change_type must be one of "
+                + ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
+                + "."
+            ),
+            "If evolution is present, evolution.signals[].history_windows must use only prev_n window_id values from history_pack_md and must not repeat the current period token.",
         ],
     }
+    payload["evolution_change_types"] = list(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
     if overview_pack_md is not None:
         payload["overview_pack_md"] = str(overview_pack_md)
     if history_pack_md is not None:
