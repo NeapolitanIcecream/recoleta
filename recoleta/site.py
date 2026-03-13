@@ -169,7 +169,7 @@ def _extract_trend_evolution_metadata(
             continue
         evolution_data = _extract_evolution_section_data(section=section)
         break
-    if evolution_data is None or not evolution_data.signals:
+    if evolution_data is None:
         return None, None
 
     summary_text = ""
@@ -184,6 +184,8 @@ def _extract_trend_evolution_metadata(
             )
             if summary_text:
                 break
+    if not evolution_data.signals:
+        return summary_text or None, None
 
     change_counts: dict[str, int] = {}
     for signal in evolution_data.signals:

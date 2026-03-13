@@ -693,6 +693,45 @@ def test_export_trend_static_site_prefers_evolution_summary_in_detail_hero(
     assert "Overview copy that should stay in the body section." in detail_html
 
 
+def test_export_trend_static_site_preserves_evolution_summary_when_no_signals(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=88,
+        title="Summary-only evolution trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 10, tzinfo=UTC),
+        period_end=datetime(2026, 3, 11, tzinfo=UTC),
+        run_id="run-site-evolution-summary-only",
+        overview_md="## Overview\n\nOverview copy should stay secondary.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "Evolution summary should still lead when the run emits zero signals.",
+            "signals": [],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "<p class='detail-dek'>Evolution summary should still lead when the run emits zero signals.</p>"
+        in detail_html
+    )
+    assert "Overview copy should stay secondary." in detail_html
+    assert "detail-insight-row" not in detail_html
+
+
 def test_export_trend_static_site_wraps_long_evolution_signal_copy_in_disclosure(
     tmp_path: Path,
 ) -> None:
