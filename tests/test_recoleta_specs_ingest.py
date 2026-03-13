@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from sqlmodel import Session, select
@@ -885,7 +886,7 @@ def test_ingest_writes_debug_artifact_on_repository_failure(
     repository = ExplodingRepository()
     service = PipelineService(
         settings=settings,
-        repository=repository,
+        repository=cast(Any, repository),
         analyzer=FakeAnalyzer(),
         telegram_sender=FakeTelegramSender(),
     )

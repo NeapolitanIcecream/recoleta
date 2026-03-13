@@ -51,33 +51,35 @@ def _seed_materialize_fixture(
     item_doc = repository.upsert_document_for_item(item=persisted_item)
     assert item_doc.id is not None
 
-    payload = TrendPayload(
-        title="Agent Systems",
-        granularity="day",
-        period_start=datetime(2026, 3, 2, tzinfo=UTC).isoformat(),
-        period_end=datetime(2026, 3, 3, tzinfo=UTC).isoformat(),
-        overview_md=(
-            "## Overview\n\n"
-            "Start with "
-            "[Robometer](https://example.com/robometer).\n"
-        ),
-        topics=["agents", "robotics"],
-        clusters=[
-            {
-                "name": "Reward models",
-                "description": (
-                    "Follow "
-                    "[Robometer](https://example.com/robometer)."
-                ),
-                "representative_chunks": [
-                    {
-                        "doc_id": item_doc.id,
-                        "chunk_index": 0,
-                    }
-                ],
-            }
-        ],
-        highlights=[],
+    payload = TrendPayload.model_validate(
+        {
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": datetime(2026, 3, 2, tzinfo=UTC).isoformat(),
+            "period_end": datetime(2026, 3, 3, tzinfo=UTC).isoformat(),
+            "overview_md": (
+                "## Overview\n\n"
+                "Start with "
+                "[Robometer](https://example.com/robometer).\n"
+            ),
+            "topics": ["agents", "robotics"],
+            "clusters": [
+                {
+                    "name": "Reward models",
+                    "description": (
+                        "Follow "
+                        "[Robometer](https://example.com/robometer)."
+                    ),
+                    "representative_chunks": [
+                        {
+                            "doc_id": item_doc.id,
+                            "chunk_index": 0,
+                        }
+                    ],
+                }
+            ],
+            "highlights": [],
+        }
     )
     trend_doc_id = persist_trend_payload(
         repository=repository,

@@ -1,9 +1,22 @@
+# ruff: noqa: F401
+
 from __future__ import annotations
 
 import sys
 from types import ModuleType
 
 from recoleta.pipeline import service as _service
+from recoleta.pipeline.service import (
+    PipelineService,
+    Progress,
+    ThreadPoolExecutor,
+    as_completed,
+    extract_html_maintext,
+    extract_pdf_text,
+    fetch_url_bytes,
+    fetch_url_html,
+    httpx,
+)
 
 
 class _PipelineModule(ModuleType):

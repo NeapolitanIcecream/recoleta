@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Protocol
 
-from recoleta.models import Analysis, Content, Delivery, Document, DocumentChunk, Item
+from recoleta.models import (
+    Analysis,
+    Content,
+    Delivery,
+    Document,
+    DocumentChunk,
+    Item,
+    TrendDelivery,
+)
 from recoleta.types import (
     AnalysisResult,
     AnalysisWrite,
@@ -162,7 +170,7 @@ class RepositoryPort(Protocol):
         message_id: str | None,
         status: str,
         error: str | None = None,
-    ) -> Delivery: ...
+    ) -> TrendDelivery: ...
 
     def mark_item_published(self, *, item_id: int) -> None: ...
 
@@ -513,4 +521,4 @@ class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
         message_id: str | None,
         status: str,
         error: str | None = None,
-    ) -> Delivery: ...
+    ) -> TrendDelivery: ...

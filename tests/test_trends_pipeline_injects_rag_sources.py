@@ -292,26 +292,28 @@ def test_trends_suppresses_evolution_when_peer_history_is_unavailable(
 
     def _fake_generate_trend_via_tools(**_kwargs):  # type: ignore[no-untyped-def]
         return (
-            TrendPayload(
-                title="Weekly Trend",
-                granularity="week",
-                period_start=week_start.isoformat(),
-                period_end=week_end.isoformat(),
-                overview_md="- weekly",
-                topics=["agents"],
-                clusters=[],
-                highlights=[],
-                evolution={
-                    "summary_md": "This should be suppressed without real history.",
-                    "signals": [
-                        {
-                            "theme": "Agent reliability",
-                            "change_type": "continuing",
-                            "summary": "The theme supposedly continues.",
-                            "history_windows": ["prev_1"],
-                        }
-                    ],
-                },
+            TrendPayload.model_validate(
+                {
+                    "title": "Weekly Trend",
+                    "granularity": "week",
+                    "period_start": week_start.isoformat(),
+                    "period_end": week_end.isoformat(),
+                    "overview_md": "- weekly",
+                    "topics": ["agents"],
+                    "clusters": [],
+                    "highlights": [],
+                    "evolution": {
+                        "summary_md": "This should be suppressed without real history.",
+                        "signals": [
+                            {
+                                "theme": "Agent reliability",
+                                "change_type": "continuing",
+                                "summary": "The theme supposedly continues.",
+                                "history_windows": ["prev_1"],
+                            }
+                        ],
+                    },
+                }
             ),
             {"usage": {}, "tool_calls_total": 0, "tool_call_breakdown": {}},
         )
@@ -408,26 +410,32 @@ def test_trends_normalize_evolution_history_windows_to_available_prev_ids(
 
     def _fake_generate_trend_via_tools(**_kwargs):  # type: ignore[no-untyped-def]
         return (
-            TrendPayload(
-                title="Weekly Trend",
-                granularity="week",
-                period_start=week_start.isoformat(),
-                period_end=week_end.isoformat(),
-                overview_md="- weekly",
-                topics=["agents"],
-                clusters=[],
-                highlights=[],
-                evolution={
-                    "summary_md": "Execution loops are getting more explicit.",
-                    "signals": [
-                        {
-                            "theme": "Agent workflow",
-                            "change_type": "continuing",
-                            "summary": "The theme keeps maturing.",
-                            "history_windows": ["2026-W09", "2026-W10", "bogus"],
-                        }
-                    ],
-                },
+            TrendPayload.model_validate(
+                {
+                    "title": "Weekly Trend",
+                    "granularity": "week",
+                    "period_start": week_start.isoformat(),
+                    "period_end": week_end.isoformat(),
+                    "overview_md": "- weekly",
+                    "topics": ["agents"],
+                    "clusters": [],
+                    "highlights": [],
+                    "evolution": {
+                        "summary_md": "Execution loops are getting more explicit.",
+                        "signals": [
+                            {
+                                "theme": "Agent workflow",
+                                "change_type": "continuing",
+                                "summary": "The theme keeps maturing.",
+                                "history_windows": [
+                                    "2026-W09",
+                                    "2026-W10",
+                                    "bogus",
+                                ],
+                            }
+                        ],
+                    },
+                }
             ),
             {"usage": {}, "tool_calls_total": 0, "tool_call_breakdown": {}},
         )
