@@ -20,6 +20,8 @@ from slugify import slugify
 
 from recoleta.publish.trend_render_shared import (
     _build_trend_browser_body_html,
+    _evolution_change_label,
+    _extract_evolution_section_data,
     _extract_trend_pdf_sections,
     _normalize_obsidian_callouts_for_pdf,
     _split_yaml_frontmatter_text,
@@ -47,6 +49,8 @@ class TrendSiteDocument:
     stream: str | None
     body_html: str
     excerpt: str
+    evolution_summary: str | None
+    evolution_insight: str | None
     frontmatter: dict[str, Any]
 
 
@@ -151,6 +155,50 @@ def _section_excerpt(sections: list[Any]) -> str:
     return _safe_excerpt(text, limit=220)
 
 
+def _html_visible_text(value: str) -> str:
+    return BeautifulSoup(str(value or ""), "html.parser").get_text(" ", strip=True)
+
+
+def _extract_trend_evolution_metadata(
+    sections: list[Any],
+) -> tuple[str | None, str | None]:
+    evolution_data = None
+    for section in sections:
+        heading = str(getattr(section, "heading", "") or "").strip().lower()
+        if "evolution" not in heading:
+            continue
+        evolution_data = _extract_evolution_section_data(section=section)
+        break
+    if evolution_data is None or not evolution_data.signals:
+        return None, None
+
+    summary_text = ""
+    if evolution_data.summary_html:
+        summary_text = _safe_excerpt(
+            _html_visible_text(evolution_data.summary_html), limit=200
+        )
+    if not summary_text:
+        for signal in evolution_data.signals:
+            summary_text = _safe_excerpt(
+                _html_visible_text(signal.summary_html), limit=200
+            )
+            if summary_text:
+                break
+
+    change_counts: dict[str, int] = {}
+    for signal in evolution_data.signals:
+        label = _evolution_change_label(signal.change_type)
+        if not label:
+            continue
+        change_counts[label] = change_counts.get(label, 0) + 1
+
+    parts = [
+        f"{len(evolution_data.signals)} signal{'s' if len(evolution_data.signals) != 1 else ''}"
+    ]
+    parts.extend(f"{label} {count}" for label, count in change_counts.items())
+    return summary_text or None, " · ".join(parts)
+
+
 def _site_href(*, from_page: Path, to_page: Path) -> str:
     relative = Path(os.path.relpath(to_page, start=from_page.parent))
     return "/".join(
@@ -173,7 +221,10 @@ def _item_action_label(*, source: str | None, canonical_url: str) -> str:
     host = (urlparse(str(canonical_url or "")).hostname or "").lower()
     if _host_matches(host=host, domain="arxiv.org") or normalized_source == "arxiv":
         return "Open arXiv"
-    if _host_matches(host=host, domain="openreview.net") or normalized_source == "openreview":
+    if (
+        _host_matches(host=host, domain="openreview.net")
+        or normalized_source == "openreview"
+    ):
         return "Open OpenReview"
     if _host_matches(host=host, domain="github.com"):
         return "Open GitHub"
@@ -285,7 +336,9 @@ def _discover_trend_site_input_dirs(
             TrendSiteInputDirectory(
                 path=resolved_candidate,
                 root_path=root_path,
-                inbox_path=inbox_path if inbox_path.exists() and inbox_path.is_dir() else None,
+                inbox_path=inbox_path
+                if inbox_path.exists() and inbox_path.is_dir()
+                else None,
                 stream=_infer_stream_name_from_trends_dir(resolved_candidate),
             )
         )
@@ -299,12 +352,12 @@ def _discover_trend_site_input_dirs(
         if direct_trends_dir.exists() and direct_trends_dir.is_dir():
             candidates.append(direct_trends_dir)
 
-        streams_root = raw_input if raw_input.name == "Streams" else raw_input / "Streams"
+        streams_root = (
+            raw_input if raw_input.name == "Streams" else raw_input / "Streams"
+        )
         if streams_root.exists() and streams_root.is_dir():
             candidates.extend(
-                path
-                for path in sorted(streams_root.glob("*/Trends"))
-                if path.is_dir()
+                path for path in sorted(streams_root.glob("*/Trends")) if path.is_dir()
             )
 
         if not candidates:
@@ -342,7 +395,11 @@ def _render_topic_link_pills(
         pills.append(
             f"<a class='topic-pill topic-pill-link' href='{href}'>{html.escape(cleaned)}</a>"
         )
-    return "".join(pills) if pills else "<span class='meta-pill subdued'>No tracked topics</span>"
+    return (
+        "".join(pills)
+        if pills
+        else "<span class='meta-pill subdued'>No tracked topics</span>"
+    )
 
 
 def _render_stream_link_pill(
@@ -359,11 +416,9 @@ def _render_stream_link_pill(
     if page_path is None:
         return f"<span class='meta-pill stream-pill'>{html.escape(cleaned)}</span>"
     href = _site_href(from_page=from_page, to_page=page_path)
-    return (
-        "<a class='meta-pill stream-pill stream-pill-link' href='{}'>{}</a>".format(
-            href,
-            html.escape(cleaned),
-        )
+    return "<a class='meta-pill stream-pill stream-pill-link' href='{}'>{}</a>".format(
+        href,
+        html.escape(cleaned),
     )
 
 
@@ -383,7 +438,9 @@ def _site_page_shell(
     stylesheet_href = _site_href(from_page=page_path, to_page=stylesheet_path)
     index_href = _site_href(from_page=page_path, to_page=output_dir / "index.html")
     archive_href = _site_href(from_page=page_path, to_page=output_dir / "archive.html")
-    topics_href = _site_href(from_page=page_path, to_page=output_dir / "topics" / "index.html")
+    topics_href = _site_href(
+        from_page=page_path, to_page=output_dir / "topics" / "index.html"
+    )
     streams_href = _site_href(
         from_page=page_path,
         to_page=output_dir / "streams" / "index.html",
@@ -455,7 +512,9 @@ def _render_trend_card(
         if document.pdf_asset_path is not None
         else None
     )
-    markdown_href = _site_href(from_page=from_page, to_page=document.markdown_asset_path)
+    markdown_href = _site_href(
+        from_page=from_page, to_page=document.markdown_asset_path
+    )
     topic_links = _render_topic_link_pills(
         topics=document.topics[:4],
         from_page=from_page,
@@ -466,7 +525,9 @@ def _render_trend_card(
         from_page=from_page,
         stream_pages=stream_pages,
     )
-    meta_pills = [f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"]
+    meta_pills = [
+        f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
+    ]
     if stream_link:
         meta_pills.append(stream_link)
     actions = [
@@ -475,6 +536,14 @@ def _render_trend_card(
     ]
     if pdf_href is not None:
         actions.insert(1, f"<a class='action-link secondary' href='{pdf_href}'>PDF</a>")
+    insight_html = ""
+    if document.evolution_insight:
+        insight_html = (
+            "<div class='trend-insight-row'>"
+            "<span class='trend-insight-badge'>Evolution</span>"
+            f"<span class='trend-insight-copy'>{html.escape(document.evolution_insight)}</span>"
+            "</div>"
+        )
     return (
         "<article class='trend-card'>"
         "<div class='card-meta-row'>"
@@ -483,6 +552,7 @@ def _render_trend_card(
         "</div>"
         f"<h2 class='card-title'><a href='{trend_href}'>{html.escape(document.title)}</a></h2>"
         f"<p class='card-excerpt'>{html.escape(document.excerpt)}</p>"
+        f"{insight_html}"
         f"<div class='topic-pill-row'>{topic_links}</div>"
         f"<div class='card-actions'>{''.join(actions)}</div>"
         "</article>"
@@ -541,11 +611,7 @@ def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path)
             "<li class='archive-item'>"
             f"<a href='{_site_href(from_page=from_page, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
             f"<span>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}"
-            + (
-                f" · {html.escape(document.stream)}"
-                if document.stream
-                else ""
-            )
+            + (f" · {html.escape(document.stream)}" if document.stream else "")
             + "</span>"
             "</li>"
             for document in month_documents
@@ -568,8 +634,12 @@ def _render_detail_page(
     previous_document: TrendSiteDocument | None,
     next_document: TrendSiteDocument | None,
 ) -> str:
-    breadcrumb_home = _site_href(from_page=document.page_path, to_page=output_dir / "index.html")
-    breadcrumb_archive = _site_href(from_page=document.page_path, to_page=output_dir / "archive.html")
+    breadcrumb_home = _site_href(
+        from_page=document.page_path, to_page=output_dir / "index.html"
+    )
+    breadcrumb_archive = _site_href(
+        from_page=document.page_path, to_page=output_dir / "archive.html"
+    )
     markdown_href = _site_href(
         from_page=document.page_path,
         to_page=document.markdown_asset_path,
@@ -609,7 +679,9 @@ def _render_detail_page(
             )
         )
     if next_document is not None:
-        next_href = _site_href(from_page=document.page_path, to_page=next_document.page_path)
+        next_href = _site_href(
+            from_page=document.page_path, to_page=next_document.page_path
+        )
         pager_items.append(
             "<a class='pager-card' href='{}'><span>Older</span><strong>{}</strong></a>".format(
                 next_href, html.escape(next_document.title)
@@ -620,11 +692,26 @@ def _render_detail_page(
         f"<a class='action-link' href='{markdown_href}'>Source markdown</a>",
     ]
     if pdf_href is not None:
-        action_links.insert(0, f"<a class='action-link' href='{pdf_href}'>Download PDF</a>")
+        action_links.insert(
+            0, f"<a class='action-link' href='{pdf_href}'>Download PDF</a>"
+        )
 
     detail_stream_html = (
         f"<div class='detail-stream-row'>{stream_link}</div>" if stream_link else ""
     )
+    hero_dek = (
+        document.evolution_summary
+        or document.excerpt
+        or _trend_pdf_hero_dek(document.frontmatter)
+    )
+    insight_html = ""
+    if document.evolution_insight:
+        insight_html = (
+            "<div class='detail-insight-row'>"
+            "<span class='detail-insight-badge'>Evolution</span>"
+            f"<span class='detail-insight-copy'>{html.escape(document.evolution_insight)}</span>"
+            "</div>"
+        )
     pager_html = (
         f"<section class='pager-row'>{''.join(pager_items)}</section>"
         if pager_items
@@ -642,8 +729,9 @@ def _render_detail_page(
         "<div class='detail-hero-main'>"
         f"<div class='hero-kicker'>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
-        f"<p class='detail-dek'>{html.escape(document.excerpt or _trend_pdf_hero_dek(document.frontmatter))}</p>"
+        f"<p class='detail-dek'>{html.escape(hero_dek)}</p>"
         f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
+        f"{insight_html}"
         f"{detail_stream_html}"
         f"<div class='topic-pill-row'>{topic_links}</div>"
         f"<div class='card-actions detail-actions'>{''.join(action_links)}</div>"
@@ -675,7 +763,9 @@ def _render_item_page(
     topic_pages: dict[str, Path],
     stream_pages: dict[str, Path],
 ) -> str:
-    breadcrumb_home = _site_href(from_page=document.page_path, to_page=output_dir / "index.html")
+    breadcrumb_home = _site_href(
+        from_page=document.page_path, to_page=output_dir / "index.html"
+    )
     markdown_href = _site_href(
         from_page=document.page_path,
         to_page=document.markdown_asset_path,
@@ -713,7 +803,9 @@ def _render_item_page(
         "</div>"
         for label, value in meta_rows
     )
-    action_links = [f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"]
+    action_links = [
+        f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"
+    ]
     if document.canonical_url:
         action_links.insert(
             0,
@@ -876,17 +968,17 @@ def _render_home_page(
         "<div class='section-heading-row'>"
         "<h2 class='section-title'>Latest briefs</h2>"
         "</div>"
-        f"<div class='trend-grid'>{latest_cards or '<div class=\"empty-card\">No trend notes available yet.</div>'}</div>"
+        f"<div class='trend-grid'>{latest_cards or '<div class="empty-card">No trend notes available yet.</div>'}</div>"
         "</section>"
         f"{stream_section_html}"
         "<section class='home-section split-layout'>"
         "<div>"
         "<h2 class='section-title'>Topic radar</h2>"
-        f"<div class='topic-card-grid'>{topic_cards or '<div class=\"empty-card\">No topics available yet.</div>'}</div>"
+        f"<div class='topic-card-grid'>{topic_cards or '<div class="empty-card">No topics available yet.</div>'}</div>"
         "</div>"
         "<div>"
         "<h2 class='section-title'>Archive preview</h2>"
-        f"<ul class='timeline-list'>{archive_preview or '<li class=\"timeline-item empty\">No archive entries yet.</li>'}</ul>"
+        f"<ul class='timeline-list'>{archive_preview or '<li class="timeline-item empty">No archive entries yet.</li>'}</ul>"
         "</div>"
         "</section>"
     )
@@ -939,7 +1031,7 @@ def _render_topics_index_page(
     content_html = (
         "<section class='home-section'>"
         "<h1 class='section-title page-section-title'>All tracked topics</h1>"
-        f"<div class='topic-card-grid'>{cards or '<div class=\"empty-card\">No topics available yet.</div>'}</div>"
+        f"<div class='topic-card-grid'>{cards or '<div class="empty-card">No topics available yet.</div>'}</div>"
         "</section>"
     )
 
@@ -988,7 +1080,7 @@ def _render_streams_index_page(
     content_html = (
         "<section class='home-section'>"
         "<h1 class='section-title page-section-title'>Topic streams</h1>"
-        f"<div class='topic-card-grid'>{cards or '<div class=\"empty-card\">No topic streams available yet.</div>'}</div>"
+        f"<div class='topic-card-grid'>{cards or '<div class="empty-card">No topic streams available yet.</div>'}</div>"
         "</section>"
     )
 
@@ -1084,7 +1176,9 @@ def _render_stream_page(
     )
 
 
-def _render_archive_page(*, documents: list[TrendSiteDocument], output_dir: Path) -> str:
+def _render_archive_page(
+    *, documents: list[TrendSiteDocument], output_dir: Path
+) -> str:
     page_path = output_dir / "archive.html"
     content_html = (
         "<section class='home-section'>"
@@ -1447,6 +1541,40 @@ iframe {
   color: #4f647a;
   line-height: 1.62;
 }
+.trend-insight-row,
+.detail-insight-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.trend-insight-row {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(29, 103, 194, 0.12);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(239, 245, 252, 0.92), rgba(247, 250, 254, 0.96));
+}
+.trend-insight-badge,
+.detail-insight-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #1d67c2;
+  color: #f7fbff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.trend-insight-copy,
+.detail-insight-copy {
+  color: #33506f;
+  font-size: 13px;
+  font-weight: 600;
+}
 .trend-card .card-actions,
 .detail-actions {
   margin-top: 16px;
@@ -1495,6 +1623,9 @@ iframe {
   font-size: 13px;
   font-weight: 700;
 }
+.detail-insight-row {
+  margin-bottom: 8px;
+}
 .detail-content {
   padding: 0;
 }
@@ -1531,6 +1662,11 @@ iframe {
 .detail-content .highlight-card {
   background:
     linear-gradient(180deg, rgba(247, 250, 254, 0.95), rgba(241, 247, 253, 0.96));
+}
+.detail-content .evolution-section {
+  background:
+    radial-gradient(circle at top right, rgba(29, 103, 194, 0.10), transparent 32%),
+    linear-gradient(180deg, rgba(236, 244, 253, 0.95), rgba(248, 251, 255, 0.98));
 }
 .detail-content .section-label {
   margin: 0 0 10px;
@@ -1620,6 +1756,168 @@ iframe {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
+.detail-content .evolution-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.detail-content .evolution-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detail-content .evolution-stat,
+.detail-content .history-pill,
+.detail-content .evolution-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(29, 103, 194, 0.14);
+  background: rgba(29, 103, 194, 0.08);
+  color: #1e5b9d;
+  font-size: 12px;
+  font-weight: 700;
+}
+.detail-content .evolution-stat.secondary,
+.detail-content .history-pill {
+  background: rgba(255, 255, 255, 0.88);
+  color: #4d647d;
+}
+.detail-content .evolution-summary {
+  margin-bottom: 14px;
+}
+.detail-content .evolution-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.detail-content .evolution-card {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(24, 52, 83, 0.10);
+  border-radius: 18px;
+  background: rgba(252, 254, 255, 0.96);
+  overflow: hidden;
+}
+.detail-content .evolution-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 18px 0 0 18px;
+  background: #7d94ae;
+}
+.detail-content .evolution-change-continuing::before {
+  background: #2c6bc5;
+}
+.detail-content .evolution-change-emerging::before {
+  background: #1d8b6f;
+}
+.detail-content .evolution-change-fading::before {
+  background: #b66a35;
+}
+.detail-content .evolution-change-shifting::before {
+  background: #7459c6;
+}
+.detail-content .evolution-change-polarizing::before {
+  background: #c24d6b;
+}
+.detail-content .evolution-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.detail-content .evolution-card-title {
+  margin: 0;
+  color: #183453;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 24px;
+  line-height: 1.08;
+}
+.detail-content .evolution-badge {
+  flex: 0 0 auto;
+}
+.detail-content .evolution-badge-continuing {
+  background: rgba(29, 103, 194, 0.10);
+  color: #1e5aa1;
+}
+.detail-content .evolution-badge-emerging {
+  background: rgba(29, 139, 111, 0.10);
+  color: #176d58;
+  border-color: rgba(29, 139, 111, 0.16);
+}
+.detail-content .evolution-badge-fading {
+  background: rgba(182, 106, 53, 0.11);
+  color: #9c5a2b;
+  border-color: rgba(182, 106, 53, 0.16);
+}
+.detail-content .evolution-badge-shifting {
+  background: rgba(116, 89, 198, 0.10);
+  color: #654bb0;
+  border-color: rgba(116, 89, 198, 0.16);
+}
+.detail-content .evolution-badge-polarizing {
+  background: rgba(194, 77, 107, 0.10);
+  color: #a2415a;
+  border-color: rgba(194, 77, 107, 0.16);
+}
+.detail-content .evolution-history-block {
+  display: grid;
+  gap: 8px;
+}
+.detail-content .evolution-history-label {
+  color: #7589a0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.detail-content .evolution-history-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detail-content .evolution-copy {
+  margin-top: -2px;
+}
+.detail-content .evolution-preview {
+  color: #30485f;
+  font-size: 14px;
+  line-height: 1.66;
+}
+.detail-content .evolution-expand {
+  margin-top: -2px;
+  border-top: 1px dashed rgba(24, 52, 83, 0.12);
+  padding-top: 10px;
+}
+.detail-content .evolution-expand-toggle {
+  cursor: pointer;
+  color: #1f5ea9;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+.detail-content .evolution-expand-toggle::-webkit-details-marker {
+  display: none;
+}
+.detail-content .evolution-expand-toggle::before {
+  content: "+";
+  display: inline-block;
+  margin-right: 6px;
+}
+.detail-content .evolution-expand[open] .evolution-expand-toggle::before {
+  content: "−";
+}
+.detail-content .evolution-expand-body {
+  margin-top: 10px;
+}
 .detail-content .topic-pill {
   justify-content: center;
   min-height: 40px;
@@ -1708,6 +2006,7 @@ iframe {
   .trend-grid,
   .topic-card-grid,
   .detail-content .summary-grid,
+  .detail-content .evolution-grid,
   .pager-row {
     grid-template-columns: 1fr;
   }
@@ -1757,6 +2056,11 @@ iframe {
   .detail-summary {
     width: 100%;
   }
+  .trend-insight-row,
+  .detail-insight-row,
+  .detail-content .evolution-card-head {
+    align-items: flex-start;
+  }
   .detail-content .topic-grid,
   .detail-content .cluster-columns {
     grid-template-columns: 1fr;
@@ -1792,7 +2096,10 @@ def _load_trend_source_documents(
             )
             topics = _parse_site_string_list(frontmatter.get("topics"))
 
-            stream = str(frontmatter.get("stream") or input_info.stream or "").strip() or None
+            stream = (
+                str(frontmatter.get("stream") or input_info.stream or "").strip()
+                or None
+            )
             source_pdf_path = markdown_path.with_suffix(".pdf")
             pdf_path = (
                 source_pdf_path
@@ -2075,7 +2382,12 @@ def _load_trend_site_documents(
         title, sections = _extract_trend_pdf_sections(body_html=body_html)
         title = sanitize_trend_title(title, fallback="Trend")
         excerpt = _section_excerpt(sections)
-        page_path = trend_pages_by_markdown_path[source_document.markdown_path.resolve()]
+        evolution_summary, evolution_insight = _extract_trend_evolution_metadata(
+            sections
+        )
+        page_path = trend_pages_by_markdown_path[
+            source_document.markdown_path.resolve()
+        ]
         browser_body_html = _rewrite_site_markdown_links(
             html_text=_build_trend_browser_body_html(sections=sections),
             source_markdown_path=source_document.markdown_path,
@@ -2116,6 +2428,8 @@ def _load_trend_site_documents(
                 stream=source_document.stream,
                 body_html=browser_body_html,
                 excerpt=excerpt,
+                evolution_summary=evolution_summary,
+                evolution_insight=evolution_insight,
                 frontmatter=source_document.frontmatter,
             )
         )
@@ -2376,9 +2690,7 @@ def stage_trend_site_source(
             stage_root / "Streams" / source_document.stream / "Trends"
             if source_document.stream
             else (
-                stage_root / "Trends"
-                if has_stream_documents
-                else resolved_output_dir
+                stage_root / "Trends" if has_stream_documents else resolved_output_dir
             )
         )
         target_dir.mkdir(parents=True, exist_ok=True)

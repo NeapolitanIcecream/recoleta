@@ -21,3 +21,8 @@ Pytest is the test runner; `pytest-asyncio` and `respx` support async and HTTP-f
 
 ## Commit & Pull Request Guidelines
 Recent history uses short imperative subjects with optional Conventional Commit scopes, for example `fix(trends): constrain rag searches` and `feat(trends): inject overview pack`. Match that pattern when possible. Keep commits focused, mention config or schema changes in the body, and include the commands you ran (`uv run pytest`, `uv run ruff check .`) in the PR description. If a change affects CLI output, Markdown publishing, or trend documents, include a representative sample in the PR.
+
+## Project-local Codex Skills
+Project-specific skills live under `.cursor/skills/`. When a task clearly matches one, load its `SKILL.md` before proceeding.
+
+- `research-site-design-language`: Use for site visuals, UI copy, badges, card hierarchy, section ordering, and markdown-to-site rendering changes. It keeps fixed research-facing chrome in English while allowing long-form body copy to follow the source language.

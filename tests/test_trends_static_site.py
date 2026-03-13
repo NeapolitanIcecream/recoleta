@@ -337,8 +337,7 @@ def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
         period_end=datetime(2026, 3, 3, tzinfo=UTC),
         run_id="run-site-items-1",
         overview_md=(
-            "## Overview\n\n"
-            f"Start with [Robometer](../Inbox/{item_note.name}).\n"
+            f"## Overview\n\nStart with [Robometer](../Inbox/{item_note.name}).\n"
         ),
         topics=["agents", "robotics"],
         clusters=[
@@ -387,10 +386,13 @@ def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
     assert "https://example.com/robometer" in item_html
     assert "Source markdown" in item_html
     assert "document-flow" in item_html
-    assert "<p class='detail-dek'>Reward models get a stronger comparison signal.</p>" in item_html
+    assert (
+        "<p class='detail-dek'>Reward models get a stronger comparison signal.</p>"
+        in item_html
+    )
     assert "summary-grid summary-grid-single" in item_html
     assert "surface-card section-card summary-card summary-card-primary" in item_html
-    assert '>Link</h2>' in item_html
+    assert ">Link</h2>" in item_html
 
 
 def test_export_trend_static_site_rewrites_history_trend_links_to_html(
@@ -462,6 +464,358 @@ def test_export_trend_static_site_rewrites_history_trend_links_to_html(
     assert "Previous Daily Trend (2026-03-04)" in detail_html
 
 
+def test_export_trend_static_site_prioritizes_evolution_section_and_renders_signal_cards(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=82,
+        title="Evolution-first trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC),
+        run_id="run-site-evolution-cards",
+        overview_md="## Overview\n\nA brief with explicit historical comparison.\n",
+        topics=["agents", "verification"],
+        evolution={
+            "summary_md": "Compared with prev_1 and prev_2, execution is easier to audit.",
+            "signals": [
+                {
+                    "theme": "Runtime verification gets explicit",
+                    "change_type": "continuing",
+                    "summary": "Compared with prev_1, the validation loop now exposes runtime checks.",
+                    "history_windows": ["prev_1"],
+                },
+                {
+                    "theme": "Terminal-native agent shells emerge",
+                    "change_type": "emerging",
+                    "summary": "Compared with prev_2, shell-native workflows become a first-class system surface.",
+                    "history_windows": ["prev_2"],
+                },
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-03-04",
+                "title": "Previous Daily Trend",
+                "granularity": "day",
+                "period_start": "2026-03-04T00:00:00+00:00",
+                "trend_doc_id": 80,
+            },
+            "prev_2": {
+                "window_id": "prev_2",
+                "label": "2026-03-03",
+                "title": "Older Daily Trend",
+                "granularity": "day",
+                "period_start": "2026-03-03T00:00:00+00:00",
+                "trend_doc_id": 79,
+            },
+        },
+        clusters=[
+            {
+                "name": "Execution loops",
+                "description": "Execution is converging on stronger validation surfaces.",
+                "representative_chunks": [],
+            }
+        ],
+        highlights=[],
+    )
+
+    previous_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=80,
+        title="Previous Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 4, tzinfo=UTC),
+        period_end=datetime(2026, 3, 5, tzinfo=UTC),
+        run_id="run-site-evolution-cards-prev-1",
+        overview_md="## Overview\n\nPrevious note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    older_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=79,
+        title="Older Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 3, tzinfo=UTC),
+        period_end=datetime(2026, 3, 4, tzinfo=UTC),
+        run_id="run-site-evolution-cards-prev-2",
+        overview_md="## Overview\n\nOlder note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert detail_html.index(">Evolution</h2>") < detail_html.index(">Clusters</h2>")
+    assert "evolution-section" in detail_html
+    assert "evolution-grid" in detail_html
+    assert "evolution-card" in detail_html
+    assert "history-pill" in detail_html
+    assert f"{previous_note.stem}.html" in detail_html
+    assert f"{older_note.stem}.html" in detail_html
+
+
+def test_export_trend_static_site_surfaces_evolution_insight_in_detail_hero_and_home_cards(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=83,
+        title="Evolution insight trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 6, tzinfo=UTC),
+        period_end=datetime(2026, 3, 7, tzinfo=UTC),
+        run_id="run-site-evolution-insight",
+        overview_md="## Overview\n\nOperational loops are becoming easier to compare.\n",
+        topics=["agents", "verification"],
+        evolution={
+            "summary_md": "Compared with prev_1, validation keeps moving earlier in the loop.",
+            "signals": [
+                {
+                    "theme": "Verification moves earlier",
+                    "change_type": "continuing",
+                    "summary": "Compared with prev_1, verification happens before deployment.",
+                    "history_windows": ["prev_1"],
+                },
+                {
+                    "theme": "Terminal harnesses solidify",
+                    "change_type": "emerging",
+                    "summary": "Compared with prev_1, shell-native harnesses are now a distinct design surface.",
+                    "history_windows": ["prev_1"],
+                },
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-03-05",
+                "title": "Previous Insight Trend",
+                "granularity": "day",
+                "period_start": "2026-03-05T00:00:00+00:00",
+                "trend_doc_id": 78,
+            }
+        },
+        clusters=[],
+        highlights=[],
+    )
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=78,
+        title="Previous Insight Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC),
+        run_id="run-site-evolution-insight-prev",
+        overview_md="## Overview\n\nPrevious note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "trend-insight-row" in index_html
+    assert "2 signals" in index_html
+    assert "Continuing 1" in index_html
+    assert "Emerging 1" in index_html
+
+    assert "detail-insight-row" in detail_html
+    assert "2 signals" in detail_html
+    assert "Continuing 1" in detail_html
+    assert "Emerging 1" in detail_html
+
+
+def test_export_trend_static_site_prefers_evolution_summary_in_detail_hero(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=84,
+        title="Hero summary trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 7, tzinfo=UTC),
+        period_end=datetime(2026, 3, 8, tzinfo=UTC),
+        run_id="run-site-evolution-hero",
+        overview_md="## Overview\n\nOverview copy that should stay in the body section.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "Evolution summary should lead the page because it explains the historical delta.",
+            "signals": [
+                {
+                    "theme": "Verification moves earlier",
+                    "change_type": "continuing",
+                    "summary": "Verification starts before deployment.",
+                    "history_windows": [],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "<p class='detail-dek'>Evolution summary should lead the page because it explains the historical delta.</p>"
+        in detail_html
+    )
+    assert "Overview copy that should stay in the body section." in detail_html
+
+
+def test_export_trend_static_site_wraps_long_evolution_signal_copy_in_disclosure(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=85,
+        title="Long evolution signal trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-evolution-disclosure",
+        overview_md="## Overview\n\nOverview copy.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "A compact historical bridge.",
+            "signals": [
+                {
+                    "theme": "Long-form runtime verification rationale",
+                    "change_type": "continuing",
+                    "summary": (
+                        "This signal summary is intentionally long so the site renderer "
+                        "has to switch from a dense always-open paragraph into a compact "
+                        "preview with a native disclosure control. The content keeps going "
+                        "to mimic a real historical comparison paragraph with multiple "
+                        "clauses, tradeoffs, and references that would otherwise turn the "
+                        "mobile layout into a wall of text."
+                    ),
+                    "history_windows": [],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "evolution-expand" in detail_html
+    assert "evolution-expand-toggle" in detail_html
+    assert "evolution-preview" in detail_html
+
+
+def test_export_trend_static_site_keeps_fixed_evolution_ui_terms_in_english_for_chinese_notes(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    previous_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=86,
+        title="Earlier Window",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-ui-english-prev",
+        overview_md="## Overview\n\nEarlier note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        output_language="zh-CN",
+    )
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=87,
+        title="Chinese note with fixed English chrome",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-ui-english-current",
+        overview_md="## Overview\n\n正文仍然可以是中文。\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "这里仍然是中文正文，但固定 UI 术语应该保持英文。",
+            "signals": [
+                {
+                    "theme": "验证继续前移",
+                    "change_type": "continuing",
+                    "summary": "相较 prev_1，验证发生得更早。",
+                    "history_windows": ["prev_1"],
+                }
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-03-08",
+                "title": "Earlier Window",
+                "granularity": "day",
+                "period_start": "2026-03-08T00:00:00+00:00",
+                "trend_doc_id": 86,
+            }
+        },
+        clusters=[],
+        highlights=[],
+        output_language="zh-CN",
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "1 signal" in detail_html
+    assert "Continuing 1" in detail_html
+    assert ">History<" in detail_html
+    assert ">Read full rationale<" not in detail_html
+    assert "Earlier Window" in detail_html
+    assert f"{previous_note.stem}.html" in detail_html
+    assert "延续 1" not in detail_html
+    assert "历史窗口" not in detail_html
+
+
 def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stream_pages(
     tmp_path: Path,
 ) -> None:
@@ -520,9 +874,7 @@ def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stre
     assert "agents_lab" in index_html
     assert "bio_watch" in index_html
 
-    stream_html = (site_dir / "streams" / "agents-lab.html").read_text(
-        encoding="utf-8"
-    )
+    stream_html = (site_dir / "streams" / "agents-lab.html").read_text(encoding="utf-8")
     assert "Agent Systems" in stream_html
 
     detail_html = (site_dir / "trends" / f"{agents_note.stem}.html").read_text(
@@ -584,9 +936,7 @@ def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
         / "Trends"
         / agents_note.with_suffix(".pdf").name
     ).exists()
-    assert (
-        staged_root / "Streams" / "bio_watch" / "Trends" / bio_note.name
-    ).exists()
+    assert (staged_root / "Streams" / "bio_watch" / "Trends" / bio_note.name).exists()
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["trends_total"] == 2
@@ -645,8 +995,7 @@ def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_strea
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert "Trends/" + legacy_note.name in manifest["files"]["markdown"]
     assert (
-        "Streams/agents_lab/Trends/" + stream_note.name
-        in manifest["files"]["markdown"]
+        "Streams/agents_lab/Trends/" + stream_note.name in manifest["files"]["markdown"]
     )
 
     site_dir = tmp_path / "site"
