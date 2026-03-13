@@ -78,13 +78,31 @@ def _citation_label_from_title(raw_title: str) -> str:
     normalized = " ".join(str(raw_title or "").split()).strip()
     if not normalized:
         return "Paper"
-    if ":" in normalized:
-        prefix = normalized.split(":", 1)[0].strip()
-        if 2 <= len(prefix) <= 40:
-            normalized = prefix
     normalized = normalized.replace("[", "(").replace("]", ")")
+    for separator in (":", "："):
+        if separator in normalized:
+            prefix = normalized.split(separator, 1)[0].strip()
+            if 2 <= len(prefix) <= 40:
+                normalized = prefix
+                break
     if len(normalized) > 60:
         normalized = normalized[:60].rstrip() + "…"
+    return normalized
+
+
+def _history_window_title_label(raw_title: str) -> str:
+    normalized = " ".join(str(raw_title or "").split()).strip()
+    if not normalized:
+        return ""
+    normalized = normalized.replace("[", "(").replace("]", ")")
+    for separator in (":", "："):
+        if separator in normalized:
+            prefix = normalized.split(separator, 1)[0].strip()
+            if 2 <= len(prefix) <= 40:
+                normalized = prefix
+                break
+    if len(normalized) > 48:
+        normalized = normalized[:48].rstrip() + "…"
     return normalized
 
 
@@ -270,6 +288,11 @@ def materialize_trend_note_payload(
         ref = {
             "window_id": window.window_id,
             "label": window.label,
+            "title": (
+                _history_window_title_label(str(getattr(doc, "title", "") or ""))
+                if doc is not None
+                else ""
+            ),
             "granularity": payload.granularity,
             "period_start": window.period_start.isoformat(),
             "trend_doc_id": int(getattr(doc, "id") or 0) if doc is not None else 0,

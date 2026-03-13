@@ -86,6 +86,22 @@ def _format_change_type_display(
     return en_labels.get(normalized, change_type)
 
 
+def _history_window_title_display(raw_title: str) -> str:
+    normalized = _single_line(str(raw_title or ""), fallback="")
+    if not normalized:
+        return ""
+    normalized = normalized.replace("[", "(").replace("]", ")")
+    for separator in (":", "："):
+        if separator in normalized:
+            prefix = normalized.split(separator, 1)[0].strip()
+            if 2 <= len(prefix) <= 40:
+                normalized = prefix
+                break
+    if len(normalized) > 48:
+        normalized = normalized[:48].rstrip() + "…"
+    return normalized
+
+
 def resolve_trend_note_path(
     *,
     note_dir: Path,
@@ -131,7 +147,13 @@ def _format_history_window_display(
         return raw
     window_id = _single_line(str(ref.get("window_id") or raw), fallback=raw)
     label = _single_line(str(ref.get("label") or ""), fallback="")
-    display = f"{window_id} ({label})" if label and label != window_id else window_id
+    title = _history_window_title_display(str(ref.get("title") or ""))
+    display_base = title or window_id
+    display = (
+        f"{display_base} ({label})"
+        if label and label not in {window_id, display_base}
+        else display_base
+    )
     try:
         trend_doc_id = int(ref.get("trend_doc_id") or 0)
     except Exception:

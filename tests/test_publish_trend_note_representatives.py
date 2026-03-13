@@ -255,6 +255,7 @@ def test_publish_trend_note_localizes_evolution_labels_and_links_history_windows
             "prev_1": {
                 "window_id": "prev_1",
                 "label": "2026-W10",
+                "title": "Previous Weekly Trend: Verification Gets Tighter",
                 "granularity": "week",
                 "period_start": "2026-03-02T00:00:00+00:00",
                 "trend_doc_id": 5,
@@ -266,14 +267,14 @@ def test_publish_trend_note_localizes_evolution_labels_and_links_history_windows
     text = note_path.read_text(encoding="utf-8")
     assert "- 变化：延续" in text
     assert (
-        "相比 [prev_1 (2026-W10)](week--2026-W10--trend--5.md)，今天更强调可运行环境与验证闭环。"
+        "相比 [Previous Weekly Trend (2026-W10)](week--2026-W10--trend--5.md)，今天更强调可运行环境与验证闭环。"
         in text
     )
     assert (
-        "相比 [prev_1 (2026-W10)](week--2026-W10--trend--5.md)，RepoLaunch reports a roughly 70% build success rate."
+        "相比 [Previous Weekly Trend (2026-W10)](week--2026-W10--trend--5.md)，RepoLaunch reports a roughly 70% build success rate."
         in text
     )
     assert (
-        "- 历史窗口：[prev_1 (2026-W10)](week--2026-W10--trend--5.md)"
+        "- 历史窗口：[Previous Weekly Trend (2026-W10)](week--2026-W10--trend--5.md)"
         in text
     )
