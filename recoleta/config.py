@@ -753,7 +753,7 @@ class Settings(BaseSettings):
         default=2, ge=1, validation_alias="TRENDS_REP_MIN_PER_CLUSTER"
     )
     trends_peer_history_enabled: bool = Field(
-        default=False, validation_alias="TRENDS_PEER_HISTORY_ENABLED"
+        default=True, validation_alias="TRENDS_PEER_HISTORY_ENABLED"
     )
     trends_peer_history_window_count: int = Field(
         default=3, ge=0, validation_alias="TRENDS_PEER_HISTORY_WINDOW_COUNT"

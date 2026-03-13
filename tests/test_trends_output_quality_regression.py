@@ -58,7 +58,7 @@ def test_write_obsidian_trend_note_renders_clusters_as_headings_and_papers(
     assert "tags:" in text
     assert "## Clusters" in text
     assert "### Cluster A" in text
-    assert "#### Representative papers" in text
+    assert "#### Representative sources" in text
     assert "- [Robometer: Scaling ...](http://arxiv.org/abs/2603.02115v1)" in text
     assert " — A; B; C; D; E; F; …" in text
     assert "TL;DR" not in text

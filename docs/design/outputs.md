@@ -44,6 +44,12 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Trends/`: canonical trend markdown notes
 - `site/`: optional derived static site output from `recoleta site build`
 
+When `TOPIC_STREAMS` is configured, each stream gets its own subtree instead:
+
+- `Streams/<stream>/Inbox/`
+- `Streams/<stream>/Trends/`
+- `Streams/<stream>/latest.md`
+
 Item notes contain YAML frontmatter and sections such as `Summary` and `Links`.
 
 Trend notes are the canonical source for all downstream trend surfaces:
@@ -51,6 +57,7 @@ Trend notes are the canonical source for all downstream trend surfaces:
 - Telegram trend PDFs render from `MARKDOWN_OUTPUT_DIR/Trends/*.md`
 - `recoleta site build` renders from a trend markdown directory
 - `recoleta site stage` mirrors trend markdown/PDF artifacts into a repo-local deployment directory
+- `recoleta materialize outputs` rerenders trend markdown from stored trend documents and can optionally refresh PDFs/site output in the same pass
 
 ## Trend PDF surface
 
@@ -95,10 +102,12 @@ Important behavior:
 
 - `recoleta site serve` uses Python's standard-library HTTP server; it is a preview helper, not a full dev server.
 - `recoleta materialize outputs` is the offline repair path for existing outputs: it backfills item notes and rerenders trend markdown from stored DB documents without mutating upstream ingest/analyze state, and can optionally refresh site/PDF artifacts.
+- `recoleta materialize outputs --scope <stream>` lets you repair a single stream without rewriting every configured stream.
 - All commands that rebuild site output treat their output directories as managed artifacts and clear stale files before writing.
 - When `--input-dir` and `--output-dir` are passed explicitly, they do not require a full Recoleta runtime config. This is intentional so CI and GitHub Pages can build from a staged content snapshot.
 - `recoleta site gh-deploy` keeps `main` free of committed site snapshots and Pages-specific workflow files by publishing a derived branch instead.
 - `recoleta site stage` remains useful for custom CI pipelines and non-GitHub static hosts when you want an explicit repo-local snapshot.
+- In topic-stream mode, `recoleta site build` and `recoleta site gh-deploy` aggregate stream-local `Trends/` trees and expose a `Streams` navigation surface instead of flattening mixed domains together.
 
 ## CLI UX
 
@@ -116,3 +125,9 @@ After `recoleta site serve` / `recoleta site build` / `recoleta site stage` / `r
 
 - exported trend/topic counts
 - output directory path
+
+After `recoleta materialize outputs`, the CLI prints:
+
+- per-scope item/trend/pdf totals
+- trend materialization failures and canonical-link rewrite totals
+- site manifest path when `--site` is enabled

@@ -56,7 +56,7 @@ def test_render_trend_note_pdf_preserves_title_and_sections(tmp_path: Path) -> N
 
     assert "Agentic tooling shifts into evaluation loops" in text
     assert "Overview" in text
-    assert "Representative papers" in text
+    assert "Representative sources" in text
 
 
 def test_render_trend_note_pdf_debug_bundle_exports_intermediate_files(

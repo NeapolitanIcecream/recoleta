@@ -13,6 +13,9 @@ Recoleta is a CLI-first application with a small set of commands:
 - `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram). `--date` scopes the run to one UTC day.
 - `recoleta trends` / `recoleta trends-week`: generate day/week/month trend documents from analyzed items or lower-granularity trend documents, with optional backfill.
 - `recoleta site`: build, stage, or GitHub Pages-deploy a static site from canonical trend markdown notes.
+- `recoleta materialize outputs`: rebuild Markdown/PDF/site artifacts from stored DB state without rerunning ingest/analyze.
+- `recoleta rag`: prewarm or rebuild the LanceDB vector workspace used by trend semantic search.
+- `recoleta db`: destructive reset helpers for clean-slate or trends-only resets.
 - `recoleta run`: schedule ingest/analyze/publish periodically, or use `run --once --date ...` for a one-shot UTC-day pipeline.
 - `recoleta stats`, `recoleta doctor`, `recoleta gc`, `recoleta vacuum`, `recoleta backup`, and `recoleta restore`: read-only diagnostics and maintenance commands for long-running workspaces.
 
@@ -29,6 +32,7 @@ Current module layout:
 - `recoleta/extract.py`: fulltext extraction (HTML/PDF), HTML cleanup, and Markdown conversion
 - `recoleta/analyzer.py`: LLM invocation via LiteLLM and PydanticAI
 - `recoleta/triage.py`: semantic scoring and pre-ranking before LLM (optional)
+- `recoleta/rag/`: vector sync, LanceDB access, semantic search, and trend-agent tool wiring
 - `recoleta/storage/`: SQLite schema, repository facade, leases, source state, maintenance, and document helpers
 - `recoleta/storage.py`: convenience re-export of the storage facade and shared types
 - `recoleta/publish/`: Markdown/Obsidian note writers plus Telegram-facing trend note and PDF rendering helpers
@@ -157,6 +161,15 @@ Operational guidance:
 - Treat the generated PDF as a delivery artifact, not as the source of truth.
 - When `--debug-pdf` is enabled, export the exact HTML/CSS/markdown inputs used for the render.
 
+## Trend generation sibling flow
+
+Trend generation is a sibling pipeline, not just an extra publish target:
+
+- `recoleta trends` builds or refreshes a scoped document corpus (`documents` + `document_chunks`) from analyzed items or lower-granularity trend docs.
+- Semantic search uses a local LanceDB workspace to retrieve related summaries and representative sources for clusters.
+- Optional overview packs (`TRENDS_SELF_SIMILAR_ENABLED`) and bounded peer-history packs (`TRENDS_PEER_HISTORY_ENABLED`) are injected into the trend agent prompt before the final payload is materialized.
+- `recoleta materialize outputs` can rerender canonical markdown notes, PDFs, and site output from stored trend documents after the fact.
+
 ## Durable pre-ranking boundary
 
 When triage is enabled, Stage 4 consumes `triaged` items (plus `retryable_failed` retries).  
@@ -188,6 +201,7 @@ For v0, concurrency should be conservative:
 Recoleta persists state in two places:
 
 - **SQLite index**: truth source for state machines, dedupe, retries, metrics.
+- **LanceDB cache**: rebuildable local vector store used by trend semantic search and manual `recoleta rag *` maintenance commands.
 - **Filesystem outputs**:
   - Local Markdown output directory (default, user-facing artifacts)
   - Obsidian Vault notes (user-facing artifacts)
@@ -198,6 +212,7 @@ Recoleta persists state in two places:
 SQLite enables:
 - incremental runs (process only new/changed items)
 - persisted source pull state (watermarks, cursors, conditional request metadata)
+- scoped analyses/documents for topic streams and trend corpora
 - delivery idempotency
 - auditing and re-processing
 
@@ -213,11 +228,13 @@ Every pipeline stage must emit at least one machine-readable signal:
   - source pull diagnostics such as `filtered_out_total`, `in_window_total`, and `not_modified_total`
   - LLM call counts and errors by provider/model
   - delivered item counts
+  - trend context-pack metrics such as history-window availability and overview-pack truncation
 - **Debug artifacts** (optional):
   - `{run_id}/{item_id}/llm-request.json`
   - `{run_id}/{item_id}/llm-response.json`
   - optional triage artifacts (when enabled): `embedding-request.json`, `embedding-response.json`, `triage-summary.json`
   - optional trend PDF render bundles under `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/<pdf-stem>/`
+  - optional trend-agent debug payloads including raw tool traces and context-pack stats
   - scrub secrets before writing
 
 ## Error handling and retries

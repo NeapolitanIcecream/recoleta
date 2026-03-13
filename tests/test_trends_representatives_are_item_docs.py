@@ -127,7 +127,7 @@ def test_trends_week_enforces_item_level_representatives(
     note_path = next(note_dir.glob(f"week--*--trend--{result.doc_id}.md"))
     note_text = note_path.read_text(encoding="utf-8")
 
-    rep_section_start = note_text.find("#### Representative papers")
+    rep_section_start = note_text.find("#### Representative sources")
     assert rep_section_start >= 0
     rep_section = note_text[rep_section_start:]
 

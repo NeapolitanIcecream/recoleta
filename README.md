@@ -48,7 +48,7 @@ flowchart LR
 - **Topic streams**: one Recoleta instance can host multiple virtual topic-specific pipelines with separate analysis scopes and delivery sinks.
 - **Semantic triage before LLM (optional)**: pre-rank (and optionally filter) candidates by topic similarity to improve LLM ROI under backlog.
 - **Outputs where you read**: local Markdown output (default) + optional Obsidian notes + optional curated Telegram digest.
-- **Trend surfaces**: trend markdown notes can be republished as browser-rendered PDFs and as a deployable static website.
+- **Trend surfaces with retrieval context**: trend generation can enrich prompts with semantic overview packs, representative source docs, bounded peer-history windows, browser-rendered PDFs, and a deployable static website.
 - **Operationally friendly**: structured logs, per-run metrics in SQLite, optional scrubbed debug artifacts.
 
 <a id="recoleta-installation"></a>
@@ -79,8 +79,8 @@ uv run recoleta --help
 
 Recoleta now ships an official multi-target `Dockerfile`.
 
-- `runtime`: core CLI image for `ingest`, `analyze`, `publish`, `run`, `gc`, `backup`, and `doctor`
-- `runtime-full`: extends `runtime` with Pandoc and Chromium for richer trend PDF / browser-rendered surfaces
+- `runtime`: the default CLI image for the full command surface, including ingest/analyze/publish/run plus trends, site, RAG, DB, and maintenance commands
+- `runtime-full`: extends `runtime` with Pandoc and Chromium for `html_document_md`, browser-rendered trend PDFs, and richer trend/web publishing flows
 
 The Docker build uses `uv.lock` plus BuildKit cache mounts, so rebuilds should be materially faster after the first dependency sync when only application code changes.
 
@@ -347,11 +347,33 @@ When `topic_streams` is configured, `recoleta trends` and `recoleta trends-week`
 - Obsidian: `OBSIDIAN_BASE_FOLDER/Streams/<stream>/Trends/`
 - CLI summary: one aggregate line plus one `stream -> doc_id` line per stream
 
-Optional knobs (env or config):
+Semantic context knobs (env or config):
 
-- `RAG_LANCEDB_DIR`: where semantic vectors are stored (default: platform user data dir + `/lancedb`)
+- `RAG_LANCEDB_DIR`: where trend-search vectors and indices are stored (default: platform user data dir + `/lancedb`)
 - `TRENDS_EMBEDDING_MODEL`, `TRENDS_EMBEDDING_DIMENSIONS`
+- `TRENDS_EMBEDDING_BATCH_MAX_INPUTS`, `TRENDS_EMBEDDING_BATCH_MAX_CHARS`
 - `TRENDS_EMBEDDING_FAILURE_MODE` (`continue|fail_fast|threshold`) and `TRENDS_EMBEDDING_MAX_ERRORS` (required when `threshold`)
+- `TRENDS_SELF_SIMILAR_ENABLED`: build an overview pack from semantically related summaries / lower-level trend docs and attach representative source documents to clusters
+- `TRENDS_RANKING_N`: top semantic matches per retrieval query used when filling clusters
+- `TRENDS_OVERVIEW_PACK_MAX_CHARS`: size budget for the overview pack injected into the trend prompt
+- `TRENDS_ITEM_OVERVIEW_TOP_K`, `TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS`: how much per-item summary context is folded into day-trend overview packs
+- `TRENDS_REP_MIN_PER_CLUSTER`: minimum cluster representatives to preserve after normalization/backfill
+- `TRENDS_PEER_HISTORY_ENABLED`: add prior peer windows to the prompt so the trend payload can emit evolution notes
+- `TRENDS_PEER_HISTORY_WINDOW_COUNT`, `TRENDS_PEER_HISTORY_MAX_CHARS`
+- `TRENDS_EVOLUTION_MAX_SIGNALS`: cap the number of evolution signals kept after normalization
+
+Manual RAG maintenance is optional. Normal trend runs can populate vectors on demand, but these commands help when you want to prewarm or repair the search corpus:
+
+```bash
+# Prebuild item-summary vectors for a date range
+uv run recoleta rag sync-vectors \
+  --doc-type item \
+  --period-start 2026-03-01T00:00:00+00:00 \
+  --period-end 2026-03-08T00:00:00+00:00
+
+# Rebuild ANN / scalar indices after a large backfill
+uv run recoleta rag build-index
+```
 
 PDF behavior:
 
@@ -377,6 +399,7 @@ Behavior:
 - `recoleta site serve` builds the site by default, then serves `MARKDOWN_OUTPUT_DIR/site` on `127.0.0.1:8000`.
 - `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
 - `recoleta materialize outputs` backfills `Inbox/` item notes and rerenders trend markdown from existing DB trend documents without rerunning ingest/analyze; add `--site` and/or `--pdf` when you want to refresh derived HTML/PDF outputs in the same pass.
+- `recoleta materialize outputs --scope <stream> --granularity week` is the targeted repair path when only one stream or one trend level needs to be regenerated.
 - `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
 - `recoleta site gh-deploy` keeps the checked-out worktree on your source branch and skips the push when the generated snapshot is unchanged.
 - In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory.
@@ -514,9 +537,21 @@ uv run recoleta backup
 uv run recoleta restore --bundle /path/to/backup-bundle --yes
 ```
 
+Workspace reset helpers:
+
+```bash
+# Remove only trend/item document corpus rows and chunks; keep items, contents, analyses
+uv run recoleta db reset --trends-only --yes
+
+# Delete the SQLite DB and sidecars for a full clean slate
+uv run recoleta db clear --yes
+```
+
 Scope notes:
 
 - `backup` / `restore` operate on the SQLite state store only
+- `db reset --trends-only` is useful when trend markdown/PDF/site output should be regenerated from fresh trend runs without losing ingest/analyze history
+- `recoleta materialize outputs` is the safer repair path when the stored DB trend payloads are still authoritative and only filesystem outputs have drifted
 - markdown outputs, artifacts, and LanceDB directories should still be protected by normal filesystem backups when they matter
 - default GC is conservative; cache pruning is explicit so old canonical notes are not deleted by surprise
 
@@ -653,6 +688,11 @@ Recoleta's current CLI surface includes:
 - `recoleta site build`: render a static site from trend markdown notes
 - `recoleta site gh-deploy`: build the site and push a dedicated GitHub Pages branch
 - `recoleta site stage`: mirror trend markdown/PDF artifacts into a repo-local snapshot for custom CI or non-GitHub hosting
+- `recoleta materialize outputs --site --pdf`: rerender item notes, trend notes, optional PDFs, and optional site output from existing DB state
+- `recoleta rag sync-vectors --period-start ... --period-end ...`: prewarm or rebuild trend-search vectors in LanceDB
+- `recoleta rag build-index`: build ANN/scalar indices for the current LanceDB embedding table
+- `recoleta db reset --trends-only --yes`: clear trend corpus/documents without deleting items, contents, or analyses
+- `recoleta db clear --yes`: delete the SQLite DB and sidecar files
 - `recoleta stats --json`: emit a machine-readable workspace snapshot
 - `recoleta doctor --healthcheck`: run a read-only healthcheck
 - `recoleta gc`, `recoleta vacuum`, `recoleta backup`, `recoleta restore --bundle ... --yes`: maintenance and recovery commands

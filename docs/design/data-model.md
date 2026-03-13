@@ -1,18 +1,30 @@
-# Data Model (SQLite + Obsidian)
+# Data Model (SQLite + LanceDB + Markdown)
 
-This document defines the SQLite schema (logical model) and the Obsidian note layout used by Recoleta.
+This document defines the current logical data model used by Recoleta: the SQLite truth store, the rebuildable LanceDB trend-search cache, and the Markdown/Obsidian output layout. The schema is scope-aware so one workspace can host multiple topic streams.
 
 ## SQLite tables (logical)
 
 ### `runs`
 
-Tracks each pipeline run for auditing and trend stats.
+Tracks each managed run for auditing, leases, and freshness checks.
 
 - `id` (PK, text): run id (UUID)
 - `started_at` (datetime)
+- `heartbeat_at` (datetime): refreshed while long-running commands hold the workspace lease
 - `finished_at` (datetime, nullable)
 - `status` (text): `running|succeeded|failed`
 - `config_fingerprint` (text): hash of effective config (excluding secrets)
+
+### `workspace_leases`
+
+Single-row lease records that prevent concurrent writers from corrupting one workspace.
+
+- `name` (PK, text): logical lease name
+- `owner_token` (text)
+- `run_id` (text, nullable)
+- `command` (text)
+- `pid`, `hostname` (nullable)
+- `acquired_at`, `heartbeat_at`, `expires_at`
 
 ### `items`
 
@@ -27,7 +39,7 @@ Canonical normalized records for source items.
 - `authors` (text, nullable): serialized list
 - `published_at` (datetime, nullable)
 - `raw_metadata_json` (text): source-specific metadata
-- `state` (text): `ingested|enriched|analyzed|published|retryable_failed|failed`
+- `state` (text): `ingested|enriched|triaged|analyzed|published|retryable_failed|failed`
 - `created_at` / `updated_at`
 
 Constraints / indexes:
@@ -53,7 +65,8 @@ Stores extracted content and links to large artifacts.
 LLM outputs (validated structured payload).
 
 - `id` (PK, integer)
-- `item_id` (FK -> items.id, unique)
+- `item_id` (FK -> items.id)
+- `scope` (text): topic stream / publish scope (`default` in single-stream mode)
 - `model` (text): e.g. `openai.gpt-4o-mini`
 - `provider` (text): LiteLLM provider label
 - `summary` (text)
@@ -64,26 +77,23 @@ LLM outputs (validated structured payload).
 - `latency_ms` (integer, nullable)
 - `created_at`
 
-### `triage_scores` (optional)
+Constraint / index:
 
-Optional cache for semantic pre-ranking (triage) scores computed before Stage 4.
+- unique `(item_id, scope)`
+
+### `item_stream_states`
+
+Per-stream item state machine. This lets one ingested item participate in several topic streams without duplicating the raw item row.
 
 - `id` (PK, integer)
 - `item_id` (FK -> items.id)
-- `topics_hash` (text): sha256 of normalized topics list and embedding model
-- `model` (text): embedding model string (e.g., `text-embedding-3-small`)
-- `method` (text): `embedding_cosine|fuzz_title|...`
-- `item_text_hash` (text): sha256 of the text embedded for this item
-- `score` (real): typically 0..1 for cosine-like scores (implementation-defined)
-- `created_at`
-
-Constraints / indexes:
-
-- unique `(item_id, topics_hash, model)`
+- `stream` (text)
+- `state` (text)
+- `created_at` / `updated_at`
 
 ### `deliveries`
 
-Records outbound deliveries for idempotency and audit.
+Records outbound item deliveries for idempotency and audit.
 
 - `id` (PK, integer)
 - `item_id` (FK -> items.id)
@@ -96,6 +106,22 @@ Records outbound deliveries for idempotency and audit.
 
 Constraints / indexes:
 - unique `(item_id, channel, destination)` to prevent re-sends
+
+### `trend_deliveries`
+
+Records outbound trend deliveries (currently Telegram PDF sends) separately from item deliveries.
+
+- `id` (PK, integer)
+- `doc_id` (FK -> documents.id)
+- `channel`, `destination`, `message_id`
+- `content_hash`: hash of the generated trend delivery payload/PDF
+- `status`: `sent|skipped|failed`
+- `error` (nullable)
+- `sent_at` (nullable)
+
+Constraint / index:
+
+- unique `(doc_id, channel, destination)`
 
 ### `metrics`
 
@@ -130,6 +156,81 @@ Optional debug artifacts (mainly for failures and LLM calls).
 - `path` (text): relative path under artifact root
 - `created_at`
 
+### `source_pull_states`
+
+Persists incremental-ingest watermarks and conditional-fetch metadata per source/feed/query scope.
+
+- `id` (PK, integer)
+- `source` (text)
+- `scope_kind`, `scope_key`
+- `etag`, `last_modified` (nullable)
+- `watermark_published_at` (nullable)
+- `cursor_json`
+- `created_at` / `updated_at`
+
+Constraint / index:
+
+- unique `(source, scope_kind, scope_key)`
+
+### `documents`
+
+Canonical trend/RAG document registry used by trend generation, materialization, and semantic search.
+
+- `id` (PK, integer)
+- `doc_type`: `item|trend`
+- `scope`: topic stream / trend scope
+- `item_id` (nullable, for `doc_type=item`)
+- `source`, `canonical_url`, `title`, `published_at` (nullable item metadata copied for retrieval/export)
+- `granularity`, `period_start`, `period_end` (nullable trend metadata for `doc_type=trend`)
+- `created_at` / `updated_at`
+
+Constraints / indexes:
+
+- unique `(doc_type, item_id, scope)` for item documents
+- unique `(doc_type, scope, granularity, period_start, period_end)` for trend documents
+
+### `document_chunks`
+
+Chunked text attached to `documents`, used for trend prompting, FTS, and retrieval.
+
+- `id` (PK, integer)
+- `doc_id` (FK -> documents.id)
+- `chunk_index`
+- `kind`: `summary|content|meta`
+- `text`
+- `start_char`, `end_char` (nullable)
+- `text_hash`
+- `source_content_type` (nullable)
+- `created_at`
+
+Constraint / index:
+
+- unique `(doc_id, chunk_index)`
+
+### `chunk_embeddings`
+
+SQLite-side embedding cache keyed by document chunk and embedding model. LanceDB stores the searchable vector tables and indices, while this table records the per-chunk embedding payload and invalidates stale rows when chunk text changes.
+
+- `id` (PK, integer)
+- `chunk_id` (FK -> document_chunks.id)
+- `model`
+- `dimensions` (nullable)
+- `vector_json`
+- `text_hash`
+- `created_at`
+
+Constraint / index:
+
+- unique `(chunk_id, model)`
+
+## LanceDB workspace
+
+Recoleta also maintains a rebuildable LanceDB directory under `RAG_LANCEDB_DIR`.
+
+- Stores vector tables and ANN/scalar indices for semantic trend search.
+- Acts as a cache over SQLite `documents` / `document_chunks`.
+- Safe to rebuild from SQLite with `recoleta rag sync-vectors` and `recoleta rag build-index`.
+
 ## Obsidian note layout
 
 Recoleta writes user-facing notes into the configured Obsidian Vault.
@@ -139,6 +240,11 @@ Recommended folders:
 - `Recoleta/Inbox/` (new items, one note per item)
 - `Recoleta/Trends/` (weekly/monthly trend notes)
 - `Recoleta/Artifacts/` (optional links to raw files)
+
+With `topic_streams`, the default layout becomes:
+
+- `Recoleta/Streams/<stream>/Inbox/`
+- `Recoleta/Streams/<stream>/Trends/`
 
 ### Note naming
 
@@ -174,6 +280,12 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `Trends/` (canonical trend markdown notes and derived trend PDFs)
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
 - `site/` (optional static site export derived from `Trends/`)
+
+With `topic_streams`, the default layout becomes:
+
+- `Streams/<stream>/latest.md`
+- `Streams/<stream>/Inbox/`
+- `Streams/<stream>/Trends/`
 
 Trend markdown notes are the canonical source for the richer trend surfaces:
 

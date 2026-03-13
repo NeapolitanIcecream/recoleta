@@ -33,6 +33,8 @@ def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(
     assert settings.sources.arxiv.enabled is False
     assert settings.sources.openreview.enabled is False
     assert settings.sources.hf_daily.enabled is False
+    assert settings.trends_peer_history_enabled is True
+    assert settings.trends_peer_history_window_count == 3
 
 
 def test_settings_rejects_configured_source_without_enabled(
