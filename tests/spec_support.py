@@ -144,6 +144,11 @@ class ExplodingRepository:
     ) -> dict[str, str | None]:
         raise NotImplementedError
 
+    def get_latest_content_texts_for_items(
+        self, *, item_ids: list[int], content_types: list[str]
+    ) -> dict[int, dict[str, str | None]]:
+        raise NotImplementedError
+
     def get_latest_contents(
         self, *, item_ids: list[int], content_type: str
     ) -> dict[int, Content]:

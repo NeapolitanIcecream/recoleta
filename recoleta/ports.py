@@ -61,6 +61,10 @@ class RepositoryPort(Protocol):
         self, *, item_id: int, content_types: list[str]
     ) -> dict[str, str | None]: ...
 
+    def get_latest_content_texts_for_items(
+        self, *, item_ids: list[int], content_types: list[str]
+    ) -> dict[int, dict[str, str | None]]: ...
+
     def get_latest_contents(
         self, *, item_ids: list[int], content_type: str
     ) -> dict[int, Content]: ...
@@ -496,6 +500,10 @@ class TrendRepositoryPort(Protocol):
     def get_latest_content_texts(
         self, *, item_id: int, content_types: list[str]
     ) -> dict[str, str | None]: ...
+
+    def get_latest_content_texts_for_items(
+        self, *, item_ids: list[int], content_types: list[str]
+    ) -> dict[int, dict[str, str | None]]: ...
 
     def get_latest_contents(
         self, *, item_ids: list[int], content_type: str

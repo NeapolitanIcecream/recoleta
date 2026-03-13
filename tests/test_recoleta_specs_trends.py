@@ -552,6 +552,81 @@ def test_index_items_as_documents_batches_writes_to_reduce_sql_commits(
     assert sql_diag.commits_total <= 4
 
 
+def test_index_items_as_documents_passes_chunk_limit_to_segmenter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: indexing should bound chunk generation to max_content_chunks_per_item."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    _, repository = _build_runtime()
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="trend-chunk-limit",
+        canonical_url="https://example.com/trend-chunk-limit",
+        title="Chunk Limit Paper",
+        authors=["Alice"],
+        published_at=period_start,
+        raw_metadata={"source": "test"},
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+
+    item_id = int(item.id)
+    _ = repository.save_analysis(
+        item_id=item_id,
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary="Summary for Chunk Limit Paper",
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.5,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    _ = repository.upsert_content(
+        item_id=item_id,
+        content_type="pdf_text",
+        text="X" * 1_000,
+    )
+
+    import recoleta.trends as trends_mod
+
+    original_chunk_text_segments = trends_mod._chunk_text_segments
+    observed_limits: list[int | None] = []
+
+    def _record_chunk_limit(  # type: ignore[no-untyped-def]
+        text_value, *, chunk_chars, max_segments
+    ):
+        observed_limits.append(max_segments)
+        return original_chunk_text_segments(
+            text_value,
+            chunk_chars=chunk_chars,
+            max_segments=max_segments,
+        )
+
+    monkeypatch.setattr(trends_mod, "_chunk_text_segments", _record_chunk_limit)
+
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-index-chunk-limit",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+        content_chunk_chars=200,
+        max_content_chunks_per_item=2,
+    )
+
+    assert observed_limits == [2]
+
+
 def test_trends_text_search_can_find_summary_chunks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

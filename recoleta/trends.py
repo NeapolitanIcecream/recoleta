@@ -1053,16 +1053,21 @@ def build_empty_trend_payload(
 
 
 def _chunk_text_segments(
-    text_value: str, *, chunk_chars: int
+    text_value: str, *, chunk_chars: int, max_segments: int | None = None
 ) -> list[tuple[int, int, str]]:
     normalized = str(text_value or "")
     size = max(200, int(chunk_chars))
     if not normalized.strip():
         return []
+    segment_limit = None if max_segments is None else max(0, int(max_segments))
+    if segment_limit == 0:
+        return []
     segments: list[tuple[int, int, str]] = []
     start = 0
     end = len(normalized)
     while start < end:
+        if segment_limit is not None and len(segments) >= segment_limit:
+            break
         seg_end = min(end, start + size)
         seg = normalized[start:seg_end]
         segments.append((start, seg_end, seg))
@@ -1105,6 +1110,13 @@ def _load_latest_content_texts_for_items(
         item_id: {content_type: None for content_type in normalized_types}
         for item_id in normalized_ids
     }
+    batch_text_getter = getattr(repository, "get_latest_content_texts_for_items", None)
+    if callable(batch_text_getter):
+        return cast(
+            dict[int, dict[str, str | None]],
+            batch_text_getter(item_ids=normalized_ids, content_types=normalized_types),
+        )
+
     batch_getter = getattr(repository, "get_latest_contents", None)
     if callable(batch_getter):
         for content_type in normalized_types:
@@ -1183,12 +1195,13 @@ def _index_items_as_documents_itemwise(
                 )
                 continue
 
-            segments = _chunk_text_segments(chosen, chunk_chars=content_chunk_chars)
+            segments = _chunk_text_segments(
+                chosen,
+                chunk_chars=content_chunk_chars,
+                max_segments=max_content_chunks_per_item,
+            )
             max_written_index: int | None = None
-            for seg_idx, (start_char, end_char, seg) in enumerate(
-                segments[: max(0, int(max_content_chunks_per_item))],
-                start=1,
-            ):
+            for seg_idx, (start_char, end_char, seg) in enumerate(segments, start=1):
                 repository.upsert_document_chunk(
                     doc_id=doc_id,
                     chunk_index=seg_idx,
@@ -1381,9 +1394,11 @@ def _index_items_as_documents_batched(
 
             max_written_index: int | None = None
             for seg_idx, (start_char, end_char, seg) in enumerate(
-                _chunk_text_segments(chosen, chunk_chars=content_chunk_chars)[
-                    : max(0, int(max_content_chunks_per_item))
-                ],
+                _chunk_text_segments(
+                    chosen,
+                    chunk_chars=content_chunk_chars,
+                    max_segments=max_content_chunks_per_item,
+                ),
                 start=1,
             ):
                 target_rows[(doc_id, seg_idx)] = {

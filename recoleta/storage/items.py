@@ -103,6 +103,11 @@ class ItemStoreMixin:
             .limit(self.title_dedup_max_candidates)
         )
         candidates = list(session.exec(statement))
+        for candidate in candidates:
+            candidate_title = str(getattr(candidate, "title", "") or "").strip()
+            if candidate_title == normalized_title:
+                return candidate, 100.0
+
         best_item: Item | None = None
         best_score = -1.0
         for candidate in candidates:
@@ -296,6 +301,66 @@ class ItemStoreMixin:
                     wanted.discard(ctype)
                     if not wanted:
                         break
+        return out
+
+    def get_latest_content_texts_for_items(
+        self, *, item_ids: list[int], content_types: list[str]
+    ) -> dict[int, dict[str, str | None]]:
+        normalized_ids: list[int] = []
+        seen_ids: set[int] = set()
+        for raw_item_id in item_ids:
+            try:
+                item_id = int(raw_item_id)
+            except Exception:
+                continue
+            if item_id <= 0 or item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+            normalized_ids.append(item_id)
+
+        normalized_types: list[str] = []
+        seen_types: set[str] = set()
+        for raw_type in content_types:
+            content_type = str(raw_type or "").strip()
+            if not content_type or content_type in seen_types:
+                continue
+            seen_types.add(content_type)
+            normalized_types.append(content_type)
+
+        if not normalized_ids or not normalized_types:
+            return {}
+
+        out: dict[int, dict[str, str | None]] = {
+            item_id: {content_type: None for content_type in normalized_types}
+            for item_id in normalized_ids
+        }
+        with Session(self.engine) as session:
+            latest_ids = (
+                select(
+                    cast(Any, Content.item_id).label("item_id"),
+                    cast(Any, Content.content_type).label("content_type"),
+                    func.max(cast(Any, Content.id)).label("max_id"),
+                )
+                .where(
+                    cast(Any, Content.item_id).in_(normalized_ids),
+                    cast(Any, Content.content_type).in_(normalized_types),
+                )
+                .group_by(
+                    cast(Any, Content.item_id),
+                    cast(Any, Content.content_type),
+                )
+                .subquery()
+            )
+            statement = select(Content).join(
+                latest_ids, cast(Any, Content.id) == latest_ids.c.max_id
+            )
+            for content in session.exec(statement):
+                item_id = int(getattr(content, "item_id"))
+                content_type = str(getattr(content, "content_type", "") or "").strip()
+                text = getattr(content, "text", None)
+                out[item_id][content_type] = (
+                    text if isinstance(text, str) and text.strip() else None
+                )
         return out
 
     def get_latest_contents(
