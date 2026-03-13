@@ -49,7 +49,6 @@ class TrendSiteDocument:
     stream: str | None
     body_html: str
     excerpt: str
-    evolution_summary: str | None
     evolution_insight: str | None
     frontmatter: dict[str, Any]
 
@@ -155,13 +154,7 @@ def _section_excerpt(sections: list[Any]) -> str:
     return _safe_excerpt(text, limit=220)
 
 
-def _html_visible_text(value: str) -> str:
-    return BeautifulSoup(str(value or ""), "html.parser").get_text(" ", strip=True)
-
-
-def _extract_trend_evolution_metadata(
-    sections: list[Any],
-) -> tuple[str | None, str | None]:
+def _extract_trend_evolution_insight(sections: list[Any]) -> str | None:
     evolution_data = None
     for section in sections:
         heading = str(getattr(section, "heading", "") or "").strip().lower()
@@ -170,22 +163,9 @@ def _extract_trend_evolution_metadata(
         evolution_data = _extract_evolution_section_data(section=section)
         break
     if evolution_data is None:
-        return None, None
-
-    summary_text = ""
-    if evolution_data.summary_html:
-        summary_text = _safe_excerpt(
-            _html_visible_text(evolution_data.summary_html), limit=200
-        )
-    if not summary_text:
-        for signal in evolution_data.signals:
-            summary_text = _safe_excerpt(
-                _html_visible_text(signal.summary_html), limit=200
-            )
-            if summary_text:
-                break
+        return None
     if not evolution_data.signals:
-        return summary_text or None, None
+        return None
 
     change_counts: dict[str, int] = {}
     for signal in evolution_data.signals:
@@ -198,7 +178,7 @@ def _extract_trend_evolution_metadata(
         f"{len(evolution_data.signals)} signal{'s' if len(evolution_data.signals) != 1 else ''}"
     ]
     parts.extend(f"{label} {count}" for label, count in change_counts.items())
-    return summary_text or None, " · ".join(parts)
+    return " · ".join(parts)
 
 
 def _site_href(*, from_page: Path, to_page: Path) -> str:
@@ -701,11 +681,7 @@ def _render_detail_page(
     detail_stream_html = (
         f"<div class='detail-stream-row'>{stream_link}</div>" if stream_link else ""
     )
-    hero_dek = (
-        document.evolution_summary
-        or document.excerpt
-        or _trend_pdf_hero_dek(document.frontmatter)
-    )
+    hero_dek = document.excerpt or _trend_pdf_hero_dek(document.frontmatter)
     insight_html = ""
     if document.evolution_insight:
         insight_html = (
@@ -1889,33 +1865,52 @@ iframe {
 .detail-content .evolution-copy {
   margin-top: -2px;
 }
-.detail-content .evolution-preview {
-  color: #30485f;
-  font-size: 14px;
-  line-height: 1.66;
-}
 .detail-content .evolution-expand {
   margin-top: -2px;
   border-top: 1px dashed rgba(24, 52, 83, 0.12);
   padding-top: 10px;
 }
 .detail-content .evolution-expand-toggle {
+  display: block;
   cursor: pointer;
-  color: #1f5ea9;
-  font-size: 12px;
-  font-weight: 700;
   list-style: none;
 }
 .detail-content .evolution-expand-toggle::-webkit-details-marker {
   display: none;
 }
-.detail-content .evolution-expand-toggle::before {
-  content: "+";
+.detail-content .evolution-expand-summary-copy {
+  display: block;
+  color: #30485f;
+  font-size: 14px;
+  line-height: 1.66;
+}
+.detail-content .evolution-expand-label {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  color: #1f5ea9;
+  font-size: 12px;
+  font-weight: 700;
+}
+.detail-content .evolution-expand-label::before {
   display: inline-block;
   margin-right: 6px;
 }
-.detail-content .evolution-expand[open] .evolution-expand-toggle::before {
+.detail-content .evolution-expand-label-more::before {
+  content: "+";
+}
+.detail-content .evolution-expand-label-less {
+  display: none;
+}
+.detail-content .evolution-expand-label-less::before {
   content: "−";
+}
+.detail-content .evolution-expand[open] .evolution-expand-summary-copy,
+.detail-content .evolution-expand[open] .evolution-expand-label-more {
+  display: none;
+}
+.detail-content .evolution-expand[open] .evolution-expand-label-less {
+  display: inline-flex;
 }
 .detail-content .evolution-expand-body {
   margin-top: 10px;
@@ -2384,14 +2379,15 @@ def _load_trend_site_documents(
         title, sections = _extract_trend_pdf_sections(body_html=body_html)
         title = sanitize_trend_title(title, fallback="Trend")
         excerpt = _section_excerpt(sections)
-        evolution_summary, evolution_insight = _extract_trend_evolution_metadata(
-            sections
-        )
+        evolution_insight = _extract_trend_evolution_insight(sections)
         page_path = trend_pages_by_markdown_path[
             source_document.markdown_path.resolve()
         ]
         browser_body_html = _rewrite_site_markdown_links(
-            html_text=_build_trend_browser_body_html(sections=sections),
+            html_text=_build_trend_browser_body_html(
+                sections=sections,
+                allow_evolution_disclosure=True,
+            ),
             source_markdown_path=source_document.markdown_path,
             from_page=page_path,
             page_by_markdown_path=linked_page_by_markdown_path,
@@ -2430,7 +2426,6 @@ def _load_trend_site_documents(
                 stream=source_document.stream,
                 body_html=browser_body_html,
                 excerpt=excerpt,
-                evolution_summary=evolution_summary,
                 evolution_insight=evolution_insight,
                 frontmatter=source_document.frontmatter,
             )

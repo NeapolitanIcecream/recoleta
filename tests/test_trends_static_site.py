@@ -648,7 +648,7 @@ def test_export_trend_static_site_surfaces_evolution_insight_in_detail_hero_and_
     assert "Emerging 1" in detail_html
 
 
-def test_export_trend_static_site_prefers_evolution_summary_in_detail_hero(
+def test_export_trend_static_site_uses_overview_summary_in_detail_hero(
     tmp_path: Path,
 ) -> None:
     output_dir = tmp_path / "notes"
@@ -660,10 +660,10 @@ def test_export_trend_static_site_prefers_evolution_summary_in_detail_hero(
         period_start=datetime(2026, 3, 7, tzinfo=UTC),
         period_end=datetime(2026, 3, 8, tzinfo=UTC),
         run_id="run-site-evolution-hero",
-        overview_md="## Overview\n\nOverview copy that should stay in the body section.\n",
+        overview_md="## Overview\n\nOverview copy should remain the page summary.\n",
         topics=["agents"],
         evolution={
-            "summary_md": "Evolution summary should lead the page because it explains the historical delta.",
+            "summary_md": "Evolution summary should stay in the comparison section because it explains the historical delta.",
             "signals": [
                 {
                     "theme": "Verification moves earlier",
@@ -687,13 +687,16 @@ def test_export_trend_static_site_prefers_evolution_summary_in_detail_hero(
         encoding="utf-8"
     )
     assert (
-        "<p class='detail-dek'>Evolution summary should lead the page because it explains the historical delta.</p>"
+        "<p class='detail-dek'>Overview copy should remain the page summary.</p>"
         in detail_html
     )
-    assert "Overview copy that should stay in the body section." in detail_html
+    assert (
+        "Evolution summary should stay in the comparison section because it explains the historical delta."
+        in detail_html
+    )
 
 
-def test_export_trend_static_site_preserves_evolution_summary_when_no_signals(
+def test_export_trend_static_site_keeps_overview_summary_when_evolution_has_no_signals(
     tmp_path: Path,
 ) -> None:
     output_dir = tmp_path / "notes"
@@ -705,10 +708,10 @@ def test_export_trend_static_site_preserves_evolution_summary_when_no_signals(
         period_start=datetime(2026, 3, 10, tzinfo=UTC),
         period_end=datetime(2026, 3, 11, tzinfo=UTC),
         run_id="run-site-evolution-summary-only",
-        overview_md="## Overview\n\nOverview copy should stay secondary.\n",
+        overview_md="## Overview\n\nOverview copy should remain the page summary.\n",
         topics=["agents"],
         evolution={
-            "summary_md": "Evolution summary should still lead when the run emits zero signals.",
+            "summary_md": "Evolution summary should still render in the comparison section when the run emits zero signals.",
             "signals": [],
         },
         clusters=[],
@@ -725,10 +728,13 @@ def test_export_trend_static_site_preserves_evolution_summary_when_no_signals(
         encoding="utf-8"
     )
     assert (
-        "<p class='detail-dek'>Evolution summary should still lead when the run emits zero signals.</p>"
+        "<p class='detail-dek'>Overview copy should remain the page summary.</p>"
         in detail_html
     )
-    assert "Overview copy should stay secondary." in detail_html
+    assert (
+        "Evolution summary should still render in the comparison section when the run emits zero signals."
+        in detail_html
+    )
     assert "detail-insight-row" not in detail_html
 
 
@@ -779,7 +785,56 @@ def test_export_trend_static_site_wraps_long_evolution_signal_copy_in_disclosure
     )
     assert "evolution-expand" in detail_html
     assert "evolution-expand-toggle" in detail_html
-    assert "evolution-preview" in detail_html
+    assert "evolution-expand-summary-copy" in detail_html
+    assert "evolution-preview" not in detail_html
+
+
+def test_export_trend_static_site_keeps_medium_evolution_signal_copy_inline(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=89,
+        title="Medium evolution signal trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-evolution-inline-medium",
+        overview_md="## Overview\n\nOverview copy.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "A medium-length historical bridge.",
+            "signals": [
+                {
+                    "theme": "Medium-length implementation rationale",
+                    "change_type": "continuing",
+                    "summary": (
+                        "This rationale is long enough to exceed a short paragraph, "
+                        "but it should still remain inline because the truncation "
+                        "benefit is too small. The goal is to avoid showing a collapsed "
+                        "preview and then effectively repeating the same amount of text "
+                        "again after expansion."
+                    ),
+                    "history_windows": [],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "evolution-copy" in detail_html
+    assert "evolution-expand" not in detail_html
 
 
 def test_export_trend_static_site_keeps_fixed_evolution_ui_terms_in_english_for_chinese_notes(

@@ -14,6 +14,7 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Do not mix languages within the same semantic layer. If one badge set is English, all peer badges stay English.
 - Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.
 - Favor dense, scannable structure over marketing-style flourish. Comparative content should read like an analysis surface, not a landing page.
+- Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Keep `Evolution` as a secondary comparison surface rather than replacing the primary summary.
 
 ## Comparative Views
 
@@ -21,6 +22,7 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Surface comparison signal counts early on index cards and detail heroes.
 - Render controlled comparison terms in English, including `Continuing`, `Emerging`, `Fading`, `Shifting`, `Polarizing`, and `History`.
 - Collapse long rationale behind progressive disclosure, especially for mobile layouts.
+- Keep PDF and HTML on the same card hierarchy and terminology, but expand rationale inline in PDF instead of carrying over interactive disclosure patterns.
 
 ## Maintenance
 

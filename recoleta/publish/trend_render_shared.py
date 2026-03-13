@@ -747,6 +747,11 @@ def _truncate_browser_visible_text(value: str, *, limit: int = 180) -> str:
     return collapsed[:boundary].rstrip() + "…"
 
 
+def _should_collapse_evolution_signal(value: str) -> bool:
+    visible_length = len(" ".join(str(value or "").split()).strip())
+    return visible_length > 320
+
+
 def _evolution_change_tone(change_type: str) -> str:
     normalized = str(change_type or "").strip().lower()
     if normalized in {"continuing", "延续"}:
@@ -884,7 +889,11 @@ def _extract_evolution_section_data(
     return TrendEvolutionSectionData(summary_html=summary_html, signals=signals)
 
 
-def _render_browser_evolution_section_html(*, section: TrendPdfSection) -> str:
+def _render_browser_evolution_section_html(
+    *,
+    section: TrendPdfSection,
+    allow_disclosure: bool,
+) -> str:
     evolution = _extract_evolution_section_data(section=section)
     if evolution is None or not evolution.signals:
         return _render_browser_content_card_html(
@@ -920,13 +929,16 @@ def _render_browser_evolution_section_html(*, section: TrendPdfSection) -> str:
         visible_text = _html_visible_text(signal.summary_html)
         if not visible_text:
             return ""
-        if len(visible_text) <= 220:
+        if not allow_disclosure or not _should_collapse_evolution_signal(visible_text):
             return f"<div class='evolution-copy prose'>{signal.summary_html}</div>"
         preview = html.escape(_truncate_browser_visible_text(visible_text, limit=170))
         return (
-            f"<div class='evolution-preview'>{preview}</div>"
             "<details class='evolution-expand'>"
-            "<summary class='evolution-expand-toggle'>Read full rationale</summary>"
+            "<summary class='evolution-expand-toggle'>"
+            f"<span class='evolution-expand-summary-copy'>{preview}</span>"
+            "<span class='evolution-expand-label evolution-expand-label-more'>Read full rationale</span>"
+            "<span class='evolution-expand-label evolution-expand-label-less'>Collapse</span>"
+            "</summary>"
             f"<div class='evolution-expand-body prose'>{signal.summary_html}</div>"
             "</details>"
         )
@@ -993,7 +1005,11 @@ def _render_browser_evolution_section_html(*, section: TrendPdfSection) -> str:
     )
 
 
-def _build_trend_browser_body_html(*, sections: list[TrendPdfSection]) -> str:
+def _build_trend_browser_body_html(
+    *,
+    sections: list[TrendPdfSection],
+    allow_evolution_disclosure: bool = True,
+) -> str:
     used: set[str] = set()
     rendered: list[str] = []
 
@@ -1035,7 +1051,12 @@ def _build_trend_browser_body_html(*, sections: list[TrendPdfSection]) -> str:
             )
             used.add(section.slug)
         elif _section_matches(section.heading, "evolution"):
-            rendered.append(_render_browser_evolution_section_html(section=section))
+            rendered.append(
+                _render_browser_evolution_section_html(
+                    section=section,
+                    allow_disclosure=allow_evolution_disclosure,
+                )
+            )
             used.add(section.slug)
         elif _section_matches(section.heading, "topics"):
             used.add(section.slug)
@@ -1078,7 +1099,10 @@ def _build_trend_browser_pdf_html(
         "</div>"
         for label, value in _trend_pdf_meta_rows(frontmatter)
     )
-    body_html = _build_trend_browser_body_html(sections=sections)
+    body_html = _build_trend_browser_body_html(
+        sections=sections,
+        allow_evolution_disclosure=False,
+    )
     return (
         "<!doctype html>"
         "<html lang='zh-CN'>"

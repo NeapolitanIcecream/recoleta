@@ -158,12 +158,16 @@ def test_render_trend_note_pdf_browser_renderer_uses_continuous_page(
     monkeypatch.setattr(
         publish_module,
         "_get_playwright_sync_api",
-        lambda: (lambda: _FakePlaywrightContext()),
+        lambda: lambda: _FakePlaywrightContext(),
     )
     monkeypatch.setattr(
         publish_module,
         "_trend_pdf_browser_launch_options",
-        lambda: [{"executable_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}],
+        lambda: [
+            {
+                "executable_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            }
+        ],
     )
 
     debug_dir = tmp_path / "browser-debug"
@@ -215,6 +219,53 @@ def test_prepare_trend_pdf_browser_css_uses_raster_card_gradients(
         "linear-gradient(180deg, rgba(235, 243, 253, 0.99),"
         " rgba(248, 251, 254, 0.99))" not in inputs.css
     )
+
+
+def test_prepare_trend_pdf_browser_renders_evolution_cards_without_disclosure(
+    tmp_path: Path,
+) -> None:
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=21,
+        title="Evolution cards for browser PDF",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-trend-pdf-evolution-browser",
+        overview_md="Browser PDF should preserve the site card language.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "Historical comparisons should keep the same card hierarchy in PDF.",
+            "signals": [
+                {
+                    "theme": "Terminal-native workflows keep consolidating",
+                    "change_type": "continuing",
+                    "summary": (
+                        "This signal summary is intentionally long so the site renderer "
+                        "would normally consider progressive disclosure, but the browser "
+                        "PDF output should keep the same card language without any "
+                        "interactive disclosure affordance. The entire rationale should "
+                        "stay inline inside the card."
+                    ),
+                    "history_windows": [],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    inputs = publish_module._prepare_trend_pdf_render_inputs(
+        markdown_path=note_path,
+        backend="browser",
+        page_mode="continuous",
+    )
+
+    assert "evolution-section" in inputs.document_html
+    assert "evolution-card" in inputs.document_html
+    assert "details class='evolution-expand'" not in inputs.document_html
+    assert ".evolution-section" in inputs.css
+    assert ".evolution-card" in inputs.css
 
 
 def test_render_trend_note_pdf_auto_falls_back_to_story_renderer(
@@ -477,7 +528,9 @@ def test_publish_counts_trend_delivery_toward_telegram_daily_cap(
         published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
         raw_metadata={"source": "test"},
     )
-    service.prepare(run_id="run-trend-telegram-cap-shared-prepare", drafts=[draft], limit=10)
+    service.prepare(
+        run_id="run-trend-telegram-cap-shared-prepare", drafts=[draft], limit=10
+    )
     service.analyze(run_id="run-trend-telegram-cap-shared-analyze", limit=10)
 
     from recoleta.rag import agent as rag_agent
@@ -700,7 +753,9 @@ def test_trends_telegram_publish_skips_duplicate_delivery_for_unchanged_period(
         published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
         raw_metadata={"source": "test"},
     )
-    service.prepare(run_id="run-trend-telegram-dedupe-prepare", drafts=[draft], limit=10)
+    service.prepare(
+        run_id="run-trend-telegram-dedupe-prepare", drafts=[draft], limit=10
+    )
     service.analyze(run_id="run-trend-telegram-dedupe-analyze", limit=10)
 
     from recoleta.rag import agent as rag_agent
@@ -820,7 +875,9 @@ def test_trends_telegram_publish_uses_injected_sender_without_telegram_credentia
         published_at=datetime(2026, 3, 5, 8, 0, tzinfo=UTC),
         raw_metadata={"source": "test"},
     )
-    service.prepare(run_id="run-trend-telegram-injected-sender", drafts=[draft], limit=10)
+    service.prepare(
+        run_id="run-trend-telegram-injected-sender", drafts=[draft], limit=10
+    )
     service.analyze(run_id="run-trend-telegram-injected-sender", limit=10)
 
     from recoleta.rag import agent as rag_agent

@@ -707,11 +707,143 @@ body {
   break-inside: avoid;
   page-break-inside: avoid;
 }
+.evolution-section {
+  background:
+    radial-gradient(circle at top right, rgba(23, 100, 194, 0.10), transparent 30%),
+    linear-gradient(180deg, rgba(237, 244, 252, 0.98), rgba(248, 251, 255, 0.99));
+}
+.evolution-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.evolution-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.evolution-stat,
+.history-pill,
+.evolution-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(23, 100, 194, 0.15);
+  background: rgba(23, 100, 194, 0.08);
+  color: #1f5da5;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.evolution-stat.secondary,
+.history-pill {
+  background: rgba(255, 255, 255, 0.92);
+  color: #4b647d;
+}
+.evolution-summary {
+  margin-bottom: 12px;
+}
+.evolution-grid {
+  display: grid;
+  gap: 12px;
+}
+.evolution-card {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 14px 14px 13px;
+  border-radius: 18px;
+  border: 1px solid rgba(20, 41, 67, 0.10);
+  background: rgba(253, 254, 255, 0.98);
+}
+.evolution-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 18px 0 0 18px;
+  background: #7d94ae;
+}
+.evolution-change-continuing::before {
+  background: #2c6bc5;
+}
+.evolution-change-emerging::before {
+  background: #1d8b6f;
+}
+.evolution-change-fading::before {
+  background: #b66a35;
+}
+.evolution-change-shifting::before {
+  background: #7459c6;
+}
+.evolution-change-polarizing::before {
+  background: #c24d6b;
+}
+.evolution-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.evolution-card-title {
+  margin: 0;
+  color: #173659;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 18px;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  font-weight: 720;
+}
+.evolution-badge-continuing {
+  background: rgba(29, 103, 194, 0.10);
+  color: #1e5aa1;
+}
+.evolution-badge-emerging {
+  background: rgba(29, 139, 111, 0.10);
+  color: #176d58;
+  border-color: rgba(29, 139, 111, 0.16);
+}
+.evolution-badge-fading {
+  background: rgba(182, 106, 53, 0.11);
+  color: #9c5a2b;
+  border-color: rgba(182, 106, 53, 0.16);
+}
+.evolution-badge-shifting {
+  background: rgba(116, 89, 198, 0.10);
+  color: #654bb0;
+  border-color: rgba(116, 89, 198, 0.16);
+}
+.evolution-badge-polarizing {
+  background: rgba(194, 77, 107, 0.10);
+  color: #a2415a;
+  border-color: rgba(194, 77, 107, 0.16);
+}
+.evolution-history-block {
+  display: grid;
+  gap: 7px;
+}
+.evolution-history-label {
+  color: #7589a0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+.evolution-history-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.evolution-copy {
+  margin-top: -1px;
+}
 """
 
 _TREND_BROWSER_PDF_CSS = (
-    _TREND_BROWSER_PDF_CSS
-    .replace(
+    _TREND_BROWSER_PDF_CSS.replace(
         "__TREND_BROWSER_BASE_CARD_GRADIENT__",
         _TREND_BROWSER_BASE_CARD_GRADIENT,
     )
@@ -763,9 +895,13 @@ def _prepare_trend_pdf_render_inputs(
 ) -> TrendPdfRenderInputs:
     resolved_markdown_path = markdown_path.expanduser().resolve()
     if not resolved_markdown_path.exists():
-        raise ValueError(f"Trend markdown note does not exist: {resolved_markdown_path}")
+        raise ValueError(
+            f"Trend markdown note does not exist: {resolved_markdown_path}"
+        )
     if not resolved_markdown_path.is_file():
-        raise ValueError(f"Trend markdown note must be a file: {resolved_markdown_path}")
+        raise ValueError(
+            f"Trend markdown note must be a file: {resolved_markdown_path}"
+        )
 
     resolved_output_path = (
         output_path.expanduser().resolve()
@@ -968,14 +1104,24 @@ def _render_trend_note_pdf_browser_with_dependencies(
                         "width": "210mm",
                         "height": f"{max(height_px, viewport['height'])}px",
                         "print_background": True,
-                        "margin": {"top": "0", "right": "0", "bottom": "0", "left": "0"},
+                        "margin": {
+                            "top": "0",
+                            "right": "0",
+                            "bottom": "0",
+                            "left": "0",
+                        },
                     }
                 else:
                     pdf_kwargs = {
                         "path": str(inputs.output_path),
                         "format": "A4",
                         "print_background": True,
-                        "margin": {"top": "0", "right": "0", "bottom": "0", "left": "0"},
+                        "margin": {
+                            "top": "0",
+                            "right": "0",
+                            "bottom": "0",
+                            "left": "0",
+                        },
                     }
                 page.pdf(**pdf_kwargs)
                 return
