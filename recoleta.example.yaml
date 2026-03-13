@@ -97,16 +97,16 @@ sources:
     # Default rss_urls: ["https://news.ycombinator.com/rss"]
     rss_urls:
       - "https://news.ycombinator.com/rss"
-    # max_items_per_feed: 100  # Default varies by source helper
-    # max_total_per_run: 100
+    # max_items_per_feed: 50  # Default: 50
+    # max_total_per_run: null  # Default: null (no overall cap)
 
   rss:
     enabled: false  # Default: false
     # feeds: []  # Required when enabled=true
     # feeds:
     #   - "https://example.com/feed.xml"
-    # max_items_per_feed: 100
-    # max_total_per_run: 100
+    # max_items_per_feed: 50  # Default: 50
+    # max_total_per_run: null  # Default: null (no overall cap)
 
   arxiv:
     enabled: false  # Default: false
@@ -114,7 +114,7 @@ sources:
     # queries:
     #   - "cat:cs.AI"
     # max_results_per_run: 50  # Default: 50
-    # max_total_per_run: 50
+    # max_total_per_run: null  # Default: null (no overall cap)
     # enrich_method: "html_document"  # Default: "html_document" (pdf_text|latex_source|html_document)
     # enrich_failure_mode: "fallback"  # Default: "fallback" (fallback|strict)
     # html_document_max_concurrency: 4  # Default: 4
@@ -129,12 +129,12 @@ sources:
     # venues: []  # Required when enabled=true
     # venues:
     #   - "NeurIPS.cc/2026/Conference"
-    # max_results_per_venue: 100
-    # max_total_per_run: 100
+    # max_results_per_venue: 50  # Default: 50
+    # max_total_per_run: null  # Default: null (no overall cap)
 
   hf_daily:
     enabled: false  # Default: false
-    # max_items_per_run: 100
+    # max_items_per_run: 50  # Default: 50
 
 ## Semantic triage (optional)
 #
