@@ -62,3 +62,41 @@ def test_upsert_item_skips_fuzzy_scoring_for_exact_title_match(
     assert created is False
     assert matched_item.id == exact_item.id
     assert repository.count_items() == 2
+
+
+def test_upsert_item_exact_title_match_respects_threshold_above_100(
+    tmp_path: Path,
+) -> None:
+    """Regression: exact-title shortcut must still honor disabled title dedup."""
+
+    repository = Repository(
+        db_path=tmp_path / "recoleta.db",
+        title_dedup_threshold=101.0,
+        title_dedup_max_candidates=10,
+    )
+    repository.init_schema()
+
+    first_item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="exact-threshold-a",
+            canonical_url="https://example.com/exact-threshold-a",
+            title="Exact Duplicate Title",
+            authors=["Alice"],
+        )
+    )
+    assert first_item.id is not None
+
+    second_item, created = repository.upsert_item(
+        ItemDraft.from_values(
+            source="hn",
+            source_item_id="exact-threshold-b",
+            canonical_url="https://example.com/exact-threshold-b",
+            title="Exact Duplicate Title",
+            authors=["Bob"],
+        )
+    )
+
+    assert created is True
+    assert second_item.id != first_item.id
+    assert repository.count_items() == 2

@@ -106,6 +106,8 @@ class ItemStoreMixin:
         for candidate in candidates:
             candidate_title = str(getattr(candidate, "title", "") or "").strip()
             if candidate_title == normalized_title:
+                if 100.0 < self.title_dedup_threshold:
+                    return None
                 return candidate, 100.0
 
         best_item: Item | None = None
