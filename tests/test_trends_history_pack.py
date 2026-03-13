@@ -174,3 +174,48 @@ def test_normalize_trend_evolution_maps_window_labels_to_prev_ids() -> None:
     assert stats["history_windows_normalized_total"] == 2
     assert stats["history_windows_dropped_total"] == 2
     assert stats["signals_dropped_total"] == 0
+
+
+def test_normalize_trend_evolution_strips_trailing_punctuation_from_history_ids() -> (
+    None
+):
+    anchor = datetime(2026, 3, 5, tzinfo=UTC).date()
+    day_start, day_end = day_period_bounds(anchor)
+    plan = TrendGenerationPlan(
+        target_granularity="day",
+        period_start=day_start,
+        period_end=day_end,
+        peer_history_window_count=3,
+    )
+
+    normalized, stats = normalize_trend_evolution(
+        TrendEvolutionSection.model_validate(
+            {
+                "summary_md": "Execution loops are becoming more explicit over time.",
+                "signals": [
+                    {
+                        "theme": "Agent workflow",
+                        "change_type": "continuing",
+                        "summary": "The workflow keeps maturing.",
+                        "history_windows": [
+                            "prev_1.",
+                            "2026-03-03.",
+                            "bogus.",
+                        ],
+                    }
+                ],
+            }
+        ),
+        granularity="day",
+        period_start=day_start,
+        history_windows=plan.peer_history_windows,
+        available_window_ids={"prev_1", "prev_2", "prev_3"},
+    )
+
+    assert normalized is not None
+    assert [signal.history_windows for signal in normalized.signals] == [
+        ["prev_1", "prev_2"]
+    ]
+    assert stats["history_windows_normalized_total"] == 1
+    assert stats["history_windows_dropped_total"] == 1
+    assert stats["signals_dropped_total"] == 0

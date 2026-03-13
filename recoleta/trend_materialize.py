@@ -54,6 +54,7 @@ _CHUNK_SUFFIX_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_HISTORY_WINDOW_ID_PATTERN = re.compile(r"\b(prev_\d+)\b", re.IGNORECASE)
 
 
 def _parse_authors(value: Any) -> list[str]:
@@ -257,6 +258,18 @@ def materialize_trend_note_payload(
     def _rewrite_text(value: str) -> str:
         return _rewrite_canonical_item_links(_rewrite_doc_refs(value))
 
+    def _collect_history_window_refs_from_text(value: str) -> None:
+        raw = str(value or "").strip()
+        if not raw:
+            return
+        seen_window_ids: set[str] = set()
+        for match in _HISTORY_WINDOW_ID_PATTERN.finditer(raw):
+            window_id = str(match.group(1) or "").strip().lower()
+            if not window_id or window_id in seen_window_ids:
+                continue
+            seen_window_ids.add(window_id)
+            _history_window_ref(window_id)
+
     def _history_window_ref(window_id: str) -> dict[str, Any] | None:
         normalized_window_id = str(window_id or "").strip().lower()
         if not normalized_window_id or current_period_start is None:
@@ -315,6 +328,9 @@ def materialize_trend_note_payload(
             _rewrite_text(str(evolution_for_notes.get("summary_md") or "")),
             output_language=output_language,
         )
+        _collect_history_window_refs_from_text(
+            str(evolution_for_notes.get("summary_md") or "")
+        )
         normalized_signals: list[dict[str, Any]] = []
         for signal in evolution_for_notes.get("signals") or []:
             if not isinstance(signal, dict):
@@ -325,6 +341,9 @@ def materialize_trend_note_payload(
             )
             normalized_signal["summary"] = _rewrite_text(
                 str(normalized_signal.get("summary") or "").strip()
+            )
+            _collect_history_window_refs_from_text(
+                str(normalized_signal.get("summary") or "")
             )
             history_windows = normalized_signal.get("history_windows") or []
             if isinstance(history_windows, list):

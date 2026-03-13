@@ -384,10 +384,15 @@ class TrendGenerationPlan:
 
 
 _HISTORY_WINDOW_ID_RE = re.compile(r"\bprev_\d+\b", flags=re.IGNORECASE)
+_HISTORY_WINDOW_TRIM_CHARS = " \t\r\n()[]{}<>.,;:!?\"'`，；：。！？"
 
 
 def _normalize_history_window_alias(value: Any) -> str:
     return " ".join(str(value or "").split()).strip().lower()
+
+
+def _trim_history_window_candidate(value: Any) -> str:
+    return str(value or "").strip(_HISTORY_WINDOW_TRIM_CHARS)
 
 
 def _split_history_window_candidates(raw_values: list[str]) -> list[str]:
@@ -458,7 +463,7 @@ def normalize_trend_evolution(
             list(signal.history_windows or [])
         ):
             normalized_candidate = _normalize_history_window_alias(
-                candidate.strip("()[]{}<>")
+                _trim_history_window_candidate(candidate)
             )
             if not normalized_candidate:
                 continue
