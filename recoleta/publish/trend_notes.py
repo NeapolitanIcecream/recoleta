@@ -25,6 +25,13 @@ __all__ = [
 ]
 
 _HISTORY_WINDOW_MENTION_RE = re.compile(r"(?<![\w\[])(prev_\d+)(?![\w\]])")
+_HISTORY_WINDOW_REPEAT_WRAPPERS: tuple[tuple[str, str], ...] = (
+    ("《", "》"),
+    ("“", "”"),
+    ("「", "」"),
+    ("『", "』"),
+    ('"', '"'),
+)
 
 
 def _single_line(value: str, *, fallback: str) -> str:
@@ -204,6 +211,60 @@ def _linkify_history_window_mentions(
     return _HISTORY_WINDOW_MENTION_RE.sub(_replace, raw)
 
 
+def _dedupe_repeated_history_window_titles(
+    text: str,
+    *,
+    note_dir: Path,
+    history_window_refs: dict[str, dict[str, Any]] | None,
+) -> str:
+    cleaned = str(text or "").strip()
+    refs = history_window_refs or {}
+    if not cleaned or not refs:
+        return cleaned
+
+    for window, ref in refs.items():
+        rendered = _format_history_window_display(
+            window=window,
+            note_dir=note_dir,
+            history_window_refs=history_window_refs,
+        )
+        if not rendered:
+            continue
+        raw_title = _single_line(str(ref.get("title") or ""), fallback="")
+        display_title = _history_window_title_display(raw_title)
+        titles = tuple(
+            dict.fromkeys(title for title in (raw_title, display_title) if title)
+        )
+        if not titles:
+            continue
+        for title in titles:
+            for open_wrapper, close_wrapper in _HISTORY_WINDOW_REPEAT_WRAPPERS:
+                pattern = (
+                    rf"({re.escape(rendered)})\s*"
+                    rf"{re.escape(open_wrapper)}{re.escape(title)}{re.escape(close_wrapper)}"
+                )
+                cleaned = re.sub(pattern, r"\1", cleaned)
+    return cleaned
+
+
+def _render_evolution_text(
+    text: str,
+    *,
+    note_dir: Path,
+    history_window_refs: dict[str, dict[str, Any]] | None,
+) -> str:
+    linked = _linkify_history_window_mentions(
+        text,
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
+    )
+    return _dedupe_repeated_history_window_titles(
+        linked,
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
+    )
+
+
 def _render_trend_note_lines(
     *,
     title: str,
@@ -275,7 +336,7 @@ def _render_trend_note_lines(
             lines.extend(
                 [
                     "",
-                    _linkify_history_window_mentions(
+                    _render_evolution_text(
                         summary_md,
                         note_dir=note_dir,
                         history_window_refs=history_window_refs,
@@ -294,7 +355,7 @@ def _render_trend_note_lines(
                     ),
                     fallback="unspecified",
                 )
-                summary = _linkify_history_window_mentions(
+                summary = _render_evolution_text(
                     str(signal.get("summary") or "").strip(),
                     note_dir=note_dir,
                     history_window_refs=history_window_refs,
@@ -333,7 +394,7 @@ def _render_trend_note_lines(
                 lines.append("")
             reps = cluster.get("representative_chunks") or []
             if isinstance(reps, list) and reps:
-                lines.append("#### Representative papers")
+                lines.append("#### Representative sources")
                 seen_rep_targets: set[str] = set()
                 for rep in reps[:6]:
                     if not isinstance(rep, dict):

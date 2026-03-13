@@ -327,10 +327,11 @@ def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
     assert f"../items/{item_note.stem}.html" in detail_html
     assert "../Inbox/" not in detail_html
     assert "https://example.com/robometer" not in detail_html
+    assert "<p class='detail-dek'>Start with Robometer.</p>" in detail_html
 
     item_html = item_page.read_text(encoding="utf-8")
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in item_html
-    assert "Open source" in item_html
+    assert "Open original" in item_html
     assert "https://example.com/robometer" in item_html
     assert "Source markdown" in item_html
     assert "document-flow" in item_html

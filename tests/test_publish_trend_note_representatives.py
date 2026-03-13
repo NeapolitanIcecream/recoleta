@@ -278,3 +278,62 @@ def test_publish_trend_note_localizes_evolution_labels_and_links_history_windows
         "- 历史窗口：[Previous Weekly Trend (2026-W10)](week--2026-W10--trend--5.md)"
         in text
     )
+
+
+def test_publish_trend_note_deduplicates_history_window_title_after_link(
+    tmp_path,
+) -> None:
+    """Regression: history window links should not be followed by the same raw title."""
+
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=1)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=8,
+        title="Daily Trend",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="- overview",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        evolution={
+            "summary_md": (
+                "延续了 prev_1《机器人具身智能转向轻量适配、长时序增强与部署一致性》的主线，"
+                "但更强调部署一致性。"
+            ),
+            "signals": [
+                {
+                    "theme": "具身部署",
+                    "change_type": "continuing",
+                    "summary": (
+                        "相比 prev_1《机器人具身智能转向轻量适配、长时序增强与部署一致性》，"
+                        "这次把量化与长时序控制放在同一条工程链路里。"
+                    ),
+                    "history_windows": ["prev_1"],
+                }
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-03-08",
+                "title": "机器人具身智能转向轻量适配、长时序增强与部署一致性",
+                "granularity": "day",
+                "period_start": "2026-03-08T00:00:00+00:00",
+                "trend_doc_id": 69,
+            }
+        },
+        output_language="Chinese (Simplified)",
+    )
+
+    text = note_path.read_text(encoding="utf-8")
+    assert (
+        "[机器人具身智能转向轻量适配、长时序增强与部署一致性 (2026-03-08)]"
+        "(day--2026-03-08--trend--69.md)"
+        in text
+    )
+    assert "](day--2026-03-08--trend--69.md)《机器人具身智能转向轻量适配、长时序增强与部署一致性》" not in text

@@ -8,9 +8,10 @@ import html
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup
 from loguru import logger
@@ -127,6 +128,8 @@ def _parse_site_string_list(value: Any) -> list[str]:
 
 def _safe_excerpt(value: str, *, limit: int = 220) -> str:
     collapsed = " ".join(str(value or "").split()).strip()
+    collapsed = re.sub(r"\s+([,.;:!?])", r"\1", collapsed)
+    collapsed = re.sub(r"\s+([，。；：！？）】》])", r"\1", collapsed)
     if len(collapsed) <= limit:
         return collapsed
     boundary = collapsed.rfind(" ", 0, limit)
@@ -153,6 +156,18 @@ def _site_href(*, from_page: Path, to_page: Path) -> str:
     return "/".join(
         part if part in {".", ".."} else quote(part) for part in relative.parts
     )
+
+
+def _item_action_label(*, source: str | None, canonical_url: str) -> str:
+    normalized_source = str(source or "").strip().lower()
+    host = urlparse(str(canonical_url or "")).netloc.lower()
+    if "arxiv.org" in host or normalized_source == "arxiv":
+        return "Open arXiv"
+    if "openreview.net" in host or normalized_source == "openreview":
+        return "Open OpenReview"
+    if host.endswith("github.com"):
+        return "Open GitHub"
+    return "Open original"
 
 
 def _topic_slug(topic: str) -> str:
@@ -617,7 +632,7 @@ def _render_detail_page(
         "<div class='detail-hero-main'>"
         f"<div class='hero-kicker'>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
-        f"<p class='detail-dek'>{html.escape(_trend_pdf_hero_dek(document.frontmatter))}</p>"
+        f"<p class='detail-dek'>{html.escape(document.excerpt or _trend_pdf_hero_dek(document.frontmatter))}</p>"
         f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
         f"{detail_stream_html}"
         f"<div class='topic-pill-row'>{topic_links}</div>"
@@ -692,8 +707,14 @@ def _render_item_page(
     if document.canonical_url:
         action_links.insert(
             0,
-            "<a class='action-link' href='{}'>Open source</a>".format(
-                html.escape(document.canonical_url, quote=True)
+            "<a class='action-link' href='{}'>{}</a>".format(
+                html.escape(document.canonical_url, quote=True),
+                html.escape(
+                    _item_action_label(
+                        source=document.source,
+                        canonical_url=document.canonical_url,
+                    )
+                ),
             ),
         )
     detail_stream_html = (

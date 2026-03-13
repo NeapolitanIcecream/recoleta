@@ -141,7 +141,7 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     ) in trend_markdown
     assert f"[Robometer](../Inbox/{item_note_path.name})" in trend_markdown
     assert "https://example.com/robometer" not in trend_markdown
-    assert "#### Representative papers" in trend_markdown
+    assert "#### Representative sources" in trend_markdown
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in trend_markdown
     assert f"(../Inbox/{item_note_path.name})" in trend_markdown
 
@@ -157,7 +157,7 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     item_html = (
         output_dir / "site" / "items" / f"{item_note_path.stem}.html"
     ).read_text(encoding="utf-8")
-    assert "Open source" in item_html
+    assert "Open original" in item_html
     assert "https://example.com/robometer" in item_html
 
     with Session(repository.engine) as session:

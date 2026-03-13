@@ -186,7 +186,7 @@ Trend generation can augment prompts with semantic retrieval and bounded history
 - `TRENDS_ITEM_OVERVIEW_TOP_K`: max analyzed items folded into day-trend overview packs (default `28`)
 - `TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS`: per-item char budget when building day-trend overview packs (default `800`)
 - `TRENDS_REP_MIN_PER_CLUSTER`: minimum representatives preserved/backfilled per cluster (default `2`)
-- `TRENDS_PEER_HISTORY_ENABLED`: enable bounded prior-window context for trend evolution notes
+- `TRENDS_PEER_HISTORY_ENABLED`: enable bounded prior-window context for trend evolution notes (default `true`)
 - `TRENDS_PEER_HISTORY_WINDOW_COUNT`: number of earlier peer windows to include (default `3`)
 - `TRENDS_PEER_HISTORY_MAX_CHARS`: char budget for the peer-history pack (default `12000`)
 - `TRENDS_EVOLUTION_MAX_SIGNALS`: max evolution signals kept after normalization (default `5`)

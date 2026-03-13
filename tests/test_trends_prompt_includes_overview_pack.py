@@ -51,6 +51,11 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
         "render_history_window_mentions": True,
         "use_fewer_signals_if_evidence_is_thin": True,
     }
+    notes = prompt_payload.get("notes") or []
+    assert any(
+        "use the exact prev_n token" in str(note) and "do not manually repeat" in str(note)
+        for note in notes
+    )
 
 
 def test_resolve_rag_query_sources_limits_week_trend_searches_to_day_docs() -> None:
