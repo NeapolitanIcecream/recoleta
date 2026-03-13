@@ -39,6 +39,10 @@ class TrendAgentDeps:
 
 _SEARCH_TEXT_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 _SEARCH_TEXT_BACKOFF_MAX_CANDIDATES = 24
+_RAW_TOOL_TRACE_MAX_EVENTS = 64
+_RAW_TOOL_TRACE_MAX_ITEMS = 12
+_RAW_TOOL_TRACE_MAX_DEPTH = 4
+_RAW_TOOL_TRACE_MAX_TEXT_CHARS = 600
 _INLINE_SUMMARY_SECTION_RE = re.compile(
     r"(?is)(summary|problem|approach|results)\s*[:：]\s*(.*?)(?=(summary|problem|approach|results)\s*[:：]|$)"
 )
@@ -1052,6 +1056,110 @@ def _summarize_tool_calls(messages: list[Any]) -> tuple[int, dict[str, int]]:
     return total, {name: breakdown[name] for name in sorted(breakdown)}
 
 
+def _compact_tool_trace_value(value: Any, *, depth: int = 0) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        if len(value) <= _RAW_TOOL_TRACE_MAX_TEXT_CHARS:
+            return value
+        return value[:_RAW_TOOL_TRACE_MAX_TEXT_CHARS].rstrip()
+    if depth >= _RAW_TOOL_TRACE_MAX_DEPTH:
+        return _truncate_text(str(value), max_chars=_RAW_TOOL_TRACE_MAX_TEXT_CHARS)
+    if isinstance(value, dict):
+        compacted_dict: dict[str, Any] = {}
+        items = list(value.items())
+        for key, item_value in items[:_RAW_TOOL_TRACE_MAX_ITEMS]:
+            compacted_dict[str(key)] = _compact_tool_trace_value(
+                item_value, depth=depth + 1
+            )
+        if len(items) > _RAW_TOOL_TRACE_MAX_ITEMS:
+            compacted_dict["__truncated_items__"] = (
+                len(items) - _RAW_TOOL_TRACE_MAX_ITEMS
+            )
+        return compacted_dict
+    if isinstance(value, (list, tuple)):
+        compacted_list: list[Any] = [
+            _compact_tool_trace_value(item, depth=depth + 1)
+            for item in list(value)[:_RAW_TOOL_TRACE_MAX_ITEMS]
+        ]
+        if len(value) > _RAW_TOOL_TRACE_MAX_ITEMS:
+            compacted_list.append(
+                {"__truncated_items__": len(value) - _RAW_TOOL_TRACE_MAX_ITEMS}
+            )
+        return compacted_list
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return _compact_tool_trace_value(model_dump(mode="json"), depth=depth + 1)
+        except Exception:
+            pass
+    return _truncate_text(str(value), max_chars=_RAW_TOOL_TRACE_MAX_TEXT_CHARS)
+
+
+def _extract_raw_tool_trace(messages: list[Any]) -> dict[str, Any]:
+    if not messages:
+        return {
+            "status": "unavailable",
+            "events": [],
+            "events_total": 0,
+            "tool_calls_total": 0,
+            "events_truncated": False,
+        }
+
+    events: list[dict[str, Any]] = []
+    tool_calls_total = 0
+    for message_index, msg in enumerate(messages):
+        parts = getattr(msg, "parts", None)
+        if not isinstance(parts, (list, tuple)):
+            continue
+        message_kind = str(getattr(msg, "kind", "") or "")
+        for part_index, part in enumerate(parts):
+            part_kind = str(getattr(part, "part_kind", "") or "").strip()
+            if part_kind == "tool-call":
+                tool_calls_total += 1
+                events.append(
+                    {
+                        "event_index": len(events),
+                        "message_index": message_index,
+                        "message_kind": message_kind,
+                        "part_index": part_index,
+                        "kind": "tool-call",
+                        "tool_name": str(getattr(part, "tool_name", "") or ""),
+                        "tool_call_id": str(getattr(part, "tool_call_id", "") or ""),
+                        "args": _compact_tool_trace_value(getattr(part, "args", None)),
+                    }
+                )
+            elif part_kind == "tool-return":
+                raw_content = getattr(part, "content", None)
+                model_response_object = getattr(part, "model_response_object", None)
+                if callable(model_response_object) and not isinstance(raw_content, str):
+                    try:
+                        raw_content = model_response_object()
+                    except Exception:
+                        raw_content = getattr(part, "content", None)
+                events.append(
+                    {
+                        "event_index": len(events),
+                        "message_index": message_index,
+                        "message_kind": message_kind,
+                        "part_index": part_index,
+                        "kind": "tool-return",
+                        "tool_name": str(getattr(part, "tool_name", "") or ""),
+                        "tool_call_id": str(getattr(part, "tool_call_id", "") or ""),
+                        "content": _compact_tool_trace_value(raw_content),
+                    }
+                )
+
+    events_total = len(events)
+    return {
+        "status": "captured",
+        "events": events[:_RAW_TOOL_TRACE_MAX_EVENTS],
+        "events_total": events_total,
+        "tool_calls_total": tool_calls_total,
+        "events_truncated": events_total > _RAW_TOOL_TRACE_MAX_EVENTS,
+    }
+
+
 def _count_tool_calls(messages: list[Any]) -> int:
     total, _ = _summarize_tool_calls(messages)
     return total
@@ -1301,6 +1409,7 @@ def generate_trend_payload(
         "estimated_cost_usd": estimated_cost_usd,
         "tool_calls_total": tool_calls_total,
         "tool_call_breakdown": tool_call_breakdown,
+        "raw_tool_trace": _extract_raw_tool_trace(messages),
         "prompt_chars": len(prompt),
         "overview_pack_chars": len(str(overview_pack_md or "")),
     }

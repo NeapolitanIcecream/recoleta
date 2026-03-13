@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 from typing import Any, cast
 
+from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
+
 
 rag_agent = importlib.import_module("recoleta.rag.agent")
 
@@ -414,3 +416,80 @@ def test_get_doc_bundle_parses_inline_legacy_summary_sections(
     assert sections["problem"] == "planners forget observations."
     assert sections["approach"] == "retrieval-augmented verifier loops."
     assert sections["results"] == "fewer cascading tool errors."
+
+
+def test_extract_raw_tool_trace_captures_calls_and_returns() -> None:
+    messages = [
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="search_hybrid",
+                    args={"query": "agent memory loops", "doc_type": "item"},
+                    tool_call_id="call-1",
+                )
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="search_hybrid",
+                    tool_call_id="call-1",
+                    content={
+                        "hits": [{"doc_id": 42, "chunk_index": 0, "title": "Agent Memory"}],
+                        "returned": 1,
+                    },
+                )
+            ]
+        ),
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="get_doc_bundle",
+                    args={"doc_id": 42, "content_limit": 2},
+                    tool_call_id="call-2",
+                )
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="get_doc_bundle",
+                    tool_call_id="call-2",
+                    content={
+                        "bundle": {
+                            "doc": {"doc_id": 42, "title": "Agent Memory"},
+                            "summary": {"text": "retrieval memory loops"},
+                        }
+                    },
+                )
+            ]
+        ),
+    ]
+
+    trace = rag_agent._extract_raw_tool_trace(messages)
+
+    assert trace["status"] == "captured"
+    assert trace["tool_calls_total"] == 2
+    assert trace["events_total"] == 4
+    assert trace["events_truncated"] is False
+    assert [event["kind"] for event in trace["events"]] == [
+        "tool-call",
+        "tool-return",
+        "tool-call",
+        "tool-return",
+    ]
+    assert trace["events"][0]["tool_name"] == "search_hybrid"
+    assert trace["events"][0]["args"] == {
+        "query": "agent memory loops",
+        "doc_type": "item",
+    }
+    assert trace["events"][1]["content"]["returned"] == 1
+    assert trace["events"][3]["content"]["bundle"]["doc"]["doc_id"] == 42
+
+
+def test_extract_raw_tool_trace_marks_unavailable_without_messages() -> None:
+    trace = rag_agent._extract_raw_tool_trace([])
+
+    assert trace["status"] == "unavailable"
+    assert trace["events"] == []
+    assert trace["tool_calls_total"] == 0
