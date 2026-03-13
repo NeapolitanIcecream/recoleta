@@ -305,6 +305,10 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRENDS_ITEM_OVERVIEW_TOP_K": "trends_item_overview_top_k",
         "TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS": "trends_item_overview_item_max_chars",
         "TRENDS_REP_MIN_PER_CLUSTER": "trends_rep_min_per_cluster",
+        "TRENDS_PEER_HISTORY_ENABLED": "trends_peer_history_enabled",
+        "TRENDS_PEER_HISTORY_WINDOW_COUNT": "trends_peer_history_window_count",
+        "TRENDS_PEER_HISTORY_MAX_CHARS": "trends_peer_history_max_chars",
+        "TRENDS_EVOLUTION_MAX_SIGNALS": "trends_evolution_max_signals",
     }
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
@@ -737,16 +741,28 @@ class Settings(BaseSettings):
     )
     trends_ranking_n: int = Field(default=10, ge=1, validation_alias="TRENDS_RANKING_N")
     trends_overview_pack_max_chars: int = Field(
-        default=8000, ge=1, validation_alias="TRENDS_OVERVIEW_PACK_MAX_CHARS"
+        default=16000, ge=1, validation_alias="TRENDS_OVERVIEW_PACK_MAX_CHARS"
     )
     trends_item_overview_top_k: int = Field(
-        default=20, ge=0, validation_alias="TRENDS_ITEM_OVERVIEW_TOP_K"
+        default=28, ge=0, validation_alias="TRENDS_ITEM_OVERVIEW_TOP_K"
     )
     trends_item_overview_item_max_chars: int = Field(
-        default=500, ge=1, validation_alias="TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS"
+        default=800, ge=1, validation_alias="TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS"
     )
     trends_rep_min_per_cluster: int = Field(
         default=2, ge=1, validation_alias="TRENDS_REP_MIN_PER_CLUSTER"
+    )
+    trends_peer_history_enabled: bool = Field(
+        default=False, validation_alias="TRENDS_PEER_HISTORY_ENABLED"
+    )
+    trends_peer_history_window_count: int = Field(
+        default=3, ge=0, validation_alias="TRENDS_PEER_HISTORY_WINDOW_COUNT"
+    )
+    trends_peer_history_max_chars: int = Field(
+        default=12000, ge=1, validation_alias="TRENDS_PEER_HISTORY_MAX_CHARS"
+    )
+    trends_evolution_max_signals: int = Field(
+        default=5, ge=1, validation_alias="TRENDS_EVOLUTION_MAX_SIGNALS"
     )
 
     @model_validator(mode="after")

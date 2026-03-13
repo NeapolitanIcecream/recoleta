@@ -219,6 +219,7 @@ def _materialize_scope_outputs(
                 markdown_output_dir=output_dir,
                 output_language=output_language,
                 item_note_href_by_url=item_note_href_by_url,
+                scope=scope_spec.scope,
             )
             note_path = write_markdown_trend_note(
                 output_dir=output_dir,
@@ -230,8 +231,11 @@ def _materialize_scope_outputs(
                 run_id="materialize-outputs",
                 overview_md=materialized.overview_md,
                 topics=list(materialized.topics),
+                evolution=materialized.evolution,
+                history_window_refs=materialized.history_window_refs,
                 clusters=materialized.clusters,
                 highlights=materialized.highlights,
+                output_language=output_language,
             )
             result.trend_notes_total += 1
             result.doc_ref_rewrites_total += (

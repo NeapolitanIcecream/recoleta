@@ -14,7 +14,11 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.trends import TrendCluster, TrendPayload
+from recoleta.trends import (
+    TREND_EVOLUTION_CHANGE_TYPE_VALUES,
+    TrendCluster,
+    TrendPayload,
+)
 from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
@@ -62,6 +66,26 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         " When available, use trend documents (doc_type=trend) for synthesis and higher-level themes, "
         "and use item documents (doc_type=item) for concrete citations and grounded evidence. "
         "Do not force a Top-N must-read section; that workflow is legacy and should only appear if the prompt explicitly requires it."
+    )
+    base += (
+        " Tools only access the active target period. "
+        "If historical same-granularity context is provided, it comes through history_pack_md in the prompt rather than tool calls. "
+        "If no usable history is provided, leave evolution as null instead of guessing."
+    )
+    change_types = ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
+    base += (
+        " If you emit evolution.signals[].change_type, it must use one of these English enum values: "
+        f"{change_types}. "
+        "If you emit evolution.signals[].history_windows, cite only prev_n window_id values from history_pack_md sections that are not marked missing. "
+        "Do not emit raw dates, ISO week/month tokens, or the current period token there."
+    )
+    base += (
+        " Treat evolution as an evidence-first section rather than a generic summary. "
+        "Each signal should name at least one concrete paper, benchmark, or system and include a specific factual detail or metric whenever the corpus provides one. "
+        "When comparing against history, anchor the contrast to a named historical title, cluster, or representative system from history_pack_md instead of saying only that 'previous windows emphasized X'. "
+        "If you mention a history window in prose, refer to it with the exact prev_n token so the renderer can convert it into a link. "
+        "Use tools to inspect current-window evidence before writing evolution, and prefer fewer signals over vague ones. "
+        "Do not simply restate the overview; focus on what persisted, appeared, faded, or changed across windows."
     )
     base += (
         " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
@@ -545,6 +569,7 @@ def build_trend_agent(
 
         Args:
             doc_type: Use `item` for paper-level evidence and `trend` for lower-level trend summaries.
+            This tool only accesses the active target period and not earlier windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             order_by: Event-time ordering, typically `event_desc` or `event_asc`.
             offset: Pagination offset for broad corpus scans.
@@ -696,6 +721,7 @@ def build_trend_agent(
         Args:
             query: Exact keywords, phrases, or jargon you expect to appear in the corpus.
             doc_type: Use `item` for papers and `trend` for lower-level trend notes.
+            This tool only searches the active target period and not prior windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             limit: Maximum number of hits to return.
         """
@@ -765,6 +791,7 @@ def build_trend_agent(
         Args:
             query: Conceptual query phrased in natural language.
             doc_type: Use `item` for papers and `trend` for lower-level trend notes.
+            This tool only searches the active target period and not prior windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             limit: Maximum number of hits to return.
         """
@@ -847,6 +874,7 @@ def build_trend_agent(
         Args:
             query: The concept, theme, or concrete phrase you want to investigate.
             doc_type: Use `item` for paper-level evidence and `trend` for synthesized lower-level trend docs.
+            This tool only searches the active target period and not prior windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             limit: Maximum number of fused hits to return.
         """
@@ -1223,9 +1251,11 @@ def build_trend_prompt_payload(
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
     overview_pack_md: str | None = None,
+    history_pack_md: str | None = None,
     rag_sources: list[dict[str, Any]] | None = None,
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
+    evolution_max_signals: int | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "task": "Generate research trends for the period.",
@@ -1239,10 +1269,34 @@ def build_trend_prompt_payload(
             "Keep claims grounded in the local corpus.",
             "Keep the title specific and remove date/generic prefixes.",
             "Keep topics only in metadata, not in overview_md body sections.",
+            "Tools only access the active target period; use history_pack_md for same-granularity historical context when present.",
+            "Leave evolution null unless history_pack_md provides usable prior-window evidence.",
+            (
+                "If evolution is present, evolution.signals[].change_type must be one of "
+                + ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
+                + "."
+            ),
+            "If evolution is present, evolution.signals[].history_windows must use only prev_n window_id values from history_pack_md and must not repeat the current period token.",
+            "Evolution must be evidence-dense: name concrete papers, benchmarks, or systems and include specific factual details or metrics whenever available.",
+            "When comparing against history, name the historical title, cluster, or representative system from history_pack_md rather than only saying previous windows emphasized a theme.",
+            "If you mention a historical window in prose, use the exact prev_n token so publishing can render it as a link.",
+            "If you cannot ground an evolution signal concretely, emit fewer signals instead of generic prose.",
+            "Do not repeat the overview inside evolution; explain the delta across windows.",
         ],
+    }
+    payload["evolution_change_types"] = list(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
+    payload["evolution_requirements"] = {
+        "avoid_generic_summary": True,
+        "prefer_concrete_titles": True,
+        "prefer_named_history_anchors": True,
+        "prefer_quantitative_details": True,
+        "render_history_window_mentions": True,
+        "use_fewer_signals_if_evidence_is_thin": True,
     }
     if overview_pack_md is not None:
         payload["overview_pack_md"] = str(overview_pack_md)
+    if history_pack_md is not None:
+        payload["history_pack_md"] = str(history_pack_md)
     if rag_sources is not None:
         payload["rag_sources"] = rag_sources
     if ranking_n is not None:
@@ -1256,6 +1310,8 @@ def build_trend_prompt_payload(
         normalized = str(rep_source_doc_type).strip().lower()
         if normalized:
             payload["rep_source_doc_type"] = normalized
+    if evolution_max_signals is not None:
+        payload["evolution_max_signals"] = int(evolution_max_signals)
     return payload
 
 
@@ -1278,9 +1334,11 @@ def generate_trend_payload(
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
     overview_pack_md: str | None = None,
+    history_pack_md: str | None = None,
     rag_sources: list[dict[str, Any]] | None = None,
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
+    evolution_max_signals: int | None = None,
     include_debug: bool = False,
     scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str = "pipeline.trends",
@@ -1320,9 +1378,11 @@ def generate_trend_payload(
             corpus_doc_type=corpus_doc_type,
             corpus_granularity=corpus_granularity,
             overview_pack_md=overview_pack_md,
+            history_pack_md=history_pack_md,
             rag_sources=rag_sources,
             ranking_n=ranking_n,
             rep_source_doc_type=rep_source_doc_type,
+            evolution_max_signals=evolution_max_signals,
         ),
         ensure_ascii=False,
         separators=(",", ":"),
@@ -1412,6 +1472,7 @@ def generate_trend_payload(
         "raw_tool_trace": _extract_raw_tool_trace(messages),
         "prompt_chars": len(prompt),
         "overview_pack_chars": len(str(overview_pack_md or "")),
+        "history_pack_chars": len(str(history_pack_md or "")),
     }
     log.info(
         "Trend generation done include_debug={} cost_present={}",

@@ -23,15 +23,34 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
         ],
         ranking_n=7,
         rep_source_doc_type="item",
+        history_pack_md="## History pack\n- prev_1\n",
+        evolution_max_signals=4,
     )
 
     assert prompt_payload.get("overview_pack_md") == "## Overview pack\n- x\n"
+    assert prompt_payload.get("history_pack_md") == "## History pack\n- prev_1\n"
     assert prompt_payload.get("rag_sources") == [
         {"doc_type": "item", "granularity": None},
         {"doc_type": "trend", "granularity": "day"},
     ]
     assert prompt_payload.get("ranking_n") == 7
     assert prompt_payload.get("rep_source_doc_type") == "item"
+    assert prompt_payload.get("evolution_max_signals") == 4
+    assert prompt_payload.get("evolution_change_types") == [
+        "continuing",
+        "emerging",
+        "fading",
+        "shifting",
+        "polarizing",
+    ]
+    assert prompt_payload.get("evolution_requirements") == {
+        "avoid_generic_summary": True,
+        "prefer_concrete_titles": True,
+        "prefer_named_history_anchors": True,
+        "prefer_quantitative_details": True,
+        "render_history_window_mentions": True,
+        "use_fewer_signals_if_evidence_is_thin": True,
+    }
 
 
 def test_resolve_rag_query_sources_limits_week_trend_searches_to_day_docs() -> None:

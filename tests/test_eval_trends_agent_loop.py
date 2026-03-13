@@ -446,9 +446,10 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
     def _assert_runtime_overrides(*, stage_name: str, stage_runner: Any) -> Any:  # noqa: ARG001
         assert str(harness.os.environ["RECOLETA_DB_PATH"]).endswith("isolated.db")
         assert str(harness.os.environ["RAG_LANCEDB_DIR"]).endswith("isolated-lancedb")
-        assert harness.os.environ["TRENDS_OVERVIEW_PACK_MAX_CHARS"] == "6000"
-        assert harness.os.environ["TRENDS_ITEM_OVERVIEW_TOP_K"] == "12"
-        assert harness.os.environ["TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS"] == "320"
+        assert harness.os.environ["TRENDS_OVERVIEW_PACK_MAX_CHARS"] == "14000"
+        assert harness.os.environ["TRENDS_ITEM_OVERVIEW_TOP_K"] == "20"
+        assert harness.os.environ["TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS"] == "600"
+        assert harness.os.environ["TRENDS_PEER_HISTORY_MAX_CHARS"] == "12000"
         return (
             fake_settings,
             fake_repository,
@@ -470,9 +471,10 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
     assert summary["runtime"]["mode"] == "isolated_copy"
     assert summary["capture_mode"] == "existing-corpus"
     assert summary["capture_budget"] == {
-        "overview_pack_max_chars": 6000,
-        "item_overview_top_k": 12,
-        "item_overview_item_max_chars": 320,
+        "overview_pack_max_chars": 14000,
+        "item_overview_top_k": 20,
+        "item_overview_item_max_chars": 600,
+        "peer_history_max_chars": 12000,
     }
     assert called["reuse_existing_corpus"] is True
     assert called["backfill"] is False
@@ -482,9 +484,10 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
     )
     assert capture_summary["status"] == "captured"
     assert capture_summary["capture_budget"] == {
-        "overview_pack_max_chars": 6000,
-        "item_overview_top_k": 12,
-        "item_overview_item_max_chars": 320,
+        "overview_pack_max_chars": 14000,
+        "item_overview_top_k": 20,
+        "item_overview_item_max_chars": 600,
+        "peer_history_max_chars": 12000,
     }
     tool_trace_payload = json.loads(
         (artifact_dir / "tool-trace.json").read_text(encoding="utf-8")

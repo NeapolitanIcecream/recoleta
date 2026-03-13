@@ -184,3 +184,97 @@ def test_publish_trend_note_prefers_item_note_links_over_source_urls(
     text = note_path.read_text(encoding="utf-8")
     assert "- [Paper A](../Inbox/2026-03-11--paper-a.md)" in text
     assert "- [Paper A](https://example.com/a)" not in text
+
+
+def test_publish_trend_note_renders_evolution_section(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=6,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="- overview",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        evolution={
+            "summary_md": "Agent workflows are stabilizing rather than just expanding.",
+            "signals": [
+                {
+                    "theme": "Tool-using agents",
+                    "change_type": "continuing",
+                    "summary": "The theme remains central, but the discussion is shifting toward operational discipline.",
+                    "history_windows": ["prev_1", "prev_2"],
+                }
+            ],
+        },
+    )
+
+    text = note_path.read_text(encoding="utf-8")
+    assert "## Evolution" in text
+    assert "### Tool-using agents" in text
+    assert "- Change: Continuing" in text
+    assert "- History windows: prev_1, prev_2" in text
+
+
+def test_publish_trend_note_localizes_evolution_labels_and_links_history_windows(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=7,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="- overview",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        evolution={
+            "summary_md": "相比 prev_1，今天更强调可运行环境与验证闭环。",
+            "signals": [
+                {
+                    "theme": "Tool-using agents",
+                    "change_type": "continuing",
+                    "summary": "相比 prev_1，RepoLaunch reports a roughly 70% build success rate.",
+                    "history_windows": ["prev_1"],
+                }
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-W10",
+                "title": "Previous Weekly Trend: Verification Gets Tighter",
+                "granularity": "week",
+                "period_start": "2026-03-02T00:00:00+00:00",
+                "trend_doc_id": 5,
+            }
+        },
+        output_language="Chinese (Simplified)",
+    )
+
+    text = note_path.read_text(encoding="utf-8")
+    assert "- 变化：延续" in text
+    assert (
+        "相比 [Previous Weekly Trend (2026-W10)](week--2026-W10--trend--5.md)，今天更强调可运行环境与验证闭环。"
+        in text
+    )
+    assert (
+        "相比 [Previous Weekly Trend (2026-W10)](week--2026-W10--trend--5.md)，RepoLaunch reports a roughly 70% build success rate."
+        in text
+    )
+    assert (
+        "- 历史窗口：[Previous Weekly Trend (2026-W10)](week--2026-W10--trend--5.md)"
+        in text
+    )

@@ -5,11 +5,12 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -118,6 +119,134 @@ class TrendCluster(BaseModel):
     representative_chunks: list[RepresentativeChunk] = Field(default_factory=list)
 
 
+class TrendEvolutionChangeType(StrEnum):
+    CONTINUING = "continuing"
+    EMERGING = "emerging"
+    FADING = "fading"
+    SHIFTING = "shifting"
+    POLARIZING = "polarizing"
+
+
+TREND_EVOLUTION_CHANGE_TYPE_VALUES = tuple(
+    change_type.value for change_type in TrendEvolutionChangeType
+)
+
+_TREND_EVOLUTION_CHANGE_TYPE_ALIASES: dict[str, TrendEvolutionChangeType] = {
+    change_type.value: change_type for change_type in TrendEvolutionChangeType
+}
+_TREND_EVOLUTION_CHANGE_TYPE_ALIASES.update(
+    {
+        "continue": TrendEvolutionChangeType.CONTINUING,
+        "continued": TrendEvolutionChangeType.CONTINUING,
+        "continuation": TrendEvolutionChangeType.CONTINUING,
+        "ongoing": TrendEvolutionChangeType.CONTINUING,
+        "persistent": TrendEvolutionChangeType.CONTINUING,
+        "persisting": TrendEvolutionChangeType.CONTINUING,
+        "stable": TrendEvolutionChangeType.CONTINUING,
+        "strengthening": TrendEvolutionChangeType.CONTINUING,
+        "sustained": TrendEvolutionChangeType.CONTINUING,
+        "sustaining": TrendEvolutionChangeType.CONTINUING,
+        "延续": TrendEvolutionChangeType.CONTINUING,
+        "持续": TrendEvolutionChangeType.CONTINUING,
+        "继续": TrendEvolutionChangeType.CONTINUING,
+        "emerge": TrendEvolutionChangeType.EMERGING,
+        "emerged": TrendEvolutionChangeType.EMERGING,
+        "emergent": TrendEvolutionChangeType.EMERGING,
+        "new": TrendEvolutionChangeType.EMERGING,
+        "newly_emerging": TrendEvolutionChangeType.EMERGING,
+        "rising": TrendEvolutionChangeType.EMERGING,
+        "appearing": TrendEvolutionChangeType.EMERGING,
+        "涌现": TrendEvolutionChangeType.EMERGING,
+        "新出现": TrendEvolutionChangeType.EMERGING,
+        "新兴": TrendEvolutionChangeType.EMERGING,
+        "faded": TrendEvolutionChangeType.FADING,
+        "declining": TrendEvolutionChangeType.FADING,
+        "cooling": TrendEvolutionChangeType.FADING,
+        "waning": TrendEvolutionChangeType.FADING,
+        "disappearing": TrendEvolutionChangeType.FADING,
+        "降温": TrendEvolutionChangeType.FADING,
+        "消退": TrendEvolutionChangeType.FADING,
+        "淡出": TrendEvolutionChangeType.FADING,
+        "shifted": TrendEvolutionChangeType.SHIFTING,
+        "shifting_focus": TrendEvolutionChangeType.SHIFTING,
+        "evolving": TrendEvolutionChangeType.SHIFTING,
+        "reframing": TrendEvolutionChangeType.SHIFTING,
+        "reframed": TrendEvolutionChangeType.SHIFTING,
+        "diversifying": TrendEvolutionChangeType.SHIFTING,
+        "转向": TrendEvolutionChangeType.SHIFTING,
+        "变化": TrendEvolutionChangeType.SHIFTING,
+        "迁移": TrendEvolutionChangeType.SHIFTING,
+        "polarized": TrendEvolutionChangeType.POLARIZING,
+        "polarising": TrendEvolutionChangeType.POLARIZING,
+        "polarizing_more": TrendEvolutionChangeType.POLARIZING,
+        "diverging": TrendEvolutionChangeType.POLARIZING,
+        "divergent": TrendEvolutionChangeType.POLARIZING,
+        "contested": TrendEvolutionChangeType.POLARIZING,
+        "debated": TrendEvolutionChangeType.POLARIZING,
+        "分化": TrendEvolutionChangeType.POLARIZING,
+        "分歧": TrendEvolutionChangeType.POLARIZING,
+        "两极化": TrendEvolutionChangeType.POLARIZING,
+    }
+)
+
+
+def _normalize_evolution_token(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return ""
+    normalized = normalized.replace("—", "-")
+    normalized = re.sub(r"[\s\-]+", "_", normalized)
+    return normalized.strip("_")
+
+
+def normalize_trend_evolution_change_type(
+    value: Any,
+) -> TrendEvolutionChangeType | None:
+    if isinstance(value, TrendEvolutionChangeType):
+        return value
+    normalized = _normalize_evolution_token(value)
+    if not normalized:
+        return None
+    return _TREND_EVOLUTION_CHANGE_TYPE_ALIASES.get(normalized)
+
+
+class TrendEvolutionSignal(BaseModel):
+    theme: str
+    change_type: TrendEvolutionChangeType
+    summary: str
+    history_windows: list[str] = Field(default_factory=list)
+
+    @field_validator("change_type", mode="before")
+    @classmethod
+    def _normalize_change_type(cls, value: Any) -> TrendEvolutionChangeType:
+        normalized = normalize_trend_evolution_change_type(value)
+        if normalized is None:
+            allowed = ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
+            raise ValueError(f"change_type must be one of {allowed}")
+        return normalized
+
+    @field_validator("history_windows", mode="before")
+    @classmethod
+    def _normalize_history_windows(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        raw_values = value if isinstance(value, list) else [value]
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in raw_values:
+            candidate = " ".join(str(raw or "").split()).strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            normalized.append(candidate)
+        return normalized
+
+
+class TrendEvolutionSection(BaseModel):
+    summary_md: str
+    signals: list[TrendEvolutionSignal] = Field(default_factory=list)
+
+
 class TrendPayload(BaseModel):
     title: str
     granularity: str  # day|week|month
@@ -127,6 +256,7 @@ class TrendPayload(BaseModel):
     topics: list[str] = Field(default_factory=list)
     clusters: list[TrendCluster] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
+    evolution: TrendEvolutionSection | None = None
 
 
 def prev_level_for_granularity(granularity: str) -> str:
@@ -160,14 +290,80 @@ def rag_sources_for_granularity(granularity: str) -> list[dict[str, str | None]]
 
 
 @dataclass(slots=True)
+class TrendPeerHistoryWindow:
+    window_id: str
+    label: str
+    period_start: datetime
+    period_end: datetime
+
+
+def _period_token_for_granularity(granularity: str, period_start: datetime) -> str:
+    normalized = str(granularity or "").strip().lower()
+    start = _to_utc_datetime(period_start)
+    if normalized == "day":
+        return start.date().isoformat()
+    if normalized == "week":
+        iso = start.date().isocalendar()
+        return f"{iso.year}-W{iso.week:02d}"
+    if normalized == "month":
+        return f"{start.year:04d}-{start.month:02d}"
+    raise ValueError("unsupported granularity")
+
+
+def _shift_month_start(period_start: datetime, *, months: int) -> datetime:
+    start = _to_utc_datetime(period_start)
+    month_index = (start.year * 12 + (start.month - 1)) + int(months)
+    year = month_index // 12
+    month = month_index % 12 + 1
+    return datetime(year, month, 1, tzinfo=UTC)
+
+
+def peer_history_windows_for_period(
+    *, granularity: str, period_start: datetime, window_count: int
+) -> list[TrendPeerHistoryWindow]:
+    normalized = str(granularity or "").strip().lower()
+    count = max(0, int(window_count or 0))
+    if count <= 0:
+        return []
+
+    anchor_start = _to_utc_datetime(period_start)
+    windows: list[TrendPeerHistoryWindow] = []
+    for idx in range(1, count + 1):
+        if normalized == "day":
+            start = anchor_start - timedelta(days=idx)
+            end = start + timedelta(days=1)
+        elif normalized == "week":
+            start = anchor_start - timedelta(days=7 * idx)
+            end = start + timedelta(days=7)
+        elif normalized == "month":
+            start = _shift_month_start(anchor_start, months=-idx)
+            end = _shift_month_start(anchor_start, months=-(idx - 1))
+        else:
+            raise ValueError("unsupported granularity")
+        windows.append(
+            TrendPeerHistoryWindow(
+                window_id=f"prev_{idx}",
+                label=_period_token_for_granularity(normalized, start),
+                period_start=start,
+                period_end=end,
+            )
+        )
+    return windows
+
+
+@dataclass(slots=True)
 class TrendGenerationPlan:
     target_granularity: str
     period_start: datetime
     period_end: datetime
+    peer_history_window_count: int = 0
     prev_level: str = field(init=False)
     overview_pack_strategy: str = field(init=False)
     rag_sources: list[dict[str, str | None]] = field(init=False)
     rep_source_doc_type: str = field(default="item", init=False)
+    peer_history_windows: list[TrendPeerHistoryWindow] = field(
+        default_factory=list, init=False
+    )
 
     def __post_init__(self) -> None:
         normalized = str(self.target_granularity or "").strip().lower()
@@ -179,6 +375,146 @@ class TrendGenerationPlan:
             "item_top_k" if self.prev_level == "item" else "trend_overviews"
         )
         self.rag_sources = rag_sources_for_granularity(normalized)
+        self.peer_history_window_count = max(0, int(self.peer_history_window_count or 0))
+        self.peer_history_windows = peer_history_windows_for_period(
+            granularity=normalized,
+            period_start=self.period_start,
+            window_count=self.peer_history_window_count,
+        )
+
+
+_HISTORY_WINDOW_ID_RE = re.compile(r"\bprev_\d+\b", flags=re.IGNORECASE)
+_HISTORY_WINDOW_TRIM_CHARS = " \t\r\n()[]{}<>.,;:!?\"'`，；：。！？"
+
+
+def _normalize_history_window_alias(value: Any) -> str:
+    return " ".join(str(value or "").split()).strip().lower()
+
+
+def _trim_history_window_candidate(value: Any) -> str:
+    return str(value or "").strip(_HISTORY_WINDOW_TRIM_CHARS)
+
+
+def _split_history_window_candidates(raw_values: list[str]) -> list[str]:
+    candidates: list[str] = []
+    for raw in raw_values:
+        normalized = " ".join(str(raw or "").split()).strip()
+        if not normalized:
+            continue
+        parts = re.split(r"[,/|;，；]+", normalized)
+        if len(parts) == 1:
+            candidates.append(normalized)
+            continue
+        for part in parts:
+            candidate = part.strip()
+            if candidate:
+                candidates.append(candidate)
+    return candidates
+
+
+def normalize_trend_evolution(
+    evolution: TrendEvolutionSection | None,
+    *,
+    granularity: str,
+    period_start: datetime,
+    history_windows: list[TrendPeerHistoryWindow] | None,
+    available_window_ids: set[str] | None = None,
+) -> tuple[TrendEvolutionSection | None, dict[str, int]]:
+    stats = {
+        "history_windows_normalized_total": 0,
+        "history_windows_dropped_total": 0,
+        "signals_dropped_total": 0,
+    }
+    if evolution is None:
+        return None, stats
+
+    all_windows = list(history_windows or [])
+    alias_to_window_id: dict[str, str] = {}
+    allowed_window_ids = {
+        str(window.window_id).strip()
+        for window in all_windows
+        if str(window.window_id).strip()
+    }
+    if available_window_ids is not None:
+        allowed_window_ids &= {
+            str(window_id).strip()
+            for window_id in available_window_ids
+            if str(window_id).strip()
+        }
+
+    for window in all_windows:
+        window_id = str(window.window_id).strip()
+        if not window_id:
+            continue
+        for alias in {window_id, window.label}:
+            normalized_alias = _normalize_history_window_alias(alias)
+            if normalized_alias:
+                alias_to_window_id.setdefault(normalized_alias, window_id)
+
+    current_period_token = _normalize_history_window_alias(
+        _period_token_for_granularity(granularity, period_start)
+    )
+
+    normalized_signals: list[TrendEvolutionSignal] = []
+    for signal in evolution.signals or []:
+        normalized_history_windows: list[str] = []
+        seen_history_windows: set[str] = set()
+        for candidate in _split_history_window_candidates(
+            list(signal.history_windows or [])
+        ):
+            normalized_candidate = _normalize_history_window_alias(
+                _trim_history_window_candidate(candidate)
+            )
+            if not normalized_candidate:
+                continue
+            if normalized_candidate == current_period_token:
+                stats["history_windows_dropped_total"] += 1
+                continue
+
+            mapped_window_id: str | None = None
+            direct_match = _HISTORY_WINDOW_ID_RE.search(normalized_candidate)
+            if direct_match is not None:
+                candidate_window_id = direct_match.group(0).lower()
+                if candidate_window_id in allowed_window_ids:
+                    mapped_window_id = candidate_window_id
+            else:
+                candidate_window_id = alias_to_window_id.get(normalized_candidate)
+                if (
+                    candidate_window_id is not None
+                    and candidate_window_id in allowed_window_ids
+                ):
+                    mapped_window_id = candidate_window_id
+                    if candidate_window_id != normalized_candidate:
+                        stats["history_windows_normalized_total"] += 1
+
+            if mapped_window_id is None:
+                stats["history_windows_dropped_total"] += 1
+                continue
+            if mapped_window_id in seen_history_windows:
+                continue
+            seen_history_windows.add(mapped_window_id)
+            normalized_history_windows.append(mapped_window_id)
+
+        if allowed_window_ids and not normalized_history_windows:
+            stats["signals_dropped_total"] += 1
+            continue
+
+        normalized_signals.append(
+            TrendEvolutionSignal(
+                theme=str(signal.theme or "").strip(),
+                change_type=signal.change_type,
+                summary=str(signal.summary or "").strip(),
+                history_windows=normalized_history_windows,
+            )
+        )
+
+    summary_md = str(evolution.summary_md or "").strip()
+    if not summary_md and not normalized_signals:
+        return None, stats
+    return (
+        TrendEvolutionSection(summary_md=summary_md, signals=normalized_signals),
+        stats,
+    )
 
 
 def _to_utc_datetime(value: datetime) -> datetime:
@@ -582,6 +918,103 @@ def build_overview_pack_md(
     stats["truncated"] = bool(truncated)
     stats["chars"] = len(md)
     stats["max_chars"] = int(overview_pack_max_chars)
+    return md, stats
+
+
+def build_history_pack_md(
+    repository: TrendRepositoryPort,
+    plan: TrendGenerationPlan,
+    *,
+    history_pack_max_chars: int,
+    scope: str = DEFAULT_TOPIC_STREAM,
+) -> tuple[str, dict[str, Any]]:
+    windows = list(getattr(plan, "peer_history_windows", []) or [])
+    current_period_token = _period_token_for_granularity(
+        plan.target_granularity, plan.period_start
+    )
+    stats: dict[str, Any] = {
+        "requested_windows": len(windows),
+        "available_windows": 0,
+        "missing_windows": 0,
+        "requested_window_ids": [window.window_id for window in windows],
+        "available_window_ids": [],
+        "missing_window_ids": [],
+        "current_period_token": current_period_token,
+        "truncated": False,
+    }
+    period_start = _to_utc_datetime(plan.period_start)
+    period_end = _to_utc_datetime(plan.period_end)
+    summary_lines: list[str] = [
+        f"## History pack (granularity={plan.target_granularity})",
+        f"- current_period_start={period_start.isoformat()} | current_period_end={period_end.isoformat()}",
+        f"- current_period_token={current_period_token}",
+        f"- requested_windows={len(windows)}",
+        (
+            "- requested_window_ids="
+            + ", ".join(str(window.window_id).strip() for window in windows)
+            if windows
+            else "- requested_window_ids=-"
+        ),
+    ]
+    if not windows:
+        summary_lines.append("- status=disabled")
+        md = "\n".join(summary_lines).strip() + "\n"
+        md, truncated = _truncate_chars(md, max_chars=int(history_pack_max_chars))
+        stats["truncated"] = bool(truncated)
+        stats["max_chars"] = int(history_pack_max_chars)
+        return md, stats
+
+    section_lines: list[str] = []
+    for window in windows:
+        section_lines.append(f"### {plan.target_granularity} {window.window_id}")
+        section_lines.append(f"- window_id={window.window_id}")
+        section_lines.append(f"- period_token={window.label}")
+        docs = repository.list_documents(
+            doc_type="trend",
+            granularity=plan.target_granularity,
+            period_start=window.period_start,
+            period_end=window.period_end,
+            scope=scope,
+            order_by="event_desc",
+            limit=1,
+        )
+        doc = docs[0] if docs else None
+        if doc is None:
+            stats["missing_windows"] = int(stats["missing_windows"]) + 1
+            stats["missing_window_ids"].append(window.window_id)
+            section_lines.append("- status=missing")
+            continue
+        stats["available_windows"] = int(stats["available_windows"]) + 1
+        stats["available_window_ids"].append(window.window_id)
+        doc_lines = _trend_payload_summary_lines(
+            repository=repository,
+            doc=doc,
+            token=window.window_id,
+            entry_label=plan.target_granularity,
+        )
+        section_lines.extend(doc_lines[1:] if len(doc_lines) > 1 else doc_lines)
+
+    summary_lines.extend(
+        [
+            (
+                "- available_window_ids="
+                + ", ".join(str(window_id) for window_id in stats["available_window_ids"])
+                if stats["available_window_ids"]
+                else "- available_window_ids=-"
+            ),
+            (
+                "- missing_window_ids="
+                + ", ".join(str(window_id) for window_id in stats["missing_window_ids"])
+                if stats["missing_window_ids"]
+                else "- missing_window_ids=-"
+            ),
+        ]
+    )
+
+    md = "\n".join(summary_lines + section_lines).strip() + "\n"
+    md, truncated = _truncate_chars(md, max_chars=int(history_pack_max_chars))
+    stats["truncated"] = bool(truncated)
+    stats["max_chars"] = int(history_pack_max_chars)
     return md, stats
 
 
@@ -1178,9 +1611,11 @@ def generate_trend_via_tools(
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
     overview_pack_md: str | None = None,
+    history_pack_md: str | None = None,
     rag_sources: list[dict[str, str | None]] | None = None,
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
+    evolution_max_signals: int | None = None,
     include_debug: bool = False,
     scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str = "pipeline.trends",
@@ -1214,9 +1649,11 @@ def generate_trend_via_tools(
         corpus_doc_type=corpus_doc_type,
         corpus_granularity=corpus_granularity,
         overview_pack_md=overview_pack_md,
+        history_pack_md=history_pack_md,
         rag_sources=rag_sources,
         ranking_n=ranking_n,
         rep_source_doc_type=rep_source_doc_type,
+        evolution_max_signals=evolution_max_signals,
         include_debug=include_debug,
         scope=scope,
         metric_namespace=metric_namespace,

@@ -199,6 +199,10 @@ def test_settings_loads_trends_self_similar_settings_from_env(
     monkeypatch.setenv("TRENDS_ITEM_OVERVIEW_TOP_K", "7")
     monkeypatch.setenv("TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS", "999")
     monkeypatch.setenv("TRENDS_REP_MIN_PER_CLUSTER", "3")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_ENABLED", "true")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_WINDOW_COUNT", "5")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_MAX_CHARS", "4321")
+    monkeypatch.setenv("TRENDS_EVOLUTION_MAX_SIGNALS", "6")
 
     settings = Settings()  # pyright: ignore[reportCallIssue]
     assert settings.trends_self_similar_enabled is True
@@ -207,6 +211,10 @@ def test_settings_loads_trends_self_similar_settings_from_env(
     assert settings.trends_item_overview_top_k == 7
     assert settings.trends_item_overview_item_max_chars == 999
     assert settings.trends_rep_min_per_cluster == 3
+    assert settings.trends_peer_history_enabled is True
+    assert settings.trends_peer_history_window_count == 5
+    assert settings.trends_peer_history_max_chars == 4321
+    assert settings.trends_evolution_max_signals == 6
 
 
 def test_settings_rejects_invalid_trends_ranking_n(
@@ -295,6 +303,10 @@ def test_settings_loads_trends_self_similar_settings_from_config_file(
                 "TRENDS_ITEM_OVERVIEW_TOP_K: 0",
                 "TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS: 321",
                 "TRENDS_REP_MIN_PER_CLUSTER: 4",
+                "TRENDS_PEER_HISTORY_ENABLED: true",
+                "TRENDS_PEER_HISTORY_WINDOW_COUNT: 2",
+                "TRENDS_PEER_HISTORY_MAX_CHARS: 6789",
+                "TRENDS_EVOLUTION_MAX_SIGNALS: 3",
             ]
         ),
         encoding="utf-8",
@@ -309,6 +321,10 @@ def test_settings_loads_trends_self_similar_settings_from_config_file(
     assert settings.trends_item_overview_top_k == 0
     assert settings.trends_item_overview_item_max_chars == 321
     assert settings.trends_rep_min_per_cluster == 4
+    assert settings.trends_peer_history_enabled is True
+    assert settings.trends_peer_history_window_count == 2
+    assert settings.trends_peer_history_max_chars == 6789
+    assert settings.trends_evolution_max_signals == 3
 
 
 def test_settings_loads_llm_output_language_from_config_file(

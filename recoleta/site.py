@@ -1833,12 +1833,12 @@ def _resolve_site_local_markdown_target(
     return (source_markdown_path.parent / candidate).resolve()
 
 
-def _rewrite_site_item_links(
+def _rewrite_site_markdown_links(
     *,
     html_text: str,
     source_markdown_path: Path,
     from_page: Path,
-    item_pages_by_markdown_path: dict[Path, Path],
+    page_by_markdown_path: dict[Path, Path],
 ) -> str:
     soup = BeautifulSoup(html_text, "html.parser")
     rewritten = False
@@ -1849,10 +1849,10 @@ def _rewrite_site_item_links(
         )
         if target_path is None:
             continue
-        item_page_path = item_pages_by_markdown_path.get(target_path)
-        if item_page_path is None:
+        target_page_path = page_by_markdown_path.get(target_path)
+        if target_page_path is None:
             continue
-        anchor["href"] = _site_href(from_page=from_page, to_page=item_page_path)
+        anchor["href"] = _site_href(from_page=from_page, to_page=target_page_path)
         rewritten = True
     return str(soup) if rewritten else html_text
 
@@ -2025,6 +2025,15 @@ def _load_trend_site_documents(
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     trends_dir.mkdir(parents=True, exist_ok=True)
 
+    trend_pages_by_markdown_path = {
+        source_document.markdown_path.resolve(): (
+            trends_dir / f"{source_document.stem}.html"
+        )
+        for source_document in source_documents
+    }
+    linked_page_by_markdown_path = dict(item_pages_by_markdown_path)
+    linked_page_by_markdown_path.update(trend_pages_by_markdown_path)
+
     for source_document in source_documents:
         normalized_markdown = _normalize_obsidian_callouts_for_pdf(
             source_document.markdown_body
@@ -2035,12 +2044,12 @@ def _load_trend_site_documents(
         title, sections = _extract_trend_pdf_sections(body_html=body_html)
         title = sanitize_trend_title(title, fallback="Trend")
         excerpt = _section_excerpt(sections)
-        page_path = trends_dir / f"{source_document.stem}.html"
-        browser_body_html = _rewrite_site_item_links(
+        page_path = trend_pages_by_markdown_path[source_document.markdown_path.resolve()]
+        browser_body_html = _rewrite_site_markdown_links(
             html_text=_build_trend_browser_body_html(sections=sections),
             source_markdown_path=source_document.markdown_path,
             from_page=page_path,
-            item_pages_by_markdown_path=item_pages_by_markdown_path,
+            page_by_markdown_path=linked_page_by_markdown_path,
         )
 
         period_token = (

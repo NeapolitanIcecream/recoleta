@@ -576,15 +576,39 @@ def run_trends_stage(
                 unit="bool",
             )
             overview_pack_md: str | None = None
+            history_pack_md: str | None = None
             rag_sources: list[dict[str, str | None]] | None = None
             ranking_n: int | None = None
             rep_source_doc_type: str | None = None
-            if bool(getattr(service.settings, "trends_self_similar_enabled", False)):
+            evolution_max_signals: int | None = None
+            overview_pack_stats: dict[str, Any] | None = None
+            history_pack_stats: dict[str, Any] | None = None
+            self_similar_enabled = bool(
+                getattr(service.settings, "trends_self_similar_enabled", False)
+            )
+            peer_history_enabled = bool(
+                getattr(service.settings, "trends_peer_history_enabled", False)
+            )
+            plan: trends.TrendGenerationPlan | None = None
+            if self_similar_enabled or peer_history_enabled:
                 plan = trends.TrendGenerationPlan(
                     target_granularity=normalized_granularity,
                     period_start=period_start,
                     period_end=period_end,
+                    peer_history_window_count=(
+                        int(
+                            getattr(
+                                service.settings,
+                                "trends_peer_history_window_count",
+                                0,
+                            )
+                            or 0
+                        )
+                        if peer_history_enabled
+                        else 0
+                    ),
                 )
+            if self_similar_enabled and plan is not None:
                 overview_pack_md, pack_stats = trends.build_overview_pack_md(
                     cast(Any, service.repository),
                     plan,
@@ -609,6 +633,7 @@ def run_trends_stage(
                     ),
                     scope=scope,
                 )
+                overview_pack_stats = pack_stats
                 rag_sources = list(getattr(plan, "rag_sources", []) or [])
                 ranking_n = int(getattr(service.settings, "trends_ranking_n", 10) or 10)
                 rep_source_doc_type = str(
@@ -620,6 +645,44 @@ def run_trends_stage(
                         value=1,
                         unit="count",
                     )
+            if peer_history_enabled and plan is not None:
+                history_pack_md, history_pack_stats = trends.build_history_pack_md(
+                    cast(Any, service.repository),
+                    plan,
+                    history_pack_max_chars=int(
+                        getattr(
+                            service.settings,
+                            "trends_peer_history_max_chars",
+                            6000,
+                        )
+                        or 6000
+                    ),
+                    scope=scope,
+                )
+                record_metric(
+                    name="pipeline.trends.history.windows_requested",
+                    value=float(history_pack_stats.get("requested_windows") or 0),
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.history.windows_available",
+                    value=float(history_pack_stats.get("available_windows") or 0),
+                    unit="count",
+                )
+                record_metric(
+                    name="pipeline.trends.history.windows_missing",
+                    value=float(history_pack_stats.get("missing_windows") or 0),
+                    unit="count",
+                )
+                if bool(history_pack_stats.get("truncated")):
+                    record_metric(
+                        name="pipeline.trends.history.pack.truncated_total",
+                        value=1,
+                        unit="count",
+                    )
+                evolution_max_signals = int(
+                    getattr(service.settings, "trends_evolution_max_signals", 5) or 5
+                )
             payload, debug = trends.generate_trend_via_tools(
                 repository=cast(Any, service.repository),
                 run_id=run_id,
@@ -642,15 +705,66 @@ def run_trends_stage(
                 corpus_doc_type=corpus_doc_type,
                 corpus_granularity=corpus_granularity,
                 overview_pack_md=overview_pack_md,
+                history_pack_md=history_pack_md,
                 rag_sources=rag_sources,
                 ranking_n=ranking_n,
                 rep_source_doc_type=rep_source_doc_type,
+                evolution_max_signals=evolution_max_signals,
                 include_debug=include_debug,
                 scope=scope,
                 metric_namespace=metric_namespace,
                 llm_connection=service._llm_connection,
             )
+            evolution_normalization_stats = {
+                "history_windows_normalized_total": 0,
+                "history_windows_dropped_total": 0,
+                "signals_dropped_total": 0,
+            }
+            if payload.evolution is not None and plan is not None:
+                available_window_ids = set()
+                if isinstance(history_pack_stats, dict):
+                    available_window_ids = {
+                        str(window_id).strip()
+                        for window_id in (
+                            history_pack_stats.get("available_window_ids") or []
+                        )
+                        if str(window_id).strip()
+                    }
+                payload.evolution, evolution_normalization_stats = (
+                    trends.normalize_trend_evolution(
+                        payload.evolution,
+                        granularity=normalized_granularity,
+                        period_start=period_start,
+                        history_windows=list(
+                            getattr(plan, "peer_history_windows", []) or []
+                        ),
+                        available_window_ids=available_window_ids,
+                    )
+                )
+            history_windows_available = int(
+                history_pack_stats.get("available_windows") or 0
+            ) if isinstance(history_pack_stats, dict) else 0
+            evolution_suppressed_without_history = False
+            if payload.evolution is not None and history_windows_available <= 0:
+                payload.evolution = None
+                evolution_suppressed_without_history = True
             if isinstance(debug, dict):
+                debug["context_packs"] = {
+                    "overview_pack_md": overview_pack_md,
+                    "history_pack_md": history_pack_md,
+                }
+                if overview_pack_stats is not None:
+                    debug["overview_pack_stats"] = overview_pack_stats
+                if history_pack_stats is not None:
+                    debug["history_pack_stats"] = history_pack_stats
+                debug["evolution"] = {
+                    "present": payload.evolution is not None,
+                    "signals_total": len(payload.evolution.signals or [])
+                    if payload.evolution is not None
+                    else 0,
+                    "suppressed_without_history": evolution_suppressed_without_history,
+                    "normalization": evolution_normalization_stats,
+                }
                 usage = debug.get("usage")
                 if isinstance(usage, dict):
                     requests = usage.get("requests")
@@ -688,6 +802,13 @@ def run_trends_stage(
                         value=float(overview_pack_chars),
                         unit="chars",
                     )
+                history_pack_chars = debug.get("history_pack_chars")
+                if isinstance(history_pack_chars, (int, float)):
+                    record_metric(
+                        name="pipeline.trends.history.pack.chars",
+                        value=float(history_pack_chars),
+                        unit="chars",
+                    )
                 cost_usd = debug.get("estimated_cost_usd")
                 if isinstance(cost_usd, (int, float)):
                     record_metric(
@@ -701,6 +822,48 @@ def run_trends_stage(
                         value=1,
                         unit="count",
                     )
+            record_metric(
+                name="pipeline.trends.evolution.emitted_total",
+                value=1 if payload.evolution is not None else 0,
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.signals_total",
+                value=len(payload.evolution.signals or [])
+                if payload.evolution is not None
+                else 0,
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.suppressed_without_history_total",
+                value=1 if evolution_suppressed_without_history else 0,
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.history_windows_normalized_total",
+                value=float(
+                    evolution_normalization_stats.get(
+                        "history_windows_normalized_total", 0
+                    )
+                ),
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.history_windows_dropped_total",
+                value=float(
+                    evolution_normalization_stats.get(
+                        "history_windows_dropped_total", 0
+                    )
+                ),
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.evolution.signals_dropped_total",
+                value=float(
+                    evolution_normalization_stats.get("signals_dropped_total", 0)
+                ),
+                unit="count",
+            )
 
         rep_dropped_non_item_total = 0
         rep_backfilled_total = 0
@@ -910,6 +1073,7 @@ def run_trends_stage(
             payload=payload,
             markdown_output_dir=service.settings.markdown_output_dir,
             output_language=service.settings.llm_output_language,
+            scope=scope,
         )
         payload = persist_materialized_trend_payload(
             payload=payload,
@@ -1041,8 +1205,11 @@ def run_trends_stage(
                     run_id=run_id,
                     overview_md=materialized.overview_md,
                     topics=list(payload.topics),
+                    evolution=materialized.evolution,
+                    history_window_refs=materialized.history_window_refs,
                     clusters=materialized.clusters,
                     highlights=materialized.highlights,
+                    output_language=service.settings.llm_output_language,
                 )
             except Exception as note_exc:  # noqa: BLE001
                 log.bind(module="pipeline.trends.markdown_note").warning(
@@ -1062,8 +1229,11 @@ def run_trends_stage(
                     run_id=run_id,
                     overview_md=materialized.overview_md,
                     topics=list(payload.topics),
+                    evolution=materialized.evolution,
+                    history_window_refs=materialized.history_window_refs,
                     clusters=materialized.clusters,
                     highlights=materialized.highlights,
+                    output_language=service.settings.llm_output_language,
                 )
             except Exception as note_exc:  # noqa: BLE001
                 log.bind(module="pipeline.trends.obsidian_note").warning(

@@ -340,6 +340,75 @@ def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
     assert '>Link</h2>' in item_html
 
 
+def test_export_trend_static_site_rewrites_history_trend_links_to_html(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    previous_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=80,
+        title="Previous Daily Trend: Verification Gets Tighter",
+        granularity="day",
+        period_start=datetime(2026, 3, 4, tzinfo=UTC),
+        period_end=datetime(2026, 3, 5, tzinfo=UTC),
+        run_id="run-site-history-1",
+        overview_md="## Overview\n\nPrevious note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    current_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=81,
+        title="Current Daily Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 5, tzinfo=UTC),
+        period_end=datetime(2026, 3, 6, tzinfo=UTC),
+        run_id="run-site-history-2",
+        overview_md="## Overview\n\nCurrent note.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "Compared with prev_1, execution is becoming more explicit.",
+            "signals": [
+                {
+                    "theme": "Verification",
+                    "change_type": "continuing",
+                    "summary": (
+                        "Compared with prev_1, validation loops now include "
+                        "more explicit runtime checks."
+                    ),
+                    "history_windows": ["prev_1"],
+                }
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-03-04",
+                "title": "Previous Daily Trend: Verification Gets Tighter",
+                "granularity": "day",
+                "period_start": "2026-03-04T00:00:00+00:00",
+                "trend_doc_id": 80,
+            }
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "trends" / f"{current_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert f"{previous_note.stem}.html" in detail_html
+    assert f"{previous_note.name}" not in detail_html
+    assert "Previous Daily Trend (2026-03-04)" in detail_html
+
+
 def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stream_pages(
     tmp_path: Path,
 ) -> None:

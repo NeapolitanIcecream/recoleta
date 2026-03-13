@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
+import re
 from typing import Any
 
 import yaml
@@ -14,11 +16,15 @@ from recoleta.publish.trend_render_shared import (
 )
 
 __all__ = [
+    "resolve_trend_note_href",
+    "resolve_trend_note_path",
     "write_markdown_run_index",
     "write_markdown_stream_index",
     "write_markdown_trend_note",
     "write_obsidian_trend_note",
 ]
+
+_HISTORY_WINDOW_MENTION_RE = re.compile(r"(?<![\w\[])(prev_\d+)(?![\w\]])")
 
 
 def _single_line(value: str, *, fallback: str) -> str:
@@ -49,6 +55,155 @@ def _format_author_suffix(authors: list[str], *, max_authors: int = 6) -> str:
     return f" — {'; '.join(cleaned)}"
 
 
+def _is_chinese_output_language(output_language: str | None) -> bool:
+    normalized = str(output_language or "").strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    return lowered.startswith("zh") or "chinese" in lowered or "中文" in normalized
+
+
+def _format_change_type_display(
+    change_type: str, *, output_language: str | None
+) -> str:
+    normalized = str(change_type or "").strip().lower()
+    zh_labels = {
+        "continuing": "延续",
+        "emerging": "新出现",
+        "fading": "降温",
+        "shifting": "转向",
+        "polarizing": "分歧加剧",
+    }
+    en_labels = {
+        "continuing": "Continuing",
+        "emerging": "Emerging",
+        "fading": "Fading",
+        "shifting": "Shifting",
+        "polarizing": "Polarizing",
+    }
+    if _is_chinese_output_language(output_language):
+        return zh_labels.get(normalized, change_type)
+    return en_labels.get(normalized, change_type)
+
+
+def _history_window_title_display(raw_title: str) -> str:
+    normalized = _single_line(str(raw_title or ""), fallback="")
+    if not normalized:
+        return ""
+    normalized = normalized.replace("[", "(").replace("]", ")")
+    for separator in (":", "："):
+        if separator in normalized:
+            prefix = normalized.split(separator, 1)[0].strip()
+            if 2 <= len(prefix) <= 40:
+                normalized = prefix
+                break
+    if len(normalized) > 48:
+        normalized = normalized[:48].rstrip() + "…"
+    return normalized
+
+
+def resolve_trend_note_path(
+    *,
+    note_dir: Path,
+    trend_doc_id: int,
+    granularity: str,
+    period_start: datetime,
+) -> Path:
+    token = _trend_date_token(granularity=granularity, period_start=period_start)
+    return note_dir / f"{granularity}--{token}--trend--{trend_doc_id}.md"
+
+
+def resolve_trend_note_href(
+    *,
+    note_dir: Path,
+    from_dir: Path,
+    trend_doc_id: int,
+    granularity: str,
+    period_start: datetime,
+) -> str:
+    note_path = resolve_trend_note_path(
+        note_dir=note_dir,
+        trend_doc_id=trend_doc_id,
+        granularity=granularity,
+        period_start=period_start,
+    )
+    relative = Path(os.path.relpath(note_path, start=from_dir))
+    return relative.as_posix()
+
+
+def _format_history_window_display(
+    *,
+    window: str,
+    note_dir: Path,
+    history_window_refs: dict[str, dict[str, Any]] | None,
+) -> str:
+    raw = str(window or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("[") and "](" in raw:
+        return raw
+    ref = (history_window_refs or {}).get(raw)
+    if not isinstance(ref, dict):
+        return raw
+    window_id = _single_line(str(ref.get("window_id") or raw), fallback=raw)
+    label = _single_line(str(ref.get("label") or ""), fallback="")
+    title = _history_window_title_display(str(ref.get("title") or ""))
+    display_base = title or window_id
+    display = (
+        f"{display_base} ({label})"
+        if label and label not in {window_id, display_base}
+        else display_base
+    )
+    try:
+        trend_doc_id = int(ref.get("trend_doc_id") or 0)
+    except Exception:
+        trend_doc_id = 0
+    granularity = str(ref.get("granularity") or "").strip().lower()
+    raw_period_start = ref.get("period_start")
+    try:
+        period_start = (
+            raw_period_start
+            if isinstance(raw_period_start, datetime)
+            else datetime.fromisoformat(str(raw_period_start))
+        )
+    except Exception:
+        period_start = None
+    if trend_doc_id <= 0 or not granularity or period_start is None:
+        return display
+    href = resolve_trend_note_href(
+        note_dir=note_dir,
+        from_dir=note_dir,
+        trend_doc_id=trend_doc_id,
+        granularity=granularity,
+        period_start=period_start,
+    )
+    return f"[{display}]({href})"
+
+
+def _linkify_history_window_mentions(
+    text: str,
+    *,
+    note_dir: Path,
+    history_window_refs: dict[str, dict[str, Any]] | None,
+) -> str:
+    raw = str(text or "").strip()
+    refs = history_window_refs or {}
+    if not raw or not refs or "prev_" not in raw:
+        return raw
+
+    def _replace(match: re.Match[str]) -> str:
+        window = str(match.group(1) or "").strip()
+        if window not in refs:
+            return window
+        return _format_history_window_display(
+            window=window,
+            note_dir=note_dir,
+            history_window_refs=history_window_refs,
+        )
+
+    return _HISTORY_WINDOW_MENTION_RE.sub(_replace, raw)
+
+
 def _render_trend_note_lines(
     *,
     title: str,
@@ -59,8 +214,12 @@ def _render_trend_note_lines(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None,
+    history_window_refs: dict[str, dict[str, Any]] | None,
     clusters: list[dict[str, Any]] | None,
     highlights: list[str] | None,
+    output_language: str | None,
+    note_dir: Path,
 ) -> list[str]:
     _ = highlights
     title = sanitize_trend_title(title)
@@ -99,6 +258,68 @@ def _render_trend_note_lines(
             (overview_md or "").strip(),
         ]
     )
+
+    evolution = evolution or {}
+    summary_md = str(evolution.get("summary_md") or "").strip()
+    signals = evolution.get("signals") or []
+    if summary_md or signals:
+        chinese_output = _is_chinese_output_language(output_language)
+        change_label = "变化" if chinese_output else "Change"
+        history_label = (
+            "历史窗口" if chinese_output else "History windows"
+        )
+        separator = "：" if chinese_output else ":"
+        after_separator = "" if chinese_output else " "
+        lines.extend(["", "## Evolution"])
+        if summary_md:
+            lines.extend(
+                [
+                    "",
+                    _linkify_history_window_mentions(
+                        summary_md,
+                        note_dir=note_dir,
+                        history_window_refs=history_window_refs,
+                    ),
+                ]
+            )
+        if isinstance(signals, list):
+            for signal in signals:
+                if not isinstance(signal, dict):
+                    continue
+                theme = _single_line(str(signal.get("theme") or ""), fallback="Signal")
+                change_type = _single_line(
+                    _format_change_type_display(
+                        str(signal.get("change_type") or ""),
+                        output_language=output_language,
+                    ),
+                    fallback="unspecified",
+                )
+                summary = _linkify_history_window_mentions(
+                    str(signal.get("summary") or "").strip(),
+                    note_dir=note_dir,
+                    history_window_refs=history_window_refs,
+                )
+                history_windows = signal.get("history_windows") or []
+                lines.extend(["", f"### {theme}", ""])
+                lines.append(
+                    f"- {change_label}{separator}{after_separator}{change_type}"
+                )
+                if isinstance(history_windows, list):
+                    windows = [
+                        _format_history_window_display(
+                            window=str(window).strip(),
+                            note_dir=note_dir,
+                            history_window_refs=history_window_refs,
+                        )
+                        for window in history_windows
+                        if str(window).strip()
+                    ]
+                    if windows:
+                        lines.append(
+                            f"- {history_label}{separator}{after_separator}{', '.join(windows)}"
+                        )
+                if summary:
+                    lines.extend(["", summary])
 
     lines.extend(["", "## Clusters"])
     clusters = clusters or []
@@ -157,12 +378,19 @@ def _write_trend_note(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None,
+    history_window_refs: dict[str, dict[str, Any]] | None,
     clusters: list[dict[str, Any]] | None,
     highlights: list[str] | None,
+    output_language: str | None,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
-    token = _trend_date_token(granularity=granularity, period_start=period_start)
-    note_path = note_dir / f"{granularity}--{token}--trend--{trend_doc_id}.md"
+    note_path = resolve_trend_note_path(
+        note_dir=note_dir,
+        trend_doc_id=trend_doc_id,
+        granularity=granularity,
+        period_start=period_start,
+    )
     lines = _render_trend_note_lines(
         title=title,
         trend_doc_id=trend_doc_id,
@@ -172,8 +400,12 @@ def _write_trend_note(
         run_id=run_id,
         overview_md=overview_md,
         topics=topics,
+        evolution=evolution,
+        history_window_refs=history_window_refs,
         clusters=clusters,
         highlights=highlights,
+        output_language=output_language,
+        note_dir=note_dir,
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return note_path
@@ -191,8 +423,11 @@ def write_obsidian_trend_note(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None = None,
+    history_window_refs: dict[str, dict[str, Any]] | None = None,
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
+    output_language: str | None = None,
 ) -> Path:
     note_dir = vault_path / base_folder / "Trends"
     return _write_trend_note(
@@ -205,8 +440,11 @@ def write_obsidian_trend_note(
         run_id=run_id,
         overview_md=overview_md,
         topics=topics,
+        evolution=evolution,
+        history_window_refs=history_window_refs,
         clusters=clusters,
         highlights=highlights,
+        output_language=output_language,
     )
 
 
@@ -221,8 +459,11 @@ def write_markdown_trend_note(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None = None,
+    history_window_refs: dict[str, dict[str, Any]] | None = None,
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
+    output_language: str | None = None,
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
@@ -238,8 +479,11 @@ def write_markdown_trend_note(
         run_id=run_id,
         overview_md=overview_md,
         topics=topics,
+        evolution=evolution,
+        history_window_refs=history_window_refs,
         clusters=clusters,
         highlights=highlights,
+        output_language=output_language,
     )
 
 
