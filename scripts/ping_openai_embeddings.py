@@ -116,6 +116,21 @@ def _embedding_dimensions(data: Any) -> list[int]:
     return dimensions
 
 
+def _mark_response_validation_error(
+    result: dict[str, Any],
+    *,
+    data: Any,
+    message: str,
+    code: str,
+) -> dict[str, Any]:
+    result["ok"] = False
+    result["error_type"] = "response_validation_error"
+    result["error_code"] = code
+    result["error_message"] = message
+    result["body_excerpt"] = json.dumps(data, ensure_ascii=False)[:1000]
+    return result
+
+
 def _run_probe_attempt(
     *,
     client: httpx.Client,
@@ -179,6 +194,31 @@ def _run_probe_attempt(
         result["embedding_dimensions"] = dimensions
     if isinstance(usage, dict):
         result["usage"] = usage
+
+    expected_count = len(payload["input"]) if isinstance(payload.get("input"), list) else 0
+    if response.is_success and not dimensions:
+        return _mark_response_validation_error(
+            result,
+            data=data,
+            message="response missing embedding vectors",
+            code="missing_embeddings",
+        )
+    if response.is_success and expected_count and len(dimensions) != expected_count:
+        return _mark_response_validation_error(
+            result,
+            data=data,
+            message=(
+                f"embedding count mismatch: expected {expected_count}, got {len(dimensions)}"
+            ),
+            code="embedding_count_mismatch",
+        )
+    if response.is_success and any(dimension <= 0 for dimension in dimensions):
+        return _mark_response_validation_error(
+            result,
+            data=data,
+            message="response contained empty embedding vectors",
+            code="empty_embedding_vector",
+        )
 
     if not response.is_success:
         error_message, error_type, error_code = _extract_json_error_fields(data)

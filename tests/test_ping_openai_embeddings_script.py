@@ -31,7 +31,7 @@ def test_embedding_probe_reports_success_metadata() -> None:
         assert request.headers["authorization"] == "Bearer sk-test"
         assert request.headers["content-type"] == "application/json"
         assert request.read() == (
-            b'{"model":"text-embedding-3-small","input":["probe text"],"encoding_format":"float"}'
+            b'{"model":"text-embedding-3-small","input":["probe text","probe text 2"],"encoding_format":"float"}'
         )
         return httpx.Response(
             200,
@@ -52,7 +52,7 @@ def test_embedding_probe_reports_success_metadata() -> None:
             headers={"Authorization": "Bearer sk-test", "Content-Type": "application/json"},
             payload=script._build_payload(
                 model="text-embedding-3-small",
-                inputs=["probe text"],
+                inputs=["probe text", "probe text 2"],
                 dimensions=None,
             ),
             attempt=1,
@@ -103,6 +103,36 @@ def test_embedding_probe_surfaces_gateway_timeout_payload() -> None:
     assert result["error_type"] == "gateway_timeout"
     assert result["error_code"] == "upstream_504"
     assert result["error_message"] == "bad response status code 504"
+
+
+def test_embedding_probe_rejects_success_payload_without_vectors() -> None:
+    """Regression: a 200 response without embeddings should still fail the probe."""
+
+    script = _load_script_module()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as client:
+        result = script._run_probe_attempt(
+            client=client,
+            url="http://llm.local/v1/embeddings",
+            headers={"Authorization": "Bearer sk-test", "Content-Type": "application/json"},
+            payload=script._build_payload(
+                model="text-embedding-3-small",
+                inputs=["probe text"],
+                dimensions=None,
+            ),
+            attempt=3,
+            timeout_seconds=12.0,
+        )
+
+    assert result["ok"] is False
+    assert result["status_code"] == 200
+    assert result["error_type"] == "response_validation_error"
+    assert result["error_code"] == "missing_embeddings"
+    assert result["error_message"] == "response missing embedding vectors"
 
 
 def test_embedding_probe_main_requires_api_key_env(monkeypatch) -> None:

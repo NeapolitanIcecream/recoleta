@@ -158,14 +158,24 @@ def _site_href(*, from_page: Path, to_page: Path) -> str:
     )
 
 
+def _host_matches(*, host: str, domain: str) -> bool:
+    normalized_host = str(host or "").strip().lower().rstrip(".")
+    normalized_domain = str(domain or "").strip().lower().rstrip(".")
+    if not normalized_host or not normalized_domain:
+        return False
+    return normalized_host == normalized_domain or normalized_host.endswith(
+        f".{normalized_domain}"
+    )
+
+
 def _item_action_label(*, source: str | None, canonical_url: str) -> str:
     normalized_source = str(source or "").strip().lower()
-    host = urlparse(str(canonical_url or "")).netloc.lower()
-    if "arxiv.org" in host or normalized_source == "arxiv":
+    host = (urlparse(str(canonical_url or "")).hostname or "").lower()
+    if _host_matches(host=host, domain="arxiv.org") or normalized_source == "arxiv":
         return "Open arXiv"
-    if "openreview.net" in host or normalized_source == "openreview":
+    if _host_matches(host=host, domain="openreview.net") or normalized_source == "openreview":
         return "Open OpenReview"
-    if host.endswith("github.com"):
+    if _host_matches(host=host, domain="github.com"):
         return "Open GitHub"
     return "Open original"
 

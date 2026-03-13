@@ -4,8 +4,60 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
-from recoleta.site import export_trend_static_site, stage_trend_site_source
+from recoleta.site import (
+    _item_action_label,
+    export_trend_static_site,
+    stage_trend_site_source,
+)
 from recoleta.publish import write_markdown_note, write_markdown_trend_note
+
+
+def test_item_action_label_uses_known_source_hosts() -> None:
+    assert (
+        _item_action_label(
+            source="",
+            canonical_url="https://arxiv.org/abs/2603.02115",
+        )
+        == "Open arXiv"
+    )
+    assert (
+        _item_action_label(
+            source="",
+            canonical_url="https://api.openreview.net/forum?id=test",
+        )
+        == "Open OpenReview"
+    )
+    assert (
+        _item_action_label(
+            source="",
+            canonical_url="https://gist.github.com/octocat/example",
+        )
+        == "Open GitHub"
+    )
+
+
+def test_item_action_label_ignores_partial_domain_suffix_matches() -> None:
+    assert (
+        _item_action_label(
+            source="",
+            canonical_url="https://notarxiv.org/abs/2603.02115",
+        )
+        == "Open original"
+    )
+    assert (
+        _item_action_label(
+            source="",
+            canonical_url="https://mirroropenreview.net/forum?id=test",
+        )
+        == "Open original"
+    )
+    assert (
+        _item_action_label(
+            source="",
+            canonical_url="https://notgithub.com/octocat/example",
+        )
+        == "Open original"
+    )
 
 
 def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
