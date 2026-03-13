@@ -64,6 +64,11 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Do not force a Top-N must-read section; that workflow is legacy and should only appear if the prompt explicitly requires it."
     )
     base += (
+        " Tools only access the active target period. "
+        "If historical same-granularity context is provided, it comes through history_pack_md in the prompt rather than tool calls. "
+        "If no usable history is provided, leave evolution as null instead of guessing."
+    )
+    base += (
         " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
         "The opening overview prose must stay under 200 Chinese characters or 200 words before any later sub-sections. "
         "Keep topics only in the topics field; do not add a Topics/主题 section inside overview_md. "
@@ -545,6 +550,7 @@ def build_trend_agent(
 
         Args:
             doc_type: Use `item` for paper-level evidence and `trend` for lower-level trend summaries.
+            This tool only accesses the active target period and not earlier windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             order_by: Event-time ordering, typically `event_desc` or `event_asc`.
             offset: Pagination offset for broad corpus scans.
@@ -696,6 +702,7 @@ def build_trend_agent(
         Args:
             query: Exact keywords, phrases, or jargon you expect to appear in the corpus.
             doc_type: Use `item` for papers and `trend` for lower-level trend notes.
+            This tool only searches the active target period and not prior windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             limit: Maximum number of hits to return.
         """
@@ -765,6 +772,7 @@ def build_trend_agent(
         Args:
             query: Conceptual query phrased in natural language.
             doc_type: Use `item` for papers and `trend` for lower-level trend notes.
+            This tool only searches the active target period and not prior windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             limit: Maximum number of hits to return.
         """
@@ -847,6 +855,7 @@ def build_trend_agent(
         Args:
             query: The concept, theme, or concrete phrase you want to investigate.
             doc_type: Use `item` for paper-level evidence and `trend` for synthesized lower-level trend docs.
+            This tool only searches the active target period and not prior windows.
             granularity: Optional trend granularity filter such as `day` or `week`.
             limit: Maximum number of fused hits to return.
         """
@@ -1223,9 +1232,11 @@ def build_trend_prompt_payload(
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
     overview_pack_md: str | None = None,
+    history_pack_md: str | None = None,
     rag_sources: list[dict[str, Any]] | None = None,
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
+    evolution_max_signals: int | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "task": "Generate research trends for the period.",
@@ -1239,10 +1250,14 @@ def build_trend_prompt_payload(
             "Keep claims grounded in the local corpus.",
             "Keep the title specific and remove date/generic prefixes.",
             "Keep topics only in metadata, not in overview_md body sections.",
+            "Tools only access the active target period; use history_pack_md for same-granularity historical context when present.",
+            "Leave evolution null unless history_pack_md provides usable prior-window evidence.",
         ],
     }
     if overview_pack_md is not None:
         payload["overview_pack_md"] = str(overview_pack_md)
+    if history_pack_md is not None:
+        payload["history_pack_md"] = str(history_pack_md)
     if rag_sources is not None:
         payload["rag_sources"] = rag_sources
     if ranking_n is not None:
@@ -1256,6 +1271,8 @@ def build_trend_prompt_payload(
         normalized = str(rep_source_doc_type).strip().lower()
         if normalized:
             payload["rep_source_doc_type"] = normalized
+    if evolution_max_signals is not None:
+        payload["evolution_max_signals"] = int(evolution_max_signals)
     return payload
 
 
@@ -1278,9 +1295,11 @@ def generate_trend_payload(
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
     overview_pack_md: str | None = None,
+    history_pack_md: str | None = None,
     rag_sources: list[dict[str, Any]] | None = None,
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
+    evolution_max_signals: int | None = None,
     include_debug: bool = False,
     scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str = "pipeline.trends",
@@ -1320,9 +1339,11 @@ def generate_trend_payload(
             corpus_doc_type=corpus_doc_type,
             corpus_granularity=corpus_granularity,
             overview_pack_md=overview_pack_md,
+            history_pack_md=history_pack_md,
             rag_sources=rag_sources,
             ranking_n=ranking_n,
             rep_source_doc_type=rep_source_doc_type,
+            evolution_max_signals=evolution_max_signals,
         ),
         ensure_ascii=False,
         separators=(",", ":"),
@@ -1412,6 +1433,7 @@ def generate_trend_payload(
         "raw_tool_trace": _extract_raw_tool_trace(messages),
         "prompt_chars": len(prompt),
         "overview_pack_chars": len(str(overview_pack_md or "")),
+        "history_pack_chars": len(str(history_pack_md or "")),
     }
     log.info(
         "Trend generation done include_debug={} cost_present={}",

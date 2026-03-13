@@ -230,6 +230,7 @@ def _materialize_scope_outputs(
                 run_id="materialize-outputs",
                 overview_md=materialized.overview_md,
                 topics=list(materialized.topics),
+                evolution=materialized.evolution,
                 clusters=materialized.clusters,
                 highlights=materialized.highlights,
             )

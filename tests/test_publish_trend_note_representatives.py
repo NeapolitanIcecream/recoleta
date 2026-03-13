@@ -184,3 +184,39 @@ def test_publish_trend_note_prefers_item_note_links_over_source_urls(
     text = note_path.read_text(encoding="utf-8")
     assert "- [Paper A](../Inbox/2026-03-11--paper-a.md)" in text
     assert "- [Paper A](https://example.com/a)" not in text
+
+
+def test_publish_trend_note_renders_evolution_section(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=6,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="- overview",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        evolution={
+            "summary_md": "Agent workflows are stabilizing rather than just expanding.",
+            "signals": [
+                {
+                    "theme": "Tool-using agents",
+                    "change_type": "continuing",
+                    "summary": "The theme remains central, but the discussion is shifting toward operational discipline.",
+                    "history_windows": ["prev_1", "prev_2"],
+                }
+            ],
+        },
+    )
+
+    text = note_path.read_text(encoding="utf-8")
+    assert "## Evolution" in text
+    assert "### Tool-using agents" in text
+    assert "- Change: continuing" in text
+    assert "- History windows: prev_1, prev_2" in text

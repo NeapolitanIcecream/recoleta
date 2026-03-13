@@ -15,6 +15,7 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "keep topics as concise English tags" in instructions
     assert "under 200 Chinese characters or 200 words" in instructions
     assert "do not add a Topics/主题 section inside overview_md" in instructions
+    assert "Tools only access the active target period" in instructions
 
 
 def test_trends_empty_payload_localizes_for_chinese() -> None:

@@ -118,6 +118,18 @@ class TrendCluster(BaseModel):
     representative_chunks: list[RepresentativeChunk] = Field(default_factory=list)
 
 
+class TrendEvolutionSignal(BaseModel):
+    theme: str
+    change_type: str
+    summary: str
+    history_windows: list[str] = Field(default_factory=list)
+
+
+class TrendEvolutionSection(BaseModel):
+    summary_md: str
+    signals: list[TrendEvolutionSignal] = Field(default_factory=list)
+
+
 class TrendPayload(BaseModel):
     title: str
     granularity: str  # day|week|month
@@ -127,6 +139,7 @@ class TrendPayload(BaseModel):
     topics: list[str] = Field(default_factory=list)
     clusters: list[TrendCluster] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
+    evolution: TrendEvolutionSection | None = None
 
 
 def prev_level_for_granularity(granularity: str) -> str:
@@ -160,14 +173,80 @@ def rag_sources_for_granularity(granularity: str) -> list[dict[str, str | None]]
 
 
 @dataclass(slots=True)
+class TrendPeerHistoryWindow:
+    window_id: str
+    label: str
+    period_start: datetime
+    period_end: datetime
+
+
+def _period_token_for_granularity(granularity: str, period_start: datetime) -> str:
+    normalized = str(granularity or "").strip().lower()
+    start = _to_utc_datetime(period_start)
+    if normalized == "day":
+        return start.date().isoformat()
+    if normalized == "week":
+        iso = start.date().isocalendar()
+        return f"{iso.year}-W{iso.week:02d}"
+    if normalized == "month":
+        return f"{start.year:04d}-{start.month:02d}"
+    raise ValueError("unsupported granularity")
+
+
+def _shift_month_start(period_start: datetime, *, months: int) -> datetime:
+    start = _to_utc_datetime(period_start)
+    month_index = (start.year * 12 + (start.month - 1)) + int(months)
+    year = month_index // 12
+    month = month_index % 12 + 1
+    return datetime(year, month, 1, tzinfo=UTC)
+
+
+def peer_history_windows_for_period(
+    *, granularity: str, period_start: datetime, window_count: int
+) -> list[TrendPeerHistoryWindow]:
+    normalized = str(granularity or "").strip().lower()
+    count = max(0, int(window_count or 0))
+    if count <= 0:
+        return []
+
+    anchor_start = _to_utc_datetime(period_start)
+    windows: list[TrendPeerHistoryWindow] = []
+    for idx in range(1, count + 1):
+        if normalized == "day":
+            start = anchor_start - timedelta(days=idx)
+            end = start + timedelta(days=1)
+        elif normalized == "week":
+            start = anchor_start - timedelta(days=7 * idx)
+            end = start + timedelta(days=7)
+        elif normalized == "month":
+            start = _shift_month_start(anchor_start, months=-idx)
+            end = _shift_month_start(anchor_start, months=-(idx - 1))
+        else:
+            raise ValueError("unsupported granularity")
+        windows.append(
+            TrendPeerHistoryWindow(
+                window_id=f"prev_{idx}",
+                label=_period_token_for_granularity(normalized, start),
+                period_start=start,
+                period_end=end,
+            )
+        )
+    return windows
+
+
+@dataclass(slots=True)
 class TrendGenerationPlan:
     target_granularity: str
     period_start: datetime
     period_end: datetime
+    peer_history_window_count: int = 0
     prev_level: str = field(init=False)
     overview_pack_strategy: str = field(init=False)
     rag_sources: list[dict[str, str | None]] = field(init=False)
     rep_source_doc_type: str = field(default="item", init=False)
+    peer_history_windows: list[TrendPeerHistoryWindow] = field(
+        default_factory=list, init=False
+    )
 
     def __post_init__(self) -> None:
         normalized = str(self.target_granularity or "").strip().lower()
@@ -179,6 +258,12 @@ class TrendGenerationPlan:
             "item_top_k" if self.prev_level == "item" else "trend_overviews"
         )
         self.rag_sources = rag_sources_for_granularity(normalized)
+        self.peer_history_window_count = max(0, int(self.peer_history_window_count or 0))
+        self.peer_history_windows = peer_history_windows_for_period(
+            granularity=normalized,
+            period_start=self.period_start,
+            window_count=self.peer_history_window_count,
+        )
 
 
 def _to_utc_datetime(value: datetime) -> datetime:
@@ -582,6 +667,68 @@ def build_overview_pack_md(
     stats["truncated"] = bool(truncated)
     stats["chars"] = len(md)
     stats["max_chars"] = int(overview_pack_max_chars)
+    return md, stats
+
+
+def build_history_pack_md(
+    repository: TrendRepositoryPort,
+    plan: TrendGenerationPlan,
+    *,
+    history_pack_max_chars: int,
+    scope: str = DEFAULT_TOPIC_STREAM,
+) -> tuple[str, dict[str, Any]]:
+    windows = list(getattr(plan, "peer_history_windows", []) or [])
+    stats: dict[str, Any] = {
+        "requested_windows": len(windows),
+        "available_windows": 0,
+        "missing_windows": 0,
+        "truncated": False,
+    }
+    period_start = _to_utc_datetime(plan.period_start)
+    period_end = _to_utc_datetime(plan.period_end)
+    lines: list[str] = [
+        f"## History pack (granularity={plan.target_granularity})",
+        f"- current_period_start={period_start.isoformat()} | current_period_end={period_end.isoformat()}",
+        f"- requested_windows={len(windows)}",
+    ]
+    if not windows:
+        lines.append("- status=disabled")
+        md = "\n".join(lines).strip() + "\n"
+        md, truncated = _truncate_chars(md, max_chars=int(history_pack_max_chars))
+        stats["truncated"] = bool(truncated)
+        stats["max_chars"] = int(history_pack_max_chars)
+        return md, stats
+
+    for window in windows:
+        lines.append(f"### {plan.target_granularity} {window.window_id}")
+        lines.append(f"- period_token={window.label}")
+        docs = repository.list_documents(
+            doc_type="trend",
+            granularity=plan.target_granularity,
+            period_start=window.period_start,
+            period_end=window.period_end,
+            scope=scope,
+            order_by="event_desc",
+            limit=1,
+        )
+        doc = docs[0] if docs else None
+        if doc is None:
+            stats["missing_windows"] = int(stats["missing_windows"]) + 1
+            lines.append("- status=missing")
+            continue
+        stats["available_windows"] = int(stats["available_windows"]) + 1
+        doc_lines = _trend_payload_summary_lines(
+            repository=repository,
+            doc=doc,
+            token=window.window_id,
+            entry_label=plan.target_granularity,
+        )
+        lines.extend(doc_lines[1:] if len(doc_lines) > 1 else doc_lines)
+
+    md = "\n".join(lines).strip() + "\n"
+    md, truncated = _truncate_chars(md, max_chars=int(history_pack_max_chars))
+    stats["truncated"] = bool(truncated)
+    stats["max_chars"] = int(history_pack_max_chars)
     return md, stats
 
 
@@ -1178,9 +1325,11 @@ def generate_trend_via_tools(
     corpus_doc_type: str,
     corpus_granularity: str | None = None,
     overview_pack_md: str | None = None,
+    history_pack_md: str | None = None,
     rag_sources: list[dict[str, str | None]] | None = None,
     ranking_n: int | None = None,
     rep_source_doc_type: str | None = None,
+    evolution_max_signals: int | None = None,
     include_debug: bool = False,
     scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str = "pipeline.trends",
@@ -1214,9 +1363,11 @@ def generate_trend_via_tools(
         corpus_doc_type=corpus_doc_type,
         corpus_granularity=corpus_granularity,
         overview_pack_md=overview_pack_md,
+        history_pack_md=history_pack_md,
         rag_sources=rag_sources,
         ranking_n=ranking_n,
         rep_source_doc_type=rep_source_doc_type,
+        evolution_max_signals=evolution_max_signals,
         include_debug=include_debug,
         scope=scope,
         metric_namespace=metric_namespace,

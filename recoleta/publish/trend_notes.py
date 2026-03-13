@@ -59,6 +59,7 @@ def _render_trend_note_lines(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None,
     clusters: list[dict[str, Any]] | None,
     highlights: list[str] | None,
 ) -> list[str]:
@@ -99,6 +100,36 @@ def _render_trend_note_lines(
             (overview_md or "").strip(),
         ]
     )
+
+    evolution = evolution or {}
+    summary_md = str(evolution.get("summary_md") or "").strip()
+    signals = evolution.get("signals") or []
+    if summary_md or signals:
+        lines.extend(["", "## Evolution"])
+        if summary_md:
+            lines.extend(["", summary_md])
+        if isinstance(signals, list):
+            for signal in signals:
+                if not isinstance(signal, dict):
+                    continue
+                theme = _single_line(str(signal.get("theme") or ""), fallback="Signal")
+                change_type = _single_line(
+                    str(signal.get("change_type") or ""), fallback="unspecified"
+                )
+                summary = str(signal.get("summary") or "").strip()
+                history_windows = signal.get("history_windows") or []
+                lines.extend(["", f"### {theme}", ""])
+                lines.append(f"- Change: {change_type}")
+                if isinstance(history_windows, list):
+                    windows = [
+                        str(window).strip()
+                        for window in history_windows
+                        if str(window).strip()
+                    ]
+                    if windows:
+                        lines.append(f"- History windows: {', '.join(windows)}")
+                if summary:
+                    lines.extend(["", summary])
 
     lines.extend(["", "## Clusters"])
     clusters = clusters or []
@@ -157,6 +188,7 @@ def _write_trend_note(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None,
     clusters: list[dict[str, Any]] | None,
     highlights: list[str] | None,
 ) -> Path:
@@ -172,6 +204,7 @@ def _write_trend_note(
         run_id=run_id,
         overview_md=overview_md,
         topics=topics,
+        evolution=evolution,
         clusters=clusters,
         highlights=highlights,
     )
@@ -191,6 +224,7 @@ def write_obsidian_trend_note(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None = None,
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
 ) -> Path:
@@ -205,6 +239,7 @@ def write_obsidian_trend_note(
         run_id=run_id,
         overview_md=overview_md,
         topics=topics,
+        evolution=evolution,
         clusters=clusters,
         highlights=highlights,
     )
@@ -221,6 +256,7 @@ def write_markdown_trend_note(
     run_id: str,
     overview_md: str,
     topics: list[str],
+    evolution: dict[str, Any] | None = None,
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
 ) -> Path:
@@ -238,6 +274,7 @@ def write_markdown_trend_note(
         run_id=run_id,
         overview_md=overview_md,
         topics=topics,
+        evolution=evolution,
         clusters=clusters,
         highlights=highlights,
     )

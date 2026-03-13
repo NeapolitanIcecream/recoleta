@@ -11,7 +11,7 @@ from recoleta.publish.trend_render_shared import (
     clamp_trend_overview_markdown,
     sanitize_trend_title,
 )
-from recoleta.trends import TrendCluster, TrendPayload
+from recoleta.trends import TrendCluster, TrendEvolutionSection, TrendPayload
 
 
 @dataclass(slots=True)
@@ -27,6 +27,7 @@ class MaterializedTrendNotePayload:
     title: str
     overview_md: str
     topics: list[str]
+    evolution: dict[str, Any] | None
     clusters: list[dict[str, Any]]
     highlights: list[str]
     rewrite_stats: TrendNoteRewriteStats
@@ -232,6 +233,35 @@ def materialize_trend_note_payload(
         _rewrite_text(str(payload.overview_md)),
         output_language=output_language,
     )
+    evolution_for_notes: dict[str, Any] | None = None
+    if payload.evolution is not None:
+        evolution_for_notes = payload.evolution.model_dump(mode="json")
+        evolution_for_notes["summary_md"] = clamp_trend_overview_markdown(
+            _rewrite_text(str(evolution_for_notes.get("summary_md") or "")),
+            output_language=output_language,
+        )
+        normalized_signals: list[dict[str, Any]] = []
+        for signal in evolution_for_notes.get("signals") or []:
+            if not isinstance(signal, dict):
+                continue
+            normalized_signal = dict(signal)
+            normalized_signal["theme"] = _rewrite_text(
+                str(normalized_signal.get("theme") or "").strip()
+            )
+            normalized_signal["summary"] = _rewrite_text(
+                str(normalized_signal.get("summary") or "").strip()
+            )
+            history_windows = normalized_signal.get("history_windows") or []
+            if isinstance(history_windows, list):
+                normalized_signal["history_windows"] = [
+                    str(window).strip()
+                    for window in history_windows
+                    if str(window).strip()
+                ]
+            else:
+                normalized_signal["history_windows"] = []
+            normalized_signals.append(normalized_signal)
+        evolution_for_notes["signals"] = normalized_signals
     highlights_for_notes = [
         _rewrite_text(str(highlight)) for highlight in (list(payload.highlights) or [])
     ]
@@ -306,6 +336,7 @@ def materialize_trend_note_payload(
         title=title_for_notes,
         overview_md=overview_md_for_notes,
         topics=list(payload.topics),
+        evolution=evolution_for_notes,
         clusters=clusters_for_notes,
         highlights=highlights_for_notes,
         rewrite_stats=stats,
@@ -320,6 +351,11 @@ def persist_materialized_trend_payload(
     payload.title = materialized.title
     payload.overview_md = materialized.overview_md
     payload.highlights = list(materialized.highlights)
+    payload.evolution = (
+        TrendEvolutionSection.model_validate(materialized.evolution)
+        if materialized.evolution is not None
+        else None
+    )
     payload.clusters = [
         TrendCluster.model_validate(cluster_dict)
         for cluster_dict in materialized.clusters
