@@ -50,13 +50,9 @@ _MARKDOWN_LINK_PATTERN = re.compile(r"\[[^\]]+\]\((?P<url>[^)]+)\)")
 _TRAILING_PARENTHESES_LINK_PATTERN = re.compile(
     r"\s*[（(]\[[^\]]+\]\((?P<url>[^)]+)\)[）)]\s*$"
 )
-_TREND_DATE_PREFIX_PATTERN = (
-    r"(?:\d{4}-\d{2}-\d{2}|\d{4}-W\d{2}|\d{4}-\d{2}(?!-\d{2}))"
-)
+_TREND_DATE_PREFIX_PATTERN = r"(?:\d{4}-\d{2}-\d{2}|\d{4}-W\d{2}|\d{4}-\d{2}(?!-\d{2}))"
 _GENERIC_TREND_TITLE_PREFIX_RE = re.compile(
-    r"^\s*(?:"
-    + _TREND_DATE_PREFIX_PATTERN
-    + r"\s*"
+    r"^\s*(?:" + _TREND_DATE_PREFIX_PATTERN + r"\s*"
     r"(?:[|｜:：\-—]\s*)?"
     r")?"
     r"(?:"
@@ -68,9 +64,7 @@ _GENERIC_TREND_TITLE_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_ONLY_PREFIX_RE = re.compile(
-    r"^\s*"
-    + _TREND_DATE_PREFIX_PATTERN
-    + r"\s*(?:[|｜:：\-—]\s*)+"
+    r"^\s*" + _TREND_DATE_PREFIX_PATTERN + r"\s*(?:[|｜:：\-—]\s*)+"
 )
 _TOP_LEVEL_H2_RE = re.compile(r"^\s{0,3}##\s+")
 _MARKDOWN_STRIP_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
@@ -361,6 +355,22 @@ class TrendPdfSection:
     inner_html: str
 
 
+@dataclass(slots=True)
+class TrendEvolutionSignal:
+    theme: str
+    change_type: str
+    change_tone: str
+    history_labels: list[str]
+    history_links: list[tuple[str, str]]
+    summary_html: str
+
+
+@dataclass(slots=True)
+class TrendEvolutionSectionData:
+    summary_html: str
+    signals: list[TrendEvolutionSignal]
+
+
 def _normalize_section_heading(heading: str) -> str:
     return str(heading or "").strip().lower()
 
@@ -545,14 +555,14 @@ def _render_cluster_grid_html(*, section: TrendPdfSection) -> str:
     return (
         "<section class='clusters-section'>"
         f"{_render_section_label_html(section.heading)}"
-        "<table class='cluster-grid'>"
-        + "".join(rows)
-        + "</table>"
+        "<table class='cluster-grid'>" + "".join(rows) + "</table>"
         "</section>"
     )
 
 
-def _render_generic_section_html(*, section: TrendPdfSection, compact: bool = False) -> str:
+def _render_generic_section_html(
+    *, section: TrendPdfSection, compact: bool = False
+) -> str:
     modifier = " section-compact" if compact else ""
     return (
         f"<section class='content-section{modifier} section-{section.slug}'>"
@@ -711,6 +721,278 @@ def _render_browser_clusters_section_html(*, section: TrendPdfSection) -> str:
     )
 
 
+def _strip_labeled_value(value: str, *, labels: tuple[str, ...]) -> str | None:
+    for label in labels:
+        pattern = re.compile(
+            rf"^\s*{re.escape(label)}\s*[:：]\s*(?P<value>.+?)\s*$",
+            re.IGNORECASE,
+        )
+        match = pattern.match(str(value or ""))
+        if match is not None:
+            return str(match.group("value") or "").strip()
+    return None
+
+
+def _html_visible_text(value: str) -> str:
+    return BeautifulSoup(str(value or ""), "html.parser").get_text(" ", strip=True)
+
+
+def _truncate_browser_visible_text(value: str, *, limit: int = 180) -> str:
+    collapsed = " ".join(str(value or "").split()).strip()
+    if len(collapsed) <= limit:
+        return collapsed
+    boundary = collapsed.rfind(" ", 0, limit)
+    if boundary < max(60, limit // 2):
+        boundary = limit
+    return collapsed[:boundary].rstrip() + "…"
+
+
+def _evolution_change_tone(change_type: str) -> str:
+    normalized = str(change_type or "").strip().lower()
+    if normalized in {"continuing", "延续"}:
+        return "continuing"
+    if normalized in {"emerging", "new", "新出现"}:
+        return "emerging"
+    if normalized in {"fading", "降温"}:
+        return "fading"
+    if normalized in {"shifting", "转向"}:
+        return "shifting"
+    if normalized in {"polarizing", "分歧加剧"}:
+        return "polarizing"
+    return "mixed"
+
+
+def _evolution_change_label(change_type: str) -> str:
+    tone = _evolution_change_tone(change_type)
+    return {
+        "continuing": "Continuing",
+        "emerging": "Emerging",
+        "fading": "Fading",
+        "shifting": "Shifting",
+        "polarizing": "Polarizing",
+    }.get(tone, "Unspecified")
+
+
+def _extract_evolution_signal(
+    *,
+    theme: str,
+    signal_nodes: list[str],
+) -> TrendEvolutionSignal:
+    soup = BeautifulSoup("".join(signal_nodes).strip(), "html.parser")
+    meta_list: Tag | None = None
+    for node in list(soup.contents):
+        if isinstance(node, Tag) and node.name in {"ul", "ol"}:
+            meta_list = node.extract()
+            break
+
+    change_type = ""
+    history_labels: list[str] = []
+    history_links: list[tuple[str, str]] = []
+    if meta_list is not None:
+        for li in meta_list.find_all("li", recursive=False):
+            raw_text = li.get_text(" ", strip=True)
+            parsed_change = _strip_labeled_value(
+                raw_text,
+                labels=("变化", "Change"),
+            )
+            if parsed_change is not None:
+                change_type = parsed_change
+                continue
+
+            parsed_history = _strip_labeled_value(
+                raw_text,
+                labels=("历史窗口", "History windows", "History window"),
+            )
+            if parsed_history is None:
+                continue
+
+            links = [
+                (str(link.get("href") or "").strip(), link.get_text(" ", strip=True))
+                for link in li.find_all("a")
+                if str(link.get("href") or "").strip()
+                and link.get_text(" ", strip=True)
+            ]
+            if links:
+                history_links.extend(links)
+                history_labels.extend(label for _href, label in links)
+                continue
+
+            history_labels.extend(
+                [
+                    segment.strip()
+                    for segment in re.split(r"[,，]", parsed_history)
+                    if segment.strip()
+                ]
+            )
+
+    summary_html = "".join(
+        str(node) for node in soup.contents if str(node).strip()
+    ).strip()
+    return TrendEvolutionSignal(
+        theme=theme,
+        change_type=change_type,
+        change_tone=_evolution_change_tone(change_type),
+        history_labels=history_labels,
+        history_links=history_links,
+        summary_html=summary_html,
+    )
+
+
+def _extract_evolution_section_data(
+    *,
+    section: TrendPdfSection,
+) -> TrendEvolutionSectionData | None:
+    soup = BeautifulSoup(section.inner_html, "html.parser")
+    summary_nodes: list[str] = []
+    signals: list[TrendEvolutionSignal] = []
+    current_theme: str | None = None
+    current_signal_nodes: list[str] = []
+    seen_signal = False
+
+    for node in list(soup.contents):
+        extracted = node.extract()
+        if not str(extracted).strip():
+            continue
+        if isinstance(extracted, Tag) and extracted.name == "h3":
+            seen_signal = True
+            if current_theme is not None:
+                signals.append(
+                    _extract_evolution_signal(
+                        theme=current_theme,
+                        signal_nodes=current_signal_nodes,
+                    )
+                )
+            current_theme = extracted.get_text(" ", strip=True) or "Signal"
+            current_signal_nodes = []
+            continue
+        if not seen_signal:
+            summary_nodes.append(str(extracted))
+            continue
+        current_signal_nodes.append(str(extracted))
+
+    if current_theme is not None:
+        signals.append(
+            _extract_evolution_signal(
+                theme=current_theme,
+                signal_nodes=current_signal_nodes,
+            )
+        )
+
+    summary_html = "".join(summary_nodes).strip()
+    if not summary_html and not signals:
+        return None
+    return TrendEvolutionSectionData(summary_html=summary_html, signals=signals)
+
+
+def _render_browser_evolution_section_html(*, section: TrendPdfSection) -> str:
+    evolution = _extract_evolution_section_data(section=section)
+    if evolution is None or not evolution.signals:
+        return _render_browser_content_card_html(
+            heading=section.heading,
+            inner_html=section.inner_html,
+        )
+
+    history_labels = {
+        label
+        for signal in evolution.signals
+        for label in signal.history_labels
+        if label
+    }
+    stat_pills = [
+        (
+            "<span class='evolution-stat'>"
+            + f"{len(evolution.signals)} signal"
+            + ("s" if len(evolution.signals) != 1 else "")
+            + "</span>"
+        )
+    ]
+    if history_labels:
+        stat_pills.append(
+            (
+                "<span class='evolution-stat secondary'>"
+                + f"{len(history_labels)} history window"
+                + ("s" if len(history_labels) != 1 else "")
+                + "</span>"
+            )
+        )
+
+    def render_signal_summary(signal: TrendEvolutionSignal) -> str:
+        visible_text = _html_visible_text(signal.summary_html)
+        if not visible_text:
+            return ""
+        if len(visible_text) <= 220:
+            return f"<div class='evolution-copy prose'>{signal.summary_html}</div>"
+        preview = html.escape(_truncate_browser_visible_text(visible_text, limit=170))
+        return (
+            f"<div class='evolution-preview'>{preview}</div>"
+            "<details class='evolution-expand'>"
+            "<summary class='evolution-expand-toggle'>Read full rationale</summary>"
+            f"<div class='evolution-expand-body prose'>{signal.summary_html}</div>"
+            "</details>"
+        )
+
+    cards = []
+    for signal in evolution.signals:
+        history_pills: list[str] = []
+        if signal.history_links:
+            history_pills.extend(
+                "<a class='history-pill' href='{}'>{}</a>".format(
+                    html.escape(href, quote=True),
+                    html.escape(label),
+                )
+                for href, label in signal.history_links
+            )
+        elif signal.history_labels:
+            history_pills.extend(
+                f"<span class='history-pill'>{html.escape(label)}</span>"
+                for label in signal.history_labels
+            )
+
+        history_html = ""
+        if history_pills:
+            history_html = (
+                "<div class='evolution-history-block'>"
+                "<div class='evolution-history-label'>History</div>"
+                f"<div class='evolution-history-track'>{''.join(history_pills)}</div>"
+                "</div>"
+            )
+
+        summary_html = render_signal_summary(signal)
+        cards.append(
+            "<article class='evolution-card evolution-change-{}'>"
+            "<div class='evolution-card-head'>"
+            "<h3 class='evolution-card-title'>{}</h3>"
+            "<span class='evolution-badge evolution-badge-{}'>{}</span>"
+            "</div>"
+            "{}"
+            "{}"
+            "</article>".format(
+                html.escape(signal.change_tone, quote=True),
+                html.escape(signal.theme),
+                html.escape(signal.change_tone, quote=True),
+                html.escape(_evolution_change_label(signal.change_type)),
+                history_html,
+                summary_html,
+            )
+        )
+
+    summary_html = (
+        f"<div class='evolution-summary prose'>{evolution.summary_html}</div>"
+        if evolution.summary_html
+        else ""
+    )
+    return (
+        "<section class='surface-card section-card evolution-section'>"
+        "<div class='evolution-section-head'>"
+        f"{_render_browser_section_label_html(section.heading)}"
+        f"<div class='evolution-stats'>{''.join(stat_pills)}</div>"
+        "</div>"
+        f"{summary_html}"
+        f"<div class='evolution-grid'>{''.join(cards)}</div>"
+        "</section>"
+    )
+
+
 def _build_trend_browser_body_html(*, sections: list[TrendPdfSection]) -> str:
     used: set[str] = set()
     rendered: list[str] = []
@@ -738,9 +1020,7 @@ def _build_trend_browser_body_html(*, sections: list[TrendPdfSection]) -> str:
 
     if summary_cards:
         rendered.append(
-            "<section class='summary-grid'>"
-            + "".join(summary_cards[:2])
-            + "</section>"
+            "<section class='summary-grid'>" + "".join(summary_cards[:2]) + "</section>"
         )
 
     for section in sections:
@@ -753,6 +1033,9 @@ def _build_trend_browser_body_html(*, sections: list[TrendPdfSection]) -> str:
                     inner_html=section.inner_html,
                 )
             )
+            used.add(section.slug)
+        elif _section_matches(section.heading, "evolution"):
+            rendered.append(_render_browser_evolution_section_html(section=section))
             used.add(section.slug)
         elif _section_matches(section.heading, "topics"):
             used.add(section.slug)
