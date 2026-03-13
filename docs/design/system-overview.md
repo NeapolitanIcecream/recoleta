@@ -1,6 +1,6 @@
 # Recoleta System Overview
 
-Recoleta is a personal research intelligence funnel. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw and derived state in SQLite, uses an LLM to produce high-signal summaries, and publishes the selected outputs to **local Markdown by default** (with optional Obsidian and Telegram integrations). The same canonical markdown trend notes can also be republished as browser-rendered PDFs and a static website.
+Recoleta is a personal research intelligence funnel. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw and derived state in SQLite, uses an LLM to produce high-signal summaries, and publishes the selected outputs to **local Markdown by default** (with optional Obsidian and Telegram integrations). Trend generation reuses that stored corpus, can augment prompts with retrieved overview/history packs, and republishes canonical markdown trend notes as browser-rendered PDFs and a static website.
 
 ## Goals
 
@@ -10,6 +10,7 @@ Recoleta is a personal research intelligence funnel. It pulls items from multipl
 - Use LLM to produce:
   - high-signal summary
   - topic tags and a relevance score against user-defined interests
+- Let trend generation reuse stored item/trend documents plus a local LanceDB vector cache for retrieval-heavy prompts.
 - Support one or more topic streams that share ingest state while keeping analyze and publish scopes isolated.
 - Publish the best summaries to one or more user-facing targets:
   - local Markdown output (default)
@@ -47,8 +48,10 @@ flowchart TD
   Publish --> Markdown[Local Markdown]
   Publish --> Obsidian[Obsidian optional]
   Publish --> Telegram[Telegram optional]
+  SQLite --> LanceDB[(LanceDB optional trend cache)]
   Analyze --> Trends[Generate trends]
   Trends --> TrendMarkdown[Canonical trend markdown]
+  Trends --> LanceDB
   TrendMarkdown --> TrendPDF[Derived PDF]
   TrendMarkdown --> StaticSite[Derived static site]
 ```
@@ -59,3 +62,4 @@ flowchart TD
 - **Window correctness**: date-targeted runs must stay within the requested UTC day and must not pull newer or older items into that run.
 - **Fail fast + retry**: transient IO errors are retried with backoff; schema/config errors fail fast.
 - **No sensitive logging**: never log tokens, raw cookies, or personal data; mask URLs if needed.
+- **Repairable outputs**: canonical trend markdown and stored trend documents must be sufficient to rerender PDFs and the static site without rerunning ingest/analyze.

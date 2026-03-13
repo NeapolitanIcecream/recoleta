@@ -33,7 +33,7 @@ publish_targets:
 
 ## LLM behavior
 
-# Optional language hint for LLM-generated text fields (summary).
+# Optional language hint for LLM-generated text fields (item summaries and trend notes).
 # JSON keys remain English and topics remain concise English tags.
 # llm_output_language: null  # Default: null
 
@@ -97,12 +97,16 @@ sources:
     # Default rss_urls: ["https://news.ycombinator.com/rss"]
     rss_urls:
       - "https://news.ycombinator.com/rss"
+    # max_items_per_feed: 100  # Default varies by source helper
+    # max_total_per_run: 100
 
   rss:
     enabled: false  # Default: false
     # feeds: []  # Required when enabled=true
     # feeds:
     #   - "https://example.com/feed.xml"
+    # max_items_per_feed: 100
+    # max_total_per_run: 100
 
   arxiv:
     enabled: false  # Default: false
@@ -110,6 +114,7 @@ sources:
     # queries:
     #   - "cat:cs.AI"
     # max_results_per_run: 50  # Default: 50
+    # max_total_per_run: 50
     # enrich_method: "html_document"  # Default: "html_document" (pdf_text|latex_source|html_document)
     # enrich_failure_mode: "fallback"  # Default: "fallback" (fallback|strict)
     # html_document_max_concurrency: 4  # Default: 4
@@ -124,9 +129,12 @@ sources:
     # venues: []  # Required when enabled=true
     # venues:
     #   - "NeurIPS.cc/2026/Conference"
+    # max_results_per_venue: 100
+    # max_total_per_run: 100
 
   hf_daily:
     enabled: false  # Default: false
+    # max_items_per_run: 100
 
 ## Semantic triage (optional)
 #
@@ -150,17 +158,30 @@ sources:
 # LanceDB directory used as the local vector store for semantic search.
 # rag_lancedb_dir: "~/.local/share/recoleta/lancedb"
 #
-# Embedding configuration used by trends semantic search.
+# Embedding configuration used by trends semantic search and `recoleta rag *`.
 # trends_embedding_model: "text-embedding-3-small"
 # trends_embedding_dimensions: null
 # trends_embedding_batch_max_inputs: 64
 # trends_embedding_batch_max_chars: 40000
 # trends_embedding_failure_mode: "continue"  # Default: "continue" (continue|fail_fast|threshold)
 # trends_embedding_max_errors: 0  # Default: 0 (required >0 when failure_mode=threshold)
+#
+# Optional context-pack controls for `recoleta trends`.
+# trends_self_similar_enabled: false  # Default: false
+# trends_ranking_n: 10  # Default: 10
+# trends_overview_pack_max_chars: 16000  # Default: 16000
+# trends_item_overview_top_k: 28  # Default: 28
+# trends_item_overview_item_max_chars: 800  # Default: 800
+# trends_rep_min_per_cluster: 2  # Default: 2
+# trends_peer_history_enabled: false  # Default: false
+# trends_peer_history_window_count: 3  # Default: 3
+# trends_peer_history_max_chars: 12000  # Default: 12000
+# trends_evolution_max_signals: 5  # Default: 5
 
 ## Analysis limits
 
 # analyze_limit: 100  # Default: 100
+# analyze_write_batch_size: 32  # Default: 32
 # analyze_content_max_chars: 32768  # Default: 32768 (set 0 to disable truncation)
 
 ## Scheduling (used only by `recoleta run`)
