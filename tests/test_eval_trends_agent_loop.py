@@ -189,6 +189,19 @@ def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Pa
         tool_trace={
             "tool_calls_total": 3,
             "tool_call_breakdown": {"search_hybrid": 1, "get_doc_bundle": 2},
+            "raw_tool_trace": {
+                "status": "captured",
+                "events": [
+                    {
+                        "kind": "tool-call",
+                        "tool_name": "search_hybrid",
+                        "args": {"query": "agent memory loops"},
+                    }
+                ],
+                "events_total": 1,
+                "tool_calls_total": 1,
+                "events_truncated": False,
+            },
         },
         capture_metadata={"capture_mode": "pipeline"},
     )
@@ -196,7 +209,12 @@ def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Pa
     artifact_dir = Path(window_manifest["artifact_dir"])
     assert (artifact_dir / "report.md").read_text(encoding="utf-8").startswith("- grounded")
     assert json.loads((artifact_dir / "payload.json").read_text(encoding="utf-8"))["title"] == "Weekly Trend"
-    assert json.loads((artifact_dir / "tool-trace.json").read_text(encoding="utf-8"))["run_id"] == "run-week-baseline"
+    tool_trace_payload = json.loads(
+        (artifact_dir / "tool-trace.json").read_text(encoding="utf-8")
+    )
+    assert tool_trace_payload["run_id"] == "run-week-baseline"
+    assert tool_trace_payload["raw_tool_trace"]["status"] == "captured"
+    assert tool_trace_payload["raw_tool_trace"]["events"][0]["tool_name"] == "search_hybrid"
     assert json.loads((artifact_dir / "rubric.json").read_text(encoding="utf-8"))["status"] == "pending_manual_review"
     prompt_payload = json.loads((artifact_dir / "prompt.json").read_text(encoding="utf-8"))
     assert prompt_payload["status"] == "not_captured_yet"
@@ -386,7 +404,24 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
     monkeypatch.setattr(
         harness,
         "_load_debug_payload",
-        lambda *, artifact_dir, run_id: {"debug": {"tool_calls_total": 2}},  # noqa: ARG005
+        lambda *, artifact_dir, run_id: {  # noqa: ARG005
+            "debug": {
+                "tool_calls_total": 2,
+                "raw_tool_trace": {
+                    "status": "captured",
+                    "events": [
+                        {
+                            "kind": "tool-call",
+                            "tool_name": "search_hybrid",
+                            "args": {"query": "agent memory"},
+                        }
+                    ],
+                    "events_total": 1,
+                    "tool_calls_total": 1,
+                    "events_truncated": False,
+                },
+            }
+        },
     )
     monkeypatch.setattr(
         harness,
@@ -451,6 +486,11 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
         "item_overview_top_k": 12,
         "item_overview_item_max_chars": 320,
     }
+    tool_trace_payload = json.loads(
+        (artifact_dir / "tool-trace.json").read_text(encoding="utf-8")
+    )
+    assert tool_trace_payload["raw_tool_trace"]["status"] == "captured"
+    assert tool_trace_payload["llm_debug"]["raw_tool_trace"]["events_total"] == 1
     baseline_summary = json.loads(
         (Path(manifest["out_dir"]) / "baseline-summary.json").read_text(encoding="utf-8")
     )

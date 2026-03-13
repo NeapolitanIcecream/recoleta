@@ -66,6 +66,9 @@ Current scaffold status on this branch:
   current indexed corpus while skipping `prepare/analyze`; a lighter
   `existing-trends` snapshot mode can still reuse already-generated trend docs
   when we only need frozen reference artifacts
+- rerun capture now preserves raw tool-call / tool-return trace artifacts when
+  the underlying agent debug payload exposes them, so manual eval can inspect
+  both aggregated metrics and concrete tool IO
 - rerun capture should pin a small eval budget instead of inheriting production
   defaults; the current harness clamps overview-pack and item-overview limits so
   repeated baseline runs stay affordable and comparable
@@ -79,6 +82,24 @@ Current scaffold status on this branch:
   metrics, or trend docs back into the live workspace
 - prompt capture is still a stub artifact, so prompt-level analysis remains a
   follow-up rather than a completed deliverable in this PR
+
+### 1a. General loop mechanics follow-up
+
+The current phase should stay focused on eval + retrieval quality, but a later
+loop redesign should borrow more general agent-runtime ideas rather than only
+adding domain-specific prompt rules.
+
+Follow-up directions from the local Codex research:
+
+- explicit continuation semantics so the loop keeps going while verification or
+  evidence gathering is still incomplete, instead of treating higher tool-call
+  count as the goal
+- in-loop context compaction / working-memory checkpoints, not just a large
+  precomputed overview pack
+- separate budgets for task instructions, tool evidence, and compressed working
+  memory so one category does not crowd out the others
+- structured trace capture that preserves tool args and bounded tool outputs for
+  later eval and failure analysis
 
 Exit criteria:
 

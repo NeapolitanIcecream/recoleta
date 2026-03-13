@@ -916,7 +916,12 @@ def capture_trends_rerun_baseline(
             tool_trace = summarize_run_metrics(repository.list_metrics(run_id=run_id))
             debug_payload = _load_debug_payload(artifact_dir=artifact_dir, run_id=run_id)
             if debug_payload is not None:
-                tool_trace["llm_debug"] = debug_payload.get("debug")
+                debug = debug_payload.get("debug")
+                tool_trace["llm_debug"] = debug
+                if isinstance(debug, dict):
+                    raw_tool_trace = debug.get("raw_tool_trace")
+                    if isinstance(raw_tool_trace, dict):
+                        tool_trace["raw_tool_trace"] = raw_tool_trace
             write_window_capture_artifacts(
                 window_manifest=window_manifest,
                 run_id=run_id,
