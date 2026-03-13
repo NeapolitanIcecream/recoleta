@@ -5,6 +5,8 @@ description: Preserve the research-facing design language for Recoleta site and 
 
 # Research Site Design Language
 
+Use this skill when changing site visuals, UI copy, badges, card hierarchy, section ordering, or markdown-to-site rendering for research-facing pages.
+
 ## Core Rules
 
 - Keep fixed UI chrome in English: section titles, badges, controlled vocabulary, action labels, metadata pills, filters, and navigation.
@@ -19,6 +21,13 @@ description: Preserve the research-facing design language for Recoleta site and 
 - Surface comparison signal counts early on index cards and detail heroes.
 - Render controlled comparison terms in English, including `Continuing`, `Emerging`, `Fading`, `Shifting`, `Polarizing`, and `History`.
 - Collapse long rationale behind progressive disclosure, especially for mobile layouts.
+
+## Maintenance
+
+- Treat this skill as the canonical record of project-level design language for research-facing site surfaces.
+- If a change introduces a new fixed UI term, badge family, layout convention, or localization rule that should persist, update this skill in the same change.
+- If user feedback or product direction invalidates an existing rule, revise or remove the stale rule here before treating the new pattern as canonical.
+- Keep the skill concise: record stable project-wide rules, not one-off exceptions or temporary experiments.
 
 ## Validation
 

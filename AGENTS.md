@@ -26,3 +26,4 @@ Recent history uses short imperative subjects with optional Conventional Commit 
 Project-specific skills live under `.cursor/skills/`. When a task clearly matches one, load its `SKILL.md` before proceeding.
 
 - `research-site-design-language`: Use for site visuals, UI copy, badges, card hierarchy, section ordering, and markdown-to-site rendering changes. It keeps fixed research-facing chrome in English while allowing long-form body copy to follow the source language.
+  When a new design rule becomes canonical or an old one is superseded, update the skill in the same change.
