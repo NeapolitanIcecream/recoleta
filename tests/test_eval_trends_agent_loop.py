@@ -614,6 +614,94 @@ def test_run_window_trends_capture_targets_requested_topic_stream(monkeypatch) -
     assert called["backfill"] is False
 
 
+def test_run_window_trends_capture_explicit_stream_preserves_eval_publish_overrides(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from recoleta.pipeline import trends_stage as trends_stage_module
+
+    captured: dict[str, Any] = {}
+
+    class _FakeSettings:
+        def __init__(self, **kwargs: Any) -> None:
+            self.__dict__.update(kwargs)
+
+        def model_copy(self, *, update: dict[str, Any]) -> "_FakeSettings":
+            data = dict(self.__dict__)
+            data.update(update)
+            return _FakeSettings(**data)
+
+    class _FakeService:
+        def __init__(
+            self,
+            *,
+            settings: Any | None = None,
+            repository: Any | None = None,
+            analyzer: Any | None = None,
+            triage: Any | None = None,
+            telegram_sender: Any | None = None,
+        ) -> None:
+            self.settings = settings or _FakeSettings(
+                scope="default",
+                publish_targets=["markdown"],
+                markdown_output_dir=tmp_path / "eval-markdown",
+                artifacts_dir=tmp_path / "eval-artifacts",
+                write_debug_artifacts=True,
+            )
+            self.repository = repository or object()
+            self.analyzer = analyzer or object()
+            self.semantic_triage = triage or object()
+            self._topic_streams = [
+                SimpleNamespace(
+                    name="software_intelligence",
+                    publish_targets=["telegram"],
+                    markdown_output_dir=tmp_path / "unsafe-stream-output",
+                )
+            ]
+            self._explicit_topic_streams = True
+            self.telegram_sender = telegram_sender
+
+        def _settings_for_topic_stream(self, stream: Any) -> Any:
+            return _FakeSettings(
+                scope=stream.name,
+                publish_targets=list(getattr(stream, "publish_targets", []) or []),
+                markdown_output_dir=getattr(stream, "markdown_output_dir", None),
+                artifacts_dir=tmp_path / "unsafe-artifacts",
+                write_debug_artifacts=False,
+            )
+
+        def _telegram_sender_for_stream(self, stream: Any) -> Any:  # noqa: ARG002
+            return "unsafe-telegram-sender"
+
+    def _fake_run_trends_stage(service: Any, **kwargs: Any) -> Any:
+        captured["service"] = service
+        captured.update(kwargs)
+        return SimpleNamespace(doc_id=101)
+
+    monkeypatch.setattr(trends_stage_module, "run_trends_stage", _fake_run_trends_stage)
+
+    result = harness._run_window_trends_capture(
+        _FakeService(),
+        stage_run_id="run-stream-window-safe",
+        window_manifest={
+            "granularity": "week",
+            "anchor_date": "2026-03-05",
+            "stream": "software_intelligence",
+        },
+        llm_model="test/fake-model",
+        reuse_existing_corpus=True,
+        backfill=False,
+    )
+
+    assert result.doc_id == 101
+    child_service = captured["service"]
+    assert child_service.settings.publish_targets == ["markdown"]
+    assert child_service.settings.markdown_output_dir == tmp_path / "eval-markdown"
+    assert child_service.settings.artifacts_dir == tmp_path / "eval-artifacts"
+    assert child_service.settings.write_debug_artifacts is True
+    assert child_service.telegram_sender is None
+
+
 def test_prepare_isolated_eval_runtime_clones_db_and_lancedb(
     monkeypatch,
     tmp_path: Path,

@@ -740,6 +740,26 @@ def capture_existing_trends_baseline(
     return baseline_summary
 
 
+def _apply_eval_publish_overrides(*, base_settings: Any, scoped_settings: Any) -> Any:
+    overrides = {
+        "publish_targets": list(getattr(base_settings, "publish_targets", []) or []),
+        "markdown_output_dir": getattr(base_settings, "markdown_output_dir", None),
+        "artifacts_dir": getattr(base_settings, "artifacts_dir", None),
+        "write_debug_artifacts": bool(
+            getattr(base_settings, "write_debug_artifacts", False)
+        ),
+    }
+    model_copy = getattr(scoped_settings, "model_copy", None)
+    if callable(model_copy):
+        return model_copy(update=overrides)
+    for key, value in overrides.items():
+        try:
+            setattr(scoped_settings, key, value)
+        except Exception:
+            continue
+    return scoped_settings
+
+
 def _run_window_trends_capture(
     service: Any,
     *,
@@ -764,7 +784,11 @@ def _run_window_trends_capture(
         if selected_stream is None:
             raise ValueError(f"unknown topic stream for eval window: {stream}")
         stream_settings = service._settings_for_topic_stream(selected_stream)
-        stream_targets = set(getattr(selected_stream, "publish_targets", []) or [])
+        stream_settings = _apply_eval_publish_overrides(
+            base_settings=service.settings,
+            scoped_settings=stream_settings,
+        )
+        stream_targets = set(getattr(stream_settings, "publish_targets", []) or [])
         stream_sender = (
             service._telegram_sender_for_stream(selected_stream)
             if "telegram" in stream_targets
