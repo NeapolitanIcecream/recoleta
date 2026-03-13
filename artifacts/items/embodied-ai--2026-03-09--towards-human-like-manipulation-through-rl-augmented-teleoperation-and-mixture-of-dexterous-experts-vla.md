@@ -16,38 +16,37 @@ authors:
 topics:
 - vision-language-action
 - dexterous-manipulation
-- force-tactile-fusion
-- mixture-of-experts
-- shared-autonomy-teleoperation
-- hierarchical-robot-policy
-relevance_score: 0.94
-run_id: 47596b38-ed69-4aa2-a335-ff14a81186ef
+- bimanual-robotics
+- tactile-force-fusion
+- hierarchical-policy
+- shared-autonomy
+relevance_score: 0.95
+run_id: materialize-outputs
 ---
 
 # Towards Human-Like Manipulation through RL-Augmented Teleoperation and Mixture-of-Dexterous-Experts VLA
 
 ## Summary
-## TL;DR: 通过“RL 训练的手内原子技能 + 可调用的分层VLA + 力/触觉MoE残差融合”，把VLA从低自由度抓取推进到更像人类的双手、接触丰富的手内操作，并在复杂任务上报告约2倍成功率提升。
+本文提出一个面向类人双手灵巧操作的整体框架：用RL训练的IMCopilot辅助遥操作并在执行时充当底层技能，再用MoDE-VLA把力觉/触觉稳健地接入预训练VLA。它针对高自由度、接触丰富的手内操作，宣称在4个任务上相对基线实现约2倍成功率提升。
 
-## Problem:
-- 现有VLA多停留在低自由度夹爪的视觉引导抓放，难以扩展到**双手高自由度（63 DoF）**、**接触丰富**的手内操作（如旋转、稳定握持、削苹果）。
-- **数据采集瓶颈**：63 DoF 双臂双手纯人工遥操作很难产出稳定、高质量示范，尤其是持续手内旋转等精细阶段。
-- **多技能学习与模态异质性**：同一任务包含视觉主导的粗动作、力反馈主导的插入/切削、触觉主导的防滑与手内重定位；把力/触觉“直接拼接到预训练VLA”会破坏预训练能力并降低表现。
+## Problem
+- 现有VLA多停留在低自由度夹爪和简单抓放，难以扩展到**63-DoF**双臂双手的类人手内操作与双手协同。
+- 高质量演示数据难采：纯遥操作很难稳定完成多指协调和手内旋转，尤其是苹果削皮这类接触丰富任务。
+- 单一策略难同时覆盖粗运动、插入/切削等力控阶段、以及触觉驱动的手内调整；同时，直接把力/触觉拼接进预训练VLA还可能损害原有能力。
 
-## Approach:
-- **IMCopilot（手内操作副驾驶）**：用PPO在IsaacLab中训练一组可组合的手内原子技能（如稳定抓取、按轴旋转），并通过域随机化实现零样本sim2real倾向。
-- **RL增强遥操作采集**：人在外骨骼遥操作中负责手臂粗运动，遇到难的手内阶段用脚踏板触发IMCopilot代劳，从而提升示范质量与一致性。
-- **分层执行**：推理时VLA除输出动作外还输出触发标量`c`；当`c>0.5`时由IMCopilot接管手部动作，而手臂仍由VLA控制，缓解“一把策略学全技能”的难题。
-- **MoDE-VLA（Mixture-of-Dexterous-Experts）力/触觉融合**：为力（14维双臂关节力矩）与触觉（60维十指6DoF力/力矩）建立专用token通路；经自注意力与稀疏MoE（E=8, top-1路由）处理后，以**残差注入**方式分别修正手臂/手部动作（避免覆盖预训练VLA知识）。
+## Approach
+- 提出**IMCopilot**：一组RL训练的原子手内技能（如稳定抓握、绕指定轴旋转）。采集数据时由人通过脚踏板触发，帮助操作员完成最难的手内阶段；自主执行时同样由VLA输出触发信号调用，形成分层控制。
+- 提出**MoDE-VLA**：在预训练OpenPI-0 / PaliGemma式VLA骨干外，单独建立力觉与触觉通道，而不是简单拼接输入。
+- 将**臂关节力矩**作为force模态、**10个指尖6-DoF触觉/力扭矩读数**作为tactile模态，投影成token后与主干上下文、自回归/流匹配动作状态一起做自注意力交互。
+- 使用**稀疏Mixture-of-Experts**按token/时间步选择专家，学习不同接触阶段（接近、接触初期、稳定抓持、动态旋转）的不同修正规律。
+- 通过**residual injection**把force主要修正到臂动作、tactile主要修正到手动作；当触发IMCopilot时，手部动作可被RL技能直接接管。
 
-## Results:
-- **手内操作能力（Table I）**：与纯遥操作相比，IMCopilot显著提升手内操作成功率：
-  - 乒乓球：10%（3/30）→ 83%（25/30）
-  - 网球：67%（20/30）→ 93%（28/30）
-  - 苹果：27%（8/30）→ 90%（27/30）
-  - 总体：34%（31/90）→ 89%（80/90）
-- **端到端任务评测设置**：4个接触丰富任务（齿轮装配、充电器插入、试管重排、削苹果），每任务20次试验；指标为成功率SR，削苹果额外报告PCR（25%粒度）。
-- **总体性能主张（摘录中未给出逐任务数表）**：作者声称在“灵巧接触丰富任务”上相对基线VLA（π0/OpenPI-0骨干）实现**约2倍成功率提升**，并宣称“首次实现自主双灵巧手削苹果”。（注：除Table I外，摘录未提供逐任务SR/PCR的具体数值与对比表。）
+## Results
+- 在手内操作能力对比中，**IMCopilot显著优于纯遥操作**：乒乓球 **3/30→25/30（10%→83%）**，网球 **20/30→28/30（67%→93%）**，苹果 **8/30→27/30（27%→90%）**，总体 **31/90→80/90（34%→89%）**。
+- 论文在**4个接触丰富任务**上评测：gear assembling、charger plugging、test tube rearranging、apple peeling；每种方法每任务**20次试验**，主指标为**Success Rate**，苹果削皮还报告**Peel Completion Ratio**。
+- 摘要声称：在灵巧接触丰富任务上，相比基线取得**“doubled success rate improvement”**，即成功率约提升到**2倍**水平；显式基线为预训练**\(\pi_0\)**。
+- 文中还宣称据其所知实现了**首个自主双灵巧手苹果削皮**，这是一个需要视觉、力觉、触觉、双手协同与手内旋转共同作用的综合任务。
+- 受限于给定摘录，完整逐任务数值表和消融实验结果未全部提供；当前最强的定量证据主要来自**Table I**与摘要中的**约2倍成功率提升**声明。
 
-## Links
-- Canonical: http://arxiv.org/abs/2603.08122v1
+## Link
+- [http://arxiv.org/abs/2603.08122v1](http://arxiv.org/abs/2603.08122v1)
