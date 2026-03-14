@@ -1,6 +1,6 @@
 ---
 title: "ADR 0030: Pass-oriented canonical outputs for trend synthesis and follow-on ideas"
-status: Proposed
+status: Accepted
 ---
 
 ## Context
