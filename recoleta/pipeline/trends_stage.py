@@ -28,7 +28,6 @@ from recoleta.publish import (
 )
 from recoleta.trend_materialize import (
     materialize_trend_note_payload,
-    persist_materialized_trend_payload,
 )
 from recoleta import trends
 from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
@@ -1166,23 +1165,19 @@ def run_trends_stage(
                         service._sanitize_error_message(str(artifact_exc)),
                     )
 
-        materialized = materialize_trend_note_payload(
-            repository=cast(Any, service.repository),
-            payload=payload,
-            markdown_output_dir=service.settings.markdown_output_dir,
-            output_language=service.settings.llm_output_language,
-            scope=scope,
-        )
-        payload = persist_materialized_trend_payload(
-            payload=payload,
-            materialized=materialized,
-        )
         doc_id = trends.persist_trend_payload(
             repository=cast(Any, service.repository),
             granularity=normalized_granularity,
             period_start=period_start,
             period_end=period_end,
             payload=payload,
+            scope=scope,
+        )
+        materialized = materialize_trend_note_payload(
+            repository=cast(Any, service.repository),
+            payload=payload,
+            markdown_output_dir=service.settings.markdown_output_dir,
+            output_language=service.settings.llm_output_language,
             scope=scope,
         )
 
@@ -1223,7 +1218,7 @@ def run_trends_stage(
                     "period_start": period_start.isoformat(),
                     "period_end": period_end.isoformat(),
                     "overview_md": materialized.overview_md,
-                    "topics": list(payload.topics),
+                    "topics": list(materialized.topics),
                     "clusters": materialized.clusters,
                 },
                 option=orjson.OPT_SORT_KEYS,
@@ -1302,7 +1297,7 @@ def run_trends_stage(
                     period_end=period_end,
                     run_id=run_id,
                     overview_md=materialized.overview_md,
-                    topics=list(payload.topics),
+                    topics=list(materialized.topics),
                     evolution=materialized.evolution,
                     history_window_refs=materialized.history_window_refs,
                     clusters=materialized.clusters,
@@ -1326,7 +1321,7 @@ def run_trends_stage(
                     period_end=period_end,
                     run_id=run_id,
                     overview_md=materialized.overview_md,
-                    topics=list(payload.topics),
+                    topics=list(materialized.topics),
                     evolution=materialized.evolution,
                     history_window_refs=materialized.history_window_refs,
                     clusters=materialized.clusters,
