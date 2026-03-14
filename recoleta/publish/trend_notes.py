@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from slugify import slugify
 
+from recoleta.provenance import ProjectionProvenance, build_projection_provenance
 from recoleta.publish.trend_render_shared import (
     _trend_date_token,
     sanitize_trend_title,
@@ -281,6 +282,7 @@ def _render_trend_note_lines(
     highlights: list[str] | None,
     output_language: str | None,
     note_dir: Path,
+    projection_provenance: ProjectionProvenance | None,
 ) -> list[str]:
     _ = highlights
     title = sanitize_trend_title(title)
@@ -304,6 +306,10 @@ def _render_trend_note_lines(
         "aliases": [f"recoleta-trend-{int(trend_doc_id)}"],
         "tags": tags,
     }
+    if projection_provenance is not None:
+        frontmatter.update(
+            projection_provenance.model_dump(mode="json", exclude_none=True)
+        )
 
     lines: list[str] = [
         "---",
@@ -444,6 +450,8 @@ def _write_trend_note(
     clusters: list[dict[str, Any]] | None,
     highlights: list[str] | None,
     output_language: str | None,
+    pass_output_id: int | None = None,
+    pass_kind: str | None = None,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = resolve_trend_note_path(
@@ -467,6 +475,14 @@ def _write_trend_note(
         highlights=highlights,
         output_language=output_language,
         note_dir=note_dir,
+        projection_provenance=(
+            build_projection_provenance(
+                pass_output_id=pass_output_id,
+                pass_kind=str(pass_kind or "").strip() or "trend_synthesis",
+            )
+            if pass_output_id is not None
+            else None
+        ),
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return note_path
@@ -489,6 +505,8 @@ def write_obsidian_trend_note(
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
     output_language: str | None = None,
+    pass_output_id: int | None = None,
+    pass_kind: str | None = None,
 ) -> Path:
     note_dir = vault_path / base_folder / "Trends"
     return _write_trend_note(
@@ -506,6 +524,8 @@ def write_obsidian_trend_note(
         clusters=clusters,
         highlights=highlights,
         output_language=output_language,
+        pass_output_id=pass_output_id,
+        pass_kind=pass_kind,
     )
 
 
@@ -525,6 +545,8 @@ def write_markdown_trend_note(
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
     output_language: str | None = None,
+    pass_output_id: int | None = None,
+    pass_kind: str | None = None,
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
@@ -545,6 +567,8 @@ def write_markdown_trend_note(
         clusters=clusters,
         highlights=highlights,
         output_language=output_language,
+        pass_output_id=pass_output_id,
+        pass_kind=pass_kind,
     )
 
 

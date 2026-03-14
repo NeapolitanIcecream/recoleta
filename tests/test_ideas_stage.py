@@ -667,6 +667,20 @@ def test_ideas_stage_projects_searchable_idea_documents(
     assert meta_chunk is not None
     assert meta_chunk.kind == "meta"
     assert meta_chunk.source_content_type == "trend_ideas_payload_json"
+    meta_payload = json.loads(meta_chunk.text)
+    assert meta_payload.get("_projection") == {
+        "pass_output_id": result.pass_output_id,
+        "pass_kind": "trend_ideas",
+        "upstream_pass_output_id": result.upstream_pass_output_id,
+        "upstream_pass_kind": TREND_SYNTHESIS_PASS_KIND,
+    }
+
+    assert result.note_path is not None
+    note_text = result.note_path.read_text(encoding="utf-8")
+    assert f"pass_output_id: {result.pass_output_id}" in note_text
+    assert "pass_kind: trend_ideas" in note_text
+    assert f"upstream_pass_output_id: {result.upstream_pass_output_id}" in note_text
+    assert f"upstream_pass_kind: {TREND_SYNTHESIS_PASS_KIND}" in note_text
 
     hits = repository.search_chunks_text(
         query="trace viewer benchmark workflow",

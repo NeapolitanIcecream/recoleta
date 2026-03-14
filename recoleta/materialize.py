@@ -31,6 +31,10 @@ from recoleta.publish import (
     write_obsidian_trend_note,
 )
 from recoleta.passes.trend_ideas import TrendIdeasPayload
+from recoleta.provenance import (
+    ProjectionProvenance,
+    projection_provenance_from_mapping,
+)
 from recoleta.site import export_trend_static_site
 from recoleta.trend_materialize import materialize_trend_note_payload
 from recoleta.trends import TrendPayload
@@ -130,14 +134,20 @@ def _materialize_trend_documents(
         return list(session.exec(statement))
 
 
-def _load_trend_payload(*, repository: Any, document: Any) -> TrendPayload:
+def _load_trend_payload(
+    *,
+    repository: Any,
+    document: Any,
+) -> tuple[TrendPayload, ProjectionProvenance | None]:
     doc_id = int(getattr(document, "id") or 0)
     if doc_id > 0:
         meta_chunk = repository.read_document_chunk(doc_id=doc_id, chunk_index=1)
         if meta_chunk is not None:
             try:
-                return TrendPayload.model_validate(
-                    json.loads(str(getattr(meta_chunk, "text", "") or ""))
+                loaded = json.loads(str(getattr(meta_chunk, "text", "") or ""))
+                return (
+                    TrendPayload.model_validate(loaded),
+                    projection_provenance_from_mapping(loaded),
                 )
             except Exception:
                 pass
@@ -155,15 +165,18 @@ def _load_trend_payload(*, repository: Any, document: Any) -> TrendPayload:
     granularity = str(getattr(document, "granularity", "") or "").strip().lower()
     if granularity not in {"day", "week", "month"}:
         raise ValueError(f"trend document {doc_id} has invalid granularity")
-    return TrendPayload(
-        title=str(getattr(document, "title", "") or "Trend").strip() or "Trend",
-        granularity=granularity,
-        period_start=period_start.astimezone(UTC).isoformat(),
-        period_end=period_end.astimezone(UTC).isoformat(),
-        overview_md=overview_md,
-        topics=[],
-        clusters=[],
-        highlights=[],
+    return (
+        TrendPayload(
+            title=str(getattr(document, "title", "") or "Trend").strip() or "Trend",
+            granularity=granularity,
+            period_start=period_start.astimezone(UTC).isoformat(),
+            period_end=period_end.astimezone(UTC).isoformat(),
+            overview_md=overview_md,
+            topics=[],
+            clusters=[],
+            highlights=[],
+        ),
+        None,
     )
 
 
@@ -338,7 +351,10 @@ def _materialize_scope_outputs(
     for document in trend_documents:
         doc_id = int(getattr(document, "id") or 0)
         try:
-            payload = _load_trend_payload(repository=repository, document=document)
+            payload, trend_projection = _load_trend_payload(
+                repository=repository,
+                document=document,
+            )
             materialized = materialize_trend_note_payload(
                 repository=repository,
                 payload=payload,
@@ -362,6 +378,14 @@ def _materialize_scope_outputs(
                 clusters=materialized.clusters,
                 highlights=materialized.highlights,
                 output_language=output_language,
+                pass_output_id=(
+                    trend_projection.pass_output_id
+                    if trend_projection is not None
+                    else None
+                ),
+                pass_kind=(
+                    trend_projection.pass_kind if trend_projection is not None else None
+                ),
             )
             result.trend_notes_total += 1
             result.doc_ref_rewrites_total += (
@@ -402,6 +426,16 @@ def _materialize_scope_outputs(
                     clusters=materialized.clusters,
                     highlights=materialized.highlights,
                     output_language=output_language,
+                    pass_output_id=(
+                        trend_projection.pass_output_id
+                        if trend_projection is not None
+                        else None
+                    ),
+                    pass_kind=(
+                        trend_projection.pass_kind
+                        if trend_projection is not None
+                        else None
+                    ),
                 )
                 result.obsidian_notes_total += 1
             except Exception as exc:  # noqa: BLE001

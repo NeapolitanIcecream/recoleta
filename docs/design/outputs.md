@@ -42,6 +42,7 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Runs/<run_id>.md`: per-run item index (same content as `latest.md`)
 - `Inbox/`: one note per published item
 - `Trends/`: canonical trend markdown notes
+- `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs
 - `site/`: optional derived static site output from `recoleta site build`
 
 When `TOPIC_STREAMS` is configured, each stream gets its own subtree instead:
@@ -58,6 +59,13 @@ Trend notes are the canonical source for all downstream trend surfaces:
 - `recoleta site build` renders from a trend markdown directory
 - `recoleta site stage` mirrors trend markdown/PDF artifacts into a repo-local deployment directory
 - `recoleta materialize outputs` rerenders trend markdown from stored trend documents and can optionally refresh PDFs/site output in the same pass
+- when available, trend note frontmatter also carries `pass_output_id` / `pass_kind` so projections can be traced back to canonical `trend_synthesis` output
+
+Idea notes follow the same projection contract:
+
+- `markdown` and `obsidian` idea notes are derived from canonical `trend_ideas` pass outputs
+- searchable `doc_type=idea` documents are also derived projections, not canonical pass state
+- idea note frontmatter and idea document meta chunks carry `pass_output_id` plus the upstream `trend_synthesis` pointer
 
 ## Trend PDF surface
 
@@ -102,6 +110,7 @@ Important behavior:
 
 - `recoleta site serve` uses Python's standard-library HTTP server; it is a preview helper, not a full dev server.
 - `recoleta materialize outputs` is the offline repair path for existing outputs: it backfills item notes, repairs sibling Obsidian notes when settings expose a vault path, rerenders trend markdown from stored DB documents without mutating upstream ingest/analyze state, and can optionally refresh site/PDF artifacts.
+- when stored trend/idea metadata includes projection provenance, `recoleta materialize outputs` preserves that provenance in the regenerated markdown/obsidian notes instead of dropping it.
 - `recoleta materialize outputs --scope <stream>` lets you repair a single stream without rewriting every configured stream.
 - `recoleta materialize outputs` does not rebuild derived `documents` projections from pass outputs; searchable corpus repair stays separate from filesystem/site repair on purpose.
 - All commands that rebuild site output treat their output directories as managed artifacts and clear stale files before writing.

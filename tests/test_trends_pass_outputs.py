@@ -118,6 +118,11 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         assert meta_chunk is not None
         projected_payload = json.loads(str(meta_chunk.text))
         assert "doc_id" in str(projected_payload.get("overview_md") or "")
+        projection_meta = projected_payload.get("_projection")
+        assert projection_meta == {
+            "pass_output_id": result.pass_output_id,
+            "pass_kind": "trend_synthesis",
+        }
 
     trend_note = (
         settings.markdown_output_dir
@@ -125,6 +130,8 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         / f"day--2026-03-02--trend--{result.doc_id}.md"
     )
     markdown = trend_note.read_text(encoding="utf-8")
+    assert f"pass_output_id: {result.pass_output_id}" in markdown
+    assert "pass_kind: trend_synthesis" in markdown
     assert "See doc_id" not in markdown
     assert re.search(r"(?<![\w])doc_id\s*[:=#-]?\s*\d+", markdown) is None
 
