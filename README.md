@@ -368,7 +368,15 @@ Key behaviors:
 - **Separate publication**: successful runs honor `PUBLISH_TARGETS` for note-style outputs. `markdown` writes `Ideas/` briefs, `obsidian` writes sibling notes into the configured vault, and the canonical payload still remains separate in `pass_outputs`.
 - **Searchable projection**: successful runs also upsert an `idea` document into the local `documents` corpus with summary/content/meta chunks so ideas can participate in later search or inspection work.
 - **Projection provenance**: idea notes and idea document meta chunks carry both their own `pass_output_id` and the upstream `trend_synthesis` pointer, so site/materialize/search surfaces can trace back to the canonical pass outputs.
+- **System-only provenance metadata**: provenance-bearing `meta` chunks are preserved for repair/audit, but they are excluded from agent-visible FTS/hybrid retrieval and do not enter semantic search.
 - **Telegram deferred**: if `PUBLISH_TARGETS` includes `telegram`, the ideas stage records a skipped metric and does not attempt delivery yet.
+
+Current deferred follow-ups after this architecture PR:
+
+- continue improving `ideas` readability and terminology quality
+- refine `ideas` site presentation as a first-class brief surface
+- optionally push the current shared pass runner into a fuller pass registry
+- defer `ideas` Telegram delivery and `idea` semantic retrieval to later PRs
 
 Examples:
 

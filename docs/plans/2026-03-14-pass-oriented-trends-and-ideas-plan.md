@@ -424,6 +424,29 @@ Exit criteria:
   `PassDefinition` runner helpers instead of open-coded persistence +
   projection wiring
 
+## Deferred Follow-Ups
+
+These are intentionally out of scope for this PR and should be tracked as
+follow-on work rather than reopening the architecture migration:
+
+- `ideas` content-quality tuning:
+  - continue tightening wording, terminology stability, and title style
+  - add lightweight quality specs for evidence density and actionable
+    `validation_next_step`
+- `ideas` site UX refinement:
+  - improve idea-brief information hierarchy and reading flow on the static site
+- fuller pass registry:
+  - the shared `PassDefinition` runner is in place, but stage-to-pass
+    registration is still not fully declarative
+- `ideas` Telegram delivery:
+  - currently deferred; the stage emits skipped metrics when `telegram` is
+    configured
+- `idea` semantic search:
+  - `doc_type=idea` participates in text/FTS search today, but not embedding
+    sync or semantic retrieval yet
+- larger-scale real-data calibration:
+  - defer until the live corpus is materially larger
+
 ## Testing Strategy
 
 ### Unit tests
