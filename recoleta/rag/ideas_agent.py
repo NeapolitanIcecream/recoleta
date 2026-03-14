@@ -80,6 +80,18 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " return an empty ideas list and explain that briefly in summary_md instead of guessing."
     )
     base += (
+        " Do not invent new umbrella terms, branded labels, or slogan-like phrasing."
+        " Prefer established domain terminology."
+    )
+    base += (
+        " If a technical term does not have a stable translation in the requested"
+        " output language, prefer the original source-language term instead of forcing a translation."
+    )
+    base += (
+        " Prefer plain, literal wording over compressed jargon, clever metaphors,"
+        " or catchy headings."
+    )
+    base += (
         " Start with search_hybrid for broad discovery, then use get_doc_bundle"
         " or read_chunk to confirm specific evidence before finalizing ideas."
     )
@@ -115,6 +127,9 @@ def build_trend_ideas_prompt_payload(
             "Each idea must answer what to build or investigate, why now, what changed, and who it helps.",
             "Use evidence_refs to point to the strongest supporting documents.",
             "Do not restate the trend summary as the final output.",
+            "Do not coin new umbrella terms or marketing-style labels.",
+            "If a technical term lacks a stable translation in the requested output language, keep the original term.",
+            "Prefer direct, readable phrasing over compressed jargon.",
         ],
     }
     if rag_sources is not None:

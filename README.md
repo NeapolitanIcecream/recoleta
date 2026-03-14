@@ -439,8 +439,8 @@ Behavior:
 - `recoleta materialize outputs --scope <stream> --granularity week` is the targeted repair path when only one stream or one trend level needs to be regenerated.
 - `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
 - `recoleta site gh-deploy` keeps the checked-out worktree on your source branch and skips the push when the generated snapshot is unchanged.
-- In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory.
-- The static site now exposes a `Streams` navigation surface so mixed-domain trend notes are not silently flattened together.
+- In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory and attach sibling `Ideas/` directories when present.
+- The static site now exposes both `Streams` and `Ideas` navigation surfaces so mixed-domain trend notes and follow-on idea briefs are not silently flattened together.
 - `recoleta site stage` remains available when you want a repo-local content snapshot for custom CI or non-GitHub hosting.
 - All four commands treat their output directories as managed artifacts and clear stale files before writing when they rebuild site output.
 
@@ -723,9 +723,9 @@ Recoleta's current CLI surface includes:
 - `recoleta ideas --granularity week --date 2026-03-02`: derive evidence-grounded opportunity ideas from an existing trend synthesis output
 - `recoleta trends-week --date 2026-03-02`: shortcut for weekly trends with lower-level backfill
 - `recoleta trends --granularity day --debug-pdf`: generate a trend note and export a PDF debug bundle for the rendered Telegram PDF
-- `recoleta site build`: render a static site from trend markdown notes
+- `recoleta site build`: render a static site from trend and idea markdown notes
 - `recoleta site gh-deploy`: build the site and push a dedicated GitHub Pages branch
-- `recoleta site stage`: mirror trend markdown/PDF artifacts into a repo-local snapshot for custom CI or non-GitHub hosting
+- `recoleta site stage`: mirror trend/idea markdown artifacts plus trend PDFs into a repo-local snapshot for custom CI or non-GitHub hosting
 - `recoleta materialize outputs --site --pdf`: rerender item notes, trend notes, optional PDFs, and optional site output from existing DB state
 - `recoleta rag sync-vectors --period-start ... --period-end ...`: prewarm or rebuild trend-search vectors in LanceDB
 - `recoleta rag build-index`: build ANN/scalar indices for the current LanceDB embedding table

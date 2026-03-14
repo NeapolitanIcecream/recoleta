@@ -395,6 +395,131 @@ def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
     assert ">Link</h2>" in item_html
 
 
+def test_export_trend_static_site_writes_idea_pages_and_rewrites_links(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    item_note = write_markdown_note(
+        output_dir=output_dir,
+        item_id=51,
+        title="CodeScout",
+        source="rss",
+        canonical_url="https://example.com/codescout",
+        published_at=datetime(2026, 3, 9, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.91,
+        run_id="run-site-ideas-item",
+        summary="## Summary\n\nProblem clarification helps.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=91,
+        title="Code agents close the loop",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-ideas-trend",
+        overview_md="## Overview\n\nAgent workflows keep tightening.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-09--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        f"Start with [CodeScout](../Inbox/{item_note.name}) and [the daily trend](../Trends/{trend_note.name}).\n\n"
+        "## Opportunities\n\n"
+        "### Prompt CI gate\n\n"
+        "Use a release gate before shipping prompt changes.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    idea_page = site_dir / "ideas" / f"{idea_note.stem}.html"
+    assert idea_page.exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["ideas_total"] == 1
+    assert f"ideas/{idea_note.stem}.html" in manifest["files"]["idea_pages"]
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert "Latest idea briefs" in index_html
+    assert "Verification-first agent rollout" in index_html
+
+    ideas_index_html = (site_dir / "ideas" / "index.html").read_text(encoding="utf-8")
+    assert "Verification-first agent rollout" in ideas_index_html
+
+    detail_html = idea_page.read_text(encoding="utf-8")
+    assert f"../items/{item_note.stem}.html" in detail_html
+    assert f"../trends/{trend_note.stem}.html" in detail_html
+    assert "../Inbox/" not in detail_html
+    assert "../Trends/" not in detail_html
+    assert "Source markdown" in detail_html
+
+
+def test_stage_trend_site_source_mirrors_idea_markdown_and_manifest_entries(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=92,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-stage-ideas-trend",
+        overview_md="## Overview\n\nTrend note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = notes_root / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-09--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n",
+        encoding="utf-8",
+    )
+
+    staged_dir = tmp_path / "site-content" / "Trends"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root / "Trends",
+        output_dir=staged_dir,
+    )
+
+    assert (staged_dir.parent / "Ideas" / idea_note.name).exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["ideas_total"] == 1
+    assert f"Ideas/{idea_note.name}" in manifest["files"]["ideas_markdown"]
+
+
 def test_export_trend_static_site_rewrites_history_trend_links_to_html(
     tmp_path: Path,
 ) -> None:

@@ -94,17 +94,15 @@ def run_site_build_command(
             )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    stream_segment = (
-        f" streams={manifest['streams_total']}"
-        if int(manifest.get("streams_total") or 0) > 1
-        else ""
-    )
+    segments = [f"trends={manifest['trends_total']}"]
+    if int(manifest.get("ideas_total") or 0) > 0:
+        segments.append(f"ideas={manifest['ideas_total']}")
+    segments.append(f"topics={manifest['topics_total']}")
+    if int(manifest.get("streams_total") or 0) > 1:
+        segments.append(f"streams={manifest['streams_total']}")
+    segments.append(f"output={resolved_output_dir}")
     console.print(
-        "[green]site build completed[/green] "
-        f"trends={manifest['trends_total']} "
-        f"topics={manifest['topics_total']} "
-        f"{stream_segment}"
-        f"output={resolved_output_dir}"
+        "[green]site build completed[/green] " + " ".join(segments)
     )
 
 
@@ -179,17 +177,15 @@ def run_site_stage_command(
             )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    stream_segment = (
-        f" streams={manifest['streams_total']}"
-        if int(manifest.get("streams_total") or 0) > 1
-        else ""
-    )
+    segments = [f"trends={manifest['trends_total']}"]
+    if int(manifest.get("ideas_total") or 0) > 0:
+        segments.append(f"ideas={manifest['ideas_total']}")
+    segments.append(f"pdfs={manifest['pdf_total']}")
+    if int(manifest.get("streams_total") or 0) > 1:
+        segments.append(f"streams={manifest['streams_total']}")
+    segments.append(f"output={resolved_output_dir}")
     console.print(
-        "[green]site stage completed[/green] "
-        f"trends={manifest['trends_total']} "
-        f"pdfs={manifest['pdf_total']} "
-        f"{stream_segment}"
-        f"output={resolved_output_dir}"
+        "[green]site stage completed[/green] " + " ".join(segments)
     )
 
 
