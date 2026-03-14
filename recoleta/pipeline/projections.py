@@ -15,6 +15,7 @@ def run_projection_target(
     execute: Callable[[], T],
     warning_context: dict[str, Any] | None = None,
     sanitize_error: Callable[[str], str] | None = None,
+    reraise: bool = True,
 ) -> T | None:
     if not enabled:
         return None
@@ -34,7 +35,9 @@ def run_projection_target(
                 ),
             },
         )
-        raise
+        if reraise:
+            raise
+        return None
     record_metric(name=f"{metric_base}.emitted_total", value=1, unit="count")
     return result
 

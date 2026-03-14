@@ -338,6 +338,8 @@ Recommended logs:
 - `pipeline.trends.pass.synthesis`
 - `pipeline.trends.pass.ideas`
 - `pipeline.trends.projection.trend_publish`
+- `pipeline.trends.projection.trend_markdown`
+- `pipeline.trends.projection.trend_obsidian`
 - `pipeline.trends.projection.ideas_markdown`
 - `pipeline.trends.projection.ideas_obsidian`
 - `pipeline.trends.projection.ideas_documents`
@@ -388,6 +390,8 @@ Exit criteria:
 
 - projected trend documents remain stable
 - publish-only rewrites no longer mutate canonical output
+- trend markdown and obsidian projections share the same failure-handling helper
+- trend projection failures emit `pipeline.trends.projection.*.failed_total`
 
 ### Phase 3. Extract shared retrieval infrastructure
 
