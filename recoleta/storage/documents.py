@@ -325,6 +325,8 @@ class DocumentStoreMixin:
                 text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
                 {"rowid": normalized_chunk_id},
             )
+            if str(kind or "").strip().lower() == "meta":
+                return
             conn.execute(
                 text(
                     "INSERT INTO chunk_fts(rowid, text, doc_id, chunk_index, kind) "
@@ -487,6 +489,7 @@ class DocumentStoreMixin:
             chunk_fts MATCH :query
             AND d.doc_type = :doc_type
             AND d.scope = :scope
+            AND dc.kind IN ('summary', 'content')
             AND {period_pred}
             {"AND " + " AND ".join(extra_predicates) if extra_predicates else ""}
         ORDER BY rank ASC

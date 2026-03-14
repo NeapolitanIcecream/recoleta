@@ -105,6 +105,8 @@ to their source pass outputs:
 - document meta chunks may carry a reserved projection-provenance block
 - downstream repair/site flows should preserve this provenance rather than
   stripping it
+- this provenance must remain system metadata, not agent corpus: `meta` chunks
+  should stay out of agent-visible lexical/semantic retrieval paths
 
 ### 5. Add `ideas` as a separate pass, not a subtask of `trend_synthesis`
 

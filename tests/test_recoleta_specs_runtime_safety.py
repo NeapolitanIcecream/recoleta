@@ -45,6 +45,59 @@ def test_init_schema_sets_user_version_and_runtime_tables(tmp_path: Path) -> Non
     assert "pass_outputs" in lease_tables
 
 
+def test_init_schema_prunes_legacy_meta_rows_from_chunk_fts(tmp_path: Path) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+
+    with sqlite3.connect(repository.db_path) as conn:
+        conn.execute(
+            "INSERT INTO documents(doc_type, scope, granularity, period_start, period_end, title, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            (
+                "idea",
+                "default",
+                "day",
+                "2026-03-02T00:00:00+00:00",
+                "2026-03-03T00:00:00+00:00",
+                "Legacy idea",
+            ),
+        )
+        doc_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.execute(
+            "INSERT INTO document_chunks(doc_id, chunk_index, kind, text, text_hash, source_content_type, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            (
+                doc_id,
+                1,
+                "meta",
+                '{"_projection":{"pass_kind":"trend_synthesis"}}',
+                "legacy-meta-hash",
+                "trend_ideas_payload_json",
+            ),
+        )
+        chunk_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.execute(
+            "INSERT INTO chunk_fts(rowid, text, doc_id, chunk_index, kind) VALUES (?, ?, ?, ?, ?)",
+            (
+                chunk_id,
+                '{"_projection":{"pass_kind":"trend_synthesis"}}',
+                doc_id,
+                1,
+                "meta",
+            ),
+        )
+        conn.commit()
+
+    repository.init_schema()
+
+    with sqlite3.connect(repository.db_path) as conn:
+        remaining = int(
+            conn.execute("SELECT COUNT(*) FROM chunk_fts WHERE kind = 'meta'").fetchone()[0]
+        )
+
+    assert remaining == 0
+
+
 def test_init_schema_rejects_newer_schema_version(tmp_path: Path) -> None:
     db_path = tmp_path / "future.db"
     with sqlite3.connect(db_path) as conn:

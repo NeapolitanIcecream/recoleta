@@ -11,9 +11,10 @@ from loguru import logger
 from recoleta.config import TopicStreamRuntime
 from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
 from recoleta.pipeline.pass_runner import (
+    PassDefinition,
+    PassPersistSpec,
     ProjectionSpec,
-    persist_pass_output_envelope,
-    run_projection_specs,
+    run_pass_definition,
 )
 from recoleta.passes import (
     PassInputRef,
@@ -385,26 +386,117 @@ def run_ideas_stage(
         diagnostics=diagnostics,
     )
 
-    pass_output_id = persist_pass_output_envelope(
+    def _build_ideas_projection_specs(
+        pass_output_id: int | None,
+        _state: None,
+    ) -> list[ProjectionSpec]:
+        normalized_pass_output_id = int(pass_output_id or 0)
+        return [
+            ProjectionSpec(
+                name="documents",
+                enabled=True,
+                metric_base="pipeline.trends.projection.ideas_documents",
+                log=log.bind(module="pipeline.trends.projection.ideas_documents"),
+                failure_message=(
+                    "Ideas document projection failed pass_output_id={pass_output_id} "
+                    "error_type={error_type} error={error}"
+                ),
+                execute=lambda: _persist_ideas_document_projection(
+                    repository=service.repository,
+                    pass_output_id=normalized_pass_output_id,
+                    upstream_pass_output_id=upstream_pass_output_id,
+                    granularity=normalized_granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    payload=payload,
+                    scope=scope,
+                ),
+                warning_context={"pass_output_id": pass_output_id},
+                sanitize_error=service._sanitize_error_message,
+            ),
+            ProjectionSpec(
+                name="markdown",
+                enabled="markdown" in targets,
+                metric_base="pipeline.trends.projection.ideas_markdown",
+                log=log.bind(module="pipeline.trends.projection.ideas_markdown"),
+                failure_message=(
+                    "Ideas markdown projection failed pass_output_id={pass_output_id} "
+                    "error_type={error_type} error={error}"
+                ),
+                execute=lambda: write_markdown_ideas_note(
+                    repository=cast(Any, service.repository),
+                    output_dir=Path(service.settings.markdown_output_dir),
+                    pass_output_id=normalized_pass_output_id,
+                    upstream_pass_output_id=upstream_pass_output_id,
+                    granularity=normalized_granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    run_id=run_id,
+                    status=status.value,
+                    payload=payload,
+                    scope=scope,
+                    topics=list(trend_payload.topics or []),
+                ),
+                warning_context={"pass_output_id": pass_output_id},
+                sanitize_error=service._sanitize_error_message,
+            ),
+            ProjectionSpec(
+                name="obsidian",
+                enabled="obsidian" in targets
+                and service.settings.obsidian_vault_path is not None,
+                metric_base="pipeline.trends.projection.ideas_obsidian",
+                log=log.bind(module="pipeline.trends.projection.ideas_obsidian"),
+                failure_message=(
+                    "Ideas obsidian projection failed pass_output_id={pass_output_id} "
+                    "error_type={error_type} error={error}"
+                ),
+                execute=lambda: write_obsidian_ideas_note(
+                    repository=cast(Any, service.repository),
+                    vault_path=service.settings.obsidian_vault_path,
+                    base_folder=service.settings.obsidian_base_folder,
+                    pass_output_id=normalized_pass_output_id,
+                    upstream_pass_output_id=upstream_pass_output_id,
+                    granularity=normalized_granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    run_id=run_id,
+                    status=status.value,
+                    payload=payload,
+                    scope=scope,
+                    topics=list(trend_payload.topics or []),
+                ),
+                warning_context={"pass_output_id": pass_output_id},
+                sanitize_error=service._sanitize_error_message,
+            ),
+        ]
+
+    pass_execution = run_pass_definition(
         repository=service.repository,
-        envelope=envelope,
-        period_start=period_start,
-        period_end=period_end,
         record_metric=record_metric,
-        log=log.bind(module="pipeline.trends.pass.ideas"),
-        failure_message=(
-            "Ideas pass output persist failed granularity={granularity} "
-            "period_start={period_start} period_end={period_end} "
-            "pass_kind={pass_kind} error_type={error_type} error={error}"
+        definition=PassDefinition[None](
+            persist=PassPersistSpec(
+                envelope=envelope,
+                period_start=period_start,
+                period_end=period_end,
+                log=log.bind(module="pipeline.trends.pass.ideas"),
+                failure_message=(
+                    "Ideas pass output persist failed granularity={granularity} "
+                    "period_start={period_start} period_end={period_end} "
+                    "pass_kind={pass_kind} error_type={error_type} error={error}"
+                ),
+                warning_context={
+                    "granularity": normalized_granularity,
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                },
+                sanitize_error=service._sanitize_error_message,
+                persisted_metric_name="pipeline.trends.pass.ideas.persisted_total",
+            ),
+            should_project=status != PassStatus.SUPPRESSED,
+            build_projection_specs=_build_ideas_projection_specs,
         ),
-        warning_context={
-            "granularity": normalized_granularity,
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-        },
-        sanitize_error=service._sanitize_error_message,
-        persisted_metric_name="pipeline.trends.pass.ideas.persisted_total",
     )
+    pass_output_id = pass_execution.pass_output_id
     if pass_output_id is None:
         raise RuntimeError("ideas pass output persistence returned an empty id")
 
@@ -416,87 +508,7 @@ def run_ideas_stage(
             unit="count",
         )
     else:
-        projection_results = run_projection_specs(
-            record_metric=record_metric,
-            specs=[
-                ProjectionSpec(
-                    name="documents",
-                    enabled=True,
-                    metric_base="pipeline.trends.projection.ideas_documents",
-                    log=log.bind(module="pipeline.trends.projection.ideas_documents"),
-                    failure_message=(
-                        "Ideas document projection failed pass_output_id={pass_output_id} "
-                        "error_type={error_type} error={error}"
-                    ),
-                    execute=lambda: _persist_ideas_document_projection(
-                        repository=service.repository,
-                        pass_output_id=pass_output_id,
-                        upstream_pass_output_id=upstream_pass_output_id,
-                        granularity=normalized_granularity,
-                        period_start=period_start,
-                        period_end=period_end,
-                        payload=payload,
-                        scope=scope,
-                    ),
-                    warning_context={"pass_output_id": pass_output_id},
-                    sanitize_error=service._sanitize_error_message,
-                ),
-                ProjectionSpec(
-                    name="markdown",
-                    enabled="markdown" in targets,
-                    metric_base="pipeline.trends.projection.ideas_markdown",
-                    log=log.bind(module="pipeline.trends.projection.ideas_markdown"),
-                    failure_message=(
-                        "Ideas markdown projection failed pass_output_id={pass_output_id} "
-                        "error_type={error_type} error={error}"
-                    ),
-                    execute=lambda: write_markdown_ideas_note(
-                        repository=cast(Any, service.repository),
-                        output_dir=Path(service.settings.markdown_output_dir),
-                        pass_output_id=pass_output_id,
-                        upstream_pass_output_id=upstream_pass_output_id,
-                        granularity=normalized_granularity,
-                        period_start=period_start,
-                        period_end=period_end,
-                        run_id=run_id,
-                        status=status.value,
-                        payload=payload,
-                        scope=scope,
-                        topics=list(trend_payload.topics or []),
-                    ),
-                    warning_context={"pass_output_id": pass_output_id},
-                    sanitize_error=service._sanitize_error_message,
-                ),
-                ProjectionSpec(
-                    name="obsidian",
-                    enabled="obsidian" in targets
-                    and service.settings.obsidian_vault_path is not None,
-                    metric_base="pipeline.trends.projection.ideas_obsidian",
-                    log=log.bind(module="pipeline.trends.projection.ideas_obsidian"),
-                    failure_message=(
-                        "Ideas obsidian projection failed pass_output_id={pass_output_id} "
-                        "error_type={error_type} error={error}"
-                    ),
-                    execute=lambda: write_obsidian_ideas_note(
-                        repository=cast(Any, service.repository),
-                        vault_path=service.settings.obsidian_vault_path,
-                        base_folder=service.settings.obsidian_base_folder,
-                        pass_output_id=pass_output_id,
-                        upstream_pass_output_id=upstream_pass_output_id,
-                        granularity=normalized_granularity,
-                        period_start=period_start,
-                        period_end=period_end,
-                        run_id=run_id,
-                        status=status.value,
-                        payload=payload,
-                        scope=scope,
-                        topics=list(trend_payload.topics or []),
-                    ),
-                    warning_context={"pass_output_id": pass_output_id},
-                    sanitize_error=service._sanitize_error_message,
-                ),
-            ],
-        )
+        projection_results = pass_execution.projection_results
         raw_note_path = projection_results.get("markdown")
         note_path = raw_note_path if isinstance(raw_note_path, Path) else None
 
