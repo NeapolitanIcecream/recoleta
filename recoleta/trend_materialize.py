@@ -14,8 +14,6 @@ from recoleta.publish.trend_render_shared import (
     sanitize_trend_title,
 )
 from recoleta.trends import (
-    TrendCluster,
-    TrendEvolutionSection,
     TrendPayload,
     peer_history_windows_for_period,
 )
@@ -438,23 +436,3 @@ def materialize_trend_note_payload(
         highlights=highlights_for_notes,
         rewrite_stats=stats,
     )
-
-
-def persist_materialized_trend_payload(
-    *,
-    payload: TrendPayload,
-    materialized: MaterializedTrendNotePayload,
-) -> TrendPayload:
-    payload.title = materialized.title
-    payload.overview_md = materialized.overview_md
-    payload.highlights = list(materialized.highlights)
-    payload.evolution = (
-        TrendEvolutionSection.model_validate(materialized.evolution)
-        if materialized.evolution is not None
-        else None
-    )
-    payload.clusters = [
-        TrendCluster.model_validate(cluster_dict)
-        for cluster_dict in materialized.clusters
-    ]
-    return payload

@@ -133,3 +133,17 @@ class TrendResult:
     pass_output_id: int | None = None
     stream: str | None = None
     stream_results: list["TrendResult"] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class IdeasResult:
+    pass_output_id: int | None
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    title: str
+    status: str
+    note_path: Path | None = None
+    upstream_pass_output_id: int | None = None
+    stream: str | None = None
+    stream_results: list["IdeasResult"] = field(default_factory=list)

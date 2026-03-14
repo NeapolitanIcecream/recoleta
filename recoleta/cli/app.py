@@ -5,6 +5,7 @@ from pathlib import Path
 from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
 from recoleta.cli.db import run_db_clear_command, run_db_reset_command
+from recoleta.cli.ideas import run_ideas_command
 from recoleta.cli.ingest import run_ingest_command
 from recoleta.cli.materialize import run_materialize_outputs_command
 from recoleta.cli.maintenance import (
@@ -129,6 +130,32 @@ def trends(
         backfill=backfill,
         backfill_mode=backfill_mode,
         debug_pdf=debug_pdf,
+    )
+
+
+@app.command()
+def ideas(
+    granularity: str = typer.Option(
+        "day",
+        "--granularity",
+        help="Ideas granularity. Allowed: day, week, month.",
+    ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for ideas generation. Defaults to LLM_MODEL.",
+    ),
+) -> None:
+    """Generate opportunity ideas from an existing trend synthesis pass output."""
+    run_ideas_command(
+        granularity=granularity,
+        anchor_date=anchor_date,
+        model=model,
     )
 
 
