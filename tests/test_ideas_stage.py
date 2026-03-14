@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from sqlmodel import Session, select
 
 from recoleta.models import PassOutput
+import recoleta.pipeline.ideas_stage as ideas_stage_module
 from recoleta.pipeline import PipelineService
 from recoleta.passes import (
     PassStatus,
@@ -179,6 +181,68 @@ def test_ideas_stage_requires_upstream_trend_synthesis_output(
         repository=repository, run_id="run-ideas-missing-upstream"
     )
     assert metric_values["pipeline.trends.pass.ideas.upstream_missing_total"] == 1.0
+
+
+def test_record_ideas_debug_artifact_preserves_relative_path_segments() -> None:
+    artifacts: list[tuple[str, int | None, str, str]] = []
+
+    class _FakeRepository:
+        def add_artifact(
+            self, *, run_id: str, item_id: int | None, kind: str, path: str
+        ) -> None:
+            artifacts.append((run_id, item_id, kind, path))
+
+    class _FakeService:
+        def __init__(self) -> None:
+            self.settings = type(
+                "Settings",
+                (),
+                {
+                    "write_debug_artifacts": True,
+                    "artifacts_dir": Path("/tmp/artifacts"),
+                },
+            )()
+            self.repository = _FakeRepository()
+
+        def _write_debug_artifact(  # type: ignore[no-untyped-def]
+            self,
+            *,
+            run_id,
+            item_id,
+            kind,
+            payload,
+        ):
+            return Path(run_id) / "no-item" / f"{kind}.json"
+
+    payload = ideas_stage_module.TrendIdeasPayload.model_validate(
+        {
+            "title": "Ideas",
+            "granularity": "day",
+            "period_start": datetime(2026, 3, 2, tzinfo=UTC).isoformat(),
+            "period_end": datetime(2026, 3, 3, tzinfo=UTC).isoformat(),
+            "summary_md": "One precise idea.",
+            "ideas": [],
+        }
+    )
+
+    ideas_stage_module._record_ideas_debug_artifact(
+        service=cast(Any, _FakeService()),
+        run_id="run-ideas-debug",
+        upstream_pass_output_id=7,
+        status=PassStatus.SUPPRESSED,
+        trend_snapshot_pack_md="## snapshot",
+        ideas_payload=payload,
+        debug={"prompt_chars": 123},
+    )
+
+    assert artifacts == [
+        (
+            "run-ideas-debug",
+            None,
+            "ideas_llm_response",
+            "run-ideas-debug/no-item/ideas_llm_response.json",
+        )
+    ]
 
 
 def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(

@@ -505,6 +505,131 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
     assert f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})" in idea_markdown
 
 
+def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppressed(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _trend_doc_id, _ = _seed_materialize_fixture(repository=repository)
+    output_dir = tmp_path / "outputs"
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    trend_payload = TrendPayload.model_validate(
+        {
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
+            "topics": ["agents", "robotics"],
+            "clusters": [],
+            "highlights": [],
+        }
+    )
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-trend-pass-latest-window",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=trend_payload.model_dump(mode="json"),
+    )
+    assert trend_pass_output.id is not None
+
+    older_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Older succeeded ideas",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "An older ideas run emitted one opportunity.",
+            "ideas": [
+                {
+                    "title": "Stale idea that should disappear",
+                    "kind": "tooling_wedge",
+                    "thesis": "This should not survive materialization.",
+                    "why_now": "It came from an older pass output.",
+                    "what_changed": "Nothing relevant anymore.",
+                    "user_or_job": "Nobody after suppression.",
+                    "evidence_refs": [],
+                    "validation_next_step": "Do not run this.",
+                    "time_horizon": "now",
+                }
+            ],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-ideas-pass-older-success",
+        pass_kind="trend_ideas",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=older_payload.model_dump(mode="json"),
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                scope="default",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    suppressed_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Latest suppressed ideas",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "Evidence is too thin for a durable opportunity brief.",
+            "ideas": [],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-ideas-pass-latest-suppressed",
+        pass_kind="trend_ideas",
+        status="suppressed",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=suppressed_payload.model_dump(mode="json"),
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                scope="default",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    result = materialize_outputs(
+        repository=repository,
+        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+    )
+
+    idea_note_path = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
+    note_text = idea_note_path.read_text(encoding="utf-8")
+
+    assert result.scopes[0].ideas_outputs_total == 1
+    assert "status: suppressed" in note_text
+    assert "# Latest suppressed ideas" in note_text
+    assert "Evidence is too thin for a durable opportunity brief." in note_text
+    assert "Stale idea that should disappear" not in note_text
+
+
 def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

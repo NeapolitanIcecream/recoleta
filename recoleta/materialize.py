@@ -189,7 +189,7 @@ def _materialize_idea_pass_outputs(
     with Session(repository.engine) as session:
         statement = select(PassOutput).where(
             PassOutput.pass_kind == "trend_ideas",
-            PassOutput.status == "succeeded",
+            cast(Any, PassOutput.status).in_(("succeeded", "suppressed")),
             cast(Any, PassOutput.scope) == scope,
         )
         if granularity is not None:
