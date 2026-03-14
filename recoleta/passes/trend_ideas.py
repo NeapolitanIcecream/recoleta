@@ -127,6 +127,8 @@ def normalize_trend_ideas_payload(
                 continue
             seen_refs.add(key)
             evidence_refs.append(ref)
+        if not evidence_refs:
+            continue
         normalized_ideas.append(
             idea.model_copy(update={"evidence_refs": evidence_refs})
         )

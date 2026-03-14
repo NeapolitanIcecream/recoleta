@@ -527,6 +527,113 @@ def test_ideas_stage_persists_suppressed_pass_output_without_projection(
     assert metric_values["pipeline.trends.pass.ideas.suppressed_total"] == 1.0
 
 
+def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    upstream_pass_output_id = _persist_trend_synthesis_pass_output(
+        repository=repository,
+        run_id="run-trend-upstream-ungrounded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendPayload.model_validate(
+            {
+                "title": "Canonical Trend",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "overview_md": "Signals exist but the candidate idea is ungrounded.",
+                "topics": ["agents"],
+                "clusters": [],
+                "highlights": [],
+            }
+        ),
+    )
+
+    from recoleta.rag import ideas_agent
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return (
+            ideas_agent.TrendIdeasPayload.model_validate(
+                {
+                    "title": "Why now ideas",
+                    "granularity": "day",
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "summary_md": "The candidate idea lacks concrete evidence anchors.",
+                    "ideas": [
+                        {
+                            "title": "Ungrounded workflow wedge",
+                            "kind": "tooling_wedge",
+                            "thesis": "Ship the idea anyway.",
+                            "why_now": "Because the model suggested it.",
+                            "what_changed": "Nothing verifiable was cited.",
+                            "user_or_job": "Unknown user.",
+                            "evidence_refs": [],
+                            "validation_next_step": "Ask for evidence first.",
+                            "time_horizon": "now",
+                        }
+                    ],
+                }
+            ),
+            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+        )
+
+    monkeypatch.setattr(ideas_agent, "generate_trend_ideas_payload", _fake_generate)
+
+    result = service.ideas(
+        run_id="run-ideas-ungrounded",
+        granularity="day",
+        anchor_date=date(2026, 3, 2),
+        llm_model="test/fake-model",
+    )
+
+    assert result.status == PassStatus.SUPPRESSED.value
+    assert result.pass_output_id is not None
+    assert result.upstream_pass_output_id == upstream_pass_output_id
+    assert result.note_path is None
+    assert not (settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md").exists()
+
+    with Session(repository.engine) as session:
+        row = session.exec(
+            select(PassOutput).where(PassOutput.id == result.pass_output_id)
+        ).first()
+        assert row is not None
+        assert row.status == PassStatus.SUPPRESSED.value
+        assert json.loads(row.payload_json)["ideas"] == []
+
+    docs = repository.list_documents(
+        doc_type="idea",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    assert docs == []
+
+    metric_values = _metric_values(repository=repository, run_id="run-ideas-ungrounded")
+    assert metric_values["pipeline.trends.pass.ideas.suppressed_total"] == 1.0
+
+
 def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

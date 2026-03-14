@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from loguru import logger
@@ -150,6 +150,73 @@ def resolve_corpus_query_sources(
 ) -> list[tuple[str, str | None]]:
     spec = CorpusSpec.from_rag_sources(rag_sources)
     return spec.resolve_sources(doc_type=doc_type, granularity=granularity)
+
+
+def _coerce_utc_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+def _document_source_key(doc: Any) -> tuple[str, str | None] | None:
+    normalized_doc_type = str(getattr(doc, "doc_type", "") or "").strip().lower()
+    if normalized_doc_type not in {"item", "trend", "idea"}:
+        return None
+    if normalized_doc_type == "item":
+        return normalized_doc_type, None
+    normalized_granularity = (
+        str(getattr(doc, "granularity", "") or "").strip().lower() or None
+    )
+    return normalized_doc_type, normalized_granularity
+
+
+def _document_visible_in_corpus(
+    *,
+    doc: Any,
+    scope: str,
+    period_start: datetime,
+    period_end: datetime,
+    corpus_spec: CorpusSpec,
+) -> bool:
+    source_key = _document_source_key(doc)
+    if source_key is None:
+        return False
+
+    normalized_scope = str(getattr(doc, "scope", "") or "").strip() or DEFAULT_TOPIC_STREAM
+    if normalized_scope != (str(scope or "").strip() or DEFAULT_TOPIC_STREAM):
+        return False
+
+    active_period_start = _coerce_utc_datetime(period_start)
+    active_period_end = _coerce_utc_datetime(period_end)
+    if active_period_start is None or active_period_end is None:
+        return False
+
+    allowed_sources = set(
+        corpus_spec.resolve_sources(
+            doc_type=source_key[0],
+            granularity=source_key[1],
+        )
+    )
+    if source_key not in allowed_sources:
+        return False
+
+    if source_key[0] == "item":
+        published_at = _coerce_utc_datetime(getattr(doc, "published_at", None))
+        return (
+            published_at is not None
+            and active_period_start <= published_at < active_period_end
+        )
+
+    doc_period_start = _coerce_utc_datetime(getattr(doc, "period_start", None))
+    doc_period_end = _coerce_utc_datetime(getattr(doc, "period_end", None))
+    return (
+        doc_period_start is not None
+        and doc_period_end is not None
+        and doc_period_start < active_period_end
+        and doc_period_end > active_period_start
+    )
 
 
 def _doc_event_sort_key(doc: Any) -> tuple[float, int]:
@@ -499,6 +566,38 @@ class SearchService:
     embedding_max_errors: int = 0
     llm_connection: LLMConnectionConfig | None = None
 
+    def _visible_document(self, *, doc_id: int) -> Any | None:
+        normalized_doc_id = int(doc_id or 0)
+        if normalized_doc_id <= 0:
+            return None
+        doc = self.repository.get_document(doc_id=normalized_doc_id)
+        if doc is None:
+            return None
+        if not _document_visible_in_corpus(
+            doc=doc,
+            scope=self.scope,
+            period_start=self.period_start,
+            period_end=self.period_end,
+            corpus_spec=self.corpus_spec,
+        ):
+            return None
+        return doc
+
+    def _visible_chunk(self, *, doc_id: int, chunk_index: int) -> Any | None:
+        doc = self._visible_document(doc_id=doc_id)
+        if doc is None:
+            return None
+        chunk = self.repository.read_document_chunk(
+            doc_id=int(getattr(doc, "id") or 0),
+            chunk_index=int(chunk_index or 0),
+        )
+        if chunk is None:
+            return None
+        normalized_kind = str(getattr(chunk, "kind", "") or "").strip().lower()
+        if normalized_kind not in {"summary", "content"}:
+            return None
+        return chunk
+
     def list_docs(
         self,
         *,
@@ -547,7 +646,7 @@ class SearchService:
         return {"docs": out, "returned": len(out)}
 
     def get_doc(self, *, doc_id: int) -> dict[str, Any]:
-        doc = self.repository.get_document(doc_id=int(doc_id or 0))
+        doc = self._visible_document(doc_id=doc_id)
         if doc is None:
             return {"doc": None}
         return {"doc": serialize_document(repository=self.repository, doc=doc)}
@@ -559,7 +658,7 @@ class SearchService:
         content_limit: int = 2,
         content_chars: int = 600,
     ) -> dict[str, Any]:
-        doc = self.repository.get_document(doc_id=int(doc_id or 0))
+        doc = self._visible_document(doc_id=doc_id)
         if doc is None:
             return {"bundle": None}
 
@@ -597,10 +696,7 @@ class SearchService:
         }
 
     def read_chunk(self, *, doc_id: int, chunk_index: int) -> dict[str, Any]:
-        chunk = self.repository.read_document_chunk(
-            doc_id=int(doc_id or 0),
-            chunk_index=int(chunk_index or 0),
-        )
+        chunk = self._visible_chunk(doc_id=doc_id, chunk_index=chunk_index)
         if chunk is None:
             return {"chunk": None}
         return {

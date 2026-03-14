@@ -95,3 +95,104 @@ def test_search_text_excludes_meta_chunks_from_agent_visible_hits(
     )
     assert summary_hits["returned"] == 1
     assert summary_hits["hits"][0]["kind"] == "summary"
+    assert service.read_chunk(doc_id=int(doc.id), chunk_index=1) == {"chunk": None}
+
+
+def test_doc_id_helpers_respect_active_corpus_bounds(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    visible_doc = repository.upsert_document_for_idea(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        title="Visible idea",
+        scope="default",
+    )
+    hidden_scope_doc = repository.upsert_document_for_idea(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        title="Other stream idea",
+        scope="other",
+    )
+    hidden_window_doc = repository.upsert_document_for_idea(
+        granularity="day",
+        period_start=datetime(2026, 2, 1, tzinfo=UTC),
+        period_end=datetime(2026, 2, 2, tzinfo=UTC),
+        title="Older idea",
+        scope="default",
+    )
+    assert visible_doc.id is not None
+    assert hidden_scope_doc.id is not None
+    assert hidden_window_doc.id is not None
+
+    repository.upsert_document_chunk(
+        doc_id=int(visible_doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="Visible summary.",
+        source_content_type="trend_ideas_summary",
+    )
+    repository.upsert_document_chunk(
+        doc_id=int(hidden_scope_doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="Other stream summary.",
+        source_content_type="trend_ideas_summary",
+    )
+    repository.upsert_document_chunk(
+        doc_id=int(hidden_window_doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="Older summary.",
+        source_content_type="trend_ideas_summary",
+    )
+
+    service = SearchService(
+        repository=repository,
+        vector_store=LanceVectorStore(
+            db_dir=tmp_path / "lancedb",
+            table_name="test_doc_visibility",
+        ),
+        run_id="run-doc-visibility",
+        period_start=period_start,
+        period_end=period_end,
+        corpus_spec=CorpusSpec.from_rag_sources(
+            [{"doc_type": "idea", "granularity": "day"}]
+        ),
+        embedding_model="test/fake-embedding",
+        embedding_dimensions=None,
+        embedding_batch_max_inputs=8,
+        embedding_batch_max_chars=2000,
+        scope="default",
+    )
+
+    listed = service.list_docs(doc_type="idea", granularity="day", limit=10)
+    assert [doc["doc_id"] for doc in listed["docs"]] == [int(visible_doc.id)]
+
+    visible_doc_result = service.get_doc(doc_id=int(visible_doc.id))
+    assert visible_doc_result["doc"] is not None
+    assert visible_doc_result["doc"]["doc_id"] == int(visible_doc.id)
+    assert service.get_doc(doc_id=int(hidden_scope_doc.id)) == {"doc": None}
+    assert service.get_doc(doc_id=int(hidden_window_doc.id)) == {"doc": None}
+
+    visible_bundle = service.get_doc_bundle(doc_id=int(visible_doc.id))
+    assert visible_bundle["bundle"] is not None
+    assert visible_bundle["bundle"]["doc"]["doc_id"] == int(visible_doc.id)
+    assert service.get_doc_bundle(doc_id=int(hidden_scope_doc.id)) == {"bundle": None}
+    assert service.get_doc_bundle(doc_id=int(hidden_window_doc.id)) == {"bundle": None}
+
+    visible_chunk = service.read_chunk(doc_id=int(visible_doc.id), chunk_index=0)
+    assert visible_chunk["chunk"] is not None
+    assert visible_chunk["chunk"]["text"] == "Visible summary."
+    assert service.read_chunk(doc_id=int(hidden_scope_doc.id), chunk_index=0) == {
+        "chunk": None
+    }
+    assert service.read_chunk(doc_id=int(hidden_window_doc.id), chunk_index=0) == {
+        "chunk": None
+    }
