@@ -180,6 +180,25 @@ class Metric(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class PassOutput(SQLModel, table=True):
+    __tablename__ = "pass_outputs"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(foreign_key="runs.id", index=True)
+    scope: str = Field(default="default", max_length=64, index=True)
+    pass_kind: str = Field(max_length=64, index=True)
+    status: str = Field(max_length=24, index=True)
+    granularity: str | None = Field(default=None, max_length=16, index=True)
+    period_start: datetime | None = Field(default=None, index=True)
+    period_end: datetime | None = Field(default=None, index=True)
+    schema_version: int = Field(default=1)
+    content_hash: str = Field(max_length=64, index=True)
+    payload_json: str = Field(default="{}", sa_type=Text)
+    diagnostics_json: str = Field(default="{}", sa_type=Text)
+    input_refs_json: str = Field(default="[]", sa_type=Text)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class SourcePullState(SQLModel, table=True):
     __tablename__ = "source_pull_states"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (

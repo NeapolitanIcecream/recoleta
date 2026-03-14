@@ -10,6 +10,7 @@ from recoleta.models import (
     Document,
     DocumentChunk,
     Item,
+    PassOutput,
     TrendDelivery,
 )
 from recoleta.types import (
@@ -182,6 +183,36 @@ class RepositoryPort(Protocol):
         self, *, run_id: str, item_id: int | None, kind: str, path: str
     ) -> None: ...
 
+    def create_pass_output(
+        self,
+        *,
+        run_id: str,
+        pass_kind: str,
+        status: str,
+        scope: str = "default",
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+        schema_version: int = 1,
+        payload: dict[str, Any] | list[Any] | None = None,
+        diagnostics: dict[str, Any] | list[Any] | None = None,
+        input_refs: list[dict[str, Any]] | None = None,
+        content_hash: str | None = None,
+    ) -> PassOutput: ...
+
+    def get_pass_output(self, *, pass_output_id: int) -> PassOutput | None: ...
+
+    def get_latest_pass_output(
+        self,
+        *,
+        pass_kind: str,
+        scope: str = "default",
+        status: str | None = None,
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> PassOutput | None: ...
+
     @staticmethod
     def decode_list(value: str | None) -> list[str]: ...
 
@@ -339,6 +370,36 @@ class AnalysisRepositoryPort(Protocol):
     def add_artifact(
         self, *, run_id: str, item_id: int | None, kind: str, path: str
     ) -> None: ...
+
+    def create_pass_output(
+        self,
+        *,
+        run_id: str,
+        pass_kind: str,
+        status: str,
+        scope: str = "default",
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+        schema_version: int = 1,
+        payload: dict[str, Any] | list[Any] | None = None,
+        diagnostics: dict[str, Any] | list[Any] | None = None,
+        input_refs: list[dict[str, Any]] | None = None,
+        content_hash: str | None = None,
+    ) -> PassOutput: ...
+
+    def get_pass_output(self, *, pass_output_id: int) -> PassOutput | None: ...
+
+    def get_latest_pass_output(
+        self,
+        *,
+        pass_kind: str,
+        scope: str = "default",
+        status: str | None = None,
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> PassOutput | None: ...
 
 
 class PublishRepositoryPort(Protocol):
@@ -514,6 +575,36 @@ class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
     def add_artifact(
         self, *, run_id: str, item_id: int | None, kind: str, path: str
     ) -> None: ...
+
+    def create_pass_output(
+        self,
+        *,
+        run_id: str,
+        pass_kind: str,
+        status: str,
+        scope: str = "default",
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+        schema_version: int = 1,
+        payload: dict[str, Any] | list[Any] | None = None,
+        diagnostics: dict[str, Any] | list[Any] | None = None,
+        input_refs: list[dict[str, Any]] | None = None,
+        content_hash: str | None = None,
+    ) -> PassOutput: ...
+
+    def get_pass_output(self, *, pass_output_id: int) -> PassOutput | None: ...
+
+    def get_latest_pass_output(
+        self,
+        *,
+        pass_kind: str,
+        scope: str = "default",
+        status: str | None = None,
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> PassOutput | None: ...
 
     def has_sent_trend_delivery(
         self, *, doc_id: int, channel: str, destination: str, content_hash: str

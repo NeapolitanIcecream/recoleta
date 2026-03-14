@@ -130,5 +130,6 @@ class TrendResult:
     period_start: datetime
     period_end: datetime
     title: str
+    pass_output_id: int | None = None
     stream: str | None = None
     stream_results: list["TrendResult"] = field(default_factory=list)

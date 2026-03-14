@@ -42,6 +42,7 @@ def test_init_schema_sets_user_version_and_runtime_tables(tmp_path: Path) -> Non
     assert version == CURRENT_SCHEMA_VERSION
     assert "heartbeat_at" in run_columns
     assert "workspace_leases" in lease_tables
+    assert "pass_outputs" in lease_tables
 
 
 def test_init_schema_rejects_newer_schema_version(tmp_path: Path) -> None:
