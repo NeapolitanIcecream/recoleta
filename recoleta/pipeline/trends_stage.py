@@ -18,6 +18,7 @@ from recoleta.models import (
     DELIVERY_STATUS_SENT,
 )
 from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
+from recoleta.pipeline.projections import run_projection_target
 from recoleta.passes import build_trend_synthesis_pass_output
 from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
 from recoleta.publish import (
@@ -1268,8 +1269,17 @@ def run_trends_stage(
         )
 
         if "markdown" in targets or telegram_can_attempt_delivery:
-            try:
-                markdown_note_path = write_markdown_trend_note(
+            markdown_note_path = run_projection_target(
+                enabled=True,
+                metric_base="pipeline.trends.projection.trend_markdown",
+                record_metric=record_metric,
+                log=log.bind(module="pipeline.trends.projection.trend_markdown"),
+                failure_message=(
+                    "Trend markdown projection failed doc_id={doc_id} "
+                    "granularity={granularity} period_start={period_start} "
+                    "period_end={period_end} error_type={error_type} error={error}"
+                ),
+                execute=lambda: write_markdown_trend_note(
                     output_dir=service.settings.markdown_output_dir,
                     trend_doc_id=doc_id,
                     title=materialized.title,
@@ -1284,15 +1294,28 @@ def run_trends_stage(
                     clusters=materialized.clusters,
                     highlights=materialized.highlights,
                     output_language=service.settings.llm_output_language,
-                )
-            except Exception as note_exc:  # noqa: BLE001
-                log.bind(module="pipeline.trends.markdown_note").warning(
-                    "Trend markdown note write failed: {}",
-                    service._sanitize_error_message(str(note_exc)),
-                )
+                ),
+                warning_context={
+                    "doc_id": doc_id,
+                    "granularity": normalized_granularity,
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                },
+                sanitize_error=service._sanitize_error_message,
+                reraise=False,
+            )
         if "obsidian" in targets and service.settings.obsidian_vault_path is not None:
-            try:
-                write_obsidian_trend_note(
+            _ = run_projection_target(
+                enabled=True,
+                metric_base="pipeline.trends.projection.trend_obsidian",
+                record_metric=record_metric,
+                log=log.bind(module="pipeline.trends.projection.trend_obsidian"),
+                failure_message=(
+                    "Trend obsidian projection failed doc_id={doc_id} "
+                    "granularity={granularity} period_start={period_start} "
+                    "period_end={period_end} error_type={error_type} error={error}"
+                ),
+                execute=lambda: write_obsidian_trend_note(
                     vault_path=service.settings.obsidian_vault_path,
                     base_folder=service.settings.obsidian_base_folder,
                     trend_doc_id=doc_id,
@@ -1308,12 +1331,16 @@ def run_trends_stage(
                     clusters=materialized.clusters,
                     highlights=materialized.highlights,
                     output_language=service.settings.llm_output_language,
-                )
-            except Exception as note_exc:  # noqa: BLE001
-                log.bind(module="pipeline.trends.obsidian_note").warning(
-                    "Trend obsidian note write failed: {}",
-                    service._sanitize_error_message(str(note_exc)),
-                )
+                ),
+                warning_context={
+                    "doc_id": doc_id,
+                    "granularity": normalized_granularity,
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                },
+                sanitize_error=service._sanitize_error_message,
+                reraise=False,
+            )
 
         if "telegram" in targets:
             if empty_corpus:

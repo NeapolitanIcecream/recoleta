@@ -414,7 +414,7 @@ def run_ideas_stage(
             enabled=True,
             metric_base="pipeline.trends.projection.ideas_documents",
             record_metric=record_metric,
-            log=log,
+            log=log.bind(module="pipeline.trends.projection.ideas_documents"),
             failure_message=(
                 "Ideas document projection failed pass_output_id={pass_output_id} "
                 "error_type={error_type} error={error}"
@@ -434,7 +434,7 @@ def run_ideas_stage(
             enabled="markdown" in targets,
             metric_base="pipeline.trends.projection.ideas_markdown",
             record_metric=record_metric,
-            log=log,
+            log=log.bind(module="pipeline.trends.projection.ideas_markdown"),
             failure_message=(
                 "Ideas markdown projection failed pass_output_id={pass_output_id} "
                 "error_type={error_type} error={error}"
@@ -460,7 +460,7 @@ def run_ideas_stage(
             enabled="obsidian" in targets and service.settings.obsidian_vault_path is not None,
             metric_base="pipeline.trends.projection.ideas_obsidian",
             record_metric=record_metric,
-            log=log,
+            log=log.bind(module="pipeline.trends.projection.ideas_obsidian"),
             failure_message=(
                 "Ideas obsidian projection failed pass_output_id={pass_output_id} "
                 "error_type={error_type} error={error}"
