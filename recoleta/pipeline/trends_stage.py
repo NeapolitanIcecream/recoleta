@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
 import hashlib
@@ -16,6 +17,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
+from recoleta.passes import build_trend_synthesis_pass_output
 from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
 from recoleta.publish import (
     build_telegram_trend_document_caption,
@@ -118,7 +120,6 @@ class TrendStageService(Protocol):
 
     @staticmethod
     def _classify_exception(exc: BaseException) -> dict[str, Any]: ...
-
 
 def run_trends_stage(
     service: TrendStageService,
@@ -529,6 +530,21 @@ def run_trends_stage(
             unit="count",
         )
         empty_corpus = corpus_docs_total <= 0
+        overview_pack_md: str | None = None
+        history_pack_md: str | None = None
+        rag_sources: list[dict[str, str | None]] | None = None
+        ranking_n: int | None = None
+        rep_source_doc_type: str | None = None
+        evolution_max_signals: int | None = None
+        overview_pack_stats: dict[str, Any] | None = None
+        history_pack_stats: dict[str, Any] | None = None
+        evolution_normalization_stats = {
+            "history_windows_normalized_total": 0,
+            "history_windows_dropped_total": 0,
+            "signals_dropped_total": 0,
+        }
+        evolution_suppressed_without_history = False
+        plan: trends.TrendGenerationPlan | None = None
 
         if empty_corpus:
             log.info(
@@ -575,21 +591,12 @@ def run_trends_stage(
                 value=0.0,
                 unit="bool",
             )
-            overview_pack_md: str | None = None
-            history_pack_md: str | None = None
-            rag_sources: list[dict[str, str | None]] | None = None
-            ranking_n: int | None = None
-            rep_source_doc_type: str | None = None
-            evolution_max_signals: int | None = None
-            overview_pack_stats: dict[str, Any] | None = None
-            history_pack_stats: dict[str, Any] | None = None
             self_similar_enabled = bool(
                 getattr(service.settings, "trends_self_similar_enabled", False)
             )
             peer_history_enabled = bool(
                 getattr(service.settings, "trends_peer_history_enabled", False)
             )
-            plan: trends.TrendGenerationPlan | None = None
             if self_similar_enabled or peer_history_enabled:
                 plan = trends.TrendGenerationPlan(
                     target_granularity=normalized_granularity,
@@ -715,11 +722,6 @@ def run_trends_stage(
                 metric_namespace=metric_namespace,
                 llm_connection=service._llm_connection,
             )
-            evolution_normalization_stats = {
-                "history_windows_normalized_total": 0,
-                "history_windows_dropped_total": 0,
-                "signals_dropped_total": 0,
-            }
             if payload.evolution is not None and plan is not None:
                 available_window_ids = set()
                 if isinstance(history_pack_stats, dict):
@@ -1067,6 +1069,102 @@ def run_trends_stage(
             value=rep_failed_clusters_total,
             unit="count",
         )
+
+        trend_synthesis_pass_output_id: int | None = None
+        trend_synthesis_diagnostics: dict[str, Any] = {
+            "context_packs": {
+                "overview_pack_md": overview_pack_md,
+                "history_pack_md": history_pack_md,
+            },
+            "overview_pack_stats": overview_pack_stats,
+            "history_pack_stats": history_pack_stats,
+            "evolution": {
+                "present": payload.evolution is not None,
+                "signals_total": len(payload.evolution.signals or [])
+                if payload.evolution is not None
+                else 0,
+                "suppressed_without_history": evolution_suppressed_without_history,
+                "normalization": evolution_normalization_stats,
+            },
+            "rep_enforcement": {
+                "dropped_non_item_total": rep_dropped_non_item_total,
+                "backfilled_total": rep_backfilled_total,
+                "failed_clusters_total": rep_failed_clusters_total,
+            },
+        }
+        if isinstance(debug, dict):
+            trend_synthesis_diagnostics["debug"] = debug
+        try:
+            trend_synthesis_envelope = build_trend_synthesis_pass_output(
+                run_id=run_id,
+                scope=scope,
+                granularity=normalized_granularity,
+                period_start=period_start,
+                period_end=period_end,
+                payload=payload,
+                diagnostics=trend_synthesis_diagnostics,
+            )
+            pass_output = service.repository.create_pass_output(
+                run_id=trend_synthesis_envelope.run_id,
+                pass_kind=trend_synthesis_envelope.pass_kind,
+                status=trend_synthesis_envelope.status.value,
+                scope=trend_synthesis_envelope.scope,
+                granularity=trend_synthesis_envelope.granularity,
+                period_start=period_start,
+                period_end=period_end,
+                schema_version=trend_synthesis_envelope.schema_version,
+                payload=trend_synthesis_envelope.payload,
+                diagnostics=trend_synthesis_envelope.diagnostics,
+                input_refs=[
+                    ref.model_dump(mode="json")
+                    for ref in trend_synthesis_envelope.input_refs
+                ],
+            )
+            trend_synthesis_pass_output_id = int(getattr(pass_output, "id") or 0) or None
+            record_metric(
+                name="pipeline.trends.pass.synthesis.persisted_total",
+                value=1,
+                unit="count",
+            )
+        except Exception as pass_output_exc:  # noqa: BLE001
+            record_metric(
+                name="pipeline.trends.pass_outputs.persist_failed_total",
+                value=1,
+                unit="count",
+            )
+            log.bind(module="pipeline.trends.pass.synthesis").warning(
+                "Trend synthesis pass output persist failed: {}",
+                service._sanitize_error_message(str(pass_output_exc)),
+            )
+            artifact_path = service._write_debug_artifact(
+                run_id=run_id,
+                item_id=None,
+                kind="pass_output_failure",
+                payload={
+                    "stage": "trends",
+                    "pass_kind": "trend_synthesis",
+                    "error_type": type(pass_output_exc).__name__,
+                    "error_message": service._sanitize_error_message(
+                        str(pass_output_exc)
+                    ),
+                    "granularity": normalized_granularity,
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                },
+            )
+            if artifact_path is not None:
+                try:
+                    service.repository.add_artifact(
+                        run_id=run_id,
+                        item_id=None,
+                        kind="pass_output_failure",
+                        path=str(artifact_path),
+                    )
+                except Exception as artifact_exc:  # noqa: BLE001
+                    log.warning(
+                        "Trends pass output failure artifact record failed: {}",
+                        service._sanitize_error_message(str(artifact_exc)),
+                    )
 
         materialized = materialize_trend_note_payload(
             repository=cast(Any, service.repository),
@@ -1420,6 +1518,7 @@ def run_trends_stage(
                     "period_start": period_start.isoformat(),
                     "period_end": period_end.isoformat(),
                     "trend_doc_id": doc_id,
+                    "trend_synthesis_pass_output_id": trend_synthesis_pass_output_id,
                     "debug": debug,
                 },
             )
@@ -1477,6 +1576,7 @@ def run_trends_stage(
             period_start=period_start,
             period_end=period_end,
             title=str(payload.title),
+            pass_output_id=trend_synthesis_pass_output_id,
         )
     except Exception as exc:
         sanitized_error = service._sanitize_error_message(str(exc))
@@ -1584,6 +1684,7 @@ def run_trends_topic_streams_stage(
             period_start=period_start,
             period_end=period_end,
             title="Trend",
+            pass_output_id=None,
             stream_results=[],
         )
 
@@ -1601,6 +1702,7 @@ def run_trends_topic_streams_stage(
         period_start=first.period_start,
         period_end=first.period_end,
         title=first.title,
+        pass_output_id=first.pass_output_id,
         stream=first.stream,
         stream_results=results,
     )
