@@ -51,6 +51,7 @@ from recoleta.pipeline.publish_stage import (
     run_publish_stage,
     run_publish_topic_streams_stage,
 )
+from recoleta.pipeline.ideas_stage import run_ideas_stage
 from recoleta.pipeline import topic_streams as pipeline_topic_streams
 from recoleta.pipeline.trends_stage import (
     run_trends_stage,
@@ -70,6 +71,7 @@ from recoleta.types import (
     ItemStateUpdate,
     MetricPoint,
     PublishResult,
+    IdeasResult,
     TrendResult,
 )
 
@@ -3975,6 +3977,22 @@ class PipelineService:
             backfill_mode=backfill_mode,
             debug_pdf=debug_pdf,
             reuse_existing_corpus=reuse_existing_corpus,
+        )
+
+    def ideas(
+        self,
+        *,
+        run_id: str,
+        granularity: str = "day",
+        anchor_date: date | None = None,
+        llm_model: str | None = None,
+    ) -> IdeasResult:
+        return run_ideas_stage(
+            self,
+            run_id=run_id,
+            granularity=granularity,
+            anchor_date=anchor_date,
+            llm_model=llm_model,
         )
 
     def _trends_topic_streams(

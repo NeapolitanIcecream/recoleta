@@ -1,7 +1,7 @@
 # Pass-Oriented Trends And Ideas Plan
 
 Date: 2026-03-14
-Status: Draft
+Status: Implemented
 
 ## Scope
 
@@ -15,6 +15,16 @@ and rerunnable pass.
 Related ADR:
 
 - `docs/adr/0030-pass-oriented-trends-and-ideas.md`
+
+## Implementation Notes
+
+As of 2026-03-14, the planned phases have been implemented in the repo:
+
+- Phase 0: pass primitives and `pass_outputs` persistence
+- Phase 1: canonical `trend_synthesis` dual-write
+- Phase 2: canonical trend payload persistence before publish-only rewrites
+- Phase 3: shared retrieval via `CorpusSpec` and `SearchService`
+- Phase 4: independent `ideas` stage/pass/markdown projection
 
 ## Goals
 

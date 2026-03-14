@@ -12,6 +12,9 @@ from recoleta.publish.item_notes import (
     write_markdown_note,
     write_obsidian_note,
 )
+from recoleta.publish.idea_notes import (
+    write_markdown_ideas_note,
+)
 from recoleta.publish.telegram_format import (
     build_telegram_message,
     build_telegram_trend_document_caption,
@@ -39,6 +42,7 @@ __all__ = [
     "export_trend_note_pdf_debug_bundle",
     "render_trend_note_pdf",
     "render_trend_note_pdf_result",
+    "write_markdown_ideas_note",
     "write_markdown_note",
     "write_markdown_run_index",
     "write_markdown_stream_index",
