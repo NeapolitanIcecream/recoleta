@@ -98,6 +98,14 @@ The current `trends` stage should evolve into:
 - markdown / obsidian / PDF / Telegram rendering
 - trend `Document` projection updates
 
+Trend and ideas projections should also preserve lightweight reverse provenance
+to their source pass outputs:
+
+- note frontmatter may carry `pass_output_id` / `pass_kind`
+- document meta chunks may carry a reserved projection-provenance block
+- downstream repair/site flows should preserve this provenance rather than
+  stripping it
+
 ### 5. Add `ideas` as a separate pass, not a subtask of `trend_synthesis`
 
 Introduce a new optional `ideas` stage built around an `ideas` pass.
@@ -157,6 +165,8 @@ This is distinct from:
 - Shared retrieval logic can evolve without coupling all passes to one payload
   schema.
 - Observability improves because each pass has its own diagnostics and status.
+- Downstream artifacts can trace back to their canonical pass outputs during
+  repair, debugging, and site export.
 
 ### Negative
 

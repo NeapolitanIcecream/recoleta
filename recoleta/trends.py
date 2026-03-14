@@ -18,6 +18,10 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.item_summary import extract_item_summary_sections
 from recoleta.models import Document, DocumentChunk
 from recoleta.ports import TrendRepositoryPort
+from recoleta.provenance import (
+    build_projection_provenance,
+    inject_projection_provenance,
+)
 from recoleta.publish.trend_render_shared import (
     clamp_trend_overview_markdown,
     sanitize_trend_title,
@@ -1684,6 +1688,8 @@ def persist_trend_payload(
     period_end: datetime,
     payload: TrendPayload,
     scope: str = DEFAULT_TOPIC_STREAM,
+    pass_output_id: int | None = None,
+    pass_kind: str | None = None,
 ) -> int:
     title = sanitize_trend_title(str(payload.title or "").strip(), fallback="Trend")
     doc = repository.upsert_document_for_trend(
@@ -1710,7 +1716,19 @@ def persist_trend_payload(
         chunk_index=1,
         kind="meta",
         text_value=json.dumps(
-            payload.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":")
+            inject_projection_provenance(
+                payload=payload.model_dump(mode="json"),
+                provenance=(
+                    build_projection_provenance(
+                        pass_output_id=pass_output_id,
+                        pass_kind=str(pass_kind or "").strip() or "trend_synthesis",
+                    )
+                    if pass_output_id is not None
+                    else None
+                ),
+            ),
+            ensure_ascii=False,
+            separators=(",", ":"),
         ),
         start_char=0,
         end_char=None,

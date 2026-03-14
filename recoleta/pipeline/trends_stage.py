@@ -18,8 +18,12 @@ from recoleta.models import (
     DELIVERY_STATUS_SENT,
 )
 from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
-from recoleta.pipeline.projections import run_projection_target
-from recoleta.passes import build_trend_synthesis_pass_output
+from recoleta.pipeline.pass_runner import (
+    ProjectionSpec,
+    persist_pass_output_envelope,
+    run_projection_specs,
+)
+from recoleta.passes import TREND_SYNTHESIS_PASS_KIND, build_trend_synthesis_pass_output
 from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
 from recoleta.publish import (
     build_telegram_trend_document_caption,
@@ -1075,48 +1079,47 @@ def run_trends_stage(
         }
         if isinstance(debug, dict):
             trend_synthesis_diagnostics["debug"] = debug
-        try:
-            trend_synthesis_envelope = build_trend_synthesis_pass_output(
-                run_id=run_id,
-                scope=scope,
-                granularity=normalized_granularity,
-                period_start=period_start,
-                period_end=period_end,
-                payload=payload,
-                diagnostics=trend_synthesis_diagnostics,
-            )
-            pass_output = service.repository.create_pass_output(
-                run_id=trend_synthesis_envelope.run_id,
-                pass_kind=trend_synthesis_envelope.pass_kind,
-                status=trend_synthesis_envelope.status.value,
-                scope=trend_synthesis_envelope.scope,
-                granularity=trend_synthesis_envelope.granularity,
-                period_start=period_start,
-                period_end=period_end,
-                schema_version=trend_synthesis_envelope.schema_version,
-                payload=trend_synthesis_envelope.payload,
-                diagnostics=trend_synthesis_envelope.diagnostics,
-                input_refs=[
-                    ref.model_dump(mode="json")
-                    for ref in trend_synthesis_envelope.input_refs
-                ],
-            )
-            trend_synthesis_pass_output_id = int(getattr(pass_output, "id") or 0) or None
-            record_metric(
-                name="pipeline.trends.pass.synthesis.persisted_total",
-                value=1,
-                unit="count",
-            )
-        except Exception as pass_output_exc:  # noqa: BLE001
-            record_metric(
-                name="pipeline.trends.pass_outputs.persist_failed_total",
-                value=1,
-                unit="count",
-            )
-            log.bind(module="pipeline.trends.pass.synthesis").warning(
-                "Trend synthesis pass output persist failed: {}",
-                service._sanitize_error_message(str(pass_output_exc)),
-            )
+        trend_synthesis_envelope = build_trend_synthesis_pass_output(
+            run_id=run_id,
+            scope=scope,
+            granularity=normalized_granularity,
+            period_start=period_start,
+            period_end=period_end,
+            payload=payload,
+            diagnostics=trend_synthesis_diagnostics,
+        )
+        pass_output_failure: dict[str, str] | None = None
+
+        def _capture_pass_output_failure(exc: BaseException) -> None:
+            nonlocal pass_output_failure
+            pass_output_failure = {
+                "error_type": type(exc).__name__,
+                "error_message": service._sanitize_error_message(str(exc)),
+            }
+
+        trend_synthesis_pass_output_id = persist_pass_output_envelope(
+            repository=service.repository,
+            envelope=trend_synthesis_envelope,
+            period_start=period_start,
+            period_end=period_end,
+            record_metric=record_metric,
+            log=log.bind(module="pipeline.trends.pass.synthesis"),
+            failure_message=(
+                "Trend synthesis pass output persist failed pass_kind={pass_kind} "
+                "granularity={granularity} period_start={period_start} "
+                "period_end={period_end} error_type={error_type} error={error}"
+            ),
+            warning_context={
+                "granularity": normalized_granularity,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+            },
+            sanitize_error=service._sanitize_error_message,
+            on_failure=_capture_pass_output_failure,
+            persisted_metric_name="pipeline.trends.pass.synthesis.persisted_total",
+            reraise=False,
+        )
+        if trend_synthesis_pass_output_id is None:
             artifact_path = service._write_debug_artifact(
                 run_id=run_id,
                 item_id=None,
@@ -1124,13 +1127,10 @@ def run_trends_stage(
                 payload={
                     "stage": "trends",
                     "pass_kind": "trend_synthesis",
-                    "error_type": type(pass_output_exc).__name__,
-                    "error_message": service._sanitize_error_message(
-                        str(pass_output_exc)
-                    ),
                     "granularity": normalized_granularity,
                     "period_start": period_start.isoformat(),
                     "period_end": period_end.isoformat(),
+                    "failure": pass_output_failure or {},
                 },
             )
             if artifact_path is not None:
@@ -1154,6 +1154,8 @@ def run_trends_stage(
             period_end=period_end,
             payload=payload,
             scope=scope,
+            pass_output_id=trend_synthesis_pass_output_id,
+            pass_kind=TREND_SYNTHESIS_PASS_KIND,
         )
         materialized = materialize_trend_note_payload(
             repository=cast(Any, service.repository),
@@ -1268,79 +1270,91 @@ def run_trends_stage(
             and not telegram_already_sent
         )
 
-        if "markdown" in targets or telegram_can_attempt_delivery:
-            markdown_note_path = run_projection_target(
-                enabled=True,
-                metric_base="pipeline.trends.projection.trend_markdown",
-                record_metric=record_metric,
-                log=log.bind(module="pipeline.trends.projection.trend_markdown"),
-                failure_message=(
-                    "Trend markdown projection failed doc_id={doc_id} "
-                    "granularity={granularity} period_start={period_start} "
-                    "period_end={period_end} error_type={error_type} error={error}"
+        projection_results = run_projection_specs(
+            record_metric=record_metric,
+            specs=[
+                ProjectionSpec(
+                    name="markdown",
+                    enabled="markdown" in targets or telegram_can_attempt_delivery,
+                    metric_base="pipeline.trends.projection.trend_markdown",
+                    log=log.bind(module="pipeline.trends.projection.trend_markdown"),
+                    failure_message=(
+                        "Trend markdown projection failed doc_id={doc_id} "
+                        "granularity={granularity} period_start={period_start} "
+                        "period_end={period_end} error_type={error_type} error={error}"
+                    ),
+                    execute=lambda: write_markdown_trend_note(
+                        output_dir=service.settings.markdown_output_dir,
+                        trend_doc_id=doc_id,
+                        title=materialized.title,
+                        granularity=normalized_granularity,
+                        period_start=period_start,
+                        period_end=period_end,
+                        run_id=run_id,
+                        overview_md=materialized.overview_md,
+                        topics=list(materialized.topics),
+                        evolution=materialized.evolution,
+                        history_window_refs=materialized.history_window_refs,
+                        clusters=materialized.clusters,
+                        highlights=materialized.highlights,
+                        output_language=service.settings.llm_output_language,
+                        pass_output_id=trend_synthesis_pass_output_id,
+                        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+                    ),
+                    warning_context={
+                        "doc_id": doc_id,
+                        "granularity": normalized_granularity,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                    },
+                    sanitize_error=service._sanitize_error_message,
+                    reraise=False,
                 ),
-                execute=lambda: write_markdown_trend_note(
-                    output_dir=service.settings.markdown_output_dir,
-                    trend_doc_id=doc_id,
-                    title=materialized.title,
-                    granularity=normalized_granularity,
-                    period_start=period_start,
-                    period_end=period_end,
-                    run_id=run_id,
-                    overview_md=materialized.overview_md,
-                    topics=list(materialized.topics),
-                    evolution=materialized.evolution,
-                    history_window_refs=materialized.history_window_refs,
-                    clusters=materialized.clusters,
-                    highlights=materialized.highlights,
-                    output_language=service.settings.llm_output_language,
+                ProjectionSpec(
+                    name="obsidian",
+                    enabled="obsidian" in targets
+                    and service.settings.obsidian_vault_path is not None,
+                    metric_base="pipeline.trends.projection.trend_obsidian",
+                    log=log.bind(module="pipeline.trends.projection.trend_obsidian"),
+                    failure_message=(
+                        "Trend obsidian projection failed doc_id={doc_id} "
+                        "granularity={granularity} period_start={period_start} "
+                        "period_end={period_end} error_type={error_type} error={error}"
+                    ),
+                    execute=lambda: write_obsidian_trend_note(
+                        vault_path=service.settings.obsidian_vault_path,
+                        base_folder=service.settings.obsidian_base_folder,
+                        trend_doc_id=doc_id,
+                        title=materialized.title,
+                        granularity=normalized_granularity,
+                        period_start=period_start,
+                        period_end=period_end,
+                        run_id=run_id,
+                        overview_md=materialized.overview_md,
+                        topics=list(materialized.topics),
+                        evolution=materialized.evolution,
+                        history_window_refs=materialized.history_window_refs,
+                        clusters=materialized.clusters,
+                        highlights=materialized.highlights,
+                        output_language=service.settings.llm_output_language,
+                        pass_output_id=trend_synthesis_pass_output_id,
+                        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+                    ),
+                    warning_context={
+                        "doc_id": doc_id,
+                        "granularity": normalized_granularity,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                    },
+                    sanitize_error=service._sanitize_error_message,
+                    reraise=False,
                 ),
-                warning_context={
-                    "doc_id": doc_id,
-                    "granularity": normalized_granularity,
-                    "period_start": period_start.isoformat(),
-                    "period_end": period_end.isoformat(),
-                },
-                sanitize_error=service._sanitize_error_message,
-                reraise=False,
-            )
-        if "obsidian" in targets and service.settings.obsidian_vault_path is not None:
-            _ = run_projection_target(
-                enabled=True,
-                metric_base="pipeline.trends.projection.trend_obsidian",
-                record_metric=record_metric,
-                log=log.bind(module="pipeline.trends.projection.trend_obsidian"),
-                failure_message=(
-                    "Trend obsidian projection failed doc_id={doc_id} "
-                    "granularity={granularity} period_start={period_start} "
-                    "period_end={period_end} error_type={error_type} error={error}"
-                ),
-                execute=lambda: write_obsidian_trend_note(
-                    vault_path=service.settings.obsidian_vault_path,
-                    base_folder=service.settings.obsidian_base_folder,
-                    trend_doc_id=doc_id,
-                    title=materialized.title,
-                    granularity=normalized_granularity,
-                    period_start=period_start,
-                    period_end=period_end,
-                    run_id=run_id,
-                    overview_md=materialized.overview_md,
-                    topics=list(materialized.topics),
-                    evolution=materialized.evolution,
-                    history_window_refs=materialized.history_window_refs,
-                    clusters=materialized.clusters,
-                    highlights=materialized.highlights,
-                    output_language=service.settings.llm_output_language,
-                ),
-                warning_context={
-                    "doc_id": doc_id,
-                    "granularity": normalized_granularity,
-                    "period_start": period_start.isoformat(),
-                    "period_end": period_end.isoformat(),
-                },
-                sanitize_error=service._sanitize_error_message,
-                reraise=False,
-            )
+            ],
+        )
+        raw_markdown_note_path = projection_results.get("markdown")
+        markdown_note_path = (
+            raw_markdown_note_path if isinstance(raw_markdown_note_path, Path) else None
+        )
 
         if "telegram" in targets:
             if empty_corpus:

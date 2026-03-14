@@ -392,6 +392,8 @@ Exit criteria:
 - publish-only rewrites no longer mutate canonical output
 - trend markdown and obsidian projections share the same failure-handling helper
 - trend projection failures emit `pipeline.trends.projection.*.failed_total`
+- trend and ideas note/document projections preserve reverse provenance to their
+  source pass outputs
 
 ### Phase 3. Extract shared retrieval infrastructure
 
@@ -422,6 +424,7 @@ Exit criteria:
 ### Unit tests
 
 - pass-output persistence and latest-success lookup
+- shared pass-runner helpers for persistence and projection registry behavior
 - trend synthesis canonical output persistence before projection rewrites
 - upstream resolution failures for `ideas`
 - `ideas` suppression path emits status and metrics
@@ -432,6 +435,7 @@ Exit criteria:
 - current trend markdown output remains stable after the internal split
 - `recoleta trends` still writes trend `Document` projections
 - `ideas` can consume prior trend synthesis output without reparsing markdown
+- repair/materialize flows preserve projection provenance when it exists
 
 ### Failure-path tests
 
@@ -442,8 +446,9 @@ Exit criteria:
 ## Open Questions
 
 1. Should projections record a reverse pointer to their source `pass_output_id`?
-   Recommendation: yes for trend and ideas document projections if the storage
-   change stays lightweight.
+   Resolved: yes. Trend and ideas note frontmatter plus document meta chunks now
+   carry lightweight projection provenance without mutating the canonical pass
+   payload contract.
 2. Do we want `ideas` to project into `documents` as a new searchable doc type
    in v1?
    Recommendation: yes, but keep it explicitly derived from canonical pass

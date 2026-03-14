@@ -342,6 +342,7 @@ Outputs:
 - **Local Markdown** (when `PUBLISH_TARGETS` includes `markdown`): `MARKDOWN_OUTPUT_DIR/Trends/` (canonical source for downstream PDF/site rendering)
 - **Obsidian** (when `PUBLISH_TARGETS` includes `obsidian`): `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Trends/`
 - **Telegram PDF** (when `PUBLISH_TARGETS` includes `telegram` and the corpus is non-empty): `<trend-note>.pdf`, rendered from the canonical markdown note
+- **Projection provenance**: trend markdown/obsidian notes and the stored trend document meta chunk carry `pass_output_id` / `pass_kind` when the note came from a canonical `trend_synthesis` pass output.
 
 When `topic_streams` is configured, `recoleta trends` and `recoleta trends-week` run once per stream. Their outputs move under each stream root instead:
 
@@ -366,6 +367,7 @@ Key behaviors:
 - **Readability guardrails**: the prompt explicitly avoids coined umbrella terms, keeps unstable technical terminology in its original form, and asks for factual titles instead of slogan-like labels.
 - **Separate publication**: successful runs honor `PUBLISH_TARGETS` for note-style outputs. `markdown` writes `Ideas/` briefs, `obsidian` writes sibling notes into the configured vault, and the canonical payload still remains separate in `pass_outputs`.
 - **Searchable projection**: successful runs also upsert an `idea` document into the local `documents` corpus with summary/content/meta chunks so ideas can participate in later search or inspection work.
+- **Projection provenance**: idea notes and idea document meta chunks carry both their own `pass_output_id` and the upstream `trend_synthesis` pointer, so site/materialize/search surfaces can trace back to the canonical pass outputs.
 - **Telegram deferred**: if `PUBLISH_TARGETS` includes `telegram`, the ideas stage records a skipped metric and does not attempt delivery yet.
 
 Examples:

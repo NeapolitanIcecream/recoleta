@@ -9,6 +9,7 @@ import yaml
 from recoleta.publish.item_notes import resolve_item_note_href
 from recoleta.publish.trend_notes import resolve_trend_note_href
 from recoleta.publish.trend_render_shared import _trend_date_token
+from recoleta.provenance import build_projection_provenance
 
 if TYPE_CHECKING:
     from recoleta.passes.trend_ideas import TrendIdeasPayload
@@ -116,6 +117,8 @@ def _render_ideas_note_lines(
     payload: TrendIdeasPayload,
     scope: str,
     topics: list[str] | None = None,
+    pass_kind: str = "trend_ideas",
+    upstream_pass_kind: str | None = "trend_synthesis",
 ) -> list[str]:
     base_tags = ["recoleta/ideas"]
     for topic in list(topics or []):
@@ -126,10 +129,6 @@ def _render_ideas_note_lines(
     tags = [tag for tag in base_tags if not (tag in seen_tags or seen_tags.add(tag))]
     frontmatter = {
         "kind": "ideas",
-        "pass_output_id": int(pass_output_id),
-        "trend_pass_output_id": (
-            int(upstream_pass_output_id) if upstream_pass_output_id is not None else None
-        ),
         "granularity": granularity,
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
@@ -139,6 +138,18 @@ def _render_ideas_note_lines(
         "topics": [str(topic).strip() for topic in list(topics or []) if str(topic).strip()],
         "tags": tags,
     }
+    frontmatter.update(
+        build_projection_provenance(
+            pass_output_id=pass_output_id,
+            pass_kind=str(pass_kind or "").strip() or "trend_ideas",
+            upstream_pass_output_id=upstream_pass_output_id,
+            upstream_pass_kind=(
+                str(upstream_pass_kind or "").strip() or None
+                if upstream_pass_output_id is not None
+                else None
+            ),
+        ).model_dump(mode="json", exclude_none=True)
+    )
 
     lines: list[str] = [
         "---",
@@ -201,6 +212,8 @@ def _write_ideas_note(
     payload: TrendIdeasPayload,
     scope: str,
     topics: list[str] | None = None,
+    pass_kind: str = "trend_ideas",
+    upstream_pass_kind: str | None = "trend_synthesis",
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = resolve_ideas_note_path(
@@ -222,6 +235,8 @@ def _write_ideas_note(
         payload=payload,
         scope=scope,
         topics=topics,
+        pass_kind=pass_kind,
+        upstream_pass_kind=upstream_pass_kind,
     )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return note_path
@@ -241,6 +256,8 @@ def write_markdown_ideas_note(
     payload: TrendIdeasPayload,
     scope: str,
     topics: list[str] | None = None,
+    pass_kind: str = "trend_ideas",
+    upstream_pass_kind: str | None = "trend_synthesis",
 ) -> Path:
     root_dir = output_dir.expanduser().resolve()
     note_dir = root_dir / "Ideas"
@@ -258,6 +275,8 @@ def write_markdown_ideas_note(
         payload=payload,
         scope=scope,
         topics=topics,
+        pass_kind=pass_kind,
+        upstream_pass_kind=upstream_pass_kind,
     )
 
 
@@ -276,6 +295,8 @@ def write_obsidian_ideas_note(
     payload: TrendIdeasPayload,
     scope: str,
     topics: list[str] | None = None,
+    pass_kind: str = "trend_ideas",
+    upstream_pass_kind: str | None = "trend_synthesis",
 ) -> Path:
     root_dir = vault_path / base_folder
     note_dir = root_dir / "Ideas"
@@ -293,4 +314,6 @@ def write_obsidian_ideas_note(
         payload=payload,
         scope=scope,
         topics=topics,
+        pass_kind=pass_kind,
+        upstream_pass_kind=upstream_pass_kind,
     )

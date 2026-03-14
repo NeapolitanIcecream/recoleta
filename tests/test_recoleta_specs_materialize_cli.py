@@ -22,6 +22,7 @@ from recoleta.types import AnalysisResult, ItemDraft
 def _seed_materialize_fixture(
     *,
     repository: Repository,
+    pass_output_id: int | None = None,
 ) -> tuple[int, Path]:
     published_at = datetime(2026, 3, 2, 12, tzinfo=UTC)
     draft = ItemDraft.from_values(
@@ -89,6 +90,7 @@ def _seed_materialize_fixture(
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 3, tzinfo=UTC),
         payload=payload,
+        pass_output_id=pass_output_id,
     )
 
     output_dir = Path("/tmp/placeholder")
@@ -176,6 +178,32 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
         assert meta_after.text == meta_text_before
         assert "https://example.com/robometer" in meta_after.text
         assert "../Inbox/" not in meta_after.text
+
+
+def test_materialize_outputs_preserves_trend_projection_provenance_in_note_frontmatter(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    trend_doc_id, _ = _seed_materialize_fixture(
+        repository=repository,
+        pass_output_id=17,
+    )
+    output_dir = tmp_path / "outputs"
+
+    _ = materialize_outputs(
+        repository=repository,
+        scope_specs=[
+            MaterializeScopeSpec(scope="default", output_dir=output_dir),
+        ],
+        site_input_dir=None,
+        site_output_dir=None,
+    )
+
+    trend_note_path = output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    note_text = trend_note_path.read_text(encoding="utf-8")
+    assert "pass_output_id: 17" in note_text
+    assert "pass_kind: trend_synthesis" in note_text
 
 
 def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(

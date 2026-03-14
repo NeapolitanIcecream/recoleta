@@ -268,6 +268,14 @@ Body sections (recommended):
 - `## Summary`
 - `## Links` (canonical + PDF + related threads)
 
+Derived trend/idea notes may also include projection provenance fields in
+frontmatter:
+
+- `pass_output_id`
+- `pass_kind`
+- `upstream_pass_output_id`
+- `upstream_pass_kind`
+
 ## Local Markdown output layout
 
 Recoleta can also write user-facing Markdown notes to a normal filesystem directory (no Obsidian required).
@@ -278,6 +286,7 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `Runs/<run_id>.md` (per-run index)
 - `Inbox/` (one note per item, Markdown + YAML frontmatter)
 - `Trends/` (canonical trend markdown notes and derived trend PDFs)
+- `Ideas/` (idea briefs derived from canonical `trend_ideas` pass outputs)
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
 - `site/` (optional static site export derived from `Trends/`)
 
