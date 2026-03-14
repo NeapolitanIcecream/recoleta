@@ -111,6 +111,43 @@ def _seed_item_document(*, repository, published_at: datetime) -> int:
     return int(doc.id)
 
 
+def _ideas_payload(
+    *,
+    period_start: datetime,
+    period_end: datetime,
+    evidence_doc_id: int,
+    title: str = "Why now ideas",
+) -> dict[str, object]:
+    return {
+        "title": title,
+        "granularity": "day",
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "summary_md": "The evidence supports one strong workflow wedge.",
+        "ideas": [
+            {
+                "title": "Auditable long-horizon eval workbench",
+                "kind": "tooling_wedge",
+                "thesis": "Build an evaluation workbench around grounded traces.",
+                "why_now": "Grounded runtime traces have become practical.",
+                "what_changed": "Teams can now capture and inspect multi-step traces.",
+                "user_or_job": "Evaluation teams need auditable long-horizon runs.",
+                "evidence_refs": [
+                    {
+                        "doc_id": evidence_doc_id,
+                        "chunk_index": 0,
+                        "reason": "Shows grounded runtime traces for evaluation.",
+                    }
+                ],
+                "validation_next_step": (
+                    "Prototype a trace viewer for one benchmark workflow."
+                ),
+                "time_horizon": "now",
+            }
+        ],
+    }
+
+
 def test_ideas_stage_requires_upstream_trend_synthesis_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -424,3 +461,232 @@ def test_ideas_stage_persists_suppressed_pass_output_without_projection(
 
     metric_values = _metric_values(repository=repository, run_id="run-ideas-suppressed")
     assert metric_values["pipeline.trends.pass.ideas.suppressed_total"] == 1.0
+
+
+def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "obsidian")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
+    monkeypatch.setenv("OBSIDIAN_BASE_FOLDER", "Recoleta")
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    evidence_doc_id = _seed_item_document(
+        repository=repository, published_at=period_start + (period_end - period_start) / 2
+    )
+    _persist_trend_synthesis_pass_output(
+        repository=repository,
+        run_id="run-trend-upstream-obsidian",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendPayload.model_validate(
+            {
+                "title": "Canonical Trend",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "overview_md": "canonical overview only",
+                "topics": ["agents"],
+                "clusters": [
+                    {
+                        "name": "Grounded runtimes",
+                        "description": "Grounding and observability are converging.",
+                        "representative_chunks": [
+                            {
+                                "doc_id": evidence_doc_id,
+                                "chunk_index": 0,
+                            }
+                        ],
+                    }
+                ],
+                "highlights": ["Grounded traces are now practical."],
+            }
+        ),
+    )
+
+    from recoleta.rag import ideas_agent
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return (
+            ideas_agent.TrendIdeasPayload.model_validate(
+                _ideas_payload(
+                    period_start=period_start,
+                    period_end=period_end,
+                    evidence_doc_id=evidence_doc_id,
+                )
+            ),
+            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+        )
+
+    monkeypatch.setattr(ideas_agent, "generate_trend_ideas_payload", _fake_generate)
+
+    result = service.ideas(
+        run_id="run-ideas-obsidian",
+        granularity="day",
+        anchor_date=date(2026, 3, 2),
+        llm_model="test/fake-model",
+    )
+
+    assert result.status == PassStatus.SUCCEEDED.value
+    assert result.note_path is None
+    assert not (settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md").exists()
+
+    assert settings.obsidian_vault_path is not None
+    obsidian_note = (
+        settings.obsidian_vault_path
+        / settings.obsidian_base_folder
+        / "Ideas"
+        / "day--2026-03-02--ideas.md"
+    )
+    assert obsidian_note.exists()
+    text = obsidian_note.read_text(encoding="utf-8")
+    assert "# Why now ideas" in text
+    assert "../Inbox/" in text
+    assert "Grounded Agent Runtime for Long-Horizon Evaluation" in text
+    assert "topics:" in text
+    assert "recoleta/ideas" in text
+
+    metric_values = _metric_values(repository=repository, run_id="run-ideas-obsidian")
+    assert (
+        metric_values["pipeline.trends.projection.ideas_obsidian.emitted_total"] == 1.0
+    )
+
+
+def test_ideas_stage_projects_searchable_idea_documents(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown,telegram")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    evidence_doc_id = _seed_item_document(
+        repository=repository, published_at=period_start + (period_end - period_start) / 2
+    )
+    _persist_trend_synthesis_pass_output(
+        repository=repository,
+        run_id="run-trend-upstream-docs",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendPayload.model_validate(
+            {
+                "title": "Canonical Trend",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "overview_md": "canonical overview only",
+                "topics": ["agents"],
+                "clusters": [],
+                "highlights": [],
+            }
+        ),
+    )
+
+    from recoleta.rag import ideas_agent
+
+    def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
+        return (
+            ideas_agent.TrendIdeasPayload.model_validate(
+                _ideas_payload(
+                    period_start=period_start,
+                    period_end=period_end,
+                    evidence_doc_id=evidence_doc_id,
+                    title="Workflow wedges",
+                )
+            ),
+            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+        )
+
+    monkeypatch.setattr(ideas_agent, "generate_trend_ideas_payload", _fake_generate)
+
+    result = service.ideas(
+        run_id="run-ideas-docs",
+        granularity="day",
+        anchor_date=date(2026, 3, 2),
+        llm_model="test/fake-model",
+    )
+
+    assert result.status == PassStatus.SUCCEEDED.value
+
+    docs = repository.list_documents(
+        doc_type="idea",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc.id is not None
+    assert doc.title == "Workflow wedges"
+
+    summary_chunk = repository.read_document_chunk(doc_id=int(doc.id), chunk_index=0)
+    assert summary_chunk is not None
+    assert summary_chunk.kind == "summary"
+    assert "strong workflow wedge" in summary_chunk.text
+
+    content_chunk = repository.read_document_chunk(doc_id=int(doc.id), chunk_index=1)
+    assert content_chunk is not None
+    assert content_chunk.kind == "content"
+    assert "Auditable long-horizon eval workbench" in content_chunk.text
+    assert "Validation next step" in content_chunk.text
+
+    meta_chunk = repository.read_document_chunk(doc_id=int(doc.id), chunk_index=2)
+    assert meta_chunk is not None
+    assert meta_chunk.kind == "meta"
+    assert meta_chunk.source_content_type == "trend_ideas_payload_json"
+
+    hits = repository.search_chunks_text(
+        query="trace viewer benchmark workflow",
+        doc_type="idea",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        limit=5,
+    )
+    assert hits
+    assert any(int(hit["doc_id"]) == int(doc.id) for hit in hits)
+
+    metric_values = _metric_values(repository=repository, run_id="run-ideas-docs")
+    assert (
+        metric_values["pipeline.trends.projection.ideas_documents.emitted_total"] == 1.0
+    )
+    assert (
+        metric_values["pipeline.trends.projection.ideas_telegram.skipped_total"] == 1.0
+    )
+    sender = service.telegram_sender
+    assert isinstance(sender, FakeTelegramSender)
+    assert sender.documents == []
+    assert sender.messages == []

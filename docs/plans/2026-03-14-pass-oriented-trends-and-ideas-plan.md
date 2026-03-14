@@ -338,7 +338,9 @@ Recommended logs:
 - `pipeline.trends.pass.synthesis`
 - `pipeline.trends.pass.ideas`
 - `pipeline.trends.projection.trend_publish`
-- `pipeline.trends.projection.ideas_publish`
+- `pipeline.trends.projection.ideas_markdown`
+- `pipeline.trends.projection.ideas_obsidian`
+- `pipeline.trends.projection.ideas_documents`
 
 Recommended debug artifacts per pass:
 

@@ -8,6 +8,7 @@ def test_corpus_spec_resolves_only_allowed_sources() -> None:
         [
             {"doc_type": "item", "granularity": None},
             {"doc_type": "trend", "granularity": "day"},
+            {"doc_type": "idea", "granularity": "week"},
         ]
     )
 
@@ -16,3 +17,6 @@ def test_corpus_spec_resolves_only_allowed_sources() -> None:
         ("trend", "day")
     ]
     assert spec.resolve_sources(doc_type="trend", granularity="month") == []
+    assert spec.resolve_sources(doc_type="idea", granularity=None) == [
+        ("idea", "week")
+    ]

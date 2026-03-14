@@ -71,14 +71,55 @@ class DocumentStoreMixin:
         title: str,
         scope: str = DEFAULT_TOPIC_STREAM,
     ) -> Document:
+        return self._upsert_period_document(
+            doc_type="trend",
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            title=title,
+            scope=scope,
+        )
+
+    def upsert_document_for_idea(
+        self,
+        *,
+        granularity: str,
+        period_start: datetime,
+        period_end: datetime,
+        title: str,
+        scope: str = DEFAULT_TOPIC_STREAM,
+    ) -> Document:
+        return self._upsert_period_document(
+            doc_type="idea",
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            title=title,
+            scope=scope,
+        )
+
+    def _upsert_period_document(
+        self,
+        *,
+        doc_type: str,
+        granularity: str,
+        period_start: datetime,
+        period_end: datetime,
+        title: str,
+        scope: str = DEFAULT_TOPIC_STREAM,
+    ) -> Document:
         normalized_granularity = str(granularity or "").strip().lower()
         if normalized_granularity not in {"day", "week", "month"}:
             raise ValueError("unsupported granularity")
-        normalized_title = str(title or "").strip() or "Trend"
+        normalized_doc_type = str(doc_type or "").strip().lower()
+        if normalized_doc_type not in {"trend", "idea"}:
+            raise ValueError("unsupported doc_type")
+        fallback_title = "Idea" if normalized_doc_type == "idea" else "Trend"
+        normalized_title = str(title or "").strip() or fallback_title
         with Session(self.engine) as session:
             existing = session.exec(
                 select(Document).where(
-                    Document.doc_type == "trend",
+                    Document.doc_type == normalized_doc_type,
                     cast(Any, Document.scope) == scope,
                     Document.granularity == normalized_granularity,
                     Document.period_start == period_start,
@@ -87,7 +128,7 @@ class DocumentStoreMixin:
             ).first()
             if existing is None:
                 doc = Document(
-                    doc_type="trend",
+                    doc_type=normalized_doc_type,
                     scope=scope,
                     granularity=normalized_granularity,
                     period_start=period_start,
@@ -329,7 +370,7 @@ class DocumentStoreMixin:
                         desc(cast(Any, Document.published_at)),
                         desc(cast(Any, Document.id)),
                     )
-            elif normalized_type == "trend":
+            elif normalized_type in {"trend", "idea"}:
                 statement = statement.where(
                     cast(Any, Document.period_start).is_not(None),
                     cast(Any, Document.period_end).is_not(None),
@@ -409,7 +450,7 @@ class DocumentStoreMixin:
 
         if normalized_type == "item":
             period_pred = "d.published_at >= :period_start AND d.published_at < :period_end"
-        elif normalized_type == "trend":
+        elif normalized_type in {"trend", "idea"}:
             period_pred = "d.period_start < :period_end AND d.period_end > :period_start"
         else:
             raise ValueError("unsupported doc_type")
@@ -423,7 +464,7 @@ class DocumentStoreMixin:
             "period_end": period_end,
             "limit": normalized_limit,
         }
-        if normalized_type == "trend":
+        if normalized_type in {"trend", "idea"}:
             normalized_granularity = (
                 str(granularity or "").strip().lower() if granularity is not None else ""
             )
@@ -512,7 +553,7 @@ class DocumentStoreMixin:
                     cast(Any, Document.published_at) >= period_start,
                     cast(Any, Document.published_at) < period_end,
                 )
-            elif normalized_type == "trend":
+            elif normalized_type in {"trend", "idea"}:
                 statement = statement.where(
                     cast(Any, Document.period_start).is_not(None),
                     cast(Any, Document.period_end).is_not(None),
@@ -563,7 +604,7 @@ class DocumentStoreMixin:
                     cast(Any, Document.published_at) < period_end,
                 )
                 statement = statement.order_by(desc(cast(Any, DocumentChunk.id)))
-            elif normalized_type == "trend":
+            elif normalized_type in {"trend", "idea"}:
                 statement = statement.where(
                     cast(Any, Document.period_start).is_not(None),
                     cast(Any, Document.period_end).is_not(None),

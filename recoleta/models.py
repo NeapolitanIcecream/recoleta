@@ -263,7 +263,7 @@ class Document(SQLModel, table=True):
     title: str | None = Field(default=None, sa_type=Text)
     published_at: datetime | None = Field(default=None, index=True)
 
-    # For doc_type == "trend"
+    # For doc_type in {"trend", "idea"}
     granularity: str | None = Field(default=None, max_length=16, index=True)
     period_start: datetime | None = Field(default=None, index=True)
     period_end: datetime | None = Field(default=None, index=True)

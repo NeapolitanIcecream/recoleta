@@ -14,6 +14,7 @@ from recoleta.publish.item_notes import (
 )
 from recoleta.publish.idea_notes import (
     write_markdown_ideas_note,
+    write_obsidian_ideas_note,
 )
 from recoleta.publish.telegram_format import (
     build_telegram_message,
@@ -47,6 +48,7 @@ __all__ = [
     "write_markdown_run_index",
     "write_markdown_stream_index",
     "write_markdown_trend_note",
+    "write_obsidian_ideas_note",
     "write_obsidian_note",
     "write_obsidian_trend_note",
 ]

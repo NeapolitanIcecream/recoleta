@@ -19,7 +19,7 @@ from recoleta.passes import (
     normalize_trend_ideas_payload,
 )
 from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
-from recoleta.publish import write_markdown_ideas_note
+from recoleta.publish import write_markdown_ideas_note, write_obsidian_ideas_note
 from recoleta.rag import ideas_agent
 from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 from recoleta import trends
@@ -100,6 +100,91 @@ def _period_bounds_for_granularity(
 def _load_trend_payload_from_pass_output(row: Any) -> TrendPayload:
     payload_json = str(getattr(row, "payload_json", "") or "{}")
     return TrendPayload.model_validate(json.loads(payload_json))
+
+
+def _render_idea_document_chunk_text(idea: Any) -> str:
+    evidence_reasons = [
+        str(getattr(ref, "reason", "") or "").strip()
+        for ref in list(getattr(idea, "evidence_refs", []) or [])
+        if str(getattr(ref, "reason", "") or "").strip()
+    ]
+    lines = [
+        f"Title: {str(getattr(idea, 'title', '') or '').strip()}",
+        f"Kind: {str(getattr(idea, 'kind', '') or '').strip()}",
+        f"Time horizon: {str(getattr(idea, 'time_horizon', '') or '').strip()}",
+        f"User/job: {str(getattr(idea, 'user_or_job', '') or '').strip()}",
+        f"Thesis: {str(getattr(idea, 'thesis', '') or '').strip()}",
+        f"Why now: {str(getattr(idea, 'why_now', '') or '').strip()}",
+        f"What changed: {str(getattr(idea, 'what_changed', '') or '').strip()}",
+        (
+            "Validation next step: "
+            + str(getattr(idea, "validation_next_step", "") or "").strip()
+        ),
+    ]
+    if evidence_reasons:
+        lines.append("Evidence: " + " | ".join(evidence_reasons))
+    return "\n".join(line for line in lines if str(line).strip()).strip()
+
+
+def _persist_ideas_document_projection(
+    *,
+    repository: TrendStageRepositoryPort,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    payload: TrendIdeasPayload,
+    scope: str,
+) -> int:
+    doc = repository.upsert_document_for_idea(
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        title=str(payload.title or "").strip() or "Ideas",
+        scope=scope,
+    )
+    doc_id = int(getattr(doc, "id") or 0)
+    if doc_id <= 0:
+        raise RuntimeError("idea document projection did not return a document id")
+
+    repository.upsert_document_chunk(
+        doc_id=doc_id,
+        chunk_index=0,
+        kind="summary",
+        text_value=str(payload.summary_md or "").strip() or "(empty)",
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_ideas_summary",
+    )
+
+    next_chunk_index = 1
+    for idea in list(payload.ideas or []):
+        text_value = _render_idea_document_chunk_text(idea)
+        if not text_value:
+            continue
+        repository.upsert_document_chunk(
+            doc_id=doc_id,
+            chunk_index=next_chunk_index,
+            kind="content",
+            text_value=text_value,
+            start_char=0,
+            end_char=None,
+            source_content_type="trend_idea",
+        )
+        next_chunk_index += 1
+
+    repository.upsert_document_chunk(
+        doc_id=doc_id,
+        chunk_index=next_chunk_index,
+        kind="meta",
+        text_value=json.dumps(
+            payload.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":")
+        ),
+        start_char=0,
+        end_char=None,
+        source_content_type="trend_ideas_payload_json",
+    )
+    repository.delete_document_chunks(doc_id=doc_id, chunk_index_gte=next_chunk_index + 1)
+    return doc_id
 
 
 def _record_ideas_debug_artifact(
@@ -220,6 +305,18 @@ def run_ideas_stage(
     model = str(llm_model or service.settings.llm_model or "").strip()
     if not model:
         raise ValueError("llm_model must not be empty")
+    targets = set(service.settings.publish_targets or [])
+    if "obsidian" in targets and service.settings.obsidian_vault_path is None:
+        raise ValueError(
+            "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
+        )
+    if "telegram" in targets:
+        record_metric(
+            name="pipeline.trends.projection.ideas_telegram.skipped_total",
+            value=1,
+            unit="count",
+        )
+        log.info("Ideas telegram projection is not implemented; target ignored")
 
     store = LanceVectorStore(
         db_dir=Path(service.settings.rag_lancedb_dir),
@@ -332,38 +429,101 @@ def run_ideas_stage(
         )
     else:
         try:
-            note_path = write_markdown_ideas_note(
-                repository=cast(Any, service.repository),
-                output_dir=Path(service.settings.markdown_output_dir),
-                pass_output_id=cast(int, pass_output_id),
-                upstream_pass_output_id=upstream_pass_output_id,
+            _persist_ideas_document_projection(
+                repository=service.repository,
                 granularity=normalized_granularity,
                 period_start=period_start,
                 period_end=period_end,
-                run_id=run_id,
-                status=status.value,
                 payload=payload,
                 scope=scope,
-                topics=list(trend_payload.topics or []),
             )
             record_metric(
-                name="pipeline.trends.projection.ideas_publish.emitted_total",
+                name="pipeline.trends.projection.ideas_documents.emitted_total",
                 value=1,
                 unit="count",
             )
         except Exception as exc:  # noqa: BLE001
             record_metric(
-                name="pipeline.trends.projection.ideas_publish.failed_total",
+                name="pipeline.trends.projection.ideas_documents.failed_total",
                 value=1,
                 unit="count",
             )
             log.warning(
-                "Ideas projection failed pass_output_id={} error_type={} error={}",
+                "Ideas document projection failed pass_output_id={} error_type={} error={}",
                 pass_output_id,
                 type(exc).__name__,
                 service._sanitize_error_message(str(exc)),
             )
             raise
+        if "markdown" in targets:
+            try:
+                note_path = write_markdown_ideas_note(
+                    repository=cast(Any, service.repository),
+                    output_dir=Path(service.settings.markdown_output_dir),
+                    pass_output_id=cast(int, pass_output_id),
+                    upstream_pass_output_id=upstream_pass_output_id,
+                    granularity=normalized_granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    run_id=run_id,
+                    status=status.value,
+                    payload=payload,
+                    scope=scope,
+                    topics=list(trend_payload.topics or []),
+                )
+                record_metric(
+                    name="pipeline.trends.projection.ideas_markdown.emitted_total",
+                    value=1,
+                    unit="count",
+                )
+            except Exception as exc:  # noqa: BLE001
+                record_metric(
+                    name="pipeline.trends.projection.ideas_markdown.failed_total",
+                    value=1,
+                    unit="count",
+                )
+                log.warning(
+                    "Ideas markdown projection failed pass_output_id={} error_type={} error={}",
+                    pass_output_id,
+                    type(exc).__name__,
+                    service._sanitize_error_message(str(exc)),
+                )
+                raise
+        if "obsidian" in targets and service.settings.obsidian_vault_path is not None:
+            try:
+                write_obsidian_ideas_note(
+                    repository=cast(Any, service.repository),
+                    vault_path=service.settings.obsidian_vault_path,
+                    base_folder=service.settings.obsidian_base_folder,
+                    pass_output_id=cast(int, pass_output_id),
+                    upstream_pass_output_id=upstream_pass_output_id,
+                    granularity=normalized_granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    run_id=run_id,
+                    status=status.value,
+                    payload=payload,
+                    scope=scope,
+                    topics=list(trend_payload.topics or []),
+                )
+                record_metric(
+                    name="pipeline.trends.projection.ideas_obsidian.emitted_total",
+                    value=1,
+                    unit="count",
+                )
+            except Exception as exc:  # noqa: BLE001
+                record_metric(
+                    name="pipeline.trends.projection.ideas_obsidian.failed_total",
+                    value=1,
+                    unit="count",
+                )
+                log.warning(
+                    "Ideas obsidian projection failed pass_output_id={} error_type={} error={}",
+                    pass_output_id,
+                    type(exc).__name__,
+                    service._sanitize_error_message(str(exc)),
+                )
+                raise
 
     if isinstance(debug, dict):
         usage = debug.get("usage")
