@@ -475,6 +475,149 @@ def test_export_trend_static_site_writes_idea_pages_and_rewrites_links(
     assert "Source markdown" in detail_html
 
 
+def test_export_trend_static_site_renders_idea_opportunities_as_cards(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    item_note = write_markdown_note(
+        output_dir=output_dir,
+        item_id=52,
+        title="CodeScout",
+        source="rss",
+        canonical_url="https://example.com/codescout",
+        published_at=datetime(2026, 3, 9, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.88,
+        run_id="run-site-ideas-structured-item",
+        summary="## Summary\n\nPrompt release notes.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=92,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-ideas-structured-trend",
+        overview_md="## Overview\n\nTrend note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-09--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        "Start with "
+        f"[CodeScout](../Inbox/{item_note.name}) and "
+        f"[the daily trend](../Trends/{trend_note.name}).\n\n"
+        "## Opportunities\n\n"
+        "### Prompt CI gate\n"
+        "- Kind: Workflow\n"
+        "- Time horizon: Now\n"
+        "- User/job: Internal agent platform owners responsible for prompt rollout safety\n\n"
+        "**Thesis.** Add a prompt release gate before rollout.\n\n"
+        "**Why now.** Teams now have enough agent activity to justify structured release controls.\n\n"
+        "**What changed.** More agent traffic means regressions show up faster and cost more.\n\n"
+        "**Validation next step.** Pilot the gate on one high-volume internal workflow.\n\n"
+        "#### Evidence\n"
+        f"- [CodeScout](../Inbox/{item_note.name})\n"
+        f"- [Daily trend](../Trends/{trend_note.name})\n\n"
+        "### Operator review lane\n"
+        "- Kind: Product\n"
+        "- Time horizon: Near-term\n"
+        "- User/job: Applied AI ops\n\n"
+        "**Thesis.** Give operators a queue that isolates low-confidence agent runs.\n\n"
+        "**Why now.** Teams are crossing the threshold where manual review no longer fits ad hoc chat.\n\n"
+        "**What changed.** Higher usage produces repeated edge cases and repeatable review heuristics.\n\n"
+        "**Validation next step.** Track acceptance rate and review latency for two weeks.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    detail_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "summary-grid summary-grid-single" in detail_html
+    assert "idea-opportunity-grid" in detail_html
+    assert detail_html.count("idea-opportunity-card") == 2
+    assert "idea-opportunity-meta-row" in detail_html
+    assert "idea-opportunity-block-role" in detail_html
+    assert "idea-evidence-list" in detail_html
+    assert "2 opportunities" in detail_html
+    assert "User/job" not in detail_html
+    assert ">Role<" in detail_html
+    assert f"../items/{item_note.stem}.html" in detail_html
+    assert f"../trends/{trend_note.stem}.html" in detail_html
+
+
+def test_export_trend_static_site_hides_empty_topics_for_ideas(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=93,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-ideas-no-topic-trend",
+        overview_md="## Overview\n\nTrend note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-09--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        "Ship a prompt release gate.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    ideas_index_html = (site_dir / "ideas" / "index.html").read_text(encoding="utf-8")
+    detail_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "No tracked topics" not in index_html
+    assert "No tracked topics" not in ideas_index_html
+    assert "No tracked topics" not in detail_html
+
+
 def test_stage_trend_site_source_mirrors_idea_markdown_and_manifest_entries(
     tmp_path: Path,
 ) -> None:
@@ -1100,6 +1243,106 @@ def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stre
         encoding="utf-8"
     )
     assert "agents_lab" in detail_html
+
+
+def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_per_stream(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    agents_root = notes_root / "Streams" / "agents_lab"
+    research_root = notes_root / "Streams" / "research_ops"
+
+    _ = write_markdown_trend_note(
+        output_dir=agents_root,
+        trend_doc_id=111,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-stream-ideas-1",
+        overview_md="## Overview\n\nAgent stream trend.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    _ = write_markdown_trend_note(
+        output_dir=research_root,
+        trend_doc_id=112,
+        title="Research ops",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-stream-ideas-2",
+        overview_md="## Overview\n\nResearch stream trend.\n",
+        topics=["operations"],
+        clusters=[],
+        highlights=[],
+    )
+
+    agents_ideas_dir = agents_root / "Ideas"
+    agents_ideas_dir.mkdir(parents=True, exist_ok=True)
+    agents_idea_note = agents_ideas_dir / "day--2026-03-09--ideas.md"
+    agents_idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "stream: agents_lab\n"
+        "---\n\n"
+        "# Agents lane\n\n"
+        "## Summary\n\n"
+        "Agent-side idea summary.\n",
+        encoding="utf-8",
+    )
+
+    research_ideas_dir = research_root / "Ideas"
+    research_ideas_dir.mkdir(parents=True, exist_ok=True)
+    research_idea_note = research_ideas_dir / "day--2026-03-09--ideas.md"
+    research_idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "stream: research_ops\n"
+        "---\n\n"
+        "# Research ops lane\n\n"
+        "## Summary\n\n"
+        "Research-side idea summary.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=notes_root,
+        output_dir=site_dir,
+    )
+
+    agents_page = site_dir / "ideas" / "agents-lab--day--2026-03-09--ideas.html"
+    research_page = site_dir / "ideas" / "research-ops--day--2026-03-09--ideas.html"
+    assert agents_page.exists()
+    assert research_page.exists()
+
+    agents_html = agents_page.read_text(encoding="utf-8")
+    research_html = research_page.read_text(encoding="utf-8")
+    assert "Agents lane" in agents_html
+    assert "Research ops lane" not in agents_html
+    assert "Research ops lane" in research_html
+    assert "Agents lane" not in research_html
+
+    stream_html = (site_dir / "streams" / "agents-lab.html").read_text(encoding="utf-8")
+    assert "../ideas/agents-lab--day--2026-03-09--ideas.html" in stream_html
+    assert "../ideas/research-ops--day--2026-03-09--ideas.html" not in stream_html
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert "ideas/agents-lab--day--2026-03-09--ideas.html" in manifest["files"]["idea_pages"]
+    assert (
+        "ideas/research-ops--day--2026-03-09--ideas.html"
+        in manifest["files"]["idea_pages"]
+    )
 
 
 def test_stage_trend_site_source_preserves_topic_stream_directory_layout(

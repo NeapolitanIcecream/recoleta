@@ -15,6 +15,9 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.
 - Favor dense, scannable structure over marketing-style flourish. Comparative content should read like an analysis surface, not a landing page.
 - Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Keep `Evolution` as a secondary comparison surface rather than replacing the primary summary.
+- On `Ideas` detail pages, keep `Summary` and `Opportunities` as separate surfaces; render each opportunity as its own readable card with English field labels instead of collapsing multiple ideas into one long prose block.
+- On `Ideas` cards and detail heroes, omit empty topic rows entirely instead of rendering placeholder chrome for missing topics.
+- On `Ideas` opportunity cards, keep only short metadata in pills; render the longer user/role audience as a separate `Role` field block instead of a wrapping pill.
 
 ## Comparative Views
 

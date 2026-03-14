@@ -13,7 +13,7 @@ import shutil
 from typing import Any
 from urllib.parse import quote, urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from loguru import logger
 from markdown_it import MarkdownIt
 from slugify import slugify
@@ -23,6 +23,9 @@ from recoleta.publish.trend_render_shared import (
     _evolution_change_label,
     _extract_evolution_section_data,
     _extract_trend_pdf_sections,
+    _render_browser_content_card_html,
+    _render_browser_section_label_html,
+    _strip_labeled_value,
     _normalize_obsidian_callouts_for_pdf,
     _split_yaml_frontmatter_text,
     _trend_date_token,
@@ -31,6 +34,7 @@ from recoleta.publish.trend_render_shared import (
     _trend_pdf_topics_summary,
     sanitize_trend_title,
 )
+from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
@@ -139,9 +143,18 @@ class IdeaSiteDocument:
     topics: list[str]
     stream: str | None
     status: str
+    opportunity_count: int
+    evidence_count: int
     body_html: str
     excerpt: str
     frontmatter: dict[str, Any]
+
+
+@dataclass(slots=True)
+class IdeaBodyRenderResult:
+    body_html: str
+    opportunity_count: int
+    evidence_count: int
 
 
 def _parse_site_datetime(value: Any) -> datetime | None:
@@ -253,6 +266,13 @@ def _topic_slug(topic: str) -> str:
 
 def _stream_slug(stream: str) -> str:
     return slugify(str(stream or "").strip(), lowercase=True) or "stream"
+
+
+def _normalize_site_stream(stream: str | None) -> str | None:
+    cleaned = str(stream or "").strip()
+    if not cleaned or cleaned == DEFAULT_TOPIC_STREAM:
+        return None
+    return cleaned
 
 
 def _paths_overlap(path_a: Path, path_b: Path) -> bool:
@@ -443,7 +463,7 @@ def _render_stream_link_pill(
     from_page: Path,
     stream_pages: dict[str, Path],
 ) -> str:
-    cleaned = str(stream or "").strip()
+    cleaned = _normalize_site_stream(stream)
     if not cleaned:
         return ""
     slug = _stream_slug(cleaned)
@@ -899,10 +919,17 @@ def _render_idea_card(
     markdown_href = _site_href(
         from_page=from_page, to_page=document.markdown_asset_path
     )
-    topic_links = _render_topic_link_pills(
-        topics=document.topics[:4],
-        from_page=from_page,
-        topic_pages=topic_pages,
+    topic_links = (
+        _render_topic_link_pills(
+            topics=document.topics[:4],
+            from_page=from_page,
+            topic_pages=topic_pages,
+        )
+        if document.topics
+        else ""
+    )
+    topic_links_html = (
+        f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
     )
     stream_link = _render_stream_link_pill(
         stream=document.stream,
@@ -918,6 +945,23 @@ def _render_idea_card(
         meta_pills.append(
             f"<span class='meta-pill subdued'>{html.escape(document.status.title())}</span>"
         )
+    insight_parts: list[str] = []
+    if document.opportunity_count:
+        insight_parts.append(
+            f"{document.opportunity_count} opportunit{'ies' if document.opportunity_count != 1 else 'y'}"
+        )
+    if document.evidence_count:
+        insight_parts.append(
+            f"{document.evidence_count} evidence link{'s' if document.evidence_count != 1 else ''}"
+        )
+    insight_html = (
+        "<div class='trend-insight-row'>"
+        "<span class='trend-insight-badge'>Opportunities</span>"
+        f"<span class='trend-insight-copy'>{html.escape(' · '.join(insight_parts))}</span>"
+        "</div>"
+        if insight_parts
+        else ""
+    )
     return (
         "<article class='trend-card'>"
         "<div class='card-meta-row'>"
@@ -926,7 +970,8 @@ def _render_idea_card(
         "</div>"
         f"<h2 class='card-title'><a href='{idea_href}'>{html.escape(document.title)}</a></h2>"
         f"<p class='card-excerpt'>{html.escape(document.excerpt)}</p>"
-        f"<div class='topic-pill-row'>{topic_links}</div>"
+        f"{insight_html}"
+        f"{topic_links_html}"
         "<div class='card-actions'>"
         f"<a class='action-link' href='{idea_href}'>Open brief</a>"
         f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>"
@@ -952,10 +997,17 @@ def _render_idea_page(
         from_page=document.page_path,
         to_page=document.markdown_asset_path,
     )
-    topic_links = _render_topic_link_pills(
-        topics=document.topics,
-        from_page=document.page_path,
-        topic_pages=topic_pages,
+    topic_links = (
+        _render_topic_link_pills(
+            topics=document.topics,
+            from_page=document.page_path,
+            topic_pages=topic_pages,
+        )
+        if document.topics
+        else ""
+    )
+    topic_links_html = (
+        f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
     )
     stream_link = _render_stream_link_pill(
         stream=document.stream,
@@ -965,7 +1017,9 @@ def _render_idea_page(
     meta_rows = [
         ("Window", document.period_token),
         ("Granularity", document.granularity.title()),
-        ("Status", document.status or "Unknown"),
+        ("Opportunities", str(document.opportunity_count or 0)),
+        ("Evidence", str(document.evidence_count or 0)),
+        ("Status", (document.status or "Unknown").title()),
     ]
     meta_items = "".join(
         "<div class='meta-panel'>"
@@ -991,7 +1045,7 @@ def _render_idea_page(
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
         f"<p class='detail-dek'>{html.escape(document.excerpt or 'Evidence-grounded opportunity brief derived from a trend window.')}</p>"
         f"{detail_stream_html}"
-        f"<div class='topic-pill-row'>{topic_links}</div>"
+        f"{topic_links_html}"
         "<div class='card-actions detail-actions'>"
         f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"
         "</div>"
@@ -1869,6 +1923,14 @@ iframe {
 .detail-content .summary-grid.summary-grid-single {
   grid-template-columns: minmax(0, 1fr);
 }
+.detail-content .idea-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
 .detail-content .surface-card {
   margin-top: 14px;
   padding: 16px;
@@ -1887,6 +1949,105 @@ iframe {
 .detail-content .summary-card-secondary {
   background:
     linear-gradient(180deg, rgba(247, 250, 254, 0.95), rgba(251, 252, 254, 0.96));
+}
+.detail-content .idea-opportunities-section {
+  background:
+    radial-gradient(circle at top right, rgba(29, 103, 194, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(243, 248, 254, 0.96), rgba(250, 252, 255, 0.98));
+}
+.detail-content .idea-section-intro {
+  margin-bottom: 14px;
+}
+.detail-content .idea-opportunity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.detail-content .idea-opportunity-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(24, 52, 83, 0.10);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(252, 254, 255, 0.98), rgba(247, 250, 254, 0.96));
+}
+.detail-content .idea-opportunity-head,
+.detail-content .idea-opportunity-body {
+  display: grid;
+  gap: 12px;
+}
+.detail-content .idea-opportunity-title {
+  margin: 0;
+  color: #183453;
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 24px;
+  line-height: 1.08;
+}
+.detail-content .idea-opportunity-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detail-content .idea-meta-pill {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(24, 52, 83, 0.10);
+  color: #34506f;
+}
+.detail-content .idea-meta-pill-label {
+  color: #70849a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.detail-content .idea-meta-pill-separator {
+  margin: 0 6px;
+  color: #9aabc0;
+}
+.detail-content .idea-opportunity-block {
+  display: grid;
+  gap: 6px;
+}
+.detail-content .idea-opportunity-block-role {
+  padding: 12px 14px;
+  border: 1px solid rgba(24, 52, 83, 0.10);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+}
+.detail-content .idea-opportunity-label {
+  color: #6a8098;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.detail-content .idea-opportunity-copy {
+  color: #213246;
+}
+.detail-content .idea-opportunity-role-value {
+  color: #34506f;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.detail-content .idea-opportunity-copy p,
+.detail-content .idea-opportunity-copy ul,
+.detail-content .idea-opportunity-copy ol {
+  margin: 0;
+}
+.detail-content .idea-opportunity-block-evidence {
+  padding-top: 12px;
+  border-top: 1px dashed rgba(24, 52, 83, 0.12);
+}
+.detail-content .idea-evidence-list ul,
+.detail-content .idea-evidence-list ol {
+  padding-inline-start: 1.08em;
 }
 .detail-content .highlight-card {
   background:
@@ -2254,6 +2415,7 @@ iframe {
   .trend-grid,
   .topic-card-grid,
   .detail-content .summary-grid,
+  .detail-content .idea-opportunity-grid,
   .detail-content .evolution-grid,
   .pager-row {
     grid-template-columns: 1fr;
@@ -2344,7 +2506,7 @@ def _load_trend_source_documents(
             )
             topics = _parse_site_string_list(frontmatter.get("topics"))
 
-            stream = (
+            stream = _normalize_site_stream(
                 str(frontmatter.get("stream") or input_info.stream or "").strip()
                 or None
             )
@@ -2483,7 +2645,7 @@ def _load_item_source_documents(
                     authors=_parse_site_string_list(frontmatter.get("authors")),
                     topics=_parse_site_string_list(frontmatter.get("topics")),
                     relevance_score=relevance_score,
-                    stream=input_info.stream,
+                    stream=_normalize_site_stream(input_info.stream),
                 )
             )
 
@@ -2528,7 +2690,7 @@ def _load_idea_source_documents(
                     period_start=period_start,
                     period_end=period_end,
                     topics=_parse_site_string_list(frontmatter.get("topics")),
-                    stream=(
+                    stream=_normalize_site_stream(
                         str(frontmatter.get("stream") or input_info.stream or "").strip()
                         or None
                     ),
@@ -2583,6 +2745,306 @@ def _build_item_browser_body_html(*, body_html: str) -> str:
         f"<div class='prose'>{fallback_html}</div>"
         "</section>"
         "</div>"
+    )
+
+
+def _idea_heading_matches(heading: str, *labels: str) -> bool:
+    normalized = str(heading or "").strip().lower()
+    if not normalized:
+        return False
+    return any(label in normalized for label in labels)
+
+
+def _idea_meta_pill(label: str, value: str) -> str:
+    return (
+        "<span class='meta-pill idea-meta-pill'>"
+        f"<span class='idea-meta-pill-label'>{html.escape(label)}</span>"
+        f"<span class='idea-meta-pill-separator'>·</span>{html.escape(value)}"
+        "</span>"
+    )
+
+
+def _render_idea_role_block(value: str) -> str:
+    safe_value = html.escape(value)
+    return (
+        "<section class='idea-opportunity-block idea-opportunity-block-role'>"
+        "<div class='idea-opportunity-label'>Role</div>"
+        f"<div class='idea-opportunity-copy idea-opportunity-role-value' title='{html.escape(value, quote=True)}'>{safe_value}</div>"
+        "</section>"
+    )
+
+
+def _extract_idea_opportunity_meta_sections(
+    node: Tag,
+) -> tuple[str | None, str | None] | None:
+    if node.name not in {"ul", "ol"}:
+        return None
+    pills: list[str] = []
+    role_html: str | None = None
+    items = node.find_all("li", recursive=False)
+    if not items:
+        return None
+    for item in items:
+        text = item.get_text(" ", strip=True)
+        if (value := _strip_labeled_value(text, labels=("Kind",))) is not None:
+            pills.append(_idea_meta_pill("Kind", value))
+            continue
+        if (value := _strip_labeled_value(text, labels=("Time horizon",))) is not None:
+            pills.append(_idea_meta_pill("Time horizon", value))
+            continue
+        if (value := _strip_labeled_value(text, labels=("User/job",))) is not None:
+            role_html = _render_idea_role_block(value)
+            continue
+        if (value := _strip_labeled_value(text, labels=("Role",))) is not None:
+            role_html = _render_idea_role_block(value)
+            continue
+        if " ".join(text.split()).strip():
+            return None
+    pills_html = f"<div class='idea-opportunity-meta-row'>{''.join(pills)}</div>" if pills else None
+    if pills_html is None and role_html is None:
+        return None
+    return pills_html, role_html
+
+
+def _extract_idea_labeled_paragraph(node: Tag) -> tuple[str, str] | None:
+    if node.name != "p":
+        return None
+    label_by_key = {
+        "thesis": "Thesis",
+        "why now": "Why now",
+        "what changed": "What changed",
+        "validation next step": "Validation next step",
+    }
+    paragraph = BeautifulSoup(str(node), "html.parser").find("p")
+    if paragraph is None:
+        return None
+    strong = paragraph.find("strong", recursive=False)
+    if strong is None:
+        return None
+    raw_label = strong.get_text(" ", strip=True).rstrip(".:：").strip().lower()
+    label = label_by_key.get(raw_label)
+    if label is None:
+        return None
+    strong.extract()
+    inner_html = re.sub(
+        r"^\s*([.:：]|&nbsp;)+\s*",
+        "",
+        paragraph.decode_contents(),
+    ).strip()
+    if not inner_html:
+        return None
+    return label, inner_html
+
+
+def _render_idea_opportunity_card(*, title: str, inner_html: str) -> tuple[str, int]:
+    soup = BeautifulSoup(inner_html, "html.parser")
+    meta_row_html = ""
+    content_blocks: list[str] = []
+    evidence_count = 0
+    generic_nodes: list[str] = []
+    children = [node for node in soup.contents if str(node).strip()]
+    index = 0
+    while index < len(children):
+        child = children[index]
+        if not isinstance(child, Tag):
+            generic_nodes.append(str(child))
+            index += 1
+            continue
+        if not meta_row_html:
+            extracted_meta_sections = _extract_idea_opportunity_meta_sections(child)
+            if extracted_meta_sections is not None:
+                extracted_meta_html, role_html = extracted_meta_sections
+                if extracted_meta_html is not None:
+                    meta_row_html = extracted_meta_html
+                if role_html is not None:
+                    content_blocks.append(role_html)
+                index += 1
+                continue
+        if child.name in {"h4", "h5"} and _idea_heading_matches(
+            child.get_text(" ", strip=True), "evidence"
+        ):
+            evidence_nodes: list[str] = []
+            look_ahead = index + 1
+            while look_ahead < len(children):
+                candidate = children[look_ahead]
+                if isinstance(candidate, Tag) and candidate.name in {
+                    "h3",
+                    "h4",
+                    "h5",
+                }:
+                    break
+                if str(candidate).strip():
+                    evidence_nodes.append(str(candidate))
+                look_ahead += 1
+            evidence_soup = BeautifulSoup("".join(evidence_nodes), "html.parser")
+            evidence_count += len(evidence_soup.find_all("li"))
+            evidence_html = "".join(evidence_nodes).strip() or "<p>(none)</p>"
+            content_blocks.append(
+                "<section class='idea-opportunity-block idea-opportunity-block-evidence'>"
+                "<div class='idea-opportunity-label'>Evidence</div>"
+                f"<div class='idea-opportunity-copy prose idea-evidence-list'>{evidence_html}</div>"
+                "</section>"
+            )
+            index = look_ahead
+            continue
+        labeled = _extract_idea_labeled_paragraph(child)
+        if labeled is not None:
+            label, value_html = labeled
+            content_blocks.append(
+                "<section class='idea-opportunity-block'>"
+                f"<div class='idea-opportunity-label'>{html.escape(label)}</div>"
+                f"<div class='idea-opportunity-copy prose'><p>{value_html}</p></div>"
+                "</section>"
+            )
+            index += 1
+            continue
+        generic_nodes.append(str(child))
+        index += 1
+
+    if generic_nodes:
+        content_blocks.insert(
+            0,
+            "<section class='idea-opportunity-block'>"
+            "<div class='idea-opportunity-copy prose'>"
+            f"{''.join(generic_nodes)}"
+            "</div>"
+            "</section>",
+        )
+
+    return (
+        "<article class='idea-opportunity-card'>"
+        "<div class='idea-opportunity-head'>"
+        f"<h3 class='idea-opportunity-title'>{html.escape(title)}</h3>"
+        f"{meta_row_html}"
+        "</div>"
+        f"<div class='idea-opportunity-body'>{''.join(content_blocks)}</div>"
+        "</article>",
+        evidence_count,
+    )
+
+
+def _render_idea_opportunities_section(
+    *, heading: str, inner_html: str
+) -> tuple[str, int, int]:
+    section_soup = BeautifulSoup(inner_html, "html.parser")
+    cards: list[str] = []
+    intro_nodes: list[str] = []
+    evidence_count = 0
+    current_title: str | None = None
+    current_nodes: list[str] = []
+    for node in section_soup.contents:
+        if not str(node).strip():
+            continue
+        if isinstance(node, Tag) and node.name == "h3":
+            if current_title is not None:
+                card_html, entry_evidence_count = _render_idea_opportunity_card(
+                    title=current_title,
+                    inner_html="".join(current_nodes),
+                )
+                cards.append(card_html)
+                evidence_count += entry_evidence_count
+            current_title = node.get_text(" ", strip=True) or "Opportunity"
+            current_nodes = []
+            continue
+        if current_title is None:
+            intro_nodes.append(str(node))
+            continue
+        current_nodes.append(str(node))
+
+    if current_title is not None:
+        card_html, entry_evidence_count = _render_idea_opportunity_card(
+            title=current_title,
+            inner_html="".join(current_nodes),
+        )
+        cards.append(card_html)
+        evidence_count += entry_evidence_count
+
+    if not cards:
+        return (
+            _render_browser_content_card_html(heading=heading, inner_html=inner_html),
+            0,
+            evidence_count,
+        )
+
+    intro_html = (
+        f"<div class='prose idea-section-intro'>{''.join(intro_nodes)}</div>"
+        if "".join(intro_nodes).strip()
+        else ""
+    )
+    count_label = (
+        f"{len(cards)} opportunity" if len(cards) == 1 else f"{len(cards)} opportunities"
+    )
+    return (
+        "<section class='surface-card section-card idea-opportunities-section'>"
+        "<div class='idea-section-head'>"
+        f"{_render_browser_section_label_html(heading)}"
+        f"<span class='meta-date'>{html.escape(count_label)}</span>"
+        "</div>"
+        f"{intro_html}"
+        f"<div class='idea-opportunity-grid'>{''.join(cards)}</div>"
+        "</section>",
+        len(cards),
+        evidence_count,
+    )
+
+
+def _build_idea_browser_body_html(*, body_html: str) -> IdeaBodyRenderResult:
+    _title, sections = _extract_trend_pdf_sections(body_html=body_html)
+    if not sections:
+        return IdeaBodyRenderResult(
+            body_html=_build_item_browser_body_html(body_html=body_html),
+            opportunity_count=0,
+            evidence_count=0,
+        )
+
+    rendered: list[str] = []
+    summary_cards: list[str] = []
+    opportunity_count = 0
+    evidence_count = 0
+    for section in sections:
+        if _idea_heading_matches(section.heading, "summary", "overview"):
+            summary_cards.append(
+                _render_browser_content_card_html(
+                    heading=section.heading,
+                    inner_html=section.inner_html,
+                    card_classes=(
+                        "surface-card section-card summary-card summary-card-primary"
+                    ),
+                )
+            )
+            continue
+        if _idea_heading_matches(section.heading, "opportunit"):
+            (
+                opportunities_html,
+                section_opportunity_count,
+                section_evidence_count,
+            ) = _render_idea_opportunities_section(
+                heading=section.heading,
+                inner_html=section.inner_html,
+            )
+            rendered.append(opportunities_html)
+            opportunity_count += section_opportunity_count
+            evidence_count += section_evidence_count
+            continue
+        rendered.append(
+            _render_browser_content_card_html(
+                heading=section.heading,
+                inner_html=section.inner_html,
+            )
+        )
+
+    if summary_cards:
+        summary_classes = (
+            "summary-grid summary-grid-single" if len(summary_cards) == 1 else "summary-grid"
+        )
+        rendered.insert(
+            0,
+            f"<section class='{summary_classes}'>{''.join(summary_cards[:2])}</section>",
+        )
+    return IdeaBodyRenderResult(
+        body_html="<div class='document-flow'>" + "".join(rendered) + "</div>",
+        opportunity_count=opportunity_count,
+        evidence_count=evidence_count,
     )
 
 
@@ -2653,7 +3115,10 @@ def _load_idea_site_documents(
     idea_artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     page_by_markdown_path = {
-        source_document.markdown_path.resolve(): ideas_dir / f"{source_document.stem}.html"
+        source_document.markdown_path.resolve(): (
+            ideas_dir
+            / f"{_item_site_page_stem(stem=source_document.stem, stream=source_document.stream)}.html"
+        )
         for source_document in source_documents
     }
     all_linked_pages = dict(linked_page_by_markdown_path)
@@ -2665,8 +3130,9 @@ def _load_idea_site_documents(
         rendered_html = markdown.render(normalized_markdown)
         title, raw_body_html, excerpt = _extract_item_body_html(body_html=rendered_html)
         page_path = page_by_markdown_path[source_document.markdown_path.resolve()]
+        idea_body = _build_idea_browser_body_html(body_html=raw_body_html)
         body_html = _rewrite_site_markdown_links(
-            html_text=_build_item_browser_body_html(body_html=raw_body_html),
+            html_text=idea_body.body_html,
             source_markdown_path=source_document.markdown_path,
             from_page=page_path,
             page_by_markdown_path=all_linked_pages,
@@ -2679,7 +3145,10 @@ def _load_idea_site_documents(
             if source_document.period_start is not None
             else source_document.stem
         )
-        markdown_asset_path = idea_artifacts_dir / source_document.markdown_path.name
+        markdown_asset_path = idea_artifacts_dir / _item_site_asset_name(
+            name=source_document.markdown_path.name,
+            stream=source_document.stream,
+        )
         shutil.copy2(source_document.markdown_path, markdown_asset_path)
         documents.append(
             IdeaSiteDocument(
@@ -2695,6 +3164,8 @@ def _load_idea_site_documents(
                 topics=source_document.topics,
                 stream=source_document.stream,
                 status=source_document.status,
+                opportunity_count=idea_body.opportunity_count,
+                evidence_count=idea_body.evidence_count,
                 body_html=body_html,
                 excerpt=excerpt,
                 frontmatter=source_document.frontmatter,
