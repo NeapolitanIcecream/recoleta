@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 __all__ = [
     "resolve_ideas_note_path",
     "write_markdown_ideas_note",
+    "write_obsidian_ideas_note",
 ]
 
 
@@ -29,10 +30,23 @@ def resolve_ideas_note_path(
     return note_dir / f"{granularity}--{token}--ideas.md"
 
 
+def _sanitize_obsidian_tag(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    normalized = "".join(
+        ch if (ch.isalnum() or ch in {"-", "_", "/"}) else "-" for ch in raw
+    )
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    normalized = normalized.strip("-")
+    return normalized.lower()
+
+
 def _format_evidence_ref(
     *,
     repository: Any,
-    output_dir: Path,
+    root_dir: Path,
     note_dir: Path,
     ref: Any,
 ) -> str:
@@ -60,7 +74,7 @@ def _format_evidence_ref(
         item = repository.get_item(item_id=item_id) if item_id > 0 else None
         if item is not None:
             href = resolve_item_note_href(
-                note_dir=output_dir / "Inbox",
+                note_dir=root_dir / "Inbox",
                 from_dir=note_dir,
                 item_id=item_id,
                 title=str(getattr(item, "title", "") or ""),
@@ -72,7 +86,7 @@ def _format_evidence_ref(
         period_start = getattr(doc, "period_start", None)
         if raw_granularity and isinstance(period_start, datetime):
             href = resolve_trend_note_href(
-                note_dir=output_dir / "Trends",
+                note_dir=root_dir / "Trends",
                 from_dir=note_dir,
                 trend_doc_id=doc_id,
                 granularity=raw_granularity,
@@ -87,10 +101,11 @@ def _format_evidence_ref(
     return f"{rendered}: {reason}" if reason else rendered
 
 
-def write_markdown_ideas_note(
+def _render_ideas_note_lines(
     *,
     repository: Any,
-    output_dir: Path,
+    root_dir: Path,
+    note_dir: Path,
     pass_output_id: int,
     upstream_pass_output_id: int | None,
     granularity: str,
@@ -101,14 +116,14 @@ def write_markdown_ideas_note(
     payload: TrendIdeasPayload,
     scope: str,
     topics: list[str] | None = None,
-) -> Path:
-    note_dir = output_dir / "Ideas"
-    note_dir.mkdir(parents=True, exist_ok=True)
-    note_path = resolve_ideas_note_path(
-        note_dir=note_dir,
-        granularity=granularity,
-        period_start=period_start,
-    )
+) -> list[str]:
+    base_tags = ["recoleta/ideas"]
+    for topic in list(topics or []):
+        normalized = _sanitize_obsidian_tag(topic)
+        if normalized:
+            base_tags.append(f"topic/{normalized}")
+    seen_tags: set[str] = set()
+    tags = [tag for tag in base_tags if not (tag in seen_tags or seen_tags.add(tag))]
     frontmatter = {
         "kind": "ideas",
         "pass_output_id": int(pass_output_id),
@@ -122,7 +137,7 @@ def write_markdown_ideas_note(
         "status": status,
         "stream": scope,
         "topics": [str(topic).strip() for topic in list(topics or []) if str(topic).strip()],
-        "tags": ["recoleta/ideas"],
+        "tags": tags,
     }
 
     lines: list[str] = [
@@ -163,11 +178,119 @@ def write_markdown_ideas_note(
                         "- "
                         + _format_evidence_ref(
                             repository=repository,
-                            output_dir=output_dir,
+                            root_dir=root_dir,
                             note_dir=note_dir,
                             ref=ref,
                         )
                     )
+    return lines
 
+
+def _write_ideas_note(
+    *,
+    repository: Any,
+    root_dir: Path,
+    note_dir: Path,
+    pass_output_id: int,
+    upstream_pass_output_id: int | None,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    run_id: str,
+    status: str,
+    payload: TrendIdeasPayload,
+    scope: str,
+    topics: list[str] | None = None,
+) -> Path:
+    note_dir.mkdir(parents=True, exist_ok=True)
+    note_path = resolve_ideas_note_path(
+        note_dir=note_dir,
+        granularity=granularity,
+        period_start=period_start,
+    )
+    lines = _render_ideas_note_lines(
+        repository=repository,
+        root_dir=root_dir,
+        note_dir=note_dir,
+        pass_output_id=pass_output_id,
+        upstream_pass_output_id=upstream_pass_output_id,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        run_id=run_id,
+        status=status,
+        payload=payload,
+        scope=scope,
+        topics=topics,
+    )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return note_path
+
+
+def write_markdown_ideas_note(
+    *,
+    repository: Any,
+    output_dir: Path,
+    pass_output_id: int,
+    upstream_pass_output_id: int | None,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    run_id: str,
+    status: str,
+    payload: TrendIdeasPayload,
+    scope: str,
+    topics: list[str] | None = None,
+) -> Path:
+    root_dir = output_dir.expanduser().resolve()
+    note_dir = root_dir / "Ideas"
+    return _write_ideas_note(
+        repository=repository,
+        root_dir=root_dir,
+        note_dir=note_dir,
+        pass_output_id=pass_output_id,
+        upstream_pass_output_id=upstream_pass_output_id,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        run_id=run_id,
+        status=status,
+        payload=payload,
+        scope=scope,
+        topics=topics,
+    )
+
+
+def write_obsidian_ideas_note(
+    *,
+    repository: Any,
+    vault_path: Path,
+    base_folder: str,
+    pass_output_id: int,
+    upstream_pass_output_id: int | None,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    run_id: str,
+    status: str,
+    payload: TrendIdeasPayload,
+    scope: str,
+    topics: list[str] | None = None,
+) -> Path:
+    root_dir = vault_path / base_folder
+    note_dir = root_dir / "Ideas"
+    return _write_ideas_note(
+        repository=repository,
+        root_dir=root_dir,
+        note_dir=note_dir,
+        pass_output_id=pass_output_id,
+        upstream_pass_output_id=upstream_pass_output_id,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        run_id=run_id,
+        status=status,
+        payload=payload,
+        scope=scope,
+        topics=topics,
+    )

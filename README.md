@@ -363,7 +363,9 @@ Key behaviors:
 - **Same window semantics**: `--date` uses the same UTC anchor-date rules as `recoleta trends`.
 - **Evidence-first output**: the ideas pass treats the upstream trend payload as the primary frame, then uses the active local corpus to verify and sharpen candidate opportunities.
 - **Safe suppression**: when the window has too little evidence for reliable ideas, the pass returns `status=suppressed` instead of padding with generic suggestions.
-- **Separate publication**: successful runs write an ideas brief under `MARKDOWN_OUTPUT_DIR/Ideas/` or `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Ideas/`.
+- **Separate publication**: successful runs honor `PUBLISH_TARGETS` for note-style outputs. `markdown` writes `Ideas/` briefs, `obsidian` writes sibling notes into the configured vault, and the canonical payload still remains separate in `pass_outputs`.
+- **Searchable projection**: successful runs also upsert an `idea` document into the local `documents` corpus with summary/content/meta chunks so ideas can participate in later search or inspection work.
+- **Telegram deferred**: if `PUBLISH_TARGETS` includes `telegram`, the ideas stage records a skipped metric and does not attempt delivery yet.
 
 Examples:
 
@@ -381,7 +383,9 @@ uv run recoleta ideas --granularity day --date 2026-03-09 --model "openai/gpt-4o
 Outputs:
 
 - **SQLite**: the canonical `trend_ideas` pass output is persisted in `pass_outputs`.
-- **Local Markdown**: a successful note is written to `MARKDOWN_OUTPUT_DIR/Ideas/`.
+- **Search corpus**: a successful run also writes a searchable `doc_type=idea` document into `documents`.
+- **Local Markdown**: when `PUBLISH_TARGETS` includes `markdown`, a successful note is written to `MARKDOWN_OUTPUT_DIR/Ideas/`.
+- **Obsidian**: when `PUBLISH_TARGETS` includes `obsidian`, a sibling note is written to `OBSIDIAN_BASE_FOLDER/Ideas/`.
 - **Topic streams**: when `topic_streams` is configured, `recoleta ideas` runs once per stream and the CLI prints one aggregate line plus one per-stream `status + pass_output_id` line.
 
 Semantic context knobs (env or config):

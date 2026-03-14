@@ -106,7 +106,7 @@ class CorpusSpec:
                 ),
             )
             key = candidate.normalized_key()
-            if key[0] not in {"item", "trend"} or key in seen:
+            if key[0] not in {"item", "trend", "idea"} or key in seen:
                 continue
             seen.add(key)
             normalized.append(candidate)
@@ -119,7 +119,7 @@ class CorpusSpec:
         granularity: str | None = None,
     ) -> list[tuple[str, str | None]]:
         normalized_type = str(doc_type or "").strip().lower()
-        if normalized_type not in {"item", "trend"}:
+        if normalized_type not in {"item", "trend", "idea"}:
             return []
         normalized_granularity = (
             str(granularity or "").strip().lower() if granularity is not None else ""
@@ -128,7 +128,7 @@ class CorpusSpec:
         if not normalized_sources:
             if normalized_type == "item":
                 return [("item", None)]
-            return [("trend", normalized_granularity or None)]
+            return [(normalized_type, normalized_granularity or None)]
         allowed_sources = [
             source for source in normalized_sources if source[0] == normalized_type
         ]
@@ -137,7 +137,7 @@ class CorpusSpec:
         if normalized_type == "item":
             return [("item", None)]
         if normalized_granularity:
-            requested = ("trend", normalized_granularity)
+            requested = (normalized_type, normalized_granularity)
             return [requested] if requested in allowed_sources else []
         return allowed_sources
 

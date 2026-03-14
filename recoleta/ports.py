@@ -240,6 +240,16 @@ class RepositoryPort(Protocol):
         scope: str = "default",
     ) -> Document: ...
 
+    def upsert_document_for_idea(
+        self,
+        *,
+        granularity: str,
+        period_start: datetime,
+        period_end: datetime,
+        title: str,
+        scope: str = "default",
+    ) -> Document: ...
+
     def upsert_document_chunk(
         self,
         *,
@@ -473,6 +483,16 @@ class TrendRepositoryPort(Protocol):
     ) -> Document: ...
 
     def upsert_document_for_trend(
+        self,
+        *,
+        granularity: str,
+        period_start: datetime,
+        period_end: datetime,
+        title: str,
+        scope: str = "default",
+    ) -> Document: ...
+
+    def upsert_document_for_idea(
         self,
         *,
         granularity: str,
