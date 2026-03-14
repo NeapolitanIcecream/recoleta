@@ -344,6 +344,7 @@ def run_ideas_stage(
                 status=status.value,
                 payload=payload,
                 scope=scope,
+                topics=list(trend_payload.topics or []),
             )
             record_metric(
                 name="pipeline.trends.projection.ideas_publish.emitted_total",

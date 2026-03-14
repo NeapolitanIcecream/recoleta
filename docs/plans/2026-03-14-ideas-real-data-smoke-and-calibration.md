@@ -151,6 +151,13 @@ Action taken in this pass:
 additional prompt surgery. The right next step is not scheduler work; it is more
 selective real-window auditing as new topic windows accumulate.
 
+Follow-up note:
+
+- further real-window calibration is now intentionally deferred until the live
+  corpus gets materially larger
+- near-term quality work should focus on prompt readability and downstream
+  publishing surfaces rather than on rerunning the same small set of windows
+
 The concrete follow-up from this study was therefore:
 
 1. keep the prompt baseline unchanged

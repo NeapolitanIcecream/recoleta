@@ -100,6 +100,7 @@ def write_markdown_ideas_note(
     status: str,
     payload: TrendIdeasPayload,
     scope: str,
+    topics: list[str] | None = None,
 ) -> Path:
     note_dir = output_dir / "Ideas"
     note_dir.mkdir(parents=True, exist_ok=True)
@@ -120,6 +121,7 @@ def write_markdown_ideas_note(
         "run_id": run_id,
         "status": status,
         "stream": scope,
+        "topics": [str(topic).strip() for topic in list(topics or []) if str(topic).strip()],
         "tags": ["recoleta/ideas"],
     }
 

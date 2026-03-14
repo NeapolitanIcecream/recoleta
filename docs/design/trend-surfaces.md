@@ -76,15 +76,18 @@ This supports visual debugging without mutating the canonical markdown note and 
 
 ## Static site strategy
 
-The static site exporter consumes trend markdown notes and emits a standalone relative-link website.
+The static site exporter consumes trend markdown notes and sibling idea briefs
+when present, then emits a standalone relative-link website.
 
 Outputs include:
 
 - homepage
 - archive page
+- ideas index
 - topics index
 - topic detail pages
 - trend detail pages
+- idea detail pages
 - copied markdown/PDF artifacts
 - site manifest
 

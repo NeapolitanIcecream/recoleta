@@ -58,6 +58,7 @@ class TrendSiteInputDirectory:
     path: Path
     root_path: Path
     inbox_path: Path | None
+    ideas_path: Path | None
     stream: str | None
 
 
@@ -105,6 +106,39 @@ class ItemSiteDocument:
     topics: list[str]
     stream: str | None
     relevance_score: float | None
+    body_html: str
+    excerpt: str
+    frontmatter: dict[str, Any]
+
+
+@dataclass(slots=True)
+class IdeaSiteSourceDocument:
+    markdown_path: Path
+    stem: str
+    frontmatter: dict[str, Any]
+    markdown_body: str
+    granularity: str
+    period_start: datetime | None
+    period_end: datetime | None
+    topics: list[str]
+    stream: str | None
+    status: str
+
+
+@dataclass(slots=True)
+class IdeaSiteDocument:
+    markdown_path: Path
+    markdown_asset_path: Path
+    page_path: Path
+    stem: str
+    title: str
+    granularity: str
+    period_token: str
+    period_start: datetime | None
+    period_end: datetime | None
+    topics: list[str]
+    stream: str | None
+    status: str
     body_html: str
     excerpt: str
     frontmatter: dict[str, Any]
@@ -244,6 +278,18 @@ def _trend_site_sort_key(
     )
 
 
+def _idea_site_sort_key(
+    document: IdeaSiteSourceDocument,
+) -> tuple[datetime, int, datetime, str]:
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    return (
+        document.period_end or document.period_start or floor,
+        _TREND_GRANULARITY_SORT_PRIORITY.get(document.granularity, 0),
+        document.period_start or floor,
+        document.stem,
+    )
+
+
 def _reset_directory(path: Path) -> None:
     if path.exists():
         if not path.is_dir():
@@ -266,6 +312,7 @@ def _reset_stage_output_root(*, stage_root: Path, trends_output_dir: Path) -> No
         _reset_directory(trends_output_dir)
         return
     _remove_managed_stage_path(trends_output_dir)
+    _remove_managed_stage_path(stage_root / "Ideas")
     _remove_managed_stage_path(stage_root / "Inbox")
     _remove_managed_stage_path(stage_root / "Streams")
     trends_output_dir.mkdir(parents=True, exist_ok=True)
@@ -321,6 +368,12 @@ def _discover_trend_site_input_dirs(
                 inbox_path=inbox_path
                 if inbox_path.exists() and inbox_path.is_dir()
                 else None,
+                ideas_path=(
+                    root_path / "Ideas"
+                    if (root_path / "Ideas").exists()
+                    and (root_path / "Ideas").is_dir()
+                    else None
+                ),
                 stream=_infer_stream_name_from_trends_dir(resolved_candidate),
             )
         )
@@ -420,6 +473,7 @@ def _site_page_shell(
     stylesheet_href = _site_href(from_page=page_path, to_page=stylesheet_path)
     index_href = _site_href(from_page=page_path, to_page=output_dir / "index.html")
     archive_href = _site_href(from_page=page_path, to_page=output_dir / "archive.html")
+    ideas_href = _site_href(from_page=page_path, to_page=output_dir / "ideas" / "index.html")
     topics_href = _site_href(
         from_page=page_path, to_page=output_dir / "topics" / "index.html"
     )
@@ -467,6 +521,7 @@ def _site_page_shell(
         "<nav class='nav-links'>"
         f"{nav_link('Home', index_href, 'home')}"
         f"{nav_link('Archive', archive_href, 'archive')}"
+        f"{nav_link('Ideas', ideas_href, 'ideas')}"
         f"{nav_link('Topics', topics_href, 'topics')}"
         f"{nav_link('Streams', streams_href, 'streams')}"
         "</nav>"
@@ -833,9 +888,171 @@ def _render_item_page(
     )
 
 
+def _render_idea_card(
+    *,
+    document: IdeaSiteDocument,
+    from_page: Path,
+    topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
+) -> str:
+    idea_href = _site_href(from_page=from_page, to_page=document.page_path)
+    markdown_href = _site_href(
+        from_page=from_page, to_page=document.markdown_asset_path
+    )
+    topic_links = _render_topic_link_pills(
+        topics=document.topics[:4],
+        from_page=from_page,
+        topic_pages=topic_pages,
+    )
+    stream_link = _render_stream_link_pill(
+        stream=document.stream,
+        from_page=from_page,
+        stream_pages=stream_pages,
+    )
+    meta_pills = [
+        f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
+    ]
+    if stream_link:
+        meta_pills.append(stream_link)
+    if document.status and document.status != "succeeded":
+        meta_pills.append(
+            f"<span class='meta-pill subdued'>{html.escape(document.status.title())}</span>"
+        )
+    return (
+        "<article class='trend-card'>"
+        "<div class='card-meta-row'>"
+        f"<div class='card-pill-row'>{''.join(meta_pills)}</div>"
+        f"<span class='meta-date'>{html.escape(document.period_token)}</span>"
+        "</div>"
+        f"<h2 class='card-title'><a href='{idea_href}'>{html.escape(document.title)}</a></h2>"
+        f"<p class='card-excerpt'>{html.escape(document.excerpt)}</p>"
+        f"<div class='topic-pill-row'>{topic_links}</div>"
+        "<div class='card-actions'>"
+        f"<a class='action-link' href='{idea_href}'>Open brief</a>"
+        f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>"
+        "</div>"
+        "</article>"
+    )
+
+
+def _render_idea_page(
+    *,
+    document: IdeaSiteDocument,
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
+) -> str:
+    breadcrumb_home = _site_href(
+        from_page=document.page_path, to_page=output_dir / "index.html"
+    )
+    breadcrumb_ideas = _site_href(
+        from_page=document.page_path, to_page=output_dir / "ideas" / "index.html"
+    )
+    markdown_href = _site_href(
+        from_page=document.page_path,
+        to_page=document.markdown_asset_path,
+    )
+    topic_links = _render_topic_link_pills(
+        topics=document.topics,
+        from_page=document.page_path,
+        topic_pages=topic_pages,
+    )
+    stream_link = _render_stream_link_pill(
+        stream=document.stream,
+        from_page=document.page_path,
+        stream_pages=stream_pages,
+    )
+    meta_rows = [
+        ("Window", document.period_token),
+        ("Granularity", document.granularity.title()),
+        ("Status", document.status or "Unknown"),
+    ]
+    meta_items = "".join(
+        "<div class='meta-panel'>"
+        f"<div class='meta-panel-label'>{html.escape(label)}</div>"
+        f"<div class='meta-panel-value'>{html.escape(value)}</div>"
+        "</div>"
+        for label, value in meta_rows
+    )
+    detail_stream_html = (
+        f"<div class='detail-stream-row'>{stream_link}</div>" if stream_link else ""
+    )
+    content_html = (
+        "<nav class='breadcrumbs'>"
+        f"<a href='{breadcrumb_home}'>Home</a>"
+        "<span>/</span>"
+        f"<a href='{breadcrumb_ideas}'>Ideas</a>"
+        "<span>/</span>"
+        f"<span>{html.escape(document.period_token)}</span>"
+        "</nav>"
+        "<section class='detail-hero'>"
+        "<div class='detail-hero-main'>"
+        f"<div class='hero-kicker'>Idea brief · {html.escape(document.period_token)}</div>"
+        f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
+        f"<p class='detail-dek'>{html.escape(document.excerpt or 'Evidence-grounded opportunity brief derived from a trend window.')}</p>"
+        f"{detail_stream_html}"
+        f"<div class='topic-pill-row'>{topic_links}</div>"
+        "<div class='card-actions detail-actions'>"
+        f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"
+        "</div>"
+        "</div>"
+        "<aside class='detail-hero-side'>"
+        f"{meta_items}"
+        "</aside>"
+        "</section>"
+        f"<section class='detail-content'>{document.body_html}</section>"
+    )
+    return _site_page_shell(
+        title=f"{document.title} · Recoleta Ideas",
+        page_path=document.page_path,
+        output_dir=output_dir,
+        page_heading=document.title,
+        page_subtitle="",
+        body_class="page-idea",
+        active_nav="ideas",
+        content_html=content_html,
+    )
+
+
+def _render_ideas_index_page(
+    *,
+    documents: list[IdeaSiteDocument],
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
+) -> str:
+    page_path = output_dir / "ideas" / "index.html"
+    cards = "".join(
+        _render_idea_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+            stream_pages=stream_pages,
+        )
+        for document in documents
+    )
+    content_html = (
+        "<section class='home-section'>"
+        "<h1 class='section-title page-section-title'>Ideas</h1>"
+        f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No ideas available yet.</div>'}</div>"
+        "</section>"
+    )
+    return _site_page_shell(
+        title="Ideas · Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading="Ideas",
+        page_subtitle="",
+        body_class="page-ideas",
+        active_nav="ideas",
+        content_html=content_html,
+    )
+
+
 def _render_home_page(
     *,
     documents: list[TrendSiteDocument],
+    idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
     stream_pages: dict[str, Path],
@@ -849,6 +1066,15 @@ def _render_home_page(
             stream_pages=stream_pages,
         )
         for document in documents[:6]
+    )
+    latest_idea_cards = "".join(
+        _render_idea_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+            stream_pages=stream_pages,
+        )
+        for document in idea_documents[:4]
     )
 
     topic_counter: Counter[str] = Counter()
@@ -925,19 +1151,21 @@ def _render_home_page(
     content_html = (
         "<section class='home-hero-card'>"
         "<div class='home-hero-copy'>"
-        "<div class='hero-kicker'>Browse trend briefs</div>"
-        "<h1 class='home-title'>Latest research trends</h1>"
+        "<div class='hero-kicker'>Browse research briefs</div>"
+        "<h1 class='home-title'>Latest research trends and ideas</h1>"
         "<p class='home-dek'>"
-        "Scan recent briefs, jump by topic or stream, and open the full note when"
-        " needed."
+        "Scan recent trend briefs and follow-on idea notes, jump by topic or stream,"
+        " and open the full note when needed."
         "</p>"
         "<div class='hero-actions'>"
         f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'archive.html')}'>Open archive</a>"
+        f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')}'>Browse ideas</a>"
         f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'topics' / 'index.html')}'>Browse topics</a>"
         "</div>"
         "</div>"
         "<div class='hero-stats'>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Briefs</div><div class='meta-panel-value'>{len(documents)}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>{len(idea_documents)}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Topics</div><div class='meta-panel-value'>{len(topic_pages)}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Window</div><div class='meta-panel-value'>{html.escape(generated_span or 'n/a')}</div></div>"
         "</div>"
@@ -947,6 +1175,12 @@ def _render_home_page(
         "<h2 class='section-title'>Latest briefs</h2>"
         "</div>"
         f"<div class='trend-grid'>{latest_cards or '<div class="empty-card">No trend notes available yet.</div>'}</div>"
+        "</section>"
+        "<section class='home-section'>"
+        "<div class='section-heading-row'>"
+        "<h2 class='section-title'>Latest idea briefs</h2>"
+        "</div>"
+        f"<div class='trend-grid'>{latest_idea_cards or '<div class=\"empty-card\">No ideas available yet.</div>'}</div>"
         "</section>"
         f"{stream_section_html}"
         "<section class='home-section split-layout'>"
@@ -1119,6 +1353,7 @@ def _render_stream_page(
     stream: str,
     stream_slug: str,
     documents: list[TrendSiteDocument],
+    idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
     stream_pages: dict[str, Path],
@@ -1133,6 +1368,15 @@ def _render_stream_page(
         )
         for document in documents
     )
+    idea_cards = "".join(
+        _render_idea_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+            stream_pages=stream_pages,
+        )
+        for document in idea_documents
+    )
     content_html = (
         "<section class='home-section'>"
         "<div class='section-heading-row'>"
@@ -1140,6 +1384,13 @@ def _render_stream_page(
         f"<span class='meta-date'>{len(documents)} briefs</span>"
         "</div>"
         f"<div class='trend-grid'>{cards}</div>"
+        "</section>"
+        "<section class='home-section'>"
+        "<div class='section-heading-row'>"
+        "<h2 class='section-title'>Ideas</h2>"
+        f"<span class='meta-date'>{len(idea_documents)} briefs</span>"
+        "</div>"
+        f"<div class='trend-grid'>{idea_cards or '<div class=\"empty-card\">No ideas available yet.</div>'}</div>"
         "</section>"
     )
     return _site_page_shell(
@@ -2246,6 +2497,49 @@ def _load_item_source_documents(
     return source_documents
 
 
+def _load_idea_source_documents(
+    *,
+    input_dirs: Sequence[TrendSiteInputDirectory],
+    limit: int | None = None,
+) -> list[IdeaSiteSourceDocument]:
+    source_documents: list[IdeaSiteSourceDocument] = []
+    for input_info in input_dirs:
+        if input_info.ideas_path is None:
+            continue
+        markdown_paths = sorted(input_info.ideas_path.glob("*.md"))
+        for markdown_path in markdown_paths:
+            raw_markdown = markdown_path.read_text(encoding="utf-8")
+            frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
+            if str(frontmatter.get("kind") or "").strip().lower() != "ideas":
+                continue
+            period_start = _parse_site_datetime(frontmatter.get("period_start"))
+            period_end = _parse_site_datetime(frontmatter.get("period_end"))
+            granularity = (
+                str(frontmatter.get("granularity") or "ideas").strip().lower()
+                or "ideas"
+            )
+            source_documents.append(
+                IdeaSiteSourceDocument(
+                    markdown_path=markdown_path,
+                    stem=markdown_path.stem,
+                    frontmatter=frontmatter,
+                    markdown_body=markdown_body,
+                    granularity=granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    topics=_parse_site_string_list(frontmatter.get("topics")),
+                    stream=(
+                        str(frontmatter.get("stream") or input_info.stream or "").strip()
+                        or None
+                    ),
+                    status=str(frontmatter.get("status") or "").strip().lower() or "unknown",
+                )
+            )
+
+    source_documents.sort(key=_idea_site_sort_key, reverse=True)
+    return source_documents[:limit] if limit is not None else source_documents
+
+
 def _extract_item_body_html(*, body_html: str) -> tuple[str, str, str]:
     soup = BeautifulSoup(body_html, "html.parser")
     title = "Item"
@@ -2341,6 +2635,71 @@ def _load_item_site_documents(
             )
         )
         page_by_markdown_path[source_document.markdown_path.resolve()] = page_path
+    return documents, page_by_markdown_path
+
+
+def _load_idea_site_documents(
+    *,
+    input_dirs: Sequence[TrendSiteInputDirectory],
+    output_dir: Path,
+    linked_page_by_markdown_path: dict[Path, Path],
+    limit: int | None = None,
+) -> tuple[list[IdeaSiteDocument], dict[Path, Path]]:
+    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
+    source_documents = _load_idea_source_documents(input_dirs=input_dirs, limit=limit)
+    ideas_dir = output_dir / "ideas"
+    idea_artifacts_dir = output_dir / "artifacts" / "ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    page_by_markdown_path = {
+        source_document.markdown_path.resolve(): ideas_dir / f"{source_document.stem}.html"
+        for source_document in source_documents
+    }
+    all_linked_pages = dict(linked_page_by_markdown_path)
+    all_linked_pages.update(page_by_markdown_path)
+
+    documents: list[IdeaSiteDocument] = []
+    for source_document in source_documents:
+        normalized_markdown = source_document.markdown_body.strip() or "# Ideas\n"
+        rendered_html = markdown.render(normalized_markdown)
+        title, raw_body_html, excerpt = _extract_item_body_html(body_html=rendered_html)
+        page_path = page_by_markdown_path[source_document.markdown_path.resolve()]
+        body_html = _rewrite_site_markdown_links(
+            html_text=_build_item_browser_body_html(body_html=raw_body_html),
+            source_markdown_path=source_document.markdown_path,
+            from_page=page_path,
+            page_by_markdown_path=all_linked_pages,
+        )
+        period_token = (
+            _trend_date_token(
+                granularity=source_document.granularity,
+                period_start=source_document.period_start,
+            )
+            if source_document.period_start is not None
+            else source_document.stem
+        )
+        markdown_asset_path = idea_artifacts_dir / source_document.markdown_path.name
+        shutil.copy2(source_document.markdown_path, markdown_asset_path)
+        documents.append(
+            IdeaSiteDocument(
+                markdown_path=source_document.markdown_path,
+                markdown_asset_path=markdown_asset_path,
+                page_path=page_path,
+                stem=source_document.stem,
+                title=title,
+                granularity=source_document.granularity,
+                period_token=period_token,
+                period_start=source_document.period_start,
+                period_end=source_document.period_end,
+                topics=source_document.topics,
+                stream=source_document.stream,
+                status=source_document.status,
+                body_html=body_html,
+                excerpt=excerpt,
+                frontmatter=source_document.frontmatter,
+            )
+        )
     return documents, page_by_markdown_path
 
 
@@ -2450,6 +2809,7 @@ def export_trend_static_site(
             )
     _reset_directory(resolved_output_dir)
     (resolved_output_dir / "assets").mkdir(parents=True, exist_ok=True)
+    (resolved_output_dir / "ideas").mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "items").mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "topics").mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "streams").mkdir(parents=True, exist_ok=True)
@@ -2464,6 +2824,20 @@ def export_trend_static_site(
         item_pages_by_markdown_path=item_pages_by_markdown_path,
         limit=limit,
     )
+    linked_page_by_markdown_path = dict(item_pages_by_markdown_path)
+    linked_page_by_markdown_path.update(
+        {
+            document.markdown_path.resolve(): document.page_path
+            for document in documents
+        }
+    )
+    idea_documents, idea_pages_by_markdown_path = _load_idea_site_documents(
+        input_dirs=resolved_input_dirs,
+        output_dir=resolved_output_dir,
+        linked_page_by_markdown_path=linked_page_by_markdown_path,
+        limit=limit,
+    )
+    linked_page_by_markdown_path.update(idea_pages_by_markdown_path)
 
     label_by_topic_slug: dict[str, str] = {}
     topic_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)
@@ -2491,6 +2865,15 @@ def export_trend_static_site(
         slug: resolved_output_dir / "streams" / f"{slug}.html"
         for slug in sorted(stream_documents.keys())
     }
+    idea_documents_by_stream: dict[str, list[IdeaSiteDocument]] = defaultdict(list)
+    for document in idea_documents:
+        cleaned_stream = str(document.stream or "").strip()
+        if not cleaned_stream:
+            continue
+        slug = _stream_slug(cleaned_stream)
+        label_by_stream_slug.setdefault(slug, cleaned_stream)
+        idea_documents_by_stream[slug].append(document)
+        stream_pages.setdefault(slug, resolved_output_dir / "streams" / f"{slug}.html")
 
     (resolved_output_dir / "assets" / "site.css").write_text(
         _SITE_CSS.strip() + "\n",
@@ -2501,6 +2884,7 @@ def export_trend_static_site(
     (resolved_output_dir / "index.html").write_text(
         _render_home_page(
             documents=documents,
+            idea_documents=idea_documents,
             output_dir=resolved_output_dir,
             topic_pages=topic_pages,
             stream_pages=stream_pages,
@@ -2526,6 +2910,15 @@ def export_trend_static_site(
         _render_streams_index_page(
             documents=documents,
             output_dir=resolved_output_dir,
+            stream_pages=stream_pages,
+        ),
+        encoding="utf-8",
+    )
+    (resolved_output_dir / "ideas" / "index.html").write_text(
+        _render_ideas_index_page(
+            documents=idea_documents,
+            output_dir=resolved_output_dir,
+            topic_pages=topic_pages,
             stream_pages=stream_pages,
         ),
         encoding="utf-8",
@@ -2557,6 +2950,17 @@ def export_trend_static_site(
             encoding="utf-8",
         )
 
+    for document in idea_documents:
+        document.page_path.write_text(
+            _render_idea_page(
+                document=document,
+                output_dir=resolved_output_dir,
+                topic_pages=topic_pages,
+                stream_pages=stream_pages,
+            ),
+            encoding="utf-8",
+        )
+
     for slug, page_path in topic_pages.items():
         page_path.write_text(
             _render_topic_page(
@@ -2576,6 +2980,7 @@ def export_trend_static_site(
                 stream=label_by_stream_slug[slug],
                 stream_slug=slug,
                 documents=stream_documents[slug],
+                idea_documents=idea_documents_by_stream.get(slug, []),
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
                 stream_pages=stream_pages,
@@ -2593,12 +2998,15 @@ def export_trend_static_site(
         "input_dirs": [
             {
                 "path": str(input_info.path),
+                "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
+                "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
                 "stream": input_info.stream,
             }
             for input_info in resolved_input_dirs
         ],
         "output_dir": str(resolved_output_dir),
         "trends_total": len(documents),
+        "ideas_total": len(idea_documents),
         "items_total": len(item_documents),
         "topics_total": len(topic_pages),
         "streams_total": len(stream_pages),
@@ -2606,12 +3014,17 @@ def export_trend_static_site(
             "index": "index.html",
             "archive": "archive.html",
             "nojekyll": ".nojekyll",
+            "ideas_index": "ideas/index.html",
             "topics_index": "topics/index.html",
             "streams_index": "streams/index.html",
             "stylesheet": "assets/site.css",
             "trend_pages": [
                 str(document.page_path.relative_to(resolved_output_dir))
                 for document in documents
+            ],
+            "idea_pages": [
+                str(document.page_path.relative_to(resolved_output_dir))
+                for document in idea_documents
             ],
             "item_pages": [
                 str(document.page_path.relative_to(resolved_output_dir))
@@ -2636,6 +3049,7 @@ def export_trend_static_site(
         module="site.build",
         output_dir=str(resolved_output_dir),
         trends_total=len(documents),
+        ideas_total=len(idea_documents),
         items_total=len(item_documents),
         topics_total=len(topic_pages),
         streams_total=len(stream_pages),
@@ -2671,11 +3085,16 @@ def stage_trend_site_source(
         input_dirs=resolved_input_dirs,
         limit=limit,
     )
+    idea_source_documents = _load_idea_source_documents(
+        input_dirs=resolved_input_dirs,
+        limit=limit,
+    )
     item_source_documents = _load_item_source_documents(input_dirs=resolved_input_dirs)
     has_stream_documents = any(
         bool(source_document.stream) for source_document in source_documents
     )
     staged_markdown_files: list[str] = []
+    staged_idea_files: list[str] = []
     staged_pdf_files: list[str] = []
     staged_item_files: list[str] = []
 
@@ -2712,6 +3131,17 @@ def stage_trend_site_source(
         shutil.copy2(source_document.markdown_path, staged_item_path)
         staged_item_files.append(relative_to_stage_root(staged_item_path))
 
+    for source_document in idea_source_documents:
+        target_dir = (
+            stage_root / "Streams" / source_document.stream / "Ideas"
+            if source_document.stream
+            else stage_root / "Ideas"
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
+        staged_idea_path = target_dir / source_document.markdown_path.name
+        shutil.copy2(source_document.markdown_path, staged_idea_path)
+        staged_idea_files.append(relative_to_stage_root(staged_idea_path))
+
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "input_dir": (
@@ -2722,23 +3152,38 @@ def stage_trend_site_source(
         "input_dirs": [
             {
                 "path": str(input_info.path),
+                "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
+                "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
                 "stream": input_info.stream,
             }
             for input_info in resolved_input_dirs
         ],
         "output_dir": str(resolved_output_dir),
         "trends_total": len(source_documents),
+        "ideas_total": len(idea_source_documents),
         "items_total": len(item_source_documents),
         "pdf_total": len(staged_pdf_files),
         "streams_total": len(
             {
-                source_document.stream
-                for source_document in source_documents
-                if source_document.stream
+                stream
+                for stream in [
+                    *[
+                        source_document.stream
+                        for source_document in source_documents
+                        if source_document.stream
+                    ],
+                    *[
+                        source_document.stream
+                        for source_document in idea_source_documents
+                        if source_document.stream
+                    ],
+                ]
+                if stream
             }
         ),
         "files": {
             "markdown": staged_markdown_files,
+            "ideas_markdown": staged_idea_files,
             "items_markdown": staged_item_files,
             "pdf": staged_pdf_files,
         },
@@ -2752,6 +3197,7 @@ def stage_trend_site_source(
         module="site.stage",
         output_dir=str(resolved_output_dir),
         trends_total=len(source_documents),
+        ideas_total=len(idea_source_documents),
         items_total=len(item_source_documents),
         pdf_total=len(staged_pdf_files),
         streams_total=manifest["streams_total"],
