@@ -25,6 +25,8 @@ As of 2026-03-14, the planned phases have been implemented in the repo:
 - Phase 2: canonical trend payload persistence before publish-only rewrites
 - Phase 3: shared retrieval via `CorpusSpec` and `SearchService`
 - Phase 4: independent `ideas` stage/pass/markdown projection
+- Phase 4.1: shared `PassDefinition` / `PassExecutionResult` helpers for
+  persistence + projection orchestration
 
 ## Goals
 
@@ -418,6 +420,9 @@ Exit criteria:
 
 - `ideas` can run independently from an existing trend synthesis output
 - `ideas` failure does not block trend publication
+- stage-specific pass persistence/projection logic now flows through shared
+  `PassDefinition` runner helpers instead of open-coded persistence +
+  projection wiring
 
 ## Testing Strategy
 
@@ -449,6 +454,9 @@ Exit criteria:
    Resolved: yes. Trend and ideas note frontmatter plus document meta chunks now
    carry lightweight projection provenance without mutating the canonical pass
    payload contract.
+   Additional boundary: provenance metadata remains system-only. `meta` chunks
+   are preserved in SQLite for repair/audit but excluded from agent-visible FTS
+   and hybrid retrieval.
 2. Do we want `ideas` to project into `documents` as a new searchable doc type
    in v1?
    Recommendation: yes, but keep it explicitly derived from canonical pass

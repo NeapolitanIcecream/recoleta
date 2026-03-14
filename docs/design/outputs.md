@@ -66,6 +66,7 @@ Idea notes follow the same projection contract:
 - `markdown` and `obsidian` idea notes are derived from canonical `trend_ideas` pass outputs
 - searchable `doc_type=idea` documents are also derived projections, not canonical pass state
 - idea note frontmatter and idea document meta chunks carry `pass_output_id` plus the upstream `trend_synthesis` pointer
+- those provenance-bearing document `meta` chunks are system-only metadata: they are preserved for repair/audit, but excluded from agent-visible FTS/hybrid retrieval
 
 ## Trend PDF surface
 

@@ -207,6 +207,14 @@ Constraint / index:
 
 - unique `(doc_id, chunk_index)`
 
+Retrieval boundary:
+
+- `kind=meta` is reserved for system-facing projection/provenance metadata
+- `meta` chunks are persisted in SQLite but are not indexed into `chunk_fts`
+- agent-visible lexical retrieval only searches `summary|content`
+- semantic retrieval remains summary-only, so provenance does not enter the
+  agent corpus through embeddings either
+
 ### `chunk_embeddings`
 
 SQLite-side embedding cache keyed by document chunk and embedding model. LanceDB stores the searchable vector tables and indices, while this table records the per-chunk embedding payload and invalidates stale rows when chunk text changes.

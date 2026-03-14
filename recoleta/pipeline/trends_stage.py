@@ -1,6 +1,7 @@
 # pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import time
 from datetime import date, timedelta
@@ -19,9 +20,10 @@ from recoleta.models import (
 )
 from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
 from recoleta.pipeline.pass_runner import (
+    PassDefinition,
+    PassPersistSpec,
     ProjectionSpec,
-    persist_pass_output_envelope,
-    run_projection_specs,
+    run_pass_definition,
 )
 from recoleta.passes import TREND_SYNTHESIS_PASS_KIND, build_trend_synthesis_pass_output
 from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
@@ -33,6 +35,7 @@ from recoleta.publish import (
     write_obsidian_trend_note,
 )
 from recoleta.trend_materialize import (
+    MaterializedTrendNotePayload,
     materialize_trend_note_payload,
 )
 from recoleta import trends
@@ -41,6 +44,18 @@ from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
 
 def _trend_metric_name(name: str, *, scope: str) -> str:
     return scoped_trends_metric_name(name, scope=scope)
+
+
+@dataclass(slots=True)
+class _TrendProjectionState:
+    doc_id: int
+    materialized: MaterializedTrendNotePayload
+    targets: set[str]
+    telegram_destination: str
+    telegram_remaining_today: int | None
+    telegram_already_sent: bool
+    telegram_can_attempt_delivery: bool
+    trend_delivery_hash: str
 
 
 class TrendStageService(Protocol):
@@ -1097,160 +1112,7 @@ def run_trends_stage(
                 "error_message": service._sanitize_error_message(str(exc)),
             }
 
-        trend_synthesis_pass_output_id = persist_pass_output_envelope(
-            repository=service.repository,
-            envelope=trend_synthesis_envelope,
-            period_start=period_start,
-            period_end=period_end,
-            record_metric=record_metric,
-            log=log.bind(module="pipeline.trends.pass.synthesis"),
-            failure_message=(
-                "Trend synthesis pass output persist failed pass_kind={pass_kind} "
-                "granularity={granularity} period_start={period_start} "
-                "period_end={period_end} error_type={error_type} error={error}"
-            ),
-            warning_context={
-                "granularity": normalized_granularity,
-                "period_start": period_start.isoformat(),
-                "period_end": period_end.isoformat(),
-            },
-            sanitize_error=service._sanitize_error_message,
-            on_failure=_capture_pass_output_failure,
-            persisted_metric_name="pipeline.trends.pass.synthesis.persisted_total",
-            reraise=False,
-        )
-        if trend_synthesis_pass_output_id is None:
-            artifact_path = service._write_debug_artifact(
-                run_id=run_id,
-                item_id=None,
-                kind="pass_output_failure",
-                payload={
-                    "stage": "trends",
-                    "pass_kind": "trend_synthesis",
-                    "granularity": normalized_granularity,
-                    "period_start": period_start.isoformat(),
-                    "period_end": period_end.isoformat(),
-                    "failure": pass_output_failure or {},
-                },
-            )
-            if artifact_path is not None:
-                try:
-                    service.repository.add_artifact(
-                        run_id=run_id,
-                        item_id=None,
-                        kind="pass_output_failure",
-                        path=str(artifact_path),
-                    )
-                except Exception as artifact_exc:  # noqa: BLE001
-                    log.warning(
-                        "Trends pass output failure artifact record failed: {}",
-                        service._sanitize_error_message(str(artifact_exc)),
-                    )
-
-        doc_id = trends.persist_trend_payload(
-            repository=cast(Any, service.repository),
-            granularity=normalized_granularity,
-            period_start=period_start,
-            period_end=period_end,
-            payload=payload,
-            scope=scope,
-            pass_output_id=trend_synthesis_pass_output_id,
-            pass_kind=TREND_SYNTHESIS_PASS_KIND,
-        )
-        materialized = materialize_trend_note_payload(
-            repository=cast(Any, service.repository),
-            payload=payload,
-            markdown_output_dir=service.settings.markdown_output_dir,
-            output_language=service.settings.llm_output_language,
-            scope=scope,
-        )
-
-        rewrite_occurrences_total = materialized.rewrite_stats.doc_ref_occurrences_total
-        rewrite_doc_ids_resolved_total = materialized.rewrite_stats.doc_ref_resolved_total
-        rewrite_doc_ids_unresolved_total = (
-            materialized.rewrite_stats.doc_ref_unresolved_total
-        )
-
-        if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
-            log.info(
-                "Trend note doc refs rewritten occurrences={} resolved_doc_ids={} unresolved_doc_ids={}",
-                rewrite_occurrences_total,
-                rewrite_doc_ids_resolved_total,
-                rewrite_doc_ids_unresolved_total,
-            )
-        record_metric(
-            name="pipeline.trends.note_doc_refs_rewrite_occurrences_total",
-            value=rewrite_occurrences_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.note_doc_refs_resolved_total",
-            value=rewrite_doc_ids_resolved_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.note_doc_refs_unresolved_total",
-            value=rewrite_doc_ids_unresolved_total,
-            unit="count",
-        )
-
-        trend_delivery_hash = hashlib.sha256(
-            orjson.dumps(
-                {
-                    "title": materialized.title,
-                    "granularity": normalized_granularity,
-                    "period_start": period_start.isoformat(),
-                    "period_end": period_end.isoformat(),
-                    "overview_md": materialized.overview_md,
-                    "topics": list(materialized.topics),
-                    "clusters": materialized.clusters,
-                },
-                option=orjson.OPT_SORT_KEYS,
-            )
-        ).hexdigest()
-
         targets = set(service.settings.publish_targets or [])
-        if "obsidian" in targets and service.settings.obsidian_vault_path is None:
-            raise ValueError(
-                "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
-            )
-        if "telegram" in targets and service.telegram_sender is None:
-            if (
-                service.settings.telegram_bot_token is None
-                or service.settings.telegram_chat_id is None
-            ):
-                raise ValueError(
-                    "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'"
-                )
-            service.telegram_sender = TelegramSender(
-                token=service.settings.telegram_bot_token.get_secret_value(),
-                chat_id=service.settings.telegram_chat_id.get_secret_value(),
-            )
-
-        repository_any = cast(Any, service.repository)
-        telegram_destination = service._telegram_delivery_destination()
-        telegram_remaining_today: int | None = None
-        telegram_already_sent = False
-        if "telegram" in targets:
-            (
-                _,
-                _,
-                telegram_remaining_today,
-            ) = service._telegram_delivery_budget()
-        if (
-            "telegram" in targets
-            and not empty_corpus
-            and telegram_remaining_today is not None
-            and telegram_remaining_today > 0
-        ):
-            telegram_already_sent = bool(
-                repository_any.has_sent_trend_delivery(
-                    doc_id=doc_id,
-                    channel=DELIVERY_CHANNEL_TELEGRAM,
-                    destination=telegram_destination,
-                    content_hash=trend_delivery_hash,
-                )
-            )
 
         markdown_note_path: Path | None = None
         pdf_generated_total = 0
@@ -1262,20 +1124,174 @@ def run_trends_stage(
         telegram_sent_total = 0
         telegram_failed_total = 0
 
-        telegram_can_attempt_delivery = (
-            "telegram" in targets
-            and not empty_corpus
-            and telegram_remaining_today is not None
-            and telegram_remaining_today > 0
-            and not telegram_already_sent
-        )
+        def _prepare_trend_projection_state(
+            pass_output_id: int | None,
+        ) -> _TrendProjectionState:
+            if pass_output_id is None:
+                artifact_path = service._write_debug_artifact(
+                    run_id=run_id,
+                    item_id=None,
+                    kind="pass_output_failure",
+                    payload={
+                        "stage": "trends",
+                        "pass_kind": "trend_synthesis",
+                        "granularity": normalized_granularity,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                        "failure": pass_output_failure or {},
+                    },
+                )
+                if artifact_path is not None:
+                    try:
+                        service.repository.add_artifact(
+                            run_id=run_id,
+                            item_id=None,
+                            kind="pass_output_failure",
+                            path=str(artifact_path),
+                        )
+                    except Exception as artifact_exc:  # noqa: BLE001
+                        log.warning(
+                            "Trends pass output failure artifact record failed: {}",
+                            service._sanitize_error_message(str(artifact_exc)),
+                        )
 
-        projection_results = run_projection_specs(
-            record_metric=record_metric,
-            specs=[
+            doc_id = trends.persist_trend_payload(
+                repository=cast(Any, service.repository),
+                granularity=normalized_granularity,
+                period_start=period_start,
+                period_end=period_end,
+                payload=payload,
+                scope=scope,
+                pass_output_id=pass_output_id,
+                pass_kind=TREND_SYNTHESIS_PASS_KIND,
+            )
+            materialized = materialize_trend_note_payload(
+                repository=cast(Any, service.repository),
+                payload=payload,
+                markdown_output_dir=service.settings.markdown_output_dir,
+                output_language=service.settings.llm_output_language,
+                scope=scope,
+            )
+
+            rewrite_occurrences_total = (
+                materialized.rewrite_stats.doc_ref_occurrences_total
+            )
+            rewrite_doc_ids_resolved_total = (
+                materialized.rewrite_stats.doc_ref_resolved_total
+            )
+            rewrite_doc_ids_unresolved_total = (
+                materialized.rewrite_stats.doc_ref_unresolved_total
+            )
+
+            if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
+                log.info(
+                    "Trend note doc refs rewritten occurrences={} resolved_doc_ids={} unresolved_doc_ids={}",
+                    rewrite_occurrences_total,
+                    rewrite_doc_ids_resolved_total,
+                    rewrite_doc_ids_unresolved_total,
+                )
+            record_metric(
+                name="pipeline.trends.note_doc_refs_rewrite_occurrences_total",
+                value=rewrite_occurrences_total,
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.note_doc_refs_resolved_total",
+                value=rewrite_doc_ids_resolved_total,
+                unit="count",
+            )
+            record_metric(
+                name="pipeline.trends.note_doc_refs_unresolved_total",
+                value=rewrite_doc_ids_unresolved_total,
+                unit="count",
+            )
+
+            trend_delivery_hash = hashlib.sha256(
+                orjson.dumps(
+                    {
+                        "title": materialized.title,
+                        "granularity": normalized_granularity,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                        "overview_md": materialized.overview_md,
+                        "topics": list(materialized.topics),
+                        "clusters": materialized.clusters,
+                    },
+                    option=orjson.OPT_SORT_KEYS,
+                )
+            ).hexdigest()
+
+            if "obsidian" in targets and service.settings.obsidian_vault_path is None:
+                raise ValueError(
+                    "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
+                )
+            if "telegram" in targets and service.telegram_sender is None:
+                if (
+                    service.settings.telegram_bot_token is None
+                    or service.settings.telegram_chat_id is None
+                ):
+                    raise ValueError(
+                        "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'"
+                    )
+                service.telegram_sender = TelegramSender(
+                    token=service.settings.telegram_bot_token.get_secret_value(),
+                    chat_id=service.settings.telegram_chat_id.get_secret_value(),
+                )
+
+            repository_any = cast(Any, service.repository)
+            telegram_destination = service._telegram_delivery_destination()
+            telegram_remaining_today: int | None = None
+            telegram_already_sent = False
+            if "telegram" in targets:
+                (
+                    _,
+                    _,
+                    telegram_remaining_today,
+                ) = service._telegram_delivery_budget()
+            if (
+                "telegram" in targets
+                and not empty_corpus
+                and telegram_remaining_today is not None
+                and telegram_remaining_today > 0
+            ):
+                telegram_already_sent = bool(
+                    repository_any.has_sent_trend_delivery(
+                        doc_id=doc_id,
+                        channel=DELIVERY_CHANNEL_TELEGRAM,
+                        destination=telegram_destination,
+                        content_hash=trend_delivery_hash,
+                    )
+                )
+
+            telegram_can_attempt_delivery = (
+                "telegram" in targets
+                and not empty_corpus
+                and telegram_remaining_today is not None
+                and telegram_remaining_today > 0
+                and not telegram_already_sent
+            )
+            return _TrendProjectionState(
+                doc_id=doc_id,
+                materialized=materialized,
+                targets=set(targets),
+                telegram_destination=telegram_destination,
+                telegram_remaining_today=telegram_remaining_today,
+                telegram_already_sent=telegram_already_sent,
+                telegram_can_attempt_delivery=telegram_can_attempt_delivery,
+                trend_delivery_hash=trend_delivery_hash,
+            )
+
+        def _build_trend_projection_specs(
+            pass_output_id: int | None,
+            state: _TrendProjectionState | None,
+        ) -> list[ProjectionSpec]:
+            if state is None:
+                raise RuntimeError("trend projection state is required")
+            return [
                 ProjectionSpec(
                     name="markdown",
-                    enabled="markdown" in targets or telegram_can_attempt_delivery,
+                    enabled="markdown" in state.targets
+                    or state.telegram_can_attempt_delivery,
                     metric_base="pipeline.trends.projection.trend_markdown",
                     log=log.bind(module="pipeline.trends.projection.trend_markdown"),
                     failure_message=(
@@ -1285,24 +1301,24 @@ def run_trends_stage(
                     ),
                     execute=lambda: write_markdown_trend_note(
                         output_dir=service.settings.markdown_output_dir,
-                        trend_doc_id=doc_id,
-                        title=materialized.title,
+                        trend_doc_id=state.doc_id,
+                        title=state.materialized.title,
                         granularity=normalized_granularity,
                         period_start=period_start,
                         period_end=period_end,
                         run_id=run_id,
-                        overview_md=materialized.overview_md,
-                        topics=list(materialized.topics),
-                        evolution=materialized.evolution,
-                        history_window_refs=materialized.history_window_refs,
-                        clusters=materialized.clusters,
-                        highlights=materialized.highlights,
+                        overview_md=state.materialized.overview_md,
+                        topics=list(state.materialized.topics),
+                        evolution=state.materialized.evolution,
+                        history_window_refs=state.materialized.history_window_refs,
+                        clusters=state.materialized.clusters,
+                        highlights=state.materialized.highlights,
                         output_language=service.settings.llm_output_language,
-                        pass_output_id=trend_synthesis_pass_output_id,
+                        pass_output_id=pass_output_id,
                         pass_kind=TREND_SYNTHESIS_PASS_KIND,
                     ),
                     warning_context={
-                        "doc_id": doc_id,
+                        "doc_id": state.doc_id,
                         "granularity": normalized_granularity,
                         "period_start": period_start.isoformat(),
                         "period_end": period_end.isoformat(),
@@ -1312,7 +1328,7 @@ def run_trends_stage(
                 ),
                 ProjectionSpec(
                     name="obsidian",
-                    enabled="obsidian" in targets
+                    enabled="obsidian" in state.targets
                     and service.settings.obsidian_vault_path is not None,
                     metric_base="pipeline.trends.projection.trend_obsidian",
                     log=log.bind(module="pipeline.trends.projection.trend_obsidian"),
@@ -1324,24 +1340,24 @@ def run_trends_stage(
                     execute=lambda: write_obsidian_trend_note(
                         vault_path=service.settings.obsidian_vault_path,
                         base_folder=service.settings.obsidian_base_folder,
-                        trend_doc_id=doc_id,
-                        title=materialized.title,
+                        trend_doc_id=state.doc_id,
+                        title=state.materialized.title,
                         granularity=normalized_granularity,
                         period_start=period_start,
                         period_end=period_end,
                         run_id=run_id,
-                        overview_md=materialized.overview_md,
-                        topics=list(materialized.topics),
-                        evolution=materialized.evolution,
-                        history_window_refs=materialized.history_window_refs,
-                        clusters=materialized.clusters,
-                        highlights=materialized.highlights,
+                        overview_md=state.materialized.overview_md,
+                        topics=list(state.materialized.topics),
+                        evolution=state.materialized.evolution,
+                        history_window_refs=state.materialized.history_window_refs,
+                        clusters=state.materialized.clusters,
+                        highlights=state.materialized.highlights,
                         output_language=service.settings.llm_output_language,
-                        pass_output_id=trend_synthesis_pass_output_id,
+                        pass_output_id=pass_output_id,
                         pass_kind=TREND_SYNTHESIS_PASS_KIND,
                     ),
                     warning_context={
-                        "doc_id": doc_id,
+                        "doc_id": state.doc_id,
                         "granularity": normalized_granularity,
                         "period_start": period_start.isoformat(),
                         "period_end": period_end.isoformat(),
@@ -1349,8 +1365,50 @@ def run_trends_stage(
                     sanitize_error=service._sanitize_error_message,
                     reraise=False,
                 ),
-            ],
+            ]
+
+        pass_execution = run_pass_definition(
+            repository=service.repository,
+            record_metric=record_metric,
+            definition=PassDefinition(
+                persist=PassPersistSpec(
+                    envelope=trend_synthesis_envelope,
+                    period_start=period_start,
+                    period_end=period_end,
+                    log=log.bind(module="pipeline.trends.pass.synthesis"),
+                    failure_message=(
+                        "Trend synthesis pass output persist failed pass_kind={pass_kind} "
+                        "granularity={granularity} period_start={period_start} "
+                        "period_end={period_end} error_type={error_type} error={error}"
+                    ),
+                    warning_context={
+                        "granularity": normalized_granularity,
+                        "period_start": period_start.isoformat(),
+                        "period_end": period_end.isoformat(),
+                    },
+                    sanitize_error=service._sanitize_error_message,
+                    on_failure=_capture_pass_output_failure,
+                    persisted_metric_name="pipeline.trends.pass.synthesis.persisted_total",
+                    reraise=False,
+                ),
+                prepare_projection_state=_prepare_trend_projection_state,
+                build_projection_specs=_build_trend_projection_specs,
+                allow_projection_without_pass_output=True,
+            ),
         )
+        trend_synthesis_pass_output_id = pass_execution.pass_output_id
+        trend_projection_state = pass_execution.projection_state
+        if trend_projection_state is None:
+            raise RuntimeError("trend projection state preparation returned empty")
+        doc_id = trend_projection_state.doc_id
+        materialized = trend_projection_state.materialized
+        targets = trend_projection_state.targets
+        telegram_destination = trend_projection_state.telegram_destination
+        telegram_remaining_today = trend_projection_state.telegram_remaining_today
+        telegram_already_sent = trend_projection_state.telegram_already_sent
+        trend_delivery_hash = trend_projection_state.trend_delivery_hash
+        repository_any = cast(Any, service.repository)
+        projection_results = pass_execution.projection_results
         raw_markdown_note_path = projection_results.get("markdown")
         markdown_note_path = (
             raw_markdown_note_path if isinstance(raw_markdown_note_path, Path) else None

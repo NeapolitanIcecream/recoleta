@@ -32,6 +32,7 @@ class SchemaStoreMixin:
         SQLModel.metadata.create_all(self.engine)
         self._backfill_default_stream_states()
         self._ensure_chunk_fts()
+        self._prune_chunk_fts_meta_rows()
         if user_version < CURRENT_SCHEMA_VERSION:
             self._set_user_version(CURRENT_SCHEMA_VERSION)
 
@@ -310,3 +311,9 @@ class SchemaStoreMixin:
         """
         with self.engine.begin() as conn:
             conn.execute(text(ddl))
+
+    def _prune_chunk_fts_meta_rows(self) -> None:
+        if not self.has_table("chunk_fts"):
+            return
+        with self.engine.begin() as conn:
+            conn.execute(text("DELETE FROM chunk_fts WHERE kind = 'meta'"))
