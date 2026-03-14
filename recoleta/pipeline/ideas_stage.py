@@ -9,6 +9,8 @@ from typing import Any, Protocol, cast
 from loguru import logger
 
 from recoleta.config import TopicStreamRuntime
+from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
+from recoleta.pipeline.projections import run_projection_target
 from recoleta.passes import (
     PassInputRef,
     PassStatus,
@@ -27,28 +29,8 @@ from recoleta.trends import TrendPayload
 from recoleta.types import DEFAULT_TOPIC_STREAM, IdeasResult, utc_now
 
 
-def _trend_metric_stream_token(scope: str) -> str:
-    normalized_scope = str(scope or "").strip().lower()
-    return (
-        "".join(ch if ch.isalnum() else "_" for ch in normalized_scope).strip("_")
-        or "unknown"
-    )
-
-
 def _trend_metric_name(name: str, *, scope: str) -> str:
-    normalized_name = str(name or "").strip()
-    normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
-    if normalized_scope == DEFAULT_TOPIC_STREAM:
-        return normalized_name
-    stream_prefix = (
-        f"pipeline.trends.stream.{_trend_metric_stream_token(normalized_scope)}"
-    )
-    if normalized_name == "pipeline.trends":
-        return stream_prefix
-    if not normalized_name.startswith("pipeline.trends."):
-        return normalized_name
-    suffix = normalized_name.removeprefix("pipeline.trends.")
-    return f"{stream_prefix}.{suffix}"
+    return scoped_trends_metric_name(name, scope=scope)
 
 
 class IdeasStageService(Protocol):
@@ -428,102 +410,79 @@ def run_ideas_stage(
             unit="count",
         )
     else:
-        try:
-            _persist_ideas_document_projection(
+        _ = run_projection_target(
+            enabled=True,
+            metric_base="pipeline.trends.projection.ideas_documents",
+            record_metric=record_metric,
+            log=log,
+            failure_message=(
+                "Ideas document projection failed pass_output_id={pass_output_id} "
+                "error_type={error_type} error={error}"
+            ),
+            execute=lambda: _persist_ideas_document_projection(
                 repository=service.repository,
                 granularity=normalized_granularity,
                 period_start=period_start,
                 period_end=period_end,
                 payload=payload,
                 scope=scope,
-            )
-            record_metric(
-                name="pipeline.trends.projection.ideas_documents.emitted_total",
-                value=1,
-                unit="count",
-            )
-        except Exception as exc:  # noqa: BLE001
-            record_metric(
-                name="pipeline.trends.projection.ideas_documents.failed_total",
-                value=1,
-                unit="count",
-            )
-            log.warning(
-                "Ideas document projection failed pass_output_id={} error_type={} error={}",
-                pass_output_id,
-                type(exc).__name__,
-                service._sanitize_error_message(str(exc)),
-            )
-            raise
-        if "markdown" in targets:
-            try:
-                note_path = write_markdown_ideas_note(
-                    repository=cast(Any, service.repository),
-                    output_dir=Path(service.settings.markdown_output_dir),
-                    pass_output_id=cast(int, pass_output_id),
-                    upstream_pass_output_id=upstream_pass_output_id,
-                    granularity=normalized_granularity,
-                    period_start=period_start,
-                    period_end=period_end,
-                    run_id=run_id,
-                    status=status.value,
-                    payload=payload,
-                    scope=scope,
-                    topics=list(trend_payload.topics or []),
-                )
-                record_metric(
-                    name="pipeline.trends.projection.ideas_markdown.emitted_total",
-                    value=1,
-                    unit="count",
-                )
-            except Exception as exc:  # noqa: BLE001
-                record_metric(
-                    name="pipeline.trends.projection.ideas_markdown.failed_total",
-                    value=1,
-                    unit="count",
-                )
-                log.warning(
-                    "Ideas markdown projection failed pass_output_id={} error_type={} error={}",
-                    pass_output_id,
-                    type(exc).__name__,
-                    service._sanitize_error_message(str(exc)),
-                )
-                raise
-        if "obsidian" in targets and service.settings.obsidian_vault_path is not None:
-            try:
-                write_obsidian_ideas_note(
-                    repository=cast(Any, service.repository),
-                    vault_path=service.settings.obsidian_vault_path,
-                    base_folder=service.settings.obsidian_base_folder,
-                    pass_output_id=cast(int, pass_output_id),
-                    upstream_pass_output_id=upstream_pass_output_id,
-                    granularity=normalized_granularity,
-                    period_start=period_start,
-                    period_end=period_end,
-                    run_id=run_id,
-                    status=status.value,
-                    payload=payload,
-                    scope=scope,
-                    topics=list(trend_payload.topics or []),
-                )
-                record_metric(
-                    name="pipeline.trends.projection.ideas_obsidian.emitted_total",
-                    value=1,
-                    unit="count",
-                )
-            except Exception as exc:  # noqa: BLE001
-                record_metric(
-                    name="pipeline.trends.projection.ideas_obsidian.failed_total",
-                    value=1,
-                    unit="count",
-                )
-                log.warning(
-                    "Ideas obsidian projection failed pass_output_id={} error_type={} error={}",
-                    pass_output_id,
-                    type(exc).__name__,
-                    service._sanitize_error_message(str(exc)),
-                )
-                raise
+            ),
+            warning_context={"pass_output_id": pass_output_id},
+            sanitize_error=service._sanitize_error_message,
+        )
+        note_path = run_projection_target(
+            enabled="markdown" in targets,
+            metric_base="pipeline.trends.projection.ideas_markdown",
+            record_metric=record_metric,
+            log=log,
+            failure_message=(
+                "Ideas markdown projection failed pass_output_id={pass_output_id} "
+                "error_type={error_type} error={error}"
+            ),
+            execute=lambda: write_markdown_ideas_note(
+                repository=cast(Any, service.repository),
+                output_dir=Path(service.settings.markdown_output_dir),
+                pass_output_id=cast(int, pass_output_id),
+                upstream_pass_output_id=upstream_pass_output_id,
+                granularity=normalized_granularity,
+                period_start=period_start,
+                period_end=period_end,
+                run_id=run_id,
+                status=status.value,
+                payload=payload,
+                scope=scope,
+                topics=list(trend_payload.topics or []),
+            ),
+            warning_context={"pass_output_id": pass_output_id},
+            sanitize_error=service._sanitize_error_message,
+        )
+        _ = run_projection_target(
+            enabled="obsidian" in targets and service.settings.obsidian_vault_path is not None,
+            metric_base="pipeline.trends.projection.ideas_obsidian",
+            record_metric=record_metric,
+            log=log,
+            failure_message=(
+                "Ideas obsidian projection failed pass_output_id={pass_output_id} "
+                "error_type={error_type} error={error}"
+            ),
+            execute=lambda: write_obsidian_ideas_note(
+                repository=cast(Any, service.repository),
+                vault_path=service.settings.obsidian_vault_path,
+                base_folder=service.settings.obsidian_base_folder,
+                pass_output_id=cast(int, pass_output_id),
+                upstream_pass_output_id=upstream_pass_output_id,
+                granularity=normalized_granularity,
+                period_start=period_start,
+                period_end=period_end,
+                run_id=run_id,
+                status=status.value,
+                payload=payload,
+                scope=scope,
+                topics=list(trend_payload.topics or []),
+            ),
+            warning_context={"pass_output_id": pass_output_id},
+            sanitize_error=service._sanitize_error_message,
+        )
 
     if isinstance(debug, dict):
         usage = debug.get("usage")
@@ -583,7 +542,7 @@ def run_ideas_stage(
             for raw_tool_name, raw_count in sorted(tool_call_breakdown.items()):
                 if not isinstance(raw_count, (int, float)):
                     continue
-                metric_tool_name = _trend_metric_stream_token(str(raw_tool_name))
+                metric_tool_name = metric_token(str(raw_tool_name), max_len=32)
                 if not metric_tool_name:
                     continue
                 record_metric(

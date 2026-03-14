@@ -18,6 +18,8 @@ def test_ideas_instructions_require_consensus_terminology_and_plain_language() -
     assert "If a technical term does not have a stable translation" in instructions
     assert "prefer the original source-language term" in instructions
     assert "Prefer plain, literal wording" in instructions
+    assert "Do not translate paper titles, framework names, product names, or acronyms" in instructions
+    assert "Idea titles should be factual descriptive noun phrases" in instructions
 
 
 def test_ideas_prompt_payload_reinforces_readability_constraints() -> None:
@@ -45,3 +47,11 @@ def test_ideas_prompt_payload_reinforces_readability_constraints() -> None:
         in notes
     )
     assert "Prefer direct, readable phrasing over compressed jargon." in notes
+    assert (
+        "Keep paper titles, framework names, product names, and acronyms in their original form unless a widely accepted translation exists."
+        in notes
+    )
+    assert (
+        "Idea titles should read like factual descriptive labels, not slogans, coined categories, or rhetorical questions."
+        in notes
+    )

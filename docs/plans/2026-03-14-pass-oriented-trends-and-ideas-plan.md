@@ -406,7 +406,7 @@ Add:
 - canonical `TrendIdeasPayload`
 - upstream pass-output resolution
 - pass-level suppression rules
-- optional markdown/document projection
+- optional markdown/document/obsidian projection
 
 Exit criteria:
 
@@ -442,8 +442,9 @@ Exit criteria:
    change stays lightweight.
 2. Do we want `ideas` to project into `documents` as a new searchable doc type
    in v1?
-   Recommendation: no; start with markdown/debug artifacts first, then add a
-   searchable projection only if downstream retrieval really needs it.
+   Recommendation: yes, but keep it explicitly derived from canonical pass
+   output and do not make `materialize outputs` mutate DB state just to rebuild
+   it.
 3. Should stage-to-pass mapping remain one-to-one long term?
    Recommendation: no strict rule. For now, keep it simple:
    `trends -> synthesis + publish`, `ideas -> ideas + publish`.
