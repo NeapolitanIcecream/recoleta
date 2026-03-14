@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -12,6 +13,14 @@ import recoleta.cli
 class _FakeRun:
     def __init__(self, run_id: str) -> None:
         self.id = run_id
+
+
+@dataclass
+class _FakeIdeasStreamResult:
+    stream: str
+    status: str
+    pass_output_id: int
+    note_path: Path | None
 
 
 class _FakeRepo:
@@ -115,3 +124,74 @@ def test_ideas_cli_accepts_yyyymmdd_date_and_prints_status(
     assert fake_repo.finished == [("run-ideas", True)]
     assert fake_service.calls
     assert fake_service.calls[0]["anchor_date"] == date(2026, 3, 2)
+
+
+def test_ideas_cli_prints_all_stream_results_for_topic_stream_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+
+    class _FakeTopicStreamService:
+        def ideas(  # type: ignore[no-untyped-def]
+            self,
+            *,
+            run_id: str,
+            granularity: str,
+            anchor_date=None,
+            llm_model=None,
+        ):
+            _ = (run_id, granularity, anchor_date, llm_model)
+            stream_results = [
+                _FakeIdeasStreamResult(
+                    stream="embodied_ai",
+                    status="succeeded",
+                    pass_output_id=5,
+                    note_path=Path(
+                        "/tmp/recoleta/Streams/embodied_ai/Ideas/day--2026-03-09--ideas.md"
+                    ),
+                ),
+                _FakeIdeasStreamResult(
+                    stream="software_intelligence",
+                    status="suppressed",
+                    pass_output_id=6,
+                    note_path=None,
+                ),
+            ]
+            return type(
+                "IdeasResult",
+                (),
+                {
+                    "pass_output_id": 5,
+                    "granularity": "day",
+                    "period_start": datetime(2026, 3, 9, tzinfo=UTC),
+                    "period_end": datetime(2026, 3, 10, tzinfo=UTC),
+                    "title": "Ideas",
+                    "status": "succeeded",
+                    "note_path": stream_results[0].note_path,
+                    "stream_results": stream_results,
+                },
+            )()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, _FakeTopicStreamService()),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["ideas", "--granularity", "day", "--date", "20260309"],
+    )
+
+    assert result.exit_code == 0
+    assert "ideas completed" in result.stdout
+    assert "streams=2" in result.stdout
+    assert "embodied_ai" in result.stdout
+    assert "status=succeeded" in result.stdout
+    assert "pass_output_id=5" in result.stdout
+    assert "software_intelligence" in result.stdout
+    assert "status=suppressed" in result.stdout
+    assert "pass_output_id=6" in result.stdout
+    assert "note_path=/tmp/recoleta/Streams/embodied_ai/Ideas/day--2026-03-09--ideas.md" in result.stdout

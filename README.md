@@ -49,6 +49,7 @@ flowchart LR
 - **Semantic triage before LLM (optional)**: pre-rank (and optionally filter) candidates by topic similarity to improve LLM ROI under backlog.
 - **Outputs where you read**: local Markdown output (default) + optional Obsidian notes + optional curated Telegram digest.
 - **Trend surfaces with retrieval context**: trend generation can enrich prompts with semantic overview packs, representative source docs, bounded peer-history windows, browser-rendered PDFs, and a deployable static website.
+- **Follow-on opportunity mining**: `recoleta ideas` can derive evidence-grounded why-now ideas from existing trend synthesis outputs without rerunning the full trend agent.
 - **Operationally friendly**: structured logs, per-run metrics in SQLite, optional scrubbed debug artifacts.
 
 <a id="recoleta-installation"></a>
@@ -276,6 +277,7 @@ Where to look next:
 - **Local Markdown**: `MARKDOWN_OUTPUT_DIR/latest.md` and `MARKDOWN_OUTPUT_DIR/Inbox/`
 - **Topic streams**: when `topic_streams` is configured, Markdown output defaults to `MARKDOWN_OUTPUT_DIR/Streams/<stream>/`
 - **Topic stream trends**: trend notes also follow stream-local output roots, e.g. `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`
+- **Ideas briefs**: opportunity notes write to `MARKDOWN_OUTPUT_DIR/Ideas/`, or `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Ideas/` in topic-stream mode
 - **Obsidian notes (optional)**: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
 - **Telegram (optional)**: messages are sent to `TELEGRAM_CHAT_ID`
 - **SQLite index**: `RECOLETA_DB_PATH` (safe to re-run; deliveries are idempotent)
@@ -346,6 +348,41 @@ When `topic_streams` is configured, `recoleta trends` and `recoleta trends-week`
 - Markdown: `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`
 - Obsidian: `OBSIDIAN_BASE_FOLDER/Streams/<stream>/Trends/`
 - CLI summary: one aggregate line plus one `stream -> doc_id` line per stream
+
+### 💡 Opportunity ideas from trend outputs
+
+Recoleta can run a separate **ideas pass** on top of existing trend synthesis outputs:
+
+```bash
+uv run recoleta ideas --granularity day --date 2026-03-09
+```
+
+Key behaviors:
+
+- **Upstream dependency**: `recoleta ideas` requires a matching `trend_synthesis` pass output for the same `day|week|month` window. It does not rerun `recoleta trends` automatically.
+- **Same window semantics**: `--date` uses the same UTC anchor-date rules as `recoleta trends`.
+- **Evidence-first output**: the ideas pass treats the upstream trend payload as the primary frame, then uses the active local corpus to verify and sharpen candidate opportunities.
+- **Safe suppression**: when the window has too little evidence for reliable ideas, the pass returns `status=suppressed` instead of padding with generic suggestions.
+- **Separate publication**: successful runs write an ideas brief under `MARKDOWN_OUTPUT_DIR/Ideas/` or `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Ideas/`.
+
+Examples:
+
+```bash
+# Generate daily ideas from an existing daily trend synthesis output
+uv run recoleta ideas --granularity day --date 2026-03-09
+
+# Generate weekly ideas from an existing weekly trend synthesis output
+uv run recoleta ideas --granularity week --date 2026-03-02
+
+# Override the LLM model used for ideas generation
+uv run recoleta ideas --granularity day --date 2026-03-09 --model "openai/gpt-4o-mini"
+```
+
+Outputs:
+
+- **SQLite**: the canonical `trend_ideas` pass output is persisted in `pass_outputs`.
+- **Local Markdown**: a successful note is written to `MARKDOWN_OUTPUT_DIR/Ideas/`.
+- **Topic streams**: when `topic_streams` is configured, `recoleta ideas` runs once per stream and the CLI prints one aggregate line plus one per-stream `status + pass_output_id` line.
 
 Semantic context knobs (env or config):
 
@@ -683,6 +720,7 @@ Recoleta's current CLI surface includes:
 - `recoleta run`: schedule ingest/analyze/publish periodically
 - `recoleta run --once --date 2026-01-02`: execute a one-shot UTC-day pipeline
 - `recoleta trends --granularity week --date 2026-03-02`: generate a trend note (day/week/month)
+- `recoleta ideas --granularity week --date 2026-03-02`: derive evidence-grounded opportunity ideas from an existing trend synthesis output
 - `recoleta trends-week --date 2026-03-02`: shortcut for weekly trends with lower-level backfill
 - `recoleta trends --granularity day --debug-pdf`: generate a trend note and export a PDF debug bundle for the rendered Telegram PDF
 - `recoleta site build`: render a static site from trend markdown notes
@@ -703,6 +741,7 @@ Recoleta's current CLI surface includes:
 - [`docs/design/architecture.md`](docs/design/architecture.md) — module boundaries, pipeline stages, storage, and observability
 - [`docs/design/configuration.md`](docs/design/configuration.md) — full configuration reference and rules
 - [`docs/design/semantic-pre-ranking.md`](docs/design/semantic-pre-ranking.md) — semantic triage before LLM (pre-ranking and optional filtering)
+- [`docs/plans/2026-03-14-ideas-real-data-smoke-and-calibration.md`](docs/plans/2026-03-14-ideas-real-data-smoke-and-calibration.md) — first real-data audit of the `ideas` pass and the current prompt baseline
 - [`docs/design/outputs.md`](docs/design/outputs.md) — publish targets and local Markdown layout
 - [`docs/design/trend-surfaces.md`](docs/design/trend-surfaces.md) — canonical trend markdown, browser PDF rendering, debug bundles, and static site deployment
 - [`docs/design/llm-output-language.md`](docs/design/llm-output-language.md) — configurable analysis language behavior

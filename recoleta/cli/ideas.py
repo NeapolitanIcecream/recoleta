@@ -22,6 +22,37 @@ def _parse_anchor_or_exit(*, anchor_date: str | None, console_cls: Any) -> date 
     return parsed_anchor
 
 
+def _print_ideas_result(
+    *,
+    console: Any,
+    result: Any,
+) -> None:
+    if len(getattr(result, "stream_results", []) or []) > 1:
+        console.print(
+            "[green]ideas completed[/green] "
+            f"streams={len(result.stream_results)} granularity={result.granularity} "
+            f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+        )
+        for stream_result in result.stream_results:
+            note_suffix = (
+                f" note_path={Path(stream_result.note_path).as_posix()}"
+                if getattr(stream_result, "note_path", None)
+                else ""
+            )
+            console.print(
+                f"[cyan]{stream_result.stream}[/cyan] "
+                f"status={stream_result.status} pass_output_id={stream_result.pass_output_id}{note_suffix}"
+            )
+        return
+    note_suffix = f" note_path={Path(result.note_path).as_posix()}" if result.note_path else ""
+    console.print(
+        "[green]ideas completed[/green] "
+        f"status={result.status} pass_output_id={result.pass_output_id} "
+        f"granularity={result.granularity} period_start={result.period_start.isoformat()} "
+        f"period_end={result.period_end.isoformat()}{note_suffix}"
+    )
+
+
 def run_ideas_command(
     *,
     granularity: str,
@@ -44,11 +75,5 @@ def run_ideas_command(
         ),
     )
     console = console_cls(stderr=settings.log_json)
-    note_suffix = f" note_path={Path(result.note_path).as_posix()}" if result.note_path else ""
-    console.print(
-        "[green]ideas completed[/green] "
-        f"status={result.status} pass_output_id={result.pass_output_id} "
-        f"granularity={result.granularity} period_start={result.period_start.isoformat()} "
-        f"period_end={result.period_end.isoformat()}{note_suffix}"
-    )
+    _print_ideas_result(console=console, result=result)
     cli._print_billing_report(console=console, repository=repository, run_id=run_id)
