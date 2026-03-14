@@ -363,6 +363,7 @@ Key behaviors:
 - **Same window semantics**: `--date` uses the same UTC anchor-date rules as `recoleta trends`.
 - **Evidence-first output**: the ideas pass treats the upstream trend payload as the primary frame, then uses the active local corpus to verify and sharpen candidate opportunities.
 - **Safe suppression**: when the window has too little evidence for reliable ideas, the pass returns `status=suppressed` instead of padding with generic suggestions.
+- **Readability guardrails**: the prompt explicitly avoids coined umbrella terms, keeps unstable technical terminology in its original form, and asks for factual titles instead of slogan-like labels.
 - **Separate publication**: successful runs honor `PUBLISH_TARGETS` for note-style outputs. `markdown` writes `Ideas/` briefs, `obsidian` writes sibling notes into the configured vault, and the canonical payload still remains separate in `pass_outputs`.
 - **Searchable projection**: successful runs also upsert an `idea` document into the local `documents` corpus with summary/content/meta chunks so ideas can participate in later search or inspection work.
 - **Telegram deferred**: if `PUBLISH_TARGETS` includes `telegram`, the ideas stage records a skipped metric and does not attempt delivery yet.
@@ -439,8 +440,9 @@ Behavior:
 
 - `recoleta site serve` builds the site by default, then serves `MARKDOWN_OUTPUT_DIR/site` on `127.0.0.1:8000`.
 - `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
-- `recoleta materialize outputs` backfills `Inbox/` item notes, rerenders trend markdown from existing DB trend documents, and rebuilds ideas markdown from existing `trend_ideas` pass outputs without rerunning ingest/analyze; add `--site` and/or `--pdf` when you want to refresh derived HTML/PDF outputs in the same pass.
+- `recoleta materialize outputs` backfills `Inbox/` item notes, rerenders trend markdown from existing DB trend documents, rebuilds ideas markdown from existing `trend_ideas` pass outputs, and repairs sibling Obsidian notes when settings expose a vault path, all without rerunning ingest/analyze; add `--site` and/or `--pdf` when you want to refresh derived HTML/PDF outputs in the same pass.
 - `recoleta materialize outputs --scope <stream> --granularity week` is the targeted repair path when only one stream or one trend level needs to be regenerated.
+- `recoleta materialize outputs` intentionally remains a filesystem/site repair path; it does not rebuild derived `documents` projections from pass outputs.
 - `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
 - `recoleta site gh-deploy` keeps the checked-out worktree on your source branch and skips the push when the generated snapshot is unchanged.
 - In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory and attach sibling `Ideas/` directories when present.

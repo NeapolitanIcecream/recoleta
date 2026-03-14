@@ -346,3 +346,261 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
     ).read_text(encoding="utf-8")
     assert f"../trends/day--2026-03-02--trend--{trend_doc_id}.html" in idea_html
     assert f"../items/{item_note_path.stem}.html" in idea_html
+
+
+def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    trend_doc_id, placeholder_item_note_path = _seed_materialize_fixture(
+        repository=repository
+    )
+    output_dir = tmp_path / "outputs"
+    vault_path = tmp_path / "vault"
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    with Session(repository.engine) as session:
+        item_doc = session.exec(
+            select(Document).where(Document.doc_type == "item").limit(1)
+        ).one()
+    assert item_doc.id is not None
+
+    trend_payload = TrendPayload.model_validate(
+        {
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
+            "topics": ["agents", "robotics"],
+            "clusters": [],
+            "highlights": [],
+        }
+    )
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-trend-pass-obsidian",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=trend_payload.model_dump(mode="json"),
+    )
+    assert trend_pass_output.id is not None
+
+    ideas_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Verification-first agent rollout",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "Use a prompt release gate before shipping changes.",
+            "ideas": [
+                {
+                    "title": "Prompt CI gate",
+                    "kind": "tooling_wedge",
+                    "thesis": "Ship a prompt release gate before production rollout.",
+                    "why_now": "Prompt changes now behave like deployable releases.",
+                    "what_changed": "Agent teams now manage prompt/tool changes continuously.",
+                    "user_or_job": "Platform engineers shipping agent changes.",
+                    "evidence_refs": [
+                        {
+                            "doc_id": trend_doc_id,
+                            "chunk_index": 0,
+                            "reason": "Trend note captures the operational shift.",
+                        },
+                        {
+                            "doc_id": item_doc.id,
+                            "chunk_index": 0,
+                            "reason": "Item note anchors the paper-level evidence.",
+                        },
+                    ],
+                    "validation_next_step": "Replay 20 prompt changes through the gate.",
+                    "time_horizon": "now",
+                }
+            ],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-ideas-pass-obsidian",
+        pass_kind="trend_ideas",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=ideas_payload.model_dump(mode="json"),
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                scope="default",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    result = materialize_outputs(
+        repository=repository,
+        scope_specs=[
+            MaterializeScopeSpec(
+                scope="default",
+                output_dir=output_dir,
+                obsidian_vault_path=vault_path,
+                obsidian_base_folder="Recoleta",
+            )
+        ],
+    )
+
+    item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
+    obsidian_item_note = vault_path / "Recoleta" / "Inbox" / item_note_path.name
+    obsidian_trend_note = (
+        vault_path / "Recoleta" / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    )
+    obsidian_idea_note = (
+        vault_path / "Recoleta" / "Ideas" / "day--2026-03-02--ideas.md"
+    )
+
+    assert obsidian_item_note.exists()
+    assert obsidian_trend_note.exists()
+    assert obsidian_idea_note.exists()
+    assert result.scopes[0].obsidian_notes_total == 3
+    assert result.scopes[0].obsidian_failures_total == 0
+
+    idea_markdown = obsidian_idea_note.read_text(encoding="utf-8")
+    assert f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)" in idea_markdown
+    assert f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})" in idea_markdown
+
+
+def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_available(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    trend_doc_id, _ = _seed_materialize_fixture(repository=repository)
+    output_dir = tmp_path / "outputs"
+    vault_path = tmp_path / "vault"
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    with Session(repository.engine) as session:
+        item_doc = session.exec(
+            select(Document).where(Document.doc_type == "item").limit(1)
+        ).one()
+    assert item_doc.id is not None
+
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-cli-trend-pass",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendPayload.model_validate(
+            {
+                "title": "Agent Systems",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
+                "topics": ["agents", "robotics"],
+                "clusters": [],
+                "highlights": [],
+            }
+        ).model_dump(mode="json"),
+    )
+    assert trend_pass_output.id is not None
+    repository.create_pass_output(
+        run_id="run-materialize-cli-ideas-pass",
+        pass_kind="trend_ideas",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "Verification-first agent rollout",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "summary_md": "Use a prompt release gate before shipping changes.",
+                "ideas": [
+                    {
+                        "title": "Prompt CI gate",
+                        "kind": "tooling_wedge",
+                        "thesis": "Ship a prompt release gate before production rollout.",
+                        "why_now": "Prompt changes now behave like deployable releases.",
+                        "what_changed": "Agent teams now manage prompt/tool changes continuously.",
+                        "user_or_job": "Platform engineers shipping agent changes.",
+                        "evidence_refs": [
+                            {
+                                "doc_id": trend_doc_id,
+                                "chunk_index": 0,
+                                "reason": "Trend note captures the operational shift.",
+                            },
+                            {
+                                "doc_id": item_doc.id,
+                                "chunk_index": 0,
+                                "reason": "Item note anchors the paper-level evidence.",
+                            },
+                        ],
+                        "validation_next_step": "Replay 20 prompt changes through the gate.",
+                        "time_horizon": "now",
+                    }
+                ],
+            }
+        ).model_dump(mode="json"),
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                scope="default",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    config_path = tmp_path / "recoleta.yml"
+    config_path.write_text(
+        "\n".join(
+                [
+                    f"recoleta_db_path: {repository.db_path}",
+                    f"markdown_output_dir: {output_dir}",
+                    f"obsidian_vault_path: {vault_path}",
+                "obsidian_base_folder: Recoleta",
+                "publish_targets: [markdown, obsidian]",
+                "llm_model: test/fake-model",
+                "llm_output_language: Chinese (Simplified)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "materialize",
+            "outputs",
+            "--config-path",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "materialize outputs completed" in result.stdout
+    assert "obsidian=3" in result.stdout
+    assert (vault_path / "Recoleta" / "Ideas" / "day--2026-03-02--ideas.md").exists()

@@ -92,6 +92,14 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " or catchy headings."
     )
     base += (
+        " Do not translate paper titles, framework names, product names, or acronyms"
+        " unless a widely accepted translation already exists."
+    )
+    base += (
+        " Idea titles should be factual descriptive noun phrases, not slogans,"
+        " coined categories, or rhetorical questions."
+    )
+    base += (
         " Start with search_hybrid for broad discovery, then use get_doc_bundle"
         " or read_chunk to confirm specific evidence before finalizing ideas."
     )
@@ -130,6 +138,8 @@ def build_trend_ideas_prompt_payload(
             "Do not coin new umbrella terms or marketing-style labels.",
             "If a technical term lacks a stable translation in the requested output language, keep the original term.",
             "Prefer direct, readable phrasing over compressed jargon.",
+            "Keep paper titles, framework names, product names, and acronyms in their original form unless a widely accepted translation exists.",
+            "Idea titles should read like factual descriptive labels, not slogans, coined categories, or rhetorical questions.",
         ],
     }
     if rag_sources is not None:

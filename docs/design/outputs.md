@@ -101,8 +101,9 @@ The static site exporter turns trend markdown notes into a standalone website:
 Important behavior:
 
 - `recoleta site serve` uses Python's standard-library HTTP server; it is a preview helper, not a full dev server.
-- `recoleta materialize outputs` is the offline repair path for existing outputs: it backfills item notes and rerenders trend markdown from stored DB documents without mutating upstream ingest/analyze state, and can optionally refresh site/PDF artifacts.
+- `recoleta materialize outputs` is the offline repair path for existing outputs: it backfills item notes, repairs sibling Obsidian notes when settings expose a vault path, rerenders trend markdown from stored DB documents without mutating upstream ingest/analyze state, and can optionally refresh site/PDF artifacts.
 - `recoleta materialize outputs --scope <stream>` lets you repair a single stream without rewriting every configured stream.
+- `recoleta materialize outputs` does not rebuild derived `documents` projections from pass outputs; searchable corpus repair stays separate from filesystem/site repair on purpose.
 - All commands that rebuild site output treat their output directories as managed artifacts and clear stale files before writing.
 - When `--input-dir` and `--output-dir` are passed explicitly, they do not require a full Recoleta runtime config. This is intentional so CI and GitHub Pages can build from a staged content snapshot.
 - `recoleta site gh-deploy` keeps `main` free of committed site snapshots and Pages-specific workflow files by publishing a derived branch instead.

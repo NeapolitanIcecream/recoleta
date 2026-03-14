@@ -17,6 +17,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
+from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
 from recoleta.passes import build_trend_synthesis_pass_output
 from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
 from recoleta.publish import (
@@ -33,28 +34,8 @@ from recoleta import trends
 from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
 
 
-def _trend_metric_stream_token(scope: str) -> str:
-    normalized_scope = str(scope or "").strip().lower()
-    return (
-        "".join(ch if ch.isalnum() else "_" for ch in normalized_scope).strip("_")
-        or "unknown"
-    )
-
-
 def _trend_metric_name(name: str, *, scope: str) -> str:
-    normalized_name = str(name or "").strip()
-    normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
-    if normalized_scope == DEFAULT_TOPIC_STREAM:
-        return normalized_name
-    stream_prefix = (
-        f"pipeline.trends.stream.{_trend_metric_stream_token(normalized_scope)}"
-    )
-    if normalized_name == "pipeline.trends":
-        return stream_prefix
-    if not normalized_name.startswith("pipeline.trends."):
-        return normalized_name
-    suffix = normalized_name.removeprefix("pipeline.trends.")
-    return f"{stream_prefix}.{suffix}"
+    return scoped_trends_metric_name(name, scope=scope)
 
 
 class TrendStageService(Protocol):
@@ -1545,7 +1526,7 @@ def run_trends_stage(
                 for raw_tool_name, raw_count in sorted(tool_call_breakdown.items()):
                     if not isinstance(raw_count, (int, float)):
                         continue
-                    metric_tool_name = _trend_metric_stream_token(str(raw_tool_name))
+                    metric_tool_name = metric_token(str(raw_tool_name), max_len=32)
                     if not metric_tool_name:
                         continue
                     record_metric(

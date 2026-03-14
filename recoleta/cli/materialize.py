@@ -63,10 +63,36 @@ def run_materialize_outputs_command(
         )
 
         if resolved_output_dir is not None:
+            resolved_obsidian_vault_path = None
+            resolved_obsidian_base_folder = None
+            if settings is not None:
+                resolved_obsidian_vault_path = getattr(
+                    settings, "obsidian_vault_path", None
+                )
+                if cli._has_explicit_topic_streams(settings):
+                    runtimes = list(getattr(settings, "topic_stream_runtimes")())
+                    matched_runtime = next(
+                        (
+                            runtime
+                            for runtime in runtimes
+                            if str(getattr(runtime, "name", "") or "") == normalized_scope
+                        ),
+                        None,
+                    )
+                    if matched_runtime is not None:
+                        resolved_obsidian_base_folder = str(
+                            getattr(matched_runtime, "obsidian_base_folder", "") or ""
+                        ).strip() or None
+                if resolved_obsidian_base_folder is None:
+                    resolved_obsidian_base_folder = str(
+                        getattr(settings, "obsidian_base_folder", "") or ""
+                    ).strip() or None
             scope_specs = [
                 materialize_scope_spec_cls(
                     scope=normalized_scope,
                     output_dir=resolved_output_dir,
+                    obsidian_vault_path=resolved_obsidian_vault_path,
+                    obsidian_base_folder=resolved_obsidian_base_folder,
                 )
             ]
             site_input_dir = resolved_output_dir if site else None
@@ -145,6 +171,12 @@ def run_materialize_outputs_command(
     ideas_failures_total = sum(
         scope_result.ideas_failures_total for scope_result in result.scopes
     )
+    obsidian_notes_total = sum(
+        scope_result.obsidian_notes_total for scope_result in result.scopes
+    )
+    obsidian_failures_total = sum(
+        scope_result.obsidian_failures_total for scope_result in result.scopes
+    )
     trend_pdf_total = sum(scope_result.trend_pdf_total for scope_result in result.scopes)
     trend_pdf_failures_total = sum(
         scope_result.trend_pdf_failures_total for scope_result in result.scopes
@@ -160,6 +192,8 @@ def run_materialize_outputs_command(
         f"trend_failures={trend_failures_total} "
         f"ideas={ideas_notes_total}/{ideas_outputs_total} "
         f"idea_failures={ideas_failures_total} "
+        f"obsidian={obsidian_notes_total} "
+        f"obsidian_failures={obsidian_failures_total} "
         f"canonical_link_rewrites={canonical_link_rewrites_total} "
         f"pdfs={trend_pdf_total} "
         f"pdf_failures={trend_pdf_failures_total}"
@@ -170,7 +204,8 @@ def run_materialize_outputs_command(
             f"output={scope_result.output_dir} "
             f"items={scope_result.item_notes_total} "
             f"trends={scope_result.trend_notes_total}/{scope_result.trend_docs_total} "
-            f"ideas={scope_result.ideas_notes_total}/{scope_result.ideas_outputs_total}"
+            f"ideas={scope_result.ideas_notes_total}/{scope_result.ideas_outputs_total} "
+            f"obsidian={scope_result.obsidian_notes_total}"
         )
     if result.site_manifest_path is not None:
         console.print(f"[cyan]site manifest[/cyan] {result.site_manifest_path}")

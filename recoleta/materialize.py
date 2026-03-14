@@ -26,6 +26,9 @@ from recoleta.publish import (
     write_markdown_ideas_note,
     write_markdown_note,
     write_markdown_trend_note,
+    write_obsidian_ideas_note,
+    write_obsidian_note,
+    write_obsidian_trend_note,
 )
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.site import export_trend_static_site
@@ -38,6 +41,8 @@ from recoleta.types import DEFAULT_TOPIC_STREAM
 class MaterializeScopeSpec:
     scope: str
     output_dir: Path
+    obsidian_vault_path: Path | None = None
+    obsidian_base_folder: str | None = None
 
 
 @dataclass(slots=True)
@@ -51,6 +56,8 @@ class MaterializeScopeResult:
     ideas_notes_total: int = 0
     ideas_outputs_total: int = 0
     ideas_failures_total: int = 0
+    obsidian_notes_total: int = 0
+    obsidian_failures_total: int = 0
     trend_pdf_total: int = 0
     trend_pdf_failures_total: int = 0
     doc_ref_rewrites_total: int = 0
@@ -252,6 +259,12 @@ def _materialize_scope_outputs(
 ) -> MaterializeScopeResult:
     output_dir = scope_spec.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    obsidian_vault_path = (
+        scope_spec.obsidian_vault_path.expanduser().resolve()
+        if scope_spec.obsidian_vault_path is not None
+        else None
+    )
+    obsidian_base_folder = str(scope_spec.obsidian_base_folder or "").strip() or None
     result = MaterializeScopeResult(
         scope=scope_spec.scope,
         output_dir=output_dir,
@@ -289,6 +302,32 @@ def _materialize_scope_outputs(
                 f"../Inbox/{note_path.name}"
             )
         result.item_notes_total += 1
+        if obsidian_vault_path is not None and obsidian_base_folder is not None:
+            try:
+                write_obsidian_note(
+                    vault_path=obsidian_vault_path,
+                    base_folder=obsidian_base_folder,
+                    item_id=int(item_id),
+                    title=str(getattr(item, "title", "") or ""),
+                    source=str(getattr(item, "source", "") or ""),
+                    canonical_url=canonical_url,
+                    published_at=getattr(item, "published_at", None),
+                    authors=repository.decode_list(getattr(item, "authors", None)),
+                    topics=repository.decode_list(getattr(analysis, "topics_json", None)),
+                    relevance_score=float(
+                        getattr(analysis, "relevance_score", 0.0) or 0.0
+                    ),
+                    run_id="materialize-outputs",
+                    summary=str(getattr(analysis, "summary", "") or ""),
+                )
+                result.obsidian_notes_total += 1
+            except Exception as exc:  # noqa: BLE001
+                result.obsidian_failures_total += 1
+                log.bind(item_id=int(item_id)).warning(
+                    "item obsidian materialization failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
 
     trend_documents = _materialize_trend_documents(
         repository=repository,
@@ -345,6 +384,33 @@ def _materialize_scope_outputs(
                 str(exc),
             )
             continue
+        if obsidian_vault_path is not None and obsidian_base_folder is not None:
+            try:
+                write_obsidian_trend_note(
+                    vault_path=obsidian_vault_path,
+                    base_folder=obsidian_base_folder,
+                    trend_doc_id=doc_id,
+                    title=materialized.title,
+                    granularity=str(getattr(document, "granularity", "") or ""),
+                    period_start=cast(datetime, getattr(document, "period_start")),
+                    period_end=cast(datetime, getattr(document, "period_end")),
+                    run_id="materialize-outputs",
+                    overview_md=materialized.overview_md,
+                    topics=list(materialized.topics),
+                    evolution=materialized.evolution,
+                    history_window_refs=materialized.history_window_refs,
+                    clusters=materialized.clusters,
+                    highlights=materialized.highlights,
+                    output_language=output_language,
+                )
+                result.obsidian_notes_total += 1
+            except Exception as exc:  # noqa: BLE001
+                result.obsidian_failures_total += 1
+                log.bind(doc_id=doc_id).warning(
+                    "trend obsidian materialization failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
 
         if not generate_pdf:
             continue
@@ -412,6 +478,32 @@ def _materialize_scope_outputs(
                 type(exc).__name__,
                 str(exc),
             )
+            continue
+        if obsidian_vault_path is not None and obsidian_base_folder is not None:
+            try:
+                write_obsidian_ideas_note(
+                    repository=repository,
+                    vault_path=obsidian_vault_path,
+                    base_folder=obsidian_base_folder,
+                    pass_output_id=pass_output_id,
+                    upstream_pass_output_id=upstream_pass_output_id,
+                    granularity=str(row.granularity or payload.granularity or "day"),
+                    period_start=period_start,
+                    period_end=period_end,
+                    run_id=str(row.run_id),
+                    status=str(row.status),
+                    payload=payload,
+                    scope=scope_spec.scope,
+                    topics=topics,
+                )
+                result.obsidian_notes_total += 1
+            except Exception as exc:  # noqa: BLE001
+                result.obsidian_failures_total += 1
+                log.bind(pass_output_id=pass_output_id).warning(
+                    "ideas obsidian materialization failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
 
     log.info(
         "scope materialization completed stats={}",
@@ -424,6 +516,8 @@ def _materialize_scope_outputs(
             "ideas_notes_total": result.ideas_notes_total,
             "ideas_outputs_total": result.ideas_outputs_total,
             "ideas_failures_total": result.ideas_failures_total,
+            "obsidian_notes_total": result.obsidian_notes_total,
+            "obsidian_failures_total": result.obsidian_failures_total,
             "trend_pdf_total": result.trend_pdf_total,
             "trend_pdf_failures_total": result.trend_pdf_failures_total,
             "doc_ref_rewrites_total": result.doc_ref_rewrites_total,
@@ -484,6 +578,11 @@ def default_scope_specs_for_settings(*, settings: Any) -> list[MaterializeScopeS
                 MaterializeScopeSpec(
                     scope=str(getattr(runtime, "name", "") or DEFAULT_TOPIC_STREAM),
                     output_dir=Path(getattr(runtime, "markdown_output_dir")),
+                    obsidian_vault_path=getattr(settings, "obsidian_vault_path", None),
+                    obsidian_base_folder=str(
+                        getattr(runtime, "obsidian_base_folder", "") or ""
+                    )
+                    or None,
                 )
                 for runtime in runtimes
             ]
@@ -491,5 +590,10 @@ def default_scope_specs_for_settings(*, settings: Any) -> list[MaterializeScopeS
         MaterializeScopeSpec(
             scope=DEFAULT_TOPIC_STREAM,
             output_dir=Path(settings.markdown_output_dir),
+            obsidian_vault_path=getattr(settings, "obsidian_vault_path", None),
+            obsidian_base_folder=str(
+                getattr(settings, "obsidian_base_folder", "") or ""
+            )
+            or None,
         )
     ]

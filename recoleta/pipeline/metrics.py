@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from recoleta.types import DEFAULT_TOPIC_STREAM
+
 
 def metric_token(value: str, *, max_len: int = 48) -> str:
     lowered = value.lower().strip()
@@ -37,3 +39,17 @@ def record_stream_metric(
         value=value,
         unit=unit,
     )
+
+
+def scoped_trends_metric_name(name: str, *, scope: str) -> str:
+    normalized_name = str(name or "").strip()
+    normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
+    if normalized_scope == DEFAULT_TOPIC_STREAM:
+        return normalized_name
+    stream_prefix = f"pipeline.trends.stream.{metric_token(normalized_scope, max_len=32)}"
+    if normalized_name == "pipeline.trends":
+        return stream_prefix
+    if not normalized_name.startswith("pipeline.trends."):
+        return normalized_name
+    suffix = normalized_name.removeprefix("pipeline.trends.")
+    return f"{stream_prefix}.{suffix}"
