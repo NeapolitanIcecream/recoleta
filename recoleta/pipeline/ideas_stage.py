@@ -227,7 +227,7 @@ def _record_ideas_debug_artifact(
             run_id=run_id,
             item_id=None,
             kind="ideas_llm_response",
-            path=artifact_path.name,
+            path=str(artifact_path),
         )
     except Exception:
         return
