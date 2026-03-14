@@ -10,7 +10,9 @@ from typer.testing import CliRunner
 import recoleta.cli
 import recoleta.materialize as materialize_module
 from recoleta.materialize import MaterializeScopeSpec, materialize_outputs
-from recoleta.models import DocumentChunk, Item
+from recoleta.models import Document, DocumentChunk, Item
+from recoleta.passes.base import PassInputRef
+from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish.item_notes import resolve_item_note_path
 from recoleta.storage import Repository
 from recoleta.trends import TrendPayload, persist_trend_payload
@@ -225,3 +227,122 @@ def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
     assert len(pdf_calls) == 1
     assert pdf_calls[0].name == f"day--2026-03-02--trend--{trend_doc_id}.md"
     assert (output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.pdf").exists()
+
+
+def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_site(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    trend_doc_id, placeholder_item_note_path = _seed_materialize_fixture(
+        repository=repository
+    )
+    output_dir = tmp_path / "outputs"
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    with Session(repository.engine) as session:
+        item_doc = session.exec(
+            select(Document).where(Document.doc_type == "item").limit(1)
+        ).one()
+    assert item_doc.id is not None
+
+    trend_payload = TrendPayload.model_validate(
+        {
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
+            "topics": ["agents", "robotics"],
+            "clusters": [],
+            "highlights": [],
+        }
+    )
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-trend-pass",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=trend_payload.model_dump(mode="json"),
+    )
+    assert trend_pass_output.id is not None
+
+    ideas_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Verification-first agent rollout",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "Use a prompt release gate before shipping changes.",
+            "ideas": [
+                {
+                    "title": "Prompt CI gate",
+                    "kind": "tooling_wedge",
+                    "thesis": "Ship a prompt release gate before production rollout.",
+                    "why_now": "Prompt changes now behave like deployable releases.",
+                    "what_changed": "Agent teams now manage prompt/tool changes continuously.",
+                    "user_or_job": "Platform engineers shipping agent changes.",
+                    "evidence_refs": [
+                        {
+                            "doc_id": trend_doc_id,
+                            "chunk_index": 0,
+                            "reason": "Trend note captures the operational shift.",
+                        },
+                        {
+                            "doc_id": item_doc.id,
+                            "chunk_index": 0,
+                            "reason": "Item note anchors the paper-level evidence.",
+                        },
+                    ],
+                    "validation_next_step": "Replay 20 prompt changes through the gate.",
+                    "time_horizon": "now",
+                }
+            ],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-ideas-pass",
+        pass_kind="trend_ideas",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=ideas_payload.model_dump(mode="json"),
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                scope="default",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    result = materialize_outputs(
+        repository=repository,
+        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        site_input_dir=output_dir,
+        site_output_dir=output_dir / "site",
+    )
+
+    item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
+    idea_note_path = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
+    assert idea_note_path.exists()
+    assert result.site_manifest_path == output_dir / "site" / "manifest.json"
+
+    idea_markdown = idea_note_path.read_text(encoding="utf-8")
+    assert f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)" in idea_markdown
+    assert f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})" in idea_markdown
+
+    idea_html = (
+        output_dir / "site" / "ideas" / "day--2026-03-02--ideas.html"
+    ).read_text(encoding="utf-8")
+    assert f"../trends/day--2026-03-02--trend--{trend_doc_id}.html" in idea_html
+    assert f"../items/{item_note_path.stem}.html" in idea_html

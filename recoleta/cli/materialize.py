@@ -138,6 +138,13 @@ def run_materialize_outputs_command(
     trend_failures_total = sum(
         scope_result.trend_failures_total for scope_result in result.scopes
     )
+    ideas_notes_total = sum(scope_result.ideas_notes_total for scope_result in result.scopes)
+    ideas_outputs_total = sum(
+        scope_result.ideas_outputs_total for scope_result in result.scopes
+    )
+    ideas_failures_total = sum(
+        scope_result.ideas_failures_total for scope_result in result.scopes
+    )
     trend_pdf_total = sum(scope_result.trend_pdf_total for scope_result in result.scopes)
     trend_pdf_failures_total = sum(
         scope_result.trend_pdf_failures_total for scope_result in result.scopes
@@ -151,6 +158,8 @@ def run_materialize_outputs_command(
         f"items={item_notes_total} "
         f"trends={trend_notes_total}/{trend_docs_total} "
         f"trend_failures={trend_failures_total} "
+        f"ideas={ideas_notes_total}/{ideas_outputs_total} "
+        f"idea_failures={ideas_failures_total} "
         f"canonical_link_rewrites={canonical_link_rewrites_total} "
         f"pdfs={trend_pdf_total} "
         f"pdf_failures={trend_pdf_failures_total}"
@@ -160,7 +169,8 @@ def run_materialize_outputs_command(
             f"[cyan]{scope_result.scope}[/cyan] "
             f"output={scope_result.output_dir} "
             f"items={scope_result.item_notes_total} "
-            f"trends={scope_result.trend_notes_total}/{scope_result.trend_docs_total}"
+            f"trends={scope_result.trend_notes_total}/{scope_result.trend_docs_total} "
+            f"ideas={scope_result.ideas_notes_total}/{scope_result.ideas_outputs_total}"
         )
     if result.site_manifest_path is not None:
         console.print(f"[cyan]site manifest[/cyan] {result.site_manifest_path}")
