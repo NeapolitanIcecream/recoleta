@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 from recoleta.models import (
     Analysis,
     Document,
+    PassOutput,
     ITEM_STATE_ANALYZED,
     ITEM_STATE_PUBLISHED,
     Item,
@@ -22,9 +23,11 @@ from recoleta.models import (
 from recoleta.publish import (
     export_trend_note_pdf_debug_bundle,
     render_trend_note_pdf_result,
+    write_markdown_ideas_note,
     write_markdown_note,
     write_markdown_trend_note,
 )
+from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.site import export_trend_static_site
 from recoleta.trend_materialize import materialize_trend_note_payload
 from recoleta.trends import TrendPayload
@@ -45,6 +48,9 @@ class MaterializeScopeResult:
     trend_notes_total: int = 0
     trend_docs_total: int = 0
     trend_failures_total: int = 0
+    ideas_notes_total: int = 0
+    ideas_outputs_total: int = 0
+    ideas_failures_total: int = 0
     trend_pdf_total: int = 0
     trend_pdf_failures_total: int = 0
     doc_ref_rewrites_total: int = 0
@@ -152,6 +158,87 @@ def _load_trend_payload(*, repository: Any, document: Any) -> TrendPayload:
         clusters=[],
         highlights=[],
     )
+
+
+def _materialize_idea_pass_outputs(
+    *,
+    repository: Any,
+    scope: str,
+    granularity: str | None,
+) -> list[PassOutput]:
+    with Session(repository.engine) as session:
+        statement = select(PassOutput).where(
+            PassOutput.pass_kind == "trend_ideas",
+            PassOutput.status == "succeeded",
+            cast(Any, PassOutput.scope) == scope,
+        )
+        if granularity is not None:
+            statement = statement.where(PassOutput.granularity == granularity)
+        statement = statement.order_by(
+            desc(cast(Any, PassOutput.created_at)),
+            desc(cast(Any, PassOutput.id)),
+        )
+        rows = list(session.exec(statement))
+
+    selected: list[PassOutput] = []
+    seen_windows: set[tuple[str | None, datetime | None, datetime | None]] = set()
+    for row in rows:
+        key = (row.granularity, row.period_start, row.period_end)
+        if key in seen_windows:
+            continue
+        seen_windows.add(key)
+        selected.append(row)
+    selected.sort(
+        key=lambda row: (
+            row.period_start or datetime.min.replace(tzinfo=UTC),
+            row.period_end or datetime.min.replace(tzinfo=UTC),
+            row.id or 0,
+        )
+    )
+    return selected
+
+
+def _load_ideas_payload(*, row: PassOutput) -> TrendIdeasPayload:
+    return TrendIdeasPayload.model_validate(json.loads(str(row.payload_json or "{}")))
+
+
+def _ideas_upstream_pass_output_id(*, row: PassOutput) -> int | None:
+    try:
+        input_refs = json.loads(str(row.input_refs_json or "[]"))
+    except Exception:
+        return None
+    if not isinstance(input_refs, list):
+        return None
+    for ref in input_refs:
+        if not isinstance(ref, dict):
+            continue
+        raw_pass_output_id = ref.get("pass_output_id")
+        if raw_pass_output_id is None:
+            continue
+        try:
+            pass_output_id = int(raw_pass_output_id)
+        except Exception:
+            continue
+        if pass_output_id > 0:
+            return pass_output_id
+    return None
+
+
+def _ideas_topics_from_upstream_pass_output(
+    *,
+    repository: Any,
+    pass_output_id: int | None,
+) -> list[str]:
+    if pass_output_id is None:
+        return []
+    row = repository.get_pass_output(pass_output_id=pass_output_id)
+    if row is None:
+        return []
+    try:
+        payload = TrendPayload.model_validate(json.loads(str(row.payload_json or "{}")))
+    except Exception:
+        return []
+    return [str(topic).strip() for topic in payload.topics or [] if str(topic).strip()]
 
 
 def _materialize_scope_outputs(
@@ -284,6 +371,48 @@ def _materialize_scope_outputs(
                 str(exc),
             )
 
+    idea_pass_outputs = _materialize_idea_pass_outputs(
+        repository=repository,
+        scope=scope_spec.scope,
+        granularity=granularity,
+    )
+    result.ideas_outputs_total = len(idea_pass_outputs)
+    for row in idea_pass_outputs:
+        pass_output_id = int(getattr(row, "id") or 0)
+        try:
+            payload = _load_ideas_payload(row=row)
+            upstream_pass_output_id = _ideas_upstream_pass_output_id(row=row)
+            topics = _ideas_topics_from_upstream_pass_output(
+                repository=repository,
+                pass_output_id=upstream_pass_output_id,
+            )
+            period_start = row.period_start
+            period_end = row.period_end
+            if not isinstance(period_start, datetime) or not isinstance(period_end, datetime):
+                raise ValueError("ideas pass output is missing period bounds")
+            _ = write_markdown_ideas_note(
+                repository=repository,
+                output_dir=output_dir,
+                pass_output_id=pass_output_id,
+                upstream_pass_output_id=upstream_pass_output_id,
+                granularity=str(row.granularity or payload.granularity or "day"),
+                period_start=period_start,
+                period_end=period_end,
+                run_id=str(row.run_id),
+                status=str(row.status),
+                payload=payload,
+                scope=scope_spec.scope,
+                topics=topics,
+            )
+            result.ideas_notes_total += 1
+        except Exception as exc:  # noqa: BLE001
+            result.ideas_failures_total += 1
+            log.bind(pass_output_id=pass_output_id).warning(
+                "ideas output materialization failed error_type={} error={}",
+                type(exc).__name__,
+                str(exc),
+            )
+
     log.info(
         "scope materialization completed stats={}",
         {
@@ -292,6 +421,9 @@ def _materialize_scope_outputs(
             "trend_notes_total": result.trend_notes_total,
             "trend_docs_total": result.trend_docs_total,
             "trend_failures_total": result.trend_failures_total,
+            "ideas_notes_total": result.ideas_notes_total,
+            "ideas_outputs_total": result.ideas_outputs_total,
+            "ideas_failures_total": result.ideas_failures_total,
             "trend_pdf_total": result.trend_pdf_total,
             "trend_pdf_failures_total": result.trend_pdf_failures_total,
             "doc_ref_rewrites_total": result.doc_ref_rewrites_total,

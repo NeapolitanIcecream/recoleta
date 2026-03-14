@@ -435,7 +435,7 @@ Behavior:
 
 - `recoleta site serve` builds the site by default, then serves `MARKDOWN_OUTPUT_DIR/site` on `127.0.0.1:8000`.
 - `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
-- `recoleta materialize outputs` backfills `Inbox/` item notes and rerenders trend markdown from existing DB trend documents without rerunning ingest/analyze; add `--site` and/or `--pdf` when you want to refresh derived HTML/PDF outputs in the same pass.
+- `recoleta materialize outputs` backfills `Inbox/` item notes, rerenders trend markdown from existing DB trend documents, and rebuilds ideas markdown from existing `trend_ideas` pass outputs without rerunning ingest/analyze; add `--site` and/or `--pdf` when you want to refresh derived HTML/PDF outputs in the same pass.
 - `recoleta materialize outputs --scope <stream> --granularity week` is the targeted repair path when only one stream or one trend level needs to be regenerated.
 - `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
 - `recoleta site gh-deploy` keeps the checked-out worktree on your source branch and skips the push when the generated snapshot is unchanged.
