@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 import json
 from pathlib import Path
+import re
 
 import pytest
 from sqlmodel import Session, select
@@ -109,7 +110,16 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         ).first()
         assert meta_chunk is not None
         projected_payload = json.loads(str(meta_chunk.text))
-        assert "doc_id" not in str(projected_payload.get("overview_md") or "")
+        assert "doc_id" in str(projected_payload.get("overview_md") or "")
+
+    trend_note = (
+        settings.markdown_output_dir
+        / "Trends"
+        / f"day--2026-03-02--trend--{result.doc_id}.md"
+    )
+    markdown = trend_note.read_text(encoding="utf-8")
+    assert "See doc_id" not in markdown
+    assert re.search(r"(?<![\w])doc_id\s*[:=#-]?\s*\d+", markdown) is None
 
 
 def test_trends_records_metric_when_pass_output_persist_fails(
