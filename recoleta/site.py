@@ -796,6 +796,21 @@ def _latest_collection_token(
     return latest_document.period_token or "n/a"
 
 
+def _collection_window_span(
+    documents: Sequence[TrendSiteDocument | IdeaSiteDocument],
+) -> str:
+    if not documents:
+        return ""
+    ordered_documents = sorted(
+        documents,
+        key=_rendered_document_sort_key,
+        reverse=True,
+    )
+    newest = ordered_documents[0].period_token or "n/a"
+    oldest = ordered_documents[-1].period_token or "n/a"
+    return f"{oldest} to {newest}"
+
+
 def _render_collection_section(
     *,
     title: str,
@@ -1489,11 +1504,7 @@ def _render_home_page(
         for document in documents[:8]
     )
 
-    generated_span = ""
-    if documents:
-        newest = documents[0].period_token
-        oldest = documents[-1].period_token
-        generated_span = f"{oldest} to {newest}"
+    generated_span = _collection_window_span([*documents, *idea_documents])
 
     stream_section_html = (
         "<section class='home-section'>"

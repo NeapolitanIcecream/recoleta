@@ -266,6 +266,43 @@ def test_export_trend_static_site_uses_single_card_columns_and_equal_width_pairs
     assert "grid-template-columns: 1fr;" in stylesheet
 
 
+def test_export_trend_static_site_home_window_uses_idea_only_range(
+    tmp_path: Path,
+) -> None:
+    """Regression: idea-only exports should not show an empty home-window summary."""
+    notes_root = tmp_path / "notes"
+    trends_dir = notes_root / "Trends"
+    trends_dir.mkdir(parents=True, exist_ok=True)
+    ideas_dir = notes_root / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    (ideas_dir / "day--2026-03-09--ideas.md").write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        "Ship a prompt release gate.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=trends_dir, output_dir=site_dir)
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert (
+        "<div class='meta-panel-label'>Window</div>"
+        "<div class='meta-panel-value'>2026-03-09 to 2026-03-09</div>"
+        in index_html
+    )
+    assert "<div class='meta-panel-value'>n/a</div>" not in index_html
+
+
 def test_stage_trend_site_source_mirrors_notes_and_cleans_stale_files(
     tmp_path: Path,
 ) -> None:
