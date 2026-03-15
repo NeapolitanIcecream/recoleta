@@ -104,6 +104,7 @@ def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
     assert manifest_path == site_dir / "manifest.json"
     assert (site_dir / "index.html").exists()
     assert (site_dir / "archive.html").exists()
+    assert (site_dir / "trends" / "index.html").exists()
     assert (site_dir / "topics" / "index.html").exists()
     assert (site_dir / "topics" / "agents.html").exists()
     assert (site_dir / "trends" / f"{note_one.stem}.html").exists()
@@ -117,6 +118,7 @@ def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["trends_total"] == 2
     assert manifest["topics_total"] == 3
+    assert manifest["files"]["trends_index"] == "trends/index.html"
 
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert "Recoleta Trends" in index_html
@@ -219,6 +221,49 @@ def test_export_trend_static_site_keeps_mobile_shell_rules_within_viewport(
     assert "width: calc(100% - 16px);" in stylesheet
     assert "flex-direction: column;" in stylesheet
     assert "overflow-wrap: anywhere;" in stylesheet
+
+
+def test_export_trend_static_site_uses_single_card_columns_and_equal_width_pairs(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=84,
+        title="Single-column layout check",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-home-single-column",
+        overview_md="## Overview\n\nA home layout regression guard.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    (ideas_dir / "day--2026-03-08--ideas.md").write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-08T00:00:00+00:00\n"
+        "period_end: 2026-03-09T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "---\n\n"
+        "# Layout guard ideas\n\n"
+        "## Summary\n\n"
+        "Idea-side layout check.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    stylesheet = (site_dir / "assets" / "site.css").read_text(encoding="utf-8")
+    assert ".paired-collection-layout {" in stylesheet
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in stylesheet
+    assert ".collection-section .trend-grid {" in stylesheet
+    assert "grid-template-columns: 1fr;" in stylesheet
 
 
 def test_stage_trend_site_source_mirrors_notes_and_cleans_stale_files(
@@ -459,10 +504,18 @@ def test_export_trend_static_site_writes_idea_pages_and_rewrites_links(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["ideas_total"] == 1
     assert f"ideas/{idea_note.stem}.html" in manifest["files"]["idea_pages"]
+    assert manifest["files"]["trends_index"] == "trends/index.html"
 
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
-    assert "Latest idea briefs" in index_html
+    assert "Browse trends" in index_html
+    assert "Trend briefs" in index_html
+    assert "Idea briefs" in index_html
     assert "Verification-first agent rollout" in index_html
+
+    trends_index_html = (site_dir / "trends" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Code agents close the loop" in trends_index_html
 
     ideas_index_html = (site_dir / "ideas" / "index.html").read_text(encoding="utf-8")
     assert "Verification-first agent rollout" in ideas_index_html
@@ -473,6 +526,122 @@ def test_export_trend_static_site_writes_idea_pages_and_rewrites_links(
     assert "../Inbox/" not in detail_html
     assert "../Trends/" not in detail_html
     assert "Source markdown" in detail_html
+
+
+def test_export_trend_static_site_builds_peer_trend_navigation_and_detail_context(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=93,
+        title="Code agents close the loop",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-trends-peer-nav",
+        overview_md="## Overview\n\nAgent workflows keep tightening.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    (ideas_dir / "day--2026-03-09--ideas.md").write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        "Ship a prompt release gate.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["files"]["trends_index"] == "trends/index.html"
+
+    home_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert "Browse trends" in home_html
+    assert "Trend briefs" in home_html
+    assert "Idea briefs" in home_html
+
+    detail_html = (site_dir / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "href='index.html'>Trends</a>" in detail_html
+    assert "Trend brief" in detail_html
+
+
+def test_export_trend_static_site_aggregates_idea_topics_into_home_and_topic_pages(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=94,
+        title="Code agents close the loop",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-topic-aggregation-trend",
+        overview_md="## Overview\n\nAgent workflows keep tightening.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-09--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "topics:\n"
+        "  - deployment\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        "Ship a prompt release gate.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["topics_total"] == 2
+    assert "topics/deployment.html" in manifest["files"]["topic_pages"]
+
+    home_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert "topics/deployment.html" in home_html
+
+    ideas_index_html = (site_dir / "ideas" / "index.html").read_text(encoding="utf-8")
+    assert "topics/deployment.html" in ideas_index_html
+
+    topic_html = (site_dir / "topics" / "deployment.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Verification-first agent rollout" in topic_html
+    assert ">Topic summary<" in topic_html
+    assert ">Trend briefs<" in topic_html
+    assert ">Idea briefs<" in topic_html
+    assert f"../ideas/{idea_note.stem}.html" in topic_html
 
 
 def test_export_trend_static_site_renders_idea_opportunities_as_cards(
@@ -1233,16 +1402,20 @@ def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stre
     assert len(manifest["input_dirs"]) == 2
 
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
-    assert "agents_lab" in index_html
-    assert "bio_watch" in index_html
+    assert "Agents Lab" in index_html
+    assert "Bio Watch" in index_html
 
     stream_html = (site_dir / "streams" / "agents-lab.html").read_text(encoding="utf-8")
     assert "Agent Systems" in stream_html
+    assert "Agents Lab" in stream_html
+    assert ">Stream summary<" in stream_html
+    assert ">Trend briefs<" in stream_html
+    assert ">Idea briefs<" in stream_html
 
     detail_html = (site_dir / "trends" / f"{agents_note.stem}.html").read_text(
         encoding="utf-8"
     )
-    assert "agents_lab" in detail_html
+    assert "Agents Lab" in detail_html
 
 
 def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_per_stream(

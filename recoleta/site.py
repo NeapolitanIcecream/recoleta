@@ -30,7 +30,6 @@ from recoleta.publish.trend_render_shared import (
     _split_yaml_frontmatter_text,
     _trend_date_token,
     _trend_pdf_hero_dek,
-    _trend_pdf_meta_rows,
     _trend_pdf_topics_summary,
     sanitize_trend_title,
 )
@@ -275,6 +274,38 @@ def _normalize_site_stream(stream: str | None) -> str | None:
     return cleaned
 
 
+_STREAM_DISPLAY_INITIALISMS = {
+    "ai",
+    "api",
+    "cpu",
+    "cv",
+    "gpu",
+    "llm",
+    "ml",
+    "nlp",
+    "ocr",
+    "qa",
+    "rag",
+    "rl",
+    "ui",
+    "ux",
+}
+
+
+def _display_site_stream(stream: str | None) -> str | None:
+    cleaned = _normalize_site_stream(stream)
+    if cleaned is None:
+        return None
+    normalized = re.sub(r"[_-]+", " ", cleaned).strip()
+    if normalized == cleaned and not cleaned.islower():
+        return cleaned
+    tokens = [
+        token.upper() if token.lower() in _STREAM_DISPLAY_INITIALISMS else token.capitalize()
+        for token in normalized.split()
+    ]
+    return " ".join(tokens) if tokens else cleaned
+
+
 def _paths_overlap(path_a: Path, path_b: Path) -> bool:
     return path_a == path_b or path_a in path_b.parents or path_b in path_a.parents
 
@@ -286,28 +317,120 @@ _TREND_GRANULARITY_SORT_PRIORITY = {
 }
 
 
-def _trend_site_sort_key(
-    document: TrendSiteSourceDocument,
+def _site_period_sort_key(
+    *,
+    period_end: datetime | None,
+    period_start: datetime | None,
+    granularity: str,
+    stem: str,
 ) -> tuple[datetime, int, datetime, str]:
     floor = datetime.min.replace(tzinfo=timezone.utc)
     return (
-        document.period_end or document.period_start or floor,
-        _TREND_GRANULARITY_SORT_PRIORITY.get(document.granularity, 0),
-        document.period_start or floor,
-        document.stem,
+        period_end or period_start or floor,
+        _TREND_GRANULARITY_SORT_PRIORITY.get(granularity, 0),
+        period_start or floor,
+        stem,
+    )
+
+
+def _trend_site_sort_key(
+    document: TrendSiteSourceDocument,
+) -> tuple[datetime, int, datetime, str]:
+    return _site_period_sort_key(
+        period_end=document.period_end,
+        period_start=document.period_start,
+        granularity=document.granularity,
+        stem=document.stem,
     )
 
 
 def _idea_site_sort_key(
     document: IdeaSiteSourceDocument,
 ) -> tuple[datetime, int, datetime, str]:
-    floor = datetime.min.replace(tzinfo=timezone.utc)
-    return (
-        document.period_end or document.period_start or floor,
-        _TREND_GRANULARITY_SORT_PRIORITY.get(document.granularity, 0),
-        document.period_start or floor,
-        document.stem,
+    return _site_period_sort_key(
+        period_end=document.period_end,
+        period_start=document.period_start,
+        granularity=document.granularity,
+        stem=document.stem,
     )
+
+
+def _rendered_document_sort_key(
+    document: TrendSiteDocument | IdeaSiteDocument,
+) -> tuple[datetime, int, datetime, str]:
+    return _site_period_sort_key(
+        period_end=document.period_end,
+        period_start=document.period_start,
+        granularity=document.granularity,
+        stem=document.stem,
+    )
+
+
+def _count_label(
+    value: int,
+    *,
+    singular: str,
+    plural: str | None = None,
+) -> str:
+    normalized_plural = plural or f"{singular}s"
+    return f"{value} {singular if value == 1 else normalized_plural}"
+
+
+def _format_collection_mix(
+    *,
+    trend_count: int = 0,
+    idea_count: int = 0,
+) -> str:
+    parts: list[str] = []
+    if trend_count > 0:
+        parts.append(_count_label(trend_count, singular="trend"))
+    if idea_count > 0:
+        parts.append(_count_label(idea_count, singular="idea"))
+    if parts:
+        return " · ".join(parts)
+    return _count_label(0, singular="brief", plural="briefs")
+
+
+def _format_collection_meta(
+    *,
+    trend_count: int = 0,
+    idea_count: int = 0,
+    latest_token: str,
+) -> str:
+    mix = _format_collection_mix(trend_count=trend_count, idea_count=idea_count)
+    return f"{mix} · latest {latest_token}" if latest_token else mix
+
+
+def _site_date_range_label(
+    *,
+    period_start: datetime | None,
+    period_end: datetime | None,
+    fallback: str,
+) -> str:
+    if period_start is None and period_end is None:
+        return fallback
+    if period_start is None:
+        assert period_end is not None
+        return period_end.astimezone(timezone.utc).date().isoformat()
+    if period_end is None:
+        return period_start.astimezone(timezone.utc).date().isoformat()
+    return (
+        f"{period_start.astimezone(timezone.utc).date().isoformat()} "
+        f"to {period_end.astimezone(timezone.utc).date().isoformat()}"
+    )
+
+
+def _record_latest_document(
+    *,
+    latest_by_slug: dict[str, TrendSiteDocument | IdeaSiteDocument],
+    slug: str,
+    document: TrendSiteDocument | IdeaSiteDocument,
+) -> None:
+    existing = latest_by_slug.get(slug)
+    if existing is None or _rendered_document_sort_key(document) > _rendered_document_sort_key(
+        existing
+    ):
+        latest_by_slug[slug] = document
 
 
 def _reset_directory(path: Path) -> None:
@@ -466,14 +589,21 @@ def _render_stream_link_pill(
     cleaned = _normalize_site_stream(stream)
     if not cleaned:
         return ""
+    display_stream = _display_site_stream(cleaned) or cleaned
     slug = _stream_slug(cleaned)
     page_path = stream_pages.get(slug)
     if page_path is None:
-        return f"<span class='meta-pill stream-pill'>{html.escape(cleaned)}</span>"
+        return (
+            "<span class='meta-pill stream-pill'>"
+            f"{html.escape(display_stream)}"
+            "</span>"
+        )
     href = _site_href(from_page=from_page, to_page=page_path)
-    return "<a class='meta-pill stream-pill stream-pill-link' href='{}'>{}</a>".format(
-        href,
-        html.escape(cleaned),
+    return (
+        "<a class='meta-pill stream-pill stream-pill-link' href='{}'>{}</a>".format(
+            href,
+            html.escape(display_stream),
+        )
     )
 
 
@@ -492,6 +622,9 @@ def _site_page_shell(
     stylesheet_path = output_dir / "assets" / "site.css"
     stylesheet_href = _site_href(from_page=page_path, to_page=stylesheet_path)
     index_href = _site_href(from_page=page_path, to_page=output_dir / "index.html")
+    trends_href = _site_href(
+        from_page=page_path, to_page=output_dir / "trends" / "index.html"
+    )
     archive_href = _site_href(from_page=page_path, to_page=output_dir / "archive.html")
     ideas_href = _site_href(from_page=page_path, to_page=output_dir / "ideas" / "index.html")
     topics_href = _site_href(
@@ -540,10 +673,11 @@ def _site_page_shell(
         "</div>"
         "<nav class='nav-links'>"
         f"{nav_link('Home', index_href, 'home')}"
-        f"{nav_link('Archive', archive_href, 'archive')}"
+        f"{nav_link('Trends', trends_href, 'trends')}"
         f"{nav_link('Ideas', ideas_href, 'ideas')}"
         f"{nav_link('Topics', topics_href, 'topics')}"
         f"{nav_link('Streams', streams_href, 'streams')}"
+        f"{nav_link('Archive', archive_href, 'archive')}"
         "</nav>"
         "</header>"
         "<main class='site-main'>"
@@ -619,7 +753,8 @@ def _render_trend_card(
 def _render_topic_card(
     *,
     topic: str,
-    count: int,
+    trend_count: int,
+    idea_count: int,
     latest_token: str,
     page_path: Path,
     topic_page_path: Path,
@@ -628,7 +763,7 @@ def _render_topic_card(
     return (
         "<article class='topic-card'>"
         f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(topic)}</a></h2>"
-        f"<div class='topic-card-meta'>{count} briefs · latest {html.escape(latest_token)}</div>"
+        f"<div class='topic-card-meta'>{html.escape(_format_collection_meta(trend_count=trend_count, idea_count=idea_count, latest_token=latest_token))}</div>"
         "</article>"
     )
 
@@ -636,18 +771,103 @@ def _render_topic_card(
 def _render_stream_card(
     *,
     stream: str,
-    count: int,
+    trend_count: int,
+    idea_count: int,
     latest_token: str,
     page_path: Path,
     stream_page_path: Path,
 ) -> str:
     href = _site_href(from_page=page_path, to_page=stream_page_path)
+    display_stream = _display_site_stream(stream) or stream
     return (
         "<article class='topic-card'>"
-        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(stream)}</a></h2>"
-        f"<div class='topic-card-meta'>{count} briefs · latest {html.escape(latest_token)}</div>"
+        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(display_stream)}</a></h2>"
+        f"<div class='topic-card-meta'>{html.escape(_format_collection_meta(trend_count=trend_count, idea_count=idea_count, latest_token=latest_token))}</div>"
         "</article>"
     )
+
+
+def _latest_collection_token(
+    documents: Sequence[TrendSiteDocument | IdeaSiteDocument],
+) -> str:
+    if not documents:
+        return "n/a"
+    latest_document = max(documents, key=_rendered_document_sort_key)
+    return latest_document.period_token or "n/a"
+
+
+def _render_collection_section(
+    *,
+    title: str,
+    count_text: str,
+    cards_html: str,
+    empty_copy: str,
+    action_label: str | None = None,
+    action_href: str | None = None,
+) -> str:
+    action_html = ""
+    if action_label is not None and action_href is not None:
+        action_html = (
+            f"<a class='action-link secondary' href='{action_href}'>"
+            f"{html.escape(action_label)}"
+            "</a>"
+        )
+    empty_html = f"<div class='empty-card'>{html.escape(empty_copy)}</div>"
+    return (
+        "<div class='home-section collection-section'>"
+        "<div class='section-heading-row'>"
+        f"<h2 class='section-title'>{html.escape(title)}</h2>"
+        "<div class='section-heading-actions'>"
+        f"<span class='meta-date'>{html.escape(count_text)}</span>"
+        f"{action_html}"
+        "</div>"
+        "</div>"
+        f"<div class='trend-grid'>{cards_html or empty_html}</div>"
+        "</div>"
+    )
+
+
+def _render_collection_summary_section(
+    *,
+    summary_label: str,
+    title: str,
+    trend_count: int,
+    idea_count: int,
+    latest_token: str,
+) -> str:
+    return (
+        "<section class='home-section collection-summary-section'>"
+        "<div class='section-heading-row'>"
+        "<div class='summary-heading'>"
+        f"<div class='section-kicker'>{html.escape(summary_label)}</div>"
+        f"<h1 class='section-title'>{html.escape(title)}</h1>"
+        "</div>"
+        f"<span class='meta-date'>{html.escape(_format_collection_mix(trend_count=trend_count, idea_count=idea_count))}</span>"
+        "</div>"
+        "<div class='summary-stats'>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Trend briefs</div><div class='meta-panel-value'>{trend_count}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Idea briefs</div><div class='meta-panel-value'>{idea_count}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Latest</div><div class='meta-panel-value'>{html.escape(latest_token)}</div></div>"
+        "</div>"
+        "</section>"
+    )
+
+
+def _trend_site_meta_rows(document: TrendSiteDocument) -> list[tuple[str, str]]:
+    topic_count = len([topic for topic in document.topics if str(topic).strip()])
+    return [
+        ("Window", document.period_token),
+        ("Granularity", document.granularity.title()),
+        ("Topics", str(topic_count) if topic_count > 0 else "None"),
+        (
+            "Coverage",
+            _site_date_range_label(
+                period_start=document.period_start,
+                period_end=document.period_end,
+                fallback=document.period_token,
+            ),
+        ),
+    ]
 
 
 def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path) -> str:
@@ -694,8 +914,8 @@ def _render_detail_page(
     breadcrumb_home = _site_href(
         from_page=document.page_path, to_page=output_dir / "index.html"
     )
-    breadcrumb_archive = _site_href(
-        from_page=document.page_path, to_page=output_dir / "archive.html"
+    breadcrumb_trends = _site_href(
+        from_page=document.page_path, to_page=output_dir / "trends" / "index.html"
     )
     markdown_href = _site_href(
         from_page=document.page_path,
@@ -721,7 +941,7 @@ def _render_detail_page(
         f"<div class='meta-panel-label'>{html.escape(label)}</div>"
         f"<div class='meta-panel-value'>{html.escape(value)}</div>"
         "</div>"
-        for label, value in _trend_pdf_meta_rows(document.frontmatter)
+        for label, value in _trend_site_meta_rows(document)
     )
 
     pager_items: list[str] = []
@@ -774,13 +994,13 @@ def _render_detail_page(
         "<nav class='breadcrumbs'>"
         f"<a href='{breadcrumb_home}'>Home</a>"
         "<span>/</span>"
-        f"<a href='{breadcrumb_archive}'>Archive</a>"
+        f"<a href='{breadcrumb_trends}'>Trends</a>"
         "<span>/</span>"
         f"<span>{html.escape(document.period_token)}</span>"
         "</nav>"
         "<section class='detail-hero'>"
         "<div class='detail-hero-main'>"
-        f"<div class='hero-kicker'>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}</div>"
+        f"<div class='hero-kicker'>Trend brief · {html.escape(document.period_token)}</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
         f"<p class='detail-dek'>{html.escape(hero_dek)}</p>"
         f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
@@ -798,13 +1018,13 @@ def _render_detail_page(
     )
 
     return _site_page_shell(
-        title=document.title,
+        title=f"{document.title} · Recoleta Trends",
         page_path=document.page_path,
         output_dir=output_dir,
         page_heading=document.title,
         page_subtitle="",
         body_class="page-detail",
-        active_nav="archive",
+        active_nav="trends",
         content_html=content_html,
     )
 
@@ -1068,6 +1288,44 @@ def _render_idea_page(
     )
 
 
+def _render_trends_index_page(
+    *,
+    documents: list[TrendSiteDocument],
+    output_dir: Path,
+    topic_pages: dict[str, Path],
+    stream_pages: dict[str, Path],
+) -> str:
+    page_path = output_dir / "trends" / "index.html"
+    cards = "".join(
+        _render_trend_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+            stream_pages=stream_pages,
+        )
+        for document in documents
+    )
+    content_html = (
+        "<section class='home-section'>"
+        "<div class='section-heading-row'>"
+        "<h1 class='section-title page-section-title'>Trends</h1>"
+        f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='trend'))}</span>"
+        "</div>"
+        f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No trend briefs available yet.</div>'}</div>"
+        "</section>"
+    )
+    return _site_page_shell(
+        title="Trends · Recoleta Trends",
+        page_path=page_path,
+        output_dir=output_dir,
+        page_heading="Trends",
+        page_subtitle="",
+        body_class="page-trends",
+        active_nav="trends",
+        content_html=content_html,
+    )
+
+
 def _render_ideas_index_page(
     *,
     documents: list[IdeaSiteDocument],
@@ -1087,8 +1345,11 @@ def _render_ideas_index_page(
     )
     content_html = (
         "<section class='home-section'>"
+        "<div class='section-heading-row'>"
         "<h1 class='section-title page-section-title'>Ideas</h1>"
-        f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No ideas available yet.</div>'}</div>"
+        f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='idea'))}</span>"
+        "</div>"
+        f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No idea briefs available yet.</div>'}</div>"
         "</section>"
     )
     return _site_page_shell(
@@ -1119,7 +1380,7 @@ def _render_home_page(
             topic_pages=topic_pages,
             stream_pages=stream_pages,
         )
-        for document in documents[:6]
+        for document in documents[:4]
     )
     latest_idea_cards = "".join(
         _render_idea_card(
@@ -1132,7 +1393,9 @@ def _render_home_page(
     )
 
     topic_counter: Counter[str] = Counter()
-    latest_by_topic: dict[str, TrendSiteDocument] = {}
+    topic_trend_counter: Counter[str] = Counter()
+    topic_idea_counter: Counter[str] = Counter()
+    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument] = {}
     label_by_slug: dict[str, str] = {}
     for document in documents:
         for topic in document.topics:
@@ -1141,13 +1404,33 @@ def _render_home_page(
                 continue
             slug = _topic_slug(cleaned)
             topic_counter[slug] += 1
+            topic_trend_counter[slug] += 1
             label_by_slug.setdefault(slug, cleaned)
-            latest_by_topic.setdefault(slug, document)
+            _record_latest_document(
+                latest_by_slug=latest_by_topic,
+                slug=slug,
+                document=document,
+            )
+    for document in idea_documents:
+        for topic in document.topics:
+            cleaned = str(topic).strip()
+            if not cleaned:
+                continue
+            slug = _topic_slug(cleaned)
+            topic_counter[slug] += 1
+            topic_idea_counter[slug] += 1
+            label_by_slug.setdefault(slug, cleaned)
+            _record_latest_document(
+                latest_by_slug=latest_by_topic,
+                slug=slug,
+                document=document,
+            )
 
     topic_cards = "".join(
         _render_topic_card(
             topic=label_by_slug[slug],
-            count=topic_counter[slug],
+            trend_count=topic_trend_counter[slug],
+            idea_count=topic_idea_counter[slug],
             latest_token=latest_by_topic[slug].period_token,
             page_path=page_path,
             topic_page_path=topic_pages[slug],
@@ -1157,19 +1440,39 @@ def _render_home_page(
     )
 
     stream_counter: Counter[str] = Counter()
-    latest_by_stream: dict[str, TrendSiteDocument] = {}
+    stream_trend_counter: Counter[str] = Counter()
+    stream_idea_counter: Counter[str] = Counter()
+    latest_by_stream: dict[str, TrendSiteDocument | IdeaSiteDocument] = {}
     for document in documents:
         cleaned_stream = str(document.stream or "").strip()
         if not cleaned_stream:
             continue
         slug = _stream_slug(cleaned_stream)
         stream_counter[slug] += 1
-        latest_by_stream.setdefault(slug, document)
+        stream_trend_counter[slug] += 1
+        _record_latest_document(
+            latest_by_slug=latest_by_stream,
+            slug=slug,
+            document=document,
+        )
+    for document in idea_documents:
+        cleaned_stream = str(document.stream or "").strip()
+        if not cleaned_stream:
+            continue
+        slug = _stream_slug(cleaned_stream)
+        stream_counter[slug] += 1
+        stream_idea_counter[slug] += 1
+        _record_latest_document(
+            latest_by_slug=latest_by_stream,
+            slug=slug,
+            document=document,
+        )
 
     stream_cards = "".join(
         _render_stream_card(
             stream=latest_by_stream[slug].stream or slug,
-            count=stream_counter[slug],
+            trend_count=stream_trend_counter[slug],
+            idea_count=stream_idea_counter[slug],
             latest_token=latest_by_stream[slug].period_token,
             page_path=page_path,
             stream_page_path=stream_pages[slug],
@@ -1205,36 +1508,28 @@ def _render_home_page(
     content_html = (
         "<section class='home-hero-card'>"
         "<div class='home-hero-copy'>"
-        "<div class='hero-kicker'>Browse research briefs</div>"
-        "<h1 class='home-title'>Latest research trends and ideas</h1>"
+        "<div class='hero-kicker'>Browse research outputs</div>"
+        "<h1 class='home-title'>Trend and idea briefs</h1>"
         "<p class='home-dek'>"
-        "Scan recent trend briefs and follow-on idea notes, jump by topic or stream,"
+        "Scan recent trend briefs and idea briefs, pivot by topic or stream,"
         " and open the full note when needed."
         "</p>"
         "<div class='hero-actions'>"
-        f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'archive.html')}'>Open archive</a>"
+        f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')}'>Browse trends</a>"
         f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')}'>Browse ideas</a>"
-        f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'topics' / 'index.html')}'>Browse topics</a>"
+        f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'archive.html')}'>Open archive</a>"
         "</div>"
         "</div>"
         "<div class='hero-stats'>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Briefs</div><div class='meta-panel-value'>{len(documents)}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Trends</div><div class='meta-panel-value'>{len(documents)}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>{len(idea_documents)}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Topics</div><div class='meta-panel-value'>{len(topic_pages)}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Window</div><div class='meta-panel-value'>{html.escape(generated_span or 'n/a')}</div></div>"
         "</div>"
         "</section>"
-        "<section class='home-section'>"
-        "<div class='section-heading-row'>"
-        "<h2 class='section-title'>Latest briefs</h2>"
-        "</div>"
-        f"<div class='trend-grid'>{latest_cards or '<div class="empty-card">No trend notes available yet.</div>'}</div>"
-        "</section>"
-        "<section class='home-section'>"
-        "<div class='section-heading-row'>"
-        "<h2 class='section-title'>Latest idea briefs</h2>"
-        "</div>"
-        f"<div class='trend-grid'>{latest_idea_cards or '<div class=\"empty-card\">No ideas available yet.</div>'}</div>"
+        "<section class='split-layout paired-collection-layout'>"
+        f"{_render_collection_section(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=latest_cards, empty_copy='No trend briefs available yet.', action_label='Browse trends', action_href=_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html'))}"
+        f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=latest_idea_cards, empty_copy='No idea briefs available yet.', action_label='Browse ideas', action_href=_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html'))}"
         "</section>"
         f"{stream_section_html}"
         "<section class='home-section split-layout'>"
@@ -1264,12 +1559,15 @@ def _render_home_page(
 def _render_topics_index_page(
     *,
     documents: list[TrendSiteDocument],
+    idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
 ) -> str:
     page_path = output_dir / "topics" / "index.html"
     topic_counter: Counter[str] = Counter()
-    latest_by_topic: dict[str, TrendSiteDocument] = {}
+    trend_counter: Counter[str] = Counter()
+    idea_counter: Counter[str] = Counter()
+    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument] = {}
     label_by_slug: dict[str, str] = {}
 
     for document in documents:
@@ -1279,13 +1577,33 @@ def _render_topics_index_page(
                 continue
             slug = _topic_slug(cleaned)
             topic_counter[slug] += 1
+            trend_counter[slug] += 1
             label_by_slug.setdefault(slug, cleaned)
-            latest_by_topic.setdefault(slug, document)
+            _record_latest_document(
+                latest_by_slug=latest_by_topic,
+                slug=slug,
+                document=document,
+            )
+    for document in idea_documents:
+        for topic in document.topics:
+            cleaned = str(topic).strip()
+            if not cleaned:
+                continue
+            slug = _topic_slug(cleaned)
+            topic_counter[slug] += 1
+            idea_counter[slug] += 1
+            label_by_slug.setdefault(slug, cleaned)
+            _record_latest_document(
+                latest_by_slug=latest_by_topic,
+                slug=slug,
+                document=document,
+            )
 
     cards = "".join(
         _render_topic_card(
             topic=label_by_slug[slug],
-            count=topic_counter[slug],
+            trend_count=trend_counter[slug],
+            idea_count=idea_counter[slug],
             latest_token=latest_by_topic[slug].period_token,
             page_path=page_path,
             topic_page_path=topic_pages[slug],
@@ -1296,7 +1614,10 @@ def _render_topics_index_page(
 
     content_html = (
         "<section class='home-section'>"
+        "<div class='section-heading-row'>"
         "<h1 class='section-title page-section-title'>All tracked topics</h1>"
+        f"<span class='meta-date'>{html.escape(_count_label(len(topic_pages), singular='topic'))}</span>"
+        "</div>"
         f"<div class='topic-card-grid'>{cards or '<div class="empty-card">No topics available yet.</div>'}</div>"
         "</section>"
     )
@@ -1316,12 +1637,15 @@ def _render_topics_index_page(
 def _render_streams_index_page(
     *,
     documents: list[TrendSiteDocument],
+    idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     stream_pages: dict[str, Path],
 ) -> str:
     page_path = output_dir / "streams" / "index.html"
     stream_counter: Counter[str] = Counter()
-    latest_by_stream: dict[str, TrendSiteDocument] = {}
+    trend_counter: Counter[str] = Counter()
+    idea_counter: Counter[str] = Counter()
+    latest_by_stream: dict[str, TrendSiteDocument | IdeaSiteDocument] = {}
 
     for document in documents:
         cleaned_stream = str(document.stream or "").strip()
@@ -1329,12 +1653,30 @@ def _render_streams_index_page(
             continue
         slug = _stream_slug(cleaned_stream)
         stream_counter[slug] += 1
-        latest_by_stream.setdefault(slug, document)
+        trend_counter[slug] += 1
+        _record_latest_document(
+            latest_by_slug=latest_by_stream,
+            slug=slug,
+            document=document,
+        )
+    for document in idea_documents:
+        cleaned_stream = str(document.stream or "").strip()
+        if not cleaned_stream:
+            continue
+        slug = _stream_slug(cleaned_stream)
+        stream_counter[slug] += 1
+        idea_counter[slug] += 1
+        _record_latest_document(
+            latest_by_slug=latest_by_stream,
+            slug=slug,
+            document=document,
+        )
 
     cards = "".join(
         _render_stream_card(
             stream=latest_by_stream[slug].stream or slug,
-            count=stream_counter[slug],
+            trend_count=trend_counter[slug],
+            idea_count=idea_counter[slug],
             latest_token=latest_by_stream[slug].period_token,
             page_path=page_path,
             stream_page_path=stream_pages[slug],
@@ -1345,7 +1687,10 @@ def _render_streams_index_page(
 
     content_html = (
         "<section class='home-section'>"
+        "<div class='section-heading-row'>"
         "<h1 class='section-title page-section-title'>Topic streams</h1>"
+        f"<span class='meta-date'>{html.escape(_count_label(len(stream_pages), singular='stream'))}</span>"
+        "</div>"
         f"<div class='topic-card-grid'>{cards or '<div class="empty-card">No topic streams available yet.</div>'}</div>"
         "</section>"
     )
@@ -1367,6 +1712,7 @@ def _render_topic_page(
     topic: str,
     topic_slug: str,
     documents: list[TrendSiteDocument],
+    idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
     stream_pages: dict[str, Path],
@@ -1381,13 +1727,21 @@ def _render_topic_page(
         )
         for document in documents
     )
+    idea_cards = "".join(
+        _render_idea_card(
+            document=document,
+            from_page=page_path,
+            topic_pages=topic_pages,
+            stream_pages=stream_pages,
+        )
+        for document in idea_documents
+    )
+    latest_token = _latest_collection_token([*documents, *idea_documents])
     content_html = (
-        "<section class='home-section'>"
-        "<div class='section-heading-row'>"
-        f"<h1 class='section-title page-section-title'>{html.escape(topic)}</h1>"
-        f"<span class='meta-date'>{len(documents)} briefs</span>"
-        "</div>"
-        f"<div class='trend-grid'>{cards}</div>"
+        f"{_render_collection_summary_section(summary_label='Topic summary', title=topic, trend_count=len(documents), idea_count=len(idea_documents), latest_token=latest_token)}"
+        "<section class='split-layout paired-collection-layout'>"
+        f"{_render_collection_section(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=cards, empty_copy='No trend briefs available yet.')}"
+        f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No idea briefs available yet.')}"
         "</section>"
     )
     return _site_page_shell(
@@ -1431,20 +1785,12 @@ def _render_stream_page(
         )
         for document in idea_documents
     )
+    latest_token = _latest_collection_token([*documents, *idea_documents])
     content_html = (
-        "<section class='home-section'>"
-        "<div class='section-heading-row'>"
-        f"<h1 class='section-title page-section-title'>{html.escape(stream)}</h1>"
-        f"<span class='meta-date'>{len(documents)} briefs</span>"
-        "</div>"
-        f"<div class='trend-grid'>{cards}</div>"
-        "</section>"
-        "<section class='home-section'>"
-        "<div class='section-heading-row'>"
-        "<h2 class='section-title'>Ideas</h2>"
-        f"<span class='meta-date'>{len(idea_documents)} briefs</span>"
-        "</div>"
-        f"<div class='trend-grid'>{idea_cards or '<div class=\"empty-card\">No ideas available yet.</div>'}</div>"
+        f"{_render_collection_summary_section(summary_label='Stream summary', title=stream, trend_count=len(documents), idea_count=len(idea_documents), latest_token=latest_token)}"
+        "<section class='split-layout paired-collection-layout'>"
+        f"{_render_collection_section(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=cards, empty_copy='No trend briefs available yet.')}"
+        f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No idea briefs available yet.')}"
         "</section>"
     )
     return _site_page_shell(
@@ -1712,6 +2058,25 @@ iframe {
   margin-bottom: 14px;
   flex-wrap: wrap;
 }
+.section-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.summary-heading {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.section-kicker {
+  color: #6a8098;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .section-title {
   margin: 0 0 12px;
   color: #183453;
@@ -1723,6 +2088,29 @@ iframe {
 }
 .page-section-title {
   margin-bottom: 18px;
+}
+.summary-heading .section-title {
+  margin-bottom: 0;
+}
+.paired-collection-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.collection-summary-section {
+  display: grid;
+  gap: 16px;
+}
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.collection-section {
+  display: grid;
+  gap: 14px;
+}
+.collection-section .trend-grid {
+  grid-template-columns: 1fr;
 }
 .trend-grid,
 .topic-card-grid {
@@ -2414,6 +2802,7 @@ iframe {
   }
   .trend-grid,
   .topic-card-grid,
+  .summary-stats,
   .detail-content .summary-grid,
   .detail-content .idea-opportunity-grid,
   .detail-content .evolution-grid,
@@ -2456,6 +2845,10 @@ iframe {
   }
   .section-heading-row {
     align-items: flex-start;
+  }
+  .section-heading-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
   .hero-actions .action-link,
   .card-actions .action-link,
@@ -3312,15 +3705,21 @@ def export_trend_static_site(
 
     label_by_topic_slug: dict[str, str] = {}
     topic_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)
+    idea_documents_by_topic: dict[str, list[IdeaSiteDocument]] = defaultdict(list)
     for document in documents:
         for topic in document.topics:
             slug = _topic_slug(topic)
             label_by_topic_slug.setdefault(slug, topic)
             topic_documents[slug].append(document)
+    for document in idea_documents:
+        for topic in document.topics:
+            slug = _topic_slug(topic)
+            label_by_topic_slug.setdefault(slug, topic)
+            idea_documents_by_topic[slug].append(document)
 
     topic_pages = {
         slug: resolved_output_dir / "topics" / f"{slug}.html"
-        for slug in sorted(topic_documents.keys())
+        for slug in sorted(set(topic_documents.keys()) | set(idea_documents_by_topic.keys()))
     }
     label_by_stream_slug: dict[str, str] = {}
     stream_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)
@@ -3329,7 +3728,10 @@ def export_trend_static_site(
         if not cleaned_stream:
             continue
         slug = _stream_slug(cleaned_stream)
-        label_by_stream_slug.setdefault(slug, cleaned_stream)
+        label_by_stream_slug.setdefault(
+            slug,
+            _display_site_stream(cleaned_stream) or cleaned_stream,
+        )
         stream_documents[slug].append(document)
 
     stream_pages = {
@@ -3342,7 +3744,10 @@ def export_trend_static_site(
         if not cleaned_stream:
             continue
         slug = _stream_slug(cleaned_stream)
-        label_by_stream_slug.setdefault(slug, cleaned_stream)
+        label_by_stream_slug.setdefault(
+            slug,
+            _display_site_stream(cleaned_stream) or cleaned_stream,
+        )
         idea_documents_by_stream[slug].append(document)
         stream_pages.setdefault(slug, resolved_output_dir / "streams" / f"{slug}.html")
 
@@ -3362,6 +3767,15 @@ def export_trend_static_site(
         ),
         encoding="utf-8",
     )
+    (resolved_output_dir / "trends" / "index.html").write_text(
+        _render_trends_index_page(
+            documents=documents,
+            output_dir=resolved_output_dir,
+            topic_pages=topic_pages,
+            stream_pages=stream_pages,
+        ),
+        encoding="utf-8",
+    )
     (resolved_output_dir / "archive.html").write_text(
         _render_archive_page(
             documents=documents,
@@ -3372,6 +3786,7 @@ def export_trend_static_site(
     (resolved_output_dir / "topics" / "index.html").write_text(
         _render_topics_index_page(
             documents=documents,
+            idea_documents=idea_documents,
             output_dir=resolved_output_dir,
             topic_pages=topic_pages,
         ),
@@ -3380,6 +3795,7 @@ def export_trend_static_site(
     (resolved_output_dir / "streams" / "index.html").write_text(
         _render_streams_index_page(
             documents=documents,
+            idea_documents=idea_documents,
             output_dir=resolved_output_dir,
             stream_pages=stream_pages,
         ),
@@ -3438,6 +3854,7 @@ def export_trend_static_site(
                 topic=label_by_topic_slug[slug],
                 topic_slug=slug,
                 documents=topic_documents[slug],
+                idea_documents=idea_documents_by_topic.get(slug, []),
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
                 stream_pages=stream_pages,
@@ -3485,6 +3902,7 @@ def export_trend_static_site(
             "index": "index.html",
             "archive": "archive.html",
             "nojekyll": ".nojekyll",
+            "trends_index": "trends/index.html",
             "ideas_index": "ideas/index.html",
             "topics_index": "topics/index.html",
             "streams_index": "streams/index.html",

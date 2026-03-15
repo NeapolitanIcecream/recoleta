@@ -14,10 +14,15 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Do not mix languages within the same semantic layer. If one badge set is English, all peer badges stay English.
 - Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.
 - Favor dense, scannable structure over marketing-style flourish. Comparative content should read like an analysis surface, not a landing page.
+- Treat `Trends` and `Ideas` as peer collection surfaces: each should have its own index destination, parallel navigation affordance, and symmetric home-section labeling.
+- When `Trends` and `Ideas` appear side by side, keep the pair visually symmetric: equal-width columns, one stacked card column per side, and mirrored section chrome.
 - Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Keep `Evolution` as a secondary comparison surface rather than replacing the primary summary.
 - On `Ideas` detail pages, keep `Summary` and `Opportunities` as separate surfaces; render each opportunity as its own readable card with English field labels instead of collapsing multiple ideas into one long prose block.
 - On `Ideas` cards and detail heroes, omit empty topic rows entirely instead of rendering placeholder chrome for missing topics.
 - On `Ideas` opportunity cards, keep only short metadata in pills; render the longer user/role audience as a separate `Role` field block instead of a wrapping pill.
+- Topic and stream discovery surfaces should aggregate both trend briefs and idea briefs so idea-only topics/streams stay navigable and linked, rather than degrading into unlabeled plain text.
+- Topic and stream entity pages should lead with a summary surface for the entity itself, then render symmetric `Trend briefs` and `Idea briefs` collection panels below instead of pairing the entity name against only one collection.
+- If a stream label originates from a machine slug such as `embedded_ai` or `research-ops`, render it as a readable title in the UI chrome rather than exposing the raw slug.
 
 ## Comparative Views
 
