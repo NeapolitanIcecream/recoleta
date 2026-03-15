@@ -2,20 +2,15 @@
 kind: trend
 trend_doc_id: 285
 granularity: week
-period_start: '2026-03-02T00:00:00'
-period_end: '2026-03-09T00:00:00'
+period_start: '2026-03-02T00:00:00+00:00'
+period_end: '2026-03-09T00:00:00+00:00'
 topics:
 - code-agents
 - software-engineering
 - evaluation
-- verification
 - agent-memory
 - agent-safety
-- repository-understanding
-- multi-agent
-- terminal-agents
-- code-performance
-run_id: materialize-outputs
+run_id: 15053a59-255a-481c-bae2-5ab820dec684
 aliases:
 - recoleta-trend-285
 tags:
@@ -23,73 +18,64 @@ tags:
 - topic/code-agents
 - topic/software-engineering
 - topic/evaluation
-- topic/verification
 - topic/agent-memory
 - topic/agent-safety
-- topic/repository-understanding
-- topic/multi-agent
-- topic/terminal-agents
-- topic/code-performance
 ---
 
-# 代码代理进入仓库执行闭环：真实评测、验证前移与安全治理升温
+# 代码代理进入真实工程闭环：仓库理解、端到端评测与安全治理升温
 
 ## Overview
-本周的软件工程与代码智能研究，主线很集中：代理不再只比会不会写，而是比能否理解仓库、完成执行闭环，并在长期运行中保持可靠与可审计。关键观察-仓库理解前置：成功率越来越取决于是否先看懂架构、补全任务说明，再开始改代码。-评测更像真实开发：基准从单点修复扩展到跨仓库、完整应用交付和持续维护。-验证前移：回归测试、环境搭建、问题复现和执行反馈，成为核心能力。
+本周的软件工程与代码智能研究，主线非常清楚：代码代理正在从“会生成”转向“能在真实仓库里执行、验证并长期运行”。真正的竞争点，已经变成仓库理解、端到端评测、记忆管理和安全治理。一个明显变化是，研究越来越少讨论单次生成是否漂亮，越来越多讨论代理能否在真实工程里完成闭环。RAIM把目标放在仓库级新功能添加。BeyondSWE把任务扩展到跨仓库和依赖迁移。Echo则把检索、执行和验证接在一起。
 
 ## Clusters
 
-### 仓库级代码代理转向“先理解，再执行”
+### 代码代理走向仓库级执行与验证闭环
 
-本周最清晰的主线，是代码代理开始从“局部生成”转向“仓库级执行”。研究重点放在先理解代码库，再决定改哪里、怎么改、如何验证。RAIM强调架构感知定位、多方案生成与影响分析；CodeScout则说明，先把含糊问题改写成可执行任务，往往比直接开工更稳。这说明上游理解与任务准备，正在成为真实修复成功率的关键杠杆。
+本周最强主线是代码代理进入真实软件工程。关注点从“会不会写”转向“能否理解仓库、完成执行、再用验证闭环证明没写坏”。RAIM强调仓库级新功能添加，需要先找插入点、比较多种设计，再做影响评估。BeyondSWE把任务扩到跨仓库、依赖迁移和从文档生成仓库，直接暴露当前代理在复杂任务上的低成功率。Echo则把检索、生成、执行、验证串成闭环，进一步贴近真实开发流程。
 
-#### Representative papers
+#### Representative sources
+- [Closing the Loop – Optimizing the Agentic SDLC](../Inbox/2026-03-03--closing-the-loop-optimizing-the-agentic-sdlc.md) — btraut
 - [Architecture-Aware Multi-Design Generation for Repository-Level Feature Addition](../Inbox/2026-03-02--architecture-aware-multi-design-generation-for-repository-level-feature-addition.md) — Mingwei Liu; Zhenxi Chen; Zheng Pei; Zihao Wang; Yanlin Wang; Zibin Zheng
-- [CodeScout: Contextual Problem Statement Enhancement for Software Agents](../Inbox/2026-03-05--codescout-contextual-problem-statement-enhancement-for-software-agents.md) — Manan Suri; Xiangci Li; Mehdi Shojaie; Songyang Han; Chao-Chun Hsu; Shweta Garg; …
-
-
-### 评测从“会写代码”升级到真实软件工程
-
-本周大量材料都在抬高评测难度。BeyondSWE把任务扩展到跨仓库、依赖迁移和文档到仓库生成；Vibe Code Bench要求交付完整 Web 应用；SWE-CI把目标转向持续维护代码库。共同信号很一致：单题通过已不够，行业开始用更接近真实开发的流程来衡量代理能力，而当前成功率仍不高。
-
-#### Representative papers
-- [BeyondSWE: Can Current Code Agent Survive Beyond Single-Repo Bug Fixing?](../Inbox/2026-03-03--beyondswe-can-current-code-agent-survive-beyond-single-repo-bug-fixing.md) — Guoxin Chen; Fanzhe Meng; Jiale Zhao; Minghao Li; Daixuan Cheng; Huatong Song; …
-- [SWE-CI: Evaluating Agent Capabilities in Maintaining Codebases via Continuous Integration](../Inbox/2026-03-04--swe-ci-evaluating-agent-capabilities-in-maintaining-codebases-via-continuous-integration.md) — Jialong Chen; Xander Xu; Hu Wei; Chuan Chen; Bing Zhao
-- [Vibe Code Bench: Evaluating AI Models on End-to-End Web Application Development](../Inbox/2026-03-04--vibe-code-bench-evaluating-ai-models-on-end-to-end-web-application-development.md) — Hung Tran; Langston Nashold; Rayan Krishnan; Antoine Bigeard; Alex Gu
-- [Key takeaways from the 2026 State of Software Delivery](../Inbox/2026-03-03--key-takeaways-from-the-2026-state-of-software-delivery.md) — Illniyar
-- [From Leaderboard to Deployment: Code Quality Challenges in AV Perception Repositories](../Inbox/2026-03-02--from-leaderboard-to-deployment-code-quality-challenges-in-av-perception-repositories.md) — Mateus Karvat; Bram Adams; Sidney Givigi
-- [CodeTaste: Can LLMs Generate Human-Level Code Refactorings?](../Inbox/2026-03-04--codetaste-can-llms-generate-human-level-code-refactorings.md) — Alex Thillen; Niels Mündler; Veselin Raychev; Martin Vechev
-
-
-### 验证与执行闭环成为代理落地的硬门槛
-
-验证正在从收尾步骤前移为核心系统能力。AgentAssay说明，面对非确定性代理，回归测试需要统计式方法而不是一次性判定。RepoLaunch补齐了跨语言、跨平台的构建与测试环境自动化。Echo进一步把检索、生成、执行、验证串成闭环。趋势很明确：谁能稳定跑通环境、复现问题、低成本回归，谁才更接近生产可用。
-
-#### Representative papers
+- [Graduate from Single-Session Coding: My Full Agentic Coding Workflow](../Inbox/2026-03-03--graduate-from-single-session-coding-my-full-agentic-coding-workflow.md) — btraut
 - [RepoLaunch: Automating Build&Test Pipeline of Code Repositories on ANY Language and ANY Platform](../Inbox/2026-03-05--repolaunch-automating-build-test-pipeline-of-code-repositories-on-any-language-and-any-platform.md) — Kenan Li; Rongzhi Li; Linghao Zhang; Qirui Jin; Liao Zhu; Xiaosong Huang; …
+- [BeyondSWE: Can Current Code Agent Survive Beyond Single-Repo Bug Fixing?](../Inbox/2026-03-03--beyondswe-can-current-code-agent-survive-beyond-single-repo-bug-fixing.md) — Guoxin Chen; Fanzhe Meng; Jiale Zhao; Minghao Li; Daixuan Cheng; Huatong Song; …
+- [A Scalable Benchmark for Repository-Oriented Long-Horizon Conversational Context Management](../Inbox/2026-03-06--a-scalable-benchmark-for-repository-oriented-long-horizon-conversational-context-management.md) — Yang Liu; Li Zhang; Fang Liu; Ping Lin; Xinyi Li
 
 
-### 自纠错、记忆与多代理协作走向系统工程
+### 评测从单点编码升级到端到端交付与维护
 
-本周另一条强线是工程化补课。ReflexiCoder把“生成—反思—修正”纳入训练，试图把自纠错学进模型参数。Modulus和终端代理工作总结都强调共享记忆、隔离工作区、脚手架与上下文工程。Memory for Autonomous LLM Agents 则把记忆机制提升为独立研究主题。说明代理竞争点正从单次答案质量，转向长时任务中的稳定性、协作性与可恢复性。
+评测标准在明显上移。VibeCodeBench不再只测局部代码片段，而是要求模型交付完整 Web 应用；一旦涉及支付、邮件、数据库等外部集成，表现会明显下滑。SWE-CI把焦点放到持续集成环境中的代码库维护。CodeScout则说明，任务前处理本身已成为性能杠杆：先做小范围仓库探索，再补全复现步骤和期望行为，比让代理直接开工更稳。这个方向说明，行业正在把“任务定义、执行环境、验收方式”一起纳入评测。
 
-#### Representative papers
-- [Building Effective AI Coding Agents for the Terminal: Scaffolding, Harness, Context Engineering, and Lessons Learned](../Inbox/2026-03-05--building-effective-ai-coding-agents-for-the-terminal-scaffolding-harness-context-engineering-and-lessons-learned.md) — Nghi D. Q. Bui
+#### Representative sources
+- [Vibe Code Bench: Evaluating AI Models on End-to-End Web Application Development](../Inbox/2026-03-04--vibe-code-bench-evaluating-ai-models-on-end-to-end-web-application-development.md) — Hung Tran; Langston Nashold; Rayan Krishnan; Antoine Bigeard; Alex Gu
+- [SWE-CI: Evaluating Agent Capabilities in Maintaining Codebases via Continuous Integration](../Inbox/2026-03-04--swe-ci-evaluating-agent-capabilities-in-maintaining-codebases-via-continuous-integration.md) — Jialong Chen; Xander Xu; Hu Wei; Chuan Chen; Bing Zhao
+- [BeyondSWE: Can Current Code Agent Survive Beyond Single-Repo Bug Fixing?](../Inbox/2026-03-03--beyondswe-can-current-code-agent-survive-beyond-single-repo-bug-fixing.md) — Guoxin Chen; Fanzhe Meng; Jiale Zhao; Minghao Li; Daixuan Cheng; Huatong Song; …
+- [CodeScout: Contextual Problem Statement Enhancement for Software Agents](../Inbox/2026-03-05--codescout-contextual-problem-statement-enhancement-for-software-agents.md) — Manan Suri; Xiangci Li; Mehdi Shojaie; Songyang Han; Chao-Chun Hsu; Shweta Garg; …
+- [AI-for-Science Low-code Platform with Bayesian Adversarial Multi-Agent Framework](../Inbox/2026-03-03--ai-for-science-low-code-platform-with-bayesian-adversarial-multi-agent-framework.md) — Zihang Zeng; Jiaquan Zhang; Pengze Li; Yuan Qi; Xi Chen
+- [From Leaderboard to Deployment: Code Quality Challenges in AV Perception Repositories](../Inbox/2026-03-02--from-leaderboard-to-deployment-code-quality-challenges-in-av-perception-repositories.md) — Mateus Karvat; Bram Adams; Sidney Givigi
+
+
+### 自纠错、共享记忆与长时运行成为系统能力
+
+另一条主线是把工程化短板补齐。ReflexiCoder把“生成—反思—修正”纳入强化学习训练，目标是在缺少外部测试器时也能进行一定程度的自主调试。Modulus提供共享项目记忆与隔离工作区，支持多编码代理协作。Memory for Autonomous LLM Agents把记忆机制、评测与前沿问题系统化，说明长时上下文已从附加能力变成系统核心。研究重点不再只是更强模型，而是更稳的执行、更长的记忆和更低的部署摩擦。
+
+#### Representative sources
+- [Memory for Autonomous LLM Agents:Mechanisms, Evaluation, and Emerging Frontiers](../Inbox/2026-03-08--memory-for-autonomous-llm-agents-mechanisms-evaluation-and-emerging-frontiers.md) — Pengfei Du
+- [ReflexiCoder: Teaching Large Language Models to Self-Reflect on Generated Code and Self-Correct It via Reinforcement Learning](../Inbox/2026-03-06--reflexicoder-teaching-large-language-models-to-self-reflect-on-generated-code-and-self-correct-it-via-reinforcement-learning.md) — Juyong Jiang; Jiasi Shen; Sunghun Kim; Kang Min Yoo; Jeonghoon Kim; Sungju Kim
+- [Show HN: OpenTimelineEngine – Shared local memory for Claude Code and codex](../Inbox/2026-03-02--show-hn-opentimelineengine-shared-local-memory-for-claude-code-and-codex.md) — joeljoseph_
+- [Show HN: Residuum | Agentic AI with continuous context](../Inbox/2026-03-04--show-hn-residuum-agentic-ai-with-continuous-context.md) — BearFlinn
 - [Show HN: Modulus – Run multiple coding agents with shared project memory](../Inbox/2026-03-07--show-hn-modulus-run-multiple-coding-agents-with-shared-project-memory.md) — dasubhajit
+- [Graduate from Single-Session Coding: My Full Agentic Coding Workflow](../Inbox/2026-03-03--graduate-from-single-session-coding-my-full-agentic-coding-workflow.md) — btraut
 
 
-### 安全治理从提示防护走向语言、审计与故障分析
+### 安全治理从提示防护转向可验证底座
 
-安全与可审计性在本周明显前移。日趋势多次提到可验证治理、审计、回滚和数据流约束。Turn尝试把类型、安全和持久执行写进语言层；故障分类与失败解释工作则把代理失效从“黑箱问题”转成可观察、可归因的问题。相比早期只做提示防护，现在更像是在建设一套面向代理系统的治理底座。
+安全与约束正在前移到系统底座。Turn尝试把类型、安全和持久执行内建到语言层。XAI for Coding Agent Failures、Characterizing Faults in Agentic AI 这类工作把失败追踪、故障分类和可审计性提到前台。到周末，主题进一步扩展为数据流治理、回滚、人类介入时机与异步运行。信号很清楚：代理落地不再只靠提示技巧，而要靠可验证、可审计、可回退的治理结构。
 
-#### Representative papers
-- [Characterizing Faults in Agentic AI: A Taxonomy of Types, Symptoms, and Root Causes](../Inbox/2026-03-06--characterizing-faults-in-agentic-ai-a-taxonomy-of-types-symptoms-and-root-causes.md) — Mehil B Shah; Mohammad Mehdi Morovati; Mohammad Masudur Rahman; Foutse Khomh
-
-
-### 代码智能开始追求结构化推理与真实性能最优
-
-除了通用编码，本周也看到高性能与结构化代码智能升温。CUDA Agent把强化学习带到 CUDA 内核优化，说明代码生成开始用真实机器性能做目标，而非只看语法正确。另一边，KCoEvo和补丁正确性评估工作都强调程序图、版本关系和结构化表示。这意味着代码智能正在从纯文本预测，转向更重结构和外部信号的路线。
-
-#### Representative papers
-- [CUDA Agent: Large-Scale Agentic RL for High-Performance CUDA Kernel Generation](../Inbox/2026-03-02--cuda-agent-large-scale-agentic-rl-for-high-performance-cuda-kernel-generation.md) — petethomas
-- [On the Effectiveness of Code Representation in Deep Learning-Based Automated Patch Correctness Assessment](../Inbox/2026-03-08--on-the-effectiveness-of-code-representation-in-deep-learning-based-automated-patch-correctness-assessment.md) — Quanjun Zhang; Chunrong Fang; Haichuan Hu; Yuan Zhao; Weisong Sun; Yun Yang; …
+#### Representative sources
+- [ESAA-Security: An Event-Sourced, Verifiable Architecture for Agent-Assisted Security Audits of AI-Generated Code](../Inbox/2026-03-06--esaa-security-an-event-sourced-verifiable-architecture-for-agent-assisted-security-audits-of-ai-generated-code.md) — Elzo Brito dos Santos Filho
+- [AI Agents Have Senior Engineer Capabilities and Day-One Intern Context](../Inbox/2026-03-05--ai-agents-have-senior-engineer-capabilities-and-day-one-intern-context.md) — bobjordan
+- [Turn: A Language for Agentic Computation](../Inbox/2026-03-07--turn-a-language-for-agentic-computation.md) — Muyukani Kizito
+- [Intent-Based Access Control (IBAC) – FGA for AI Agent Permissions](../Inbox/2026-03-03--intent-based-access-control-ibac-fga-for-ai-agent-permissions.md) — ERROR_0x06
+- [REGAL: A Registry-Driven Architecture for Deterministic Grounding of Agentic AI in Enterprise Telemetry](../Inbox/2026-03-03--regal-a-registry-driven-architecture-for-deterministic-grounding-of-agentic-ai-in-enterprise-telemetry.md) — Yuvraj Agrawal
+- [Show HN: We filed 99 patents for deterministic AI governance(Prior Art vs. RLHF)](../Inbox/2026-03-02--show-hn-we-filed-99-patents-for-deterministic-ai-governance-prior-art-vs-rlhf.md) — genesalvatore
