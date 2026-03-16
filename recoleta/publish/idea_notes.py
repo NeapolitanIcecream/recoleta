@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -50,15 +51,21 @@ def _format_evidence_ref(
     root_dir: Path,
     note_dir: Path,
     ref: Any,
+    show_chunk_index: bool = False,
 ) -> str:
     try:
         doc_id = int(getattr(ref, "doc_id"))
-        chunk_index = int(getattr(ref, "chunk_index"))
     except Exception:
         return "Unknown evidence"
+    chunk_index = 0
+    if show_chunk_index:
+        try:
+            chunk_index = int(getattr(ref, "chunk_index"))
+        except Exception:
+            return "Unknown evidence"
     doc = repository.get_document(doc_id=doc_id)
     reason = str(getattr(ref, "reason", "") or "").strip()
-    suffix = f" (chunk {chunk_index})" if chunk_index > 0 else ""
+    suffix = f" (chunk {chunk_index})" if show_chunk_index and chunk_index > 0 else ""
     if doc is None:
         base = f"Document {doc_id}{suffix}"
         return f"{base}: {reason}" if reason else base
@@ -100,6 +107,80 @@ def _format_evidence_ref(
 
     rendered = f"[{title}]({href}){suffix}" if href else f"{title}{suffix}"
     return f"{rendered}: {reason}" if reason else rendered
+
+
+def _merge_evidence_reasons(refs: list[Any]) -> list[str]:
+    seen_reasons: set[str] = set()
+    merged_reasons: list[str] = []
+    for ref in refs:
+        reason = " ".join(str(getattr(ref, "reason", "") or "").split()).strip()
+        if not reason or reason in seen_reasons:
+            continue
+        seen_reasons.add(reason)
+        merged_reasons.append(reason)
+    return merged_reasons
+
+
+def _display_evidence_refs(refs: list[Any]) -> list[tuple[Any, list[str]]]:
+    ordered: list[tuple[str, Any]] = []
+    grouped: dict[int, list[Any]] = {}
+    for ref in refs:
+        try:
+            doc_id = int(getattr(ref, "doc_id"))
+        except Exception:
+            ordered.append(("raw", ref))
+            continue
+        if doc_id <= 0:
+            ordered.append(("raw", ref))
+            continue
+        if doc_id not in grouped:
+            grouped[doc_id] = []
+            ordered.append(("doc", doc_id))
+        grouped[doc_id].append(ref)
+
+    display_refs: list[tuple[Any, list[str]]] = []
+    for kind, value in ordered:
+        if kind == "raw":
+            display_refs.append((value, _merge_evidence_reasons([value])))
+            continue
+        refs_for_doc = grouped.get(int(value), [])
+        if not refs_for_doc:
+            continue
+        display_refs.append(
+            (
+                SimpleNamespace(
+                    doc_id=int(value),
+                    chunk_index=0,
+                    reason=None,
+                ),
+                _merge_evidence_reasons(refs_for_doc),
+            )
+        )
+    return display_refs
+
+
+def _render_evidence_ref_lines(
+    *,
+    repository: Any,
+    root_dir: Path,
+    note_dir: Path,
+    ref: Any,
+    reasons: list[str],
+) -> list[str]:
+    rendered = _format_evidence_ref(
+        repository=repository,
+        root_dir=root_dir,
+        note_dir=note_dir,
+        ref=ref,
+        show_chunk_index=False,
+    )
+    if not reasons:
+        return [f"- {rendered}"]
+    if len(reasons) == 1:
+        return [f"- {rendered}: {reasons[0]}"]
+    lines = [f"- {rendered}"]
+    lines.extend(f"  - {reason}" for reason in reasons)
+    return lines
 
 
 def _render_ideas_note_lines(
@@ -184,14 +265,14 @@ def _render_ideas_note_lines(
             )
             if idea.evidence_refs:
                 lines.extend(["", "#### Evidence"])
-                for ref in idea.evidence_refs:
-                    lines.append(
-                        "- "
-                        + _format_evidence_ref(
+                for ref, reasons in _display_evidence_refs(list(idea.evidence_refs or [])):
+                    lines.extend(
+                        _render_evidence_ref_lines(
                             repository=repository,
                             root_dir=root_dir,
                             note_dir=note_dir,
                             ref=ref,
+                            reasons=reasons,
                         )
                     )
     return lines

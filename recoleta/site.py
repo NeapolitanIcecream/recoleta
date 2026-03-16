@@ -175,6 +175,13 @@ def _parse_site_string_list(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _parse_site_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
+
+
 def _safe_excerpt(value: str, *, limit: int = 220) -> str:
     collapsed = " ".join(str(value or "").split()).strip()
     collapsed = re.sub(r"\s+([,.;:!?])", r"\1", collapsed)
@@ -2901,6 +2908,8 @@ def _load_trend_source_documents(
             frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
             if str(frontmatter.get("kind") or "").strip().lower() != "trend":
                 continue
+            if _parse_site_bool(frontmatter.get("site_exclude")):
+                continue
 
             period_start = _parse_site_datetime(frontmatter.get("period_start"))
             period_end = _parse_site_datetime(frontmatter.get("period_end"))
@@ -3077,6 +3086,8 @@ def _load_idea_source_documents(
             raw_markdown = markdown_path.read_text(encoding="utf-8")
             frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
             if str(frontmatter.get("kind") or "").strip().lower() != "ideas":
+                continue
+            if _parse_site_bool(frontmatter.get("site_exclude")):
                 continue
             period_start = _parse_site_datetime(frontmatter.get("period_start"))
             period_end = _parse_site_datetime(frontmatter.get("period_end"))
@@ -3281,7 +3292,11 @@ def _render_idea_opportunity_card(*, title: str, inner_html: str) -> tuple[str, 
                     evidence_nodes.append(str(candidate))
                 look_ahead += 1
             evidence_soup = BeautifulSoup("".join(evidence_nodes), "html.parser")
-            evidence_count += len(evidence_soup.find_all("li"))
+            evidence_count += sum(
+                1
+                for item in evidence_soup.find_all("li")
+                if item.find_parent("li") is None
+            )
             evidence_html = "".join(evidence_nodes).strip() or "<p>(none)</p>"
             content_blocks.append(
                 "<section class='idea-opportunity-block idea-opportunity-block-evidence'>"

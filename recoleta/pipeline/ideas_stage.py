@@ -21,6 +21,7 @@ from recoleta.passes import (
     PassStatus,
     TREND_SYNTHESIS_PASS_KIND,
     TrendIdeasPayload,
+    build_empty_trend_ideas_payload,
     build_trend_ideas_pass_output,
     build_trend_snapshot_pack_md,
     normalize_trend_ideas_payload,
@@ -91,6 +92,31 @@ def _period_bounds_for_granularity(
 def _load_trend_payload_from_pass_output(row: Any) -> TrendPayload:
     payload_json = str(getattr(row, "payload_json", "") or "{}")
     return TrendPayload.model_validate(json.loads(payload_json))
+
+
+def _truthy_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
+
+
+def _trend_pass_output_has_empty_corpus(row: Any) -> bool:
+    try:
+        diagnostics = json.loads(str(getattr(row, "diagnostics_json", "") or "{}"))
+    except Exception:
+        diagnostics = {}
+    if isinstance(diagnostics, dict):
+        if _truthy_flag(diagnostics.get("empty_corpus")):
+            return True
+        debug = diagnostics.get("debug")
+        if isinstance(debug, dict) and _truthy_flag(debug.get("empty_corpus")):
+            return True
+    try:
+        payload = _load_trend_payload_from_pass_output(row)
+    except Exception:
+        return False
+    return trends.is_empty_trend_payload(payload)
 
 
 def _render_idea_document_chunk_text(idea: Any) -> str:
@@ -296,6 +322,7 @@ def run_ideas_stage(
         )
 
     upstream_pass_output_id = int(getattr(upstream, "id"))
+    upstream_empty_corpus = _trend_pass_output_has_empty_corpus(upstream)
     trend_payload = _load_trend_payload_from_pass_output(upstream)
     trend_snapshot_pack_md = build_trend_snapshot_pack_md(
         trend_payload=trend_payload,
@@ -321,40 +348,60 @@ def run_ideas_stage(
         )
         log.info("Ideas telegram projection is not implemented; target ignored")
 
-    store = LanceVectorStore(
-        db_dir=Path(service.settings.rag_lancedb_dir),
-        table_name=embedding_table_name(
+    if upstream_empty_corpus:
+        payload = build_empty_trend_ideas_payload(
+            granularity=normalized_granularity,
+            period_start=period_start,
+            period_end=period_end,
+            output_language=service.settings.llm_output_language,
+        )
+        debug = {
+            "empty_corpus": True,
+            "usage": {"requests": 0, "input_tokens": 0, "output_tokens": 0},
+            "tool_calls_total": 0,
+            "tool_call_breakdown": {},
+            "estimated_cost_usd": 0.0,
+        }
+        record_metric(
+            name="pipeline.trends.pass.ideas.upstream_empty_corpus_total",
+            value=1,
+            unit="count",
+        )
+    else:
+        store = LanceVectorStore(
+            db_dir=Path(service.settings.rag_lancedb_dir),
+            table_name=embedding_table_name(
+                embedding_model=service.settings.trends_embedding_model,
+                embedding_dimensions=service.settings.trends_embedding_dimensions,
+            ),
+        )
+        payload, debug = ideas_agent.generate_trend_ideas_payload(
+            repository=cast(Any, service.repository),
+            vector_store=store,
+            run_id=run_id,
+            llm_model=model,
+            output_language=service.settings.llm_output_language,
             embedding_model=service.settings.trends_embedding_model,
             embedding_dimensions=service.settings.trends_embedding_dimensions,
-        ),
-    )
-    payload, debug = ideas_agent.generate_trend_ideas_payload(
-        repository=cast(Any, service.repository),
-        vector_store=store,
-        run_id=run_id,
-        llm_model=model,
-        output_language=service.settings.llm_output_language,
-        embedding_model=service.settings.trends_embedding_model,
-        embedding_dimensions=service.settings.trends_embedding_dimensions,
-        embedding_batch_max_inputs=service.settings.trends_embedding_batch_max_inputs,
-        embedding_batch_max_chars=service.settings.trends_embedding_batch_max_chars,
-        embedding_failure_mode=getattr(
-            service.settings, "trends_embedding_failure_mode", "continue"
-        ),
-        embedding_max_errors=int(
-            getattr(service.settings, "trends_embedding_max_errors", 0) or 0
-        ),
-        granularity=normalized_granularity,
-        period_start=period_start,
-        period_end=period_end,
-        trend_payload=trend_payload,
-        trend_snapshot_pack_md=trend_snapshot_pack_md,
-        rag_sources=trends.rag_sources_for_granularity(normalized_granularity),
-        include_debug=include_debug,
-        scope=scope,
-        metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas", scope=scope),
-        llm_connection=service._llm_connection,
-    )
+            embedding_batch_max_inputs=service.settings.trends_embedding_batch_max_inputs,
+            embedding_batch_max_chars=service.settings.trends_embedding_batch_max_chars,
+            embedding_failure_mode=getattr(
+                service.settings, "trends_embedding_failure_mode", "continue"
+            ),
+            embedding_max_errors=int(
+                getattr(service.settings, "trends_embedding_max_errors", 0) or 0
+            ),
+            granularity=normalized_granularity,
+            period_start=period_start,
+            period_end=period_end,
+            trend_payload=trend_payload,
+            trend_snapshot_pack_md=trend_snapshot_pack_md,
+            rag_sources=trends.rag_sources_for_granularity(normalized_granularity),
+            include_debug=include_debug,
+            scope=scope,
+            metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas", scope=scope),
+            llm_connection=service._llm_connection,
+        )
     payload = normalize_trend_ideas_payload(payload)
     status = (
         PassStatus.SUPPRESSED

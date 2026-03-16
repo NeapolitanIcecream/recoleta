@@ -30,6 +30,7 @@ from recoleta.publish import (
     write_obsidian_note,
     write_obsidian_trend_note,
 )
+from recoleta.publish.idea_notes import resolve_ideas_note_path
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.provenance import (
     ProjectionProvenance,
@@ -37,7 +38,7 @@ from recoleta.provenance import (
 )
 from recoleta.site import export_trend_static_site
 from recoleta.trend_materialize import materialize_trend_note_payload
-from recoleta.trends import TrendPayload
+from recoleta.trends import TrendPayload, is_empty_trend_payload
 from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
@@ -222,6 +223,36 @@ def _load_ideas_payload(*, row: PassOutput) -> TrendIdeasPayload:
     return TrendIdeasPayload.model_validate(json.loads(str(row.payload_json or "{}")))
 
 
+def _truthy_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
+
+
+def _trend_pass_output_has_empty_corpus(*, row: Any) -> bool:
+    diagnostics = _pass_output_diagnostics(row=row)
+    if isinstance(diagnostics, dict):
+        if _truthy_flag(diagnostics.get("empty_corpus")):
+            return True
+        debug = diagnostics.get("debug")
+        if isinstance(debug, dict) and _truthy_flag(debug.get("empty_corpus")):
+            return True
+    try:
+        payload = TrendPayload.model_validate(json.loads(str(getattr(row, "payload_json", "") or "{}")))
+    except Exception:
+        return False
+    return is_empty_trend_payload(payload)
+
+
+def _pass_output_diagnostics(*, row: Any) -> dict[str, Any]:
+    try:
+        loaded = json.loads(str(getattr(row, "diagnostics_json", "") or "{}"))
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _ideas_upstream_pass_output_id(*, row: PassOutput) -> int | None:
     try:
         input_refs = json.loads(str(row.input_refs_json or "[]"))
@@ -355,6 +386,15 @@ def _materialize_scope_outputs(
                 repository=repository,
                 document=document,
             )
+            trend_site_exclude = is_empty_trend_payload(payload)
+            if trend_projection is not None and trend_projection.pass_output_id is not None:
+                source_pass_output = repository.get_pass_output(
+                    pass_output_id=int(trend_projection.pass_output_id)
+                )
+                if source_pass_output is not None:
+                    trend_site_exclude = _trend_pass_output_has_empty_corpus(
+                        row=source_pass_output
+                    )
             materialized = materialize_trend_note_payload(
                 repository=repository,
                 payload=payload,
@@ -386,6 +426,7 @@ def _materialize_scope_outputs(
                 pass_kind=(
                     trend_projection.pass_kind if trend_projection is not None else None
                 ),
+                site_exclude=trend_site_exclude,
             )
             result.trend_notes_total += 1
             result.doc_ref_rewrites_total += (
@@ -436,6 +477,7 @@ def _materialize_scope_outputs(
                         if trend_projection is not None
                         else None
                     ),
+                    site_exclude=trend_site_exclude,
                 )
                 result.obsidian_notes_total += 1
             except Exception as exc:  # noqa: BLE001
@@ -482,6 +524,20 @@ def _materialize_scope_outputs(
         try:
             payload = _load_ideas_payload(row=row)
             upstream_pass_output_id = _ideas_upstream_pass_output_id(row=row)
+            upstream_pass_output = (
+                repository.get_pass_output(pass_output_id=int(upstream_pass_output_id))
+                if upstream_pass_output_id is not None
+                else None
+            )
+            ideas_empty_corpus = _truthy_flag(
+                _pass_output_diagnostics(row=row).get("empty_corpus")
+            )
+            if (
+                not ideas_empty_corpus
+                and upstream_pass_output is not None
+                and _trend_pass_output_has_empty_corpus(row=upstream_pass_output)
+            ):
+                ideas_empty_corpus = True
             topics = _ideas_topics_from_upstream_pass_output(
                 repository=repository,
                 pass_output_id=upstream_pass_output_id,
@@ -490,6 +546,21 @@ def _materialize_scope_outputs(
             period_end = row.period_end
             if not isinstance(period_start, datetime) or not isinstance(period_end, datetime):
                 raise ValueError("ideas pass output is missing period bounds")
+            if ideas_empty_corpus:
+                note_path = resolve_ideas_note_path(
+                    note_dir=output_dir / "Ideas",
+                    granularity=str(row.granularity or payload.granularity or "day"),
+                    period_start=period_start,
+                )
+                note_path.unlink(missing_ok=True)
+                if obsidian_vault_path is not None and obsidian_base_folder is not None:
+                    obsidian_note_path = resolve_ideas_note_path(
+                        note_dir=obsidian_vault_path / obsidian_base_folder / "Ideas",
+                        granularity=str(row.granularity or payload.granularity or "day"),
+                        period_start=period_start,
+                    )
+                    obsidian_note_path.unlink(missing_ok=True)
+                continue
             _ = write_markdown_ideas_note(
                 repository=repository,
                 output_dir=output_dir,
