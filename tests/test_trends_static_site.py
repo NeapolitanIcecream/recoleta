@@ -824,6 +824,55 @@ def test_export_trend_static_site_hides_empty_topics_for_ideas(
     assert "No tracked topics" not in detail_html
 
 
+def test_export_trend_static_site_skips_site_excluded_trend_and_idea_notes(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=94,
+        title="No publishable research trend for this period",
+        granularity="day",
+        period_start=datetime(2026, 3, 13, tzinfo=UTC),
+        period_end=datetime(2026, 3, 14, tzinfo=UTC),
+        run_id="run-site-excluded-trend",
+        overview_md="- No documents available for this period.\n",
+        topics=[],
+        clusters=[],
+        highlights=[],
+        site_exclude=True,
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    excluded_idea = ideas_dir / "day--2026-03-13--ideas.md"
+    excluded_idea.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-13T00:00:00+00:00\n"
+        "period_end: 2026-03-14T00:00:00+00:00\n"
+        "status: suppressed\n"
+        "site_exclude: true\n"
+        "---\n\n"
+        "# No publishable ideas for this period\n\n"
+        "## Summary\n\n"
+        "No documents available for this period.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["trends_total"] == 0
+    assert manifest["ideas_total"] == 0
+    assert manifest["files"]["trend_pages"] == []
+    assert manifest["files"]["idea_pages"] == []
+
+
 def test_stage_trend_site_source_mirrors_idea_markdown_and_manifest_entries(
     tmp_path: Path,
 ) -> None:

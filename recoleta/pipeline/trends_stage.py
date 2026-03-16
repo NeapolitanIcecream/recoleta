@@ -1316,6 +1316,7 @@ def run_trends_stage(
                         output_language=service.settings.llm_output_language,
                         pass_output_id=pass_output_id,
                         pass_kind=TREND_SYNTHESIS_PASS_KIND,
+                        site_exclude=empty_corpus,
                     ),
                     warning_context={
                         "doc_id": state.doc_id,
@@ -1355,6 +1356,7 @@ def run_trends_stage(
                         output_language=service.settings.llm_output_language,
                         pass_output_id=pass_output_id,
                         pass_kind=TREND_SYNTHESIS_PASS_KIND,
+                        site_exclude=empty_corpus,
                     ),
                     warning_context={
                         "doc_id": state.doc_id,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 
+from bs4 import BeautifulSoup
 import pytest
 from sqlmodel import Session, select
 from typer.testing import CliRunner
@@ -15,7 +17,7 @@ from recoleta.passes.base import PassInputRef
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish.item_notes import resolve_item_note_path
 from recoleta.storage import Repository
-from recoleta.trends import TrendPayload, persist_trend_payload
+from recoleta.trends import TrendPayload, build_empty_trend_payload, persist_trend_payload
 from recoleta.types import AnalysisResult, ItemDraft
 
 
@@ -376,6 +378,152 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
     assert f"../items/{item_note_path.stem}.html" in idea_html
 
 
+def test_materialize_outputs_deduplicates_idea_evidence_by_document(
+    tmp_path: Path,
+) -> None:
+    """Regression: ideas output should not expose duplicate article citations for different chunks."""
+
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    trend_doc_id, placeholder_item_note_path = _seed_materialize_fixture(
+        repository=repository
+    )
+    output_dir = tmp_path / "outputs"
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    with Session(repository.engine) as session:
+        item_doc = session.exec(
+            select(Document).where(Document.doc_type == "item").limit(1)
+        ).one()
+    assert item_doc.id is not None
+    repository.upsert_document_chunk(
+        doc_id=int(item_doc.id),
+        chunk_index=1,
+        kind="content",
+        text_value="Verifier loops inspect long traces in the body chunk.",
+        source_content_type="analysis_body",
+    )
+
+    trend_payload = TrendPayload.model_validate(
+        {
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
+            "topics": ["agents", "robotics"],
+            "clusters": [],
+            "highlights": [],
+        }
+    )
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-trend-pass-dedup",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=trend_payload.model_dump(mode="json"),
+    )
+    assert trend_pass_output.id is not None
+
+    ideas_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Verification-first agent rollout",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "Use a prompt release gate before shipping changes.",
+            "ideas": [
+                {
+                    "title": "Prompt CI gate",
+                    "kind": "tooling_wedge",
+                    "thesis": "Ship a prompt release gate before production rollout.",
+                    "why_now": "Prompt changes now behave like deployable releases.",
+                    "what_changed": "Agent teams now manage prompt/tool changes continuously.",
+                    "user_or_job": "Platform engineers shipping agent changes.",
+                    "evidence_refs": [
+                        {
+                            "doc_id": item_doc.id,
+                            "chunk_index": 0,
+                            "reason": "The summary chunk anchors the paper-level evidence.",
+                        },
+                        {
+                            "doc_id": item_doc.id,
+                            "chunk_index": 1,
+                            "reason": "The body chunk shows the verifier loop details.",
+                        },
+                    ],
+                    "validation_next_step": "Replay 20 prompt changes through the gate.",
+                    "time_horizon": "now",
+                }
+            ],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-ideas-pass-dedup",
+        pass_kind="trend_ideas",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=ideas_payload.model_dump(mode="json"),
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                scope="default",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    _ = materialize_outputs(
+        repository=repository,
+        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        site_input_dir=output_dir,
+        site_output_dir=output_dir / "site",
+    )
+
+    item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
+    idea_note_path = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
+    idea_markdown = idea_note_path.read_text(encoding="utf-8")
+    item_link = (
+        f"[Robometer: Scaling General-Purpose Robotic Reward Models]"
+        f"(../Inbox/{item_note_path.name})"
+    )
+    assert idea_markdown.count(item_link) == 1
+    assert (
+        f"- {item_link}\n"
+        "  - The summary chunk anchors the paper-level evidence.\n"
+        "  - The body chunk shows the verifier loop details."
+    ) in idea_markdown
+    assert "The summary chunk anchors the paper-level evidence." in idea_markdown
+    assert "The body chunk shows the verifier loop details." in idea_markdown
+    assert "; The body chunk shows the verifier loop details." not in idea_markdown
+    assert "(chunk 1)" not in idea_markdown
+
+    idea_html = (
+        output_dir / "site" / "ideas" / "day--2026-03-02--ideas.html"
+    ).read_text(encoding="utf-8")
+    soup = BeautifulSoup(idea_html, "html.parser")
+    meta_panels = {
+        label.get_text(" ", strip=True): value.get_text(" ", strip=True)
+        for panel in soup.select(".meta-panel")
+        for label in [panel.select_one(".meta-panel-label")]
+        for value in [panel.select_one(".meta-panel-value")]
+        if label is not None and value is not None
+    }
+    assert idea_html.count(f"../items/{item_note_path.stem}.html") == 1
+    assert meta_panels.get("Evidence") == "1"
+    assert "(chunk 1)" not in idea_html
+
+
 def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
     tmp_path: Path,
 ) -> None:
@@ -628,6 +776,97 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
     assert "# Latest suppressed ideas" in note_text
     assert "Evidence is too thin for a durable opportunity brief." in note_text
     assert "Stale idea that should disappear" not in note_text
+
+
+def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_trends(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    output_dir = tmp_path / "outputs"
+    period_start = datetime(2026, 3, 13, tzinfo=UTC)
+    period_end = datetime(2026, 3, 14, tzinfo=UTC)
+
+    empty_trend_payload = build_empty_trend_payload(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        output_language="Chinese (Simplified)",
+    )
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-empty-trend-pass",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_trend_payload.model_dump(mode="json"),
+        diagnostics={"empty_corpus": True},
+    )
+    assert trend_pass_output.id is not None
+    trend_doc_id = persist_trend_payload(
+        repository=repository,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_trend_payload,
+        pass_output_id=int(trend_pass_output.id),
+    )
+
+    empty_ideas_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "本期暂无可发布研究趋势",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "该周期没有可用文档，因此不输出机会想法。",
+            "ideas": [],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-empty-ideas-pass",
+        pass_kind="trend_ideas",
+        status="suppressed",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_ideas_payload.model_dump(mode="json"),
+        diagnostics={"empty_corpus": True},
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                scope="default",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    result = materialize_outputs(
+        repository=repository,
+        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        site_input_dir=output_dir,
+        site_output_dir=output_dir / "site",
+    )
+
+    trend_note_path = output_dir / "Trends" / f"day--2026-03-13--trend--{trend_doc_id}.md"
+    idea_note_path = output_dir / "Ideas" / "day--2026-03-13--ideas.md"
+    trend_note_text = trend_note_path.read_text(encoding="utf-8")
+    manifest = json.loads(result.site_manifest_path.read_text(encoding="utf-8"))
+
+    assert "site_exclude: true" in trend_note_text
+    assert not idea_note_path.exists()
+    assert manifest["trends_total"] == 0
+    assert manifest["ideas_total"] == 0
+    assert manifest["files"]["trend_pages"] == []
+    assert manifest["files"]["idea_pages"] == []
+    assert not (output_dir / "site" / "trends" / f"{trend_note_path.stem}.html").exists()
+    assert not (output_dir / "site" / "ideas" / "day--2026-03-13--ideas.html").exists()
 
 
 def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_available(

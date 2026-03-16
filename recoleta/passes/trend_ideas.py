@@ -21,6 +21,14 @@ TREND_IDEA_KIND_VALUES = (
 TREND_IDEA_TIME_HORIZON_VALUES = ("now", "near", "frontier")
 
 
+def _is_chinese_output_language(output_language: str | None) -> bool:
+    normalized = str(output_language or "").strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    return lowered.startswith("zh") or "chinese" in lowered or "中文" in normalized
+
+
 class TrendIdeaEvidenceRef(BaseModel):
     doc_id: int
     chunk_index: int = 0
@@ -105,6 +113,30 @@ class TrendIdeasPayload(BaseModel):
         if not normalized:
             raise ValueError("payload text fields must not be empty")
         return normalized
+
+
+def build_empty_trend_ideas_payload(
+    *,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    output_language: str | None = None,
+) -> TrendIdeasPayload:
+    normalized_granularity = str(granularity or "").strip().lower() or "day"
+    if _is_chinese_output_language(output_language):
+        title = "本期暂无可发布研究趋势"
+        summary_md = "该周期没有可用文档，因此不输出机会想法。"
+    else:
+        title = "No publishable ideas for this period"
+        summary_md = "No documents are available for this period, so no opportunity ideas are emitted."
+    return TrendIdeasPayload(
+        title=title,
+        granularity=normalized_granularity,
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        summary_md=summary_md,
+        ideas=[],
+    )
 
 
 def normalize_trend_ideas_payload(
@@ -255,6 +287,7 @@ __all__ = [
     "TrendIdea",
     "TrendIdeaEvidenceRef",
     "TrendIdeasPayload",
+    "build_empty_trend_ideas_payload",
     "build_trend_ideas_pass_output",
     "build_trend_snapshot_pack_md",
     "normalize_trend_ideas_payload",

@@ -283,6 +283,7 @@ def _render_trend_note_lines(
     output_language: str | None,
     note_dir: Path,
     projection_provenance: ProjectionProvenance | None,
+    site_exclude: bool,
 ) -> list[str]:
     _ = highlights
     title = sanitize_trend_title(title)
@@ -310,6 +311,8 @@ def _render_trend_note_lines(
         frontmatter.update(
             projection_provenance.model_dump(mode="json", exclude_none=True)
         )
+    if site_exclude:
+        frontmatter["site_exclude"] = True
 
     lines: list[str] = [
         "---",
@@ -452,6 +455,7 @@ def _write_trend_note(
     output_language: str | None,
     pass_output_id: int | None = None,
     pass_kind: str | None = None,
+    site_exclude: bool = False,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = resolve_trend_note_path(
@@ -483,6 +487,7 @@ def _write_trend_note(
             if pass_output_id is not None
             else None
         ),
+        site_exclude=bool(site_exclude),
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return note_path
@@ -507,6 +512,7 @@ def write_obsidian_trend_note(
     output_language: str | None = None,
     pass_output_id: int | None = None,
     pass_kind: str | None = None,
+    site_exclude: bool = False,
 ) -> Path:
     note_dir = vault_path / base_folder / "Trends"
     return _write_trend_note(
@@ -526,6 +532,7 @@ def write_obsidian_trend_note(
         output_language=output_language,
         pass_output_id=pass_output_id,
         pass_kind=pass_kind,
+        site_exclude=site_exclude,
     )
 
 
@@ -547,6 +554,7 @@ def write_markdown_trend_note(
     output_language: str | None = None,
     pass_output_id: int | None = None,
     pass_kind: str | None = None,
+    site_exclude: bool = False,
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
@@ -569,6 +577,7 @@ def write_markdown_trend_note(
         output_language=output_language,
         pass_output_id=pass_output_id,
         pass_kind=pass_kind,
+        site_exclude=site_exclude,
     )
 
 

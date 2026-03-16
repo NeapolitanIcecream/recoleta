@@ -1056,6 +1056,23 @@ def build_empty_trend_payload(
     )
 
 
+def is_empty_trend_payload(payload: TrendPayload) -> bool:
+    if list(payload.topics or []) or list(payload.clusters or []) or list(payload.highlights or []):
+        return False
+    title = str(payload.title or "").strip()
+    overview = str(payload.overview_md or "").strip()
+    return (title, overview) in {
+        (
+            "本期暂无可发布研究趋势",
+            "- 该周期没有可用文档。",
+        ),
+        (
+            "No publishable research trend for this period",
+            "- No documents available for this period.",
+        ),
+    }
+
+
 def _chunk_text_segments(
     text_value: str, *, chunk_chars: int, max_segments: int | None = None
 ) -> list[tuple[int, int, str]]:

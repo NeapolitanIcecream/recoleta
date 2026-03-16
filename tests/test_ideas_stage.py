@@ -37,6 +37,7 @@ def _persist_trend_synthesis_pass_output(
     period_start: datetime,
     period_end: datetime,
     payload: TrendPayload,
+    diagnostics: dict[str, object] | None = None,
 ) -> int:
     envelope = build_trend_synthesis_pass_output(
         run_id=run_id,
@@ -45,7 +46,7 @@ def _persist_trend_synthesis_pass_output(
         period_start=period_start,
         period_end=period_end,
         payload=payload,
-        diagnostics={"source": "test"},
+        diagnostics={"source": "test", **(diagnostics or {})},
     )
     row = repository.create_pass_output(
         run_id=envelope.run_id,
@@ -525,6 +526,87 @@ def test_ideas_stage_persists_suppressed_pass_output_without_projection(
 
     metric_values = _metric_values(repository=repository, run_id="run-ideas-suppressed")
     assert metric_values["pipeline.trends.pass.ideas.suppressed_total"] == 1.0
+
+
+def test_ideas_stage_skips_llm_when_upstream_trend_corpus_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: ideas should not invoke the LLM when the upstream trend had no corpus."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    period_start = datetime(2026, 3, 13, tzinfo=UTC)
+    period_end = datetime(2026, 3, 14, tzinfo=UTC)
+    upstream_pass_output_id = _persist_trend_synthesis_pass_output(
+        repository=repository,
+        run_id="run-trend-upstream-empty-corpus",
+        scope="default",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendPayload.model_validate(
+            {
+                "title": "本期暂无可发布研究趋势",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "overview_md": "- 该周期没有可用文档。",
+                "topics": [],
+                "clusters": [],
+                "highlights": [],
+            }
+        ),
+        diagnostics={"empty_corpus": True},
+    )
+
+    from recoleta.rag import ideas_agent
+
+    def _must_not_call_agent(**_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("Ideas agent must not be called for empty upstream corpus")
+
+    monkeypatch.setattr(ideas_agent, "generate_trend_ideas_payload", _must_not_call_agent)
+
+    result = service.ideas(
+        run_id="run-ideas-empty-upstream",
+        granularity="day",
+        anchor_date=date(2026, 3, 13),
+        llm_model="test/fake-model",
+    )
+
+    assert result.status == PassStatus.SUPPRESSED.value
+    assert result.pass_output_id is not None
+    assert result.upstream_pass_output_id == upstream_pass_output_id
+    assert result.note_path is None
+    assert not (settings.markdown_output_dir / "Ideas" / "day--2026-03-13--ideas.md").exists()
+
+    with Session(repository.engine) as session:
+        row = session.exec(
+            select(PassOutput).where(PassOutput.id == result.pass_output_id)
+        ).first()
+        assert row is not None
+        assert row.status == PassStatus.SUPPRESSED.value
+        assert json.loads(row.payload_json)["ideas"] == []
+        assert json.loads(row.diagnostics_json)["empty_corpus"] is True
+
+    metric_values = _metric_values(repository=repository, run_id="run-ideas-empty-upstream")
+    assert metric_values["pipeline.trends.pass.ideas.suppressed_total"] == 1.0
+    assert metric_values["pipeline.trends.pass.ideas.llm_requests_total"] == 0.0
+    assert metric_values["pipeline.trends.pass.ideas.llm_input_tokens_total"] == 0.0
+    assert metric_values["pipeline.trends.pass.ideas.llm_output_tokens_total"] == 0.0
 
 
 def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
