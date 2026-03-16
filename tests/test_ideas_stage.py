@@ -158,7 +158,6 @@ def test_ideas_stage_requires_upstream_trend_synthesis_output(
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
-    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
@@ -584,7 +583,6 @@ def test_ideas_stage_skips_llm_when_upstream_trend_corpus_is_empty(
         run_id="run-ideas-empty-upstream",
         granularity="day",
         anchor_date=date(2026, 3, 13),
-        llm_model="test/fake-model",
     )
 
     assert result.status == PassStatus.SUPPRESSED.value

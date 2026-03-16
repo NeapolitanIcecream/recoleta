@@ -332,9 +332,6 @@ def run_ideas_stage(
         service.settings.write_debug_artifacts
         and service.settings.artifacts_dir is not None
     )
-    model = str(llm_model or service.settings.llm_model or "").strip()
-    if not model:
-        raise ValueError("llm_model must not be empty")
     targets = set(service.settings.publish_targets or [])
     if "obsidian" in targets and service.settings.obsidian_vault_path is None:
         raise ValueError(
@@ -368,6 +365,9 @@ def run_ideas_stage(
             unit="count",
         )
     else:
+        model = str(llm_model or service.settings.llm_model or "").strip()
+        if not model:
+            raise ValueError("llm_model must not be empty")
         store = LanceVectorStore(
             db_dir=Path(service.settings.rag_lancedb_dir),
             table_name=embedding_table_name(
