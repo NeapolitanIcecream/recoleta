@@ -252,7 +252,6 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
-    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
