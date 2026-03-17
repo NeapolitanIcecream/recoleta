@@ -58,8 +58,9 @@ flowchart TB
   Publish --> Telegram["Telegram delivery<br/>(optional)"]
 
   SQLite --> Trends["Build trend briefs<br/>recoleta trends"]
-  SQLite --> LanceDB[(LanceDB cache<br/>optional)]
+  SQLite --> LanceDB[(LanceDB retrieval cache<br/>optional)]
   LanceDB -. semantic retrieval .-> Trends
+  LanceDB -. semantic retrieval .-> Ideas
   Trends -. trend docs .-> SQLite
 
   Trends --> TrendMarkdown["Canonical trend markdown"]
@@ -71,8 +72,9 @@ flowchart TB
   IdeaMarkdown --> Site
 ```
 
-Trend briefs can feed a follow-on `recoleta ideas` pass that emits
-evidence-grounded idea briefs for local notes and the static site.
+Trend briefs can feed a follow-on `recoleta ideas` pass. Both trends and ideas
+can reuse the local LanceDB-backed retrieval cache to ground outputs against the
+active corpus.
 
 <a id="recoleta-features"></a>
 ## ✨ Features
