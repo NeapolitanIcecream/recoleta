@@ -44,16 +44,27 @@ you share ingest and enrich state across related domains while keeping trend,
 idea, and publishing outputs separate.
 
 ```mermaid
-flowchart LR
-  Sources[Sources] --> Prepare["Prepare (recoleta ingest)"]
-  Prepare --> Analyze["Analyze (LLM, recoleta analyze)"]
-  Analyze --> Publish[Publish]
-  Publish --> Markdown[Local Markdown output]
-  Publish --> Obsidian["Obsidian Markdown notes (optional)"]
-  Publish --> Telegram["Telegram messages (optional)"]
-  Prepare --> SQLite[(SQLite index)]
+flowchart TB
+  Sources["Sources<br/>arXiv, Hacker News, OpenReview, HF Daily Papers, RSS"] --> Ingest["Ingest / prepare<br/>recoleta ingest"]
+  Ingest --> SQLite[(SQLite state)]
+
+  SQLite --> Analyze["Analyze prepared items<br/>recoleta analyze"]
   Analyze --> SQLite
-  Publish --> SQLite
+  Analyze --> Publish["Publish item outputs<br/>recoleta publish"]
+  Publish -. delivery state .-> SQLite
+
+  Publish --> Markdown["Local Markdown<br/>latest.md + Inbox/"]
+  Publish --> Obsidian["Obsidian notes<br/>(optional)"]
+  Publish --> Telegram["Telegram delivery<br/>(optional)"]
+
+  SQLite --> Trends["Build trend briefs<br/>recoleta trends"]
+  SQLite --> LanceDB[(LanceDB cache<br/>optional)]
+  LanceDB -. semantic retrieval .-> Trends
+  Trends -. trend docs .-> SQLite
+
+  Trends --> TrendMarkdown["Canonical trend markdown"]
+  TrendMarkdown --> PDF["PDF reports"]
+  TrendMarkdown --> Site["Static site<br/>recoleta site"]
 ```
 
 <a id="recoleta-features"></a>
