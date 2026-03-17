@@ -1,7 +1,7 @@
 [project]
 name = "recoleta"
 version = "0.1.0"
-description = "Personal research intelligence funnel for ingesting, analyzing, and publishing signals."
+description = "Local-first AI research radar for ingesting, analyzing, and publishing research signals."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

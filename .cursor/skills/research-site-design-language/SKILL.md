@@ -12,6 +12,9 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Keep fixed UI chrome in English: section titles, badges, controlled vocabulary, action labels, metadata pills, filters, and navigation.
 - Let long-form narrative content follow the source language.
 - Do not mix languages within the same semantic layer. If one badge set is English, all peer badges stay English.
+- Public site chrome should keep a direct repo-return CTA so readers can open the source repo or first-run path from the rendered site.
+- First-contact promo assets should lead with the user-visible outcome before qualifiers such as `local-first` or detailed source/input taxonomy.
+- First-contact promo cards should show the shape of the produced artifact with nested surfaces or grouped sub-sections, not just a flat stack of left-aligned copy and pills.
 - Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.
 - Favor dense, scannable structure over marketing-style flourish. Comparative content should read like an analysis surface, not a landing page.
 - Treat `Trends` and `Ideas` as peer collection surfaces: each should have its own index destination, parallel navigation affordance, and symmetric home-section labeling.

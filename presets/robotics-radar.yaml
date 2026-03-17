@@ -1,0 +1,38 @@
+# Recoleta preset: robotics radar
+#
+# Best for:
+# - embodied AI and robotics trend tracking
+# - VLA, manipulation, control, and robot learning monitoring
+# - local-first research briefs for robotics teams
+#
+# Secrets rule:
+# - keep RECOLETA_LLM_API_KEY, TELEGRAM_BOT_TOKEN, and TELEGRAM_CHAT_ID in env
+
+recoleta_db_path: "~/.local/share/recoleta/presets/robotics-radar/recoleta.db"
+llm_model: "openai/gpt-5.4"
+
+publish_targets:
+  - markdown
+
+markdown_output_dir: "~/.local/share/recoleta/presets/robotics-radar/outputs"
+
+topics:
+  - robotics
+  - embodied-ai
+  - vla
+  - manipulation
+
+sources:
+  arxiv:
+    enabled: true
+    queries:
+      - "cat:cs.RO"
+      - "cat:cs.AI AND all:robot"
+    max_results_per_run: 25
+
+  hf_daily:
+    enabled: true
+
+min_relevance_score: 0.6
+max_deliveries_per_day: 10
+write_debug_artifacts: false

@@ -13,9 +13,9 @@ recoleta_db_path: "~/.local/share/recoleta/recoleta.db"
 
 # LiteLLM model naming: <provider>/<model-identifier>
 # Examples:
-# - openai/gpt-4o-mini
+# - openai/gpt-5.4
 # - anthropic/claude-3-5-sonnet-20241022
-llm_model: "openai/gpt-4o-mini"
+llm_model: "openai/gpt-5.4"
 
 ## Outputs (defaults shown)
 

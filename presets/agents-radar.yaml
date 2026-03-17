@@ -1,0 +1,43 @@
+# Recoleta preset: agents radar
+#
+# Best for:
+# - AI builders tracking agent systems and tool use
+# - repo automation and evaluation watchers
+# - local-first daily research briefing
+#
+# Secrets rule:
+# - keep RECOLETA_LLM_API_KEY, TELEGRAM_BOT_TOKEN, and TELEGRAM_CHAT_ID in env
+
+recoleta_db_path: "~/.local/share/recoleta/presets/agents-radar/recoleta.db"
+llm_model: "openai/gpt-5.4"
+
+publish_targets:
+  - markdown
+
+markdown_output_dir: "~/.local/share/recoleta/presets/agents-radar/outputs"
+
+topics:
+  - agents
+  - tool-use
+  - code-agents
+  - evaluation
+
+sources:
+  hn:
+    enabled: true
+    rss_urls:
+      - "https://news.ycombinator.com/rss"
+
+  arxiv:
+    enabled: true
+    queries:
+      - "cat:cs.AI"
+      - "cat:cs.SE"
+    max_results_per_run: 25
+
+  hf_daily:
+    enabled: true
+
+min_relevance_score: 0.6
+max_deliveries_per_day: 10
+write_debug_artifacts: false

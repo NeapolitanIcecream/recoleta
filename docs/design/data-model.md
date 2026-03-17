@@ -67,7 +67,7 @@ LLM outputs (validated structured payload).
 - `id` (PK, integer)
 - `item_id` (FK -> items.id)
 - `scope` (text): topic stream / publish scope (`default` in single-stream mode)
-- `model` (text): e.g. `openai.gpt-4o-mini`
+- `model` (text): e.g. `openai/gpt-5.4`
 - `provider` (text): LiteLLM provider label
 - `summary` (text)
 - `topics_json` (text): list[string]

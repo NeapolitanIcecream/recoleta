@@ -216,6 +216,8 @@ bench-perf*/
 .DS_Store
 site-content/
 site-dist/
+output/
+.playwright-cli/
 
 # Git worktrees (project-local)
 .worktrees/

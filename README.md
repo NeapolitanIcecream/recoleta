@@ -2,13 +2,18 @@
   <img src="./docs/assets/Recoleta-3.jpeg" alt="Project Name Banner"/>
 </p>
 
-<!-- Badges (replace with your links) -->
-<!-- [![CI](...)](...) -->
-<!-- [![PyPI](...)](...) -->
+[![CI](https://github.com/NeapolitanIcecream/recoleta/actions/workflows/ci.yml/badge.svg)](https://github.com/NeapolitanIcecream/recoleta/actions/workflows/ci.yml)
+[![Live demo](https://img.shields.io/badge/demo-live-0b7a75)](https://neapolitanicecream.github.io/recoleta/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.14%2B-blue.svg)](#recoleta-installation)
 
-Recoleta is a **research intelligence funnel** that ingests noisy sources, runs **structured LLM analysis**, and publishes high-signal outputs to **local Markdown by default** (with optional **Obsidian** and **Telegram** integrations) — so you can keep up with research without drowning in tabs.
+Recoleta is a **local-first AI research radar** for **arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS**. It turns noisy source streams into **trend briefs**, **idea briefs**, and a **public research site**, then projects the same results to **local Markdown first** with optional **Obsidian** and **Telegram** delivery.
+
+**Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Preset gallery](./presets/README.md)
+
+- Track one topic list or multiple topic streams from the same local workspace.
+- Publish daily trend briefs, evidence-grounded idea briefs, PDFs, and a public site from one pipeline.
+- Keep durable state in SQLite and treat Markdown, Obsidian, Telegram, and site output as derived artifacts.
 
 ## 📚 Contents
 
@@ -17,14 +22,16 @@ Recoleta is a **research intelligence funnel** that ingests noisy sources, runs 
 - [Installation](#recoleta-installation)
 - [Docker / Compose](#recoleta-docker)
 - [Usage](#recoleta-usage)
-- [Configuration & CLI API](#recoleta-configuration)
+- [Starter presets](#recoleta-presets)
+- [Common commands](#recoleta-common-commands)
+- [Guides & reference](#recoleta-guides)
 - [Contributing](#recoleta-contributing)
 - [License](#recoleta-license)
 
 <a id="recoleta-overview"></a>
 ## 👀 Overview
 
-Recoleta is local-first: it stores durable state in a local **SQLite** index and treats notes/messages as derived artifacts. A single instance can now run one or more **topic streams** so different topic domains can share ingest/enrich state while keeping analyze/publish outputs isolated.
+Recoleta is local-first by design: it stores durable state in a local **SQLite** index and treats notes, PDFs, and site pages as derived artifacts. A single instance can run one or more **topic streams**, so different research domains can share ingest/enrich state while keeping analyze/publish outputs isolated.
 
 ```mermaid
 flowchart LR
@@ -154,7 +161,35 @@ If the container needs browser/PDF-capable trend surfaces, change the Compose bu
 <a id="recoleta-usage"></a>
 ## 🧰 Usage
 
+<a id="recoleta-quickstart"></a>
 ### 🚀 Quick Start
+
+#### 5-minute local run (Docker Compose)
+
+Use the bundled `docker-compose.yml` when you want the shortest path from repo clone to first local output:
+
+```bash
+mkdir -p config data
+cp recoleta.example.yaml config/recoleta.yaml
+
+cat <<'ENV' > .env
+RECOLETA_CONFIG_PATH=/config/recoleta.yaml
+RECOLETA_LLM_API_KEY="sk-replace-me"
+ENV
+
+docker compose run --rm recoleta run --once --analyze-limit 50 --publish-limit 20
+```
+
+First places to check after that run:
+
+- `./data/outputs/latest.md`
+- `./data/outputs/Inbox/`
+- `./data/recoleta.db`
+
+If you want to see what those outputs should grow into next, use the
+[first output tour](./docs/guides/first-output-tour.md).
+
+#### Developer/source workflow
 
 Create a non-secret config file (all sources are disabled by default and must be explicitly enabled).
 
@@ -170,9 +205,9 @@ recoleta_db_path: "~/.local/share/recoleta/recoleta.db"
 
 # LiteLLM model naming: <provider>/<model-identifier>
 # Examples:
-# - openai/gpt-4o-mini
+# - openai/gpt-5.4
 # - anthropic/claude-3-5-sonnet-20241022
-llm_model: "openai/gpt-4o-mini"
+llm_model: "openai/gpt-5.4"
 
 # Publish targets (default: ["markdown"])
 # Allowed: markdown, obsidian, telegram
@@ -282,490 +317,70 @@ Where to look next:
 - **Telegram (optional)**: messages are sent to `TELEGRAM_CHAT_ID`
 - **SQLite index**: `RECOLETA_DB_PATH` (safe to re-run; deliveries are idempotent)
 
-### 📈 Trend analysis (daily / weekly / monthly)
+<a id="recoleta-presets"></a>
+### 🧭 Starter presets
 
-Recoleta can generate **trend notes** as a standalone stage:
+Use a ready-made preset when you want a narrower starting point than the full
+example config:
 
-```bash
-uv run recoleta trends
-```
+- [`presets/agents-radar.yaml`](./presets/agents-radar.yaml): AI builders, code agents, tool use, and eval tracking
+- [`presets/robotics-radar.yaml`](./presets/robotics-radar.yaml): embodied AI, VLA, and robotics watching
+- [`presets/arxiv-digest.yaml`](./presets/arxiv-digest.yaml): paper-first arXiv monitoring with minimal source noise
+- [`presets/README.md`](./presets/README.md): quick guidance on which preset to start from
+- [`docs/guides/first-output-tour.md`](./docs/guides/first-output-tour.md): sample outputs, screenshots, and preset-to-demo mapping
 
-Key behaviors:
-
-- **Time windows**: `--date` is an anchor date in **UTC** (`YYYY-MM-DD` or `YYYYMMDD`).
-  - `day`: the UTC calendar day of `--date`
-  - `week`: ISO week (Monday start) containing `--date`
-  - `month`: calendar month containing `--date`
-- **Corpus sources**:
-  - `day` trends are generated from **analyzed items** in that day.
-  - `week` trends are generated from existing **day trend documents** in that week.
-  - `month` trends are generated from existing **week trend documents** in that month.
-- **Optional auto-backfill**: `--backfill` can auto-generate missing lower-granularity trends before generating `week`/`month` trends.
-  - `week --backfill`: generates missing `day` trends for the week first.
-  - `month --backfill`: generates missing `week` trends for the month first.
-- **Token-safe**: if the corpus is empty, Recoleta **skips the LLM call** and emits a placeholder trend document.
-
-Examples:
+<a id="recoleta-common-commands"></a>
+### 🧰 Common commands
 
 ```bash
-# Daily trend for today (UTC)
+# run the full pipeline once
+uv run recoleta run --once --analyze-limit 50 --publish-limit 20
+
+# generate a daily or weekly trend brief
 uv run recoleta trends --granularity day
-
-# Daily trend for a specific day (UTC)
-uv run recoleta trends --granularity day --date 2026-03-02
-
-# Weekly trend (by default, requires daily trends for that week)
-uv run recoleta trends --granularity week --date 2026-03-02
-
-# Weekly trend with automatic daily backfill (missing days only)
-uv run recoleta trends --granularity week --date 2026-03-02 --backfill
-
-# Shortcut: weekly trend + backfill
 uv run recoleta trends-week --date 2026-03-02
 
-# Rebuild all daily trends for the week, then generate the weekly trend
-uv run recoleta trends-week --date 2026-03-02 --backfill-mode all
-
-# Monthly trend (requires weekly trends for that month)
-uv run recoleta trends --granularity month --date 2026-03-02
-
-# Monthly trend with automatic weekly backfill (missing weeks only)
-uv run recoleta trends --granularity month --date 2026-03-02 --backfill
-
-# Override the LLM model used for trend generation
-uv run recoleta trends --granularity week --model "openai/gpt-4o-mini"
-```
-
-Outputs:
-
-- **SQLite**: a durable `trend` document is persisted into `RECOLETA_DB_PATH`.
-- **Local Markdown** (when `PUBLISH_TARGETS` includes `markdown`): `MARKDOWN_OUTPUT_DIR/Trends/` (canonical source for downstream PDF/site rendering)
-- **Obsidian** (when `PUBLISH_TARGETS` includes `obsidian`): `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Trends/`
-- **Telegram PDF** (when `PUBLISH_TARGETS` includes `telegram` and the corpus is non-empty): `<trend-note>.pdf`, rendered from the canonical markdown note
-- **Projection provenance**: trend markdown/obsidian notes and the stored trend document meta chunk carry `pass_output_id` / `pass_kind` when the note came from a canonical `trend_synthesis` pass output.
-
-When `topic_streams` is configured, `recoleta trends` and `recoleta trends-week` run once per stream. Their outputs move under each stream root instead:
-
-- Markdown: `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`
-- Obsidian: `OBSIDIAN_BASE_FOLDER/Streams/<stream>/Trends/`
-- CLI summary: one aggregate line plus one `stream -> doc_id` line per stream
-
-### 💡 Opportunity ideas from trend outputs
-
-Recoleta can run a separate **ideas pass** on top of existing trend synthesis outputs:
-
-```bash
-uv run recoleta ideas --granularity day --date 2026-03-09
-```
-
-Key behaviors:
-
-- **Upstream dependency**: `recoleta ideas` requires a matching `trend_synthesis` pass output for the same `day|week|month` window. It does not rerun `recoleta trends` automatically.
-- **Same window semantics**: `--date` uses the same UTC anchor-date rules as `recoleta trends`.
-- **Evidence-first output**: the ideas pass treats the upstream trend payload as the primary frame, then uses the active local corpus to verify and sharpen candidate opportunities.
-- **Safe suppression**: when the window has too little evidence for reliable ideas, the pass returns `status=suppressed` instead of padding with generic suggestions.
-- **Readability guardrails**: the prompt explicitly avoids coined umbrella terms, keeps unstable technical terminology in its original form, and asks for factual titles instead of slogan-like labels.
-- **Separate publication**: successful runs honor `PUBLISH_TARGETS` for note-style outputs. `markdown` writes `Ideas/` briefs, `obsidian` writes sibling notes into the configured vault, and the canonical payload still remains separate in `pass_outputs`.
-- **Searchable projection**: successful runs also upsert an `idea` document into the local `documents` corpus with summary/content/meta chunks so ideas can participate in later search or inspection work.
-- **Projection provenance**: idea notes and idea document meta chunks carry both their own `pass_output_id` and the upstream `trend_synthesis` pointer, so site/materialize/search surfaces can trace back to the canonical pass outputs.
-- **System-only provenance metadata**: provenance-bearing `meta` chunks are preserved for repair/audit, but they are excluded from agent-visible FTS/hybrid retrieval and do not enter semantic search.
-- **Telegram deferred**: if `PUBLISH_TARGETS` includes `telegram`, the ideas stage records a skipped metric and does not attempt delivery yet.
-
-Current deferred follow-ups after this architecture PR:
-
-- continue improving `ideas` readability and terminology quality
-- refine `ideas` site presentation as a first-class brief surface
-- optionally push the current shared pass runner into a fuller pass registry
-- defer `ideas` Telegram delivery and `idea` semantic retrieval to later PRs
-
-Examples:
-
-```bash
-# Generate daily ideas from an existing daily trend synthesis output
+# derive idea briefs from an existing trend window
 uv run recoleta ideas --granularity day --date 2026-03-09
 
-# Generate weekly ideas from an existing weekly trend synthesis output
-uv run recoleta ideas --granularity week --date 2026-03-02
-
-# Override the LLM model used for ideas generation
-uv run recoleta ideas --granularity day --date 2026-03-09 --model "openai/gpt-4o-mini"
-```
-
-Outputs:
-
-- **SQLite**: the canonical `trend_ideas` pass output is persisted in `pass_outputs`.
-- **Search corpus**: a successful run also writes a searchable `doc_type=idea` document into `documents`.
-- **Local Markdown**: when `PUBLISH_TARGETS` includes `markdown`, a successful note is written to `MARKDOWN_OUTPUT_DIR/Ideas/`.
-- **Obsidian**: when `PUBLISH_TARGETS` includes `obsidian`, a sibling note is written to `OBSIDIAN_BASE_FOLDER/Ideas/`.
-- **Topic streams**: when `topic_streams` is configured, `recoleta ideas` runs once per stream and the CLI prints one aggregate line plus one per-stream `status + pass_output_id` line.
-
-Semantic context knobs (env or config):
-
-- `RAG_LANCEDB_DIR`: where trend-search vectors and indices are stored (default: platform user data dir + `/lancedb`)
-- `TRENDS_EMBEDDING_MODEL`, `TRENDS_EMBEDDING_DIMENSIONS`
-- `TRENDS_EMBEDDING_BATCH_MAX_INPUTS`, `TRENDS_EMBEDDING_BATCH_MAX_CHARS`
-- `TRENDS_EMBEDDING_FAILURE_MODE` (`continue|fail_fast|threshold`) and `TRENDS_EMBEDDING_MAX_ERRORS` (required when `threshold`)
-- `TRENDS_SELF_SIMILAR_ENABLED`: build an overview pack from semantically related summaries / lower-level trend docs and attach representative source documents to clusters
-- `TRENDS_RANKING_N`: top semantic matches per retrieval query used when filling clusters
-- `TRENDS_OVERVIEW_PACK_MAX_CHARS`: size budget for the overview pack injected into the trend prompt
-- `TRENDS_ITEM_OVERVIEW_TOP_K`, `TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS`: how much per-item summary context is folded into day-trend overview packs
-- `TRENDS_REP_MIN_PER_CLUSTER`: minimum cluster representatives to preserve after normalization/backfill
-- `TRENDS_PEER_HISTORY_ENABLED`: add prior peer windows to the prompt so the trend payload can emit evolution notes
-- `TRENDS_PEER_HISTORY_WINDOW_COUNT`, `TRENDS_PEER_HISTORY_MAX_CHARS`
-- `TRENDS_EVOLUTION_MAX_SIGNALS`: cap the number of evolution signals kept after normalization
-
-Manual RAG maintenance is optional. Normal trend runs can populate vectors on demand, but these commands help when you want to prewarm or repair the search corpus:
-
-```bash
-# Prebuild item-summary vectors for a date range
-uv run recoleta rag sync-vectors \
-  --doc-type item \
-  --period-start 2026-03-01T00:00:00+00:00 \
-  --period-end 2026-03-08T00:00:00+00:00
-
-# Rebuild ANN / scalar indices after a large backfill
-uv run recoleta rag build-index
-```
-
-PDF behavior:
-
-- Telegram trend delivery renders the PDF from the canonical markdown note under `MARKDOWN_OUTPUT_DIR/Trends/`, or `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` in topic-stream mode.
-- The renderer uses `backend="auto"`: browser rendering via Playwright/Chromium first, then a `PyMuPDF Story` fallback if browser rendering is unavailable.
-- Telegram uses a browser-rendered `continuous` page mode by default to avoid A4 page breaks in the mobile reading surface.
-- `uv run recoleta trends --granularity day --debug-pdf` writes a debug bundle to `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/<pdf-stem>/` containing the source markdown, normalized markdown, HTML, CSS, manifest, and per-page PNG previews.
-
-### 🌐 Static trends site
-
-Recoleta can turn trend notes into a deployable static website:
-
-```bash
-# Build and serve a local preview from trend markdown notes
+# build or preview the public site
+uv run recoleta site build
 uv run recoleta site serve
 
-# Push a dedicated GitHub Pages branch without polluting main
-uv run recoleta site gh-deploy
-```
-
-Behavior:
-
-- `recoleta site serve` builds the site by default, then serves `MARKDOWN_OUTPUT_DIR/site` on `127.0.0.1:8000`.
-- `recoleta site build` writes a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default.
-- `recoleta materialize outputs` backfills `Inbox/` item notes, rerenders trend markdown from existing DB trend documents, rebuilds ideas markdown from existing `trend_ideas` pass outputs, and repairs sibling Obsidian notes when settings expose a vault path, all without rerunning ingest/analyze; add `--site` and/or `--pdf` when you want to refresh derived HTML/PDF outputs in the same pass.
-- `recoleta materialize outputs --scope <stream> --granularity week` is the targeted repair path when only one stream or one trend level needs to be regenerated.
-- `recoleta materialize outputs` intentionally remains a filesystem/site repair path; it does not rebuild derived `documents` projections from pass outputs.
-- `recoleta site gh-deploy` builds the site into a temporary directory, commits it to a dedicated branch (default: `gh-pages`), and pushes that branch to the selected remote.
-- `recoleta site gh-deploy` keeps the checked-out worktree on your source branch and skips the push when the generated snapshot is unchanged.
-- In topic-stream mode, both commands automatically aggregate every `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` directory and attach sibling `Ideas/` directories when present.
-- The static site now exposes both `Streams` and `Ideas` navigation surfaces so mixed-domain trend notes and follow-on idea briefs are not silently flattened together.
-- `recoleta site stage` remains available when you want a repo-local content snapshot for custom CI or non-GitHub hosting.
-- All four commands treat their output directories as managed artifacts and clear stale files before writing when they rebuild site output.
-
-Recommended GitHub Pages flow:
-
-```bash
-uv run recoleta site gh-deploy \
-  --branch gh-pages \
-  --pages-config auto
-```
-
-What `gh-deploy` does:
-
-1. Builds the public site from your current trend markdown notes.
-2. Creates or updates a dedicated deployment branch (default: `gh-pages`).
-3. Force-pushes that derived branch by default, similar to `mkdocs gh-deploy`.
-4. Tries to configure the repository Pages source to that branch when `gh` is authenticated or `GH_TOKEN` / `GITHUB_TOKEN` is available.
-
-This keeps `main` free of `site-content/` snapshots and Pages-specific workflow YAML.
-
-If you want explicit control over Pages configuration:
-
-- `--pages-config auto`: best-effort; skip configuration if GitHub API credentials are unavailable
-- `--pages-config always`: require automatic Pages source configuration, or fail
-- `--pages-config never`: only push the deployment branch
-
-If you prefer custom CI or another static host, `recoleta site stage` and `recoleta site build --input-dir ... --output-dir ...` still work with explicit paths and without loading the full runtime config.
-
-### 🗓️ Run continuously (built-in scheduler)
-
-```bash
-uv run recoleta run
-```
-
-Tune the intervals via:
-
-- `INGEST_INTERVAL_MINUTES`
-- `ANALYZE_INTERVAL_MINUTES`
-- `PUBLISH_INTERVAL_MINUTES`
-
-### 🧪 Run manually (cron / launchd / systemd-friendly)
-
-```bash
-uv run recoleta run --once
-```
-
-Use explicit stage commands only when you intentionally want per-stage control:
-
-```bash
-uv run recoleta ingest
-uv run recoleta analyze
-uv run recoleta publish
-```
-
-Read-only operator checks:
-
-```bash
-# healthcheck-style contract; add freshness gating when needed
+# operator checks
 uv run recoleta doctor --healthcheck --max-success-age-minutes 180
-
-# machine-readable backlog / lease / size snapshot
 uv run recoleta stats --json
 ```
 
-### 🧱 Deployment recipes
+Use the full recipes guide for trend backfills, `ideas`, site deploy, cron,
+systemd, maintenance, and recovery workflows:
 
-Recommended deployment split:
+- [`docs/guides/usage-recipes.md`](docs/guides/usage-recipes.md)
 
-- use `uv run recoleta run` for a local always-on process
-- use `uv run recoleta run --once` for cron, launchd, systemd timers, and scheduled containers
-- use `uv run recoleta doctor --healthcheck` for supervisor/container liveness checks
-- use `uv run recoleta stats --json` for dashboards, ad hoc inspections, or periodic snapshots
+<a id="recoleta-guides"></a>
+## 📚 Guides & reference
 
-Minimal cron example:
-
-```bash
-*/15 * * * * cd /path/to/recoleta && /path/to/uv run recoleta run --once >> /var/log/recoleta.log 2>&1
-```
-
-Minimal systemd pattern:
-
-```ini
-# /etc/systemd/system/recoleta.service
-[Unit]
-Description=Recoleta one-shot pipeline
-After=network-online.target
-
-[Service]
-Type=oneshot
-WorkingDirectory=/path/to/recoleta
-Environment=RECOLETA_CONFIG_PATH=/path/to/recoleta.yaml
-ExecStart=/path/to/uv run recoleta run --once
-```
-
-```ini
-# /etc/systemd/system/recoleta.timer
-[Unit]
-Description=Run Recoleta every 15 minutes
-
-[Timer]
-OnBootSec=5m
-OnUnitActiveSec=15m
-Unit=recoleta.service
-
-[Install]
-WantedBy=timers.target
-```
-
-### 🧹 Maintenance and recovery
-
-Routine maintenance commands:
-
-```bash
-# prune expired debug artifacts, old runs, and old metrics
-uv run recoleta gc
-
-# additionally prune rebuildable caches such as inactive vector tables and derived PDFs
-uv run recoleta gc --prune-caches
-
-# compact the SQLite file after large cleanup windows
-uv run recoleta vacuum
-```
-
-DB-scoped backup and restore:
-
-```bash
-# create a timestamped bundle under <db-dir>/backups/ by default
-uv run recoleta backup
-
-# restore from a specific bundle; requires explicit confirmation
-uv run recoleta restore --bundle /path/to/backup-bundle --yes
-```
-
-Workspace reset helpers:
-
-```bash
-# Remove only trend/item document corpus rows and chunks; keep items, contents, analyses
-uv run recoleta db reset --trends-only --yes
-
-# Delete the SQLite DB and sidecars for a full clean slate
-uv run recoleta db clear --yes
-```
-
-Scope notes:
-
-- `backup` / `restore` operate on the SQLite state store only
-- `db reset --trends-only` is useful when trend markdown/PDF/site output should be regenerated from fresh trend runs without losing ingest/analyze history
-- `recoleta materialize outputs` is the safer repair path when the stored DB trend payloads are still authoritative and only filesystem outputs have drifted
-- markdown outputs, artifacts, and LanceDB directories should still be protected by normal filesystem backups when they matter
-- default GC is conservative; cache pruning is explicit so old canonical notes are not deleted by surprise
-
-<a id="recoleta-configuration"></a>
-## ⚙️ Configuration & CLI API
-
-### Configuration sources & precedence
-
-Recoleta loads typed settings from:
-
-1. **Init args** (rare; mainly for tests)
-2. **Environment variables**
-3. **`.env`** in the working directory
-4. **Config file** pointed to by `RECOLETA_CONFIG_PATH` (`.yaml`/`.yml`/`.json`)
-5. Defaults (for optional fields)
-
-**Secrets rule**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `RECOLETA_LLM_API_KEY` are forbidden in the config file and must come from environment variables only.
-
-### Settings reference
-
-Required:
-
-- `RECOLETA_DB_PATH` / `recoleta_db_path` (SQLite file path)
-- `LLM_MODEL` / `llm_model` (LiteLLM model, format: `<provider>/<model>`)
-- `PUBLISH_TARGETS` / `publish_targets` (default: `["markdown"]`)
-- `MARKDOWN_OUTPUT_DIR` / `markdown_output_dir` (default: platform-specific data dir + `/outputs`)
-
-Conditionally required:
-
-- `OBSIDIAN_VAULT_PATH` / `obsidian_vault_path` (required when `PUBLISH_TARGETS` includes `obsidian`)
-- `TELEGRAM_BOT_TOKEN` (env-only, required when `PUBLISH_TARGETS` includes `telegram`)
-- `TELEGRAM_CHAT_ID` (env-only, required when `PUBLISH_TARGETS` includes `telegram`)
-
-Common optional knobs:
-
-- **Recoleta-scoped LLM connection**:
-  - `RECOLETA_LLM_API_KEY` (env-only)
-  - `RECOLETA_LLM_BASE_URL` / `llm_base_url`
-- **LLM output language**:
-  - `LLM_OUTPUT_LANGUAGE` / `llm_output_language` (applies to `summary` and trend notes; JSON keys and `topics` stay English)
-- **Sources**: `SOURCES` / `sources`
-  - `hn.enabled`, `hn.rss_urls`
-  - `rss.enabled`, `rss.feeds`
-  - `arxiv.enabled`, `arxiv.queries`, `arxiv.max_results_per_run`
-  - `arxiv.enrich_method`, `arxiv.enrich_failure_mode`
-  - `arxiv.html_document_max_concurrency`, `arxiv.html_document_requests_per_second`
-  - `arxiv.html_document_log_sample_rate`
-  - `openreview.enabled`, `openreview.venues`
-  - `hf_daily.enabled`
-- **Relevance & filtering**:
-  - `TOPICS` / `topics`
-  - `ALLOW_TAGS` / `allow_tags`
-  - `DENY_TAGS` / `deny_tags`
-  - `MIN_RELEVANCE_SCORE` / `min_relevance_score`
-  - `MAX_DELIVERIES_PER_DAY` / `max_deliveries_per_day`
-- **Analysis content truncation**:
-  - `ANALYZE_CONTENT_MAX_CHARS` / `analyze_content_max_chars` (default: `32768`, set to `0` to disable truncation)
-- **Semantic triage (pre-ranking before LLM)** (runs only when `TRIAGE_ENABLED=true` and `TOPICS` is non-empty):
-  - `TRIAGE_ENABLED` / `triage_enabled`
-  - `TRIAGE_MODE` / `triage_mode` (`prioritize|filter`)
-  - `TRIAGE_EMBEDDING_MODEL` / `triage_embedding_model`
-  - `TRIAGE_EMBEDDING_DIMENSIONS` / `triage_embedding_dimensions`
-  - `TRIAGE_EMBEDDING_BATCH_MAX_INPUTS` / `triage_embedding_batch_max_inputs`
-  - `TRIAGE_EMBEDDING_BATCH_MAX_CHARS` / `triage_embedding_batch_max_chars`
-  - `TRIAGE_QUERY_MODE` / `triage_query_mode` (`joined|max_per_topic`)
-  - `TRIAGE_CANDIDATE_FACTOR` / `triage_candidate_factor`
-  - `TRIAGE_MAX_CANDIDATES` / `triage_max_candidates`
-  - `TRIAGE_ITEM_TEXT_MAX_CHARS` / `triage_item_text_max_chars`
-  - `TRIAGE_MIN_SIMILARITY` / `triage_min_similarity` (filter mode only)
-  - `TRIAGE_EXPLORATION_RATE` / `triage_exploration_rate`
-  - `TRIAGE_RECENCY_FLOOR` / `triage_recency_floor`
-- **Execution limits**:
-  - `ANALYZE_LIMIT` / `analyze_limit` (default Stage 4 batch size; also used as Stage 3.5 selection limit)
-- **Dedup**:
-  - `TITLE_DEDUP_THRESHOLD` / `title_dedup_threshold`
-  - `TITLE_DEDUP_MAX_CANDIDATES` / `title_dedup_max_candidates`
-- **Outputs**:
-  - `PUBLISH_TARGETS` / `publish_targets`
-  - `MARKDOWN_OUTPUT_DIR` / `markdown_output_dir`
-  - `OBSIDIAN_BASE_FOLDER` / `obsidian_base_folder`
-  - `ARTIFACTS_DIR` / `artifacts_dir` (required if `WRITE_DEBUG_ARTIFACTS=true`)
-- **Browser PDF rendering**:
-  - `RECOLETA_PLAYWRIGHT_EXECUTABLE_PATH`
-  - `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`
-  - `GOOGLE_CHROME_BIN`
-  - `CHROME_BIN`
-- **Scheduling**:
-  - `INGEST_INTERVAL_MINUTES`, `ANALYZE_INTERVAL_MINUTES`, `PUBLISH_INTERVAL_MINUTES`
-- **Logging & diagnostics**:
-  - `LOG_LEVEL` / `log_level`
-  - `LOG_JSON` / `log_json`
-  - `WRITE_DEBUG_ARTIFACTS` / `write_debug_artifacts`
-
-### LiteLLM provider credentials
-
-Recoleta delegates LLM calls to LiteLLM and PydanticAI. Preferred configuration is to use Recoleta-scoped overrides:
-
-- `RECOLETA_LLM_API_KEY`
-- `RECOLETA_LLM_BASE_URL`
-
-These overrides are passed directly into Recoleta's own LLM calls and avoid collisions with other tools in the same shell session that also use `OPENAI_API_KEY` or `OPENAI_BASE_URL`.
-
-Backward-compatible provider envs remain supported:
-
-- OpenAI: `OPENAI_API_KEY`
-- Anthropic: `ANTHROPIC_API_KEY`
-- OpenRouter: `OPENROUTER_API_KEY`
-- Custom OpenAI-compatible endpoints (including LiteLLM Proxy): `OPENAI_API_BASE` or `OPENAI_BASE_URL`
-- Custom OpenRouter endpoints: `OPENROUTER_API_BASE` or `OPENROUTER_BASE_URL`
-
-### Debug artifacts & metrics (optional)
-
-Enable scrubbed debug artifacts:
-
-- Set `WRITE_DEBUG_ARTIFACTS=true`
-- Set `ARTIFACTS_DIR=/absolute/path/to/artifacts`
-
-Recoleta writes per-run/per-item JSON artifacts (e.g. failure context and LLM request/response payloads) and **scrubs known secrets** before persisting them.
-
-Recoleta also records lightweight, machine-readable **metrics** into the SQLite `metrics` table (e.g. stage durations, LLM call counts, publish outcomes).
-
-### CLI commands
-
-Recoleta's current CLI surface includes:
-
-- `recoleta ingest --date 2026-01-02`: prepare one UTC day of source material (or the latest incremental backlog when `--date` is omitted)
-- `recoleta analyze --limit 100 --date 2026-01-02`: run structured LLM analysis for prepared items
-- `recoleta publish --limit 50 --date 2026-01-02`: write Markdown/Obsidian notes and send Telegram deliverables
-- `recoleta run`: schedule ingest/analyze/publish periodically
-- `recoleta run --once --date 2026-01-02`: execute a one-shot UTC-day pipeline
-- `recoleta trends --granularity week --date 2026-03-02`: generate a trend note (day/week/month)
-- `recoleta ideas --granularity week --date 2026-03-02`: derive evidence-grounded opportunity ideas from an existing trend synthesis output
-- `recoleta trends-week --date 2026-03-02`: shortcut for weekly trends with lower-level backfill
-- `recoleta trends --granularity day --debug-pdf`: generate a trend note and export a PDF debug bundle for the rendered Telegram PDF
-- `recoleta site build`: render a static site from trend and idea markdown notes
-- `recoleta site gh-deploy`: build the site and push a dedicated GitHub Pages branch
-- `recoleta site stage`: mirror trend/idea markdown artifacts plus trend PDFs into a repo-local snapshot for custom CI or non-GitHub hosting
-- `recoleta materialize outputs --site --pdf`: rerender item notes, trend notes, optional PDFs, and optional site output from existing DB state
-- `recoleta rag sync-vectors --period-start ... --period-end ...`: prewarm or rebuild trend-search vectors in LanceDB
-- `recoleta rag build-index`: build ANN/scalar indices for the current LanceDB embedding table
-- `recoleta db reset --trends-only --yes`: clear trend corpus/documents without deleting items, contents, or analyses
-- `recoleta db clear --yes`: delete the SQLite DB and sidecar files
-- `recoleta stats --json`: emit a machine-readable workspace snapshot
-- `recoleta doctor --healthcheck`: run a read-only healthcheck
-- `recoleta gc`, `recoleta vacuum`, `recoleta backup`, `recoleta restore --bundle ... --yes`: maintenance and recovery commands
-
-### Further reading
-
+- [`docs/guides/usage-recipes.md`](docs/guides/usage-recipes.md) — CLI recipes, trend/ideas/site workflows, ops, and maintenance
+- [`docs/guides/first-output-tour.md`](docs/guides/first-output-tour.md) — what a successful first run creates, with sample screenshots and preset mapping
+- [`docs/releases/github-launch-handoff.md`](docs/releases/github-launch-handoff.md) — About text, topics, social preview, Discussions, and release handoff
+- [`docs/releases/v0.1.0-draft.md`](docs/releases/v0.1.0-draft.md) — draft release notes for the first public baseline
+- [`docs/releases/v0.1.0-launch-kit.md`](docs/releases/v0.1.0-launch-kit.md) — ready-to-use release copy, launch post drafts, and proof points
 - [`docs/design/system-overview.md`](docs/design/system-overview.md) — goals, non-goals, and the end-to-end workflow
-- [`docs/design/architecture.md`](docs/design/architecture.md) — module boundaries, pipeline stages, storage, and observability
 - [`docs/design/configuration.md`](docs/design/configuration.md) — full configuration reference and rules
-- [`docs/design/semantic-pre-ranking.md`](docs/design/semantic-pre-ranking.md) — semantic triage before LLM (pre-ranking and optional filtering)
-- [`docs/plans/2026-03-14-ideas-real-data-smoke-and-calibration.md`](docs/plans/2026-03-14-ideas-real-data-smoke-and-calibration.md) — first real-data audit of the `ideas` pass and the current prompt baseline
-- [`docs/design/outputs.md`](docs/design/outputs.md) — publish targets and local Markdown layout
-- [`docs/design/trend-surfaces.md`](docs/design/trend-surfaces.md) — canonical trend markdown, browser PDF rendering, debug bundles, and static site deployment
+- [`docs/design/outputs.md`](docs/design/outputs.md) — publish targets and filesystem/layout contracts
+- [`docs/design/trend-surfaces.md`](docs/design/trend-surfaces.md) — trend markdown, PDFs, and static site behavior
+- [`docs/design/architecture.md`](docs/design/architecture.md) — module boundaries, pipeline stages, storage, and observability
+- [`docs/design/data-model.md`](docs/design/data-model.md) — SQLite schema and output layout
+- [`docs/design/semantic-pre-ranking.md`](docs/design/semantic-pre-ranking.md) — semantic triage before LLM
 - [`docs/design/llm-output-language.md`](docs/design/llm-output-language.md) — configurable analysis language behavior
-- [`docs/design/data-model.md`](docs/design/data-model.md) — SQLite schema and Obsidian note layout
-- [`docs/adr/`](docs/adr/) — architecture decision records (SQLite, LiteLLM, config file, Telegram delivery)
+- [`docs/plans/2026-03-14-ideas-real-data-smoke-and-calibration.md`](docs/plans/2026-03-14-ideas-real-data-smoke-and-calibration.md) — current `ideas` prompt baseline and audit
+- [`docs/adr/`](docs/adr/) — architecture decision records
 
 <a id="recoleta-contributing"></a>
 ## 🤝 Contributing
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for contribution guidelines, issue
+templates, and PR expectations.
 
 Install dev dependencies and run checks:
 

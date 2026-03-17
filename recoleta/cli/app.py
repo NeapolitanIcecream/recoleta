@@ -31,7 +31,7 @@ from recoleta.cli.site import (
 from recoleta.cli.trends import run_trends_command, run_trends_week_command
 
 app = typer.Typer(
-    help="Recoleta research intelligence funnel CLI.", no_args_is_help=True
+    help="Recoleta local-first AI research radar CLI.", no_args_is_help=True
 )
 db_app = typer.Typer(help="Database utilities.", no_args_is_help=True)
 app.add_typer(db_app, name="db")

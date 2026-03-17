@@ -1,0 +1,35 @@
+# Recoleta preset: arXiv digest
+#
+# Best for:
+# - paper-first monitoring with minimal source noise
+# - daily or weekly digests driven only by arXiv queries
+# - users who want a simple Recoleta workspace before layering more sources
+#
+# Secrets rule:
+# - keep RECOLETA_LLM_API_KEY, TELEGRAM_BOT_TOKEN, and TELEGRAM_CHAT_ID in env
+
+recoleta_db_path: "~/.local/share/recoleta/presets/arxiv-digest/recoleta.db"
+llm_model: "openai/gpt-5.4"
+
+publish_targets:
+  - markdown
+
+markdown_output_dir: "~/.local/share/recoleta/presets/arxiv-digest/outputs"
+
+topics:
+  - agents
+  - reasoning
+  - multimodal
+
+sources:
+  arxiv:
+    enabled: true
+    queries:
+      - "cat:cs.AI"
+      - "cat:cs.LG"
+      - "cat:cs.CL"
+    max_results_per_run: 30
+
+min_relevance_score: 0.6
+max_deliveries_per_day: 10
+write_debug_artifacts: false

@@ -35,6 +35,9 @@ from recoleta.publish.trend_render_shared import (
 )
 from recoleta.types import DEFAULT_TOPIC_STREAM
 
+RECOLETA_REPO_URL = "https://github.com/NeapolitanIcecream/recoleta"
+RECOLETA_QUICKSTART_URL = f"{RECOLETA_REPO_URL}#recoleta-quickstart"
+
 
 @dataclass(slots=True)
 class TrendSiteDocument:
@@ -279,6 +282,29 @@ def _normalize_site_stream(stream: str | None) -> str | None:
     if not cleaned or cleaned == DEFAULT_TOPIC_STREAM:
         return None
     return cleaned
+
+
+def _repo_cta_links() -> str:
+    repo_href = html.escape(RECOLETA_REPO_URL, quote=True)
+    quickstart_href = html.escape(RECOLETA_QUICKSTART_URL, quote=True)
+    return (
+        f"<a class='action-link' href='{repo_href}'>View repo</a>"
+        f"<a class='action-link secondary' href='{quickstart_href}'>5-minute quickstart</a>"
+    )
+
+
+def _render_repo_cta_card() -> str:
+    return (
+        "<section class='repo-cta-card'>"
+        "<div class='section-kicker'>Built with Recoleta</div>"
+        "<h2 class='section-title'>Run your own research radar</h2>"
+        "<p class='repo-cta-copy'>"
+        "Turn arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS "
+        "into local Markdown, Obsidian notes, Telegram digests, and a public site."
+        "</p>"
+        f"<div class='card-actions'>{_repo_cta_links()}</div>"
+        "</section>"
+    )
 
 
 _STREAM_DISPLAY_INITIALISMS = {
@@ -686,6 +712,9 @@ def _site_page_shell(
         f"{nav_link('Streams', streams_href, 'streams')}"
         f"{nav_link('Archive', archive_href, 'archive')}"
         "</nav>"
+        "<div class='nav-actions'>"
+        f"<a class='nav-link nav-link-external' href='{html.escape(RECOLETA_REPO_URL, quote=True)}'>GitHub</a>"
+        "</div>"
         "</header>"
         "<main class='site-main'>"
         f"{page_hero_html}"
@@ -1036,6 +1065,7 @@ def _render_detail_page(
         "</aside>"
         "</section>"
         f"<section class='detail-content'>{document.body_html}</section>"
+        f"{_render_repo_cta_card()}"
         f"{pager_html}"
     )
 
@@ -1137,6 +1167,7 @@ def _render_item_page(
         "</aside>"
         "</section>"
         f"<section class='detail-content'>{document.body_html}</section>"
+        f"{_render_repo_cta_card()}"
     )
     return _site_page_shell(
         title=f"{document.title} · Recoleta",
@@ -1297,6 +1328,7 @@ def _render_idea_page(
         "</aside>"
         "</section>"
         f"<section class='detail-content'>{document.body_html}</section>"
+        f"{_render_repo_cta_card()}"
     )
     return _site_page_shell(
         title=f"{document.title} · Recoleta Ideas",
@@ -1526,16 +1558,17 @@ def _render_home_page(
     content_html = (
         "<section class='home-hero-card'>"
         "<div class='home-hero-copy'>"
-        "<div class='hero-kicker'>Browse research outputs</div>"
-        "<h1 class='home-title'>Trend and idea briefs</h1>"
+        "<div class='hero-kicker'>Local-first AI research radar</div>"
+        "<h1 class='home-title'>Trend briefs, idea briefs, and a public research site</h1>"
         "<p class='home-dek'>"
-        "Scan recent trend briefs and idea briefs, pivot by topic or stream,"
-        " and open the full note when needed."
+        "Turn arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS "
+        "into publishable research briefs that stay local first."
         "</p>"
         "<div class='hero-actions'>"
         f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')}'>Browse trends</a>"
         f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')}'>Browse ideas</a>"
-        f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'archive.html')}'>Open archive</a>"
+        f"<a class='action-link secondary' href='{html.escape(RECOLETA_REPO_URL, quote=True)}'>GitHub</a>"
+        f"<a class='action-link secondary' href='{html.escape(RECOLETA_QUICKSTART_URL, quote=True)}'>5-minute quickstart</a>"
         "</div>"
         "</div>"
         "<div class='hero-stats'>"
@@ -1934,12 +1967,22 @@ iframe {
   gap: 10px;
   min-width: 0;
 }
+.nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
 .nav-link {
   padding: 10px 14px;
   border-radius: 999px;
   color: #2f4b69;
   font-size: 13px;
   font-weight: 600;
+}
+.nav-link.nav-link-external {
+  background: rgba(29, 103, 194, 0.10);
+  color: #1b579d;
 }
 .nav-link.is-active {
   background: rgba(29, 103, 194, 0.12);
@@ -1986,6 +2029,7 @@ iframe {
 .detail-hero,
 .home-section,
 .detail-content,
+.repo-cta-card,
 .pager-row,
 .archive-block {
   border: 1px solid rgba(255, 255, 255, 0.34);
@@ -2058,10 +2102,24 @@ iframe {
 }
 .home-section,
 .detail-content,
+.repo-cta-card,
 .archive-block {
   padding: 20px;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
+}
+.repo-cta-card {
+  display: grid;
+  gap: 12px;
+}
+.repo-cta-card .section-title {
+  margin-bottom: 0;
+}
+.repo-cta-copy {
+  margin: 0;
+  max-width: 72ch;
+  color: #4f647a;
+  line-height: 1.65;
 }
 .split-layout {
   display: grid;
@@ -2844,6 +2902,9 @@ iframe {
   .nav-links {
     width: 100%;
   }
+  .nav-actions {
+    width: 100%;
+  }
   .nav-link {
     flex: 1 1 calc(50% - 5px);
     justify-content: center;
@@ -2854,6 +2915,7 @@ iframe {
   .home-section,
   .detail-hero,
   .detail-content,
+  .repo-cta-card,
   .archive-block {
     padding-left: 16px;
     padding-right: 16px;

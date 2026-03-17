@@ -19,7 +19,7 @@ Secrets:
 ## Required settings
 
 - `RECOLETA_DB_PATH`: path to the SQLite file (e.g. `~/.local/share/recoleta/recoleta.db`).
-- `LLM_MODEL`: default model name (LiteLLM format), e.g. `openai/gpt-4o-mini`.
+- `LLM_MODEL`: default model name (LiteLLM format), e.g. `openai/gpt-5.4`.
 - `PUBLISH_TARGETS` (default `["markdown"]`): publish targets, allowed values: `markdown|obsidian|telegram`.
 - `MARKDOWN_OUTPUT_DIR` (default: platform-specific user data dir + `/outputs`): local Markdown output directory.
 

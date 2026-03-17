@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a regression, broken workflow, or incorrect output.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What broke, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Provide the smallest command sequence or config fragment that reproduces the issue.
+      placeholder: |
+        1. Copy this config
+        2. Run `uv run recoleta ...`
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, platform, relevant model/provider, and whether you used Docker or source install.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or output
+      description: Paste the relevant logs, traceback, screenshot, or rendered output sample.
+    validations:
+      required: false

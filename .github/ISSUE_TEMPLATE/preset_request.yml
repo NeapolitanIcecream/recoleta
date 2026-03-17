@@ -1,0 +1,50 @@
+name: Preset request
+description: Request a new starter preset for a specific monitoring workflow.
+title: "[preset] "
+labels:
+  - preset
+body:
+  - type: input
+    id: use_case
+    attributes:
+      label: Target user or team
+      description: Who is this preset for?
+      placeholder: AI builders tracking code agents
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources to watch
+      description: List the sources and any queries or feeds you expect.
+      placeholder: |
+        - arXiv: cat:cs.AI
+        - Hacker News RSS
+        - specific RSS feeds
+    validations:
+      required: true
+  - type: textarea
+    id: topics
+    attributes:
+      label: Topics or scopes
+      description: Which topics should the preset optimize for?
+      placeholder: |
+        - agents
+        - evaluation
+        - tool-use
+    validations:
+      required: true
+  - type: textarea
+    id: outputs
+    attributes:
+      label: Desired outputs
+      description: Markdown only, Obsidian, Telegram, static site, PDFs, or another combination?
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Reference examples
+      description: Link to public radars, digests, or reports that capture the output style you want.
+    validations:
+      required: false

@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from recoleta.site import (
+    RECOLETA_QUICKSTART_URL,
+    RECOLETA_REPO_URL,
     _item_action_label,
     export_trend_static_site,
     stage_trend_site_source,
@@ -142,6 +144,115 @@ def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
     assert "Telegram-ready PDF brief" not in detail_html
     assert "section-label'>Topics<" not in detail_html
     assert "<section class='page-hero'>" not in detail_html
+
+
+def test_export_trend_static_site_home_shell_links_back_to_repo_and_quickstart(
+    tmp_path: Path,
+) -> None:
+    """Spec: the public site home should route readers back to the repo and first-run path."""
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=73,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 2, 27, tzinfo=UTC),
+        period_end=datetime(2026, 2, 28, tzinfo=UTC),
+        run_id="run-site-repo-cta-home",
+        overview_md="## Overview\n\nAgent workflows are getting easier to operationalize.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Agent workflows are getting easier to operationalize."],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert ">GitHub<" in index_html
+    assert f"href='{RECOLETA_REPO_URL}'" in index_html
+    assert "5-minute quickstart" in index_html
+    assert f"href='{RECOLETA_QUICKSTART_URL}'" in index_html
+
+
+def test_export_trend_static_site_trend_pages_include_built_with_recoleta_cta(
+    tmp_path: Path,
+) -> None:
+    """Spec: trend brief pages should explain the surface and offer a repo return path."""
+    output_dir = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=74,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 2, 28, tzinfo=UTC),
+        period_end=datetime(2026, 3, 1, tzinfo=UTC),
+        run_id="run-site-repo-cta-trend",
+        overview_md="## Overview\n\nAgent workflows are tightening.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Agent workflows are tightening."],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Built with Recoleta" in detail_html
+    assert "Run your own research radar" in detail_html
+    assert f"href='{RECOLETA_REPO_URL}'" in detail_html
+    assert f"href='{RECOLETA_QUICKSTART_URL}'" in detail_html
+
+
+def test_export_trend_static_site_idea_pages_include_built_with_recoleta_cta(
+    tmp_path: Path,
+) -> None:
+    """Spec: idea brief pages should carry the same repo return CTA as trend briefs."""
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=75,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 3, 2, tzinfo=UTC),
+        run_id="run-site-repo-cta-idea-trend",
+        overview_md="## Overview\n\nAgent workflows are tightening.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-01--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-01T00:00:00+00:00\n"
+        "period_end: 2026-03-02T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        "Ship a prompt release gate.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Built with Recoleta" in detail_html
+    assert "Run your own research radar" in detail_html
+    assert f"href='{RECOLETA_REPO_URL}'" in detail_html
+    assert f"href='{RECOLETA_QUICKSTART_URL}'" in detail_html
 
 
 def test_export_trend_static_site_orders_weekly_briefs_before_latest_daily_child(

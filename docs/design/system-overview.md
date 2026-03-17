@@ -1,6 +1,6 @@
 # Recoleta System Overview
 
-Recoleta is a personal research intelligence funnel. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw and derived state in SQLite, uses an LLM to produce high-signal summaries, and publishes the selected outputs to **local Markdown by default** (with optional Obsidian and Telegram integrations). Trend generation reuses that stored corpus, can augment prompts with retrieved overview/history packs, and republishes canonical markdown trend notes as browser-rendered PDFs and a static website.
+Recoleta is a local-first AI research radar. It pulls items from multiple sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters via RSS), stores raw and derived state in SQLite, uses an LLM to produce high-signal summaries, and publishes the selected outputs to **local Markdown by default** (with optional Obsidian, Telegram, and static-site integrations). Trend generation reuses that stored corpus, can augment prompts with retrieved overview/history packs, and republishes canonical markdown trend notes as browser-rendered PDFs and a static website.
 
 ## Goals
 

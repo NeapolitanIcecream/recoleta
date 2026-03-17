@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Recoleta docs
+    url: https://github.com/NeapolitanIcecream/recoleta#readme
+    about: Start with the README, presets, and usage recipes before opening an issue.
