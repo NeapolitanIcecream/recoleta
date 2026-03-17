@@ -43,39 +43,6 @@ One workspace can run a single topic list or several topic streams. That lets
 you share ingest and enrich state across related domains while keeping item
 publishing, trend briefs, and follow-on idea briefs separate.
 
-```mermaid
-flowchart TB
-  Sources["Sources<br/>arXiv, Hacker News, OpenReview, HF Daily Papers, RSS"] --> Ingest["Ingest / prepare<br/>recoleta ingest"]
-  Ingest --> SQLite[(SQLite state)]
-
-  SQLite --> Analyze["Analyze prepared items<br/>recoleta analyze"]
-  Analyze --> SQLite
-  Analyze --> Publish["Publish item outputs<br/>recoleta publish"]
-  Publish -. delivery state .-> SQLite
-
-  Publish --> Markdown["Local Markdown<br/>latest.md + Inbox/"]
-  Publish --> Obsidian["Obsidian notes<br/>(optional)"]
-  Publish --> Telegram["Telegram delivery<br/>(optional)"]
-
-  SQLite --> Trends["Build trend briefs<br/>recoleta trends"]
-  SQLite --> LanceDB[(LanceDB retrieval cache<br/>optional)]
-  LanceDB -. semantic retrieval .-> Trends
-  LanceDB -. semantic retrieval .-> Ideas
-  Trends -. trend docs .-> SQLite
-
-  Trends --> TrendMarkdown["Canonical trend markdown"]
-  Trends --> Ideas["Extract opportunity ideas<br/>recoleta ideas"]
-  Ideas -. idea docs .-> SQLite
-  Ideas --> IdeaMarkdown["Idea briefs<br/>Markdown or Obsidian"]
-  TrendMarkdown --> PDF["PDF reports"]
-  TrendMarkdown --> Site["Static site<br/>recoleta site"]
-  IdeaMarkdown --> Site
-```
-
-Trend briefs can feed a follow-on `recoleta ideas` pass. Both trends and ideas
-can reuse the local LanceDB-backed retrieval cache to ground outputs against the
-active corpus.
-
 <a id="recoleta-features"></a>
 ## ✨ Features
 
