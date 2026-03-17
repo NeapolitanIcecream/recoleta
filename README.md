@@ -40,8 +40,8 @@ was ingested, analyzed, and published. Markdown notes, PDFs, Telegram messages,
 and site pages are rebuildable outputs on top of that state.
 
 One workspace can run a single topic list or several topic streams. That lets
-you share ingest and enrich state across related domains while keeping trend,
-idea, and publishing outputs separate.
+you share ingest and enrich state across related domains while keeping item
+publishing, trend briefs, and follow-on idea briefs separate.
 
 ```mermaid
 flowchart TB
@@ -63,9 +63,16 @@ flowchart TB
   Trends -. trend docs .-> SQLite
 
   Trends --> TrendMarkdown["Canonical trend markdown"]
+  Trends --> Ideas["Extract opportunity ideas<br/>recoleta ideas"]
+  Ideas -. idea docs .-> SQLite
+  Ideas --> IdeaMarkdown["Idea briefs<br/>Markdown or Obsidian"]
   TrendMarkdown --> PDF["PDF reports"]
   TrendMarkdown --> Site["Static site<br/>recoleta site"]
+  IdeaMarkdown --> Site
 ```
+
+Trend briefs can feed a follow-on `recoleta ideas` pass that emits
+evidence-grounded idea briefs for local notes and the static site.
 
 <a id="recoleta-features"></a>
 ## ✨ Features
