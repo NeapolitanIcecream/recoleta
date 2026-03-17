@@ -1,50 +1,47 @@
 # Recoleta Starter Presets
 
-These presets are non-secret starting points you can copy into your own
-workspace. Keep API keys and delivery credentials in environment variables only.
+Use a preset when you want a working config without editing the full example
+file first.
 
-See [`../docs/guides/first-output-tour.md`](../docs/guides/first-output-tour.md)
-when you want sample screenshots and a concrete "what should I see after the
-first run?" reference.
+Each preset uses its own SQLite database and Markdown output directory, so you
+can try them side by side without mixing state.
 
-## Presets
+If you want screenshots and sample pages for comparison, start with
+[`../docs/guides/first-output-tour.md`](../docs/guides/first-output-tour.md).
+
+## Pick a preset
 
 ### Agents radar
 
-- Best for: AI builders, agent infra tracking, tool-use and code-agent monitoring
+- Best for: tracking agent tooling, code agents, evals, and AI builder workflow
 - Sources: Hacker News, arXiv, Hugging Face Daily Papers
-- Outputs: local Markdown by default
 - Config: [`agents-radar.yaml`](./agents-radar.yaml)
 - Guide: [`agents-radar.md`](./agents-radar.md)
-- Sample outputs: [`../docs/guides/first-output-tour.md#agents-radar`](../docs/guides/first-output-tour.md#agents-radar)
-- Live demo: <https://neapolitanicecream.github.io/recoleta/>
+- Public example:
+  [`first-output-tour.md#agents-radar`](../docs/guides/first-output-tour.md#agents-radar)
 
 ### Robotics radar
 
-- Best for: embodied AI, VLA, manipulation, and robotics research watching
+- Best for: embodied AI, VLA, manipulation, and robotics research
 - Sources: arXiv, Hugging Face Daily Papers
-- Outputs: local Markdown by default
 - Config: [`robotics-radar.yaml`](./robotics-radar.yaml)
 - Guide: [`robotics-radar.md`](./robotics-radar.md)
-- Sample outputs: [`../docs/guides/first-output-tour.md#robotics-radar`](../docs/guides/first-output-tour.md#robotics-radar)
-- Live demo: <https://neapolitanicecream.github.io/recoleta/>
+- Public example:
+  [`first-output-tour.md#robotics-radar`](../docs/guides/first-output-tour.md#robotics-radar)
 
 ### arXiv digest
 
-- Best for: paper-first tracking without HN or RSS noise
+- Best for: a paper-only first run without HN or RSS
 - Sources: arXiv only
-- Outputs: local Markdown by default
 - Config: [`arxiv-digest.yaml`](./arxiv-digest.yaml)
 - Guide: [`arxiv-digest.md`](./arxiv-digest.md)
-- Sample outputs: [`../docs/guides/first-output-tour.md#arxiv-digest`](../docs/guides/first-output-tour.md#arxiv-digest)
-- Live demo: <https://neapolitanicecream.github.io/recoleta/>
+- Public example:
+  [`first-output-tour.md#arxiv-digest`](../docs/guides/first-output-tour.md#arxiv-digest)
 
-## How To Use One
+## Use one in four steps
 
-1. Copy the preset you want into `recoleta.yaml`.
+1. Copy the preset you want to `recoleta.yaml`.
 2. Set `RECOLETA_CONFIG_PATH` and your LLM credentials in `.env`.
-3. Run `uv run recoleta run --once` or `docker compose run --rm recoleta run --once`.
-4. Check the preset-specific output directory shown in the YAML file.
-
-Each preset uses its own local SQLite and Markdown output paths so you can test
-them side by side without mixing state.
+3. Run `uv run recoleta run --once` or
+   `docker compose run --rm recoleta run --once`.
+4. Open the preset guide and check the output paths listed there.

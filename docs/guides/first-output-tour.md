@@ -1,12 +1,12 @@
 # Recoleta First Output Tour
 
-Use this guide right after the README quickstart or one of the starter presets.
-The goal is simple: confirm that your first run worked, then see the three
-output surfaces most users care about.
+Use this guide after your first `run --once`. It tells you where to look, what
+to run next, and which public examples are closest to the local files you
+should see.
 
-## 1. What success looks like after `run --once`
+## 1. Check that the first run worked
 
-After:
+If you ran:
 
 ```bash
 uv run recoleta run --once --analyze-limit 50 --publish-limit 20
@@ -18,48 +18,48 @@ or:
 docker compose run --rm recoleta run --once --analyze-limit 50 --publish-limit 20
 ```
 
-check these local paths first:
+open these paths first:
 
-- `MARKDOWN_OUTPUT_DIR/latest.md` or `./data/outputs/latest.md`: the run index
+- `MARKDOWN_OUTPUT_DIR/latest.md` or `./data/outputs/latest.md`: summary page
+  for the latest run
 - `MARKDOWN_OUTPUT_DIR/Inbox/`: one Markdown note per published item
-- `RECOLETA_DB_PATH`: the SQLite truth store for later trends, ideas, and site rebuilds
+- `RECOLETA_DB_PATH`: the SQLite database that later trend, idea, and site
+  steps build from
 
-If you started from a preset, use the preset-specific output directory declared
-in the YAML file.
+If you started from a preset, use the output paths in that preset YAML file.
 
-## 2. The next two commands worth running
+## 2. Add trends and the site
 
-Once item publishing works, the shortest path to the "full Recoleta" experience
-is:
+Once the first batch of item notes looks right, run:
 
 ```bash
 uv run recoleta trends --granularity day
 uv run recoleta site build
 ```
 
-That gives you:
+That should create:
 
-- `MARKDOWN_OUTPUT_DIR/Trends/`: canonical trend markdown
+- `MARKDOWN_OUTPUT_DIR/Trends/`: trend briefs in Markdown
 - `MARKDOWN_OUTPUT_DIR/site/index.html`: a browsable static site
 
-After you have a trend window, add idea briefs with:
+If you want idea briefs too, run:
 
 ```bash
 uv run recoleta ideas --granularity day --date 2026-03-14
 ```
 
-That writes idea briefs under `MARKDOWN_OUTPUT_DIR/Ideas/` and refreshes the
-site surface if you run `recoleta site build` again.
+That writes to `MARKDOWN_OUTPUT_DIR/Ideas/`. Run `recoleta site build` again if
+you want those pages included in the site.
 
-## 3. Sample output surfaces
+## 3. Compare your output with the public examples
 
-### Public site home
+### Site home
 
-Local output:
+Local path:
 
 - `MARKDOWN_OUTPUT_DIR/site/index.html`
 
-Public reference:
+Public example:
 
 - <https://neapolitanicecream.github.io/recoleta/>
 
@@ -67,18 +67,18 @@ Public reference:
 
 ### Trend brief
 
-Generated after:
+Create it with:
 
 ```bash
 uv run recoleta trends --granularity day
 ```
 
-Local output:
+Local paths:
 
 - `MARKDOWN_OUTPUT_DIR/Trends/*.md`
 - `MARKDOWN_OUTPUT_DIR/site/trends/*.html`
 
-Public references:
+Public examples:
 
 - <https://neapolitanicecream.github.io/recoleta/trends/>
 - <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
@@ -87,40 +87,42 @@ Public references:
 
 ### Idea brief
 
-Generated after:
+Create it with:
 
 ```bash
 uv run recoleta ideas --granularity day --date 2026-03-14
 ```
 
-Local output:
+Local paths:
 
 - `MARKDOWN_OUTPUT_DIR/Ideas/*.md`
 - `MARKDOWN_OUTPUT_DIR/site/ideas/*.html`
 
-Public references:
+Public examples:
 
 - <https://neapolitanicecream.github.io/recoleta/ideas/>
 - <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
 
 ![Recoleta idea brief](../assets/sample-output-idea-brief.png)
 
-## 4. Preset-to-sample mapping
+## 4. Pick the closest preset example
 
 ### Agents radar
 
 - Start from: [`presets/agents-radar.yaml`](../../presets/agents-radar.yaml)
-- Closest public reference: <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
-- Expect the same output surfaces shown above: `latest.md`, `Inbox/`, trend briefs, idea briefs, and the static site
+- Closest public example:
+  <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
+- Expect: `latest.md`, `Inbox/`, trend briefs, idea briefs, and the static site
 
 ### Robotics radar
 
 - Start from: [`presets/robotics-radar.yaml`](../../presets/robotics-radar.yaml)
-- Closest public reference: <https://neapolitanicecream.github.io/recoleta/streams/embodied-ai.html>
-- Expect the same output surfaces, with robotics- and embodied-AI-heavy source material
+- Closest public example:
+  <https://neapolitanicecream.github.io/recoleta/streams/embodied-ai.html>
+- Expect the same output structure, but with robotics-heavy source material
 
 ### arXiv digest
 
 - Start from: [`presets/arxiv-digest.yaml`](../../presets/arxiv-digest.yaml)
-- Closest public reference: <https://neapolitanicecream.github.io/recoleta/trends/>
-- Expect the same output surfaces, but from a paper-first corpus without HN or RSS turned on
+- Closest public example: <https://neapolitanicecream.github.io/recoleta/trends/>
+- Expect the same output structure, but from a paper-only corpus

@@ -1,32 +1,30 @@
 # Robotics Radar Preset
 
-## Who this is for
+Use this preset when you want a robotics-focused feed with embodied AI, VLA,
+manipulation, and lab-paper coverage.
 
-- embodied AI and robotics researchers
-- teams tracking VLA systems, manipulation, and robotics learning
-
-## What it watches
+## Sources
 
 - arXiv `cs.RO`
 - arXiv `cs.AI AND all:robot`
 - Hugging Face Daily Papers
 
-Config:
+Config file:
 
 - [`robotics-radar.yaml`](./robotics-radar.yaml)
 
-## What it produces
+## Default outputs
 
-- local Markdown inbox notes
-- robotics-oriented trend briefs after `recoleta trends`
-- optional public-site output derived from the generated trend markdown
+- Markdown inbox notes after `run --once`
+- Robotics-oriented trend briefs after `recoleta trends`
+- Optional static site after `recoleta site build`
 
 Default local paths:
 
 - SQLite: `~/.local/share/recoleta/presets/robotics-radar/recoleta.db`
 - Markdown: `~/.local/share/recoleta/presets/robotics-radar/outputs`
 
-## Fast start
+## Run it
 
 ```bash
 cp presets/robotics-radar.yaml recoleta.yaml
@@ -39,7 +37,14 @@ ENV
 uv run recoleta run --once --analyze-limit 50 --publish-limit 20
 ```
 
-## Good next commands
+## Check the first run
+
+Open these paths after `run --once`:
+
+- `~/.local/share/recoleta/presets/robotics-radar/outputs/latest.md`
+- `~/.local/share/recoleta/presets/robotics-radar/outputs/Inbox/`
+
+Then run:
 
 ```bash
 uv run recoleta trends --granularity day
@@ -47,29 +52,22 @@ uv run recoleta trends-week --date 2026-03-02
 uv run recoleta site build
 ```
 
-## What success looks like
-
-After `run --once`, open:
-
-- `~/.local/share/recoleta/presets/robotics-radar/outputs/latest.md`
-- `~/.local/share/recoleta/presets/robotics-radar/outputs/Inbox/`
-
-After `trends` and `site build`, expect:
+That should create:
 
 - `~/.local/share/recoleta/presets/robotics-radar/outputs/Trends/`
 - `~/.local/share/recoleta/presets/robotics-radar/outputs/site/index.html`
 
-## Sample outputs
+## Compare with the public example
 
-- First-output guide: [`../docs/guides/first-output-tour.md#robotics-radar`](../docs/guides/first-output-tour.md#robotics-radar)
-- Closest live reference: <https://neapolitanicecream.github.io/recoleta/streams/embodied-ai.html>
+- First-output guide:
+  [`../docs/guides/first-output-tour.md#robotics-radar`](../docs/guides/first-output-tour.md#robotics-radar)
+- Closest live page:
+  <https://neapolitanicecream.github.io/recoleta/streams/embodied-ai.html>
+- Demo home: <https://neapolitanicecream.github.io/recoleta/>
 
-## Live reference
+## Common tweaks
 
-- Demo site: <https://neapolitanicecream.github.io/recoleta/>
-
-## Customization ideas
-
-- add RSS feeds from robotics labs or newsletters
-- add `obsidian` or `telegram` to `publish_targets`
-- split the preset into stream-local scopes for `robotics` and `embodied-ai`
+- Add RSS feeds from robotics labs or newsletters.
+- Add `obsidian` or `telegram` to `publish_targets`.
+- Split the preset into stream-local scopes such as `robotics` and
+  `embodied-ai`.

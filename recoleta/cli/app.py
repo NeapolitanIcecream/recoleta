@@ -200,7 +200,7 @@ def site_build(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
+        help="Directory containing trend markdown notes and sibling idea briefs. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -214,10 +214,10 @@ def site_build(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally export only the latest N trend notes.",
+        help="Optionally export only the latest N trend notes and sibling idea briefs.",
     ),
 ) -> None:
-    """Build a static website from trend markdown notes."""
+    """Build a static website from trend markdown notes and sibling idea briefs."""
     run_site_build_command(input_dir=input_dir, output_dir=output_dir, limit=limit)
 
 
@@ -230,7 +230,7 @@ def site_stage(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
+        help="Directory containing trend markdown notes and sibling idea briefs. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -239,15 +239,15 @@ def site_stage(
         dir_okay=True,
         resolve_path=True,
         writable=True,
-        help="Repo-local directory to mirror trend markdown notes for deployment. Defaults to ./site-content/Trends, or ./site-content in topic-stream mode.",
+        help="Repo-local directory to mirror trend markdown notes and sibling idea briefs for deployment. Defaults to ./site-content/Trends, or ./site-content in topic-stream mode.",
     ),
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally stage only the latest N trend notes.",
+        help="Optionally stage only the latest N trend notes and sibling idea briefs.",
     ),
 ) -> None:
-    """Stage trend markdown notes into a repo-local directory for deployment."""
+    """Stage trend markdown notes and sibling idea briefs for deployment."""
     run_site_stage_command(input_dir=input_dir, output_dir=output_dir, limit=limit)
 
 
@@ -260,7 +260,7 @@ def site_serve(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes when building before serving. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
+        help="Directory containing trend markdown notes and sibling idea briefs when building before serving. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -274,7 +274,7 @@ def site_serve(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally build only the latest N trend notes before serving.",
+        help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
     ),
     host: str = typer.Option(
         "127.0.0.1",
@@ -314,7 +314,7 @@ def site_gh_deploy(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
+        help="Directory containing trend markdown notes and sibling idea briefs. Defaults to MARKDOWN_OUTPUT_DIR/Trends, or MARKDOWN_OUTPUT_DIR in topic-stream mode.",
     ),
     repo_dir: Path | None = typer.Option(
         None,
@@ -337,7 +337,7 @@ def site_gh_deploy(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally deploy only the latest N trend notes.",
+        help="Optionally deploy only the latest N trend notes and sibling idea briefs.",
     ),
     commit_message: str | None = typer.Option(
         None,

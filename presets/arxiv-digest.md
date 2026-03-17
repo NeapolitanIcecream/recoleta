@@ -1,32 +1,30 @@
 # arXiv Digest Preset
 
-## Who this is for
+Use this preset when you want the simplest first run: papers first, other
+sources later.
 
-- users who want a simple paper-first monitoring setup
-- anyone who wants to try Recoleta without mixing in HN or RSS noise first
-
-## What it watches
+## Sources
 
 - arXiv `cs.AI`
 - arXiv `cs.LG`
 - arXiv `cs.CL`
 
-Config:
+Config file:
 
 - [`arxiv-digest.yaml`](./arxiv-digest.yaml)
 
-## What it produces
+## Default outputs
 
-- local Markdown inbox notes
-- trend briefs from a paper-first corpus
-- a simple starting point for later adding RSS, HN, or topic streams
+- Markdown inbox notes after `run --once`
+- Trend briefs from a paper-only corpus
+- A clean base for adding RSS, OpenReview, or topic streams later
 
 Default local paths:
 
 - SQLite: `~/.local/share/recoleta/presets/arxiv-digest/recoleta.db`
 - Markdown: `~/.local/share/recoleta/presets/arxiv-digest/outputs`
 
-## Fast start
+## Run it
 
 ```bash
 cp presets/arxiv-digest.yaml recoleta.yaml
@@ -39,7 +37,14 @@ ENV
 uv run recoleta run --once --analyze-limit 50 --publish-limit 20
 ```
 
-## Good next commands
+## Check the first run
+
+Open these paths after `run --once`:
+
+- `~/.local/share/recoleta/presets/arxiv-digest/outputs/latest.md`
+- `~/.local/share/recoleta/presets/arxiv-digest/outputs/Inbox/`
+
+Then run:
 
 ```bash
 uv run recoleta trends --granularity day
@@ -47,29 +52,20 @@ uv run recoleta trends --granularity week --date 2026-03-02 --backfill
 uv run recoleta site build
 ```
 
-## What success looks like
-
-After `run --once`, open:
-
-- `~/.local/share/recoleta/presets/arxiv-digest/outputs/latest.md`
-- `~/.local/share/recoleta/presets/arxiv-digest/outputs/Inbox/`
-
-After `trends` and `site build`, expect:
+That should create:
 
 - `~/.local/share/recoleta/presets/arxiv-digest/outputs/Trends/`
 - `~/.local/share/recoleta/presets/arxiv-digest/outputs/site/index.html`
 
-## Sample outputs
+## Compare with the public example
 
-- First-output guide: [`../docs/guides/first-output-tour.md#arxiv-digest`](../docs/guides/first-output-tour.md#arxiv-digest)
-- Closest live reference: <https://neapolitanicecream.github.io/recoleta/trends/>
+- First-output guide:
+  [`../docs/guides/first-output-tour.md#arxiv-digest`](../docs/guides/first-output-tour.md#arxiv-digest)
+- Closest live page: <https://neapolitanicecream.github.io/recoleta/trends/>
+- Demo home: <https://neapolitanicecream.github.io/recoleta/>
 
-## Live reference
+## Common tweaks
 
-- Demo site: <https://neapolitanicecream.github.io/recoleta/>
-
-## Customization ideas
-
-- narrow the arXiv queries to your exact field
-- add RSS or OpenReview once the paper-only baseline feels good
-- use the preset as a base for a lab-specific or topic-specific digest
+- Narrow the arXiv queries to your exact field.
+- Add RSS or OpenReview once the paper-only baseline feels right.
+- Use the preset as the base for a lab-specific or topic-specific digest.
