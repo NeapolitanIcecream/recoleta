@@ -1,8 +1,8 @@
 ---
 kind: ideas
 granularity: day
-period_start: '2026-03-11T00:00:00+00:00'
-period_end: '2026-03-12T00:00:00+00:00'
+period_start: '2026-03-11T00:00:00'
+period_end: '2026-03-12T00:00:00'
 run_id: 7f79a271-737e-4d1c-bc67-36419fd59552
 status: succeeded
 stream: embodied_ai

@@ -86,12 +86,22 @@ iframe {
   gap: 10px;
   min-width: 0;
 }
+.nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
 .nav-link {
   padding: 10px 14px;
   border-radius: 999px;
   color: #2f4b69;
   font-size: 13px;
   font-weight: 600;
+}
+.nav-link.nav-link-external {
+  background: rgba(29, 103, 194, 0.10);
+  color: #1b579d;
 }
 .nav-link.is-active {
   background: rgba(29, 103, 194, 0.12);
@@ -138,6 +148,7 @@ iframe {
 .detail-hero,
 .home-section,
 .detail-content,
+.repo-cta-card,
 .pager-row,
 .archive-block {
   border: 1px solid rgba(255, 255, 255, 0.34);
@@ -210,10 +221,24 @@ iframe {
 }
 .home-section,
 .detail-content,
+.repo-cta-card,
 .archive-block {
   padding: 20px;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
+}
+.repo-cta-card {
+  display: grid;
+  gap: 12px;
+}
+.repo-cta-card .section-title {
+  margin-bottom: 0;
+}
+.repo-cta-copy {
+  margin: 0;
+  max-width: 72ch;
+  color: #4f647a;
+  line-height: 1.65;
 }
 .split-layout {
   display: grid;
@@ -996,6 +1021,9 @@ iframe {
   .nav-links {
     width: 100%;
   }
+  .nav-actions {
+    width: 100%;
+  }
   .nav-link {
     flex: 1 1 calc(50% - 5px);
     justify-content: center;
@@ -1006,6 +1034,7 @@ iframe {
   .home-section,
   .detail-hero,
   .detail-content,
+  .repo-cta-card,
   .archive-block {
     padding-left: 16px;
     padding-right: 16px;

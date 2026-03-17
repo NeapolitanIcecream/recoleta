@@ -1,15 +1,28 @@
 ---
 kind: ideas
-pass_output_id: 8
-trend_pass_output_id: 4
 granularity: week
-period_start: '2026-03-02T00:00:00+00:00'
-period_end: '2026-03-09T00:00:00+00:00'
+period_start: '2026-03-02T00:00:00'
+period_end: '2026-03-09T00:00:00'
 run_id: c6ddfa98-d73f-45eb-ad56-94ec7a0e08bd
 status: succeeded
 stream: software_intelligence
+topics:
+- code-agents
+- software-engineering
+- evaluation
+- agent-memory
+- agent-safety
 tags:
 - recoleta/ideas
+- topic/code-agents
+- topic/software-engineering
+- topic/evaluation
+- topic/agent-memory
+- topic/agent-safety
+pass_output_id: 8
+pass_kind: trend_ideas
+upstream_pass_output_id: 4
+upstream_pass_kind: trend_synthesis
 ---
 
 # 代码代理进入真实工程闭环：4 个有证据支撑的 why-now 机会

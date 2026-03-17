@@ -2,15 +2,15 @@
 kind: trend
 trend_doc_id: 285
 granularity: week
-period_start: '2026-03-02T00:00:00+00:00'
-period_end: '2026-03-09T00:00:00+00:00'
+period_start: '2026-03-02T00:00:00'
+period_end: '2026-03-09T00:00:00'
 topics:
 - code-agents
 - software-engineering
 - evaluation
 - agent-memory
 - agent-safety
-run_id: 15053a59-255a-481c-bae2-5ab820dec684
+run_id: materialize-outputs
 aliases:
 - recoleta-trend-285
 tags:

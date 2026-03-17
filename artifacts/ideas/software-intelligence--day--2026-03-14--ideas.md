@@ -1,8 +1,8 @@
 ---
 kind: ideas
 granularity: day
-period_start: '2026-03-14T00:00:00+00:00'
-period_end: '2026-03-15T00:00:00+00:00'
+period_start: '2026-03-14T00:00:00'
+period_end: '2026-03-15T00:00:00'
 run_id: a3e199d3-fa9b-4840-80fc-20146f2e9128
 status: succeeded
 stream: software_intelligence
@@ -46,8 +46,9 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 选 5-10 个内部 MCP server 或 agent endpoint 做试点，先验证三件事：团队是否确实存在“重复造轮子和找不到现成代理”的问题；所有权验证与审批元数据是否能显著提高被采用率；搜索排序里加入信任字段后，用户是否更少回退到人工问人。
 
 #### Evidence
-- [Show HN: Joy – Trust Network for AI Agents to Verify Each Other](../Inbox/2026-03-14--show-hn-joy-trust-network-for-ai-agents-to-verify-each-other.md): Joy 显示开放代理生态已开始把发现、担保和端点所有权验证做成统一接口，说明“先找到谁、再信谁”正在从概念变成可接入产品层。
-- [Show HN: Joy – Trust Network for AI Agents to Verify Each Other](../Inbox/2026-03-14--show-hn-joy-trust-network-for-ai-agents-to-verify-each-other.md) (chunk 1): 文档给出可执行的 `/agents/discover`、`/vouches`、`/mcp` 与 trust score 规则，证明这不是抽象讨论，而是已有可调用原型。
+- [Show HN: Joy – Trust Network for AI Agents to Verify Each Other](../Inbox/2026-03-14--show-hn-joy-trust-network-for-ai-agents-to-verify-each-other.md)
+  - Joy 显示开放代理生态已开始把发现、担保和端点所有权验证做成统一接口，说明“先找到谁、再信谁”正在从概念变成可接入产品层。
+  - 文档给出可执行的 `/agents/discover`、`/vouches`、`/mcp` 与 trust score 规则，证明这不是抽象讨论，而是已有可调用原型。
 
 ### 多代理终端会话运营控制台
 - Kind: workflow_shift
@@ -80,8 +81,9 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 挑 2-3 个已有公开验证器的问题域做封闭试验，例如 SAT、图搜索或小型组合构造；比较人工启发式、普通代码生成和“变异+验证”流程在发现更优程序或更优结果上的差异。
 
 #### Evidence
-- [Researchers improve lower bounds for some Ramsey numbers using AlphaEvolve](../Inbox/2026-03-14--researchers-improve-lower-bounds-for-some-ramsey-numbers-using-alphaevolve.md): AlphaEvolve 已经用代码变异代理把 5 个经典 Ramsey 数下界同时推进，证明“代理+可验证反馈”不仅能写代码，还能在可验证搜索任务上产出新结果。
-- [Researchers improve lower bounds for some Ramsey numbers using AlphaEvolve](../Inbox/2026-03-14--researchers-improve-lower-bounds-for-some-ramsey-numbers-using-alphaevolve.md) (chunk 1): 论文摘要明确写出 5 个下界提升，并称恢复了所有已知精确 Ramsey 数对应的下界，说明该范式已有少量但硬的研究结果。
+- [Researchers improve lower bounds for some Ramsey numbers using AlphaEvolve](../Inbox/2026-03-14--researchers-improve-lower-bounds-for-some-ramsey-numbers-using-alphaevolve.md)
+  - AlphaEvolve 已经用代码变异代理把 5 个经典 Ramsey 数下界同时推进，证明“代理+可验证反馈”不仅能写代码，还能在可验证搜索任务上产出新结果。
+  - 论文摘要明确写出 5 个下界提升，并称恢复了所有已知精确 Ramsey 数对应的下界，说明该范式已有少量但硬的研究结果。
 
 ### 受限任务白名单的设备代理沙箱
 - Kind: new_build
@@ -97,5 +99,6 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 与 2-3 个需要自助交互演示的场地合作，限定 5-10 个应用流程，测试用户是否更愿意通过自然语言探索设备，以及白名单限制是否足以把误操作率控制在可接受范围内。
 
 #### Evidence
-- [Show HN: I let the internet control my iPad with AI](../Inbox/2026-03-14--show-hn-i-let-the-internet-control-my-ipad-with-ai.md): 真实 iPad 演示证明自然语言到真实移动设备 GUI 操作已能在公开环境中跑通基础动作与简单多步任务。
-- [Show HN: I let the internet control my iPad with AI](../Inbox/2026-03-14--show-hn-i-let-the-internet-control-my-ipad-with-ai.md) (chunk 1): 文档同时明确列出不能做文本输入、复杂手势、登录和锁屏等限制，说明近期机会更适合受限、低风险、无账号场景。
+- [Show HN: I let the internet control my iPad with AI](../Inbox/2026-03-14--show-hn-i-let-the-internet-control-my-ipad-with-ai.md)
+  - 真实 iPad 演示证明自然语言到真实移动设备 GUI 操作已能在公开环境中跑通基础动作与简单多步任务。
+  - 文档同时明确列出不能做文本输入、复杂手势、登录和锁屏等限制，说明近期机会更适合受限、低风险、无账号场景。

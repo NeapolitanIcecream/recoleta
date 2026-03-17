@@ -1,15 +1,28 @@
 ---
 kind: ideas
-pass_output_id: 7
-trend_pass_output_id: 3
 granularity: week
-period_start: '2026-03-02T00:00:00+00:00'
-period_end: '2026-03-09T00:00:00+00:00'
+period_start: '2026-03-02T00:00:00'
+period_end: '2026-03-09T00:00:00'
 run_id: c6ddfa98-d73f-45eb-ad56-94ec7a0e08bd
 status: succeeded
 stream: embodied_ai
+topics:
+- robotics
+- vla
+- world-models
+- memory
+- deployment
 tags:
 - recoleta/ideas
+- topic/robotics
+- topic/vla
+- topic/world-models
+- topic/memory
+- topic/deployment
+pass_output_id: 7
+pass_kind: trend_ideas
+upstream_pass_output_id: 3
+upstream_pass_kind: trend_synthesis
 ---
 
 # 机器人VLA迈向可部署系统：按需推理、记忆插件与安全世界模型

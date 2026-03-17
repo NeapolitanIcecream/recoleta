@@ -1,15 +1,30 @@
 ---
 kind: ideas
-pass_output_id: 10
-trend_pass_output_id: 2
 granularity: day
-period_start: '2026-03-09T00:00:00+00:00'
-period_end: '2026-03-10T00:00:00+00:00'
+period_start: '2026-03-09T00:00:00'
+period_end: '2026-03-10T00:00:00'
 run_id: 1b72926e-8eff-4aff-8907-31fcc4bda477
 status: succeeded
 stream: software_intelligence
+topics:
+- software-agents
+- agent-evaluation
+- agent-safety
+- software-engineering
+- rl-agents
+- autonomous-optimization
 tags:
 - recoleta/ideas
+- topic/software-agents
+- topic/agent-evaluation
+- topic/agent-safety
+- topic/software-engineering
+- topic/rl-agents
+- topic/autonomous-optimization
+pass_output_id: 10
+pass_kind: trend_ideas
+upstream_pass_output_id: 2
+upstream_pass_kind: trend_synthesis
 ---
 
 # 代码代理走向可验证闭环，安全审计与研发自动化同步升温

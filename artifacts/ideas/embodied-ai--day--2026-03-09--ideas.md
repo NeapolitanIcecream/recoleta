@@ -1,15 +1,34 @@
 ---
 kind: ideas
-pass_output_id: 9
-trend_pass_output_id: 1
 granularity: day
-period_start: '2026-03-09T00:00:00+00:00'
-period_end: '2026-03-10T00:00:00+00:00'
+period_start: '2026-03-09T00:00:00'
+period_end: '2026-03-10T00:00:00'
 run_id: 1b72926e-8eff-4aff-8907-31fcc4bda477
 status: succeeded
 stream: embodied_ai
+topics:
+- robotics
+- VLA
+- world-models
+- data-engine
+- post-training
+- inference-guidance
+- efficient-deployment
+- policy-routing
 tags:
 - recoleta/ideas
+- topic/robotics
+- topic/vla
+- topic/world-models
+- topic/data-engine
+- topic/post-training
+- topic/inference-guidance
+- topic/efficient-deployment
+- topic/policy-routing
+pass_output_id: 9
+pass_kind: trend_ideas
+upstream_pass_output_id: 1
+upstream_pass_kind: trend_synthesis
 ---
 
 # 机器人VLA走向自动造数、后训练增强与交互式世界模型

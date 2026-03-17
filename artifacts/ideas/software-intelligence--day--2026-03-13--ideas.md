@@ -1,8 +1,8 @@
 ---
 kind: ideas
 granularity: day
-period_start: '2026-03-13T00:00:00+00:00'
-period_end: '2026-03-14T00:00:00+00:00'
+period_start: '2026-03-13T00:00:00'
+period_end: '2026-03-14T00:00:00'
 run_id: 2465b86e-38ed-4928-a533-92a4021fc2eb
 status: succeeded
 stream: software_intelligence
@@ -82,8 +82,9 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 挑选一个已有 shell/tool use 能力的内部代理环境，先以观察模式记录一周命令流，再上线 denylist/allowlist 策略，测量误拦截率、被拦截高风险命令数与开发团队绕过率。
 
 #### Evidence
-- [Execwall – firewall to stop ModelScope CVE-2026-2256 (AI agent command injectn)](../Inbox/2026-03-13--execwall-firewall-to-stop-modelscope-cve-2026-2256-ai-agent-command-injectn.md): Execwall 说明代理安全边界正从提示层下沉到执行层，且已有现实 CVE 作为触发背景。
-- [Execwall – firewall to stop ModelScope CVE-2026-2256 (AI agent command injectn)](../Inbox/2026-03-13--execwall-firewall-to-stop-modelscope-cve-2026-2256-ai-agent-command-injectn.md) (chunk 1): 具体演示显示危险命令如网络下载执行和递归删除可在 shell 与内核之间被策略拦截，指向可产品化的执行控制面。
+- [Execwall – firewall to stop ModelScope CVE-2026-2256 (AI agent command injectn)](../Inbox/2026-03-13--execwall-firewall-to-stop-modelscope-cve-2026-2256-ai-agent-command-injectn.md)
+  - Execwall 说明代理安全边界正从提示层下沉到执行层，且已有现实 CVE 作为触发背景。
+  - 具体演示显示危险命令如网络下载执行和递归删除可在 shell 与内核之间被策略拦截，指向可产品化的执行控制面。
 
 ### 面向受控采购场景的代理支付编排层
 - Kind: new_build

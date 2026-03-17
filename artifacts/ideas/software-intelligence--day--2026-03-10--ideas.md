@@ -1,8 +1,8 @@
 ---
 kind: ideas
 granularity: day
-period_start: '2026-03-10T00:00:00+00:00'
-period_end: '2026-03-11T00:00:00+00:00'
+period_start: '2026-03-10T00:00:00'
+period_end: '2026-03-11T00:00:00'
 run_id: e1104c2f-2dc2-4653-aca1-060e118734e3
 status: succeeded
 stream: software_intelligence
@@ -48,8 +48,9 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 选取一个已有代码审查代理的中型工程团队，离线回放最近200个PR，比较三种策略：全量评论、仅高置信评论、后台排序建议；用评论采纳率、评审时长变化和开发者主观负担验证是否优于现状。
 
 #### Evidence
-- [CR-Bench: Evaluating the Real-World Utility of AI Code Review Agents](../Inbox/2026-03-10--cr-bench-evaluating-the-real-world-utility-of-ai-code-review-agents.md): CR-Bench显示代码审查代理不能只看召回率，还要同时看Usefulness与SNR；真实PR环境里高召回往往伴随高噪声。
-- [CR-Bench: Evaluating the Real-World Utility of AI Code Review Agents](../Inbox/2026-03-10--cr-bench-evaluating-the-real-world-utility-of-ai-code-review-agents.md) (chunk 1): 原文强调代码审查缺少像编译/测试那样清晰的pass/fail信号，误报成本会直接伤害开发者采用。
+- [CR-Bench: Evaluating the Real-World Utility of AI Code Review Agents](../Inbox/2026-03-10--cr-bench-evaluating-the-real-world-utility-of-ai-code-review-agents.md)
+  - CR-Bench显示代码审查代理不能只看召回率，还要同时看Usefulness与SNR；真实PR环境里高召回往往伴随高噪声。
+  - 原文强调代码审查缺少像编译/测试那样清晰的pass/fail信号，误报成本会直接伤害开发者采用。
 
 ### 企业GUI代理的持续回归测试流水线
 - Kind: workflow_shift
@@ -65,8 +66,9 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 在一个已有内部桌面或Web代理的团队中接入发布流程，针对最近10次变更自动生成并运行测试，统计新发现缺陷数、人工编写测试节省时间，以及是否能在上线前稳定复现真实失败。
 
 #### Evidence
-- [SpecOps: A Fully Automated AI Agent Testing Framework in Real-World GUI Environments](../Inbox/2026-03-10--specops-a-fully-automated-ai-agent-testing-framework-in-real-world-gui-environments.md): SpecOps把GUI agent测试拆成生成、搭建、执行、验证四阶段，并在真实环境中发现164个真实bug，证明自动化回归测试已经可行。
-- [SpecOps: A Fully Automated AI Agent Testing Framework in Real-World GUI Environments](../Inbox/2026-03-10--specops-a-fully-automated-ai-agent-testing-framework-in-real-world-gui-environments.md) (chunk 2): 论文指出产品级agent运行在快速演化的真实环境中，错误会影响邮件、HR问答、文件处理等高风险业务，且提示与需求变化加大了持续测试需求。
+- [SpecOps: A Fully Automated AI Agent Testing Framework in Real-World GUI Environments](../Inbox/2026-03-10--specops-a-fully-automated-ai-agent-testing-framework-in-real-world-gui-environments.md)
+  - SpecOps把GUI agent测试拆成生成、搭建、执行、验证四阶段，并在真实环境中发现164个真实bug，证明自动化回归测试已经可行。
+  - 论文指出产品级agent运行在快速演化的真实环境中，错误会影响邮件、HR问答、文件处理等高风险业务，且提示与需求变化加大了持续测试需求。
 
 ### 基于真实工具轨迹的企业代理训练数据工厂
 - Kind: tooling_wedge
@@ -82,8 +84,9 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 从一个工具调用密集的内部工作流中抽取两周日志，生成一版evidence-first训练/评测样本，与现有人工编写任务集对比，看新工具接入后的成功率和回放可验证率是否提升。
 
 #### Evidence
-- [DIVE: Scaling Diversity in Agentic Task Synthesis for Generalizable Tool Use](../Inbox/2026-03-10--dive-scaling-diversity-in-agentic-task-synthesis-for-generalizable-tool-use.md): DIVE证明“先执行真实工具、再反推任务”的evidence-first流程能同时保证可执行性与可验证性，并显著提升OOD工具泛化。
-- [DIVE: Scaling Diversity in Agentic Task Synthesis for Generalizable Tool Use](../Inbox/2026-03-10--dive-scaling-diversity-in-agentic-task-synthesis-for-generalizable-tool-use.md) (chunk 1): 原文指出现有任务合成往往困在固定任务族和工具集，导致模型对新工具和新任务家族泛化很差。
+- [DIVE: Scaling Diversity in Agentic Task Synthesis for Generalizable Tool Use](../Inbox/2026-03-10--dive-scaling-diversity-in-agentic-task-synthesis-for-generalizable-tool-use.md)
+  - DIVE证明“先执行真实工具、再反推任务”的evidence-first流程能同时保证可执行性与可验证性，并显著提升OOD工具泛化。
+  - 原文指出现有任务合成往往困在固定任务族和工具集，导致模型对新工具和新任务家族泛化很差。
 
 ### MCP工具接入的权限控制与记忆隔离网关
 - Kind: new_build
@@ -99,8 +102,9 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 选择2到3个内部MCP或类MCP工具接入场景，先实现工具注册、策略校验、执行签名和会话级记忆隔离，再做红队演练，验证能否拦截跨工具越权与记忆污染类问题。
 
 #### Evidence
-- [AgenticCyOps: Securing Multi-Agentic AI Integration in Enterprise Cyber Operations](../Inbox/2026-03-10--agenticcyops-securing-multi-agentic-ai-integration-in-enterprise-cyber-operations.md): AgenticCyOps把企业多代理安全主要收敛到tool orchestration与memory management两个集成面，并提出authorized interfaces、capability scoping、verified execution等原则。
-- [AgenticCyOps: Securing Multi-Agentic AI Integration in Enterprise Cyber Operations](../Inbox/2026-03-10--agenticcyops-securing-multi-agentic-ai-integration-in-enterprise-cyber-operations.md) (chunk 2): 在基于MCP的SOC案例中，论文报告4条代表性攻击链中有3条能在前两步拦截，且相较flat MAS可利用信任边界至少减少72%。
+- [AgenticCyOps: Securing Multi-Agentic AI Integration in Enterprise Cyber Operations](../Inbox/2026-03-10--agenticcyops-securing-multi-agentic-ai-integration-in-enterprise-cyber-operations.md)
+  - AgenticCyOps把企业多代理安全主要收敛到tool orchestration与memory management两个集成面，并提出authorized interfaces、capability scoping、verified execution等原则。
+  - 在基于MCP的SOC案例中，论文报告4条代表性攻击链中有3条能在前两步拦截，且相较flat MAS可利用信任边界至少减少72%。
 - [Build a "Deep Data" MCP Server to Connect LLMs to Your Local Database](../Inbox/2026-03-10--build-a-deep-data-mcp-server-to-connect-llms-to-your-local-database.md): MCP实践文章说明把LLM接入本地数据库和私有数据源的门槛正在快速下降，协议化连接正在进入更广泛的实际集成。
 
 ### 面向后端系统设计的分步自检生成前评审工具
@@ -117,5 +121,6 @@ upstream_pass_kind: trend_synthesis
 **Validation next step.** 在一个真实的新服务设计流程中，对照普通提示生成与分步自检流程，比较架构评审发现的问题数、返工轮次以及最终设计文档的完整性评分。
 
 #### Evidence
-- [Quality-Driven Agentic Reasoning for LLM-Assisted Software Design: Questions-of-Thoughts (QoT) as a Time-Series Self-QA Chain](../Inbox/2026-03-10--quality-driven-agentic-reasoning-for-llm-assisted-software-design-questions-of-thoughts-qot-as-a-time-series-self-qa-chain.md): QoT表明不改模型参数、只改推理流程，也能在API Design和Data Communication等复杂设计任务上提升质量。
-- [Quality-Driven Agentic Reasoning for LLM-Assisted Software Design: Questions-of-Thoughts (QoT) as a Time-Series Self-QA Chain](../Inbox/2026-03-10--quality-driven-agentic-reasoning-for-llm-assisted-software-design-questions-of-thoughts-qot-as-a-time-series-self-qa-chain.md) (chunk 1): 原文强调软件设计的主要问题是完整性、模块化和安全性不足，而QoT用分步规划与逐步自检来减少遗漏。
+- [Quality-Driven Agentic Reasoning for LLM-Assisted Software Design: Questions-of-Thoughts (QoT) as a Time-Series Self-QA Chain](../Inbox/2026-03-10--quality-driven-agentic-reasoning-for-llm-assisted-software-design-questions-of-thoughts-qot-as-a-time-series-self-qa-chain.md)
+  - QoT表明不改模型参数、只改推理流程，也能在API Design和Data Communication等复杂设计任务上提升质量。
+  - 原文强调软件设计的主要问题是完整性、模块化和安全性不足，而QoT用分步规划与逐步自检来减少遗漏。
