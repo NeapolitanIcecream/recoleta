@@ -1,8 +1,8 @@
 ---
 kind: ideas
 granularity: day
-period_start: '2026-03-15T00:00:00+00:00'
-period_end: '2026-03-16T00:00:00+00:00'
+period_start: '2026-03-15T00:00:00'
+period_end: '2026-03-16T00:00:00'
 run_id: 91dd7d7c-28b6-47ed-b806-1fdf632b5ac5
 status: succeeded
 stream: software_intelligence

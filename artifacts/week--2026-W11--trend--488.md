@@ -2,8 +2,8 @@
 kind: trend
 trend_doc_id: 488
 granularity: week
-period_start: '2026-03-09T00:00:00+00:00'
-period_end: '2026-03-16T00:00:00+00:00'
+period_start: '2026-03-09T00:00:00'
+period_end: '2026-03-16T00:00:00'
 topics:
 - robotics
 - VLA
@@ -12,7 +12,7 @@ topics:
 - dexterous-manipulation
 - long-horizon
 - deployment
-run_id: 83a94555-49f1-456e-8e7a-73d57da2b973
+run_id: materialize-outputs
 aliases:
 - recoleta-trend-488
 tags:
