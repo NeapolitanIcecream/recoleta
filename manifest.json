@@ -2,6 +2,10 @@
   "files": {
     "archive": "archive.html",
     "idea_pages": [
+      "ideas/embodied-ai--week--2026-W11--ideas.html",
+      "ideas/software-intelligence--week--2026-W11--ideas.html",
+      "ideas/embodied-ai--day--2026-03-15--ideas.html",
+      "ideas/software-intelligence--day--2026-03-15--ideas.html",
       "ideas/software-intelligence--day--2026-03-14--ideas.html",
       "ideas/software-intelligence--day--2026-03-13--ideas.html",
       "ideas/embodied-ai--day--2026-03-12--ideas.html",
@@ -1680,6 +1684,7 @@
     "streams_index": "streams/index.html",
     "stylesheet": "assets/site.css",
     "topic_pages": [
+      "topics/3d-policy.html",
       "topics/3d-pretraining.html",
       "topics/active-perception.html",
       "topics/agent-auditing.html",
@@ -1690,6 +1695,7 @@
       "topics/agent-security.html",
       "topics/agent-systems.html",
       "topics/agent-testing.html",
+      "topics/agentic-coding.html",
       "topics/ai-security.html",
       "topics/automated-discovery.html",
       "topics/autonomous-driving.html",
@@ -1727,13 +1733,16 @@
       "topics/healthcare-agents.html",
       "topics/human-in-the-loop.html",
       "topics/humanoid.html",
+      "topics/humanoid-teleoperation.html",
       "topics/industrial-readiness.html",
       "topics/inference-guidance.html",
       "topics/inference-optimization.html",
+      "topics/inference-systems.html",
       "topics/inference-time.html",
       "topics/local-ai.html",
       "topics/long-horizon.html",
       "topics/long-horizon-control.html",
+      "topics/low-resource-code.html",
       "topics/mcp.html",
       "topics/memory.html",
       "topics/multi-agent.html",
@@ -1748,6 +1757,7 @@
       "topics/post-training.html",
       "topics/protocols.html",
       "topics/refactoring.html",
+      "topics/release-engineering.html",
       "topics/reliability.html",
       "topics/repo-automation.html",
       "topics/repository-reasoning.html",
@@ -1769,7 +1779,9 @@
       "topics/terminal-agents.html",
       "topics/testing.html",
       "topics/tool-creation.html",
+      "topics/tool-routing.html",
       "topics/tool-use.html",
+      "topics/uav.html",
       "topics/verification.html",
       "topics/vision-language-action.html",
       "topics/vla.html",
@@ -1777,6 +1789,10 @@
     ],
     "topics_index": "topics/index.html",
     "trend_pages": [
+      "trends/week--2026-W11--trend--489.html",
+      "trends/week--2026-W11--trend--488.html",
+      "trends/day--2026-03-15--trend--487.html",
+      "trends/day--2026-03-15--trend--486.html",
       "trends/day--2026-03-14--trend--484.html",
       "trends/day--2026-03-13--trend--472.html",
       "trends/day--2026-03-12--trend--459.html",
@@ -1807,6 +1823,6 @@
     "trends_index": "trends/index.html"
   },
   "streams_total": 2,
-  "topics_total": 94,
-  "trends_total": 26
+  "topics_total": 102,
+  "trends_total": 30
 }
