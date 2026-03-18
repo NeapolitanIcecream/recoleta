@@ -180,7 +180,24 @@ class RepositoryPort(Protocol):
     def mark_item_published(self, *, item_id: int) -> None: ...
 
     def add_artifact(
-        self, *, run_id: str, item_id: int | None, kind: str, path: str
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        path: str,
+        details: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def update_run_context(
+        self,
+        *,
+        run_id: str,
+        command: str | None = None,
+        scope: str | None = None,
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> None: ...
 
     def create_pass_output(
@@ -378,7 +395,13 @@ class AnalysisRepositoryPort(Protocol):
     def mark_item_retryable_failed(self, *, item_id: int) -> None: ...
 
     def add_artifact(
-        self, *, run_id: str, item_id: int | None, kind: str, path: str
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        path: str,
+        details: dict[str, Any] | None = None,
     ) -> None: ...
 
     def create_pass_output(
@@ -454,7 +477,13 @@ class PublishRepositoryPort(Protocol):
     ) -> None: ...
 
     def add_artifact(
-        self, *, run_id: str, item_id: int | None, kind: str, path: str
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        path: str,
+        details: dict[str, Any] | None = None,
     ) -> None: ...
 
     @staticmethod
@@ -593,7 +622,13 @@ class TrendRepositoryPort(Protocol):
 
 class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
     def add_artifact(
-        self, *, run_id: str, item_id: int | None, kind: str, path: str
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        path: str,
+        details: dict[str, Any] | None = None,
     ) -> None: ...
 
     def create_pass_output(

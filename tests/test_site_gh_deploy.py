@@ -373,3 +373,79 @@ def test_site_gh_deploy_cli_with_explicit_input_dir_does_not_require_settings(
     assert calls["repo_dir"] == Path.cwd().resolve()
     assert calls["pages_config_mode"] == "never"
     assert "no changes" in result.stdout
+
+
+def test_site_gh_deploy_cli_emits_json_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings(
+        markdown_output_dir=tmp_path / "output",
+        recoleta_db_path=tmp_path / "recoleta.db",
+    )
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_maybe_acquire_workspace_lease_for_settings",
+        lambda **_: (None, None, None, None),
+    )
+
+    def _fake_deploy(  # type: ignore[no-untyped-def]
+        *,
+        input_dir,
+        repo_dir,
+        remote,
+        branch,
+        limit=None,
+        commit_message=None,
+        cname=None,
+        pages_config_mode="auto",
+        force=True,
+    ):
+        _ = (
+            input_dir,
+            repo_dir,
+            remote,
+            branch,
+            limit,
+            commit_message,
+            cname,
+            pages_config_mode,
+            force,
+        )
+        return GitHubPagesDeployResult(
+            branch="gh-pages",
+            remote="origin",
+            remote_url="git@github.com:example/recoleta.git",
+            repo_root=tmp_path,
+            commit_sha="abcdef1234567890",
+            skipped=False,
+            trends_total=4,
+            topics_total=7,
+            streams_total=2,
+            files_total=18,
+            pages_source=PagesSourceConfigResult(
+                status="configured",
+                method="gh",
+                detail="configured via gh",
+                site_url="https://example.github.io/recoleta/",
+            ),
+        )
+
+    monkeypatch.setattr(
+        "recoleta.site_deploy.deploy_trend_static_site_to_github_pages",
+        _fake_deploy,
+    )
+
+    result = runner.invoke(recoleta.cli.app, ["site", "gh-deploy", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "site gh-deploy"
+    assert payload["branch"] == "gh-pages"
+    assert payload["remote"] == "origin"
+    assert payload["commit_sha"] == "abcdef1234567890"
+    assert payload["pages_source"]["site_url"] == "https://example.github.io/recoleta/"

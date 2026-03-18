@@ -102,6 +102,17 @@ class TrendStageService(Protocol):
         payload: dict[str, Any],
     ) -> Path | None: ...
 
+    def _record_debug_artifact(
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        payload: dict[str, Any],
+        log: Any,
+        failure_message: str,
+    ) -> Path | None: ...
+
     def prepare(
         self,
         *,
@@ -1128,7 +1139,7 @@ def run_trends_stage(
             pass_output_id: int | None,
         ) -> _TrendProjectionState:
             if pass_output_id is None:
-                artifact_path = service._write_debug_artifact(
+                service._record_debug_artifact(
                     run_id=run_id,
                     item_id=None,
                     kind="pass_output_failure",
@@ -1140,20 +1151,9 @@ def run_trends_stage(
                         "period_end": period_end.isoformat(),
                         "failure": pass_output_failure or {},
                     },
+                    log=log,
+                    failure_message="Trends pass output failure artifact record failed: {}",
                 )
-                if artifact_path is not None:
-                    try:
-                        service.repository.add_artifact(
-                            run_id=run_id,
-                            item_id=None,
-                            kind="pass_output_failure",
-                            path=str(artifact_path),
-                        )
-                    except Exception as artifact_exc:  # noqa: BLE001
-                        log.warning(
-                            "Trends pass output failure artifact record failed: {}",
-                            service._sanitize_error_message(str(artifact_exc)),
-                        )
 
             doc_id = trends.persist_trend_payload(
                 repository=cast(Any, service.repository),
@@ -1585,7 +1585,7 @@ def run_trends_stage(
         )
 
         if include_debug and debug is not None:
-            artifact_path = service._write_debug_artifact(
+            service._record_debug_artifact(
                 run_id=run_id,
                 item_id=None,
                 kind="llm_response",
@@ -1598,20 +1598,9 @@ def run_trends_stage(
                     "trend_synthesis_pass_output_id": trend_synthesis_pass_output_id,
                     "debug": debug,
                 },
+                log=log,
+                failure_message="Trends debug artifact record failed: {}",
             )
-            if artifact_path is not None:
-                try:
-                    service.repository.add_artifact(
-                        run_id=run_id,
-                        item_id=None,
-                        kind="llm_response",
-                        path=str(artifact_path),
-                    )
-                except Exception as artifact_exc:  # noqa: BLE001
-                    log.warning(
-                        "Trends debug artifact record failed: {}",
-                        service._sanitize_error_message(str(artifact_exc)),
-                    )
 
         tool_calls_total = 0
         if isinstance(debug, dict):
@@ -1657,7 +1646,7 @@ def run_trends_stage(
         )
     except Exception as exc:
         sanitized_error = service._sanitize_error_message(str(exc))
-        artifact_path = service._write_debug_artifact(
+        service._record_debug_artifact(
             run_id=run_id,
             item_id=None,
             kind="error_context",
@@ -1669,20 +1658,9 @@ def run_trends_stage(
                 "anchor_date": anchor.isoformat(),
                 **service._classify_exception(exc),
             },
+            log=log,
+            failure_message="Trends error artifact record failed: {}",
         )
-        if artifact_path is not None:
-            try:
-                service.repository.add_artifact(
-                    run_id=run_id,
-                    item_id=None,
-                    kind="error_context",
-                    path=str(artifact_path),
-                )
-            except Exception as artifact_exc:  # noqa: BLE001
-                log.warning(
-                    "Trends error artifact record failed: {}",
-                    service._sanitize_error_message(str(artifact_exc)),
-                )
         record_metric(
             name="pipeline.trends.failed_total",
             value=1,

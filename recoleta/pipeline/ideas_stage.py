@@ -77,6 +77,17 @@ class IdeasStageService(Protocol):
         payload: dict[str, Any],
     ) -> Path | None: ...
 
+    def _record_debug_artifact(
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        payload: dict[str, Any],
+        log: Any,
+        failure_message: str,
+    ) -> Path | None: ...
+
 
 def _period_bounds_for_granularity(
     *, granularity: str, anchor: date
@@ -231,18 +242,33 @@ def _record_ideas_debug_artifact(
         and service.settings.artifacts_dir is not None
     ):
         return
+    payload = {
+        "upstream_pass_output_id": upstream_pass_output_id,
+        "status": status.value,
+        "trend_snapshot_pack_md": trend_snapshot_pack_md,
+        "payload": ideas_payload.model_dump(mode="json"),
+        "debug": debug or {},
+    }
+    record_debug_artifact = getattr(service, "_record_debug_artifact", None)
+    if callable(record_debug_artifact):
+        try:
+            record_debug_artifact(
+                run_id=run_id,
+                item_id=None,
+                kind="ideas_llm_response",
+                payload=payload,
+                log=logger.bind(module="pipeline.trends.pass.ideas", run_id=run_id),
+                failure_message="Ideas debug artifact record failed: {}",
+            )
+        except Exception:
+            return
+        return
     try:
         artifact_path = service._write_debug_artifact(
             run_id=run_id,
             item_id=None,
             kind="ideas_llm_response",
-            payload={
-                "upstream_pass_output_id": upstream_pass_output_id,
-                "status": status.value,
-                "trend_snapshot_pack_md": trend_snapshot_pack_md,
-                "payload": ideas_payload.model_dump(mode="json"),
-                "debug": debug or {},
-            },
+            payload=payload,
         )
     except Exception:
         return

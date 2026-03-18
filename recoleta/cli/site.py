@@ -31,6 +31,7 @@ def run_site_build_command(
     input_dir: Path | None,
     output_dir: Path | None,
     limit: int | None,
+    json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -94,6 +95,18 @@ def run_site_build_command(
             )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if json_output:
+        cli._emit_json(
+            {
+                "status": "ok",
+                "command": "site build",
+                "input_dir": str(resolved_input_dir),
+                "output_dir": str(resolved_output_dir),
+                "manifest_path": str(manifest_path),
+                "manifest": manifest,
+            }
+        )
+        return
     segments = [f"trends={manifest['trends_total']}"]
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
@@ -111,6 +124,7 @@ def run_site_stage_command(
     input_dir: Path | None,
     output_dir: Path | None,
     limit: int | None,
+    json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -177,6 +191,18 @@ def run_site_stage_command(
             )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if json_output:
+        cli._emit_json(
+            {
+                "status": "ok",
+                "command": "site stage",
+                "input_dir": str(resolved_input_dir),
+                "output_dir": str(resolved_output_dir),
+                "manifest_path": str(manifest_path),
+                "manifest": manifest,
+            }
+        )
+        return
     segments = [f"trends={manifest['trends_total']}"]
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
@@ -265,6 +291,7 @@ def run_site_gh_deploy_command(
     cname: str | None,
     pages_config: str,
     force: bool,
+    json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -329,6 +356,32 @@ def run_site_gh_deploy_command(
     stream_segment = (
         f"streams={result.streams_total}" if int(result.streams_total or 0) > 1 else None
     )
+    if json_output:
+        cli._emit_json(
+            {
+                "status": "ok",
+                "command": "site gh-deploy",
+                "input_dir": str(resolved_input_dir),
+                "repo_dir": str(resolved_repo_dir),
+                "remote": str(result.remote),
+                "branch": str(result.branch),
+                "remote_url": str(result.remote_url),
+                "repo_root": str(result.repo_root),
+                "commit_sha": result.commit_sha,
+                "skipped": bool(result.skipped),
+                "trends_total": int(result.trends_total),
+                "topics_total": int(result.topics_total),
+                "streams_total": int(result.streams_total),
+                "files_total": int(result.files_total),
+                "pages_source": {
+                    "status": str(result.pages_source.status),
+                    "method": result.pages_source.method,
+                    "detail": str(result.pages_source.detail),
+                    "site_url": result.pages_source.site_url,
+                },
+            }
+        )
+        return
     status_segment = "no changes" if result.skipped else "pushed"
     commit_segment = (
         f"commit={result.commit_sha[:12]}" if result.commit_sha is not None else None

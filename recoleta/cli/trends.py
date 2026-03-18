@@ -45,6 +45,29 @@ def _print_trends_result(
     )
 
 
+def _serialize_trends_result(result: Any) -> dict[str, Any]:
+    stream_results = list(getattr(result, "stream_results", []) or [])
+    payload: dict[str, Any] = {
+        "doc_id": int(getattr(result, "doc_id", 0) or 0),
+        "pass_output_id": (
+            int(getattr(result, "pass_output_id", 0) or 0)
+            if getattr(result, "pass_output_id", None) is not None
+            else None
+        ),
+        "granularity": str(getattr(result, "granularity", "") or ""),
+        "period_start": cli._isoformat_or_none(getattr(result, "period_start", None)),
+        "period_end": cli._isoformat_or_none(getattr(result, "period_end", None)),
+        "title": str(getattr(result, "title", "") or ""),
+        "stream": str(getattr(result, "stream", "") or "") or None,
+    }
+    if stream_results:
+        payload["stream_results"] = [
+            _serialize_trends_result(child) for child in stream_results
+        ]
+        payload["stream_results_total"] = len(stream_results)
+    return payload
+
+
 def run_trends_command(
     *,
     granularity: str,
@@ -53,6 +76,7 @@ def run_trends_command(
     backfill: bool,
     backfill_mode: str,
     debug_pdf: bool,
+    json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -73,6 +97,30 @@ def run_trends_command(
             debug_pdf=debug_pdf,
         ),
     )
+    cli._update_run_context(
+        repository,
+        run_id=run_id,
+        command="trends",
+        scope=(
+            str(getattr(result, "stream", "") or "").strip() or "default"
+            if not list(getattr(result, "stream_results", []) or [])
+            else None
+        ),
+        granularity=str(getattr(result, "granularity", "") or "").strip() or None,
+        period_start=getattr(result, "period_start", None),
+        period_end=getattr(result, "period_end", None),
+    )
+    if json_output:
+        metrics = repository.list_metrics(run_id=run_id)
+        payload = {
+            "status": "ok",
+            "command": "trends",
+            "run_id": run_id,
+            "billing": cli._billing_summary_payload(metrics),
+            **_serialize_trends_result(result),
+        }
+        cli._emit_json(payload)
+        return
     console = console_cls(stderr=settings.log_json)
     _print_trends_result(console=console, result=result)
     cli._print_billing_report(console=console, repository=repository, run_id=run_id)
@@ -84,6 +132,7 @@ def run_trends_week_command(
     model: str | None,
     backfill_mode: str,
     debug_pdf: bool,
+    json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -104,6 +153,30 @@ def run_trends_week_command(
             debug_pdf=debug_pdf,
         ),
     )
+    cli._update_run_context(
+        repository,
+        run_id=run_id,
+        command="trends-week",
+        scope=(
+            str(getattr(result, "stream", "") or "").strip() or "default"
+            if not list(getattr(result, "stream_results", []) or [])
+            else None
+        ),
+        granularity=str(getattr(result, "granularity", "") or "").strip() or None,
+        period_start=getattr(result, "period_start", None),
+        period_end=getattr(result, "period_end", None),
+    )
+    if json_output:
+        metrics = repository.list_metrics(run_id=run_id)
+        payload = {
+            "status": "ok",
+            "command": "trends-week",
+            "run_id": run_id,
+            "billing": cli._billing_summary_payload(metrics),
+            **_serialize_trends_result(result),
+        }
+        cli._emit_json(payload)
+        return
     console = console_cls(stderr=settings.log_json)
     _print_trends_result(console=console, result=result)
     cli._print_billing_report(console=console, repository=repository, run_id=run_id)

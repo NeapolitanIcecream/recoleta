@@ -767,7 +767,7 @@ class PipelineService:
                 except Exception as exc:
                     ingest_result.failed += 1
                     sanitized_error = self._sanitize_error_message(str(exc))
-                    artifact_path = self._write_debug_artifact(
+                    self._record_debug_artifact(
                         run_id=run_id,
                         item_id=None,
                         kind="error_context",
@@ -782,20 +782,9 @@ class PipelineService:
                                 "canonical_url_hash": draft.canonical_url_hash,
                             },
                         },
+                        log=log,
+                        failure_message="Ingest debug artifact record failed: {}",
                     )
-                    if artifact_path is not None:
-                        try:
-                            self.repository.add_artifact(
-                                run_id=run_id,
-                                item_id=None,
-                                kind="error_context",
-                                path=str(artifact_path),
-                            )
-                        except Exception as artifact_exc:
-                            log.warning(
-                                "Ingest debug artifact record failed: {}",
-                                self._sanitize_error_message(str(artifact_exc)),
-                            )
                     log.bind(item_hash=draft.canonical_url_hash).warning(
                         "Ingest failed: {}", sanitized_error
                     )
@@ -1042,27 +1031,14 @@ class PipelineService:
             def write_and_record_artifact(
                 *, item_id: int | None, kind: str, payload: dict[str, Any]
             ) -> None:
-                artifact_path = self._write_debug_artifact(
+                self._record_debug_artifact(
                     run_id=run_id,
                     item_id=item_id,
                     kind=kind,
                     payload=payload,
+                    log=log.bind(item_id=item_id),
+                    failure_message=f"Enrich {kind} artifact record failed: {{}}",
                 )
-                if artifact_path is None:
-                    return
-                try:
-                    self.repository.add_artifact(
-                        run_id=run_id,
-                        item_id=item_id,
-                        kind=kind,
-                        path=str(artifact_path),
-                    )
-                except Exception as artifact_exc:
-                    log.bind(item_id=item_id).warning(
-                        "Enrich {} artifact record failed: {}",
-                        kind,
-                        self._sanitize_error_message(str(artifact_exc)),
-                    )
 
             timeout = httpx.Timeout(10.0, connect=5.0)
             headers = {"User-Agent": "recoleta/0.1"}
@@ -1710,27 +1686,14 @@ class PipelineService:
         def write_and_record_artifact(
             *, item_id: int | None, kind: str, payload: dict[str, Any]
         ) -> None:
-            artifact_path = self._write_debug_artifact(
+            self._record_debug_artifact(
                 run_id=run_id,
                 item_id=item_id,
                 kind=kind,
                 payload=payload,
+                log=log.bind(item_id=item_id),
+                failure_message=f"Triage {kind} artifact record failed: {{}}",
             )
-            if artifact_path is None:
-                return
-            try:
-                self.repository.add_artifact(
-                    run_id=run_id,
-                    item_id=item_id,
-                    kind=kind,
-                    path=str(artifact_path),
-                )
-            except Exception as artifact_exc:
-                log.bind(item_id=item_id).warning(
-                    "Triage {} artifact record failed: {}",
-                    kind,
-                    self._sanitize_error_message(str(artifact_exc)),
-                )
 
         triage_candidates, content_fetch_failed, content_fetch_error = (
             self._build_triage_candidates(items=triage_items)
@@ -2381,27 +2344,14 @@ class PipelineService:
         def write_and_record_artifact(
             *, item_id: int | None, kind: str, payload: dict[str, Any]
         ) -> None:
-            artifact_path = self._write_debug_artifact(
+            self._record_debug_artifact(
                 run_id=run_id,
                 item_id=item_id,
                 kind=kind,
                 payload=payload,
+                log=log.bind(item_id=item_id),
+                failure_message=f"Analyze {kind} artifact record failed: {{}}",
             )
-            if artifact_path is None:
-                return
-            try:
-                self.repository.add_artifact(
-                    run_id=run_id,
-                    item_id=item_id,
-                    kind=kind,
-                    path=str(artifact_path),
-                )
-            except Exception as artifact_exc:
-                log.bind(item_id=item_id).warning(
-                    "Analyze {} artifact record failed: {}",
-                    kind,
-                    self._sanitize_error_message(str(artifact_exc)),
-                )
         with self.repository.sql_diagnostics() as sql_diag:
             candidate_limit = self._stage_candidate_limit(limit=effective_limit)
             items = self._invoke_repository_method(
@@ -2703,27 +2653,14 @@ class PipelineService:
         def write_and_record_artifact(
             *, item_id: int | None, kind: str, payload: dict[str, Any]
         ) -> None:
-            artifact_path = self._write_debug_artifact(
+            self._record_debug_artifact(
                 run_id=run_id,
                 item_id=item_id,
                 kind=kind,
                 payload={"stream": stream.name, **payload},
+                log=log.bind(item_id=item_id),
+                failure_message=f"Topic stream triage {kind} artifact record failed: {{}}",
             )
-            if artifact_path is None:
-                return
-            try:
-                self.repository.add_artifact(
-                    run_id=run_id,
-                    item_id=item_id,
-                    kind=kind,
-                    path=str(artifact_path),
-                )
-            except Exception as artifact_exc:
-                log.bind(item_id=item_id).warning(
-                    "Topic stream triage {} artifact record failed: {}",
-                    kind,
-                    self._sanitize_error_message(str(artifact_exc)),
-                )
 
         if content_fetch_failed and include_debug and content_fetch_error is not None:
             write_and_record_artifact(
@@ -2967,27 +2904,14 @@ class PipelineService:
             kind: str,
             payload: dict[str, Any],
         ) -> None:
-            artifact_path = self._write_debug_artifact(
+            self._record_debug_artifact(
                 run_id=run_id,
                 item_id=item_id,
                 kind=kind,
                 payload={"stream": stream_name, **payload},
+                log=log.bind(item_id=item_id, stream=stream_name),
+                failure_message=f"Topic stream analyze {kind} artifact record failed: {{}}",
             )
-            if artifact_path is None:
-                return
-            try:
-                self.repository.add_artifact(
-                    run_id=run_id,
-                    item_id=item_id,
-                    kind=kind,
-                    path=str(artifact_path),
-                )
-            except Exception as artifact_exc:
-                log.bind(item_id=item_id, stream=stream_name).warning(
-                    "Topic stream analyze {} artifact record failed: {}",
-                    kind,
-                    self._sanitize_error_message(str(artifact_exc)),
-                )
         with self.repository.sql_diagnostics() as sql_diag:
             analysis_writes: list[AnalysisWrite] = []
             state_updates: list[ItemStateUpdate] = []
@@ -4116,7 +4040,7 @@ class PipelineService:
                 source_failures_total += 1
                 bucket["pull_failed_total"] += 1
                 sanitized_error = self._sanitize_error_message(str(exc))
-                artifact_path = self._write_debug_artifact(
+                self._record_debug_artifact(
                     run_id=run_id,
                     item_id=None,
                     kind="error_context",
@@ -4127,20 +4051,9 @@ class PipelineService:
                         "error_message": sanitized_error,
                         **self._classify_exception(exc),
                     },
+                    log=log.bind(source=source_name),
+                    failure_message="Ingest source debug artifact record failed: {}",
                 )
-                if artifact_path is not None:
-                    try:
-                        self.repository.add_artifact(
-                            run_id=run_id,
-                            item_id=None,
-                            kind="error_context",
-                            path=str(artifact_path),
-                        )
-                    except Exception as artifact_exc:
-                        log.bind(source=source_name).warning(
-                            "Ingest source debug artifact record failed: {}",
-                            self._sanitize_error_message(str(artifact_exc)),
-                        )
                 log.bind(source=source_name).warning(
                     "Source pull failed: {}", sanitized_error
                 )
@@ -4206,6 +4119,43 @@ class PipelineService:
             kind=kind,
             payload=payload,
         )
+
+    def _record_debug_artifact(
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        payload: dict[str, Any],
+        log: Any,
+        failure_message: str,
+    ) -> Path | None:
+        artifact_path = self._write_debug_artifact(
+            run_id=run_id,
+            item_id=item_id,
+            kind=kind,
+            payload=payload,
+        )
+        if artifact_path is None:
+            return None
+        try:
+            self._invoke_repository_method(
+                "add_artifact",
+                run_id=run_id,
+                item_id=item_id,
+                kind=kind,
+                path=str(artifact_path),
+                details=pipeline_artifacts.summarize_artifact_payload(
+                    kind=kind,
+                    payload=payload,
+                ),
+            )
+        except Exception as artifact_exc:
+            log.warning(
+                failure_message,
+                self._sanitize_error_message(str(artifact_exc)),
+            )
+        return artifact_path
 
     def _build_triage_candidates(
         self, *, items: list[Any]

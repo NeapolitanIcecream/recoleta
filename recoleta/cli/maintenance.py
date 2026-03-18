@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import json
+import os
 from pathlib import Path
+import time
 from typing import Any, NoReturn
 
 import recoleta.cli as cli
@@ -201,6 +203,184 @@ def _build_source_diagnostics_payload(
     return None
 
 
+def _period_bounds_for_granularity(
+    *,
+    anchor_date: str,
+    granularity: str,
+) -> tuple[datetime, datetime]:
+    from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
+
+    parsed_anchor = cli._parse_anchor_date_option(str(anchor_date or "").strip())
+    normalized = str(granularity or "").strip().lower()
+    if normalized == "week":
+        period_start, period_end = week_period_bounds(parsed_anchor)
+    elif normalized == "month":
+        period_start, period_end = month_period_bounds(parsed_anchor)
+    elif normalized == "day":
+        period_start, period_end = day_period_bounds(parsed_anchor)
+    else:
+        raise ValueError("granularity must be one of: day, week, month")
+    return period_start.astimezone(UTC), period_end.astimezone(UTC)
+
+
+def _parse_stream_names(value: str) -> list[str]:
+    streams = sorted(
+        {
+            token
+            for token in (
+                str(part or "").strip() for part in str(value or "").split(",")
+            )
+            if token
+        }
+    )
+    if not streams:
+        raise ValueError("at least one stream name is required")
+    return streams
+
+
+def _min_relevance_score_for_scope(*, settings: Any | None, scope: str) -> float:
+    fallback = float(getattr(settings, "min_relevance_score", 0.0) or 0.0)
+    if settings is None or scope == "default":
+        return fallback
+    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
+    if not callable(runtime_builder):
+        return fallback
+    try:
+        runtimes = runtime_builder()
+    except Exception:
+        return fallback
+    if not isinstance(runtimes, list):
+        return fallback
+    for stream in runtimes:
+        if str(getattr(stream, "name", "") or "").strip() != scope:
+            continue
+        return float(
+            getattr(stream, "min_relevance_score", fallback)
+            if getattr(stream, "min_relevance_score", None) is not None
+            else fallback
+        )
+    return fallback
+
+
+def _llm_provider_from_model(model: str) -> str:
+    normalized = str(model or "").strip()
+    if not normalized:
+        return "unknown"
+    if "/" not in normalized:
+        return "unknown"
+    provider, _ = normalized.split("/", 1)
+    return provider or "unknown"
+
+
+def _llm_connection_payload(*, settings: Any) -> dict[str, Any]:
+    mask_value = cli._import_symbol("recoleta.observability", attr_name="mask_value")
+    llm_connection_from_settings = cli._import_symbol(
+        "recoleta.llm_connection",
+        attr_name="llm_connection_from_settings",
+    )
+    connection = llm_connection_from_settings(settings)
+    api_key = getattr(connection, "api_key", None)
+    base_url = getattr(connection, "base_url", None)
+    return {
+        "api_key": {
+            "configured": api_key is not None,
+            "env_var": "RECOLETA_LLM_API_KEY",
+            "env_present": bool(str(os.getenv("RECOLETA_LLM_API_KEY", "")).strip()),
+            "fingerprint": mask_value(api_key) if api_key is not None else None,
+        },
+        "base_url": {
+            "configured": base_url is not None,
+            "value": base_url,
+            "env_var": "RECOLETA_LLM_BASE_URL",
+            "env_present": bool(str(os.getenv("RECOLETA_LLM_BASE_URL", "")).strip()),
+        },
+    }
+
+
+def _build_llm_diagnostics_payload(
+    *,
+    settings: Any,
+    ping_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    connection_payload = _llm_connection_payload(settings=settings)
+    issues: list[str] = []
+    if not connection_payload["api_key"]["configured"]:
+        issues.append("missing_api_key")
+    return {
+        "ready": not issues,
+        "issues": issues,
+        "model": str(getattr(settings, "llm_model", "") or ""),
+        "provider": _llm_provider_from_model(str(getattr(settings, "llm_model", "") or "")),
+        "output_language": str(getattr(settings, "llm_output_language", "") or "") or None,
+        "config_path": cli._path_or_none(getattr(settings, "config_path", None)),
+        "connection": connection_payload,
+        "ping": ping_payload or {"status": "skipped"},
+    }
+
+
+def _run_llm_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
+    analyzer_module = cli._import_symbol("recoleta.analyzer")
+    llm_connection_from_settings = cli._import_symbol(
+        "recoleta.llm_connection",
+        attr_name="llm_connection_from_settings",
+    )
+    connection = llm_connection_from_settings(settings)
+    api_key = getattr(connection, "api_key", None)
+    if api_key is None:
+        return {
+            "status": "failed",
+            "error_type": "MissingConfiguration",
+            "error_message": "RECOLETA_LLM_API_KEY is not configured",
+        }
+
+    completion = analyzer_module._get_completion()
+    messages = [
+        {"role": "system", "content": "Reply with the single word pong."},
+        {"role": "user", "content": "ping"},
+    ]
+    started = time.perf_counter()
+    try:
+        response = completion(
+            model=str(getattr(settings, "llm_model", "") or ""),
+            messages=messages,
+            max_tokens=8,
+            timeout=float(timeout_seconds),
+            **connection.litellm_completion_kwargs(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        sanitize = getattr(analyzer_module, "_sanitize_error_message")
+        return {
+            "status": "failed",
+            "elapsed_ms": elapsed_ms,
+            "error_type": type(exc).__name__,
+            "error_message": sanitize(str(exc)),
+        }
+
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    usage = analyzer_module._extract_usage_dict(response)
+    prompt_tokens, completion_tokens, total_tokens = (
+        analyzer_module._extract_token_counts(usage)
+    )
+    cost_usd = analyzer_module._extract_response_cost_usd(response)
+    resolved_model = (
+        str(response.get("model") or "").strip()
+        if isinstance(response, dict)
+        else str(getattr(response, "model", "") or "").strip()
+    )
+    return {
+        "status": "ok",
+        "elapsed_ms": elapsed_ms,
+        "resolved_model": resolved_model or str(getattr(settings, "llm_model", "") or ""),
+        "response_excerpt": analyzer_module._extract_content(response)[:200],
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "cost_usd": cost_usd,
+        "usage": usage,
+    }
+
+
 def run_gc_command(
     *,
     db_path: Path | None,
@@ -345,6 +525,226 @@ def run_gc_command(
             owner_token=owner_token,
             heartbeat_monitor=heartbeat_monitor,
             log=log,
+        )
+
+
+def run_repair_streams_command(
+    *,
+    db_path: Path | None,
+    config_path: Path | None,
+    anchor_date: str,
+    streams: str,
+    json_output: bool,
+) -> None:
+    symbols = cli._runtime_symbols()
+    console_cls = symbols["Console"]
+    logger = symbols["logger"]
+    console = console_cls()
+    log = logger.bind(module="cli.repair_streams", json=json_output)
+
+    def _exit_with_error(message: str, *, code: int = 1) -> NoReturn:
+        log.warning("repair-streams failed error={}", message)
+        if json_output:
+            cli.typer.echo(
+                json.dumps(
+                    {"status": "error", "error": message},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+        else:
+            console.print(f"[red]repair-streams failed[/red] {message}")
+        raise cli.typer.Exit(code=code)
+
+    try:
+        normalized_streams = _parse_stream_names(streams)
+        period_start, period_end = _period_bounds_for_granularity(
+            anchor_date=anchor_date,
+            granularity="day",
+        )
+        resolved_db_path = cli._resolve_db_path(
+            db_path=db_path,
+            config_path=config_path,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _exit_with_error(str(exc))
+
+    if not resolved_db_path.exists():
+        _exit_with_error(f"db does not exist: {resolved_db_path}")
+
+    repository = cli._build_repository_for_db_path(db_path=resolved_db_path)
+    try:
+        repository.ensure_schema_current()
+    except Exception as exc:
+        _exit_with_error(str(exc))
+
+    owner_token, lease_log, heartbeat_monitor = cli._acquire_workspace_lease_for_command(
+        repository=repository,
+        console=console,
+        command="repair-streams",
+        log_module="cli.repair_streams",
+    )
+    try:
+        payload = repository.repair_stream_states_for_period(
+            period_start=period_start,
+            period_end=period_end,
+            streams=normalized_streams,
+        )
+    finally:
+        cli._cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=lease_log,
+        )
+
+    payload["status"] = "ok"
+    if json_output:
+        cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
+
+    console.print(
+        "[green]repair-streams completed[/green] "
+        f"period_start={payload['period_start']} "
+        f"period_end={payload['period_end']} "
+        f"item_total={payload['item_total']} "
+        f"candidate_total={payload['candidate_total']} "
+        f"inserted={payload['inserted_total']} "
+        f"updated={payload['updated_total']} "
+        f"unchanged={payload['unchanged_total']}"
+    )
+    console.print("streams=" + ",".join(payload["streams"]))
+
+
+def run_doctor_why_empty_command(
+    *,
+    db_path: Path | None,
+    config_path: Path | None,
+    anchor_date: str,
+    granularity: str,
+    stream: str,
+    min_relevance_score: float | None,
+    json_output: bool,
+) -> None:
+    symbols = cli._runtime_symbols()
+    console_cls = symbols["Console"]
+    logger = symbols["logger"]
+    console = console_cls()
+    log = logger.bind(module="cli.doctor.why_empty", json=json_output)
+
+    def _exit_with_error(message: str, *, code: int = 1) -> NoReturn:
+        log.warning("doctor why-empty failed error={}", message)
+        if json_output:
+            cli.typer.echo(
+                json.dumps(
+                    {"status": "error", "error": message},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+        else:
+            console.print(f"[red]doctor why-empty failed[/red] {message}")
+        raise cli.typer.Exit(code=code)
+
+    try:
+        period_start, period_end = _period_bounds_for_granularity(
+            anchor_date=anchor_date,
+            granularity=granularity,
+        )
+        resolved_db_path = cli._resolve_db_path(
+            db_path=db_path,
+            config_path=config_path,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _exit_with_error(str(exc))
+
+    if not resolved_db_path.exists():
+        _exit_with_error(f"db does not exist: {resolved_db_path}")
+
+    settings: Any | None = None
+    if cli._should_attempt_settings_load(
+        db_path_option=db_path,
+        config_path_option=config_path,
+    ):
+        try:
+            settings = cli._build_settings(
+                config_path=config_path,
+                db_path=resolved_db_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "doctor why-empty settings load skipped error_type={} error={}",
+                type(exc).__name__,
+                str(exc),
+            )
+
+    repository = cli._build_repository_for_db_path(db_path=resolved_db_path)
+    try:
+        repository.ensure_schema_current()
+    except Exception as exc:
+        _exit_with_error(str(exc))
+
+    normalized_scope = str(stream or "").strip() or "default"
+    effective_min_relevance = (
+        float(min_relevance_score)
+        if min_relevance_score is not None
+        else _min_relevance_score_for_scope(
+            settings=settings,
+            scope=normalized_scope,
+        )
+    )
+    payload = repository.diagnose_corpus_window(
+        period_start=period_start,
+        period_end=period_end,
+        scope=normalized_scope,
+        min_relevance_score=effective_min_relevance,
+    )
+    payload["status"] = "ok"
+    payload["granularity"] = str(granularity or "").strip().lower()
+
+    if json_output:
+        cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
+
+    console.print("[green]doctor why-empty[/green]")
+    console.print(
+        f"scope={payload['scope']} granularity={payload['granularity']} "
+        f"period_start={payload['period_start']} period_end={payload['period_end']}"
+    )
+    console.print(
+        f"candidate_total={payload['candidate_total']} "
+        f"selected_total={payload['selected_total']} "
+        f"filtered_out_total={payload['filtered_out_total']} "
+        f"indexed_item_docs_total={payload['indexed_item_docs_total']}"
+    )
+    if payload["item_states"]:
+        console.print(
+            "item_states="
+            + " ".join(
+                f"{name}={count}" for name, count in payload["item_states"].items()
+            )
+        )
+    if payload["stream_states"]:
+        console.print(
+            "stream_states="
+            + " ".join(
+                f"{name}={count}" for name, count in payload["stream_states"].items()
+            )
+        )
+    if payload["exclusion_reasons"]:
+        console.print(
+            "exclusion_reasons="
+            + " ".join(
+                f"{name}={count}"
+                for name, count in payload["exclusion_reasons"].items()
+            )
+        )
+    for sample in payload["excluded_samples"]:
+        console.print(
+            "excluded_sample="
+            + f"id={sample['item_id']} "
+            + f"title={sample['title']} "
+            + f"reasons={','.join(sample['reasons'])}"
         )
 
 
@@ -932,3 +1332,131 @@ def run_doctor_command(
         f"lease={lease_state}" + (f" {lease_details}" if lease_details else "")
     )
     console.print(f"latest_run={latest_run_state}")
+
+
+def run_doctor_llm_command(
+    *,
+    ping: bool,
+    timeout_seconds: float,
+    json_output: bool,
+    db_path: Path | None,
+    config_path: Path | None,
+) -> None:
+    symbols = cli._runtime_symbols()
+    console_cls = symbols["Console"]
+    logger = symbols["logger"]
+    console = console_cls()
+    log = logger.bind(module="cli.doctor.llm", ping=ping, json=json_output)
+
+    try:
+        settings = cli._build_settings(
+            config_path=config_path,
+            db_path=db_path,
+        )
+    except Exception as exc:  # noqa: BLE001
+        message = f"settings load failed: {exc}"
+        log.warning(message)
+        if json_output:
+            cli._emit_json({"status": "error", "error": message})
+        else:
+            console.print(f"[red]doctor llm failed[/red] {message}")
+        raise cli.typer.Exit(code=1) from exc
+
+    ping_payload = _run_llm_ping(
+        settings=settings,
+        timeout_seconds=timeout_seconds,
+    ) if ping else {"status": "skipped"}
+    payload = _build_llm_diagnostics_payload(
+        settings=settings,
+        ping_payload=ping_payload,
+    )
+
+    if ping and str(ping_payload.get("status", "") or "") != "ok":
+        message = "llm ping failed"
+        log.warning(
+            "LLM ping failed model={} provider={} error_type={} error={}",
+            payload["model"],
+            payload["provider"],
+            ping_payload.get("error_type"),
+            ping_payload.get("error_message"),
+        )
+        if json_output:
+            cli._emit_json(
+                {
+                    "status": "error",
+                    "error": message,
+                    "diagnostics": payload,
+                }
+            )
+        else:
+            console.print(
+                "[red]doctor llm failed[/red] "
+                f"{message} error_type={ping_payload.get('error_type')} "
+                f"error={ping_payload.get('error_message')}"
+            )
+        raise cli.typer.Exit(code=1)
+
+    if json_output:
+        cli._emit_json({"status": "ok", **payload})
+        return
+
+    console.print(
+        "[green]doctor llm ok[/green] "
+        f"ready={str(payload['ready']).lower()} "
+        f"provider={payload['provider']} model={payload['model']}"
+    )
+    console.print(
+        "api_key="
+        + (
+            f"configured fingerprint={payload['connection']['api_key']['fingerprint']}"
+            if payload["connection"]["api_key"]["configured"]
+            else "missing"
+        )
+        + (
+            " env_present=true"
+            if payload["connection"]["api_key"]["env_present"]
+            else " env_present=false"
+        )
+    )
+    console.print(
+        "base_url="
+        + (
+            str(payload["connection"]["base_url"]["value"])
+            if payload["connection"]["base_url"]["configured"]
+            else "default"
+        )
+        + (
+            " env_present=true"
+            if payload["connection"]["base_url"]["env_present"]
+            else " env_present=false"
+        )
+    )
+    if payload["output_language"] is not None:
+        console.print(f"output_language={payload['output_language']}")
+    if payload["config_path"] is not None:
+        console.print(f"config_path={payload['config_path']}")
+    if payload["issues"]:
+        console.print("issues=" + " ".join(payload["issues"]))
+    if ping:
+        console.print(
+            "ping="
+            + " ".join(
+                part
+                for part in (
+                    payload["ping"]["status"],
+                    f"elapsed_ms={payload['ping'].get('elapsed_ms')}"
+                    if payload["ping"].get("elapsed_ms") is not None
+                    else "",
+                    f"resolved_model={payload['ping'].get('resolved_model')}"
+                    if payload["ping"].get("resolved_model")
+                    else "",
+                    f"prompt_tokens={payload['ping'].get('prompt_tokens')}"
+                    if payload["ping"].get("prompt_tokens") is not None
+                    else "",
+                    f"completion_tokens={payload['ping'].get('completion_tokens')}"
+                    if payload["ping"].get("completion_tokens") is not None
+                    else "",
+                )
+                if part
+            )
+        )

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 WORKSPACE_LEASE_NAME = "workspace"
 
 

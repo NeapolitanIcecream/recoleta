@@ -11,7 +11,15 @@ import pytest
 from sqlmodel import Session, select
 
 from recoleta.config import Settings
-from recoleta.models import Analysis, Document, DocumentChunk, Item, Metric
+from recoleta.models import (
+    Analysis,
+    Document,
+    DocumentChunk,
+    ITEM_STATE_ANALYZED,
+    ITEM_STATE_RETRYABLE_FAILED,
+    Item,
+    Metric,
+)
 from recoleta.pipeline.service import PipelineService
 from recoleta.trends import TrendPayload, day_period_bounds
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft, utc_now
@@ -763,3 +771,142 @@ def test_trends_emit_stream_scoped_metrics_for_topic_streams(
         "pipeline.trends.stream.agents_lab",
         "pipeline.trends.stream.bio_watch",
     }
+
+
+def test_stream_analysis_selection_keeps_retryable_stream_items_after_default_analysis(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: explicit stream reruns must not disappear after default analysis."""
+
+    _configure_topic_stream_env(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    _settings, repository = _build_runtime()
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="topic-stream-rerun-1",
+        canonical_url="https://example.com/topic-stream-rerun-1",
+        title="Topic Stream Rerun",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+        published_at=datetime(2026, 3, 15, 12, tzinfo=UTC),
+    )
+    item, _created = repository.upsert_item(draft)
+    assert item.id is not None
+    repository.upsert_content(
+        item_id=int(item.id),
+        content_type="html_maintext",
+        text="Agents are present in the document body.",
+    )
+    repository.mark_item_enriched(item_id=int(item.id))
+    repository.save_analysis(
+        item_id=int(item.id),
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary="Default stream summary",
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+        scope="default",
+        mirror_item_state=True,
+    )
+    repository.mark_item_stream_state(
+        item_id=int(item.id),
+        stream="agents_lab",
+        state=ITEM_STATE_RETRYABLE_FAILED,
+    )
+
+    selected = repository.list_items_for_stream_analysis(
+        stream="agents_lab",
+        limit=10,
+        period_start=datetime(2026, 3, 15, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+    )
+
+    assert [int(entry.id) for entry in selected if entry.id is not None] == [int(item.id)]
+
+
+def test_explicit_stream_analyze_reruns_item_even_when_global_state_is_analyzed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: stream repair must allow a true rerun after default analysis."""
+
+    monkeypatch.delenv("TOPICS", raising=False)
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "outputs"))
+    monkeypatch.setenv("PUBLISH_TARGETS", json.dumps(["markdown"]))
+    monkeypatch.setenv(
+        "TOPIC_STREAMS",
+        json.dumps([{"name": "agents_lab", "topics": ["agents"]}]),
+    )
+
+    settings, repository = _build_runtime()
+    analyzer = _RecordingAnalyzer()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=analyzer,
+        telegram_sender=FakeTelegramSender(),
+    )
+    item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="topic-stream-rerun-service-1",
+            canonical_url="https://example.com/topic-stream-rerun-service-1",
+            title="Topic Stream Service Rerun",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 15, 12, tzinfo=UTC),
+        )
+    )
+    assert item.id is not None
+    repository.upsert_content(
+        item_id=int(item.id),
+        content_type="html_maintext",
+        text="Agents remain visible for the rerun.",
+    )
+    repository.mark_item_enriched(item_id=int(item.id))
+    repository.save_analysis(
+        item_id=int(item.id),
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary="Default summary",
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.3,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+        scope="default",
+        mirror_item_state=True,
+    )
+    repository.mark_item_stream_state(
+        item_id=int(item.id),
+        stream="agents_lab",
+        state=ITEM_STATE_RETRYABLE_FAILED,
+    )
+
+    result = service.analyze(run_id="run-topic-stream-service-rerun", limit=10)
+
+    assert result.processed == 1
+    assert result.failed == 0
+    assert analyzer.calls == [["agents"]]
+
+    with Session(repository.engine) as session:
+        analysis = session.exec(
+            select(Analysis).where(
+                Analysis.item_id == int(item.id),
+                Analysis.scope == "agents_lab",
+            )
+        ).one()
+        refreshed = session.get(Item, int(item.id))
+
+    assert analysis.summary.endswith("agents")
+    assert refreshed is not None
+    assert refreshed.state == ITEM_STATE_ANALYZED

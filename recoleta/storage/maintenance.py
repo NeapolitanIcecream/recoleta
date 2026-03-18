@@ -8,10 +8,26 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import text
+from sqlalchemy import and_, desc, func, text
 from sqlmodel import Session, select
 
-from recoleta.models import Artifact, Metric, Run, RUN_STATUS_FAILED, RUN_STATUS_SUCCEEDED
+from recoleta.models import (
+    Analysis,
+    Artifact,
+    Document,
+    ITEM_STATE_ANALYZED,
+    ITEM_STATE_ENRICHED,
+    ITEM_STATE_FAILED,
+    ITEM_STATE_PUBLISHED,
+    ITEM_STATE_RETRYABLE_FAILED,
+    ITEM_STATE_TRIAGED,
+    Item,
+    ItemStreamState,
+    Metric,
+    Run,
+    RUN_STATUS_FAILED,
+    RUN_STATUS_SUCCEEDED,
+)
 from recoleta.storage_common import (
     CURRENT_SCHEMA_VERSION,
     ArtifactPruneResult,
@@ -21,6 +37,7 @@ from recoleta.storage_common import (
     OperationalPruneResult,
     SchemaVersionError,
     _from_json_list,
+    _to_json,
 )
 from recoleta.types import utc_now
 
@@ -34,12 +51,270 @@ class MaintenanceStoreMixin:
     def schema_version(self) -> int: ...
 
     def add_artifact(
-        self, *, run_id: str, item_id: int | None, kind: str, path: str
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        path: str,
+        details: dict[str, Any] | None = None,
     ) -> None:
-        artifact = Artifact(run_id=run_id, item_id=item_id, kind=kind, path=path)
+        normalized_details = details if isinstance(details, dict) else {}
+        artifact = Artifact(
+            run_id=run_id,
+            item_id=item_id,
+            kind=kind,
+            path=path,
+            details_json=_to_json(normalized_details),
+        )
         with Session(self.engine) as session:
             session.add(artifact)
             self._commit(session)
+
+    def list_artifacts_for_run(self, *, run_id: str) -> list[Artifact]:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            return []
+        with Session(self.engine) as session:
+            statement = (
+                select(Artifact)
+                .where(Artifact.run_id == normalized_run_id)
+                .order_by(
+                    desc(cast(Any, Artifact.created_at)),
+                    desc(cast(Any, Artifact.id)),
+                )
+            )
+            return list(session.exec(statement))
+
+    def repair_stream_states_for_period(
+        self,
+        *,
+        period_start: datetime,
+        period_end: datetime,
+        streams: list[str],
+    ) -> dict[str, Any]:
+        normalized_streams = sorted(
+            {str(stream or "").strip() for stream in streams if str(stream or "").strip()}
+        )
+        if not normalized_streams:
+            return {
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "streams": [],
+                "item_total": 0,
+                "candidate_total": 0,
+                "inserted_total": 0,
+                "updated_total": 0,
+                "unchanged_total": 0,
+            }
+
+        ready_item_states = [
+            ITEM_STATE_ENRICHED,
+            ITEM_STATE_TRIAGED,
+            ITEM_STATE_ANALYZED,
+            ITEM_STATE_PUBLISHED,
+            ITEM_STATE_RETRYABLE_FAILED,
+            ITEM_STATE_FAILED,
+        ]
+        with Session(self.engine) as session:
+            event_at = func.coalesce(
+                cast(Any, Item.published_at), cast(Any, Item.created_at)
+            )
+            items = list(
+                session.exec(
+                    select(Item)
+                    .where(
+                        event_at >= period_start,
+                        event_at < period_end,
+                        cast(Any, Item.state).in_(ready_item_states),
+                    )
+                    .order_by(
+                        desc(cast(Any, event_at)),
+                        desc(cast(Any, Item.updated_at)),
+                        desc(cast(Any, Item.created_at)),
+                    )
+                )
+            )
+            item_ids = [
+                int(raw_id)
+                for raw_id in (getattr(item, "id", None) for item in items)
+                if raw_id is not None and int(raw_id) > 0
+            ]
+            existing_states: dict[tuple[int, str], ItemStreamState] = {}
+            if item_ids:
+                for row in session.exec(
+                    select(ItemStreamState).where(
+                        cast(Any, ItemStreamState.item_id).in_(item_ids),
+                        cast(Any, ItemStreamState.stream).in_(normalized_streams),
+                    )
+                ):
+                    existing_states[(int(row.item_id), str(row.stream))] = row
+
+            inserted_total = 0
+            updated_total = 0
+            unchanged_total = 0
+            now = utc_now()
+            for item_id in item_ids:
+                for stream in normalized_streams:
+                    existing = existing_states.get((item_id, stream))
+                    if existing is None:
+                        session.add(
+                            ItemStreamState(
+                                item_id=item_id,
+                                stream=stream,
+                                state=ITEM_STATE_RETRYABLE_FAILED,
+                                created_at=now,
+                                updated_at=now,
+                            )
+                        )
+                        inserted_total += 1
+                        continue
+                    if str(getattr(existing, "state", "") or "") == ITEM_STATE_RETRYABLE_FAILED:
+                        unchanged_total += 1
+                        continue
+                    existing.state = ITEM_STATE_RETRYABLE_FAILED
+                    existing.updated_at = now
+                    session.add(existing)
+                    updated_total += 1
+
+            if inserted_total > 0 or updated_total > 0:
+                self._commit(session)
+
+        return {
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "streams": normalized_streams,
+            "item_total": len(item_ids),
+            "candidate_total": len(item_ids) * len(normalized_streams),
+            "inserted_total": inserted_total,
+            "updated_total": updated_total,
+            "unchanged_total": unchanged_total,
+        }
+
+    def diagnose_corpus_window(
+        self,
+        *,
+        period_start: datetime,
+        period_end: datetime,
+        scope: str,
+        min_relevance_score: float = 0.0,
+    ) -> dict[str, Any]:
+        normalized_scope = str(scope or "").strip() or "default"
+        min_relevance = float(min_relevance_score or 0.0)
+        selected_stream_states = {ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED}
+
+        with Session(self.engine) as session:
+            event_at = func.coalesce(
+                cast(Any, Item.published_at), cast(Any, Item.created_at)
+            )
+            rows = list(
+                session.exec(
+                    select(Item, Analysis, ItemStreamState)
+                    .outerjoin(
+                        Analysis,
+                        and_(
+                            cast(Any, Analysis.item_id) == cast(Any, Item.id),
+                            cast(Any, Analysis.scope) == normalized_scope,
+                        ),
+                    )
+                    .outerjoin(
+                        ItemStreamState,
+                        and_(
+                            cast(Any, ItemStreamState.item_id) == cast(Any, Item.id),
+                            cast(Any, ItemStreamState.stream) == normalized_scope,
+                        ),
+                    )
+                    .where(event_at >= period_start, event_at < period_end)
+                    .order_by(
+                        desc(cast(Any, event_at)),
+                        desc(cast(Any, Item.updated_at)),
+                        desc(cast(Any, Item.created_at)),
+                    )
+                )
+            )
+            indexed_item_docs_total = int(
+                session.exec(
+                    select(func.count())
+                    .select_from(Document)
+                    .where(
+                        Document.doc_type == "item",
+                        cast(Any, Document.scope) == normalized_scope,
+                        cast(Any, Document.published_at).is_not(None),
+                        cast(Any, Document.published_at) >= period_start,
+                        cast(Any, Document.published_at) < period_end,
+                    )
+                ).one()
+                or 0
+            )
+
+        item_states: dict[str, int] = {}
+        stream_states: dict[str, int] = {}
+        exclusion_reasons: dict[str, int] = {}
+        selected_total = 0
+        filtered_out_total = 0
+        analysis_present_total = 0
+        stream_state_present_total = 0
+        excluded_samples: list[dict[str, Any]] = []
+
+        for item, analysis, stream_state in rows:
+            item_state = str(getattr(item, "state", "") or "unknown")
+            item_states[item_state] = item_states.get(item_state, 0) + 1
+            if analysis is not None:
+                analysis_present_total += 1
+
+            blockers: set[str] = set()
+            if analysis is None:
+                blockers.add("missing_analysis")
+
+            if stream_state is None:
+                stream_states["missing"] = stream_states.get("missing", 0) + 1
+                blockers.add("missing_stream_state")
+            else:
+                stream_state_present_total += 1
+                stream_state_name = str(getattr(stream_state, "state", "") or "unknown")
+                stream_states[stream_state_name] = (
+                    stream_states.get(stream_state_name, 0) + 1
+                )
+                if stream_state_name not in selected_stream_states:
+                    blockers.add(f"stream_state_{stream_state_name}")
+
+            if analysis is not None and float(getattr(analysis, "relevance_score", 0.0) or 0.0) < min_relevance:
+                blockers.add("relevance_below_threshold")
+
+            if blockers:
+                filtered_out_total += 1
+                for reason in sorted(blockers):
+                    exclusion_reasons[reason] = exclusion_reasons.get(reason, 0) + 1
+                if len(excluded_samples) < 5:
+                    excluded_samples.append(
+                        {
+                            "item_id": int(getattr(item, "id", 0) or 0),
+                            "title": str(getattr(item, "title", "") or ""),
+                            "reasons": sorted(blockers),
+                        }
+                    )
+                continue
+
+            selected_total += 1
+
+        return {
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "scope": normalized_scope,
+            "min_relevance_score": min_relevance,
+            "candidate_total": len(rows),
+            "selected_total": selected_total,
+            "filtered_out_total": filtered_out_total,
+            "analysis_present_total": analysis_present_total,
+            "stream_state_present_total": stream_state_present_total,
+            "indexed_item_docs_total": indexed_item_docs_total,
+            "item_states": dict(sorted(item_states.items())),
+            "stream_states": dict(sorted(stream_states.items())),
+            "exclusion_reasons": dict(
+                sorted(exclusion_reasons.items(), key=lambda entry: (-entry[1], entry[0]))
+            ),
+            "excluded_samples": excluded_samples,
+        }
 
     def prune_artifacts_older_than(
         self,

@@ -259,6 +259,41 @@ def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
     assert (output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.pdf").exists()
 
 
+def test_materialize_outputs_cli_emits_json_summary(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _seed_materialize_fixture(repository=repository)
+    output_dir = tmp_path / "outputs"
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "materialize",
+            "outputs",
+            "--db-path",
+            str(repository.db_path),
+            "--output-dir",
+            str(output_dir),
+            "--site",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "materialize outputs"
+    assert payload["totals"]["scopes"] == 1
+    assert payload["totals"]["items"] == 1
+    assert payload["totals"]["trends"] == 1
+    assert payload["site_manifest_path"] == str(output_dir / "site" / "manifest.json")
+    assert payload["scopes"][0]["scope"] == "default"
+    assert payload["scopes"][0]["trend_notes_total"] == 1
+
+
 def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_site(
     tmp_path: Path,
 ) -> None:
@@ -857,6 +892,7 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
     trend_note_path = output_dir / "Trends" / f"day--2026-03-13--trend--{trend_doc_id}.md"
     idea_note_path = output_dir / "Ideas" / "day--2026-03-13--ideas.md"
     trend_note_text = trend_note_path.read_text(encoding="utf-8")
+    assert result.site_manifest_path is not None
     manifest = json.loads(result.site_manifest_path.read_text(encoding="utf-8"))
 
     assert "site_exclude: true" in trend_note_text
