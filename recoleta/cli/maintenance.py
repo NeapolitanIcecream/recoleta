@@ -574,7 +574,7 @@ def run_repair_streams_command(
 
     repository = cli._build_repository_for_db_path(db_path=resolved_db_path)
     try:
-        repository.ensure_schema_current()
+        repository.init_schema()
     except Exception as exc:
         _exit_with_error(str(exc))
 

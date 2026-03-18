@@ -13,6 +13,10 @@ Tracks each managed run for auditing, leases, and freshness checks.
 - `heartbeat_at` (datetime): refreshed while long-running commands hold the workspace lease
 - `finished_at` (datetime, nullable)
 - `status` (text): `running|succeeded|failed`
+- `command` (text, nullable): CLI command that created the run, for example `trends` or `site gh-deploy`
+- `scope` (text, nullable): stream or logical scope when one applies
+- `granularity` (text, nullable): `day|week|month` for run-scoped trend/idea windows
+- `period_start` / `period_end` (datetime, nullable): UTC bounds for windowed runs
 - `config_fingerprint` (text): hash of effective config (excluding secrets)
 
 ### `workspace_leases`
@@ -154,6 +158,7 @@ Optional debug artifacts (mainly for failures and LLM calls).
 - `item_id` (FK -> items.id, nullable)
 - `kind` (text): `error_context|llm_request|llm_response|embedding_request|embedding_response|triage_summary|raw_html|raw_pdf`
 - `path` (text): relative path under artifact root
+- `details_json` (text): lightweight structured summary for quick inspection, for example `error_type`, `error_category`, `http_status`, `retryable`, and `message_excerpt`
 - `created_at`
 
 ### `source_pull_states`

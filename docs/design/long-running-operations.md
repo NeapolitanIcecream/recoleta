@@ -24,7 +24,7 @@ Recoleta's long-running operating model is now implemented around a few concrete
 - SQLite as the durable local index plus `PRAGMA user_version` compatibility checks
 - a SQLite-backed workspace lease and run heartbeat for singleton writes
 - maintenance and recovery commands (`gc`, `vacuum`, `backup`, `restore`)
-- read-only diagnostics (`doctor`, `stats`) and a documented container contract
+- diagnostics and repair commands (`doctor`, `stats`, `runs`, `repair-streams`) plus a documented container contract
 
 The remaining design questions are mostly about defaults and future policy, for example retention windows, cache pruning scope, and how much schema migration machinery the project should eventually adopt.
 
@@ -356,7 +356,15 @@ Operators should be able to answer these questions quickly:
 Recoleta exposes two small operator-facing interfaces for this:
 
 - `recoleta doctor`
+- `recoleta stats --json`
+- `recoleta runs show` / `recoleta runs list`
 - a container/system healthcheck command built on the same checks
+
+Targeted recovery remains separate from the read-only checks:
+
+- `recoleta repair-streams --date ... --streams ...` repairs explicit
+  stream-analysis state for one UTC day without introducing a general rerun
+  workflow engine.
 
 ## Dependency stance
 
@@ -406,6 +414,8 @@ This is the highest-value first implementation slice.
 - official Dockerfile(s)
 - Compose example
 - `doctor` command
+- `runs` inspection commands
+- targeted repair helpers such as `repair-streams`
 - documented healthcheck contract
 
 ## Implementation workstreams
@@ -472,7 +482,9 @@ Scope:
 
 Outcome:
 
-- `doctor` and `stats` now provide the intended lightweight operator surface
+- `doctor`, `stats`, and `runs` now provide the intended lightweight operator surface
+- `doctor why-empty` and `doctor llm` cover the two most common incident-response questions
+- `repair-streams` provides a bounded write-capable repair path without adding a top-level rerun orchestrator
 - deployment recipes are documented for cron/systemd/containers
 - retention defaults remain internal on purpose for now
 

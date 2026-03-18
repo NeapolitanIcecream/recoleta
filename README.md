@@ -358,7 +358,16 @@ uv run recoleta site serve
 # operator checks
 uv run recoleta doctor --healthcheck --max-success-age-minutes 180
 uv run recoleta stats --json
+uv run recoleta doctor llm --json
+uv run recoleta doctor why-empty --date 2026-03-15 --granularity day --stream agents_lab --json
+uv run recoleta repair-streams --date 2026-03-15 --streams agents_lab --json
+uv run recoleta runs show --run-id <run-id> --json
+uv run recoleta runs list --limit 5 --json
 ```
+
+For automation, `analyze`, `publish`, `trends`, `trends-week`, `ideas`,
+`materialize outputs`, `site build`, `site stage`, and `site gh-deploy` also
+accept `--json`.
 
 For backfills, site deploy, cron, systemd, maintenance, and recovery workflows,
 see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).

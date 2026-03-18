@@ -609,3 +609,52 @@ def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> Non
     assert payload["item_states"]["analyzed"] == 1
     assert payload["exclusion_reasons"]["missing_analysis"] == 1
     assert payload["exclusion_reasons"]["stream_state_retryable_failed"] == 1
+
+
+def test_repair_streams_applies_startup_safe_migrations_before_repair(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="repair-stream-migration",
+            canonical_url="https://example.com/repair-stream-migration",
+            title="Repair Streams Migrates First",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 15, 12, tzinfo=UTC),
+        )
+    )
+    assert item.id is not None
+    repository.mark_item_enriched(item_id=int(item.id))
+
+    with repository.engine.begin() as conn:
+        conn.exec_driver_sql("PRAGMA user_version = 3")
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "repair-streams",
+            "--db-path",
+            str(db_path),
+            "--date",
+            "2026-03-15",
+            "--streams",
+            "agents_lab",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["inserted_total"] == 1
+
+    with sqlite3.connect(db_path) as conn:
+        version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+    assert version == CURRENT_SCHEMA_VERSION

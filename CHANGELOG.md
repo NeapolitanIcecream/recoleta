@@ -7,6 +7,27 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `recoleta doctor llm` for effective LLM config inspection and optional probe
+  checks.
+- `recoleta doctor why-empty` for machine-readable empty-corpus diagnostics.
+- `recoleta repair-streams` for stream-state repair by UTC day.
+- `recoleta runs show` and `recoleta runs list` for aggregated run inspection.
+- `--json` output for `analyze`, `publish`, `trends`, `trends-week`, `ideas`,
+  `materialize outputs`, `site build`, `site stage`, and `site gh-deploy`.
+
+### Changed
+
+- Explicit stream reruns no longer depend on the global `items.state` being
+  below `analyzed`.
+- `401` and `403` auth failures are now classified as retryable for stream
+  recovery.
+- Runs now persist minimal context such as command, scope, granularity, and
+  period bounds.
+- Artifacts now persist lightweight structured failure summaries alongside
+  artifact paths.
+
 ## [0.1.0] - 2026-03-16
 
 First public release.
