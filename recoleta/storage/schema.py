@@ -40,6 +40,8 @@ class SchemaStoreMixin:
         self._migrate_analyses_add_scope()
         self._migrate_documents_add_scope()
         self._migrate_runs_add_heartbeat()
+        self._migrate_runs_add_context()
+        self._migrate_artifacts_add_details_json()
 
     def _get_user_version(self) -> int:
         with self.engine.begin() as conn:
@@ -256,6 +258,47 @@ class SchemaStoreMixin:
         with self.engine.begin() as conn:
             for statement in ddl:
                 conn.execute(text(statement))
+
+    def _migrate_runs_add_context(self) -> None:
+        columns = self._table_columns("runs")
+        if not columns:
+            return
+
+        ddl: list[str] = []
+        if "command" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN command VARCHAR(128);")
+        if "scope" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN scope VARCHAR(64);")
+        if "granularity" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN granularity VARCHAR(16);")
+        if "period_start" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN period_start DATETIME;")
+        if "period_end" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN period_end DATETIME;")
+        ddl.extend(
+            [
+                "CREATE INDEX IF NOT EXISTS ix_runs_command ON runs (command);",
+                "CREATE INDEX IF NOT EXISTS ix_runs_scope ON runs (scope);",
+                "CREATE INDEX IF NOT EXISTS ix_runs_granularity ON runs (granularity);",
+                "CREATE INDEX IF NOT EXISTS ix_runs_period_start ON runs (period_start);",
+                "CREATE INDEX IF NOT EXISTS ix_runs_period_end ON runs (period_end);",
+            ]
+        )
+        with self.engine.begin() as conn:
+            for statement in ddl:
+                conn.execute(text(statement))
+
+    def _migrate_artifacts_add_details_json(self) -> None:
+        columns = self._table_columns("artifacts")
+        if not columns or "details_json" in columns:
+            return
+
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE artifacts ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}';"
+                )
+            )
 
     def _backfill_default_stream_states(self) -> None:
         statement = """

@@ -36,6 +36,11 @@ class Run(SQLModel, table=True):
     heartbeat_at: datetime = Field(default_factory=utc_now, index=True)
     finished_at: datetime | None = None
     status: str = Field(default=RUN_STATUS_RUNNING, max_length=24, index=True)
+    command: str | None = Field(default=None, max_length=128, index=True)
+    scope: str | None = Field(default=None, max_length=64, index=True)
+    granularity: str | None = Field(default=None, max_length=16, index=True)
+    period_start: datetime | None = Field(default=None, index=True)
+    period_end: datetime | None = Field(default=None, index=True)
     config_fingerprint: str = Field(max_length=128)
 
 
@@ -230,6 +235,7 @@ class Artifact(SQLModel, table=True):
     item_id: int | None = Field(default=None, foreign_key="items.id", index=True)
     kind: str = Field(max_length=64, index=True)
     path: str = Field(max_length=2048)
+    details_json: str = Field(default="{}", sa_type=Text)
     created_at: datetime = Field(default_factory=utc_now)
 
 

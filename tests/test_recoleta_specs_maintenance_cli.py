@@ -13,7 +13,17 @@ from typer.testing import CliRunner
 
 import recoleta.cli
 from recoleta.config import Settings
-from recoleta.models import Artifact, ChunkEmbedding, DocumentChunk, Item, Metric, Run
+from recoleta.models import (
+    Artifact,
+    ChunkEmbedding,
+    DocumentChunk,
+    ITEM_STATE_ANALYZED,
+    ITEM_STATE_RETRYABLE_FAILED,
+    Item,
+    ItemStreamState,
+    Metric,
+    Run,
+)
 from recoleta.rag.vector_store import embedding_table_name
 from recoleta.storage import CURRENT_SCHEMA_VERSION, Repository
 from recoleta.types import ItemDraft
@@ -464,3 +474,138 @@ def test_gc_prune_caches_with_db_path_only_skips_filesystem_cache_pruning(
     assert "deleted_document_chunks=1" in result.stdout
     assert "filesystem_cache_pruning=skipped" in result.stdout
     assert repository.read_document_chunk(doc_id=doc_id, chunk_index=0) is None
+
+
+def test_repair_streams_requeues_existing_and_missing_stream_rows(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    first, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="repair-stream-1",
+            canonical_url="https://example.com/repair-stream-1",
+            title="Repair Stream Existing State",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 15, 10, tzinfo=UTC),
+        )
+    )
+    second, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="repair-stream-2",
+            canonical_url="https://example.com/repair-stream-2",
+            title="Repair Stream Missing State",
+            authors=["Bob"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 15, 11, tzinfo=UTC),
+        )
+    )
+    assert first.id is not None
+    assert second.id is not None
+    repository.mark_item_enriched(item_id=int(first.id))
+    repository.mark_item_enriched(item_id=int(second.id))
+    repository.mark_item_stream_state(
+        item_id=int(first.id),
+        stream="agents_lab",
+        state=ITEM_STATE_ANALYZED,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "repair-streams",
+            "--db-path",
+            str(db_path),
+            "--date",
+            "2026-03-15",
+            "--streams",
+            "agents_lab",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["candidate_total"] == 2
+    assert payload["updated_total"] == 1
+    assert payload["inserted_total"] == 1
+    assert payload["streams"] == ["agents_lab"]
+
+    with Session(repository.engine) as session:
+        rows = list(
+            session.exec(
+                select(ItemStreamState).where(ItemStreamState.stream == "agents_lab")
+            )
+        )
+
+    assert len(rows) == 2
+    assert {int(row.item_id): row.state for row in rows} == {
+        int(first.id): ITEM_STATE_RETRYABLE_FAILED,
+        int(second.id): ITEM_STATE_RETRYABLE_FAILED,
+    }
+
+
+def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="doctor-why-empty-1",
+            canonical_url="https://example.com/doctor-why-empty-1",
+            title="Doctor Why Empty",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 15, 12, tzinfo=UTC),
+        )
+    )
+    assert item.id is not None
+    repository.mark_item_enriched(item_id=int(item.id))
+    repository.mark_item_stream_state(
+        item_id=int(item.id),
+        stream="agents_lab",
+        state=ITEM_STATE_RETRYABLE_FAILED,
+    )
+    with Session(repository.engine) as session:
+        row = session.get(Item, int(item.id))
+        assert row is not None
+        row.state = ITEM_STATE_ANALYZED
+        session.add(row)
+        session.commit()
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "doctor",
+            "why-empty",
+            "--db-path",
+            str(db_path),
+            "--date",
+            "2026-03-15",
+            "--granularity",
+            "day",
+            "--stream",
+            "agents_lab",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["scope"] == "agents_lab"
+    assert payload["candidate_total"] == 1
+    assert payload["selected_total"] == 0
+    assert payload["filtered_out_total"] == 1
+    assert payload["item_states"]["analyzed"] == 1
+    assert payload["exclusion_reasons"]["missing_analysis"] == 1
+    assert payload["exclusion_reasons"]["stream_state_retryable_failed"] == 1

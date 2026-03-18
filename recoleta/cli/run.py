@@ -134,6 +134,13 @@ def run_pipeline_once(
         command="run --once",
         log_module="cli.run.once",
     )
+    cli._update_run_context(
+        repository,
+        run_id=run_id,
+        scope=None if cli._has_explicit_topic_streams(settings) else "default",
+        period_start=period_start,
+        period_end=period_end,
+    )
 
     try:
         with cli._graceful_shutdown_signals():

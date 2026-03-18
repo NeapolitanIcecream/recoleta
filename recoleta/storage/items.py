@@ -14,9 +14,11 @@ from recoleta.models import (
     Content,
     Item,
     ItemStreamState,
+    ITEM_STATE_ANALYZED,
     ITEM_STATE_ENRICHED,
     ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
+    ITEM_STATE_PUBLISHED,
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
 )
@@ -607,7 +609,14 @@ class ItemStoreMixin:
                 )
                 .where(
                     cast(Any, Item.state).in_(
-                        [ITEM_STATE_ENRICHED, ITEM_STATE_RETRYABLE_FAILED]
+                        [
+                            ITEM_STATE_ENRICHED,
+                            ITEM_STATE_TRIAGED,
+                            ITEM_STATE_ANALYZED,
+                            ITEM_STATE_PUBLISHED,
+                            ITEM_STATE_RETRYABLE_FAILED,
+                            ITEM_STATE_FAILED,
+                        ]
                     )
                 )
             )

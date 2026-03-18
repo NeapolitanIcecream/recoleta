@@ -122,3 +122,18 @@ class PassOutputStoreMixin:
                 desc(cast(Any, PassOutput.id)),
             ).limit(1)
             return session.exec(statement).first()
+
+    def list_pass_outputs_for_run(self, *, run_id: str) -> list[PassOutput]:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            return []
+        with Session(self.engine) as session:
+            statement = (
+                select(PassOutput)
+                .where(PassOutput.run_id == normalized_run_id)
+                .order_by(
+                    desc(cast(Any, PassOutput.created_at)),
+                    desc(cast(Any, PassOutput.id)),
+                )
+            )
+            return list(session.exec(statement))

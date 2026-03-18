@@ -50,6 +50,43 @@ class RunStoreMixin:
             session.add(run)
             self._commit(session)
 
+    def update_run_context(
+        self,
+        *,
+        run_id: str,
+        command: str | None = None,
+        scope: str | None = None,
+        granularity: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> None:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            return
+        normalized_command = str(command or "").strip() or None
+        normalized_scope = str(scope or "").strip() or None
+        normalized_granularity = str(granularity or "").strip() or None
+        with Session(self.engine) as session:
+            run = session.get(Run, normalized_run_id)
+            if run is None:
+                return
+            changed = False
+            for name, value in (
+                ("command", normalized_command),
+                ("scope", normalized_scope),
+                ("granularity", normalized_granularity),
+                ("period_start", period_start),
+                ("period_end", period_end),
+            ):
+                if value is None or getattr(run, name, None) == value:
+                    continue
+                setattr(run, name, value)
+                changed = True
+            if not changed:
+                return
+            session.add(run)
+            self._commit(session)
+
     def heartbeat_run(self, run_id: str, *, now: datetime | None = None) -> None:
         heartbeat_at = now or utc_now()
         statement = text(
@@ -114,6 +151,13 @@ class RunStoreMixin:
                 .limit(normalized_limit)
             )
             return list(session.exec(statement))
+
+    def get_run(self, *, run_id: str) -> Run | None:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            return None
+        with Session(self.engine) as session:
+            return session.get(Run, normalized_run_id)
 
     def record_metric(
         self, *, run_id: str, name: str, value: float, unit: str | None = None

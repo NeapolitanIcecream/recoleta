@@ -91,6 +91,17 @@ class PublishStageService(Protocol):
         payload: dict[str, Any],
     ) -> Path | None: ...
 
+    def _record_debug_artifact(
+        self,
+        *,
+        run_id: str,
+        item_id: int | None,
+        kind: str,
+        payload: dict[str, Any],
+        log: Any,
+        failure_message: str,
+    ) -> Path | None: ...
+
     @staticmethod
     def _classify_exception(exc: BaseException) -> dict[str, Any]: ...
 
@@ -281,7 +292,7 @@ def run_publish_stage(
                 publish_result.note_paths.extend(note_paths)
             except Exception as exc:
                 sanitized_error = service._sanitize_error_message(str(exc))
-                artifact_path = service._write_debug_artifact(
+                service._record_debug_artifact(
                     run_id=run_id,
                     item_id=item.id,
                     kind="error_context",
@@ -292,20 +303,9 @@ def run_publish_stage(
                         "item_id": item.id,
                         **service._classify_exception(exc),
                     },
+                    log=log.bind(item_id=item.id),
+                    failure_message="Publish debug artifact record failed: {}",
                 )
-                if artifact_path is not None:
-                    try:
-                        service.repository.add_artifact(
-                            run_id=run_id,
-                            item_id=item.id,
-                            kind="error_context",
-                            path=str(artifact_path),
-                        )
-                    except Exception as artifact_exc:
-                        log.bind(item_id=item.id).warning(
-                            "Publish debug artifact record failed: {}",
-                            service._sanitize_error_message(str(artifact_exc)),
-                        )
                 if (
                     enable_telegram
                     and destination_hash is not None
@@ -564,7 +564,7 @@ def run_publish_topic_streams_stage(
                     publish_result.note_paths.extend(note_paths)
                 except Exception as exc:
                     sanitized_error = service._sanitize_error_message(str(exc))
-                    artifact_path = service._write_debug_artifact(
+                    service._record_debug_artifact(
                         run_id=run_id,
                         item_id=item.id,
                         kind="error_context",
@@ -576,20 +576,9 @@ def run_publish_topic_streams_stage(
                             "item_id": item.id,
                             **service._classify_exception(exc),
                         },
+                        log=stream_log.bind(item_id=item.id),
+                        failure_message="Topic stream publish debug artifact record failed: {}",
                     )
-                    if artifact_path is not None:
-                        try:
-                            service.repository.add_artifact(
-                                run_id=run_id,
-                                item_id=item.id,
-                                kind="error_context",
-                                path=str(artifact_path),
-                            )
-                        except Exception as artifact_exc:
-                            stream_log.bind(item_id=item.id).warning(
-                                "Topic stream publish debug artifact record failed: {}",
-                                service._sanitize_error_message(str(artifact_exc)),
-                            )
                     if (
                         enable_telegram
                         and destination_hash is not None

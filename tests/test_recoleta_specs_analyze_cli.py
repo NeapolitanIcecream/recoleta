@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 
 import pytest
@@ -89,4 +90,37 @@ def test_analyze_cli_passes_target_day_window_to_analyze(
 
     assert result.exit_code == 0
     assert "analyze completed processed=4 failed=1" in result.stdout
+    assert fake_repo.finished == [("run-analyze", True)]
+
+
+def test_analyze_cli_emits_json_output(
+    configured_env: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["analyze", "--limit", "3", "--date", "2026-01-02", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "analyze"
+    assert payload["run_id"] == "run-analyze"
+    assert payload["processed"] == 4
+    assert payload["failed"] == 1
+    assert payload["limit"] == 3
+    assert payload["period_start"] == "2026-01-02T00:00:00+00:00"
+    assert payload["period_end"] == "2026-01-03T00:00:00+00:00"
     assert fake_repo.finished == [("run-analyze", True)]

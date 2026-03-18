@@ -17,6 +17,12 @@ def sanitize_error_message(*, message: str, secrets: tuple[str, ...]) -> str:
 def classify_exception(exc: BaseException) -> dict[str, Any]:
     if isinstance(exc, httpx.HTTPStatusError):
         status = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+        if status in {401, 403}:
+            return {
+                "error_category": "auth",
+                "retryable": True,
+                "http_status": status,
+            }
         return {
             "error_category": "http_status",
             "retryable": status >= 500 or status == 429,
@@ -27,6 +33,46 @@ def classify_exception(exc: BaseException) -> dict[str, Any]:
     if isinstance(exc, ValueError):
         return {"error_category": "validation", "retryable": False}
     return {"error_category": "unknown", "retryable": False}
+
+
+def _message_excerpt(value: Any, *, max_len: int = 240) -> str | None:
+    normalized = " ".join(str(value or "").split())
+    if not normalized:
+        return None
+    if len(normalized) <= max_len:
+        return normalized
+    return normalized[: max_len - 3].rstrip() + "..."
+
+
+def summarize_artifact_payload(
+    *,
+    kind: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    source: dict[str, Any] | None = payload if isinstance(payload, dict) else None
+    if str(kind or "").strip() == "pass_output_failure":
+        nested = payload.get("failure") if isinstance(payload, dict) else None
+        source = nested if isinstance(nested, dict) else None
+    if not source:
+        return None
+
+    summary: dict[str, Any] = {}
+    error_type = str(source.get("error_type") or "").strip()
+    if error_type:
+        summary["error_type"] = error_type
+    error_category = str(source.get("error_category") or "").strip()
+    if error_category:
+        summary["error_category"] = error_category
+    retryable = source.get("retryable")
+    if isinstance(retryable, bool):
+        summary["retryable"] = retryable
+    http_status = source.get("http_status")
+    if isinstance(http_status, int) and http_status > 0:
+        summary["http_status"] = http_status
+    message_excerpt = _message_excerpt(source.get("error_message"))
+    if message_excerpt is not None:
+        summary["message_excerpt"] = message_excerpt
+    return summary or None
 
 
 def write_debug_artifact(

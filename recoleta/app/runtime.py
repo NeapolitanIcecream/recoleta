@@ -442,6 +442,12 @@ def _begin_managed_run(
             config_fingerprint=settings.safe_fingerprint(),
             run_id=run_id,
         )
+        update_run_context = getattr(repository, "update_run_context", None)
+        if callable(update_run_context):
+            try:
+                update_run_context(run_id=run.id, command=command)
+            except Exception:
+                lock_log.exception("Run context update failed during startup")
         command_log = logger.bind(module=log_module, run_id=run.id)
         heartbeat_monitor = _LeaseHeartbeatMonitor(
             repository=repository,

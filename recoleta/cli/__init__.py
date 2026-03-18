@@ -123,6 +123,51 @@ def _invoke_service_method(service: Any, method_name: str, /, **kwargs: Any) -> 
     return method(**supported_kwargs)
 
 
+def _update_run_context(
+    repository: Any,
+    *,
+    run_id: str,
+    command: str | None = None,
+    scope: str | None = None,
+    granularity: str | None = None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+) -> None:
+    method = getattr(repository, "update_run_context", None)
+    if not callable(method):
+        return
+    kwargs: dict[str, Any] = {"run_id": run_id}
+    if command is not None:
+        kwargs["command"] = command
+    if scope is not None:
+        kwargs["scope"] = scope
+    if granularity is not None:
+        kwargs["granularity"] = granularity
+    if period_start is not None:
+        kwargs["period_start"] = period_start
+    if period_end is not None:
+        kwargs["period_end"] = period_end
+    if len(kwargs) <= 1:
+        return
+    try:
+        signature = inspect.signature(method)
+    except Exception:
+        method(**kwargs)
+        return
+    accepts_var_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    supported_kwargs = (
+        kwargs
+        if accepts_var_kwargs
+        else {key: value for key, value in kwargs.items() if key in signature.parameters}
+    )
+    if len(supported_kwargs) <= 1:
+        return
+    method(**supported_kwargs)
+
+
 def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:
     if isinstance(db_path, Path):
         normalized = db_path.expanduser().resolve()
@@ -291,6 +336,153 @@ def _normalize_utc_datetime(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
+def _isoformat_or_none(value: Any) -> str | None:
+    if not isinstance(value, datetime):
+        return None
+    normalized = _normalize_utc_datetime(value)
+    return normalized.isoformat() if normalized is not None else None
+
+
+def _path_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, Path):
+        return str(value)
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _json_number(value: float | None) -> int | float | None:
+    if value is None:
+        return None
+    normalized = float(value)
+    if normalized.is_integer():
+        return int(normalized)
+    return normalized
+
+
+def _emit_json(payload: dict[str, Any]) -> None:
+    typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _metrics_payload(metrics: list[Any]) -> dict[str, dict[str, int | float | str | None]]:
+    totals: dict[str, float] = {}
+    units: dict[str, str | None] = {}
+    for metric in metrics:
+        name = str(getattr(metric, "name", "") or "").strip()
+        if not name:
+            continue
+        raw_value = getattr(metric, "value", None)
+        if not isinstance(raw_value, (int, float)):
+            continue
+        totals[name] = float(totals.get(name, 0.0)) + float(raw_value)
+        raw_unit = getattr(metric, "unit", None)
+        normalized_unit = str(raw_unit).strip() if raw_unit is not None else ""
+        units[name] = normalized_unit or None
+    return {
+        name: {
+            "value": _json_number(total),
+            "unit": units.get(name),
+        }
+        for name, total in sorted(totals.items())
+    }
+
+
+def _billing_summary_payload(metrics: list[Any]) -> dict[str, Any] | None:
+    metric_payload = _metrics_payload(metrics)
+
+    def _metric_value(name: str) -> float | None:
+        item = metric_payload.get(name)
+        if item is None:
+            return None
+        raw = item.get("value")
+        if not isinstance(raw, (int, float)):
+            return None
+        return float(raw)
+
+    component_specs = [
+        (
+            "triage_embeddings",
+            "pipeline.triage.embedding_calls_total",
+            "pipeline.triage.embedding_prompt_tokens_total",
+            None,
+            "pipeline.triage.estimated_cost_usd",
+            "pipeline.triage.cost_missing_total",
+        ),
+        (
+            "analyze_llm",
+            "pipeline.analyze.llm_calls_total",
+            "pipeline.analyze.llm_prompt_tokens_total",
+            "pipeline.analyze.llm_completion_tokens_total",
+            "pipeline.analyze.estimated_cost_usd",
+            "pipeline.analyze.cost_missing_total",
+        ),
+        (
+            "trends_embeddings",
+            "pipeline.trends.embedding_calls_total",
+            "pipeline.trends.embedding_prompt_tokens_total",
+            None,
+            "pipeline.trends.embedding_estimated_cost_usd",
+            "pipeline.trends.embedding_cost_missing_total",
+        ),
+        (
+            "trends_llm",
+            "pipeline.trends.llm_requests_total",
+            "pipeline.trends.llm_input_tokens_total",
+            "pipeline.trends.llm_output_tokens_total",
+            "pipeline.trends.estimated_cost_usd",
+            "pipeline.trends.cost_missing_total",
+        ),
+        (
+            "ideas_llm",
+            "pipeline.trends.pass.ideas.llm_requests_total",
+            "pipeline.trends.pass.ideas.llm_input_tokens_total",
+            "pipeline.trends.pass.ideas.llm_output_tokens_total",
+            "pipeline.trends.pass.ideas.estimated_cost_usd",
+            "pipeline.trends.pass.ideas.cost_missing_total",
+        ),
+    ]
+
+    components: dict[str, dict[str, int | float | None]] = {}
+    total_cost_usd = 0.0
+    any_cost = False
+    for (
+        component_name,
+        calls_name,
+        input_tokens_name,
+        output_tokens_name,
+        cost_name,
+        cost_missing_name,
+    ) in component_specs:
+        calls = _metric_value(calls_name)
+        input_tokens = _metric_value(input_tokens_name)
+        output_tokens = _metric_value(output_tokens_name) if output_tokens_name else None
+        cost_usd = _metric_value(cost_name)
+        cost_missing = _metric_value(cost_missing_name)
+        if all(
+            value is None
+            for value in (calls, input_tokens, output_tokens, cost_usd, cost_missing)
+        ):
+            continue
+        components[component_name] = {
+            "calls": _json_number(calls),
+            "input_tokens": _json_number(input_tokens),
+            "output_tokens": _json_number(output_tokens),
+            "cost_usd": _json_number(cost_usd),
+            "cost_missing": _json_number(cost_missing),
+        }
+        if cost_usd is not None:
+            total_cost_usd += float(cost_usd)
+            any_cost = True
+
+    if not components:
+        return None
+    return {
+        "components": components,
+        "total_cost_usd": _json_number(total_cost_usd) if any_cost else None,
+    }
+
+
 def _path_size_bytes(path: Path) -> int | None:
     candidate = path.expanduser().resolve()
     if not candidate.exists():
@@ -450,6 +642,9 @@ app = _app_module.app
 db_app = _app_module.db_app
 rag_app = _app_module.rag_app
 site_app = _app_module.site_app
+materialize_app = _app_module.materialize_app
+runs_app = _app_module.runs_app
+doctor_app = _app_module.doctor_app
 main = _app_module.main
 
 __all__ = [
@@ -457,6 +652,9 @@ __all__ = [
     "db_app",
     "rag_app",
     "site_app",
+    "materialize_app",
+    "runs_app",
+    "doctor_app",
     "main",
     "typer",
 ]

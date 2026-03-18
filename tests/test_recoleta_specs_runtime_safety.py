@@ -41,8 +41,63 @@ def test_init_schema_sets_user_version_and_runtime_tables(tmp_path: Path) -> Non
 
     assert version == CURRENT_SCHEMA_VERSION
     assert "heartbeat_at" in run_columns
+    assert "command" in run_columns
+    assert "scope" in run_columns
+    assert "granularity" in run_columns
+    assert "period_start" in run_columns
+    assert "period_end" in run_columns
     assert "workspace_leases" in lease_tables
     assert "pass_outputs" in lease_tables
+
+
+def test_init_schema_migrates_run_context_and_artifact_details_columns(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE runs (
+                id TEXT PRIMARY KEY,
+                started_at DATETIME NOT NULL,
+                heartbeat_at DATETIME,
+                finished_at DATETIME,
+                status TEXT NOT NULL,
+                config_fingerprint TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE artifacts (
+                id INTEGER PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                item_id INTEGER,
+                kind TEXT NOT NULL,
+                path TEXT NOT NULL,
+                created_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.execute("PRAGMA user_version = 3")
+        conn.commit()
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    with sqlite3.connect(db_path) as conn:
+        run_columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(runs)").fetchall()
+        }
+        artifact_columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(artifacts)").fetchall()
+        }
+        version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+    assert version == CURRENT_SCHEMA_VERSION
+    assert {"command", "scope", "granularity", "period_start", "period_end"} <= run_columns
+    assert "details_json" in artifact_columns
 
 
 def test_init_schema_prunes_legacy_meta_rows_from_chunk_fts(tmp_path: Path) -> None:

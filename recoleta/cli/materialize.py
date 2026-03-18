@@ -15,6 +15,7 @@ def run_materialize_outputs_command(
     pdf: bool,
     site: bool,
     debug_pdf: bool,
+    json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -184,6 +185,55 @@ def run_materialize_outputs_command(
     canonical_link_rewrites_total = sum(
         scope_result.canonical_link_rewrites_total for scope_result in result.scopes
     )
+    if json_output:
+        cli._emit_json(
+            {
+                "status": "ok",
+                "command": "materialize outputs",
+                "db_path": str(resolved_db_path),
+                "scope": normalized_scope,
+                "granularity": granularity,
+                "site_manifest_path": cli._path_or_none(result.site_manifest_path),
+                "totals": {
+                    "scopes": len(result.scopes),
+                    "items": item_notes_total,
+                    "trends": trend_notes_total,
+                    "trend_docs": trend_docs_total,
+                    "trend_failures": trend_failures_total,
+                    "ideas": ideas_notes_total,
+                    "idea_outputs": ideas_outputs_total,
+                    "idea_failures": ideas_failures_total,
+                    "obsidian": obsidian_notes_total,
+                    "obsidian_failures": obsidian_failures_total,
+                    "canonical_link_rewrites": canonical_link_rewrites_total,
+                    "pdfs": trend_pdf_total,
+                    "pdf_failures": trend_pdf_failures_total,
+                },
+                "scopes": [
+                    {
+                        "scope": scope_result.scope,
+                        "output_dir": str(scope_result.output_dir),
+                        "item_notes_total": scope_result.item_notes_total,
+                        "trend_notes_total": scope_result.trend_notes_total,
+                        "trend_docs_total": scope_result.trend_docs_total,
+                        "trend_failures_total": scope_result.trend_failures_total,
+                        "ideas_notes_total": scope_result.ideas_notes_total,
+                        "ideas_outputs_total": scope_result.ideas_outputs_total,
+                        "ideas_failures_total": scope_result.ideas_failures_total,
+                        "obsidian_notes_total": scope_result.obsidian_notes_total,
+                        "obsidian_failures_total": scope_result.obsidian_failures_total,
+                        "trend_pdf_total": scope_result.trend_pdf_total,
+                        "trend_pdf_failures_total": scope_result.trend_pdf_failures_total,
+                        "doc_ref_rewrites_total": scope_result.doc_ref_rewrites_total,
+                        "doc_ref_resolved_total": scope_result.doc_ref_resolved_total,
+                        "doc_ref_unresolved_total": scope_result.doc_ref_unresolved_total,
+                        "canonical_link_rewrites_total": scope_result.canonical_link_rewrites_total,
+                    }
+                    for scope_result in result.scopes
+                ],
+            }
+        )
+        return
     console.print(
         "[green]materialize outputs completed[/green] "
         f"scopes={len(result.scopes)} "
