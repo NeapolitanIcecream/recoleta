@@ -152,6 +152,10 @@ uv run recoleta doctor --healthcheck --max-success-age-minutes 180
 uv run recoleta stats --json
 ```
 
+Most long-running commands also support `--json`, including `analyze`,
+`publish`, `trends`, `trends-week`, `ideas`, `materialize outputs`, `site
+build`, `site stage`, and `site gh-deploy`.
+
 ## Deploy with cron or systemd
 
 Minimal cron example:
@@ -220,6 +224,59 @@ Scope notes:
   keeping ingest and analyze history.
 - `materialize outputs` is the safer repair path when the database is still
   correct and only filesystem output drifted.
+
+## Diagnose LLM config, empty corpora, and failed runs
+
+Use these commands when you need to prove what the current shell is doing
+before you rerun a date or repair state:
+
+```bash
+uv run recoleta doctor llm --json
+uv run recoleta doctor llm --ping --json
+uv run recoleta doctor why-empty --date 2026-03-15 --granularity day --stream agents_lab --json
+uv run recoleta runs show --run-id <run-id> --json
+uv run recoleta runs list --limit 10 --json
+```
+
+What to know:
+
+- `doctor llm` is read-only. It reports the effective model, provider,
+  output language, whether `RECOLETA_LLM_API_KEY` is present, a key
+  fingerprint, and whether `base_url` came from the current shell env.
+- `doctor llm --ping` runs a small completion probe against the current LLM
+  config and returns a non-zero exit code if the probe fails.
+- `doctor why-empty` explains why a day, week, or month corpus selected zero
+  items. It reports candidate counts, selected counts, filtered-out totals, and
+  exclusion reasons such as `missing_analysis` or
+  `stream_state_retryable_failed`.
+- `runs show` aggregates run status, billing, metrics, pass outputs, artifacts,
+  run context, and structured failure summaries in one JSON payload.
+- `runs list` gives a compact recent-run view that is easier to automate than
+  scraping logs.
+
+## Repair explicit stream analysis state
+
+Use `repair-streams` when a stream-scoped rerun is blocked by stale
+`item_stream_states` and the underlying source items are already present in the
+database:
+
+```bash
+uv run recoleta repair-streams --date 2026-03-15 --streams agents_lab --json
+uv run recoleta analyze --date 2026-03-15 --limit 50
+uv run recoleta trends --granularity day --date 2026-03-15
+uv run recoleta ideas --granularity day --date 2026-03-15
+```
+
+What to know:
+
+- `repair-streams` marks the selected stream rows `retryable_failed` for one
+  UTC day. It does not rerun analysis, trends, or ideas by itself.
+- `repair-streams` is write-capable and applies startup-safe schema migrations
+  before it repairs state, so it can be used directly on an older workspace.
+- Follow it with `analyze` to rerun the stream-scoped analysis, then `trends`
+  and `ideas` if you need new downstream documents for that window.
+- If the database is already correct and only Markdown/PDF/site output drifted,
+  use `materialize outputs` instead of mutating stream state.
 
 ## Further reference
 

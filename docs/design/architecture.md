@@ -17,7 +17,8 @@ Recoleta is a CLI-first application with a small set of commands:
 - `recoleta rag`: prewarm or rebuild the LanceDB vector workspace used by trend semantic search.
 - `recoleta db`: destructive reset helpers for clean-slate or trends-only resets.
 - `recoleta run`: schedule ingest/analyze/publish periodically, or use `run --once --date ...` for a one-shot UTC-day pipeline.
-- `recoleta stats`, `recoleta doctor`, `recoleta gc`, `recoleta vacuum`, `recoleta backup`, and `recoleta restore`: read-only diagnostics and maintenance commands for long-running workspaces.
+- `recoleta doctor`, `recoleta stats`, and `recoleta runs`: operator diagnostics and run inspection surfaces.
+- `recoleta repair-streams`, `recoleta gc`, `recoleta vacuum`, `recoleta backup`, and `recoleta restore`: targeted recovery and maintenance commands for long-running workspaces.
 
 ## Module boundaries
 
@@ -236,6 +237,12 @@ Every pipeline stage must emit at least one machine-readable signal:
   - optional trend PDF render bundles under `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/<pdf-stem>/`
   - optional trend-agent debug payloads including raw tool traces and context-pack stats
   - scrub secrets before writing
+- **Artifact summaries in SQLite**:
+  - `artifacts.details_json` stores a small structured summary when an artifact
+    represents a failure, for example `error_type`, `error_category`,
+    `http_status`, `retryable`, and `message_excerpt`
+  - `runs show` aggregates those summaries into a run-level failure view without
+    requiring the operator to open artifact files first
 
 ## Error handling and retries
 
@@ -244,3 +251,5 @@ Every pipeline stage must emit at least one machine-readable signal:
   - transient: retry, then mark `retryable_failed`
   - permanent: mark `failed` and stop further stages for that item
 - Persist failure context (error type, message, stage) in SQLite for later inspection.
+- For operator ergonomics, key CLI commands also expose machine-readable JSON
+  output instead of requiring log scraping.
