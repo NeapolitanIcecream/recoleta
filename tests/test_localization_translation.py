@@ -697,6 +697,10 @@ def test_export_trend_static_site_builds_language_trees_and_redirect_shell(
     assert "<html lang='en'>" in en_detail
     assert "<html lang='zh-CN'>" in zh_detail
     assert "language-switcher" in en_detail
+    assert "data-has-language-switcher=\"true\"" in en_detail
+    assert "nav-utility-cluster" in en_detail
+    assert "nav-link nav-link-external nav-link-repo" in en_detail
+    assert ">Language<" in en_detail
     assert "../../zh-cn/trends/" in en_detail
     assert "Agent Systems" in en_detail
     assert "智能体系统" in zh_detail

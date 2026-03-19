@@ -293,8 +293,8 @@ def _repo_cta_links() -> str:
     repo_href = html.escape(RECOLETA_REPO_URL, quote=True)
     quickstart_href = html.escape(RECOLETA_QUICKSTART_URL, quote=True)
     return (
-        f"<a class='action-link' href='{repo_href}'>View repo</a>"
-        f"<a class='action-link secondary' href='{quickstart_href}'>5-minute quickstart</a>"
+        f"<a class='action-link action-link-external' href='{repo_href}'>View repo</a>"
+        f"<a class='action-link secondary action-link-external' href='{quickstart_href}'>5-minute quickstart</a>"
     )
 
 
@@ -759,7 +759,8 @@ def _site_page_shell(
         f"{nav_link('Archive', archive_href, 'archive')}"
         "</nav>"
         "<div class='nav-actions'>"
-        f"<a class='nav-link nav-link-external' href='{html.escape(RECOLETA_REPO_URL, quote=True)}'>GitHub</a>"
+        "<div class='nav-utility-cluster'></div>"
+        f"<a class='nav-link nav-link-external nav-link-repo' href='{html.escape(RECOLETA_REPO_URL, quote=True)}'>GitHub</a>"
         "</div>"
         "</header>"
         "<main class='site-main'>"
@@ -1180,7 +1181,7 @@ def _render_item_page(
     if document.canonical_url:
         action_links.insert(
             0,
-            "<a class='action-link' href='{}'>{}</a>".format(
+            "<a class='action-link action-link-external' href='{}'>{}</a>".format(
                 html.escape(document.canonical_url, quote=True),
                 html.escape(
                     _item_action_label(
@@ -1613,8 +1614,7 @@ def _render_home_page(
         "<div class='hero-actions'>"
         f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')}'>Browse trends</a>"
         f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')}'>Browse ideas</a>"
-        f"<a class='action-link secondary' href='{html.escape(RECOLETA_REPO_URL, quote=True)}'>GitHub</a>"
-        f"<a class='action-link secondary' href='{html.escape(RECOLETA_QUICKSTART_URL, quote=True)}'>5-minute quickstart</a>"
+        f"<a class='action-link secondary action-link-external' href='{html.escape(RECOLETA_QUICKSTART_URL, quote=True)}'>5-minute quickstart</a>"
         "</div>"
         "</div>"
         "<div class='hero-stats'>"
@@ -2015,11 +2015,23 @@ iframe {
 }
 .nav-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 14px;
+}
+.nav-utility-cluster {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.nav-utility-cluster:empty {
+  display: none;
 }
 .nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 10px 14px;
   border-radius: 999px;
   color: #2f4b69;
@@ -2029,6 +2041,41 @@ iframe {
 .nav-link.nav-link-external {
   background: rgba(29, 103, 194, 0.10);
   color: #1b579d;
+}
+.nav-link.nav-link-external::after,
+.action-link.action-link-external::after {
+  content: "\\2197";
+  display: inline-block;
+  margin-left: 0.45em;
+  font-size: 0.82em;
+  line-height: 1;
+}
+.nav-link.nav-link-repo {
+  position: relative;
+  padding: 8px 0;
+  border-radius: 0;
+  background: transparent;
+  color: #4a657f;
+  white-space: nowrap;
+}
+.nav-link.nav-link-repo.nav-link-external {
+  background: transparent;
+}
+.nav-link.nav-link-repo:hover {
+  color: #1b579d;
+}
+.nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo {
+  padding-left: 16px;
+}
+.nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 22px;
+  transform: translateY(-50%);
+  background: rgba(17, 41, 71, 0.12);
 }
 .nav-link.is-active {
   background: rgba(29, 103, 194, 0.12);
@@ -2307,6 +2354,19 @@ iframe {
 .trend-card a:hover,
 .topic-card a:hover {
   opacity: 0.85;
+}
+.nav-brand:focus-visible,
+.nav-link:focus-visible,
+.action-link:focus-visible,
+.topic-pill-link:focus-visible,
+.stream-pill-link:focus-visible,
+.pager-card:focus-visible,
+.breadcrumbs a:focus-visible,
+.language-switcher-link:focus-visible {
+  opacity: 1;
+  outline: 2px solid rgba(29, 103, 194, 0.36);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
 }
 .meta-date {
   color: #6e849d;
@@ -2930,6 +2990,67 @@ iframe {
     grid-template-columns: 1fr;
   }
 }
+@media (max-width: 1040px) {
+  .site-header {
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 12px;
+    padding: 14px 16px 16px;
+    border-radius: 30px;
+  }
+  .nav-brand-wrap {
+    flex: 1 1 auto;
+  }
+  .nav-brand {
+    font-size: 22px;
+    white-space: nowrap;
+  }
+  .nav-links {
+    order: 3;
+    flex: 1 1 100%;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(17, 41, 71, 0.08);
+  }
+  .nav-links .nav-link {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .nav-actions {
+    flex: 0 0 auto;
+    margin-left: auto;
+    gap: 12px;
+  }
+  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo {
+    padding-left: 12px;
+  }
+  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo::before {
+    height: 18px;
+  }
+}
+@media (max-width: 820px) {
+  .site-header {
+    align-items: stretch;
+    row-gap: 10px;
+  }
+  .nav-brand-wrap {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+  .nav-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .nav-utility-cluster {
+    flex: 1 1 auto;
+  }
+  .nav-links {
+    padding-top: 8px;
+  }
+}
 @media (max-width: 760px) {
   .site-shell {
     width: calc(100% - 16px);
@@ -2948,11 +3069,26 @@ iframe {
   }
   .nav-actions {
     width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
   }
-  .nav-link {
+  .nav-links .nav-link {
     flex: 1 1 calc(50% - 5px);
     justify-content: center;
     text-align: center;
+  }
+  .nav-utility-cluster {
+    flex: 1 1 auto;
+  }
+  .nav-actions .nav-link.nav-link-repo {
+    flex: 0 0 auto;
+  }
+  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo {
+    padding-left: 0;
+  }
+  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo::before {
+    display: none;
   }
   .page-hero,
   .home-hero-card,
@@ -3887,27 +4023,33 @@ _LANGUAGE_SWITCHER_CSS = """
 .language-switcher {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
+  flex-wrap: nowrap;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid rgba(16, 39, 63, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.40);
 }
 .language-switcher-label {
   color: #6f859d;
-  font-size: 11px;
+  flex-shrink: 0;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
 }
 .language-switcher-links {
   display: inline-flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .language-switcher-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 34px;
+  padding: 0 12px;
   border-radius: 999px;
   border: 1px solid rgba(16, 39, 63, 0.12);
   background: rgba(247, 250, 253, 0.92);
@@ -3916,10 +4058,35 @@ _LANGUAGE_SWITCHER_CSS = """
   font-weight: 700;
   text-decoration: none;
 }
+@media (max-width: 1040px) {
+  .language-switcher {
+    gap: 8px;
+    padding: 5px 6px 5px 8px;
+  }
+  .language-switcher-label {
+    display: none;
+  }
+  .language-switcher-link {
+    min-height: 32px;
+    padding: 0 10px;
+  }
+}
 .language-switcher-link.is-active {
   background: #16304f;
   border-color: #16304f;
   color: #f8fbff;
+}
+@media (max-width: 760px) {
+  .language-switcher {
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .language-switcher-label {
+    display: none;
+  }
 }
 """
 
@@ -4008,16 +4175,20 @@ def _apply_site_language_overrides(
 
         if inject_switcher:
             nav_actions = soup.select_one(".site-header .nav-actions")
-            if nav_actions is not None and nav_actions.select_one(".language-switcher") is None:
-                nav_actions.insert(
-                    0,
-                    _render_language_switcher_fragment(
-                        current_language_slug=language_slug,
-                        current_page_relative_path=relative_path,
-                        page_paths_by_language=page_paths_by_language,
-                        language_code_by_slug=language_code_by_slug,
-                    ),
-                )
+            if nav_actions is not None:
+                nav_actions["data-has-language-switcher"] = "true"
+                utility_cluster = nav_actions.select_one(".nav-utility-cluster")
+                insertion_target = utility_cluster if utility_cluster is not None else nav_actions
+                if nav_actions.select_one(".language-switcher") is None:
+                    insertion_target.insert(
+                        0,
+                        _render_language_switcher_fragment(
+                            current_language_slug=language_slug,
+                            current_page_relative_path=relative_path,
+                            page_paths_by_language=page_paths_by_language,
+                            language_code_by_slug=language_code_by_slug,
+                        ),
+                    )
         rendered_html = str(soup).replace(
             f'<html lang="{language_code}">', f"<html lang='{language_code}'>"
         )

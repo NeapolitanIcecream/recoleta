@@ -13,6 +13,10 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Let long-form narrative content follow the source language.
 - Do not mix languages within the same semantic layer. If one badge set is English, all peer badges stay English.
 - Public site chrome should keep a direct repo-return CTA so readers can open the source repo or first-run path from the rendered site.
+- When a header includes language switching, treat the switcher as a utility control and keep the repo-return CTA visually subordinate rather than styling both as peer primary pills.
+- When the header already exposes the repo-return CTA, keep the home hero focused on in-product browsing and onboarding actions rather than repeating a GitHub pill there.
+- At medium widths, split dense header chrome into an intentional top utility row and a separate navigation row instead of relying on incidental link wrapping.
+- On the way from medium to mobile, let brand and utility controls separate into their own row before collapsing navigation into the full mobile grid.
 - First-contact promo assets should lead with the user-visible outcome before qualifiers such as `local-first` or detailed source/input taxonomy.
 - First-contact promo cards should show the shape of the produced artifact with nested surfaces or grouped sub-sections, not just a flat stack of left-aligned copy and pills.
 - Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.

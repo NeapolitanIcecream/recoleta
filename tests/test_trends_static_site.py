@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -171,8 +172,45 @@ def test_export_trend_static_site_home_shell_links_back_to_repo_and_quickstart(
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert ">GitHub<" in index_html
     assert f"href='{RECOLETA_REPO_URL}'" in index_html
+    assert "nav-link-repo" in index_html
     assert "5-minute quickstart" in index_html
     assert f"href='{RECOLETA_QUICKSTART_URL}'" in index_html
+
+
+def test_export_trend_static_site_home_hero_prioritizes_browse_actions_over_repo_link(
+    tmp_path: Path,
+) -> None:
+    """Spec: the home hero should keep task actions and avoid repeating the repo CTA."""
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=731,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 2, 27, tzinfo=UTC),
+        period_end=datetime(2026, 2, 28, tzinfo=UTC),
+        run_id="run-site-home-hero-actions",
+        overview_md="## Overview\n\nAgent workflows are getting easier to operationalize.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Agent workflows are getting easier to operationalize."],
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    soup = BeautifulSoup(index_html, "html.parser")
+    hero_actions = soup.select_one(".home-hero-card .hero-actions")
+
+    assert hero_actions is not None
+    assert [
+        link.get_text(" ", strip=True)
+        for link in hero_actions.select("a.action-link")
+    ] == ["Browse trends", "Browse ideas", "5-minute quickstart"]
+    quickstart_link = hero_actions.select_one("a.action-link-external")
+    assert quickstart_link is not None
+    assert quickstart_link.get_text(" ", strip=True) == "5-minute quickstart"
 
 
 def test_export_trend_static_site_trend_pages_include_built_with_recoleta_cta(
@@ -332,6 +370,103 @@ def test_export_trend_static_site_keeps_mobile_shell_rules_within_viewport(
     assert "width: calc(100% - 16px);" in stylesheet
     assert "flex-direction: column;" in stylesheet
     assert "overflow-wrap: anywhere;" in stylesheet
+
+
+def test_export_trend_static_site_adds_medium_header_breakpoint_for_dense_nav(
+    tmp_path: Path,
+) -> None:
+    """Regression: multilingual header should switch to an intentional two-row layout before mobile."""
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=831,
+        title="Medium breakpoint check",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-medium-header-layout",
+        overview_md="## Overview\n\nA medium-width header regression guard.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Dense nav should fold into an intentional second row."],
+        language_code="en",
+    )
+    _ = write_markdown_trend_note(
+        output_dir=output_dir / "Localized" / "zh-cn",
+        trend_doc_id=831,
+        title="中等断点检查",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-medium-header-layout-zh",
+        overview_md="## Overview\n\n一个中等宽度 header 回归保护。\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["中等宽度时导航应切成有意的第二行。"],
+        language_code="zh-CN",
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir,
+        output_dir=site_dir,
+        default_language_code="en",
+    )
+
+    stylesheet = (site_dir / "en" / "assets" / "site.css").read_text(encoding="utf-8")
+    assert "@media (max-width: 1040px) {" in stylesheet
+    assert "order: 3;" in stylesheet
+    assert "border-top: 1px solid rgba(17, 41, 71, 0.08);" in stylesheet
+    assert "padding-top: 10px;" in stylesheet
+    assert "white-space: nowrap;" in stylesheet
+
+
+def test_export_trend_static_site_adds_bridge_header_breakpoint_before_mobile_stack(
+    tmp_path: Path,
+) -> None:
+    """Regression: the header utility row should get its own line before the full mobile nav stack."""
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=832,
+        title="Bridge breakpoint check",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-bridge-header-layout",
+        overview_md="## Overview\n\nA bridge-width header regression guard.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Utility controls should separate before the full mobile stack."],
+        language_code="en",
+    )
+    _ = write_markdown_trend_note(
+        output_dir=output_dir / "Localized" / "zh-cn",
+        trend_doc_id=832,
+        title="桥接断点检查",
+        granularity="day",
+        period_start=datetime(2026, 3, 8, tzinfo=UTC),
+        period_end=datetime(2026, 3, 9, tzinfo=UTC),
+        run_id="run-site-bridge-header-layout-zh",
+        overview_md="## Overview\n\n一个桥接宽度 header 回归保护。\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["在完整 mobile 栈之前，utility controls 应先独立成行。"],
+        language_code="zh-CN",
+    )
+
+    site_dir = tmp_path / "site"
+    _ = export_trend_static_site(
+        input_dir=output_dir,
+        output_dir=site_dir,
+        default_language_code="en",
+    )
+
+    stylesheet = (site_dir / "en" / "assets" / "site.css").read_text(encoding="utf-8")
+    assert "@media (max-width: 820px) {" in stylesheet
+    assert "width: 100%;" in stylesheet
+    assert "margin-left: 0;" in stylesheet
+    assert "justify-content: space-between;" in stylesheet
 
 
 def test_export_trend_static_site_uses_single_card_columns_and_equal_width_pairs(
