@@ -208,6 +208,47 @@ def test_materialize_outputs_preserves_trend_projection_provenance_in_note_front
     assert "pass_kind: trend_synthesis" in note_text
 
 
+def test_materialize_outputs_removes_stale_managed_scope_files(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    trend_doc_id, placeholder_item_note_path = _seed_materialize_fixture(
+        repository=repository
+    )
+    output_dir = tmp_path / "outputs"
+    stale_item_path = output_dir / "Inbox" / "stale-item.md"
+    stale_trend_path = output_dir / "Trends" / "stale-trend.md"
+    stale_idea_path = output_dir / "Ideas" / "stale-idea.md"
+    stale_localized_path = (
+        output_dir / "Localized" / "zh-cn" / "Inbox" / "stale-localized-item.md"
+    )
+    for path in (
+        stale_item_path,
+        stale_trend_path,
+        stale_idea_path,
+        stale_localized_path,
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("stale\n", encoding="utf-8")
+
+    _ = materialize_outputs(
+        repository=repository,
+        scope_specs=[
+            MaterializeScopeSpec(scope="default", output_dir=output_dir),
+        ],
+        site_input_dir=None,
+        site_output_dir=None,
+    )
+
+    assert not stale_item_path.exists()
+    assert not stale_trend_path.exists()
+    assert not stale_idea_path.exists()
+    assert not stale_localized_path.exists()
+    assert (output_dir / "Inbox" / placeholder_item_note_path.name).exists()
+    assert (output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md").exists()
+
+
 def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

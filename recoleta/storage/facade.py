@@ -27,6 +27,7 @@ from recoleta.storage.analyses import AnalysisStoreMixin
 from recoleta.storage.documents import DocumentStoreMixin
 from recoleta.storage.deliveries import DeliveryStoreMixin
 from recoleta.storage.items import ItemStoreMixin
+from recoleta.storage.localized_outputs import LocalizedOutputStoreMixin
 from recoleta.storage.maintenance import MaintenanceStoreMixin
 from recoleta.storage.pass_outputs import PassOutputStoreMixin
 from recoleta.storage.runtime import RuntimeStoreMixin
@@ -58,6 +59,7 @@ class Repository(
     DeliveryStoreMixin,
     DocumentStoreMixin,
     PassOutputStoreMixin,
+    LocalizedOutputStoreMixin,
     MaintenanceStoreMixin,
 ):
     def __init__(

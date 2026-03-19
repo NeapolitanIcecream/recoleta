@@ -33,9 +33,21 @@ publish_targets:
 
 ## LLM behavior
 
-# Optional language hint for LLM-generated text fields (item summaries and trend notes).
-# JSON keys remain English and topics remain concise English tags.
-# llm_output_language: null  # Default: null
+# Optional canonical language hint for newly generated item summaries, trend briefs,
+# and idea briefs. JSON keys remain English and topics remain concise English tags.
+# llm_output_language: "English"  # Default: null
+
+# Optional: derive translated output trees and a multilingual site from the canonical
+# language above. `translate backfill` uses `legacy_backfill_source_language_code`
+# when historical canonical content was written in another language.
+#
+# localization:
+#   source_language_code: "en"
+#   site_default_language_code: "en"
+#   legacy_backfill_source_language_code: "zh-CN"
+#   targets:
+#     - code: "zh-CN"
+#       llm_label: "Chinese (Simplified)"
 
 ## Topic and ranking configuration
 

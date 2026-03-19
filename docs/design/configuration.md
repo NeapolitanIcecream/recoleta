@@ -33,10 +33,50 @@ Optional LLM behavior:
 
 - `RECOLETA_LLM_API_KEY`: Recoleta-scoped API key override for LiteLLM / PydanticAI calls (env-only).
 - `RECOLETA_LLM_BASE_URL`: Recoleta-scoped base URL override for OpenAI-compatible or OpenRouter endpoints.
-- `LLM_OUTPUT_LANGUAGE`: preferred output language for LLM-generated `summary`.
+- `LLM_OUTPUT_LANGUAGE`: canonical language label for newly generated LLM output such as item summaries, trend briefs, and idea briefs.
   - JSON keys remain English.
   - `topics` remain concise English tags for downstream allow/deny filtering.
   - Empty value means unset.
+
+## Localization (optional)
+
+Use `LOCALIZATION` / `localization` when one language remains canonical in
+SQLite and one or more additional language variants should be stored in
+`localized_outputs`, materialized under `MARKDOWN_OUTPUT_DIR/Localized/<code>/`,
+and exported into a multilingual static site.
+
+- `LOCALIZATION.source_language_code`: canonical language code for new output, for example `en`.
+- `LOCALIZATION.targets`: derived language variants.
+  - `code`: language code, for example `zh-CN`.
+  - `llm_label`: prompt label passed to the translation model, for example `Chinese (Simplified)`.
+- `LOCALIZATION.site_default_language_code`: default site language when multilingual site export is enabled.
+- `LOCALIZATION.legacy_backfill_source_language_code`: language code used by historical canonical rows during `recoleta translate backfill`.
+
+Validation rules:
+
+- target codes must be unique
+- a target code must not duplicate `source_language_code`
+- `site_default_language_code` must match either `source_language_code` or one configured target code
+- when `targets` is non-empty, `LLM_OUTPUT_LANGUAGE` must be set
+
+Operational notes:
+
+- `recoleta translate run` fills derived translations for new canonical rows.
+- `recoleta translate backfill` projects historical canonical content into the configured `source_language_code` without rewriting `analyses`, `pass_outputs`, or `documents`.
+
+Example:
+
+```yaml
+llm_output_language: "English"
+
+localization:
+  source_language_code: "en"
+  site_default_language_code: "en"
+  legacy_backfill_source_language_code: "zh-CN"
+  targets:
+    - code: "zh-CN"
+      llm_label: "Chinese (Simplified)"
+```
 
 ## Source configuration
 
@@ -212,7 +252,7 @@ Choose one:
 - `ARTIFACTS_DIR` (required when `WRITE_DEBUG_ARTIFACTS=true`): where to write raw/debug artifacts (outside the Vault is fine).
 - `OBSIDIAN_BASE_FOLDER` (default `Recoleta`): base folder under the Vault.
 - `PUBLISH_TARGETS` (default `["markdown"]`): which publish integrations are enabled.
-- `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`, `Trends/`, and derived `site/` output).
+- `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`, `Trends/`, `Ideas/`, `Localized/<language>/...`, and derived `site/` output).
 - When `TOPIC_STREAMS` is enabled, Markdown defaults to `MARKDOWN_OUTPUT_DIR/Streams/<stream>/...` for stream-local notes and trend surfaces.
 
 ### Browser trend PDF rendering
@@ -233,6 +273,7 @@ Notes:
 - `recoleta materialize outputs --pdf --debug-pdf` uses the same debug-bundle contract when regenerating PDFs offline.
 - `recoleta site build --input-dir ... --output-dir ...` and `recoleta site stage --input-dir ... --output-dir ...` intentionally work without loading the full runtime config so CI can build from staged trend notes only.
 - In `TOPIC_STREAMS` mode, `recoleta site build` auto-discovers `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` and `recoleta site stage` mirrors them under `./site-content/Streams/<stream>/Trends/` by default.
+- When localized markdown trees are present, `recoleta site build`, `recoleta site stage`, `recoleta site serve`, and `recoleta site gh-deploy` use `LOCALIZATION.site_default_language_code` by default when runtime settings are loaded. Use `--default-language-code <code>` when building from explicit input/output paths without full config loading.
 
 ## Logging and diagnostics
 

@@ -85,6 +85,28 @@ Constraint / index:
 
 - unique `(item_id, scope)`
 
+### `localized_outputs`
+
+Derived language variants for canonical item analyses, trend synthesis outputs,
+and idea outputs.
+
+- `id` (PK, integer)
+- `source_kind` (text): `analysis|trend_synthesis|trend_ideas`
+- `source_record_id` (integer): canonical record id for the source row
+- `scope` (text): topic stream / publish scope
+- `language_code` (text): localized output language, for example `en` or `zh-CN`
+- `status` (text): localized projection status, usually `succeeded`
+- `schema_version` (integer): localized payload schema version
+- `source_hash` (text): hash of the canonical source payload used for incremental skip/retranslate decisions
+- `variant_role` (text): `translation|mirror`
+- `payload_json` (text): localized structured payload
+- `diagnostics_json` (text): machine-readable translation diagnostics
+- `created_at` / `updated_at`
+
+Constraint / index:
+
+- unique `(source_kind, source_record_id, scope, language_code)`
+
 ### `item_stream_states`
 
 Per-stream item state machine. This lets one ingested item participate in several topic streams without duplicating the raw item row.
@@ -300,6 +322,7 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `Inbox/` (one note per item, Markdown + YAML frontmatter)
 - `Trends/` (canonical trend markdown notes and derived trend PDFs)
 - `Ideas/` (idea briefs derived from canonical `trend_ideas` pass outputs)
+- `Localized/<language>/Inbox|Trends|Ideas/` (translated or mirrored projections derived from canonical outputs)
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
 - `site/` (optional static site export derived from `Trends/`)
 
@@ -314,3 +337,4 @@ Trend markdown notes are the canonical source for the richer trend surfaces:
 - Telegram trend PDFs render from `Trends/*.md`
 - the static site exporter renders from a trend markdown directory
 - a repository can mirror selected trend notes into `site-content/` while preserving `Streams/<stream>/Trends/` when topic streams are enabled
+- when localized markdown trees exist, the site exporter also aggregates `Localized/<language>/...` and emits one site subtree per language

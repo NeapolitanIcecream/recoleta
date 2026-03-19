@@ -147,6 +147,7 @@ def run_materialize_outputs_command(
             output_language=output_language,
             site_input_dir=site_input_dir,
             site_output_dir=site_output_dir,
+            localization=getattr(settings, "localization", None) if settings is not None else None,
         )
         heartbeat_monitor.raise_if_failed()
     finally:

@@ -1070,6 +1070,14 @@ def is_empty_trend_payload(payload: TrendPayload) -> bool:
             "No publishable research trend for this period",
             "- No documents available for this period.",
         ),
+        (
+            "No research trends available for publication this period",
+            "- No documents were available during this period.",
+        ),
+        (
+            "No research trends available for publication this period",
+            "- No documents are available for this period.",
+        ),
     }
 
 

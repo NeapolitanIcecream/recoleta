@@ -565,6 +565,7 @@ class SearchService:
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
     llm_connection: LLMConnectionConfig | None = None
+    auto_sync_vectors: bool = True
 
     def _visible_document(self, *, doc_id: int) -> Any | None:
         normalized_doc_id = int(doc_id or 0)
@@ -809,6 +810,7 @@ class SearchService:
                 scope=self.scope,
                 metric_namespace=self.metric_namespace,
                 llm_connection=self.llm_connection,
+                auto_sync_vectors=bool(self.auto_sync_vectors),
             )
             for hit in rows:
                 try:

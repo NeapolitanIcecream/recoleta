@@ -284,6 +284,7 @@ def _render_trend_note_lines(
     note_dir: Path,
     projection_provenance: ProjectionProvenance | None,
     site_exclude: bool,
+    language_code: str | None,
 ) -> list[str]:
     _ = highlights
     title = sanitize_trend_title(title)
@@ -307,6 +308,9 @@ def _render_trend_note_lines(
         "aliases": [f"recoleta-trend-{int(trend_doc_id)}"],
         "tags": tags,
     }
+    normalized_language_code = str(language_code or "").strip()
+    if normalized_language_code:
+        frontmatter["language_code"] = normalized_language_code
     if projection_provenance is not None:
         frontmatter.update(
             projection_provenance.model_dump(mode="json", exclude_none=True)
@@ -456,6 +460,7 @@ def _write_trend_note(
     pass_output_id: int | None = None,
     pass_kind: str | None = None,
     site_exclude: bool = False,
+    language_code: str | None = None,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = resolve_trend_note_path(
@@ -488,6 +493,7 @@ def _write_trend_note(
             else None
         ),
         site_exclude=bool(site_exclude),
+        language_code=language_code,
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return note_path
@@ -513,6 +519,7 @@ def write_obsidian_trend_note(
     pass_output_id: int | None = None,
     pass_kind: str | None = None,
     site_exclude: bool = False,
+    language_code: str | None = None,
 ) -> Path:
     note_dir = vault_path / base_folder / "Trends"
     return _write_trend_note(
@@ -533,6 +540,7 @@ def write_obsidian_trend_note(
         pass_output_id=pass_output_id,
         pass_kind=pass_kind,
         site_exclude=site_exclude,
+        language_code=language_code,
     )
 
 
@@ -555,6 +563,7 @@ def write_markdown_trend_note(
     pass_output_id: int | None = None,
     pass_kind: str | None = None,
     site_exclude: bool = False,
+    language_code: str | None = None,
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
@@ -578,6 +587,7 @@ def write_markdown_trend_note(
         pass_output_id=pass_output_id,
         pass_kind=pass_kind,
         site_exclude=site_exclude,
+        language_code=language_code,
     )
 
 

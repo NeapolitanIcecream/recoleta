@@ -98,6 +98,52 @@ Outputs:
 - Optional Markdown brief under `MARKDOWN_OUTPUT_DIR/Ideas/`
 - Optional Obsidian note
 
+## Translate localized reading surfaces
+
+Use `recoleta translate run` after the canonical item summaries, trend briefs,
+or idea briefs already exist in SQLite:
+
+```bash
+uv run recoleta translate run --include items,trends,ideas
+uv run recoleta translate run --scope agents_lab --granularity week --include trends,ideas
+uv run recoleta translate run --include items --force
+```
+
+What to know:
+
+- `translate run` reads canonical rows and writes derived variants to
+  `localized_outputs`.
+- `--include` accepts `items`, `trends`, and `ideas`.
+- `--force` rewrites localized outputs even when the source hash is unchanged.
+- `--context-assist` defaults to `direct`.
+- `--context-assist hybrid` only reads existing search and vector state. It does
+  not sync vectors automatically, and it falls back to direct-context behavior
+  if hybrid retrieval fails.
+
+## Backfill historical canonical content into a new source language
+
+Use `recoleta translate backfill` once when the historical canonical corpus is
+in one language and future canonical output should be in another:
+
+```bash
+uv run recoleta translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
+uv run recoleta translate backfill --scope agents_lab --granularity week --include trends,ideas --legacy-source-language zh-CN
+```
+
+What to know:
+
+- `localization.source_language_code` is the language you want future canonical
+  output to use.
+- `localization.legacy_backfill_source_language_code` or
+  `--legacy-source-language` tells Recoleta what language the historical
+  canonical rows currently use.
+- `--emit-mirror-targets` also records localized mirror variants for matching
+  target languages so multilingual rendering can stay on one projection layer.
+- `--all-history` scans the full historical corpus. `--latest-only` limits the
+  pass to the latest available window per granularity.
+- Backfill writes `localized_outputs`. It does not rewrite canonical
+  `analyses`, `pass_outputs`, or `documents`.
+
 ## Build, preview, or publish the site
 
 Use these commands when you want to materialize public-facing output from the
@@ -106,6 +152,7 @@ stored Markdown and DB state:
 ```bash
 uv run recoleta site build
 uv run recoleta site serve
+uv run recoleta site build --default-language-code en
 uv run recoleta site gh-deploy --branch gh-pages --pages-config auto
 uv run recoleta materialize outputs --site --pdf
 uv run recoleta materialize outputs --scope <stream> --granularity week
@@ -119,6 +166,13 @@ What to know:
 - `site gh-deploy` publishes a derived branch and keeps `main` clean.
 - `materialize outputs` repairs filesystem output from stored DB state without
   rerunning ingest or analyze.
+- When localized markdown trees exist, site export writes one subtree per
+  language, for example `/en/...` and `/zh-cn/...`.
+- The root `index.html` redirects to the remembered browser language first and
+  then to the configured default language.
+- `--default-language-code` is only needed when you build or deploy a
+  multilingual site without loading a config that already defines
+  `localization.site_default_language_code`.
 
 More detail:
 
@@ -153,8 +207,9 @@ uv run recoleta stats --json
 ```
 
 Most long-running commands also support `--json`, including `analyze`,
-`publish`, `trends`, `trends-week`, `ideas`, `materialize outputs`, `site
-build`, `site stage`, and `site gh-deploy`.
+`publish`, `trends`, `trends-week`, `ideas`, `translate run`,
+`translate backfill`, `materialize outputs`, `site build`, `site stage`, and
+`site gh-deploy`.
 
 ## Deploy with cron or systemd
 

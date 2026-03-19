@@ -121,6 +121,7 @@ def materialize_trend_note_payload(
     payload: TrendPayload,
     markdown_output_dir: Path,
     output_language: str | None,
+    language_code: str | None = None,
     item_note_href_by_url: dict[str, str] | None = None,
     scope: str = DEFAULT_TOPIC_STREAM,
 ) -> MaterializedTrendNotePayload:
@@ -142,6 +143,29 @@ def materialize_trend_note_payload(
         if doc_id_value not in doc_cache:
             doc_cache[doc_id_value] = repository.get_document(doc_id=doc_id_value)
         return doc_cache[doc_id_value]
+
+    def _localized_trend_title_for_doc(doc_id_value: int) -> str | None:
+        normalized_language_code = str(language_code or "").strip()
+        if not normalized_language_code:
+            return None
+        localized_output = repository.get_localized_output(
+            source_kind="trend_synthesis",
+            source_record_id=doc_id_value,
+            scope=scope,
+            language_code=normalized_language_code,
+        )
+        if localized_output is None:
+            return None
+        try:
+            localized_payload = json.loads(
+                str(getattr(localized_output, "payload_json", "") or "{}")
+            )
+        except Exception:
+            return None
+        if not isinstance(localized_payload, dict):
+            return None
+        localized_title = str(localized_payload.get("title") or "").strip()
+        return localized_title or None
 
     def _item_note_href_for_doc(doc: Any) -> str | None:
         doc_type = str(getattr(doc, "doc_type", "") or "").strip().lower()
@@ -296,11 +320,18 @@ def materialize_trend_note_payload(
             limit=1,
         )
         doc = docs[0] if docs else None
+        localized_title = (
+            _localized_trend_title_for_doc(int(getattr(doc, "id") or 0))
+            if doc is not None
+            else None
+        )
         ref = {
             "window_id": window.window_id,
             "label": window.label,
             "title": (
-                _history_window_title_label(str(getattr(doc, "title", "") or ""))
+                _history_window_title_label(
+                    localized_title or str(getattr(doc, "title", "") or "")
+                )
                 if doc is not None
                 else ""
             ),

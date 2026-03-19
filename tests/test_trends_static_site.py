@@ -467,6 +467,239 @@ def test_stage_trend_site_source_mirrors_notes_and_cleans_stale_files(
     assert manifest["pdf_total"] == 1
 
 
+def test_stage_trend_site_source_preserves_localized_roots_for_round_trip(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=81,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
+        run_id="run-stage-multilang-en",
+        overview_md="## Overview\n\nEnglish note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="en",
+    )
+    write_markdown_trend_note(
+        output_dir=notes_root / "Localized" / "zh-cn",
+        trend_doc_id=81,
+        title="智能体系统",
+        granularity="day",
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
+        run_id="run-stage-multilang-zh",
+        overview_md="## Overview\n\n中文笔记。\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="zh-CN",
+    )
+
+    staged_dir = tmp_path / "site-content" / "Trends"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root,
+        output_dir=staged_dir,
+        default_language_code="en",
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["languages"] == ["en", "zh-cn"]
+    assert manifest["default_language_code"] == "en"
+    assert (staged_dir / trend_note.name).exists()
+    assert (
+        tmp_path
+        / "site-content"
+        / "Localized"
+        / "zh-cn"
+        / "Trends"
+        / trend_note.name
+    ).exists()
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(
+        input_dir=tmp_path / "site-content",
+        output_dir=site_dir,
+        default_language_code="en",
+    )
+    assert (site_dir / "en" / "trends" / f"{trend_note.stem}.html").exists()
+    assert (site_dir / "zh-cn" / "trends" / f"{trend_note.stem}.html").exists()
+
+
+def test_export_trend_static_site_discovers_stream_localized_roots(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    en_embodied = notes_root / "Streams" / "embodied_ai"
+    zh_embodied = en_embodied / "Localized" / "zh-cn"
+    en_software = notes_root / "Streams" / "software_intelligence"
+    zh_software = en_software / "Localized" / "zh-cn"
+
+    embodied_note = write_markdown_trend_note(
+        output_dir=en_embodied,
+        trend_doc_id=181,
+        title="Embodied Weekly",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-stream-en-embodied",
+        overview_md="## Overview\n\nEnglish embodied note.\n",
+        topics=["robotics"],
+        clusters=[],
+        highlights=[],
+        language_code="en",
+    )
+    write_markdown_trend_note(
+        output_dir=zh_embodied,
+        trend_doc_id=181,
+        title="具身周报",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-stream-zh-embodied",
+        overview_md="## Overview\n\n中文具身笔记。\n",
+        topics=["robotics"],
+        clusters=[],
+        highlights=[],
+        language_code="zh-CN",
+    )
+    software_note = write_markdown_trend_note(
+        output_dir=en_software,
+        trend_doc_id=182,
+        title="Software Weekly",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-stream-en-software",
+        overview_md="## Overview\n\nEnglish software note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="en",
+    )
+    write_markdown_trend_note(
+        output_dir=zh_software,
+        trend_doc_id=182,
+        title="软件周报",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-stream-zh-software",
+        overview_md="## Overview\n\n中文软件笔记。\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="zh-CN",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=notes_root,
+        output_dir=site_dir,
+        default_language_code="en",
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["languages"] == ["en", "zh-cn"]
+    assert manifest["default_language_code"] == "en"
+    assert (site_dir / "index.html").exists()
+    assert (site_dir / "en" / "index.html").exists()
+    assert (site_dir / "zh-cn" / "index.html").exists()
+    assert (site_dir / "en" / "streams" / "embodied-ai.html").exists()
+    assert (site_dir / "zh-cn" / "streams" / "software-intelligence.html").exists()
+    assert (site_dir / "en" / "trends" / f"{embodied_note.stem}.html").exists()
+    assert (site_dir / "zh-cn" / "trends" / f"{software_note.stem}.html").exists()
+    root_index = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert "localStorage" in root_index
+    assert "en/index.html" in root_index
+    en_embodied_detail = (
+        site_dir / "en" / "trends" / f"{embodied_note.stem}.html"
+    ).read_text(encoding="utf-8")
+    zh_embodied_detail = (
+        site_dir / "zh-cn" / "trends" / f"{embodied_note.stem}.html"
+    ).read_text(encoding="utf-8")
+    assert "Embodied Weekly" in en_embodied_detail
+    assert "具身周报" not in en_embodied_detail
+    assert "具身周报" in zh_embodied_detail
+    assert "Embodied Weekly" not in zh_embodied_detail
+
+
+def test_stage_trend_site_source_round_trips_stream_localized_roots(
+    tmp_path: Path,
+) -> None:
+    """Regression: staging stream-localized notes must preserve multilingual rebuilds."""
+    notes_root = tmp_path / "notes"
+    en_stream = notes_root / "Streams" / "agents_lab"
+    zh_stream = en_stream / "Localized" / "zh-cn"
+
+    en_note = write_markdown_trend_note(
+        output_dir=en_stream,
+        trend_doc_id=281,
+        title="Agent Systems",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-stage-stream-en",
+        overview_md="## Overview\n\nEnglish stream note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="en",
+    )
+    zh_note = write_markdown_trend_note(
+        output_dir=zh_stream,
+        trend_doc_id=281,
+        title="智能体系统",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-stage-stream-zh",
+        overview_md="## Overview\n\n中文流笔记。\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="zh-CN",
+    )
+
+    staged_root = tmp_path / "site-content"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root,
+        output_dir=staged_root,
+        default_language_code="en",
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["languages"] == ["en", "zh-cn"]
+    assert (
+        staged_root / "Streams" / "agents_lab" / "Trends" / en_note.name
+    ).exists()
+    assert (
+        staged_root
+        / "Streams"
+        / "agents_lab"
+        / "Localized"
+        / "zh-cn"
+        / "Trends"
+        / zh_note.name
+    ).exists()
+
+    site_dir = tmp_path / "site"
+    site_manifest_path = export_trend_static_site(
+        input_dir=staged_root,
+        output_dir=site_dir,
+        default_language_code="en",
+    )
+
+    site_manifest = json.loads(site_manifest_path.read_text(encoding="utf-8"))
+    assert site_manifest["languages"] == ["en", "zh-cn"]
+    assert (site_dir / "en" / "trends" / f"{en_note.stem}.html").exists()
+    assert (site_dir / "zh-cn" / "trends" / f"{zh_note.stem}.html").exists()
+
+
 def test_export_trend_static_site_hides_legacy_topics_body_section(
     tmp_path: Path,
 ) -> None:
@@ -872,6 +1105,7 @@ def test_export_trend_static_site_renders_idea_opportunities_as_cards(
     detail_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
         encoding="utf-8"
     )
+    stylesheet = (site_dir / "assets" / "site.css").read_text(encoding="utf-8")
     assert "summary-grid summary-grid-single" in detail_html
     assert "idea-opportunity-grid" in detail_html
     assert detail_html.count("idea-opportunity-card") == 2
@@ -883,6 +1117,8 @@ def test_export_trend_static_site_renders_idea_opportunities_as_cards(
     assert ">Role<" in detail_html
     assert f"../items/{item_note.stem}.html" in detail_html
     assert f"../trends/{trend_note.stem}.html" in detail_html
+    assert ".detail-content .idea-opportunity-role-value {" in stylesheet
+    assert "-webkit-line-clamp: 2;" not in stylesheet
 
 
 def test_export_trend_static_site_hides_empty_topics_for_ideas(

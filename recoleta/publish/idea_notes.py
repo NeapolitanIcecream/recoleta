@@ -188,7 +188,7 @@ def _render_ideas_note_lines(
     repository: Any,
     root_dir: Path,
     note_dir: Path,
-    pass_output_id: int,
+    pass_output_id: int | None,
     upstream_pass_output_id: int | None,
     granularity: str,
     period_start: datetime,
@@ -200,6 +200,7 @@ def _render_ideas_note_lines(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    language_code: str | None = None,
 ) -> list[str]:
     base_tags = ["recoleta/ideas"]
     for topic in list(topics or []):
@@ -219,18 +220,22 @@ def _render_ideas_note_lines(
         "topics": [str(topic).strip() for topic in list(topics or []) if str(topic).strip()],
         "tags": tags,
     }
-    frontmatter.update(
-        build_projection_provenance(
-            pass_output_id=pass_output_id,
-            pass_kind=str(pass_kind or "").strip() or "trend_ideas",
-            upstream_pass_output_id=upstream_pass_output_id,
-            upstream_pass_kind=(
-                str(upstream_pass_kind or "").strip() or None
-                if upstream_pass_output_id is not None
-                else None
-            ),
-        ).model_dump(mode="json", exclude_none=True)
-    )
+    normalized_language_code = str(language_code or "").strip()
+    if normalized_language_code:
+        frontmatter["language_code"] = normalized_language_code
+    if pass_output_id is not None:
+        frontmatter.update(
+            build_projection_provenance(
+                pass_output_id=pass_output_id,
+                pass_kind=str(pass_kind or "").strip() or "trend_ideas",
+                upstream_pass_output_id=upstream_pass_output_id,
+                upstream_pass_kind=(
+                    str(upstream_pass_kind or "").strip() or None
+                    if upstream_pass_output_id is not None
+                    else None
+                ),
+            ).model_dump(mode="json", exclude_none=True)
+        )
 
     lines: list[str] = [
         "---",
@@ -283,7 +288,7 @@ def _write_ideas_note(
     repository: Any,
     root_dir: Path,
     note_dir: Path,
-    pass_output_id: int,
+    pass_output_id: int | None,
     upstream_pass_output_id: int | None,
     granularity: str,
     period_start: datetime,
@@ -295,6 +300,7 @@ def _write_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    language_code: str | None = None,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = resolve_ideas_note_path(
@@ -318,6 +324,7 @@ def _write_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
+        language_code=language_code,
     )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return note_path
@@ -327,7 +334,7 @@ def write_markdown_ideas_note(
     *,
     repository: Any,
     output_dir: Path,
-    pass_output_id: int,
+    pass_output_id: int | None,
     upstream_pass_output_id: int | None,
     granularity: str,
     period_start: datetime,
@@ -339,6 +346,7 @@ def write_markdown_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    language_code: str | None = None,
 ) -> Path:
     root_dir = output_dir.expanduser().resolve()
     note_dir = root_dir / "Ideas"
@@ -358,6 +366,7 @@ def write_markdown_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
+        language_code=language_code,
     )
 
 
@@ -366,7 +375,7 @@ def write_obsidian_ideas_note(
     repository: Any,
     vault_path: Path,
     base_folder: str,
-    pass_output_id: int,
+    pass_output_id: int | None,
     upstream_pass_output_id: int | None,
     granularity: str,
     period_start: datetime,
@@ -378,6 +387,7 @@ def write_obsidian_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    language_code: str | None = None,
 ) -> Path:
     root_dir = vault_path / base_folder
     note_dir = root_dir / "Ideas"
@@ -397,4 +407,5 @@ def write_obsidian_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
+        language_code=language_code,
     )

@@ -359,38 +359,15 @@ def semantic_search_summaries_in_period(
     scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str | None = None,
     llm_connection: LLMConnectionConfig | None = None,
+    auto_sync_vectors: bool = True,
 ) -> list[SemanticSearchHit]:
     log = logger.bind(module="rag.semantic_search", run_id=run_id, doc_type=doc_type)
     normalized_query = str(query or "").strip()
     if not normalized_query:
         return []
 
-    cache_key = _summary_corpus_cache_key(
-        vector_store=vector_store,
-        run_id=run_id,
-        doc_type=doc_type,
-        granularity=granularity,
-        period_start=period_start,
-        period_end=period_end,
-        embedding_model=embedding_model,
-        embedding_dimensions=embedding_dimensions,
-        max_batch_inputs=max_batch_inputs,
-        max_batch_chars=max_batch_chars,
-        embedding_failure_mode=embedding_failure_mode,
-        embedding_max_errors=embedding_max_errors,
-        limit=corpus_limit,
-        offset=0,
-        scope=scope,
-    )
-    with _summary_corpus_cache_lock:
-        cached_stats = _summary_corpus_cache.get(cache_key)
-        if cached_stats is not None:
-            _summary_corpus_cache.move_to_end(cache_key)
-    if cached_stats is not None:
-        index_stats = _clone_summary_index_stats(cached_stats, cache_hit=True)
-    else:
-        fresh_index_stats = ensure_summary_vectors_for_period(
-            repository=repository,
+    if auto_sync_vectors:
+        cache_key = _summary_corpus_cache_key(
             vector_store=vector_store,
             run_id=run_id,
             doc_type=doc_type,
@@ -406,18 +383,80 @@ def semantic_search_summaries_in_period(
             limit=corpus_limit,
             offset=0,
             scope=scope,
-            llm_connection=llm_connection,
         )
-        if _should_cache_summary_index_stats(fresh_index_stats):
-            with _summary_corpus_cache_lock:
-                _summary_corpus_cache[cache_key] = _clone_summary_index_stats(
-                    fresh_index_stats,
-                    cache_hit=False,
-                )
+        with _summary_corpus_cache_lock:
+            cached_stats = _summary_corpus_cache.get(cache_key)
+            if cached_stats is not None:
                 _summary_corpus_cache.move_to_end(cache_key)
-                while len(_summary_corpus_cache) > _SUMMARY_CORPUS_CACHE_MAX_KEYS:
-                    _summary_corpus_cache.popitem(last=False)
-        index_stats = _clone_summary_index_stats(fresh_index_stats, cache_hit=False)
+        if cached_stats is not None:
+            index_stats = _clone_summary_index_stats(cached_stats, cache_hit=True)
+        else:
+            fresh_index_stats = ensure_summary_vectors_for_period(
+                repository=repository,
+                vector_store=vector_store,
+                run_id=run_id,
+                doc_type=doc_type,
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+                embedding_model=embedding_model,
+                embedding_dimensions=embedding_dimensions,
+                max_batch_inputs=max_batch_inputs,
+                max_batch_chars=max_batch_chars,
+                embedding_failure_mode=embedding_failure_mode,
+                embedding_max_errors=embedding_max_errors,
+                limit=corpus_limit,
+                offset=0,
+                scope=scope,
+                llm_connection=llm_connection,
+            )
+            if _should_cache_summary_index_stats(fresh_index_stats):
+                with _summary_corpus_cache_lock:
+                    _summary_corpus_cache[cache_key] = _clone_summary_index_stats(
+                        fresh_index_stats,
+                        cache_hit=False,
+                    )
+                    _summary_corpus_cache.move_to_end(cache_key)
+                    while len(_summary_corpus_cache) > _SUMMARY_CORPUS_CACHE_MAX_KEYS:
+                        _summary_corpus_cache.popitem(last=False)
+            index_stats = _clone_summary_index_stats(fresh_index_stats, cache_hit=False)
+    else:
+        candidate_rows = repository.list_summary_chunk_index_rows_in_period(
+            doc_type=doc_type,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            scope=scope,
+            limit=corpus_limit,
+            offset=0,
+        )
+        candidate_chunk_ids = [
+            int(row.get("chunk_id") or 0)
+            for row in candidate_rows
+            if int(row.get("chunk_id") or 0) > 0
+        ]
+        index_stats = {
+            "chunks_total": len(candidate_chunk_ids),
+            "candidate_chunk_ids": candidate_chunk_ids,
+            "embedded_total": 0,
+            "skipped_total": len(candidate_chunk_ids),
+            "embedding_calls_total": 0,
+            "embedding_errors_total": 0,
+            "embedding_prompt_tokens_total": 0,
+            "embedding_prompt_tokens_missing_total": 0,
+            "embedding_cost_usd_total": 0.0,
+            "embedding_cost_missing_total": 0,
+            "embedding_failure_mode": str(embedding_failure_mode or "").strip().lower()
+            or "continue",
+            "embedding_max_errors": int(embedding_max_errors or 0),
+            "corpus_cache_hit": False,
+        }
+        if not candidate_chunk_ids:
+            log.info("Semantic search skipped: empty candidate corpus")
+            return []
+        if vector_store.try_open_table() is None:
+            log.info("Semantic search skipped: vector table missing and auto_sync_vectors=false")
+            return []
     candidate_chunk_ids = [
         int(raw_id)
         for raw_id in list(index_stats.get("candidate_chunk_ids") or [])

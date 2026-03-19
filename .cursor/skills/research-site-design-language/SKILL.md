@@ -23,6 +23,7 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - On `Ideas` detail pages, keep `Summary` and `Opportunities` as separate surfaces; render each opportunity as its own readable card with English field labels instead of collapsing multiple ideas into one long prose block.
 - On `Ideas` cards and detail heroes, omit empty topic rows entirely instead of rendering placeholder chrome for missing topics.
 - On `Ideas` opportunity cards, keep only short metadata in pills; render the longer user/role audience as a separate `Role` field block instead of a wrapping pill.
+- On `Ideas` opportunity cards, `Role` field copy must fully expand; do not clamp or truncate multi-line role/audience text.
 - Topic and stream discovery surfaces should aggregate both trend briefs and idea briefs so idea-only topics/streams stay navigable and linked, rather than degrading into unlabeled plain text.
 - Topic and stream entity pages should lead with a summary surface for the entity itself, then render symmetric `Trend briefs` and `Idea briefs` collection panels below instead of pairing the entity name against only one collection.
 - If a stream label originates from a machine slug such as `embedded_ai` or `research-ops`, render it as a readable title in the UI chrome rather than exposing the raw slug.
