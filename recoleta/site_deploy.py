@@ -223,6 +223,9 @@ def _sanitize_public_manifest(*, manifest_path: Path) -> dict[str, Any]:
         "topics_total": int(loaded.get("topics_total") or 0),
         "trends_total": int(loaded.get("trends_total") or 0),
     }
+    for key in ("ideas_total", "items_total", "languages", "language_codes", "default_language_code"):
+        if key in loaded:
+            sanitized[key] = loaded.get(key)
     manifest_path.write_text(
         json.dumps(sanitized, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -522,6 +525,7 @@ def deploy_trend_static_site_to_github_pages(
     cname: str | None = None,
     pages_config_mode: str = "auto",
     force: bool = True,
+    default_language_code: str | None = None,
 ) -> GitHubPagesDeployResult:
     normalized_mode = _normalize_pages_config_mode(pages_config_mode)
     resolved_repo_root = _resolve_git_repo_root(repo_dir.expanduser().resolve())
@@ -536,6 +540,7 @@ def deploy_trend_static_site_to_github_pages(
             input_dir=input_dir,
             output_dir=site_dir,
             limit=limit,
+            default_language_code=default_language_code,
         )
         manifest = _sanitize_public_manifest(manifest_path=manifest_path)
         if cname is not None:

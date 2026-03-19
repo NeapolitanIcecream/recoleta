@@ -99,6 +99,71 @@ def test_gh_deploy_creates_branch_snapshot_without_touching_main_worktree(
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
+def test_gh_deploy_preserves_multilingual_manifest_metadata(tmp_path: Path) -> None:
+    notes_root = tmp_path / "notes"
+    write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=401,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 3, 2, tzinfo=UTC),
+        run_id="run-gh-deploy-multilang-en",
+        overview_md="## Overview\n\nEnglish note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="en",
+    )
+    write_markdown_trend_note(
+        output_dir=notes_root / "Localized" / "zh-cn",
+        trend_doc_id=401,
+        title="智能体系统",
+        granularity="day",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 3, 2, tzinfo=UTC),
+        run_id="run-gh-deploy-multilang-zh",
+        overview_md="## Overview\n\n中文笔记。\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="zh-CN",
+    )
+
+    remote_repo = tmp_path / "remote.git"
+    _run_git("init", "--bare", str(remote_repo), cwd=tmp_path)
+
+    local_repo = tmp_path / "repo"
+    local_repo.mkdir(parents=True, exist_ok=True)
+    _run_git("init", "-b", "main", cwd=local_repo)
+    _run_git("config", "user.name", "Recoleta Tester", cwd=local_repo)
+    _run_git("config", "user.email", "tester@example.com", cwd=local_repo)
+    (local_repo / "README.md").write_text("# repo\n", encoding="utf-8")
+    _run_git("add", "README.md", cwd=local_repo)
+    _run_git("commit", "-m", "init", cwd=local_repo)
+    _run_git("remote", "add", "origin", str(remote_repo), cwd=local_repo)
+    _run_git("push", "-u", "origin", "main", cwd=local_repo)
+
+    result = deploy_trend_static_site_to_github_pages(
+        input_dir=notes_root,
+        repo_dir=local_repo,
+        remote="origin",
+        branch="gh-pages",
+        pages_config_mode="never",
+        force=True,
+        default_language_code="en",
+    )
+
+    assert result.skipped is False
+    published = tmp_path / "published"
+    _run_git("clone", "--branch", "gh-pages", str(remote_repo), str(published), cwd=tmp_path)
+    deployed_manifest = json.loads((published / "manifest.json").read_text(encoding="utf-8"))
+    assert deployed_manifest["languages"] == ["en", "zh-cn"]
+    assert deployed_manifest["default_language_code"] == "en"
+    assert deployed_manifest["language_codes"] == {"en": "en", "zh-cn": "zh-CN"}
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
 def test_gh_deploy_skips_push_when_snapshot_is_unchanged(tmp_path: Path) -> None:
     notes_root = tmp_path / "notes"
     trend_note = write_markdown_trend_note(
@@ -219,6 +284,7 @@ class _FakeSettings:
     log_json: bool = False
     markdown_output_dir: Path = Path("/tmp/recoleta-output")
     recoleta_db_path: Path = Path("/tmp/recoleta.db")
+    localization: object | None = None
 
     def safe_fingerprint(self) -> str:
         return "fp-gh-deploy"
@@ -233,6 +299,11 @@ def test_site_gh_deploy_cli_uses_default_paths_and_prints_summary(
         markdown_output_dir=tmp_path / "output",
         recoleta_db_path=tmp_path / "recoleta.db",
     )
+    fake_settings.localization = type(
+        "_Localization",
+        (),
+        {"site_default_language_code": "en"},
+    )()
     calls: dict[str, object] = {}
 
     monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
@@ -253,6 +324,7 @@ def test_site_gh_deploy_cli_uses_default_paths_and_prints_summary(
         cname=None,
         pages_config_mode="auto",
         force=True,
+        default_language_code=None,
     ):
         calls["input_dir"] = input_dir
         calls["repo_dir"] = repo_dir
@@ -263,6 +335,7 @@ def test_site_gh_deploy_cli_uses_default_paths_and_prints_summary(
         calls["cname"] = cname
         calls["pages_config_mode"] = pages_config_mode
         calls["force"] = force
+        calls["default_language_code"] = default_language_code
         return GitHubPagesDeployResult(
             branch=str(branch),
             remote=str(remote),
@@ -297,6 +370,7 @@ def test_site_gh_deploy_cli_uses_default_paths_and_prints_summary(
     assert calls["branch"] == "gh-pages"
     assert calls["pages_config_mode"] == "auto"
     assert calls["force"] is True
+    assert calls["default_language_code"] == "en"
     assert "site gh-deploy completed" in result.stdout
     assert "branch=gh-pages" in result.stdout
     assert "https://example.github.io/recoleta/" in result.stdout
@@ -323,11 +397,13 @@ def test_site_gh_deploy_cli_with_explicit_input_dir_does_not_require_settings(
         cname=None,
         pages_config_mode="auto",
         force=True,
+        default_language_code=None,
     ):
         _ = (remote, branch, limit, commit_message, cname, force)
         calls["input_dir"] = input_dir
         calls["repo_dir"] = repo_dir
         calls["pages_config_mode"] = pages_config_mode
+        calls["default_language_code"] = default_language_code
         return GitHubPagesDeployResult(
             branch="gh-pages",
             remote="origin",
@@ -365,6 +441,8 @@ def test_site_gh_deploy_cli_with_explicit_input_dir_does_not_require_settings(
             str(input_dir),
             "--pages-config",
             "never",
+            "--default-language-code",
+            "zh-CN",
         ],
     )
 
@@ -372,6 +450,7 @@ def test_site_gh_deploy_cli_with_explicit_input_dir_does_not_require_settings(
     assert calls["input_dir"] == input_dir.resolve()
     assert calls["repo_dir"] == Path.cwd().resolve()
     assert calls["pages_config_mode"] == "never"
+    assert calls["default_language_code"] == "zh-CN"
     assert "no changes" in result.stdout
 
 
@@ -403,6 +482,7 @@ def test_site_gh_deploy_cli_emits_json_output(
         cname=None,
         pages_config_mode="auto",
         force=True,
+        default_language_code=None,
     ):
         _ = (
             input_dir,
@@ -414,6 +494,7 @@ def test_site_gh_deploy_cli_emits_json_output(
             cname,
             pages_config_mode,
             force,
+            default_language_code,
         )
         return GitHubPagesDeployResult(
             branch="gh-pages",

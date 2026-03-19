@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from recoleta.rag import agent as rag_agent
-from recoleta.trends import build_empty_trend_payload
+from recoleta.trends import build_empty_trend_payload, is_empty_trend_payload
 
 
 def test_trend_agent_instructions_include_output_language() -> None:
@@ -29,3 +29,21 @@ def test_trends_empty_payload_localizes_for_chinese() -> None:
     )
     assert payload.title == "本期暂无可发布研究趋势"
     assert "没有可用文档" in payload.overview_md
+
+
+def test_is_empty_trend_payload_accepts_legacy_english_placeholder_copy() -> None:
+    period_start = datetime(2026, 3, 1, tzinfo=UTC)
+    period_end = datetime(2026, 3, 2, tzinfo=UTC)
+    payload = build_empty_trend_payload(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        output_language="English",
+    )
+    payload.title = "No research trends available for publication this period"
+
+    payload.overview_md = "- No documents were available during this period."
+    assert is_empty_trend_payload(payload) is True
+
+    payload.overview_md = "- No documents are available for this period."
+    assert is_empty_trend_payload(payload) is True

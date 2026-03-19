@@ -70,6 +70,7 @@ _ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
 _ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
 _ALLOWED_TRENDS_EMBEDDING_FAILURE_MODES = {"continue", "fail_fast", "threshold"}
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_LANGUAGE_CODE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 
 
 def _normalize_identifier(value: Any, *, field_name: str) -> str:
@@ -249,6 +250,79 @@ class TopicStreamConfig(BaseModel):
         return self
 
 
+def _normalize_language_code(value: Any, *, field_name: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        raise ValueError(f"{field_name} must not be empty")
+    if "\n" in normalized or "\r" in normalized:
+        raise ValueError(f"{field_name} must be a single-line value")
+    if len(normalized) > 32:
+        raise ValueError(f"{field_name} must be <= 32 characters")
+    if _LANGUAGE_CODE_RE.fullmatch(normalized) is None:
+        raise ValueError(f"{field_name} must be a valid language code")
+    return normalized
+
+
+class LocalizationTargetConfig(BaseModel):
+    code: str
+    llm_label: str
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _normalize_code(cls, value: Any) -> str:
+        return _normalize_language_code(value, field_name="localization.targets.code")
+
+    @field_validator("llm_label", mode="before")
+    @classmethod
+    def _normalize_llm_label(cls, value: Any) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("localization.targets.llm_label must not be empty")
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("localization.targets.llm_label must be a single-line value")
+        if len(normalized) > 64:
+            raise ValueError("localization.targets.llm_label must be <= 64 characters")
+        return normalized
+
+
+class LocalizationConfig(BaseModel):
+    source_language_code: str
+    targets: list[LocalizationTargetConfig] = Field(default_factory=list)
+    site_default_language_code: str
+    legacy_backfill_source_language_code: str | None = None
+
+    @field_validator(
+        "source_language_code",
+        "site_default_language_code",
+        "legacy_backfill_source_language_code",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_language_codes(cls, value: Any, info: Any) -> str | None:
+        if value is None:
+            return None
+        return _normalize_language_code(value, field_name=f"localization.{info.field_name}")
+
+    @model_validator(mode="after")
+    def _validate_localization(self) -> "LocalizationConfig":
+        target_codes = [target.code for target in self.targets]
+        duplicates = sorted({code for code in target_codes if target_codes.count(code) > 1})
+        if duplicates:
+            raise ValueError(
+                "localization.targets codes must be unique: " + ", ".join(duplicates)
+            )
+        if self.source_language_code in set(target_codes):
+            raise ValueError(
+                "localization.targets.code must not duplicate source_language_code"
+            )
+        known_codes = {self.source_language_code, *target_codes}
+        if self.site_default_language_code not in known_codes:
+            raise ValueError(
+                "localization.site_default_language_code must match source_language_code or one target code"
+            )
+        return self
+
+
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
     _KEY_MAP: dict[str, str] = {
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
@@ -309,6 +383,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRENDS_PEER_HISTORY_WINDOW_COUNT": "trends_peer_history_window_count",
         "TRENDS_PEER_HISTORY_MAX_CHARS": "trends_peer_history_max_chars",
         "TRENDS_EVOLUTION_MAX_SIGNALS": "trends_evolution_max_signals",
+        "LOCALIZATION": "localization",
     }
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
@@ -588,6 +663,9 @@ class Settings(BaseSettings):
     llm_output_language: str | None = Field(
         default=None, validation_alias="LLM_OUTPUT_LANGUAGE"
     )
+    localization: LocalizationConfig | None = Field(
+        default=None, validation_alias="LOCALIZATION"
+    )
     llm_api_key: SecretStr | None = Field(
         default=None, validation_alias="RECOLETA_LLM_API_KEY"
     )
@@ -789,6 +867,15 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_localization_requires_llm_output_language(self) -> "Settings":
+        if self.localization is not None and self.localization.targets:
+            if not str(self.llm_output_language or "").strip():
+                raise ValueError(
+                    "LLM_OUTPUT_LANGUAGE is required when LOCALIZATION.targets are configured"
+                )
+        return self
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -813,6 +900,18 @@ class Settings(BaseSettings):
             loaded = _parse_json_or_yaml(value)
             if not isinstance(loaded, dict):
                 raise ValueError("SOURCES must be a JSON/YAML object")
+            return loaded
+        return value
+
+    @field_validator("localization", mode="before")
+    @classmethod
+    def _parse_localization_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            loaded = _parse_json_or_yaml(value)
+            if not isinstance(loaded, dict):
+                raise ValueError("LOCALIZATION must be a JSON/YAML object")
             return loaded
         return value
 

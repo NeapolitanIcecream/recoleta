@@ -33,6 +33,10 @@ from recoleta.cli.site import (
     run_site_serve_command,
     run_site_stage_command,
 )
+from recoleta.cli.translate import (
+    run_translate_backfill_command,
+    run_translate_run_command,
+)
 from recoleta.cli.trends import run_trends_command, run_trends_week_command
 
 app = typer.Typer(
@@ -52,6 +56,8 @@ runs_app = typer.Typer(help="Run history utilities.", no_args_is_help=True)
 app.add_typer(runs_app, name="runs")
 doctor_app = typer.Typer(help="Workspace diagnostics.", no_args_is_help=False)
 app.add_typer(doctor_app, name="doctor")
+translate_app = typer.Typer(help="Derived translation utilities.", no_args_is_help=True)
+app.add_typer(translate_app, name="translate")
 
 
 @app.command()
@@ -253,6 +259,11 @@ def site_build(
         min=1,
         help="Optionally export only the latest N trend notes and sibling idea briefs.",
     ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code for multilingual static site builds. Defaults to localization.site_default_language_code when available.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -264,6 +275,7 @@ def site_build(
         input_dir=input_dir,
         output_dir=output_dir,
         limit=limit,
+        default_language_code=default_language_code,
         json_output=json_output,
     )
 
@@ -293,6 +305,11 @@ def site_stage(
         min=1,
         help="Optionally stage only the latest N trend notes and sibling idea briefs.",
     ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code metadata for multilingual staged content. Defaults to localization.site_default_language_code when available.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -304,6 +321,7 @@ def site_stage(
         input_dir=input_dir,
         output_dir=output_dir,
         limit=limit,
+        default_language_code=default_language_code,
         json_output=json_output,
     )
 
@@ -350,6 +368,11 @@ def site_serve(
         "--build/--no-build",
         help="Build the static site before serving it.",
     ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code for multilingual builds performed before serving.",
+    ),
 ) -> None:
     """Build and serve the static site locally."""
     run_site_serve_command(
@@ -359,6 +382,7 @@ def site_serve(
         host=host,
         port=port,
         build=build,
+        default_language_code=default_language_code,
     )
 
 
@@ -416,6 +440,11 @@ def site_gh_deploy(
         "--force/--no-force",
         help="Force-push the deployment branch. Defaults to force for derived site output.",
     ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code for multilingual site deployments. Defaults to localization.site_default_language_code when available.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -433,6 +462,7 @@ def site_gh_deploy(
         cname=cname,
         pages_config=pages_config,
         force=force,
+        default_language_code=default_language_code,
         json_output=json_output,
     )
 
@@ -507,6 +537,166 @@ def materialize_outputs(
         pdf=pdf,
         site=site,
         debug_pdf=debug_pdf,
+        json_output=json_output,
+    )
+
+
+@translate_app.command("run")
+def translate_run(
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="SQLite database path. Defaults to RECOLETA_DB_PATH or the configured settings file.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="YAML/JSON config path used to resolve localization settings and the database path.",
+    ),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Scope/stream name to translate.",
+    ),
+    granularity: str | None = typer.Option(
+        None,
+        "--granularity",
+        help="Optionally constrain trend and idea translations to day, week, or month windows.",
+    ),
+    include: str = typer.Option(
+        "items,trends,ideas",
+        "--include",
+        help="Comma-separated surfaces to translate: items, trends, ideas.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Optional cap on source records per included surface.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Rewrite localized outputs even when the source hash is unchanged.",
+    ),
+    context_assist: str = typer.Option(
+        "direct",
+        "--context-assist",
+        help="Translation context mode: none, direct, or hybrid.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON output.",
+    ),
+) -> None:
+    """Incrementally translate canonical outputs into configured derived languages."""
+    run_translate_run_command(
+        db_path=db_path,
+        config_path=config_path,
+        scope=scope,
+        granularity=granularity,
+        include=include,
+        limit=limit,
+        force=force,
+        context_assist=context_assist,
+        json_output=json_output,
+    )
+
+
+@translate_app.command("backfill")
+def translate_backfill(
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="SQLite database path. Defaults to RECOLETA_DB_PATH or the configured settings file.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="YAML/JSON config path used to resolve localization settings and the database path.",
+    ),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Scope/stream name to backfill.",
+    ),
+    granularity: str | None = typer.Option(
+        None,
+        "--granularity",
+        help="Optionally constrain trend and idea backfill to day, week, or month windows.",
+    ),
+    include: str = typer.Option(
+        "items,trends,ideas",
+        "--include",
+        help="Comma-separated surfaces to backfill: items, trends, ideas.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Optional cap on source records per included surface.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Rewrite localized outputs even when the source hash is unchanged.",
+    ),
+    context_assist: str = typer.Option(
+        "direct",
+        "--context-assist",
+        help="Translation context mode: none, direct, or hybrid.",
+    ),
+    legacy_source_language: str | None = typer.Option(
+        None,
+        "--legacy-source-language",
+        help="Language code for historical canonical content. Defaults to localization.legacy_backfill_source_language_code.",
+    ),
+    emit_mirror_targets: bool = typer.Option(
+        False,
+        "--emit-mirror-targets/--no-emit-mirror-targets",
+        help="Also persist mirror variants for configured target languages alongside the translated source-language override.",
+    ),
+    all_history: bool = typer.Option(
+        False,
+        "--all-history/--latest-only",
+        help="Backfill the full historical corpus instead of only current windows.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable JSON output.",
+    ),
+) -> None:
+    """Translate historical canonical outputs into the configured source language."""
+    run_translate_backfill_command(
+        db_path=db_path,
+        config_path=config_path,
+        scope=scope,
+        granularity=granularity,
+        include=include,
+        limit=limit,
+        force=force,
+        context_assist=context_assist,
+        legacy_source_language=legacy_source_language,
+        emit_mirror_targets=emit_mirror_targets,
+        all_history=all_history,
         json_output=json_output,
     )
 

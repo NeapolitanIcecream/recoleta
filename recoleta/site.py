@@ -8,6 +8,8 @@ import html
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
+import posixpath
 import re
 import shutil
 from typing import Any
@@ -66,6 +68,9 @@ class TrendSiteInputDirectory:
     inbox_path: Path | None
     ideas_path: Path | None
     stream: str | None
+    language_code: str | None = None
+    language_slug: str | None = None
+    is_localized_root: bool = False
 
 
 @dataclass(slots=True)
@@ -513,13 +518,21 @@ def _infer_stream_name_from_trends_dir(path: Path) -> str | None:
         return None
     if len(path.parts) < 3:
         return None
-    if path.parent.parent.name != "Streams":
+    if path.parent.parent.name == "Streams":
+        return path.parent.name
+    if len(path.parts) < 5:
         return None
-    return path.parent.name
+    if path.parent.parent.name != "Localized":
+        return None
+    if path.parent.parent.parent.parent.name != "Streams":
+        return None
+    return path.parent.parent.parent.name
 
 
 def _discover_trend_site_input_dirs(
     raw_inputs: Sequence[Path],
+    *,
+    include_localized_children: bool = True,
 ) -> list[TrendSiteInputDirectory]:
     discovered: list[TrendSiteInputDirectory] = []
     seen_paths: set[Path] = set()
@@ -536,6 +549,7 @@ def _discover_trend_site_input_dirs(
             if resolved_candidate.name == "Trends"
             else resolved_candidate
         )
+        language_code = _infer_site_language_code_from_root(root_path)
         inbox_path = root_path / "Inbox"
         discovered.append(
             TrendSiteInputDirectory(
@@ -551,6 +565,9 @@ def _discover_trend_site_input_dirs(
                     else None
                 ),
                 stream=_infer_stream_name_from_trends_dir(resolved_candidate),
+                language_code=language_code,
+                language_slug=language_slug_from_code(language_code) or None,
+                is_localized_root=root_path.parent.name == "Localized",
             )
         )
 
@@ -562,6 +579,23 @@ def _discover_trend_site_input_dirs(
         direct_trends_dir = raw_input / "Trends"
         if direct_trends_dir.exists() and direct_trends_dir.is_dir():
             candidates.append(direct_trends_dir)
+
+        if include_localized_children:
+            localized_root = raw_input / "Localized"
+            if localized_root.exists() and localized_root.is_dir():
+                for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
+                    child_trends_dir = child / "Trends"
+                    if child_trends_dir.exists() and child_trends_dir.is_dir():
+                        candidates.append(child_trends_dir)
+                    else:
+                        candidates.append(child)
+                    child_streams_root = child / "Streams"
+                    if child_streams_root.exists() and child_streams_root.is_dir():
+                        candidates.extend(
+                            path
+                            for path in sorted(child_streams_root.glob("*/Trends"))
+                            if path.is_dir()
+                        )
 
         streams_root = (
             raw_input if raw_input.name == "Streams" else raw_input / "Streams"
@@ -2493,12 +2527,10 @@ iframe {
   color: #34506f;
   font-size: 14px;
   line-height: 1.5;
-  overflow: hidden;
   overflow-wrap: anywhere;
   word-break: break-word;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: normal;
+  display: block;
 }
 .detail-content .idea-opportunity-copy p,
 .detail-content .idea-opportunity-copy ul,
@@ -3745,14 +3777,284 @@ def _load_trend_site_documents(
     return documents
 
 
-def export_trend_static_site(
+def _markdown_language_code(path: Path) -> str | None:
+    try:
+        raw_markdown = path.read_text(encoding="utf-8")
+    except Exception:
+        return None
+    frontmatter, _markdown_body = _split_yaml_frontmatter_text(raw_markdown)
+    normalized = str(
+        frontmatter.get("language_code") or frontmatter.get("lang") or ""
+    ).strip()
+    return normalized or None
+
+
+def _infer_site_language_code_from_root(root_path: Path) -> str | None:
+    candidate_dirs = [root_path / "Trends", root_path / "Ideas", root_path / "Inbox"]
+    if root_path.name == "Trends":
+        candidate_dirs.insert(0, root_path)
+    for candidate_dir in candidate_dirs:
+        if not candidate_dir.exists() or not candidate_dir.is_dir():
+            continue
+        for markdown_path in sorted(candidate_dir.glob("*.md")):
+            if language_code := _markdown_language_code(markdown_path):
+                return language_code
+    return None
+
+
+def _discover_site_language_inputs(
+    raw_inputs: Sequence[Path],
+) -> list[tuple[str | None, str, tuple[Path, ...]]]:
+    discovered: list[tuple[str | None, str, tuple[Path, ...]]] = []
+    grouped_roots: dict[str, list[Path]] = {}
+    language_code_by_slug: dict[str, str] = {}
+    seen_roots: set[Path] = set()
+
+    def add_root(root_path: Path) -> None:
+        resolved_root = root_path.expanduser().resolve()
+        if resolved_root in seen_roots or not resolved_root.exists() or not resolved_root.is_dir():
+            return
+        seen_roots.add(resolved_root)
+        language_code = _infer_site_language_code_from_root(resolved_root)
+        language_slug = (
+            language_slug_from_code(language_code)
+            if language_code is not None
+            else ""
+        )
+        if language_code is None or not language_slug:
+            discovered.append((language_code, language_slug, (resolved_root,)))
+            return
+        grouped_roots.setdefault(language_slug, []).append(resolved_root)
+        language_code_by_slug[language_slug] = str(language_code)
+
+    for raw_input in raw_inputs:
+        base_root = (
+            raw_input.parent if raw_input.name == "Trends" else raw_input
+        ).expanduser().resolve()
+        add_root(base_root)
+        localized_root = base_root / "Localized"
+        if localized_root.exists() and localized_root.is_dir():
+            for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
+                add_root(child)
+        streams_root = (
+            base_root if base_root.name == "Streams" else base_root / "Streams"
+        )
+        if streams_root.exists() and streams_root.is_dir():
+            for stream_root in sorted(path for path in streams_root.iterdir() if path.is_dir()):
+                add_root(stream_root)
+                stream_localized_root = stream_root / "Localized"
+                if stream_localized_root.exists() and stream_localized_root.is_dir():
+                    for child in sorted(
+                        path for path in stream_localized_root.iterdir() if path.is_dir()
+                    ):
+                        add_root(child)
+    for language_slug in sorted(grouped_roots):
+        discovered.append(
+            (
+                language_code_by_slug[language_slug],
+                language_slug,
+                tuple(grouped_roots[language_slug]),
+            )
+        )
+    return discovered
+
+
+def language_slug_from_code(language_code: str | None) -> str:
+    normalized = str(language_code or "").strip().lower().replace("_", "-")
+    return normalized
+
+
+def _collect_site_html_files(output_dir: Path) -> set[str]:
+    return {
+        str(path.relative_to(output_dir)).replace("\\", "/")
+        for path in output_dir.rglob("*.html")
+    }
+
+
+_LANGUAGE_SWITCHER_CSS = """
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.language-switcher-label {
+  color: #6f859d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.language-switcher-links {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.language-switcher-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 39, 63, 0.12);
+  background: rgba(247, 250, 253, 0.92);
+  color: #16304f;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.language-switcher-link.is-active {
+  background: #16304f;
+  border-color: #16304f;
+  color: #f8fbff;
+}
+"""
+
+
+def _render_language_switcher_fragment(
+    *,
+    current_language_slug: str,
+    current_page_relative_path: str,
+    page_paths_by_language: dict[str, set[str]],
+    language_code_by_slug: dict[str, str],
+) -> Tag:
+    switcher_soup = BeautifulSoup("", "html.parser")
+    container = switcher_soup.new_tag("div")
+    container["class"] = "language-switcher"
+    label = switcher_soup.new_tag("span")
+    label["class"] = "language-switcher-label"
+    label.string = "Language"
+    container.append(label)
+    links = switcher_soup.new_tag("div")
+    links["class"] = "language-switcher-links"
+    for language_slug, language_code in language_code_by_slug.items():
+        target_relative_path = (
+            current_page_relative_path
+            if current_page_relative_path in page_paths_by_language.get(language_slug, set())
+            else "index.html"
+        )
+        current_page_path = PurePosixPath(current_language_slug) / current_page_relative_path
+        target_page_path = PurePosixPath(language_slug) / target_relative_path
+        anchor = switcher_soup.new_tag(
+            "a",
+            href=posixpath.relpath(
+                str(target_page_path),
+                start=str(current_page_path.parent),
+            ),
+        )
+        classes = ["language-switcher-link"]
+        if language_slug == current_language_slug:
+            classes.append("is-active")
+        anchor["class"] = " ".join(classes)
+        anchor["data-language-code"] = language_slug
+        anchor.string = language_code
+        links.append(anchor)
+    container.append(links)
+
+    script = switcher_soup.new_tag("script")
+    script.string = (
+        "(function(){"
+        "var links=document.querySelectorAll('.language-switcher-link[data-language-code]');"
+        "for(var i=0;i<links.length;i+=1){"
+        "links[i].addEventListener('click',function(){"
+        "try{localStorage.setItem('recoleta-language-code',this.getAttribute('data-language-code')||'');}catch(_err){}"
+        "});"
+        "}"
+        "})();"
+    )
+    fragment = switcher_soup.new_tag("div")
+    fragment.append(container)
+    fragment.append(script)
+    return fragment
+
+
+def _apply_site_language_overrides(
+    *,
+    output_dir: Path,
+    language_code: str,
+    language_slug: str,
+    page_paths_by_language: dict[str, set[str]],
+    language_code_by_slug: dict[str, str],
+) -> None:
+    stylesheet_path = output_dir / "assets" / "site.css"
+    if stylesheet_path.exists():
+        stylesheet = stylesheet_path.read_text(encoding="utf-8")
+        if ".language-switcher {" not in stylesheet:
+            stylesheet_path.write_text(
+                stylesheet.rstrip() + "\n" + _LANGUAGE_SWITCHER_CSS.strip() + "\n",
+                encoding="utf-8",
+            )
+
+    inject_switcher = len(language_code_by_slug) > 1
+    for html_path in output_dir.rglob("*.html"):
+        relative_path = str(html_path.relative_to(output_dir)).replace("\\", "/")
+        soup = BeautifulSoup(html_path.read_text(encoding="utf-8"), "html.parser")
+        html_tag = soup.find("html")
+        if html_tag is not None:
+            html_tag["lang"] = language_code
+
+        if inject_switcher:
+            nav_actions = soup.select_one(".site-header .nav-actions")
+            if nav_actions is not None and nav_actions.select_one(".language-switcher") is None:
+                nav_actions.insert(
+                    0,
+                    _render_language_switcher_fragment(
+                        current_language_slug=language_slug,
+                        current_page_relative_path=relative_path,
+                        page_paths_by_language=page_paths_by_language,
+                        language_code_by_slug=language_code_by_slug,
+                    ),
+                )
+        rendered_html = str(soup).replace(
+            f'<html lang="{language_code}">', f"<html lang='{language_code}'>"
+        )
+        html_path.write_text(rendered_html, encoding="utf-8")
+
+
+def _render_language_redirect_page(
+    *,
+    default_language_slug: str,
+    language_slugs: list[str],
+) -> str:
+    languages_json = json.dumps(language_slugs, ensure_ascii=False)
+    default_href = f"{default_language_slug}/index.html"
+    return (
+        "<!doctype html>"
+        "<html lang='en'>"
+        "<head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Recoleta Trends</title>"
+        "<script>"
+        f"const recoletaLanguages={languages_json};"
+        "let recoletaLanguage='';"
+        "try{recoletaLanguage=(localStorage.getItem('recoleta-language-code')||'').toLowerCase();}catch(_err){}"
+        "if(!recoletaLanguages.includes(recoletaLanguage)){"
+        f"recoletaLanguage='{default_language_slug}';"
+        "}"
+        "window.location.replace(recoletaLanguage+'/index.html');"
+        "</script>"
+        "</head>"
+        "<body>"
+        f"<p>Redirecting to <a href='{default_href}'>{default_href}</a>...</p>"
+        "</body>"
+        "</html>"
+    )
+
+
+def _export_trend_static_site_single_language(
     *,
     input_dir: Path | Sequence[Path],
     output_dir: Path,
     limit: int | None = None,
+    include_localized_children: bool = True,
 ) -> Path:
     resolved_input_roots = _coerce_site_input_paths(input_dir)
-    resolved_input_dirs = _discover_trend_site_input_dirs(resolved_input_roots)
+    resolved_input_dirs = _discover_trend_site_input_dirs(
+        resolved_input_roots,
+        include_localized_children=include_localized_children,
+    )
     resolved_output_dir = output_dir.expanduser().resolve()
     for input_info in resolved_input_dirs:
         if _paths_overlap(input_info.path, resolved_output_dir):
@@ -4034,11 +4336,131 @@ def export_trend_static_site(
     return manifest_path
 
 
+def export_trend_static_site(
+    *,
+    input_dir: Path | Sequence[Path],
+    output_dir: Path,
+    limit: int | None = None,
+    default_language_code: str | None = None,
+) -> Path:
+    resolved_input_roots = _coerce_site_input_paths(input_dir)
+    language_inputs = _discover_site_language_inputs(resolved_input_roots)
+    valid_language_inputs = [
+        (language_code, language_slug, root_paths)
+        for language_code, language_slug, root_paths in language_inputs
+        if language_code is not None and language_slug
+    ]
+
+    if len(valid_language_inputs) <= 1:
+        manifest_path = _export_trend_static_site_single_language(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            limit=limit,
+        )
+        if valid_language_inputs:
+            language_code, language_slug, _root_paths = valid_language_inputs[0]
+            resolved_output_dir = output_dir.expanduser().resolve()
+            _apply_site_language_overrides(
+                output_dir=resolved_output_dir,
+                language_code=str(language_code),
+                language_slug=language_slug,
+                page_paths_by_language={language_slug: _collect_site_html_files(resolved_output_dir)},
+                language_code_by_slug={language_slug: str(language_code)},
+            )
+        return manifest_path
+
+    normalized_default_language_slug = language_slug_from_code(default_language_code)
+    if not normalized_default_language_slug:
+        raise ValueError(
+            "default_language_code is required when exporting a multilingual site"
+        )
+    if normalized_default_language_slug not in {
+        language_slug for _language_code, language_slug, _root_paths in valid_language_inputs
+    }:
+        raise ValueError(
+            "default_language_code must match one discovered language root"
+        )
+
+    resolved_output_dir = output_dir.expanduser().resolve()
+    _reset_directory(resolved_output_dir)
+    (resolved_output_dir / ".nojekyll").write_text("", encoding="utf-8")
+
+    manifest_by_language: dict[str, dict[str, Any]] = {}
+    page_paths_by_language: dict[str, set[str]] = {}
+    language_code_by_slug: dict[str, str] = {}
+
+    for language_code, language_slug, root_paths in valid_language_inputs:
+        language_output_dir = resolved_output_dir / language_slug
+        manifest_path = _export_trend_static_site_single_language(
+            input_dir=list(root_paths),
+            output_dir=language_output_dir,
+            limit=limit,
+            include_localized_children=False,
+        )
+        manifest_by_language[language_slug] = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        page_paths_by_language[language_slug] = _collect_site_html_files(language_output_dir)
+        language_code_by_slug[language_slug] = str(language_code)
+
+    for language_slug, language_code in language_code_by_slug.items():
+        _apply_site_language_overrides(
+            output_dir=resolved_output_dir / language_slug,
+            language_code=language_code,
+            language_slug=language_slug,
+            page_paths_by_language=page_paths_by_language,
+            language_code_by_slug=language_code_by_slug,
+        )
+
+    default_manifest = manifest_by_language[normalized_default_language_slug]
+    aggregate_manifest = dict(default_manifest)
+    aggregate_files = dict(default_manifest.get("files") or {})
+    aggregate_files["language_homes"] = {
+        language_slug: f"{language_slug}/index.html"
+        for language_slug in sorted(language_code_by_slug)
+    }
+    aggregate_files["language_manifests"] = {
+        language_slug: f"{language_slug}/manifest.json"
+        for language_slug in sorted(language_code_by_slug)
+    }
+    aggregate_files["by_language"] = {
+        language_slug: dict(manifest_by_language[language_slug].get("files") or {})
+        for language_slug in sorted(language_code_by_slug)
+    }
+    aggregate_manifest["files"] = aggregate_files
+    aggregate_manifest["languages"] = sorted(language_code_by_slug)
+    aggregate_manifest["language_codes"] = language_code_by_slug
+    aggregate_manifest["default_language_code"] = normalized_default_language_slug
+    aggregate_manifest["output_dir"] = str(resolved_output_dir)
+
+    manifest_path = resolved_output_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(aggregate_manifest, ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    (resolved_output_dir / "index.html").write_text(
+        _render_language_redirect_page(
+            default_language_slug=normalized_default_language_slug,
+            language_slugs=sorted(language_code_by_slug),
+        ),
+        encoding="utf-8",
+    )
+    logger.bind(
+        module="site.build.multilang",
+        output_dir=str(resolved_output_dir),
+        languages=sorted(language_code_by_slug),
+        default_language_code=normalized_default_language_slug,
+    ).info("Multilingual trend static site export completed")
+    return manifest_path
+
+
 def stage_trend_site_source(
     *,
     input_dir: Path | Sequence[Path],
     output_dir: Path,
     limit: int | None = None,
+    default_language_code: str | None = None,
 ) -> Path:
     resolved_input_roots = _coerce_site_input_paths(input_dir)
     resolved_input_dirs = _discover_trend_site_input_dirs(resolved_input_roots)
@@ -4078,12 +4500,33 @@ def stage_trend_site_source(
     def relative_to_stage_root(path: Path) -> str:
         return str(path.relative_to(stage_root))
 
+    def language_prefix(*, language_slug: str | None) -> Path:
+        cleaned_slug = str(language_slug or "").strip()
+        return stage_root / "Localized" / cleaned_slug if cleaned_slug else stage_root
+
     for source_document in source_documents:
+        source_input = next(
+            (
+                input_info
+                for input_info in resolved_input_dirs
+                if input_info.path == source_document.markdown_path.parent
+            ),
+            None,
+        )
+        prefix = language_prefix(
+            language_slug=(
+                getattr(source_input, "language_slug", None)
+                if source_input is not None and getattr(source_input, "is_localized_root", False)
+                else None
+            )
+        )
         target_dir = (
-            stage_root / "Streams" / source_document.stream / "Trends"
+            prefix / "Streams" / source_document.stream / "Trends"
             if source_document.stream
             else (
-                stage_root / "Trends" if has_stream_documents else resolved_output_dir
+                prefix / "Trends"
+                if has_stream_documents or prefix != stage_root
+                else resolved_output_dir
             )
         )
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -4098,10 +4541,25 @@ def stage_trend_site_source(
         staged_pdf_files.append(relative_to_stage_root(staged_pdf_path))
 
     for source_document in item_source_documents:
+        source_input = next(
+            (
+                input_info
+                for input_info in resolved_input_dirs
+                if input_info.inbox_path == source_document.markdown_path.parent
+            ),
+            None,
+        )
+        prefix = language_prefix(
+            language_slug=(
+                getattr(source_input, "language_slug", None)
+                if source_input is not None and getattr(source_input, "is_localized_root", False)
+                else None
+            )
+        )
         target_dir = (
-            stage_root / "Streams" / source_document.stream / "Inbox"
+            prefix / "Streams" / source_document.stream / "Inbox"
             if source_document.stream
-            else stage_root / "Inbox"
+            else prefix / "Inbox"
         )
         target_dir.mkdir(parents=True, exist_ok=True)
         staged_item_path = target_dir / source_document.markdown_path.name
@@ -4109,10 +4567,25 @@ def stage_trend_site_source(
         staged_item_files.append(relative_to_stage_root(staged_item_path))
 
     for source_document in idea_source_documents:
+        source_input = next(
+            (
+                input_info
+                for input_info in resolved_input_dirs
+                if input_info.ideas_path == source_document.markdown_path.parent
+            ),
+            None,
+        )
+        prefix = language_prefix(
+            language_slug=(
+                getattr(source_input, "language_slug", None)
+                if source_input is not None and getattr(source_input, "is_localized_root", False)
+                else None
+            )
+        )
         target_dir = (
-            stage_root / "Streams" / source_document.stream / "Ideas"
+            prefix / "Streams" / source_document.stream / "Ideas"
             if source_document.stream
-            else stage_root / "Ideas"
+            else prefix / "Ideas"
         )
         target_dir.mkdir(parents=True, exist_ok=True)
         staged_idea_path = target_dir / source_document.markdown_path.name
@@ -4132,10 +4605,21 @@ def stage_trend_site_source(
                 "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
                 "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
                 "stream": input_info.stream,
+                "language_code": input_info.language_code,
+                "language_slug": input_info.language_slug,
+                "is_localized_root": bool(input_info.is_localized_root),
             }
             for input_info in resolved_input_dirs
         ],
         "output_dir": str(resolved_output_dir),
+        "default_language_code": language_slug_from_code(default_language_code),
+        "languages": sorted(
+            {
+                str(input_info.language_slug or "").strip()
+                for input_info in resolved_input_dirs
+                if str(input_info.language_slug or "").strip()
+            }
+        ),
         "trends_total": len(source_documents),
         "ideas_total": len(idea_source_documents),
         "items_total": len(item_source_documents),

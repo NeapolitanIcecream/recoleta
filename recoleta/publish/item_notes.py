@@ -113,6 +113,7 @@ def _render_item_note_lines(
     relevance_score: float,
     run_id: str,
     summary: str,
+    language_code: str | None,
 ) -> list[str]:
     normalized_summary = normalize_item_summary_markdown(summary)
     frontmatter = {
@@ -124,6 +125,9 @@ def _render_item_note_lines(
         "relevance_score": round(relevance_score, 4),
         "run_id": run_id,
     }
+    normalized_language_code = str(language_code or "").strip()
+    if normalized_language_code:
+        frontmatter["language_code"] = normalized_language_code
     return [
         "---",
         yaml.safe_dump(frontmatter, sort_keys=False).strip(),
@@ -152,6 +156,7 @@ def _write_item_note(
     relevance_score: float,
     run_id: str,
     summary: str,
+    language_code: str | None = None,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = _item_note_path(
@@ -171,6 +176,7 @@ def _write_item_note(
         relevance_score=relevance_score,
         run_id=run_id,
         summary=summary,
+        language_code=language_code,
     )
     note_path.write_text("\n".join(lines), encoding="utf-8")
     return note_path
@@ -190,6 +196,7 @@ def write_obsidian_note(
     relevance_score: float,
     run_id: str,
     summary: str,
+    language_code: str | None = None,
 ) -> Path:
     note_dir = vault_path / base_folder / "Inbox"
     return _write_item_note(
@@ -204,6 +211,7 @@ def write_obsidian_note(
         relevance_score=relevance_score,
         run_id=run_id,
         summary=summary,
+        language_code=language_code,
     )
 
 
@@ -220,6 +228,7 @@ def write_markdown_note(
     relevance_score: float,
     run_id: str,
     summary: str,
+    language_code: str | None = None,
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
@@ -238,4 +247,5 @@ def write_markdown_note(
         relevance_score=relevance_score,
         run_id=run_id,
         summary=summary,
+        language_code=language_code,
     )

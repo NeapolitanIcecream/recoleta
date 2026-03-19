@@ -31,6 +31,7 @@ def run_site_build_command(
     input_dir: Path | None,
     output_dir: Path | None,
     limit: int | None,
+    default_language_code: str | None = None,
     json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
@@ -61,6 +62,18 @@ def run_site_build_command(
     if resolved_output_dir is None:
         assert settings is not None
         resolved_output_dir = settings.markdown_output_dir / "site"
+    resolved_default_language_code = str(default_language_code or "").strip() or None
+    if (
+        resolved_default_language_code is None
+        and settings is not None
+        and getattr(settings, "localization", None) is not None
+    ):
+        configured_default = getattr(
+            getattr(settings, "localization", None),
+            "site_default_language_code",
+            None,
+        )
+        resolved_default_language_code = str(configured_default or "").strip() or None
     console = (
         console_cls(stderr=settings.log_json) if settings is not None else console_cls()
     )
@@ -73,10 +86,15 @@ def run_site_build_command(
         )
     )
     try:
+        export_kwargs: dict[str, object] = {
+            "input_dir": resolved_input_dir,
+            "output_dir": resolved_output_dir,
+            "limit": limit,
+        }
+        if resolved_default_language_code is not None:
+            export_kwargs["default_language_code"] = resolved_default_language_code
         manifest_path = export_trend_static_site(
-            input_dir=resolved_input_dir,
-            output_dir=resolved_output_dir,
-            limit=limit,
+            **export_kwargs,
         )
         if lease_heartbeat_monitor is not None:
             lease_heartbeat_monitor.raise_if_failed()
@@ -103,6 +121,7 @@ def run_site_build_command(
                 "input_dir": str(resolved_input_dir),
                 "output_dir": str(resolved_output_dir),
                 "manifest_path": str(manifest_path),
+                "default_language_code": resolved_default_language_code,
                 "manifest": manifest,
             }
         )
@@ -124,6 +143,7 @@ def run_site_stage_command(
     input_dir: Path | None,
     output_dir: Path | None,
     limit: int | None,
+    default_language_code: str | None = None,
     json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
@@ -157,6 +177,18 @@ def run_site_stage_command(
             if settings is not None and cli._has_explicit_topic_streams(settings)
             else (Path.cwd() / "site-content" / "Trends").resolve()
         )
+    resolved_default_language_code = str(default_language_code or "").strip() or None
+    if (
+        resolved_default_language_code is None
+        and settings is not None
+        and getattr(settings, "localization", None) is not None
+    ):
+        configured_default = getattr(
+            getattr(settings, "localization", None),
+            "site_default_language_code",
+            None,
+        )
+        resolved_default_language_code = str(configured_default or "").strip() or None
     console = (
         console_cls(stderr=settings.log_json) if settings is not None else console_cls()
     )
@@ -169,11 +201,14 @@ def run_site_stage_command(
         )
     )
     try:
-        manifest_path = stage_trend_site_source(
-            input_dir=resolved_input_dir,
-            output_dir=resolved_output_dir,
-            limit=limit,
-        )
+        stage_kwargs: dict[str, object] = {
+            "input_dir": resolved_input_dir,
+            "output_dir": resolved_output_dir,
+            "limit": limit,
+        }
+        if resolved_default_language_code is not None:
+            stage_kwargs["default_language_code"] = resolved_default_language_code
+        manifest_path = stage_trend_site_source(**stage_kwargs)
         if lease_heartbeat_monitor is not None:
             lease_heartbeat_monitor.raise_if_failed()
     finally:
@@ -199,6 +234,7 @@ def run_site_stage_command(
                 "input_dir": str(resolved_input_dir),
                 "output_dir": str(resolved_output_dir),
                 "manifest_path": str(manifest_path),
+                "default_language_code": resolved_default_language_code,
                 "manifest": manifest,
             }
         )
@@ -223,6 +259,7 @@ def run_site_serve_command(
     host: str,
     port: int,
     build: bool,
+    default_language_code: str | None = None,
 ) -> None:
     resolved_output_dir = (
         output_dir.expanduser().resolve() if output_dir is not None else None
@@ -241,6 +278,7 @@ def run_site_serve_command(
             input_dir=input_dir,
             output_dir=resolved_output_dir,
             limit=limit,
+            default_language_code=default_language_code,
         )
 
     if not resolved_output_dir.exists() or not resolved_output_dir.is_dir():
@@ -291,6 +329,7 @@ def run_site_gh_deploy_command(
     cname: str | None,
     pages_config: str,
     force: bool,
+    default_language_code: str | None = None,
     json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
@@ -314,6 +353,18 @@ def run_site_gh_deploy_command(
             if cli._has_explicit_topic_streams(settings)
             else settings.markdown_output_dir / "Trends"
         )
+    resolved_default_language_code = str(default_language_code or "").strip() or None
+    if (
+        resolved_default_language_code is None
+        and settings is not None
+        and getattr(settings, "localization", None) is not None
+    ):
+        configured_default = getattr(
+            getattr(settings, "localization", None),
+            "site_default_language_code",
+            None,
+        )
+        resolved_default_language_code = str(configured_default or "").strip() or None
     console = (
         console_cls(stderr=settings.log_json) if settings is not None else console_cls()
     )
@@ -326,17 +377,20 @@ def run_site_gh_deploy_command(
         )
     )
     try:
-        result = deploy_trend_static_site_to_github_pages(
-            input_dir=resolved_input_dir,
-            repo_dir=resolved_repo_dir,
-            remote=remote,
-            branch=branch,
-            limit=limit,
-            commit_message=commit_message,
-            cname=cname,
-            pages_config_mode=pages_config,
-            force=force,
-        )
+        deploy_kwargs: dict[str, object] = {
+            "input_dir": resolved_input_dir,
+            "repo_dir": resolved_repo_dir,
+            "remote": remote,
+            "branch": branch,
+            "limit": limit,
+            "commit_message": commit_message,
+            "cname": cname,
+            "pages_config_mode": pages_config,
+            "force": force,
+        }
+        if resolved_default_language_code is not None:
+            deploy_kwargs["default_language_code"] = resolved_default_language_code
+        result = deploy_trend_static_site_to_github_pages(**deploy_kwargs)
         if lease_heartbeat_monitor is not None:
             lease_heartbeat_monitor.raise_if_failed()
     finally:
@@ -373,6 +427,7 @@ def run_site_gh_deploy_command(
                 "topics_total": int(result.topics_total),
                 "streams_total": int(result.streams_total),
                 "files_total": int(result.files_total),
+                "default_language_code": resolved_default_language_code,
                 "pages_source": {
                     "status": str(result.pages_source.status),
                     "method": result.pages_source.method,

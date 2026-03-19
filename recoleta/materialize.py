@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+import shutil
 from typing import Any, cast
 
 from loguru import logger
@@ -20,6 +21,7 @@ from recoleta.models import (
     Item,
     ItemStreamState,
 )
+from recoleta.config import LocalizationConfig
 from recoleta.publish import (
     export_trend_note_pdf_debug_bundle,
     render_trend_note_pdf_result,
@@ -37,6 +39,10 @@ from recoleta.provenance import (
     projection_provenance_from_mapping,
 )
 from recoleta.site import export_trend_static_site
+from recoleta.translation import (
+    localized_language_root,
+    materialize_localized_languages_for_scope,
+)
 from recoleta.trend_materialize import materialize_trend_note_payload
 from recoleta.trends import TrendPayload, is_empty_trend_payload
 from recoleta.types import DEFAULT_TOPIC_STREAM
@@ -86,6 +92,340 @@ def _normalize_granularity(value: str | None) -> str | None:
     if normalized not in {"day", "week", "month"}:
         raise ValueError("granularity must be one of: day, week, month")
     return normalized
+
+
+def _reset_managed_scope_output_dirs(output_dir: Path) -> None:
+    for name in ("Inbox", "Trends", "Ideas", "Localized"):
+        managed_path = output_dir / name
+        if not managed_path.exists():
+            continue
+        if managed_path.is_dir():
+            shutil.rmtree(managed_path)
+            continue
+        managed_path.unlink()
+
+
+def _materialize_idea_documents(
+    *,
+    repository: Any,
+    scope: str,
+    granularity: str | None,
+) -> list[Document]:
+    with Session(repository.engine) as session:
+        statement = select(Document).where(
+            Document.doc_type == "idea",
+            cast(Any, Document.scope) == scope,
+        )
+        if granularity is not None:
+            statement = statement.where(Document.granularity == granularity)
+        statement = statement.order_by(
+            cast(Any, Document.period_start),
+            cast(Any, Document.id),
+        )
+        return list(session.exec(statement))
+
+
+def _load_localized_payload(*, row: Any) -> dict[str, Any] | None:
+    try:
+        loaded = json.loads(str(getattr(row, "payload_json", "") or "{}"))
+    except Exception:
+        return None
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _localized_output_payload(
+    *,
+    repository: Any,
+    source_kind: str,
+    source_record_id: int,
+    scope: str,
+    language_code: str | None,
+) -> dict[str, Any] | None:
+    normalized_language_code = str(language_code or "").strip()
+    if not normalized_language_code:
+        return None
+    row = repository.get_localized_output(
+        source_kind=source_kind,
+        source_record_id=source_record_id,
+        scope=scope,
+        language_code=normalized_language_code,
+    )
+    if row is None:
+        return None
+    return _load_localized_payload(row=row)
+
+
+def _canonical_language_code_for_scope(
+    *,
+    repository: Any,
+    scope: str,
+    localization: LocalizationConfig | None,
+) -> str | None:
+    _ = (repository, scope)
+    if localization is None:
+        return None
+    source_language_code = str(localization.source_language_code or "").strip()
+    if not source_language_code:
+        return None
+    return source_language_code
+
+
+def _localized_idea_topics(
+    *,
+    repository: Any,
+    scope: str,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+) -> list[str]:
+    with Session(repository.engine) as session:
+        trend_doc = session.exec(
+            select(Document).where(
+                Document.doc_type == "trend",
+                cast(Any, Document.scope) == scope,
+                Document.granularity == granularity,
+                Document.period_start == period_start,
+                Document.period_end == period_end,
+            )
+        ).first()
+    if trend_doc is None:
+        return []
+    try:
+        trend_payload, _projection = _load_trend_payload(
+            repository=repository,
+            document=trend_doc,
+        )
+    except Exception:
+        return []
+    return [str(topic).strip() for topic in trend_payload.topics or [] if str(topic).strip()]
+
+
+def _localized_idea_payload_for_pass_output(
+    *,
+    repository: Any,
+    scope: str,
+    row: PassOutput,
+    language_code: str | None,
+) -> dict[str, Any] | None:
+    normalized_language_code = str(language_code or "").strip()
+    if not normalized_language_code:
+        return None
+    period_start = getattr(row, "period_start", None)
+    period_end = getattr(row, "period_end", None)
+    granularity = str(getattr(row, "granularity", "") or "").strip() or None
+    if not isinstance(period_start, datetime) or not isinstance(period_end, datetime):
+        return None
+    with Session(repository.engine) as session:
+        document = session.exec(
+            select(Document)
+            .where(
+                Document.doc_type == "idea",
+                cast(Any, Document.scope) == scope,
+                Document.granularity == granularity,
+                Document.period_start == period_start,
+                Document.period_end == period_end,
+            )
+            .order_by(desc(cast(Any, Document.id)))
+        ).first()
+    if document is None:
+        return None
+    doc_id = int(getattr(document, "id") or 0)
+    if doc_id <= 0:
+        return None
+    return _localized_output_payload(
+        repository=repository,
+        source_kind="trend_ideas",
+        source_record_id=doc_id,
+        scope=scope,
+        language_code=normalized_language_code,
+    )
+
+
+def _materialize_localized_scope_outputs(
+    *,
+    repository: Any,
+    scope_spec: MaterializeScopeSpec,
+    granularity: str | None,
+    localization: LocalizationConfig,
+) -> None:
+    output_dir = scope_spec.output_dir.expanduser().resolve()
+    languages = materialize_localized_languages_for_scope(
+        repository=repository,
+        scope=scope_spec.scope,
+        localization=localization,
+    )
+    if not languages:
+        return
+
+    item_pairs = _materialize_item_pairs(
+        repository=repository,
+        scope=scope_spec.scope,
+    )
+    trend_documents = _materialize_trend_documents(
+        repository=repository,
+        scope=scope_spec.scope,
+        granularity=granularity,
+    )
+    idea_documents = _materialize_idea_documents(
+        repository=repository,
+        scope=scope_spec.scope,
+        granularity=granularity,
+    )
+
+    for language_code in languages:
+        language_root = localized_language_root(
+            output_dir=output_dir,
+            language_code=language_code,
+        )
+        if language_root.exists():
+            shutil.rmtree(language_root)
+        language_root.mkdir(parents=True, exist_ok=True)
+
+        item_note_href_by_url: dict[str, str] = {}
+        for item, analysis in item_pairs:
+            analysis_id = int(getattr(analysis, "id") or 0)
+            item_id = int(getattr(item, "id") or 0)
+            if analysis_id <= 0 or item_id <= 0:
+                continue
+            localized_output = repository.get_localized_output(
+                source_kind="analysis",
+                source_record_id=analysis_id,
+                scope=scope_spec.scope,
+                language_code=language_code,
+            )
+            if localized_output is None:
+                continue
+            payload = _load_localized_payload(row=localized_output) or {}
+            summary = str(payload.get("summary") or "").strip()
+            if not summary:
+                continue
+            note_path = write_markdown_note(
+                output_dir=language_root,
+                item_id=item_id,
+                title=str(getattr(item, "title", "") or ""),
+                source=str(getattr(item, "source", "") or ""),
+                canonical_url=str(getattr(item, "canonical_url", "") or ""),
+                published_at=getattr(item, "published_at", None),
+                authors=repository.decode_list(getattr(item, "authors", None)),
+                topics=repository.decode_list(getattr(analysis, "topics_json", None)),
+                relevance_score=float(getattr(analysis, "relevance_score", 0.0) or 0.0),
+                run_id="materialize-outputs",
+                summary=summary,
+                language_code=language_code,
+            )
+            canonical_url = str(getattr(item, "canonical_url", "") or "").strip()
+            if canonical_url:
+                item_note_href_by_url[canonical_url] = f"../Inbox/{note_path.name}"
+
+        for document in trend_documents:
+            doc_id = int(getattr(document, "id") or 0)
+            if doc_id <= 0:
+                continue
+            localized_output = repository.get_localized_output(
+                source_kind="trend_synthesis",
+                source_record_id=doc_id,
+                scope=scope_spec.scope,
+                language_code=language_code,
+            )
+            if localized_output is None:
+                continue
+            payload_json = _load_localized_payload(row=localized_output)
+            if payload_json is None:
+                continue
+            try:
+                payload = TrendPayload.model_validate(payload_json)
+            except Exception:
+                continue
+            trend_site_exclude = is_empty_trend_payload(payload)
+            try:
+                _source_payload, trend_projection = _load_trend_payload(
+                    repository=repository,
+                    document=document,
+                )
+            except Exception:
+                trend_projection = None
+            if trend_projection is not None and trend_projection.pass_output_id is not None:
+                source_pass_output = repository.get_pass_output(
+                    pass_output_id=int(trend_projection.pass_output_id)
+                )
+                if source_pass_output is not None:
+                    trend_site_exclude = _trend_pass_output_has_empty_corpus(
+                        row=source_pass_output
+                    )
+            materialized = materialize_trend_note_payload(
+                repository=repository,
+                payload=payload,
+                markdown_output_dir=language_root,
+                output_language=language_code,
+                language_code=language_code,
+                item_note_href_by_url=item_note_href_by_url,
+                scope=scope_spec.scope,
+            )
+            write_markdown_trend_note(
+                output_dir=language_root,
+                trend_doc_id=doc_id,
+                title=materialized.title,
+                granularity=str(getattr(document, "granularity", "") or ""),
+                period_start=cast(datetime, getattr(document, "period_start")),
+                period_end=cast(datetime, getattr(document, "period_end")),
+                run_id="materialize-outputs",
+                overview_md=materialized.overview_md,
+                topics=list(materialized.topics),
+                evolution=materialized.evolution,
+                history_window_refs=materialized.history_window_refs,
+                clusters=materialized.clusters,
+                highlights=materialized.highlights,
+                output_language=language_code,
+                site_exclude=trend_site_exclude,
+                language_code=language_code,
+            )
+
+        for document in idea_documents:
+            doc_id = int(getattr(document, "id") or 0)
+            if doc_id <= 0:
+                continue
+            localized_output = repository.get_localized_output(
+                source_kind="trend_ideas",
+                source_record_id=doc_id,
+                scope=scope_spec.scope,
+                language_code=language_code,
+            )
+            if localized_output is None:
+                continue
+            payload_json = _load_localized_payload(row=localized_output)
+            if payload_json is None:
+                continue
+            try:
+                payload = TrendIdeasPayload.model_validate(payload_json)
+            except Exception:
+                continue
+            period_start = cast(datetime, getattr(document, "period_start"))
+            period_end = cast(datetime, getattr(document, "period_end"))
+            granularity_value = str(
+                getattr(document, "granularity", "") or payload.granularity or "day"
+            )
+            topics = _localized_idea_topics(
+                repository=repository,
+                scope=scope_spec.scope,
+                granularity=granularity_value,
+                period_start=period_start,
+                period_end=period_end,
+            )
+            write_markdown_ideas_note(
+                repository=repository,
+                output_dir=language_root,
+                pass_output_id=None,
+                upstream_pass_output_id=None,
+                granularity=granularity_value,
+                period_start=period_start,
+                period_end=period_end,
+                run_id="materialize-outputs",
+                status=str(getattr(localized_output, "status", "") or "succeeded"),
+                payload=payload,
+                scope=scope_spec.scope,
+                topics=topics,
+                language_code=language_code,
+            )
 
 
 def _materialize_item_pairs(*, repository: Any, scope: str) -> list[tuple[Any, Any]]:
@@ -300,9 +640,11 @@ def _materialize_scope_outputs(
     generate_pdf: bool,
     debug_pdf: bool,
     output_language: str | None,
+    language_code: str | None,
 ) -> MaterializeScopeResult:
     output_dir = scope_spec.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    _reset_managed_scope_output_dirs(output_dir)
     obsidian_vault_path = (
         scope_spec.obsidian_vault_path.expanduser().resolve()
         if scope_spec.obsidian_vault_path is not None
@@ -327,6 +669,19 @@ def _materialize_scope_outputs(
         item_id = getattr(item, "id", None)
         if item_id is None:
             continue
+        analysis_id = int(getattr(analysis, "id") or 0)
+        localized_analysis_payload = _localized_output_payload(
+            repository=repository,
+            source_kind="analysis",
+            source_record_id=analysis_id,
+            scope=scope_spec.scope,
+            language_code=language_code,
+        )
+        summary_text = (
+            str(localized_analysis_payload.get("summary") or "").strip()
+            if isinstance(localized_analysis_payload, dict)
+            else str(getattr(analysis, "summary", "") or "")
+        )
         note_path = write_markdown_note(
             output_dir=output_dir,
             item_id=int(item_id),
@@ -338,7 +693,8 @@ def _materialize_scope_outputs(
             topics=repository.decode_list(getattr(analysis, "topics_json", None)),
             relevance_score=float(getattr(analysis, "relevance_score", 0.0) or 0.0),
             run_id="materialize-outputs",
-            summary=str(getattr(analysis, "summary", "") or ""),
+            summary=summary_text,
+            language_code=language_code,
         )
         canonical_url = str(getattr(item, "canonical_url", "") or "").strip()
         if canonical_url:
@@ -362,7 +718,8 @@ def _materialize_scope_outputs(
                         getattr(analysis, "relevance_score", 0.0) or 0.0
                     ),
                     run_id="materialize-outputs",
-                    summary=str(getattr(analysis, "summary", "") or ""),
+                    summary=summary_text,
+                    language_code=language_code,
                 )
                 result.obsidian_notes_total += 1
             except Exception as exc:  # noqa: BLE001
@@ -382,10 +739,21 @@ def _materialize_scope_outputs(
     for document in trend_documents:
         doc_id = int(getattr(document, "id") or 0)
         try:
-            payload, trend_projection = _load_trend_payload(
+            localized_trend_payload = _localized_output_payload(
                 repository=repository,
-                document=document,
+                source_kind="trend_synthesis",
+                source_record_id=doc_id,
+                scope=scope_spec.scope,
+                language_code=language_code,
             )
+            if localized_trend_payload is not None:
+                payload = TrendPayload.model_validate(localized_trend_payload)
+                trend_projection = None
+            else:
+                payload, trend_projection = _load_trend_payload(
+                    repository=repository,
+                    document=document,
+                )
             trend_site_exclude = is_empty_trend_payload(payload)
             if trend_projection is not None and trend_projection.pass_output_id is not None:
                 source_pass_output = repository.get_pass_output(
@@ -400,6 +768,7 @@ def _materialize_scope_outputs(
                 payload=payload,
                 markdown_output_dir=output_dir,
                 output_language=output_language,
+                language_code=language_code,
                 item_note_href_by_url=item_note_href_by_url,
                 scope=scope_spec.scope,
             )
@@ -427,6 +796,7 @@ def _materialize_scope_outputs(
                     trend_projection.pass_kind if trend_projection is not None else None
                 ),
                 site_exclude=trend_site_exclude,
+                language_code=language_code,
             )
             result.trend_notes_total += 1
             result.doc_ref_rewrites_total += (
@@ -478,6 +848,7 @@ def _materialize_scope_outputs(
                         else None
                     ),
                     site_exclude=trend_site_exclude,
+                    language_code=language_code,
                 )
                 result.obsidian_notes_total += 1
             except Exception as exc:  # noqa: BLE001
@@ -522,7 +893,17 @@ def _materialize_scope_outputs(
     for row in idea_pass_outputs:
         pass_output_id = int(getattr(row, "id") or 0)
         try:
-            payload = _load_ideas_payload(row=row)
+            localized_idea_payload = _localized_idea_payload_for_pass_output(
+                repository=repository,
+                scope=scope_spec.scope,
+                row=row,
+                language_code=language_code,
+            )
+            payload = (
+                TrendIdeasPayload.model_validate(localized_idea_payload)
+                if localized_idea_payload is not None
+                else _load_ideas_payload(row=row)
+            )
             upstream_pass_output_id = _ideas_upstream_pass_output_id(row=row)
             upstream_pass_output = (
                 repository.get_pass_output(pass_output_id=int(upstream_pass_output_id))
@@ -574,6 +955,7 @@ def _materialize_scope_outputs(
                 payload=payload,
                 scope=scope_spec.scope,
                 topics=topics,
+                language_code=language_code,
             )
             result.ideas_notes_total += 1
         except Exception as exc:  # noqa: BLE001
@@ -600,6 +982,7 @@ def _materialize_scope_outputs(
                     payload=payload,
                     scope=scope_spec.scope,
                     topics=topics,
+                    language_code=language_code,
                 )
                 result.obsidian_notes_total += 1
             except Exception as exc:  # noqa: BLE001
@@ -642,25 +1025,46 @@ def materialize_outputs(
     output_language: str | None = None,
     site_input_dir: Path | None = None,
     site_output_dir: Path | None = None,
+    localization: LocalizationConfig | None = None,
 ) -> MaterializeOutputsResult:
     normalized_granularity = _normalize_granularity(granularity)
-    results = [
-        _materialize_scope_outputs(
+    results: list[MaterializeScopeResult] = []
+    for scope_spec in scope_specs:
+        canonical_language_code = _canonical_language_code_for_scope(
             repository=repository,
-            scope_spec=scope_spec,
-            granularity=normalized_granularity,
-            generate_pdf=generate_pdf,
-            debug_pdf=debug_pdf,
-            output_language=output_language,
+            scope=scope_spec.scope,
+            localization=localization,
         )
-        for scope_spec in scope_specs
-    ]
+        canonical_output_language = canonical_language_code or output_language
+        results.append(
+            _materialize_scope_outputs(
+                repository=repository,
+                scope_spec=scope_spec,
+                granularity=normalized_granularity,
+                generate_pdf=generate_pdf,
+                debug_pdf=debug_pdf,
+                output_language=canonical_output_language,
+                language_code=canonical_language_code,
+            )
+        )
+        if localization is not None:
+            _materialize_localized_scope_outputs(
+                repository=repository,
+                scope_spec=scope_spec,
+                granularity=normalized_granularity,
+                localization=localization,
+            )
 
     site_manifest_path: Path | None = None
     if site_input_dir is not None and site_output_dir is not None:
         site_manifest_path = export_trend_static_site(
             input_dir=site_input_dir,
             output_dir=site_output_dir,
+            default_language_code=(
+                str(localization.site_default_language_code)
+                if localization is not None
+                else None
+            ),
         )
         logger.bind(
             module="materialize.outputs.site",

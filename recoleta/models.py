@@ -204,6 +204,33 @@ class PassOutput(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, index=True)
 
 
+class LocalizedOutput(SQLModel, table=True):
+    __tablename__ = "localized_outputs"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+    __table_args__ = (
+        UniqueConstraint(
+            "source_kind",
+            "source_record_id",
+            "scope",
+            "language_code",
+            name="uq_localized_outputs_source_scope_language",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    source_kind: str = Field(max_length=32, index=True)
+    source_record_id: int = Field(index=True)
+    scope: str = Field(default="default", max_length=64, index=True)
+    language_code: str = Field(max_length=32, index=True)
+    status: str = Field(default="succeeded", max_length=24, index=True)
+    schema_version: int = Field(default=1)
+    source_hash: str = Field(max_length=64, index=True)
+    variant_role: str = Field(default="translation", max_length=16, index=True)
+    payload_json: str = Field(default="{}", sa_type=Text)
+    diagnostics_json: str = Field(default="{}", sa_type=Text)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class SourcePullState(SQLModel, table=True):
     __tablename__ = "source_pull_states"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (
