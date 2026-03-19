@@ -214,9 +214,18 @@ publish_targets:
 # Local Markdown output directory
 markdown_output_dir: "~/.local/share/recoleta/outputs"
 
-# Optional: language for summary text and trend notes.
+# Optional: canonical language for newly generated summaries, trends, and ideas.
 # JSON keys stay in English and topics remain English tags.
-llm_output_language: "Chinese (Simplified)"
+llm_output_language: "English"
+
+# Optional: derive additional localized output trees and a multilingual site.
+# localization:
+#   source_language_code: "en"
+#   site_default_language_code: "en"
+#   legacy_backfill_source_language_code: "zh-CN"
+#   targets:
+#     - code: "zh-CN"
+#       llm_label: "Chinese (Simplified)"
 
 topics:
   - agents
@@ -282,6 +291,20 @@ Or run the whole pipeline once:
 uv run recoleta run --once --analyze-limit 50 --publish-limit 20
 ```
 
+If `localization` is configured, derive translated reading surfaces after the
+canonical outputs exist:
+
+```bash
+uv run recoleta translate run --include items,trends,ideas
+```
+
+If you are migrating a historical corpus that was written in another canonical
+language, run the one-time backfill:
+
+```bash
+uv run recoleta translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
+```
+
 To replay one UTC day:
 
 ```bash
@@ -316,6 +339,11 @@ Where outputs go:
   `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`
 - Idea briefs: `MARKDOWN_OUTPUT_DIR/Ideas/` or
   `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Ideas/`
+- Localized Markdown: `MARKDOWN_OUTPUT_DIR/Localized/<language>/Inbox/`,
+  `Trends/`, and `Ideas/` when `localization` is configured
+- Static site: `MARKDOWN_OUTPUT_DIR/site/`; multilingual builds emit
+  `/<language>/...` roots and a root redirect page that remembers the browser's
+  last language choice
 - Obsidian notes: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
 - Telegram: sent to `TELEGRAM_CHAT_ID`
 - SQLite state: `RECOLETA_DB_PATH`
@@ -351,6 +379,12 @@ uv run recoleta trends-week --date 2026-03-02
 # derive idea briefs from an existing trend window
 uv run recoleta ideas --granularity day --date 2026-03-09
 
+# translate canonical outputs into derived language variants
+uv run recoleta translate run --include items,trends,ideas
+
+# one-time backfill when migrating legacy canonical content
+uv run recoleta translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
+
 # build or preview the public site
 uv run recoleta site build
 uv run recoleta site serve
@@ -366,8 +400,8 @@ uv run recoleta runs list --limit 5 --json
 ```
 
 For automation, `analyze`, `publish`, `trends`, `trends-week`, `ideas`,
-`materialize outputs`, `site build`, `site stage`, and `site gh-deploy` also
-accept `--json`.
+`translate run`, `translate backfill`, `materialize outputs`, `site build`,
+`site stage`, and `site gh-deploy` also accept `--json`.
 
 For backfills, site deploy, cron, systemd, maintenance, and recovery workflows,
 see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).

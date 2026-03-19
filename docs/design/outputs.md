@@ -43,6 +43,7 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Inbox/`: one note per published item
 - `Trends/`: canonical trend markdown notes
 - `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs
+- `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading surfaces derived from canonical outputs
 - `site/`: optional derived static site output from `recoleta site build`
 
 When `TOPIC_STREAMS` is configured, each stream gets its own subtree instead:
@@ -67,6 +68,13 @@ Idea notes follow the same projection contract:
 - searchable `doc_type=idea` documents are also derived projections, not canonical pass state
 - idea note frontmatter and idea document meta chunks carry `pass_output_id` plus the upstream `trend_synthesis` pointer
 - those provenance-bearing document `meta` chunks are system-only metadata: they are preserved for repair/audit, but excluded from agent-visible FTS/hybrid retrieval
+
+Localized notes are projections, not canonical state:
+
+- `recoleta translate run` writes incremental translations for canonical item, trend, and idea outputs
+- `recoleta translate backfill` writes translated source-language overrides plus optional mirror variants for historical corpora
+- localized notes are materialized under `MARKDOWN_OUTPUT_DIR/Localized/<language>/...`
+- canonical `analyses`, `pass_outputs`, and `documents` remain unchanged
 
 ## Trend PDF surface
 
@@ -116,6 +124,10 @@ Important behavior:
 - `recoleta materialize outputs` does not rebuild derived `documents` projections from pass outputs; searchable corpus repair stays separate from filesystem/site repair on purpose.
 - All commands that rebuild site output treat their output directories as managed artifacts and clear stale files before writing.
 - When `--input-dir` and `--output-dir` are passed explicitly, they do not require a full Recoleta runtime config. This is intentional so CI and GitHub Pages can build from a staged content snapshot.
+- When multilingual content exists, the exporter emits one site subtree per language, for example `/en/...` and `/zh-cn/...`, plus a root `index.html` redirect page.
+- The root redirect prefers the browser's remembered language and then falls back to the configured default language.
+- Every page renders a language switcher that stores the chosen language in the browser and routes to the peer page when available.
+- `--default-language-code` is required for multilingual exports only when the exporter is running without runtime settings that already expose `localization.site_default_language_code`.
 - `recoleta site gh-deploy` keeps `main` free of committed site snapshots and Pages-specific workflow files by publishing a derived branch instead.
 - `recoleta site stage` remains useful for custom CI pipelines and non-GitHub static hosts when you want an explicit repo-local snapshot.
 - In topic-stream mode, `recoleta site build` and `recoleta site gh-deploy` aggregate stream-local `Trends/` trees and expose a `Streams` navigation surface instead of flattening mixed domains together.

@@ -77,7 +77,9 @@ This supports visual debugging without mutating the canonical markdown note and 
 ## Static site strategy
 
 The static site exporter consumes trend markdown notes and sibling idea briefs
-when present, then emits a standalone relative-link website.
+when present, then emits a standalone relative-link website. When localized
+markdown trees exist, it also aggregates peer language roots and exports a
+multilingual site.
 
 Outputs include:
 
@@ -90,12 +92,16 @@ Outputs include:
 - idea detail pages
 - copied markdown/PDF artifacts
 - site manifest
+- optional per-language roots such as `/en/...` and `/zh-cn/...`
 
 Design constraints:
 
 - The output directory is treated as a managed artifact and is rebuilt cleanly each run.
 - The site reuses the same trend section structure and visual language as the browser PDF, but with web navigation added.
 - Relative links keep the output portable across GitHub Pages, Cloudflare Pages, local filesystem previews, and generic static hosting.
+- Fixed UI chrome stays English even when localized long-form content is present.
+- Multilingual builds emit a root redirect page that prefers the browser's remembered language and otherwise uses the configured default language.
+- Page-level language switches route to the peer page when available and otherwise fall back to the target language home page.
 
 ## Deployment strategy
 
