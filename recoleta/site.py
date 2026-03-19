@@ -601,9 +601,21 @@ def _discover_trend_site_input_dirs(
             raw_input if raw_input.name == "Streams" else raw_input / "Streams"
         )
         if streams_root.exists() and streams_root.is_dir():
-            candidates.extend(
-                path for path in sorted(streams_root.glob("*/Trends")) if path.is_dir()
-            )
+            for stream_root in sorted(path for path in streams_root.iterdir() if path.is_dir()):
+                stream_trends_dir = stream_root / "Trends"
+                if stream_trends_dir.exists() and stream_trends_dir.is_dir():
+                    candidates.append(stream_trends_dir)
+                if not include_localized_children:
+                    continue
+                stream_localized_root = stream_root / "Localized"
+                if not stream_localized_root.exists() or not stream_localized_root.is_dir():
+                    continue
+                for child in sorted(path for path in stream_localized_root.iterdir() if path.is_dir()):
+                    child_trends_dir = child / "Trends"
+                    if child_trends_dir.exists() and child_trends_dir.is_dir():
+                        candidates.append(child_trends_dir)
+                    else:
+                        candidates.append(child)
 
         if not candidates:
             candidates.append(raw_input)
@@ -4500,9 +4512,22 @@ def stage_trend_site_source(
     def relative_to_stage_root(path: Path) -> str:
         return str(path.relative_to(stage_root))
 
-    def language_prefix(*, language_slug: str | None) -> Path:
-        cleaned_slug = str(language_slug or "").strip()
-        return stage_root / "Localized" / cleaned_slug if cleaned_slug else stage_root
+    def stage_root_for_surface(
+        *,
+        stream: str | None,
+        source_input: TrendSiteInputDirectory | None,
+    ) -> Path:
+        language_slug = (
+            str(getattr(source_input, "language_slug", None) or "").strip()
+            if source_input is not None and getattr(source_input, "is_localized_root", False)
+            else ""
+        )
+        if stream:
+            base_root = stage_root / "Streams" / stream
+            return base_root / "Localized" / language_slug if language_slug else base_root
+        if language_slug:
+            return stage_root / "Localized" / language_slug
+        return stage_root
 
     for source_document in source_documents:
         source_input = next(
@@ -4513,21 +4538,14 @@ def stage_trend_site_source(
             ),
             None,
         )
-        prefix = language_prefix(
-            language_slug=(
-                getattr(source_input, "language_slug", None)
-                if source_input is not None and getattr(source_input, "is_localized_root", False)
-                else None
-            )
+        surface_root = stage_root_for_surface(
+            stream=source_document.stream,
+            source_input=source_input,
         )
         target_dir = (
-            prefix / "Streams" / source_document.stream / "Trends"
-            if source_document.stream
-            else (
-                prefix / "Trends"
-                if has_stream_documents or prefix != stage_root
-                else resolved_output_dir
-            )
+            surface_root / "Trends"
+            if source_document.stream or has_stream_documents or surface_root != stage_root
+            else resolved_output_dir
         )
         target_dir.mkdir(parents=True, exist_ok=True)
         staged_markdown_path = target_dir / source_document.markdown_path.name
@@ -4549,18 +4567,11 @@ def stage_trend_site_source(
             ),
             None,
         )
-        prefix = language_prefix(
-            language_slug=(
-                getattr(source_input, "language_slug", None)
-                if source_input is not None and getattr(source_input, "is_localized_root", False)
-                else None
-            )
+        surface_root = stage_root_for_surface(
+            stream=source_document.stream,
+            source_input=source_input,
         )
-        target_dir = (
-            prefix / "Streams" / source_document.stream / "Inbox"
-            if source_document.stream
-            else prefix / "Inbox"
-        )
+        target_dir = surface_root / "Inbox"
         target_dir.mkdir(parents=True, exist_ok=True)
         staged_item_path = target_dir / source_document.markdown_path.name
         shutil.copy2(source_document.markdown_path, staged_item_path)
@@ -4575,18 +4586,11 @@ def stage_trend_site_source(
             ),
             None,
         )
-        prefix = language_prefix(
-            language_slug=(
-                getattr(source_input, "language_slug", None)
-                if source_input is not None and getattr(source_input, "is_localized_root", False)
-                else None
-            )
+        surface_root = stage_root_for_surface(
+            stream=source_document.stream,
+            source_input=source_input,
         )
-        target_dir = (
-            prefix / "Streams" / source_document.stream / "Ideas"
-            if source_document.stream
-            else prefix / "Ideas"
-        )
+        target_dir = surface_root / "Ideas"
         target_dir.mkdir(parents=True, exist_ok=True)
         staged_idea_path = target_dir / source_document.markdown_path.name
         shutil.copy2(source_document.markdown_path, staged_idea_path)
