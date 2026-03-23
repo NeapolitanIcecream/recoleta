@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt
 from tenacity.wait import wait_base, wait_exponential_jitter
 
+from recoleta.llm_costs import extract_measured_cost_usd, resolve_cost_usd
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.observability import collect_environment_secrets, scrub_secrets
 from recoleta.item_summary import normalize_item_summary_markdown
@@ -207,14 +208,12 @@ class LiteLLMAnalyzer:
         provider = self.model.split("/", 1)[0] if "/" in self.model else "unknown"
         usage = _extract_usage_dict(response)
         prompt_tokens, completion_tokens, total_tokens = _extract_token_counts(usage)
-        cost_usd = _extract_response_cost_usd(response)
-        if cost_usd is None:
-            try:
-                from litellm.cost_calculator import completion_cost
-
-                cost_usd = float(completion_cost(completion_response=response))
-            except Exception:
-                cost_usd = None
+        cost_usd = _resolve_response_cost_usd(
+            response=response,
+            model=self.model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
         result = AnalysisResult(
             model=self.model,
             provider=provider,
@@ -329,9 +328,19 @@ def _extract_usage_dict(response: object) -> dict[str, Any] | None:
         return usage
     if usage is None:
         return None
+    dump = getattr(usage, "model_dump", None)
+    if callable(dump):
+        try:
+            dumped = dump(exclude_none=True)
+        except TypeError:
+            dumped = dump()
+        if isinstance(dumped, dict):
+            return dumped
     prompt_tokens = getattr(usage, "prompt_tokens", None)
     completion_tokens = getattr(usage, "completion_tokens", None)
     total_tokens = getattr(usage, "total_tokens", None)
+    cost = getattr(usage, "cost", None)
+    cost_details = getattr(usage, "cost_details", None)
     out: dict[str, Any] = {}
     if prompt_tokens is not None:
         out["prompt_tokens"] = prompt_tokens
@@ -339,26 +348,30 @@ def _extract_usage_dict(response: object) -> dict[str, Any] | None:
         out["completion_tokens"] = completion_tokens
     if total_tokens is not None:
         out["total_tokens"] = total_tokens
+    if cost is not None:
+        out["cost"] = cost
+    if isinstance(cost_details, dict) and cost_details:
+        out["cost_details"] = cost_details
     return out or None
 
 
 def _extract_response_cost_usd(response: object) -> float | None:
-    hidden: Any | None
-    if isinstance(response, dict):
-        hidden = response.get("_hidden_params")
-    else:
-        hidden = getattr(response, "_hidden_params", None)
-    if not isinstance(hidden, dict):
-        return None
-    raw = hidden.get("response_cost")
-    if isinstance(raw, (int, float)):
-        return float(raw)
-    if raw is None:
-        return None
-    try:
-        return float(raw)
-    except Exception:
-        return None
+    return extract_measured_cost_usd(response)
+
+
+def _resolve_response_cost_usd(
+    *,
+    response: object,
+    model: str | None,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> float | None:
+    return resolve_cost_usd(
+        response=response,
+        model=model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
 
 
 def _get_int(value: Any) -> int | None:

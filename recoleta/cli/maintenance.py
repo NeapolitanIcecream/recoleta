@@ -362,7 +362,12 @@ def _run_llm_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
     prompt_tokens, completion_tokens, total_tokens = (
         analyzer_module._extract_token_counts(usage)
     )
-    cost_usd = analyzer_module._extract_response_cost_usd(response)
+    cost_usd = analyzer_module._resolve_response_cost_usd(
+        response=response,
+        model=str(getattr(settings, "llm_model", "") or ""),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
     resolved_model = (
         str(response.get("model") or "").strip()
         if isinstance(response, dict)

@@ -14,10 +14,10 @@ from sqlmodel import Session, select
 
 from recoleta.analyzer import (
     _extract_content,
-    _extract_response_cost_usd,
     _extract_token_counts,
     _extract_usage_dict,
     _get_completion,
+    _resolve_response_cost_usd,
 )
 from recoleta.config import LocalizationConfig, Settings
 from recoleta.llm_connection import LLMConnectionConfig
@@ -260,14 +260,12 @@ def _translate_structured_payload_with_debug(
     )
     usage = _extract_usage_dict(response)
     prompt_tokens, completion_tokens, total_tokens = _extract_token_counts(usage)
-    cost_usd = _extract_response_cost_usd(response)
-    if cost_usd is None:
-        try:
-            from litellm.cost_calculator import completion_cost
-
-            cost_usd = float(completion_cost(completion_response=response))
-        except Exception:
-            cost_usd = None
+    cost_usd = _resolve_response_cost_usd(
+        response=response,
+        model=normalized_model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
     raw_content = _extract_content(response)
     try:
         decoded = json.loads(raw_content)
@@ -287,13 +285,20 @@ def _translate_structured_payload_with_debug(
         raise ValueError("translation LLM returned a non-object JSON payload")
     else:
         translated_payload = decoded
+    debug_usage: dict[str, Any] = {"requests": 1}
+    if prompt_tokens is not None:
+        debug_usage["input_tokens"] = prompt_tokens
+    if completion_tokens is not None:
+        debug_usage["output_tokens"] = completion_tokens
+    if total_tokens is not None:
+        debug_usage["total_tokens"] = total_tokens
+    if isinstance(usage, dict):
+        if "cost" in usage:
+            debug_usage["cost"] = usage["cost"]
+        if "cost_details" in usage and isinstance(usage["cost_details"], dict):
+            debug_usage["cost_details"] = usage["cost_details"]
     return translated_payload, {
-        "usage": {
-            "requests": 1,
-            "input_tokens": prompt_tokens,
-            "output_tokens": completion_tokens,
-            "total_tokens": total_tokens,
-        },
+        "usage": debug_usage,
         "estimated_cost_usd": cost_usd,
     }
 

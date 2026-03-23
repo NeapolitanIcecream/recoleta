@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent, RunContext
 
+from recoleta.llm_costs import estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.ports import TrendRepositoryPort
@@ -279,50 +280,11 @@ def _summarize_tool_calls(messages: list[Any]) -> tuple[int, dict[str, int]]:
 def _estimate_cost_usd_from_tokens(
     *, model: str, input_tokens: int | None, output_tokens: int | None
 ) -> float | None:
-    if input_tokens is None and output_tokens is None:
-        return None
-    prompt_tokens = int(input_tokens or 0)
-    completion_tokens = int(output_tokens or 0)
-    if prompt_tokens <= 0 and completion_tokens <= 0:
-        return 0.0
-    try:
-        from litellm.cost_calculator import cost_per_token
-    except Exception:
-        return None
-
-    candidates: list[str] = []
-    raw = str(model or "").strip()
-    if raw:
-        candidates.append(raw)
-        if "/" in raw and ":" not in raw:
-            provider, rest = raw.split("/", 1)
-            provider = provider.strip()
-            rest = rest.strip()
-            if provider and rest:
-                candidates.append(f"{provider}:{rest}")
-                candidates.append(rest)
-        if ":" in raw:
-            _, rest = raw.split(":", 1)
-            rest = rest.strip()
-            if rest:
-                candidates.append(rest)
-
-    seen: set[str] = set()
-    for candidate in candidates:
-        normalized = str(candidate).strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        try:
-            prompt_cost, completion_cost = cost_per_token(
-                model=normalized,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
-            return float(prompt_cost) + float(completion_cost)
-        except Exception:
-            continue
-    return None
+    return estimate_llm_cost_usd_from_tokens(
+        model=model,
+        prompt_tokens=input_tokens,
+        completion_tokens=output_tokens,
+    )
 
 
 def generate_trend_ideas_payload(
