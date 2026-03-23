@@ -269,6 +269,105 @@ def _acquire_workspace_lease_for_command(
     return owner_token, lock_log, heartbeat_monitor
 
 
+def _safe_fingerprint_for_settings(settings: Any) -> str:
+    builder = getattr(settings, "safe_fingerprint", None)
+    if callable(builder):
+        try:
+            return str(builder())
+        except Exception:
+            return ""
+    return ""
+
+
+def _begin_managed_run_for_settings(
+    *,
+    settings: Any,
+    repository: Any,
+    console: Any,
+    command: str,
+    log_module: str,
+) -> tuple[str, str, Any, _LeaseHeartbeatMonitor]:
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    workspace_lease_held_error = symbols["WorkspaceLeaseHeldError"]
+    workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+
+    run_id = str(uuid4())
+    owner_token = str(uuid4())
+    lock_log = logger.bind(
+        module="cli.runtime.lock",
+        command=command,
+        requested_run_id=run_id,
+    )
+    try:
+        repository.acquire_workspace_lease(
+            run_id=run_id,
+            command=command,
+            owner_token=owner_token,
+            lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+            hostname=socket.gethostname(),
+            pid=os.getpid(),
+        )
+    except workspace_lease_held_error as exc:
+        _raise_typer_exit_for_workspace_lock(
+            console=console,
+            log=lock_log,
+            exc=exc,
+        )
+
+    try:
+        recovered_total = repository.mark_stale_runs_failed(
+            stale_after_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS
+        )
+        if int(recovered_total or 0) > 0:
+            lock_log.warning(
+                "Recovered stale runs recovered_total={}",
+                int(recovered_total),
+            )
+        run = repository.create_run(
+            config_fingerprint=_safe_fingerprint_for_settings(settings),
+            run_id=run_id,
+        )
+        _update_run_context(repository, run_id=run.id, command=command)
+        command_log = logger.bind(module=log_module, run_id=run.id)
+        heartbeat_monitor = _LeaseHeartbeatMonitor(
+            repository=repository,
+            run_id=run.id,
+            owner_token=owner_token,
+            lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+            interval_seconds=_RUN_HEARTBEAT_INTERVAL_SECONDS,
+            log=logger.bind(
+                module="cli.runtime.heartbeat", command=command, run_id=run.id
+            ),
+            lease_lost_error_cls=workspace_lease_lost_error,
+            thread_name=f"recoleta-heartbeat-{run.id}",
+        )
+        heartbeat_monitor.start()
+        return run.id, owner_token, command_log, heartbeat_monitor
+    except Exception:
+        try:
+            repository.release_workspace_lease(owner_token=owner_token)
+        except Exception:
+            lock_log.exception("Workspace lease release failed during startup")
+        raise
+
+
+def _begin_observed_run_for_settings(
+    *,
+    settings: Any,
+    repository: Any,
+    command: str,
+    log_module: str,
+) -> tuple[str, Any]:
+    symbols = _runtime_symbols()
+    logger = symbols["logger"]
+    run = repository.create_run(
+        config_fingerprint=_safe_fingerprint_for_settings(settings),
+    )
+    _update_run_context(repository, run_id=run.id, command=command)
+    return run.id, logger.bind(module=log_module, run_id=run.id)
+
+
 def _maybe_acquire_workspace_lease_for_settings(
     *,
     settings: Any | None,
@@ -389,98 +488,11 @@ def _metrics_payload(metrics: list[Any]) -> dict[str, dict[str, int | float | st
 
 
 def _billing_summary_payload(metrics: list[Any]) -> dict[str, Any] | None:
-    metric_payload = _metrics_payload(metrics)
-
-    def _metric_value(name: str) -> float | None:
-        item = metric_payload.get(name)
-        if item is None:
-            return None
-        raw = item.get("value")
-        if not isinstance(raw, (int, float)):
-            return None
-        return float(raw)
-
-    component_specs = [
-        (
-            "triage_embeddings",
-            "pipeline.triage.embedding_calls_total",
-            "pipeline.triage.embedding_prompt_tokens_total",
-            None,
-            "pipeline.triage.estimated_cost_usd",
-            "pipeline.triage.cost_missing_total",
-        ),
-        (
-            "analyze_llm",
-            "pipeline.analyze.llm_calls_total",
-            "pipeline.analyze.llm_prompt_tokens_total",
-            "pipeline.analyze.llm_completion_tokens_total",
-            "pipeline.analyze.estimated_cost_usd",
-            "pipeline.analyze.cost_missing_total",
-        ),
-        (
-            "trends_embeddings",
-            "pipeline.trends.embedding_calls_total",
-            "pipeline.trends.embedding_prompt_tokens_total",
-            None,
-            "pipeline.trends.embedding_estimated_cost_usd",
-            "pipeline.trends.embedding_cost_missing_total",
-        ),
-        (
-            "trends_llm",
-            "pipeline.trends.llm_requests_total",
-            "pipeline.trends.llm_input_tokens_total",
-            "pipeline.trends.llm_output_tokens_total",
-            "pipeline.trends.estimated_cost_usd",
-            "pipeline.trends.cost_missing_total",
-        ),
-        (
-            "ideas_llm",
-            "pipeline.trends.pass.ideas.llm_requests_total",
-            "pipeline.trends.pass.ideas.llm_input_tokens_total",
-            "pipeline.trends.pass.ideas.llm_output_tokens_total",
-            "pipeline.trends.pass.ideas.estimated_cost_usd",
-            "pipeline.trends.pass.ideas.cost_missing_total",
-        ),
-    ]
-
-    components: dict[str, dict[str, int | float | None]] = {}
-    total_cost_usd = 0.0
-    any_cost = False
-    for (
-        component_name,
-        calls_name,
-        input_tokens_name,
-        output_tokens_name,
-        cost_name,
-        cost_missing_name,
-    ) in component_specs:
-        calls = _metric_value(calls_name)
-        input_tokens = _metric_value(input_tokens_name)
-        output_tokens = _metric_value(output_tokens_name) if output_tokens_name else None
-        cost_usd = _metric_value(cost_name)
-        cost_missing = _metric_value(cost_missing_name)
-        if all(
-            value is None
-            for value in (calls, input_tokens, output_tokens, cost_usd, cost_missing)
-        ):
-            continue
-        components[component_name] = {
-            "calls": _json_number(calls),
-            "input_tokens": _json_number(input_tokens),
-            "output_tokens": _json_number(output_tokens),
-            "cost_usd": _json_number(cost_usd),
-            "cost_missing": _json_number(cost_missing),
-        }
-        if cost_usd is not None:
-            total_cost_usd += float(cost_usd)
-            any_cost = True
-
-    if not components:
-        return None
-    return {
-        "components": components,
-        "total_cost_usd": _json_number(total_cost_usd) if any_cost else None,
-    }
+    summarize_billing_metrics = _import_symbol(
+        "recoleta.billing",
+        attr_name="summarize_billing_metrics",
+    )
+    return summarize_billing_metrics(metrics)
 
 
 def _path_size_bytes(path: Path) -> int | None:

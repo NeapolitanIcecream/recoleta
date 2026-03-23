@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import time
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 import recoleta.cli as cli
 
@@ -379,6 +379,69 @@ def _run_llm_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
         "cost_usd": cost_usd,
         "usage": usage,
     }
+
+
+def _doctor_ping_attempted_request(ping_payload: dict[str, Any]) -> bool:
+    status = str(ping_payload.get("status", "") or "").strip().lower()
+    if status == "ok":
+        return True
+    error_type = str(ping_payload.get("error_type", "") or "").strip()
+    return status == "failed" and error_type not in {"", "MissingConfiguration"}
+
+
+def _record_doctor_llm_metrics(
+    *,
+    repository: Any,
+    run_id: str,
+    ping_payload: dict[str, Any],
+) -> None:
+    attempted_request = _doctor_ping_attempted_request(ping_payload)
+    if attempted_request:
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.doctor.llm.requests_total",
+            value=1,
+            unit="count",
+        )
+    prompt_tokens = ping_payload.get("prompt_tokens")
+    if isinstance(prompt_tokens, (int, float)):
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.doctor.llm.input_tokens_total",
+            value=float(prompt_tokens),
+            unit="count",
+        )
+    completion_tokens = ping_payload.get("completion_tokens")
+    if isinstance(completion_tokens, (int, float)):
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.doctor.llm.output_tokens_total",
+            value=float(completion_tokens),
+            unit="count",
+        )
+    cost_usd = ping_payload.get("cost_usd")
+    if isinstance(cost_usd, (int, float)):
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.doctor.llm.estimated_cost_usd",
+            value=float(cost_usd),
+            unit="usd",
+        )
+    elif attempted_request:
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.doctor.llm.cost_missing_total",
+            value=1,
+            unit="count",
+        )
+    elapsed_ms = ping_payload.get("elapsed_ms")
+    if isinstance(elapsed_ms, (int, float)):
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.doctor.llm.duration_ms",
+            value=float(elapsed_ms),
+            unit="ms",
+        )
 
 
 def run_gc_command(
@@ -1362,10 +1425,92 @@ def run_doctor_llm_command(
             console.print(f"[red]doctor llm failed[/red] {message}")
         raise cli.typer.Exit(code=1) from exc
 
-    ping_payload = _run_llm_ping(
-        settings=settings,
-        timeout_seconds=timeout_seconds,
-    ) if ping else {"status": "skipped"}
+    repository: Any | None = None
+    run_id: str | None = None
+    billing: dict[str, Any] | None = None
+    if ping:
+        raw_db_path = getattr(settings, "recoleta_db_path", None)
+        if raw_db_path is None:
+            message = "settings do not expose recoleta_db_path"
+            log.warning(message)
+            if json_output:
+                cli._emit_json({"status": "error", "error": message})
+            else:
+                console.print(f"[red]doctor llm failed[/red] {message}")
+            raise cli.typer.Exit(code=1)
+        try:
+            repository = cast(
+                Any,
+                cli._build_repository_for_db_path(db_path=Path(raw_db_path)),
+            )
+            assert repository is not None
+            repository.init_schema()
+            run_id, log = cli._begin_observed_run_for_settings(
+                settings=settings,
+                repository=repository,
+                command="doctor llm",
+                log_module="cli.doctor.llm",
+            )
+        except Exception as exc:  # noqa: BLE001
+            message = f"doctor llm run setup failed: {exc}"
+            log.warning(message)
+            if json_output:
+                cli._emit_json({"status": "error", "error": message})
+            else:
+                console.print(f"[red]doctor llm failed[/red] {message}")
+            raise cli.typer.Exit(code=1) from exc
+
+    try:
+        ping_payload = _run_llm_ping(
+            settings=settings,
+            timeout_seconds=timeout_seconds,
+        ) if ping else {"status": "skipped"}
+        if repository is not None and run_id is not None:
+            _record_doctor_llm_metrics(
+                repository=repository,
+                run_id=run_id,
+                ping_payload=ping_payload,
+            )
+            repository.finish_run(
+                run_id,
+                success=str(ping_payload.get("status", "") or "") == "ok",
+            )
+            try:
+                billing = cli._billing_summary_payload(
+                    repository.list_metrics(run_id=run_id)
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "Doctor llm billing metrics load failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
+    except Exception as exc:  # noqa: BLE001
+        if repository is not None and run_id is not None:
+            try:
+                repository.finish_run(run_id, success=False)
+            except Exception:
+                log.exception("Doctor llm run finish failed during error handling")
+        message = f"llm ping failed: {exc}"
+        log.warning(message)
+        if json_output:
+            cli._emit_json(
+                {
+                    "status": "error",
+                    "error": message,
+                    "run_id": run_id,
+                    "billing": billing,
+                }
+            )
+        else:
+            console.print(f"[red]doctor llm failed[/red] {message}")
+            if repository is not None and run_id is not None:
+                cli._print_billing_report(
+                    console=console,
+                    repository=repository,
+                    run_id=run_id,
+                )
+        raise cli.typer.Exit(code=1) from exc
     payload = _build_llm_diagnostics_payload(
         settings=settings,
         ping_payload=ping_payload,
@@ -1385,6 +1530,8 @@ def run_doctor_llm_command(
                 {
                     "status": "error",
                     "error": message,
+                    "run_id": run_id,
+                    "billing": billing,
                     "diagnostics": payload,
                 }
             )
@@ -1394,10 +1541,20 @@ def run_doctor_llm_command(
                 f"{message} error_type={ping_payload.get('error_type')} "
                 f"error={ping_payload.get('error_message')}"
             )
+            if repository is not None and run_id is not None:
+                cli._print_billing_report(
+                    console=console,
+                    repository=repository,
+                    run_id=run_id,
+                )
         raise cli.typer.Exit(code=1)
 
     if json_output:
-        cli._emit_json({"status": "ok", **payload})
+        output_payload: dict[str, Any] = {"status": "ok", **payload}
+        if ping:
+            output_payload["run_id"] = run_id
+            output_payload["billing"] = billing
+        cli._emit_json(output_payload)
         return
 
     console.print(
@@ -1460,3 +1617,5 @@ def run_doctor_llm_command(
                 if part
             )
         )
+    if repository is not None and run_id is not None:
+        cli._print_billing_report(console=console, repository=repository, run_id=run_id)

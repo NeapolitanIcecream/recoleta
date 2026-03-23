@@ -160,6 +160,89 @@ def test_runs_show_json_reports_run_context_and_failure_summary(
     assert payload["run"]["failure_summary"]["http_status"]["401"] == 1
 
 
+def test_runs_show_json_includes_stream_billing_breakdown(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-stream-billing", run_id="run-stream-billing")
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.llm_requests_total",
+        value=2,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.llm_input_tokens_total",
+        value=180,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.llm_output_tokens_total",
+        value=36,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.estimated_cost_usd",
+        value=0.02,
+        unit="usd",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.pass.ideas.llm_requests_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.pass.ideas.llm_input_tokens_total",
+        value=90,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.pass.ideas.llm_output_tokens_total",
+        value=18,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.stream.agents_lab.pass.ideas.estimated_cost_usd",
+        value=0.007,
+        unit="usd",
+    )
+    repository.finish_run(run.id, success=True)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "runs",
+            "show",
+            "--db-path",
+            str(db_path),
+            "--run-id",
+            "run-stream-billing",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    billing = payload["run"]["billing"]
+    assert billing["components"]["trends_llm"]["calls"] == 2
+    assert billing["components"]["ideas_llm"]["calls"] == 1
+    assert billing["total_cost_usd"] == 0.027
+    assert billing["by_stream"]["agents_lab"]["components"]["trends_llm"]["calls"] == 2
+    assert billing["by_stream"]["agents_lab"]["components"]["ideas_llm"]["calls"] == 1
+    assert billing["by_stream"]["agents_lab"]["total_cost_usd"] == 0.027
+
+
 def test_runs_show_json_errors_for_missing_run(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"

@@ -630,6 +630,12 @@ def run_ideas_stage(
                 value=float(cost_usd),
                 unit="usd",
             )
+        else:
+            record_metric(
+                name="pipeline.trends.pass.ideas.cost_missing_total",
+                value=1,
+                unit="count",
+            )
 
     tool_calls_total = int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0
     record_metric(

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
+import time
 from typing import Any, cast
 
 from loguru import logger
@@ -11,7 +12,13 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
-from recoleta.analyzer import _extract_content, _get_completion
+from recoleta.analyzer import (
+    _extract_content,
+    _extract_response_cost_usd,
+    _extract_token_counts,
+    _extract_usage_dict,
+    _get_completion,
+)
 from recoleta.config import LocalizationConfig, Settings
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.models import Analysis, Document, DocumentChunk, Item, PassOutput
@@ -180,7 +187,38 @@ def translate_structured_payload(
     context: dict[str, Any] | None = None,
     payload_model: type[BaseModel] | None = None,
     llm_connection: LLMConnectionConfig | None = None,
-) -> dict[str, Any]:
+    return_debug: bool = False,
+) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+    translated_payload, debug = _translate_structured_payload_with_debug(
+        model=model,
+        source_kind=source_kind,
+        payload=payload,
+        source_language_code=source_language_code,
+        target_language_code=target_language_code,
+        source_language_label=source_language_label,
+        target_language_label=target_language_label,
+        context=context,
+        payload_model=payload_model,
+        llm_connection=llm_connection,
+    )
+    if return_debug:
+        return translated_payload, debug
+    return translated_payload
+
+
+def _translate_structured_payload_with_debug(
+    *,
+    model: str,
+    source_kind: str,
+    payload: dict[str, Any],
+    source_language_code: str,
+    target_language_code: str,
+    source_language_label: str | None = None,
+    target_language_label: str | None = None,
+    context: dict[str, Any] | None = None,
+    payload_model: type[BaseModel] | None = None,
+    llm_connection: LLMConnectionConfig | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     normalized_model = str(model or "").strip()
     if not normalized_model:
         raise ValueError("model must not be empty")
@@ -220,6 +258,16 @@ def translate_structured_payload(
         response_format={"type": "json_object"},
         **connection.litellm_completion_kwargs(),
     )
+    usage = _extract_usage_dict(response)
+    prompt_tokens, completion_tokens, total_tokens = _extract_token_counts(usage)
+    cost_usd = _extract_response_cost_usd(response)
+    if cost_usd is None:
+        try:
+            from litellm.cost_calculator import completion_cost
+
+            cost_usd = float(completion_cost(completion_response=response))
+        except Exception:
+            cost_usd = None
     raw_content = _extract_content(response)
     try:
         decoded = json.loads(raw_content)
@@ -228,14 +276,26 @@ def translate_structured_payload(
 
     if payload_model is not None:
         try:
-            return payload_model.model_validate(decoded).model_dump(mode="json")
+            translated_payload = payload_model.model_validate(decoded).model_dump(
+                mode="json"
+            )
         except ValidationError as exc:
             raise ValueError(
                 f"translation LLM returned JSON with invalid schema: {type(exc).__name__}"
             ) from exc
-    if not isinstance(decoded, dict):
+    elif not isinstance(decoded, dict):
         raise ValueError("translation LLM returned a non-object JSON payload")
-    return decoded
+    else:
+        translated_payload = decoded
+    return translated_payload, {
+        "usage": {
+            "requests": 1,
+            "input_tokens": prompt_tokens,
+            "output_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        },
+        "estimated_cost_usd": cost_usd,
+    }
 
 
 def _latest_meta_chunk_for_doc(
@@ -296,6 +356,7 @@ def _translation_search_service(
     *,
     repository: Any,
     settings: Settings,
+    run_id: str | None,
     scope: str,
     period_start: datetime,
     period_end: datetime,
@@ -311,7 +372,7 @@ def _translation_search_service(
                 embedding_dimensions=settings.trends_embedding_dimensions,
             ),
         ),
-        run_id="translation-context",
+        run_id=str(run_id or "").strip(),
         period_start=period_start,
         period_end=period_end,
         corpus_spec=CorpusSpec.from_rag_sources(
@@ -322,7 +383,9 @@ def _translation_search_service(
         embedding_batch_max_inputs=settings.trends_embedding_batch_max_inputs,
         embedding_batch_max_chars=settings.trends_embedding_batch_max_chars,
         scope=scope,
-        metric_namespace="translation.context",
+        metric_namespace=(
+            "pipeline.translate.context" if str(run_id or "").strip() else None
+        ),
         embedding_failure_mode=settings.trends_embedding_failure_mode,
         embedding_max_errors=settings.trends_embedding_max_errors,
         llm_connection=settings.llm_connection_config(),
@@ -351,6 +414,7 @@ def _hybrid_context_for_query(
     *,
     repository: Any,
     settings: Settings,
+    run_id: str | None,
     scope: str,
     period_start: datetime | None,
     period_end: datetime | None,
@@ -368,6 +432,7 @@ def _hybrid_context_for_query(
     service = _translation_search_service(
         repository=repository,
         settings=settings,
+        run_id=run_id,
         scope=scope,
         period_start=period_start,
         period_end=period_end,
@@ -438,6 +503,7 @@ def _item_translation_context(
     *,
     repository: Any,
     settings: Settings,
+    run_id: str | None,
     scope: str,
     item: Item,
     summary_text: str | None,
@@ -472,6 +538,7 @@ def _item_translation_context(
             _hybrid_context_for_query(
                 repository=repository,
                 settings=settings,
+                run_id=run_id,
                 scope=scope,
                 period_start=period_start,
                 period_end=period_end,
@@ -491,6 +558,7 @@ def _trend_translation_context(
     *,
     repository: Any,
     settings: Settings,
+    run_id: str | None,
     scope: str,
     payload: dict[str, Any],
     granularity: str | None,
@@ -525,6 +593,7 @@ def _trend_translation_context(
             _hybrid_context_for_query(
                 repository=repository,
                 settings=settings,
+                run_id=run_id,
                 scope=scope,
                 period_start=period_start,
                 period_end=period_end,
@@ -544,6 +613,7 @@ def _idea_translation_context(
     *,
     repository: Any,
     settings: Settings,
+    run_id: str | None,
     payload: dict[str, Any],
     scope: str,
     granularity: str | None,
@@ -607,6 +677,7 @@ def _idea_translation_context(
             _hybrid_context_for_query(
                 repository=repository,
                 settings=settings,
+                run_id=run_id,
                 scope=scope,
                 period_start=period_start,
                 period_end=period_end,
@@ -1107,6 +1178,7 @@ def _candidate_context(
     settings: Settings,
     candidate: TranslationCandidate,
     context_assist: str,
+    run_id: str | None,
 ) -> dict[str, Any]:
     if context_assist == "none":
         return {}
@@ -1117,6 +1189,7 @@ def _candidate_context(
         return _item_translation_context(
             repository=repository,
             settings=settings,
+            run_id=run_id,
             scope=candidate.scope,
             item=item,
             summary_text=str(candidate.payload.get("summary") or "").strip() or None,
@@ -1126,6 +1199,7 @@ def _candidate_context(
         return _trend_translation_context(
             repository=repository,
             settings=settings,
+            run_id=run_id,
             scope=candidate.scope,
             payload=candidate.payload,
             granularity=candidate.granularity,
@@ -1137,6 +1211,7 @@ def _candidate_context(
         return _idea_translation_context(
             repository=repository,
             settings=settings,
+            run_id=run_id,
             payload=candidate.payload,
             scope=candidate.scope,
             granularity=candidate.granularity,
@@ -1173,6 +1248,7 @@ def _translate_candidate_into_language(
     context_assist: str,
     llm_connection: LLMConnectionConfig,
     force: bool,
+    run_id: str | None = None,
 ) -> tuple[str, bool]:
     source_hash = _payload_hash(candidate.payload)
     existing = repository.get_localized_output(
@@ -1193,8 +1269,10 @@ def _translate_candidate_into_language(
         settings=settings,
         candidate=candidate,
         context_assist=context_assist,
+        run_id=run_id,
     )
-    translated_payload = translate_structured_payload(
+    started = time.perf_counter()
+    translated_result = translate_structured_payload(
         model=llm_model,
         source_kind=candidate.source_kind,
         payload=candidate.payload,
@@ -1205,7 +1283,25 @@ def _translate_candidate_into_language(
         context=context,
         payload_model=candidate.payload_model,
         llm_connection=llm_connection,
+        return_debug=True,
     )
+    if (
+        isinstance(translated_result, tuple)
+        and len(translated_result) == 2
+        and isinstance(translated_result[0], dict)
+        and isinstance(translated_result[1], dict)
+    ):
+        translated_payload, debug = translated_result
+    else:
+        translated_payload = cast(dict[str, Any], translated_result)
+        debug = {}
+    if str(run_id or "").strip():
+        _record_translation_llm_metrics(
+            repository=repository,
+            run_id=str(run_id),
+            debug=debug,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+        )
     repository.upsert_localized_output(
         source_kind=candidate.source_kind,
         source_record_id=candidate.source_record_id,
@@ -1226,6 +1322,62 @@ def _translate_candidate_into_language(
         variant_role="translation",
     )
     return "translated", True
+
+
+def _record_translation_llm_metrics(
+    *,
+    repository: Any,
+    run_id: str,
+    debug: dict[str, Any] | None,
+    duration_ms: int,
+) -> None:
+    usage = debug.get("usage") if isinstance(debug, dict) else None
+    if isinstance(usage, dict):
+        requests = usage.get("requests")
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        if isinstance(requests, (int, float)):
+            repository.record_metric(
+                run_id=run_id,
+                name="pipeline.translate.llm_requests_total",
+                value=float(requests),
+                unit="count",
+            )
+        if isinstance(input_tokens, (int, float)):
+            repository.record_metric(
+                run_id=run_id,
+                name="pipeline.translate.llm_input_tokens_total",
+                value=float(input_tokens),
+                unit="count",
+            )
+        if isinstance(output_tokens, (int, float)):
+            repository.record_metric(
+                run_id=run_id,
+                name="pipeline.translate.llm_output_tokens_total",
+                value=float(output_tokens),
+                unit="count",
+            )
+    cost_usd = debug.get("estimated_cost_usd") if isinstance(debug, dict) else None
+    if isinstance(cost_usd, (int, float)):
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.translate.estimated_cost_usd",
+            value=float(cost_usd),
+            unit="usd",
+        )
+    else:
+        repository.record_metric(
+            run_id=run_id,
+            name="pipeline.translate.cost_missing_total",
+            value=1,
+            unit="count",
+        )
+    repository.record_metric(
+        run_id=run_id,
+        name="pipeline.translate.duration_ms",
+        value=float(max(0, int(duration_ms))),
+        unit="ms",
+    )
 
 
 def _mirror_candidate_into_language(
@@ -1274,6 +1426,7 @@ def run_translation(
     limit: int | None = None,
     force: bool = False,
     context_assist: str = "direct",
+    run_id: str | None = None,
 ) -> TranslationRunResult:
     localization = settings.localization
     if localization is None or not localization.targets:
@@ -1324,6 +1477,7 @@ def run_translation(
                     context_assist=normalized_context_assist,
                     llm_connection=llm_connection,
                     force=force,
+                    run_id=run_id,
                 )
             except Exception as exc:  # noqa: BLE001
                 result.failed_total += 1
@@ -1364,6 +1518,7 @@ def run_translation_backfill(
     legacy_source_language: str | None = None,
     emit_mirror_targets: bool = False,
     all_history: bool = False,  # noqa: ARG001
+    run_id: str | None = None,
 ) -> TranslationRunResult:
     localization = settings.localization
     if localization is None:
@@ -1433,6 +1588,7 @@ def run_translation_backfill(
                 context_assist=normalized_context_assist,
                 llm_connection=llm_connection,
                 force=force,
+                run_id=run_id,
             )
         except Exception as exc:  # noqa: BLE001
             result.failed_total += 1

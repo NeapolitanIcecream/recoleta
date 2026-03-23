@@ -430,6 +430,7 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
     metric_values = _metric_values(repository=repository, run_id="run-ideas-success")
     assert metric_values["pipeline.trends.pass.ideas.duration_ms"] >= 0.0
     assert metric_values["pipeline.trends.pass.ideas.prompt_chars"] == 999.0
+    assert metric_values["pipeline.trends.pass.ideas.cost_missing_total"] == 1.0
     assert metric_values["pipeline.trends.pass.ideas.tool_calls_total"] == 2.0
     assert (
         metric_values["pipeline.trends.pass.ideas.tool.search_hybrid.calls_total"]
