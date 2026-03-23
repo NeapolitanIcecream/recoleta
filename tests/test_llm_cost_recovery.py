@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 import pytest
+from litellm import completion_cost
 from litellm.cost_calculator import cost_per_token
 
 import recoleta.analyzer as analyzer_module
@@ -58,6 +59,10 @@ def _expected_cost_usd(*, model: str, prompt_tokens: int, completion_tokens: int
         completion_tokens=completion_tokens,
     )
     return float(prompt_cost) + float(completion_cost)
+
+
+def _expected_response_cost_usd(*, response: dict[str, Any], model: str) -> float:
+    return float(completion_cost(completion_response=response, model=model))
 
 
 class _FakeSettings:
@@ -166,6 +171,41 @@ def test_translation_recovers_measured_usage_cost_from_litellm_response_gh_w12(
     assert translated_payload["summary"] == "## Summary\n\nTranslated summary.\n"
     assert debug["estimated_cost_usd"] == measured_cost_usd
     assert debug["usage"]["cost"] == measured_cost_usd
+
+
+def test_analyzer_preserves_cached_prompt_pricing_in_fallback_estimate_gh_w12(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: fallback pricing must respect cached prompt token discounts."""
+
+    prompt_tokens = 1000
+    completion_tokens = 100
+    response = _litellm_like_response(
+        content=_analysis_response_content(),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        measured_cost_usd=None,
+    )
+    response["usage"]["prompt_tokens_details"] = {"cached_tokens": 900}
+
+    def fake_completion(**_kwargs: Any) -> dict[str, Any]:
+        return response
+
+    monkeypatch.setattr("recoleta.analyzer.completion", fake_completion)
+    analyzer = LiteLLMAnalyzer(model="openai/openai/gpt-5.4")
+
+    result, _ = analyzer.analyze(
+        title="Sample title",
+        canonical_url="https://example.com/paper",
+        user_topics=["agents"],
+        content="Sample content",
+        include_debug=False,
+    )
+
+    assert result.cost_usd == _expected_response_cost_usd(
+        response=response,
+        model="openai/gpt-5.4",
+    )
 
 
 def test_doctor_ping_estimates_cost_when_provider_omits_measured_cost_gh_w12(

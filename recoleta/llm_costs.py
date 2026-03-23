@@ -114,6 +114,33 @@ def estimate_cost_usd_from_tokens(
     return None
 
 
+def estimate_cost_usd_from_response(
+    *,
+    response: object,
+    model: str | None,
+    pricing_model_alias: str | None = None,
+) -> float | None:
+    try:
+        from litellm import completion_cost
+    except Exception:
+        return None
+
+    for candidate in iter_pricing_model_candidates(
+        model,
+        pricing_model_alias=pricing_model_alias,
+    ):
+        try:
+            return float(
+                completion_cost(
+                    completion_response=response,
+                    model=candidate,
+                )
+            )
+        except Exception:
+            continue
+    return None
+
+
 def resolve_cost_usd(
     *,
     response: object,
@@ -125,6 +152,13 @@ def resolve_cost_usd(
     measured_cost = extract_measured_cost_usd(response)
     if measured_cost is not None:
         return measured_cost
+    estimated_cost = estimate_cost_usd_from_response(
+        response=response,
+        model=model,
+        pricing_model_alias=pricing_model_alias,
+    )
+    if estimated_cost is not None:
+        return estimated_cost
     return estimate_cost_usd_from_tokens(
         model=model,
         prompt_tokens=prompt_tokens,
