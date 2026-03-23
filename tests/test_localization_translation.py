@@ -10,6 +10,7 @@ import pytest
 from sqlmodel import Session, select
 from typer.testing import CliRunner
 
+import recoleta.cli as recoleta_cli
 from recoleta import translation as translation_module
 from recoleta.cli.app import app
 from recoleta.config import LocalizationConfig, Settings
@@ -1468,6 +1469,96 @@ def test_translate_backfill_cli_json_includes_run_id_and_billing(
     assert payload["billing"]["components"]["translation_llm"]["input_tokens"] == 88
     assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 22
     assert payload["billing"]["total_cost_usd"] == 0.0019
+
+
+def test_translate_run_preserves_success_when_billing_metrics_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.cli.translate as translate_cli
+
+    class _FakeConsole:
+        def __init__(self) -> None:
+            self.lines: list[str] = []
+
+        def print(self, message: str) -> None:
+            self.lines.append(str(message))
+
+    class _FakeHeartbeat:
+        def raise_if_failed(self) -> None:
+            return None
+
+    class _FakeLog:
+        def __init__(self) -> None:
+            self.warning_calls: list[str] = []
+
+        def warning(self, message: str, *args: object) -> None:
+            self.warning_calls.append(message.format(*args))
+
+        def exception(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("unexpected exception log")
+
+    class _FakeRepository:
+        def __init__(self) -> None:
+            self.finished: list[tuple[str, bool]] = []
+
+        def finish_run(self, run_id: str, *, success: bool) -> None:
+            self.finished.append((run_id, bool(success)))
+
+        def list_metrics(self, *, run_id: str):  # type: ignore[no-untyped-def]
+            _ = run_id
+            raise RuntimeError("metrics unavailable")
+
+    fake_repo = _FakeRepository()
+    fake_console = _FakeConsole()
+    fake_log = _FakeLog()
+    fake_settings = SimpleNamespace(log_json=False)
+
+    monkeypatch.setattr(
+        translate_cli,
+        "_load_settings_for_translate",
+        lambda **_: (Path("/tmp/recoleta.db"), fake_settings, fake_repo, fake_console),
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_begin_managed_run_for_settings",
+        lambda **_: ("run-translate", "owner", fake_log, _FakeHeartbeat()),
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_cleanup_managed_run",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_print_billing_report",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_update_run_context",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "run_translation",
+        lambda **_: translation_module.TranslationRunResult(translated_total=1),
+    )
+
+    translate_cli.run_translate_run_command(
+        db_path=None,
+        config_path=None,
+        scope="default",
+        granularity=None,
+        include="items",
+        limit=None,
+        force=False,
+        context_assist="direct",
+        json_output=False,
+    )
+
+    assert fake_repo.finished == [("run-translate", True)]
+    assert any("translate run completed" in line for line in fake_console.lines)
+    assert fake_log.warning_calls
 
 
 def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window(

@@ -1460,21 +1460,57 @@ def run_doctor_llm_command(
                 console.print(f"[red]doctor llm failed[/red] {message}")
             raise cli.typer.Exit(code=1) from exc
 
-    ping_payload = _run_llm_ping(
-        settings=settings,
-        timeout_seconds=timeout_seconds,
-    ) if ping else {"status": "skipped"}
-    if repository is not None and run_id is not None:
-        _record_doctor_llm_metrics(
-            repository=repository,
-            run_id=run_id,
-            ping_payload=ping_payload,
-        )
-        repository.finish_run(
-            run_id,
-            success=str(ping_payload.get("status", "") or "") == "ok",
-        )
-        billing = cli._billing_summary_payload(repository.list_metrics(run_id=run_id))
+    try:
+        ping_payload = _run_llm_ping(
+            settings=settings,
+            timeout_seconds=timeout_seconds,
+        ) if ping else {"status": "skipped"}
+        if repository is not None and run_id is not None:
+            _record_doctor_llm_metrics(
+                repository=repository,
+                run_id=run_id,
+                ping_payload=ping_payload,
+            )
+            repository.finish_run(
+                run_id,
+                success=str(ping_payload.get("status", "") or "") == "ok",
+            )
+            try:
+                billing = cli._billing_summary_payload(
+                    repository.list_metrics(run_id=run_id)
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "Doctor llm billing metrics load failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
+    except Exception as exc:  # noqa: BLE001
+        if repository is not None and run_id is not None:
+            try:
+                repository.finish_run(run_id, success=False)
+            except Exception:
+                log.exception("Doctor llm run finish failed during error handling")
+        message = f"llm ping failed: {exc}"
+        log.warning(message)
+        if json_output:
+            cli._emit_json(
+                {
+                    "status": "error",
+                    "error": message,
+                    "run_id": run_id,
+                    "billing": billing,
+                }
+            )
+        else:
+            console.print(f"[red]doctor llm failed[/red] {message}")
+            if repository is not None and run_id is not None:
+                cli._print_billing_report(
+                    console=console,
+                    repository=repository,
+                    run_id=run_id,
+                )
+        raise cli.typer.Exit(code=1) from exc
     payload = _build_llm_diagnostics_payload(
         settings=settings,
         ping_payload=ping_payload,

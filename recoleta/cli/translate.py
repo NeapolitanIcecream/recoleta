@@ -66,6 +66,7 @@ def run_translate_run_command(
         command="translate run",
         log_module="cli.translate.run",
     )
+    metrics: list[Any] = []
     try:
         cli._update_run_context(
             repository,
@@ -91,7 +92,6 @@ def run_translate_run_command(
             )
         heartbeat_monitor.raise_if_failed()
         repository.finish_run(run_id, success=not bool(result.aborted))
-        metrics = repository.list_metrics(run_id=run_id)
     except KeyboardInterrupt as exc:
         try:
             repository.finish_run(run_id, success=False)
@@ -123,6 +123,14 @@ def run_translate_run_command(
             owner_token=owner_token,
             heartbeat_monitor=heartbeat_monitor,
             log=run_log,
+        )
+    try:
+        metrics = repository.list_metrics(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        run_log.warning(
+            "Translate run billing metrics load failed error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
         )
 
     if json_output:
@@ -203,6 +211,7 @@ def run_translate_backfill_command(
         command="translate backfill",
         log_module="cli.translate.backfill",
     )
+    metrics: list[Any] = []
     try:
         cli._update_run_context(
             repository,
@@ -231,7 +240,6 @@ def run_translate_backfill_command(
             )
         heartbeat_monitor.raise_if_failed()
         repository.finish_run(run_id, success=not bool(result.aborted))
-        metrics = repository.list_metrics(run_id=run_id)
     except KeyboardInterrupt as exc:
         try:
             repository.finish_run(run_id, success=False)
@@ -263,6 +271,14 @@ def run_translate_backfill_command(
             owner_token=owner_token,
             heartbeat_monitor=heartbeat_monitor,
             log=run_log,
+        )
+    try:
+        metrics = repository.list_metrics(run_id=run_id)
+    except Exception as exc:  # noqa: BLE001
+        run_log.warning(
+            "Translate backfill billing metrics load failed error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
         )
 
     if json_output:

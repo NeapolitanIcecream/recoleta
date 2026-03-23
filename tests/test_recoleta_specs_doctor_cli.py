@@ -315,3 +315,35 @@ def test_doctor_llm_json_fails_when_ping_probe_fails(
     run = repository.get_run(run_id=payload["run_id"])
     assert run is not None
     assert run.status == "failed"
+
+
+def test_doctor_llm_marks_observed_run_failed_when_ping_raises_unexpectedly(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    settings = _FakeLLMSettings(recoleta_db_path=db_path)
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda **_: settings)
+
+    def _raising_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
+        _ = (settings, timeout_seconds)
+        raise RuntimeError("client init exploded")
+
+    monkeypatch.setattr(maintenance_cli, "_run_llm_ping", _raising_ping)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["doctor", "llm", "--ping", "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "error"
+    assert "client init exploded" in payload["error"]
+    assert payload["run_id"]
+    run = repository.get_run(run_id=payload["run_id"])
+    assert run is not None
+    assert run.status == "failed"
