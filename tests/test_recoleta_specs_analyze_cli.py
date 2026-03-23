@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -42,6 +43,31 @@ class _FakeRepo:
 
     def finish_run(self, run_id: str, *, success: bool) -> None:
         self.finished.append((run_id, bool(success)))
+
+    def list_metrics(self, *, run_id: str):  # type: ignore[no-untyped-def]
+        _ = run_id
+        return [
+            SimpleNamespace(
+                name="pipeline.analyze.llm_calls_total",
+                value=1.0,
+                unit="count",
+            ),
+            SimpleNamespace(
+                name="pipeline.analyze.llm_prompt_tokens_total",
+                value=321.0,
+                unit="count",
+            ),
+            SimpleNamespace(
+                name="pipeline.analyze.llm_completion_tokens_total",
+                value=89.0,
+                unit="count",
+            ),
+            SimpleNamespace(
+                name="pipeline.analyze.estimated_cost_usd",
+                value=0.0045,
+                unit="usd",
+            ),
+        ]
 
 
 class _FakeSettings:
@@ -90,6 +116,7 @@ def test_analyze_cli_passes_target_day_window_to_analyze(
 
     assert result.exit_code == 0
     assert "analyze completed processed=4 failed=1" in result.stdout
+    assert "Billing report" in result.stdout
     assert fake_repo.finished == [("run-analyze", True)]
 
 
@@ -123,4 +150,8 @@ def test_analyze_cli_emits_json_output(
     assert payload["limit"] == 3
     assert payload["period_start"] == "2026-01-02T00:00:00+00:00"
     assert payload["period_end"] == "2026-01-03T00:00:00+00:00"
+    assert payload["billing"]["components"]["analyze_llm"]["calls"] == 1
+    assert payload["billing"]["components"]["analyze_llm"]["input_tokens"] == 321
+    assert payload["billing"]["components"]["analyze_llm"]["output_tokens"] == 89
+    assert payload["billing"]["total_cost_usd"] == 0.0045
     assert fake_repo.finished == [("run-analyze", True)]

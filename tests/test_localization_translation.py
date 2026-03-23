@@ -741,21 +741,48 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
     monkeypatch.setattr(
         translation_module,
         "translate_structured_payload",
-        lambda **kwargs: kwargs["payload"]
-        | (
-            {"summary": "## Summary\n\n中文条目摘要。\n"}
-            if kwargs["source_kind"] == "analysis"
-            else {}
+        lambda **kwargs: (
+            (
+                kwargs["payload"]
+                | (
+                    {"summary": "## Summary\n\n中文条目摘要。\n"}
+                    if kwargs["source_kind"] == "analysis"
+                    else {}
+                )
+                | (
+                    {"title": "智能体系统"}
+                    if kwargs["source_kind"] == "trend_synthesis"
+                    else {}
+                )
+                | (
+                    {"title": "运营切入点"}
+                    if kwargs["source_kind"] == "trend_ideas"
+                    else {}
+                )
+            ),
+            {
+                "usage": {"requests": 1, "input_tokens": 80, "output_tokens": 24},
+                "estimated_cost_usd": 0.0016,
+            },
         )
-        | (
-            {"title": "智能体系统"}
-            if kwargs["source_kind"] == "trend_synthesis"
-            else {}
-        )
-        | (
-            {"title": "运营切入点"}
-            if kwargs["source_kind"] == "trend_ideas"
-            else {}
+        if kwargs.get("return_debug")
+        else (
+            kwargs["payload"]
+            | (
+                {"summary": "## Summary\n\n中文条目摘要。\n"}
+                if kwargs["source_kind"] == "analysis"
+                else {}
+            )
+            | (
+                {"title": "智能体系统"}
+                if kwargs["source_kind"] == "trend_synthesis"
+                else {}
+            )
+            | (
+                {"title": "运营切入点"}
+                if kwargs["source_kind"] == "trend_ideas"
+                else {}
+            )
         ),
     )
 
@@ -771,6 +798,7 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
         ],
     )
     assert result.exit_code == 0, result.stdout
+    assert "Billing report" in result.stdout
 
     second = runner.invoke(
         app,
@@ -784,6 +812,7 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
         ],
     )
     assert second.exit_code == 0, second.stdout
+    assert "Billing report" in second.stdout
 
     with Session(repository.engine) as session:
         rows = list(
@@ -797,6 +826,94 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
         ("trend_synthesis", trend_doc_id),
     ]
     assert all(row.language_code == "zh-CN" for row in rows)
+    recent_runs = repository.list_recent_runs(limit=2)
+    assert len(recent_runs) == 2
+    assert all(run.command == "translate run" for run in recent_runs)
+    recent_metric_names = [
+        {
+            str(getattr(metric, "name", "") or "")
+            for metric in repository.list_metrics(run_id=run.id)
+        }
+        for run in recent_runs
+    ]
+    assert any(
+        "pipeline.translate.llm_requests_total" in metric_names
+        for metric_names in recent_metric_names
+    )
+
+
+def test_translate_run_cli_json_includes_run_id_and_billing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    analysis, _trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    config_path = tmp_path / "recoleta-json.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'recoleta_db_path: "{repository.db_path}"',
+                'llm_model: "openai/gpt-5.4"',
+                'publish_targets: ["markdown"]',
+                f'markdown_output_dir: "{tmp_path / "outputs"}"',
+                'llm_output_language: "English"',
+                "localization:",
+                "  source_language_code: en",
+                "  targets:",
+                '    - code: "zh-CN"',
+                '      llm_label: "Chinese (Simplified)"',
+                "  site_default_language_code: en",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: (
+            kwargs["payload"],
+            {
+                "usage": {"requests": 1, "input_tokens": 64, "output_tokens": 16},
+                "estimated_cost_usd": 0.0011,
+            },
+        )
+        if kwargs.get("return_debug")
+        else kwargs["payload"],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "translate",
+            "run",
+            "--config-path",
+            str(config_path),
+            "--include",
+            "items",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "translate run"
+    assert payload["run_id"]
+    assert payload["billing"]["components"]["translation_llm"]["calls"] == 1
+    assert payload["billing"]["components"]["translation_llm"]["input_tokens"] == 64
+    assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 16
+    assert payload["billing"]["total_cost_usd"] == 0.0011
+    row = repository.get_localized_output(
+        source_kind="analysis",
+        source_record_id=int(analysis.id or 0),
+        scope="default",
+        language_code="zh-CN",
+    )
+    assert row is not None
 
 
 def test_translate_run_hybrid_uses_search_service_without_auto_syncing_vectors(
@@ -871,6 +988,88 @@ def test_translate_run_hybrid_uses_search_service_without_auto_syncing_vectors(
     assert captured_contexts[0]["assist_mode"] == "hybrid"
     assert captured_contexts[0]["hybrid_status"] == "ok"
     assert captured_contexts[0]["hybrid_matches"]
+    assert repository.list_metrics(run_id="translation-context") == []
+
+
+def test_translate_run_records_llm_and_context_metrics_when_run_id_is_present(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, _trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "rag_lancedb_dir": tmp_path / "lancedb",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+    run = repository.create_run("fp-translate-metrics", run_id="run-translate-metrics")
+
+    def _recording_search_hybrid(self, **kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        if str(getattr(self, "metric_namespace", "") or "").strip():
+            self.repository.record_metric(
+                run_id=self.run_id,
+                name=f"{self.metric_namespace}.embedding_calls_total",
+                value=1,
+                unit="count",
+            )
+        return {
+            "hits": [],
+            "returned": 0,
+            "source_returned": {"text": 0, "semantic": 0},
+        }
+
+    monkeypatch.setattr(SearchService, "search_hybrid", _recording_search_hybrid)
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: (
+            kwargs["payload"],
+            {
+                "usage": {"requests": 1, "input_tokens": 72, "output_tokens": 18},
+                "estimated_cost_usd": 0.0013,
+            },
+        )
+        if kwargs.get("return_debug")
+        else kwargs["payload"],
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="items",
+        context_assist="hybrid",
+        force=True,
+        run_id=run.id,
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 1
+    metric_values = {
+        str(metric.name): float(metric.value)
+        for metric in repository.list_metrics(run_id=run.id)
+    }
+    assert metric_values["pipeline.translate.llm_requests_total"] == 1.0
+    assert metric_values["pipeline.translate.llm_input_tokens_total"] == 72.0
+    assert metric_values["pipeline.translate.llm_output_tokens_total"] == 18.0
+    assert metric_values["pipeline.translate.estimated_cost_usd"] == 0.0013
+    assert metric_values["pipeline.translate.context.embedding_calls_total"] == 1.0
 
 
 def test_translate_run_hybrid_fails_open_when_search_service_raises(
@@ -1152,6 +1351,14 @@ def test_translate_backfill_cli_writes_translation_and_mirror_variants(
             }.get(kwargs["source_kind"], payload.get("title"))
             if kwargs["source_kind"] == "analysis":
                 payload["summary"] = "## Summary\n\nHistorical item summary in English.\n"
+        if kwargs.get("return_debug"):
+            return (
+                payload,
+                {
+                    "usage": {"requests": 1, "input_tokens": 70, "output_tokens": 20},
+                    "estimated_cost_usd": 0.0015,
+                },
+            )
         return payload
 
     monkeypatch.setattr(
@@ -1174,6 +1381,7 @@ def test_translate_backfill_cli_writes_translation_and_mirror_variants(
         ],
     )
     assert result.exit_code == 0, result.stdout
+    assert "Billing report" in result.stdout
 
     with Session(repository.engine) as session:
         rows = list(session.exec(select(LocalizedOutput)))
@@ -1189,6 +1397,77 @@ def test_translate_backfill_cli_writes_translation_and_mirror_variants(
     assert ("trend_ideas", idea_doc_id, "zh-CN") in by_key
     assert by_key[("analysis", int(analysis.id or 0), "zh-CN")].variant_role == "mirror"
     assert by_key[("analysis", int(analysis.id or 0), "en")].variant_role == "translation"
+    recent_run = repository.list_recent_runs(limit=1)[0]
+    assert recent_run.command == "translate backfill"
+
+
+def test_translate_backfill_cli_json_includes_run_id_and_billing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, _trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    config_path = tmp_path / "recoleta-backfill-json.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'recoleta_db_path: "{repository.db_path}"',
+                'llm_model: "openai/gpt-5.4"',
+                'publish_targets: ["markdown"]',
+                f'markdown_output_dir: "{tmp_path / "outputs"}"',
+                'llm_output_language: "English"',
+                "localization:",
+                "  source_language_code: en",
+                "  targets:",
+                '    - code: "zh-CN"',
+                '      llm_label: "Chinese (Simplified)"',
+                "  site_default_language_code: en",
+                '  legacy_backfill_source_language_code: "zh-CN"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: (
+            kwargs["payload"],
+            {
+                "usage": {"requests": 1, "input_tokens": 88, "output_tokens": 22},
+                "estimated_cost_usd": 0.0019,
+            },
+        )
+        if kwargs.get("return_debug")
+        else kwargs["payload"],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "translate",
+            "backfill",
+            "--config-path",
+            str(config_path),
+            "--include",
+            "items",
+            "--all-history",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "translate backfill"
+    assert payload["run_id"]
+    assert payload["billing"]["components"]["translation_llm"]["calls"] == 1
+    assert payload["billing"]["components"]["translation_llm"]["input_tokens"] == 88
+    assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 22
+    assert payload["billing"]["total_cost_usd"] == 0.0019
 
 
 def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window(

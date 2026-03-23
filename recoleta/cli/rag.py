@@ -83,6 +83,7 @@ def run_rag_sync_vectors_command(
         heartbeat_monitor.raise_if_failed()
         repository.finish_run(run_id, success=True)
         console.print(f"[green]rag sync completed[/green] stats={stats}")
+        cli._print_billing_report(console=console, repository=repository, run_id=run_id)
     except KeyboardInterrupt as exc:
         try:
             repository.finish_run(run_id, success=False)

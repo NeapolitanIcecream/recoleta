@@ -174,12 +174,17 @@ class _FakeLLMSettings:
         llm_api_key: str | None = "sk-recoleta-live",
         llm_base_url: str | None = "http://llm.local/v1",
         config_path: Path | None = None,
+        recoleta_db_path: Path | None = None,
     ) -> None:
         self.llm_model = llm_model
         self.llm_output_language = llm_output_language
         self.llm_api_key = _FakeSecret(llm_api_key) if llm_api_key is not None else None
         self.llm_base_url = llm_base_url
         self.config_path = config_path
+        self.recoleta_db_path = recoleta_db_path
+
+    def safe_fingerprint(self) -> str:
+        return "fp-doctor-llm"
 
 
 def test_doctor_llm_json_reports_effective_configuration(
@@ -187,7 +192,12 @@ def test_doctor_llm_json_reports_effective_configuration(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
-    settings = _FakeLLMSettings(config_path=tmp_path / "recoleta.yaml")
+    db_path = tmp_path / "recoleta.db"
+    Repository(db_path=db_path).init_schema()
+    settings = _FakeLLMSettings(
+        config_path=tmp_path / "recoleta.yaml",
+        recoleta_db_path=db_path,
+    )
     monkeypatch.setenv("RECOLETA_LLM_API_KEY", "sk-recoleta-live")
     monkeypatch.setenv("RECOLETA_LLM_BASE_URL", "http://llm.local/v1")
     monkeypatch.setattr(recoleta.cli, "_build_settings", lambda **_: settings)
@@ -208,14 +218,23 @@ def test_doctor_llm_json_reports_effective_configuration(
     assert payload["connection"]["base_url"]["value"] == "http://llm.local/v1"
     assert payload["connection"]["base_url"]["env_present"] is True
     assert payload["ping"]["status"] == "skipped"
+    assert "run_id" not in payload
+    assert "billing" not in payload
     assert "sk-recoleta-live" not in result.stdout
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    assert repository.list_recent_runs(limit=5) == []
 
 
 def test_doctor_llm_json_can_run_ping_probe(
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
     runner = CliRunner()
-    settings = _FakeLLMSettings()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    settings = _FakeLLMSettings(recoleta_db_path=db_path)
     monkeypatch.setattr(recoleta.cli, "_build_settings", lambda **_: settings)
 
     def _fake_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
@@ -247,13 +266,25 @@ def test_doctor_llm_json_can_run_ping_probe(
     assert payload["ping"]["resolved_model"] == "gpt-4o-mini"
     assert payload["ping"]["response_excerpt"] == "pong"
     assert payload["ping"]["total_tokens"] == 9
+    assert payload["billing"]["components"]["doctor_llm"]["calls"] == 1
+    assert payload["billing"]["components"]["doctor_llm"]["input_tokens"] == 8
+    assert payload["billing"]["components"]["doctor_llm"]["output_tokens"] == 1
+    assert payload["billing"]["total_cost_usd"] == 0.00012
+    run = repository.get_run(run_id=payload["run_id"])
+    assert run is not None
+    assert run.status == "succeeded"
+    assert run.command == "doctor llm"
 
 
 def test_doctor_llm_json_fails_when_ping_probe_fails(
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
     runner = CliRunner()
-    settings = _FakeLLMSettings()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    settings = _FakeLLMSettings(recoleta_db_path=db_path)
     monkeypatch.setattr(recoleta.cli, "_build_settings", lambda **_: settings)
 
     def _fake_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
@@ -276,5 +307,11 @@ def test_doctor_llm_json_fails_when_ping_probe_fails(
     payload = json.loads(result.stdout)
     assert payload["status"] == "error"
     assert "llm ping failed" in payload["error"]
+    assert payload["run_id"]
+    assert payload["billing"]["components"]["doctor_llm"]["calls"] == 1
+    assert payload["billing"]["components"]["doctor_llm"]["cost_missing"] == 1
     assert payload["diagnostics"]["ping"]["status"] == "failed"
     assert payload["diagnostics"]["ping"]["error_type"] == "AuthenticationError"
+    run = repository.get_run(run_id=payload["run_id"])
+    assert run is not None
+    assert run.status == "failed"

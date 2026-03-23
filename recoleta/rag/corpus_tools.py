@@ -561,7 +561,7 @@ class SearchService:
     embedding_batch_max_inputs: int
     embedding_batch_max_chars: int
     scope: str = DEFAULT_TOPIC_STREAM
-    metric_namespace: str = "pipeline.trends"
+    metric_namespace: str | None = "pipeline.trends"
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
     llm_connection: LLMConnectionConfig | None = None

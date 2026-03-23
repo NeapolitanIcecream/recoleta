@@ -40,6 +40,7 @@ def run_analyze_command(
         period_start=period_start,
         period_end=period_end,
     )
+    metrics = repository.list_metrics(run_id=run_id)
     if json_output:
         cli._emit_json(
             {
@@ -51,6 +52,7 @@ def run_analyze_command(
                 "failed": int(getattr(result, "failed", 0) or 0),
                 "period_start": cli._isoformat_or_none(period_start),
                 "period_end": cli._isoformat_or_none(period_end),
+                "billing": cli._billing_summary_payload(metrics),
             }
         )
         return
@@ -58,3 +60,4 @@ def run_analyze_command(
     console.print(
         f"[green]analyze completed[/green] processed={result.processed} failed={result.failed}"
     )
+    cli._print_billing_report(console=console, repository=repository, run_id=run_id)
