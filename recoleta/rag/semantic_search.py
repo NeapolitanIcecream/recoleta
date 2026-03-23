@@ -4,6 +4,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from threading import Lock
+import time
 from typing import Any
 
 from loguru import logger
@@ -115,6 +116,7 @@ def _clone_summary_index_stats(
         cloned["embedding_prompt_tokens_missing_total"] = 0
         cloned["embedding_cost_usd_total"] = 0.0
         cloned["embedding_cost_missing_total"] = 0
+        cloned["duration_ms"] = 0
     return cloned
 
 
@@ -145,6 +147,11 @@ def ensure_summary_vectors_for_period(
     """Ensure summary chunks in period have vectors in LanceDB (idempotent by text_hash)."""
 
     log = logger.bind(module="rag.semantic_index", run_id=run_id, doc_type=doc_type)
+    started = time.perf_counter()
+
+    def _duration_ms() -> int:
+        return int((time.perf_counter() - started) * 1000)
+
     normalized_model = str(embedding_model or "").strip()
     if not normalized_model:
         raise ValueError("embedding_model must not be empty")
@@ -185,6 +192,7 @@ def ensure_summary_vectors_for_period(
             "embedding_cost_missing_total": 0,
             "embedding_failure_mode": normalized_failure_mode,
             "embedding_max_errors": normalized_max_errors,
+            "duration_ms": _duration_ms(),
         }
 
     chunk_ids = [int(r["chunk_id"]) for r in rows if int(r.get("chunk_id") or 0) > 0]
@@ -219,6 +227,7 @@ def ensure_summary_vectors_for_period(
             "embedding_cost_missing_total": 0,
             "embedding_failure_mode": normalized_failure_mode,
             "embedding_max_errors": normalized_max_errors,
+            "duration_ms": _duration_ms(),
         }
 
     embedder = LiteLLMEmbedder(llm_connection=llm_connection)
@@ -333,6 +342,7 @@ def ensure_summary_vectors_for_period(
         "embedding_cost_missing_total": embedding_cost_missing_total,
         "embedding_failure_mode": normalized_failure_mode,
         "embedding_max_errors": normalized_max_errors,
+        "duration_ms": _duration_ms(),
     }
     log.info("Vector sync done stats={}", stats)
     return stats
@@ -362,8 +372,27 @@ def semantic_search_summaries_in_period(
     auto_sync_vectors: bool = True,
 ) -> list[SemanticSearchHit]:
     log = logger.bind(module="rag.semantic_search", run_id=run_id, doc_type=doc_type)
+    started = time.perf_counter()
+    normalized_doc_type = str(doc_type or "").strip().lower() or "unknown"
+
+    def _search_duration_ms() -> int:
+        return int((time.perf_counter() - started) * 1000)
+
+    def _record_search_duration_metric() -> None:
+        if metric_namespace is not None and str(metric_namespace).strip():
+            repository.record_metric(
+                run_id=run_id,
+                name=(
+                    f"{str(metric_namespace).strip()}.semantic_search."
+                    f"{normalized_doc_type}.duration_ms"
+                ),
+                value=_search_duration_ms(),
+                unit="ms",
+            )
+
     normalized_query = str(query or "").strip()
     if not normalized_query:
+        _record_search_duration_metric()
         return []
 
     if auto_sync_vectors:
@@ -453,9 +482,11 @@ def semantic_search_summaries_in_period(
         }
         if not candidate_chunk_ids:
             log.info("Semantic search skipped: empty candidate corpus")
+            _record_search_duration_metric()
             return []
         if vector_store.try_open_table() is None:
             log.info("Semantic search skipped: vector table missing and auto_sync_vectors=false")
+            _record_search_duration_metric()
             return []
     candidate_chunk_ids = [
         int(raw_id)
@@ -464,6 +495,7 @@ def semantic_search_summaries_in_period(
     ]
     if not candidate_chunk_ids:
         log.info("Semantic search skipped: empty candidate corpus")
+        _record_search_duration_metric()
         return []
 
     embedder = LiteLLMEmbedder(llm_connection=llm_connection)
@@ -583,6 +615,13 @@ def semantic_search_summaries_in_period(
             value=1,
             unit="count",
         )
+        index_duration_ms = int(index_stats.get("duration_ms") or 0)
+        repository.record_metric(
+            run_id=run_id,
+            name=f"{prefix}.semantic_index.{normalized_doc_type}.duration_ms",
+            value=index_duration_ms,
+            unit="ms",
+        )
         if prompt_tokens_total > 0:
             repository.record_metric(
                 run_id=run_id,
@@ -611,4 +650,5 @@ def semantic_search_summaries_in_period(
                 value=cost_missing_total,
                 unit="count",
             )
+    _record_search_duration_metric()
     return hits
