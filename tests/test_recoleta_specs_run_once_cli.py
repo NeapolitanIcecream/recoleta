@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 import recoleta.cli
+import recoleta.cli.workflows as workflow_cli
 
 
 class _FakeConsole:
@@ -427,6 +429,249 @@ def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_bu
         ]
         for update in fake_repo.updated
     )
+
+
+def test_run_month_executes_recursive_day_week_and_month_synthesis_workflow(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    site_build_calls: list[tuple[str, str]] = []
+
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
+            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+                _ = (default_language_code, limit)
+                site_build_calls.append((str(input_dir), str(output_dir)))
+                manifest_path = Path(output_dir) / "manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    '{"trends_total": 39, "ideas_total": 39, "topics_total": 1, "streams_total": 1}',
+                    encoding="utf-8",
+                )
+                return manifest_path
+
+            return _fake_site_build
+        return None
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "month", "--date", "2026-03-16", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert len(site_build_calls) == 1
+    prepare_calls = [call for call in fake_service.calls if call[0] == "prepare"]
+    analyze_calls = [call for call in fake_service.calls if call[0] == "analyze"]
+    publish_calls = [call for call in fake_service.calls if call[0] == "publish"]
+    day_trend_calls = [
+        call
+        for call in fake_service.calls
+        if call[0] == "trends" and call[1][1] == "day"
+    ]
+    day_ideas_calls = [
+        call
+        for call in fake_service.calls
+        if call[0] == "ideas" and call[1][1] == "day"
+    ]
+    week_trend_calls = [
+        call
+        for call in fake_service.calls
+        if call[0] == "trends" and call[1][1] == "week"
+    ]
+    week_ideas_calls = [
+        call
+        for call in fake_service.calls
+        if call[0] == "ideas" and call[1][1] == "week"
+    ]
+    month_trend_calls = [
+        call
+        for call in fake_service.calls
+        if call[0] == "trends" and call[1][1] == "month"
+    ]
+    month_ideas_calls = [
+        call
+        for call in fake_service.calls
+        if call[0] == "ideas" and call[1][1] == "month"
+    ]
+
+    assert len(prepare_calls) == 31
+    assert len(analyze_calls) == 31
+    assert len(publish_calls) == 31
+    assert len(day_trend_calls) == 31
+    assert len(day_ideas_calls) == 31
+    assert len(week_trend_calls) == 6
+    assert len(week_ideas_calls) == 6
+    assert len(month_trend_calls) == 1
+    assert len(month_ideas_calls) == 1
+    assert [call[1][2] for call in week_trend_calls] == [
+        date(2026, 2, 23),
+        date(2026, 3, 2),
+        date(2026, 3, 9),
+        date(2026, 3, 16),
+        date(2026, 3, 23),
+        date(2026, 3, 30),
+    ]
+    assert month_trend_calls[0][1][2] == date(2026, 3, 1)
+    assert month_ideas_calls[0][1][2] == date(2026, 3, 1)
+    assert payload["operation_kind"] == "workflow.run.month"
+    assert payload["target_granularity"] == "month"
+    assert payload["target_period_start"] == "2026-03-01T00:00:00+00:00"
+    assert payload["target_period_end"] == "2026-04-01T00:00:00+00:00"
+    assert payload["requested_steps"] == [
+        "ingest",
+        "analyze",
+        "publish",
+        "trends:day",
+        "ideas:day",
+        "trends:week",
+        "ideas:week",
+        "trends:month",
+        "ideas:month",
+        "site-build",
+    ]
+    assert payload["executed_steps"] == payload["requested_steps"]
+    assert payload["skipped_steps"] == ["translate"]
+    assert fake_repo.finished == [("run-1", True, "succeeded_clean")]
+
+
+def test_run_now_aliases_run_day_for_today_utc(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
+            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+                _ = (input_dir, default_language_code, limit)
+                manifest_path = Path(output_dir) / "manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    encoding="utf-8",
+                )
+                return manifest_path
+
+            return _fake_site_build
+        return None
+
+    monkeypatch.setattr(workflow_cli, "_today_utc", lambda: date(2026, 3, 16))
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "now", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "run now"
+    assert payload["operation_kind"] == "workflow.run.day"
+    assert payload["target_granularity"] == "day"
+    assert payload["target_period_start"] == "2026-03-16T00:00:00+00:00"
+    assert payload["target_period_end"] == "2026-03-17T00:00:00+00:00"
+    assert payload["requested_steps"] == [
+        "ingest",
+        "analyze",
+        "publish",
+        "trends:day",
+        "ideas:day",
+        "site-build",
+    ]
+    assert payload["executed_steps"] == payload["requested_steps"]
+    assert len([call for call in fake_service.calls if call[0] == "prepare"]) == 1
+    assert len([call for call in fake_service.calls if call[0] == "trends"]) == 1
+    assert len([call for call in fake_service.calls if call[0] == "ideas"]) == 1
+    assert fake_service.calls[-2][1][2] == date(2026, 3, 16)
+    assert fake_service.calls[-1][1][2] == date(2026, 3, 16)
+
+
+def test_run_day_json_stdout_stays_machine_readable_when_steps_write_stdout(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path, localization=_FakeLocalization())
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.translation" and attr_name == "run_translation":
+            def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
+                _ = kwargs
+                print("TRANSLATION STDOUT NOISE")
+                return SimpleNamespace(
+                    scanned_total=2,
+                    translated_total=2,
+                    mirrored_total=0,
+                    skipped_total=0,
+                    failed_total=0,
+                    aborted=False,
+                    abort_reason=None,
+                )
+
+            return _fake_translate
+        if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
+            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+                _ = (input_dir, default_language_code, limit)
+                print("SITE BUILD STDOUT NOISE")
+                manifest_path = Path(output_dir) / "manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    encoding="utf-8",
+                )
+                return manifest_path
+
+            return _fake_site_build
+        return None
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["terminal_state"] == "succeeded_clean"
+    assert "TRANSLATION STDOUT NOISE" not in result.stdout
+    assert "SITE BUILD STDOUT NOISE" not in result.stdout
+    assert "TRANSLATION STDOUT NOISE" in result.stderr
+    assert "SITE BUILD STDOUT NOISE" in result.stderr
 
 
 def test_run_once_surfaces_v2_migration_error() -> None:
