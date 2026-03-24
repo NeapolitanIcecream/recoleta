@@ -735,43 +735,43 @@ def execute_granularity_workflow(
         log_module=f"cli.workflow.{workflow_name}",
     )
 
-    plan = _build_granularity_plan(
-        workflow_name=workflow_name,
-        command=command,
-        anchor_date=anchor_date,
-        settings=settings,
-        include_steps=include_steps,
-        skip_steps=skip_steps,
-    )
+    plan: WorkflowPlan | None = None
     billing_metrics_by_step: dict[str, list[Any]] = defaultdict(list)
     executed_steps: list[str] = []
     terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_CLEAN
     step_results: list[dict[str, Any]] = []
     analyze_limit = int(getattr(settings, "analyze_limit", 100) or 100)
     publish_limit = max(50, analyze_limit)
-    policy = settings.workflow_policy_for_granularity(plan.target_granularity or "day")
-    translate_granularities = _granularity_stack(
-        target_granularity=plan.target_granularity or "day",
-        recursive_lower_levels=bool(policy.recursive_lower_levels),
-    )
-
-    cli._update_run_context(
-        repository,
-        run_id=run_id,
-        command=command,
-        operation_kind=plan.operation_kind,
-        scope=None if cli._has_explicit_topic_streams(settings) else DEFAULT_TOPIC_STREAM,
-        granularity=plan.target_granularity,
-        period_start=plan.target_period_start,
-        period_end=plan.target_period_end,
-        target_granularity=plan.target_granularity,
-        target_period_start=plan.target_period_start,
-        target_period_end=plan.target_period_end,
-        requested_steps=plan.requested_steps,
-        skipped_steps=plan.skipped_steps,
-    )
 
     try:
+        plan = _build_granularity_plan(
+            workflow_name=workflow_name,
+            command=command,
+            anchor_date=anchor_date,
+            settings=settings,
+            include_steps=include_steps,
+            skip_steps=skip_steps,
+        )
+        policy = settings.workflow_policy_for_granularity(plan.target_granularity or "day")
+        translate_granularities = _granularity_stack(
+            target_granularity=plan.target_granularity or "day",
+            recursive_lower_levels=bool(policy.recursive_lower_levels),
+        )
+        cli._update_run_context(
+            repository,
+            run_id=run_id,
+            command=command,
+            operation_kind=plan.operation_kind,
+            scope=None if cli._has_explicit_topic_streams(settings) else DEFAULT_TOPIC_STREAM,
+            granularity=plan.target_granularity,
+            period_start=plan.target_period_start,
+            period_end=plan.target_period_end,
+            target_granularity=plan.target_granularity,
+            target_period_start=plan.target_period_start,
+            target_period_end=plan.target_period_end,
+            requested_steps=plan.requested_steps,
+            skipped_steps=plan.skipped_steps,
+        )
         previous_snapshot = _metric_snapshot(repository.list_metrics(run_id=run_id))
         with cli._graceful_shutdown_signals(), _stdout_guard(enabled=json_output):
             for invocation in plan.invocations:
@@ -893,6 +893,7 @@ def execute_granularity_workflow(
             log=log,
         )
 
+    assert plan is not None
     metrics = repository.list_metrics(run_id=run_id)
     billing = cli._billing_summary_payload(metrics)
     payload = {
@@ -961,26 +962,27 @@ def execute_deploy_workflow(
         log_module="cli.workflow.deploy",
     )
     _ = service
-    plan = _build_deploy_plan(
-        command=command,
-        settings=settings,
-        include_steps=include_steps,
-        skip_steps=skip_steps,
-    )
+    plan: WorkflowPlan | None = None
     billing_metrics_by_step: dict[str, list[Any]] = defaultdict(list)
     executed_steps: list[str] = []
     terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_CLEAN
     step_results: list[dict[str, Any]] = []
-    cli._update_run_context(
-        repository,
-        run_id=run_id,
-        command=command,
-        operation_kind=plan.operation_kind,
-        requested_steps=plan.requested_steps,
-        skipped_steps=plan.skipped_steps,
-    )
 
     try:
+        plan = _build_deploy_plan(
+            command=command,
+            settings=settings,
+            include_steps=include_steps,
+            skip_steps=skip_steps,
+        )
+        cli._update_run_context(
+            repository,
+            run_id=run_id,
+            command=command,
+            operation_kind=plan.operation_kind,
+            requested_steps=plan.requested_steps,
+            skipped_steps=plan.skipped_steps,
+        )
         previous_snapshot = _metric_snapshot(repository.list_metrics(run_id=run_id))
         with cli._graceful_shutdown_signals(), _stdout_guard(enabled=json_output):
             for invocation in plan.invocations:
@@ -1108,8 +1110,9 @@ def execute_deploy_workflow(
             log=log,
         )
 
+    assert plan is not None
     metrics = repository.list_metrics(run_id=run_id)
-    deploy_payload = next(
+    deploy_payload_candidate = next(
         (
             step_result.get("payload")
             for step_result in step_results
@@ -1117,6 +1120,11 @@ def execute_deploy_workflow(
             and isinstance(step_result.get("payload"), dict)
         ),
         {},
+    )
+    deploy_payload = (
+        deploy_payload_candidate
+        if isinstance(deploy_payload_candidate, dict)
+        else {}
     )
     payload = {
         "status": "ok",

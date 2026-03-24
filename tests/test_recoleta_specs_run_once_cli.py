@@ -764,6 +764,78 @@ def test_run_day_include_site_build_removes_reenabled_step_from_skipped_metadata
     assert payload["skipped_steps"] == ["translate"]
 
 
+def test_run_day_cleans_up_and_marks_failed_when_plan_building_fails(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    cleanup_calls: list[dict[str, object]] = []
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_cleanup_managed_run",
+        lambda **kwargs: cleanup_calls.append(dict(kwargs)),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "not-a-date"],
+    )
+
+    assert result.exit_code == 1
+    assert len(cleanup_calls) == 1
+    assert fake_repo.finished == [("run-1", False, "failed")]
+
+
+def test_run_deploy_cleans_up_and_marks_failed_when_plan_building_fails(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    cleanup_calls: list[dict[str, object]] = []
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_cleanup_managed_run",
+        lambda **kwargs: cleanup_calls.append(dict(kwargs)),
+    )
+
+    def _raise_plan_error(**kwargs):  # type: ignore[no-untyped-def]
+        _ = kwargs
+        raise ValueError("broken deploy plan")
+
+    monkeypatch.setattr(workflow_cli, "_build_deploy_plan", _raise_plan_error)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "deploy"],
+    )
+
+    assert result.exit_code == 1
+    assert len(cleanup_calls) == 1
+    assert fake_repo.finished == [("run-1", False, "failed")]
+
+
 def test_run_once_surfaces_v2_migration_error() -> None:
     runner = CliRunner()
 
