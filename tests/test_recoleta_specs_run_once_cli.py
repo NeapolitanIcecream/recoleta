@@ -674,6 +674,96 @@ def test_run_day_json_stdout_stays_machine_readable_when_steps_write_stdout(
     assert "SITE BUILD STDOUT NOISE" in result.stderr
 
 
+def test_run_day_include_publish_executes_publish_when_delivery_mode_is_none(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(
+        tmp_path=tmp_path,
+        workflows=_FakeWorkflows(day=_FakePolicy(delivery_mode="none", site_build=False)),
+    )
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--include", "publish", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    publish_calls = [call for call in fake_service.calls if call[0] == "publish"]
+    assert len(publish_calls) == 1
+    assert "publish" in payload["requested_steps"]
+    assert "publish" in payload["executed_steps"]
+    assert payload["skipped_steps"] == ["translate", "site-build"]
+    publish_step = next(
+        step for step in payload["steps"] if step["step_id"] == "publish"
+    )
+    assert publish_step["status"] == "ok"
+    assert publish_step["payload"] == {"sent": 1, "skipped": 0, "failed": 0}
+
+
+def test_run_day_include_site_build_removes_reenabled_step_from_skipped_metadata(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(
+        tmp_path=tmp_path,
+        workflows=_FakeWorkflows(day=_FakePolicy(site_build=False)),
+    )
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    site_build_calls: list[int] = []
+
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
+            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+                _ = (input_dir, default_language_code, limit)
+                site_build_calls.append(1)
+                manifest_path = Path(output_dir) / "manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    encoding="utf-8",
+                )
+                return manifest_path
+
+            return _fake_site_build
+        return None
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--include", "site-build", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert len(site_build_calls) == 1
+    assert "site-build" in payload["requested_steps"]
+    assert "site-build" in payload["executed_steps"]
+    assert payload["skipped_steps"] == ["translate"]
+
+
 def test_run_once_surfaces_v2_migration_error() -> None:
     runner = CliRunner()
 

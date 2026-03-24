@@ -353,10 +353,12 @@ def _build_granularity_plan(
         skipped.append(STEP_SITE_BUILD)
 
     requested_steps = _dedupe_preserve_order(requested_steps + include_steps)
+    skipped = [step_id for step_id in skipped if step_id not in requested_steps]
     for step_id in skip_steps:
         if step_id in requested_steps:
             requested_steps.remove(step_id)
         _append_unique(skipped, step_id)
+    skipped = [step_id for step_id in skipped if step_id not in requested_steps]
 
     invocations: list[WorkflowInvocation] = []
     if target_granularity == "day":
@@ -462,12 +464,14 @@ def _build_deploy_plan(
         skipped.append(STEP_SITE_BUILD)
     requested_steps.append(STEP_SITE_DEPLOY)
     requested_steps = _dedupe_preserve_order(requested_steps + include_steps)
+    skipped = [step_id for step_id in skipped if step_id not in requested_steps]
     for step_id in skip_steps:
         if step_id == STEP_SITE_DEPLOY:
             raise ValueError("deploy does not allow skipping site-deploy")
         if step_id in requested_steps:
             requested_steps.remove(step_id)
         _append_unique(skipped, step_id)
+    skipped = [step_id for step_id in skipped if step_id not in requested_steps]
     invocations = [WorkflowInvocation(step_id=step_id) for step_id in requested_steps]
     return WorkflowPlan(
         operation_kind="workflow.run.deploy",
@@ -592,6 +596,7 @@ def _execute_invocation(
     translate_include: list[str],
     translate_granularities: list[str] | None,
     delivery_mode: str | None,
+    publish_requested_explicitly: bool,
     analyze_limit: int | None,
     publish_limit: int,
     repo_dir: Path | None,
@@ -624,6 +629,8 @@ def _execute_invocation(
         return {"processed": int(getattr(result, "processed", 0) or 0), "failed": int(getattr(result, "failed", 0) or 0)}
     if step_id == STEP_PUBLISH:
         normalized_delivery_mode = str(delivery_mode or "").strip().lower() or "all"
+        if normalized_delivery_mode == "none" and publish_requested_explicitly:
+            normalized_delivery_mode = "all"
         if normalized_delivery_mode == "none":
             return {"status": "skipped", "reason": "delivery_mode=none"}
         with _delivery_mode_override(settings=settings, delivery_mode=normalized_delivery_mode):
@@ -780,6 +787,7 @@ def execute_granularity_workflow(
                         translate_include=list(policy.translate_include),
                         translate_granularities=translate_granularities,
                         delivery_mode=policy.delivery_mode,
+                        publish_requested_explicitly=STEP_PUBLISH in include_steps,
                         analyze_limit=analyze_limit,
                         publish_limit=publish_limit,
                         repo_dir=None,
