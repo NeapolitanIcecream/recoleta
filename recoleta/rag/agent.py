@@ -4,6 +4,8 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from threading import Event, Thread
+import time
 from typing import Any
 
 from loguru import logger
@@ -76,6 +78,7 @@ _RAW_TOOL_TRACE_MAX_EVENTS = 64
 _RAW_TOOL_TRACE_MAX_ITEMS = 12
 _RAW_TOOL_TRACE_MAX_DEPTH = 4
 _RAW_TOOL_TRACE_MAX_TEXT_CHARS = 600
+_TREND_AGENT_HEARTBEAT_INTERVAL_SECONDS = 15.0
 _INLINE_SUMMARY_SECTION_RE = re.compile(
     r"(?is)(summary|problem|approach|results)\s*[:：]\s*(.*?)(?=(summary|problem|approach|results)\s*[:：]|$)"
 )
@@ -856,6 +859,55 @@ def _estimate_cost_usd_from_tokens(
     )
 
 
+def _record_metric(
+    *,
+    repository: TrendRepositoryPort,
+    run_id: str,
+    metric_namespace: str,
+    name: str,
+    value: float,
+    unit: str | None = None,
+) -> None:
+    repository.record_metric(
+        run_id=run_id,
+        name=f"{metric_namespace}.{name}",
+        value=value,
+        unit=unit,
+    )
+
+
+def _start_trend_generation_heartbeat(
+    *,
+    log: Any,
+    granularity: str,
+    scope: str,
+    prompt_chars: int,
+) -> tuple[Event, Thread]:
+    stop_event = Event()
+    started = time.perf_counter()
+    interval_seconds = max(0.01, float(_TREND_AGENT_HEARTBEAT_INTERVAL_SECONDS))
+
+    def _heartbeat() -> None:
+        while not stop_event.wait(timeout=interval_seconds):
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            log.info(
+                "Trend generation heartbeat granularity={} scope={} elapsed_ms={} prompt_chars={} tool_calls_observed_total={}",
+                granularity,
+                scope,
+                elapsed_ms,
+                prompt_chars,
+                0,
+            )
+
+    thread = Thread(
+        target=_heartbeat,
+        name=f"recoleta-trend-heartbeat-{granularity}-{scope or 'default'}",
+        daemon=True,
+    )
+    thread.start()
+    return stop_event, thread
+
+
 def build_trend_prompt_payload(
     *,
     granularity: str,
@@ -1000,8 +1052,72 @@ def generate_trend_payload(
         ensure_ascii=False,
         separators=(",", ":"),
     )
-
-    result = agent.run_sync(prompt, deps=deps)
+    prompt_chars = len(prompt)
+    log.info(
+        "Trend generation started granularity={} scope={} prompt_chars={} corpus_doc_type={} corpus_granularity={}",
+        granularity,
+        scope,
+        prompt_chars,
+        corpus_doc_type,
+        corpus_granularity or "-",
+    )
+    agent_started = time.perf_counter()
+    stop_event, heartbeat_thread = _start_trend_generation_heartbeat(
+        log=log,
+        granularity=granularity,
+        scope=scope,
+        prompt_chars=prompt_chars,
+    )
+    try:
+        result = agent.run_sync(prompt, deps=deps)
+    except Exception as exc:  # noqa: BLE001
+        agent_duration_ms = int((time.perf_counter() - agent_started) * 1000)
+        _record_metric(
+            repository=repository,
+            run_id=run_id,
+            metric_namespace=metric_namespace,
+            name="agent_run_sync.duration_ms",
+            value=agent_duration_ms,
+            unit="ms",
+        )
+        _record_metric(
+            repository=repository,
+            run_id=run_id,
+            metric_namespace=metric_namespace,
+            name="agent_run_sync.failed_total",
+            value=1,
+            unit="count",
+        )
+        log.warning(
+            "Trend generation failed granularity={} scope={} elapsed_ms={} prompt_chars={} error_type={} error={}",
+            granularity,
+            scope,
+            agent_duration_ms,
+            prompt_chars,
+            type(exc).__name__,
+            str(exc),
+        )
+        raise
+    finally:
+        stop_event.set()
+        heartbeat_thread.join(timeout=1.0)
+    agent_duration_ms = int((time.perf_counter() - agent_started) * 1000)
+    _record_metric(
+        repository=repository,
+        run_id=run_id,
+        metric_namespace=metric_namespace,
+        name="agent_run_sync.duration_ms",
+        value=agent_duration_ms,
+        unit="ms",
+    )
+    _record_metric(
+        repository=repository,
+        run_id=run_id,
+        metric_namespace=metric_namespace,
+        name="agent_run_sync.failed_total",
+        value=0,
+        unit="count",
+    )
     payload = result.output
     rep_doc_type_candidate = str(rep_source_doc_type or "").strip().lower()
     rep_doc_type = (
@@ -1009,6 +1125,7 @@ def generate_trend_payload(
         if rep_doc_type_candidate in {"item", "trend"}
         else "item"
     )
+    rep_backfill_started = time.perf_counter()
     rep_stats = ensure_trend_cluster_representatives(
         payload=payload,
         search=lambda q, n: [
@@ -1038,6 +1155,24 @@ def generate_trend_payload(
             )
         ],
         max_reps=6,
+    )
+    rep_backfill_duration_ms = int((time.perf_counter() - rep_backfill_started) * 1000)
+    _record_metric(
+        repository=repository,
+        run_id=run_id,
+        metric_namespace=metric_namespace,
+        name="rep_backfill.duration_ms",
+        value=rep_backfill_duration_ms,
+        unit="ms",
+    )
+    log.info(
+        "Trend representative backfill done granularity={} scope={} duration_ms={} clusters_backfilled_total={} invalid_reps_dropped_total={} reps_backfilled_total={}",
+        granularity,
+        scope,
+        rep_backfill_duration_ms,
+        int(rep_stats.get("clusters_backfilled_total") or 0),
+        int(rep_stats.get("invalid_reps_dropped_total") or 0),
+        int(rep_stats.get("reps_backfilled_total") or 0),
     )
     if rep_stats.get("invalid_reps_dropped_total", 0) or rep_stats.get(
         "clusters_backfilled_total", 0
@@ -1083,13 +1218,17 @@ def generate_trend_payload(
         "tool_calls_total": tool_calls_total,
         "tool_call_breakdown": tool_call_breakdown,
         "raw_tool_trace": _extract_raw_tool_trace(messages),
-        "prompt_chars": len(prompt),
+        "prompt_chars": prompt_chars,
         "overview_pack_chars": len(str(overview_pack_md or "")),
         "history_pack_chars": len(str(history_pack_md or "")),
     }
     log.info(
-        "Trend generation done include_debug={} cost_present={}",
+        "Trend generation done granularity={} scope={} elapsed_ms={} include_debug={} cost_present={} tool_calls_total={}",
+        granularity,
+        scope,
+        agent_duration_ms,
         bool(include_debug),
         estimated_cost_usd is not None,
+        tool_calls_total,
     )
     return payload, debug

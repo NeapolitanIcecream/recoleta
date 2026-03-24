@@ -175,6 +175,11 @@ def run_trends_stage(
             unit=unit,
         )
 
+    def record_duration_metric(*, name: str, started_at: float) -> int:
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        record_metric(name=name, value=duration_ms, unit="ms")
+        return duration_ms
+
     try:
         include_debug = bool(
             service.settings.write_debug_artifacts
@@ -407,7 +412,25 @@ def run_trends_stage(
                         backfill_missing_total += 1
                     if normalized_backfill_mode == "missing" and not is_missing:
                         backfill_skipped_total += 1
+                        log.info(
+                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
+                            scope,
+                            day.isoformat(),
+                            offset + 1,
+                            backfill_days_total,
+                            "probe_existing",
+                            "skip_existing",
+                        )
                         continue
+                    log.info(
+                        "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
+                        scope,
+                        day.isoformat(),
+                        offset + 1,
+                        backfill_days_total,
+                        "generate_day_trend",
+                        "start",
+                    )
                     try:
                         _ = run_trends_stage(
                             service,
@@ -421,6 +444,15 @@ def run_trends_stage(
                             reuse_existing_corpus=reuse_existing_corpus,
                         )
                         backfill_generated_total += 1
+                        log.info(
+                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
+                            scope,
+                            day.isoformat(),
+                            offset + 1,
+                            backfill_days_total,
+                            "generate_day_trend",
+                            "done",
+                        )
                     except Exception as day_exc:  # noqa: BLE001
                         backfill_failed_total += 1
                         log.warning(
@@ -451,8 +483,26 @@ def run_trends_stage(
                         backfill_missing_total += 1
                     if normalized_backfill_mode == "missing" and not is_missing:
                         backfill_skipped_total += 1
+                        log.info(
+                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
+                            scope,
+                            week_start.date().isoformat(),
+                            backfill_days_total,
+                            "-",
+                            "probe_existing",
+                            "skip_existing",
+                        )
                         cursor = (week_start + timedelta(days=7)).date()
                         continue
+                    log.info(
+                        "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
+                        scope,
+                        week_start.date().isoformat(),
+                        backfill_days_total,
+                        "-",
+                        "generate_week_trend",
+                        "start",
+                    )
                     try:
                         _ = run_trends_stage(
                             service,
@@ -466,6 +516,15 @@ def run_trends_stage(
                             reuse_existing_corpus=reuse_existing_corpus,
                         )
                         backfill_generated_total += 1
+                        log.info(
+                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
+                            scope,
+                            week_start.date().isoformat(),
+                            backfill_days_total,
+                            "-",
+                            "generate_week_trend",
+                            "done",
+                        )
                     except Exception as week_exc:  # noqa: BLE001
                         backfill_failed_total += 1
                         log.warning(
@@ -627,6 +686,14 @@ def run_trends_stage(
                     ),
                 )
             if self_similar_enabled and plan is not None:
+                overview_pack_started = time.perf_counter()
+                log.info(
+                    "Trends overview pack building scope={} granularity={} strategy={}",
+                    scope,
+                    normalized_granularity,
+                    str(getattr(plan, "overview_pack_strategy", "") or "").strip()
+                    or "-",
+                )
                 overview_pack_md, pack_stats = trends.build_overview_pack_md(
                     cast(Any, service.repository),
                     plan,
@@ -651,12 +718,24 @@ def run_trends_stage(
                     ),
                     scope=scope,
                 )
+                overview_pack_duration_ms = record_duration_metric(
+                    name="pipeline.trends.overview_pack.duration_ms",
+                    started_at=overview_pack_started,
+                )
                 overview_pack_stats = pack_stats
                 rag_sources = list(getattr(plan, "rag_sources", []) or [])
                 ranking_n = int(getattr(service.settings, "trends_ranking_n", 10) or 10)
                 rep_source_doc_type = str(
                     getattr(plan, "rep_source_doc_type", "item") or "item"
                 ).strip()
+                log.info(
+                    "Trends overview pack built scope={} granularity={} duration_ms={} chars={} truncated={}",
+                    scope,
+                    normalized_granularity,
+                    overview_pack_duration_ms,
+                    len(str(overview_pack_md or "")),
+                    bool(isinstance(pack_stats, dict) and pack_stats.get("truncated")),
+                )
                 if isinstance(pack_stats, dict) and bool(pack_stats.get("truncated")):
                     record_metric(
                         name="pipeline.trends.overview_pack.truncated_total",
@@ -664,6 +743,13 @@ def run_trends_stage(
                         unit="count",
                     )
             if peer_history_enabled and plan is not None:
+                history_pack_started = time.perf_counter()
+                log.info(
+                    "Trends history pack building scope={} granularity={} window_count={}",
+                    scope,
+                    normalized_granularity,
+                    int(getattr(plan, "peer_history_window_count", 0) or 0),
+                )
                 history_pack_md, history_pack_stats = trends.build_history_pack_md(
                     cast(Any, service.repository),
                     plan,
@@ -676,6 +762,19 @@ def run_trends_stage(
                         or 6000
                     ),
                     scope=scope,
+                )
+                history_pack_duration_ms = record_duration_metric(
+                    name="pipeline.trends.history.pack.duration_ms",
+                    started_at=history_pack_started,
+                )
+                log.info(
+                    "Trends history pack built scope={} granularity={} duration_ms={} chars={} available_windows={} missing_windows={}",
+                    scope,
+                    normalized_granularity,
+                    history_pack_duration_ms,
+                    len(str(history_pack_md or "")),
+                    int(history_pack_stats.get("available_windows") or 0),
+                    int(history_pack_stats.get("missing_windows") or 0),
                 )
                 record_metric(
                     name="pipeline.trends.history.windows_requested",
@@ -697,10 +796,20 @@ def run_trends_stage(
                         name="pipeline.trends.history.pack.truncated_total",
                         value=1,
                         unit="count",
-                    )
+                )
                 evolution_max_signals = int(
                     getattr(service.settings, "trends_evolution_max_signals", 5) or 5
                 )
+            log.info(
+                "Trends synthesis starting scope={} granularity={} corpus_doc_type={} corpus_docs_total={} overview_pack_chars={} history_pack_chars={}",
+                scope,
+                normalized_granularity,
+                corpus_doc_type,
+                corpus_docs_total,
+                len(str(overview_pack_md or "")),
+                len(str(history_pack_md or "")),
+            )
+            generate_started = time.perf_counter()
             payload, debug = trends.generate_trend_via_tools(
                 repository=cast(Any, service.repository),
                 run_id=run_id,
@@ -732,6 +841,17 @@ def run_trends_stage(
                 scope=scope,
                 metric_namespace=metric_namespace,
                 llm_connection=service._llm_connection,
+            )
+            generate_duration_ms = record_duration_metric(
+                name="pipeline.trends.generate.duration_ms",
+                started_at=generate_started,
+            )
+            log.info(
+                "Trends synthesis completed scope={} granularity={} duration_ms={} tool_calls_total={}",
+                scope,
+                normalized_granularity,
+                generate_duration_ms,
+                int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0,
             )
             if payload.evolution is not None and plan is not None:
                 available_window_ids = set()

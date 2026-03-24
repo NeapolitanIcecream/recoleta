@@ -41,6 +41,7 @@ class SchemaStoreMixin:
         self._migrate_documents_add_scope()
         self._migrate_runs_add_heartbeat()
         self._migrate_runs_add_context()
+        self._migrate_runs_add_workflow_metadata()
         self._migrate_artifacts_add_details_json()
 
     def _get_user_version(self) -> int:
@@ -239,6 +240,66 @@ class SchemaStoreMixin:
         ]
         with self.engine.begin() as conn:
             for statement in ddl:
+                conn.execute(text(statement))
+
+    def _migrate_runs_add_workflow_metadata(self) -> None:
+        columns = self._table_columns("runs")
+        if not columns:
+            return
+
+        ddl: list[str] = []
+        index_ddl: list[str] = []
+        if "operation_kind" not in columns:
+            ddl.append(
+                "ALTER TABLE runs ADD COLUMN operation_kind VARCHAR(64);"
+            )
+            index_ddl.append(
+                "CREATE INDEX IF NOT EXISTS ix_runs_operation_kind ON runs (operation_kind);"
+            )
+        if "target_granularity" not in columns:
+            ddl.append(
+                "ALTER TABLE runs ADD COLUMN target_granularity VARCHAR(16);"
+            )
+            index_ddl.append(
+                "CREATE INDEX IF NOT EXISTS ix_runs_target_granularity ON runs (target_granularity);"
+            )
+        if "target_period_start" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN target_period_start DATETIME;")
+            index_ddl.append(
+                "CREATE INDEX IF NOT EXISTS ix_runs_target_period_start ON runs (target_period_start);"
+            )
+        if "target_period_end" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN target_period_end DATETIME;")
+            index_ddl.append(
+                "CREATE INDEX IF NOT EXISTS ix_runs_target_period_end ON runs (target_period_end);"
+            )
+        if "requested_steps_json" not in columns:
+            ddl.append(
+                "ALTER TABLE runs ADD COLUMN requested_steps_json TEXT NOT NULL DEFAULT '[]';"
+            )
+        if "executed_steps_json" not in columns:
+            ddl.append(
+                "ALTER TABLE runs ADD COLUMN executed_steps_json TEXT NOT NULL DEFAULT '[]';"
+            )
+        if "skipped_steps_json" not in columns:
+            ddl.append(
+                "ALTER TABLE runs ADD COLUMN skipped_steps_json TEXT NOT NULL DEFAULT '[]';"
+            )
+        if "billing_by_step_json" not in columns:
+            ddl.append(
+                "ALTER TABLE runs ADD COLUMN billing_by_step_json TEXT NOT NULL DEFAULT '{}';"
+            )
+        if "terminal_state" not in columns:
+            ddl.append("ALTER TABLE runs ADD COLUMN terminal_state VARCHAR(32);")
+            index_ddl.append(
+                "CREATE INDEX IF NOT EXISTS ix_runs_terminal_state ON runs (terminal_state);"
+            )
+
+        if not ddl and not index_ddl:
+            return
+
+        with self.engine.begin() as conn:
+            for statement in ddl + index_ddl:
                 conn.execute(text(statement))
 
     def _migrate_runs_add_heartbeat(self) -> None:

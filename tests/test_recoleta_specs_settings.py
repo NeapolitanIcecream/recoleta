@@ -481,3 +481,80 @@ def test_settings_requires_artifacts_dir_when_debug_artifacts_enabled(
 
     with pytest.raises(ValueError, match=r"ARTIFACTS_DIR.*WRITE_DEBUG_ARTIFACTS"):
         Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_loads_workflow_and_daemon_configuration_from_config_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                "WORKFLOWS:",
+                "  granularities:",
+                "    default:",
+                "      recursive_lower_levels: true",
+                "      delivery_mode: all",
+                "      translation: auto",
+                "      translate_include: [items, trends, ideas]",
+                "      site_build: true",
+                "      on_translate_failure: partial_success",
+                "    week:",
+                "      site_build: false",
+                "  deploy:",
+                '    translation: "off"',
+                "DAEMON:",
+                "  schedules:",
+                "    - workflow: day",
+                "      interval_minutes: 60",
+                "    - workflow: week",
+                "      weekday: mon",
+                "      hour_utc: 2",
+                "      minute_utc: 0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    week_policy = settings.workflow_policy_for_granularity("week")
+    assert week_policy.site_build is False
+    assert week_policy.delivery_mode == "all"
+    assert settings.workflows.deploy.translation == "off"
+    assert len(settings.daemon.schedules) == 2
+    assert settings.daemon.schedules[0].workflow == "day"
+    assert settings.daemon.schedules[1].weekday == "mon"
+
+
+def test_settings_rejects_invalid_daemon_schedule_shape(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                "DAEMON:",
+                "  schedules:",
+                "    - workflow: day",
+                "      interval_minutes: 60",
+                "      weekday: mon",
+                "      hour_utc: 2",
+                "      minute_utc: 0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    with pytest.raises(ValueError, match="either interval_minutes or weekday/hour_utc/minute_utc"):
+        Settings()  # pyright: ignore[reportCallIssue]

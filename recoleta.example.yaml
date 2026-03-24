@@ -196,11 +196,38 @@ sources:
 # analyze_write_batch_size: 32  # Default: 32
 # analyze_content_max_chars: 32768  # Default: 32768 (set 0 to disable truncation)
 
-## Scheduling (used only by `recoleta run`)
+## Workflow policy and daemon schedules
 
-# ingest_interval_minutes: 60  # Default: 60
-# analyze_interval_minutes: 120  # Default: 120
-# publish_interval_minutes: 120  # Default: 120
+# workflows:
+#   granularities:
+#     default:
+#       recursive_lower_levels: true  # Default: true
+#       delivery_mode: all  # Allowed: all, local_only, none
+#       translation: auto  # Allowed: auto, off
+#       translate_include: [items, trends, ideas]
+#       site_build: true
+#       on_translate_failure: partial_success  # Allowed: fail, partial_success, skip
+#     day: {}
+#     week: {}
+#     month: {}
+#   deploy:
+#     translation: auto
+#     translate_include: [items, trends, ideas]
+#     site_build: true
+#     on_translate_failure: partial_success
+#
+# daemon:
+#   schedules:
+#     - workflow: day
+#       interval_minutes: 60
+#     - workflow: week
+#       weekday: mon
+#       hour_utc: 2
+#       minute_utc: 0
+#     - workflow: deploy
+#       weekday: mon
+#       hour_utc: 2
+#       minute_utc: 30
 
 ## Logging and diagnostics
 

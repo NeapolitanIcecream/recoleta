@@ -380,11 +380,11 @@ def test_ingest_cli_exits_when_workspace_lock_is_held(
 @pytest.mark.parametrize(
     ("argv", "command_name"),
     [
-        (["materialize", "outputs"], "materialize outputs"),
+        (["repair", "outputs"], "repair outputs"),
         (["site", "build"], "site build"),
         (["site", "stage"], "site stage"),
         (["site", "serve", "--port", "8765"], "site serve"),
-        (["site", "gh-deploy", "--pages-config", "never"], "site gh-deploy"),
+        (["run", "deploy"], "run deploy"),
     ],
 )
 def test_site_cli_defaults_exit_when_workspace_lock_is_held(

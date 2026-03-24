@@ -283,7 +283,7 @@ def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
     result = runner.invoke(
         recoleta.cli.app,
         [
-            "materialize",
+            "repair",
             "outputs",
             "--db-path",
             str(repository.db_path),
@@ -294,7 +294,7 @@ def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
     )
 
     assert result.exit_code == 0
-    assert "materialize outputs completed" in result.stdout
+    assert "repair outputs completed" in result.stdout
     assert len(pdf_calls) == 1
     assert pdf_calls[0].name == f"day--2026-03-02--trend--{trend_doc_id}.md"
     assert (output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.pdf").exists()
@@ -312,7 +312,7 @@ def test_materialize_outputs_cli_emits_json_summary(
     result = runner.invoke(
         recoleta.cli.app,
         [
-            "materialize",
+            "repair",
             "outputs",
             "--db-path",
             str(repository.db_path),
@@ -326,7 +326,7 @@ def test_materialize_outputs_cli_emits_json_summary(
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["command"] == "materialize outputs"
+    assert payload["command"] == "repair outputs"
     assert payload["totals"]["scopes"] == 1
     assert payload["totals"]["items"] == 1
     assert payload["totals"]["trends"] == 1
@@ -1060,7 +1060,7 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
     result = runner.invoke(
         recoleta.cli.app,
         [
-            "materialize",
+            "repair",
             "outputs",
             "--config-path",
             str(config_path),
@@ -1070,6 +1070,6 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
     )
 
     assert result.exit_code == 0
-    assert "materialize outputs completed" in result.stdout
+    assert "repair outputs completed" in result.stdout
     assert "obsidian=3" in result.stdout
     assert (vault_path / "Recoleta" / "Ideas" / "day--2026-03-02--ideas.md").exists()
