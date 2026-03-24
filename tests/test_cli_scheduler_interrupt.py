@@ -49,15 +49,18 @@ class _SigtermScheduler(_FakeScheduler):
 def _install_scheduler_double(
     monkeypatch,
     scheduler_cls: type[_FakeScheduler],
+    *,
+    schedules: list[SimpleNamespace] | None = None,
 ) -> None:
+    resolved_schedules = schedules or [
+        SimpleNamespace(workflow="day", interval_minutes=60, weekday=None, hour_utc=None, minute_utc=None),
+        SimpleNamespace(workflow="week", interval_minutes=None, weekday="mon", hour_utc=2, minute_utc=0),
+        SimpleNamespace(workflow="deploy", interval_minutes=None, weekday="mon", hour_utc=2, minute_utc=30),
+    ]
     settings = SimpleNamespace(
         log_json=False,
         daemon=SimpleNamespace(
-            schedules=[
-                SimpleNamespace(workflow="day", interval_minutes=60, weekday=None, hour_utc=None, minute_utc=None),
-                SimpleNamespace(workflow="week", interval_minutes=None, weekday="mon", hour_utc=2, minute_utc=0),
-                SimpleNamespace(workflow="deploy", interval_minutes=None, weekday="mon", hour_utc=2, minute_utc=30),
-            ]
+            schedules=resolved_schedules
         ),
     )
     monkeypatch.setattr(cli, "_build_settings", lambda: settings, raising=True)
@@ -85,11 +88,35 @@ def test_daemon_start_shuts_down_cleanly_on_keyboard_interrupt(monkeypatch) -> N
     scheduler = _FakeScheduler.latest
     assert scheduler is not None
     assert scheduler.jobs == [
-        ("workflow:day", "interval", {"minutes": 60}),
-        ("workflow:week", "cron", {"day_of_week": "mon", "hour": 2, "minute": 0}),
-        ("workflow:deploy", "cron", {"day_of_week": "mon", "hour": 2, "minute": 30}),
+        ("workflow:day:interval:60:0", "interval", {"minutes": 60}),
+        ("workflow:week:cron:mon:2:0:1", "cron", {"day_of_week": "mon", "hour": 2, "minute": 0}),
+        ("workflow:deploy:cron:mon:2:30:2", "cron", {"day_of_week": "mon", "hour": 2, "minute": 30}),
     ]
     assert scheduler.shutdown_wait == [True]
+
+
+def test_daemon_start_keeps_multiple_schedule_entries_for_same_workflow(monkeypatch) -> None:
+    _FakeScheduler.latest = None
+    _install_scheduler_double(
+        monkeypatch,
+        _FakeScheduler,
+        schedules=[
+            SimpleNamespace(workflow="day", interval_minutes=60, weekday=None, hour_utc=None, minute_utc=None),
+            SimpleNamespace(workflow="day", interval_minutes=None, weekday="mon", hour_utc=2, minute_utc=0),
+        ],
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["daemon", "start"])
+
+    assert result.exit_code == 130
+    scheduler = _FakeScheduler.latest
+    assert scheduler is not None
+    assert scheduler.jobs == [
+        ("workflow:day:interval:60:0", "interval", {"minutes": 60}),
+        ("workflow:day:cron:mon:2:0:1", "cron", {"day_of_week": "mon", "hour": 2, "minute": 0}),
+    ]
+    assert len({job[0] for job in scheduler.jobs}) == 2
 
 
 def test_daemon_start_preserves_sigterm_exit_code(monkeypatch) -> None:

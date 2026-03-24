@@ -1162,8 +1162,18 @@ def run_daemon_start_command() -> None:
         job_defaults={"coalesce": True, "max_instances": 1},
     )
 
-    for schedule in list(getattr(settings.daemon, "schedules", []) or []):
+    for schedule_index, schedule in enumerate(list(getattr(settings.daemon, "schedules", []) or [])):
         workflow_name = str(getattr(schedule, "workflow", "") or "").strip().lower()
+        if getattr(schedule, "interval_minutes", None) is not None:
+            job_id = (
+                f"workflow:{workflow_name}:interval:{int(schedule.interval_minutes)}:{schedule_index}"
+            )
+        else:
+            job_id = (
+                "workflow:"
+                f"{workflow_name}:cron:{str(schedule.weekday)}:"
+                f"{int(schedule.hour_utc)}:{int(schedule.minute_utc)}:{schedule_index}"
+            )
 
         def _run_scheduled_workflow(name: str = workflow_name) -> None:
             if name in {"now", "day", "week", "month"}:
@@ -1182,7 +1192,7 @@ def run_daemon_start_command() -> None:
                 _run_scheduled_workflow,
                 "interval",
                 minutes=int(schedule.interval_minutes),
-                id=f"workflow:{workflow_name}",
+                id=job_id,
                 replace_existing=True,
             )
             continue
@@ -1192,7 +1202,7 @@ def run_daemon_start_command() -> None:
             day_of_week=str(schedule.weekday),
             hour=int(schedule.hour_utc),
             minute=int(schedule.minute_utc),
-            id=f"workflow:{workflow_name}",
+            id=job_id,
             replace_existing=True,
         )
 

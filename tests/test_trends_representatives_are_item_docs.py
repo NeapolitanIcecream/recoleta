@@ -198,9 +198,17 @@ def test_generate_trend_payload_rep_backfill_uses_item_doc_type_by_default(
         lambda *, llm_model, output_language=None: _FakeAgent(_make_payload()),  # noqa: ARG005
     )
 
+    class _MetricSink:
+        def __init__(self) -> None:
+            self.metrics: list[dict[str, Any]] = []
+
+        def record_metric(self, **kwargs: Any) -> None:
+            self.metrics.append(dict(kwargs))
+
+    repository = _MetricSink()
     generate_any = cast(Any, rag_agent.generate_trend_payload)
     payload, _ = generate_any(
-        repository=object(),  # only passed through to the patched semantic search
+        repository=repository,
         vector_store=object(),  # only passed through to the patched semantic search
         run_id="run-agent-rep-doc-type",
         llm_model="test/fake-model",
@@ -224,11 +232,12 @@ def test_generate_trend_payload_rep_backfill_uses_item_doc_type_by_default(
     )
     assert payload.title
     assert seen and seen[-1] == "item"
+    assert repository.metrics
 
     # If rep_source_doc_type is provided, it should override the default.
     seen.clear()
     _ = generate_any(
-        repository=object(),
+        repository=repository,
         vector_store=object(),
         run_id="run-agent-rep-doc-type-override",
         llm_model="test/fake-model",
