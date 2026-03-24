@@ -10,6 +10,9 @@ from recoleta.types import utc_now
 RUN_STATUS_RUNNING = "running"
 RUN_STATUS_SUCCEEDED = "succeeded"
 RUN_STATUS_FAILED = "failed"
+RUN_TERMINAL_STATE_SUCCEEDED_CLEAN = "succeeded_clean"
+RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL = "succeeded_partial"
+RUN_TERMINAL_STATE_FAILED = "failed"
 
 ITEM_STATE_INGESTED = "ingested"
 ITEM_STATE_ENRICHED = "enriched"
@@ -37,10 +40,19 @@ class Run(SQLModel, table=True):
     finished_at: datetime | None = None
     status: str = Field(default=RUN_STATUS_RUNNING, max_length=24, index=True)
     command: str | None = Field(default=None, max_length=128, index=True)
+    operation_kind: str | None = Field(default=None, max_length=64, index=True)
     scope: str | None = Field(default=None, max_length=64, index=True)
     granularity: str | None = Field(default=None, max_length=16, index=True)
     period_start: datetime | None = Field(default=None, index=True)
     period_end: datetime | None = Field(default=None, index=True)
+    target_granularity: str | None = Field(default=None, max_length=16, index=True)
+    target_period_start: datetime | None = Field(default=None, index=True)
+    target_period_end: datetime | None = Field(default=None, index=True)
+    requested_steps_json: str = Field(default="[]", sa_type=Text)
+    executed_steps_json: str = Field(default="[]", sa_type=Text)
+    skipped_steps_json: str = Field(default="[]", sa_type=Text)
+    billing_by_step_json: str = Field(default="{}", sa_type=Text)
+    terminal_state: str | None = Field(default=None, max_length=32, index=True)
     config_fingerprint: str = Field(max_length=128)
 
 

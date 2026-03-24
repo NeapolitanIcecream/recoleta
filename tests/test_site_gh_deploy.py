@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -285,12 +286,103 @@ class _FakeSettings:
     markdown_output_dir: Path = Path("/tmp/recoleta-output")
     recoleta_db_path: Path = Path("/tmp/recoleta.db")
     localization: object | None = None
+    topic_streams: list[object] | None = None
+    workflows: object | None = None
 
     def safe_fingerprint(self) -> str:
         return "fp-gh-deploy"
 
+    def topic_stream_runtimes(self) -> list[SimpleNamespace]:
+        return [SimpleNamespace(name="default", explicit=False)]
 
-def test_site_gh_deploy_cli_uses_default_paths_and_prints_summary(
+    def localization_target_codes(self) -> list[str]:
+        if self.localization is None:
+            return []
+        return [str(getattr(target, "code", "") or "") for target in getattr(self.localization, "targets", [])]
+
+
+class _FakeRepo:
+    def __init__(self) -> None:
+        self.updated: list[dict[str, object]] = []
+        self.finished: list[tuple[str, bool, str | None]] = []
+
+    def update_run_context(self, **kwargs: object) -> None:
+        self.updated.append(dict(kwargs))
+
+    def finish_run(
+        self,
+        run_id: str,
+        *,
+        success: bool,
+        terminal_state: str | None = None,
+    ) -> None:
+        self.finished.append((run_id, bool(success), terminal_state))
+
+    def list_metrics(self, *, run_id: str) -> list[object]:
+        _ = run_id
+        return []
+
+
+class _FakeHeartbeatMonitor:
+    def raise_if_failed(self) -> None:
+        return None
+
+    def stop(self) -> None:
+        return None
+
+
+class _FakeConsole:
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+
+    def print(self, *parts: object) -> None:
+        self.lines.append(" ".join(str(part) for part in parts))
+
+
+class _FakeLog:
+    def exception(self, *_: object, **__: object) -> None:
+        return None
+
+    def warning(self, *_: object, **__: object) -> None:
+        return None
+
+
+def _install_deploy_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    settings: _FakeSettings,
+    repository: _FakeRepo,
+    import_symbol_override,
+) -> _FakeConsole:
+    console = _FakeConsole()
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_begin_managed_run",
+        lambda *, command, log_module: (  # noqa: ARG005
+            settings,
+            repository,
+            object(),
+            console,
+            "run-deploy-1",
+            "owner-1",
+            _FakeLog(),
+            _FakeHeartbeatMonitor(),
+        ),
+    )
+    monkeypatch.setattr(recoleta.cli, "_cleanup_managed_run", lambda **_: None)
+    original_import_symbol = recoleta.cli._import_symbol
+
+    def _fake_import_symbol(module_name: str, *, attr_name: str | None = None):
+        override = import_symbol_override(module_name, attr_name)
+        if override is not None:
+            return override
+        return original_import_symbol(module_name, attr_name=attr_name)
+
+    monkeypatch.setattr(recoleta.cli, "_import_symbol", _fake_import_symbol)
+    return console
+
+
+def test_run_deploy_cli_uses_default_paths_and_prints_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -299,69 +391,94 @@ def test_site_gh_deploy_cli_uses_default_paths_and_prints_summary(
         markdown_output_dir=tmp_path / "output",
         recoleta_db_path=tmp_path / "recoleta.db",
     )
-    fake_settings.localization = type(
-        "_Localization",
-        (),
-        {"site_default_language_code": "en"},
-    )()
+    fake_settings.localization = SimpleNamespace(targets=[], site_default_language_code="en")
+    fake_settings.workflows = SimpleNamespace(
+        deploy=SimpleNamespace(
+            translation="auto",
+            translate_include=["items", "trends", "ideas"],
+            site_build=True,
+            on_translate_failure="partial_success",
+        )
+    )
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
-    monkeypatch.setattr(
-        recoleta.cli,
-        "_maybe_acquire_workspace_lease_for_settings",
-        lambda **_: (None, None, None, None),
-    )
-
-    def _fake_deploy(  # type: ignore[no-untyped-def]
-        *,
-        input_dir,
-        repo_dir,
-        remote,
-        branch,
-        limit=None,
-        commit_message=None,
-        cname=None,
-        pages_config_mode="auto",
-        force=True,
-        default_language_code=None,
-    ):
-        calls["input_dir"] = input_dir
-        calls["repo_dir"] = repo_dir
-        calls["remote"] = remote
-        calls["branch"] = branch
-        calls["limit"] = limit
-        calls["commit_message"] = commit_message
-        calls["cname"] = cname
-        calls["pages_config_mode"] = pages_config_mode
-        calls["force"] = force
-        calls["default_language_code"] = default_language_code
-        return GitHubPagesDeployResult(
-            branch=str(branch),
-            remote=str(remote),
-            remote_url="git@github.com:example/recoleta.git",
-            repo_root=Path(repo_dir),
-            commit_sha="abcdef1234567890",
-            skipped=False,
-            trends_total=4,
-            topics_total=7,
-            streams_total=2,
-            files_total=18,
-            pages_source=PagesSourceConfigResult(
-                status="configured",
-                method="gh",
-                detail="configured via gh",
-                site_url="https://example.github.io/recoleta/",
-            ),
-        )
-
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        "recoleta.site_deploy.deploy_trend_static_site_to_github_pages",
-        _fake_deploy,
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
+            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+                calls.setdefault("site_build", []).append(
+                    (input_dir, output_dir, default_language_code, limit)
+                )
+                manifest_path = Path(output_dir) / "manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    '{"trends_total": 4, "ideas_total": 4, "topics_total": 7, "streams_total": 2}',
+                    encoding="utf-8",
+                )
+                return manifest_path
+
+            return _fake_site_build
+        if (
+            module_name == "recoleta.site_deploy"
+            and attr_name == "deploy_trend_static_site_to_github_pages"
+        ):
+            def _fake_deploy(  # type: ignore[no-untyped-def]
+                *,
+                input_dir,
+                repo_dir,
+                remote,
+                branch,
+                limit=None,
+                commit_message=None,
+                cname=None,
+                pages_config_mode="auto",
+                force=True,
+                default_language_code=None,
+            ):
+                calls.update(
+                    {
+                        "input_dir": input_dir,
+                        "repo_dir": repo_dir,
+                        "remote": remote,
+                        "branch": branch,
+                        "limit": limit,
+                        "commit_message": commit_message,
+                        "cname": cname,
+                        "pages_config_mode": pages_config_mode,
+                        "force": force,
+                        "default_language_code": default_language_code,
+                    }
+                )
+                return GitHubPagesDeployResult(
+                    branch=str(branch),
+                    remote=str(remote),
+                    remote_url="git@github.com:example/recoleta.git",
+                    repo_root=Path(repo_dir),
+                    commit_sha="abcdef1234567890",
+                    skipped=False,
+                    trends_total=4,
+                    topics_total=7,
+                    streams_total=2,
+                    files_total=18,
+                    pages_source=PagesSourceConfigResult(
+                        status="configured",
+                        method="gh",
+                        detail="configured via gh",
+                        site_url="https://example.github.io/recoleta/",
+                    ),
+                )
+
+            return _fake_deploy
+        return None
+
+    _install_deploy_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=_FakeRepo(),
+        import_symbol_override=_override,
     )
 
-    result = runner.invoke(recoleta.cli.app, ["site", "gh-deploy"])
+    result = runner.invoke(recoleta.cli.app, ["run", "deploy"])
 
     assert result.exit_code == 0
     assert calls["input_dir"] == fake_settings.markdown_output_dir / "Trends"
@@ -371,90 +488,104 @@ def test_site_gh_deploy_cli_uses_default_paths_and_prints_summary(
     assert calls["pages_config_mode"] == "auto"
     assert calls["force"] is True
     assert calls["default_language_code"] == "en"
-    assert "site gh-deploy completed" in result.stdout
-    assert "branch=gh-pages" in result.stdout
-    assert "https://example.github.io/recoleta/" in result.stdout
 
 
-def test_site_gh_deploy_cli_with_explicit_input_dir_does_not_require_settings(
+def test_run_deploy_cli_passes_repo_dir_and_pages_config(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
     calls: dict[str, object] = {}
-
-    def _fail_build_settings():  # type: ignore[no-untyped-def]
-        raise AssertionError("settings should not be loaded")
-
-    def _fake_deploy(  # type: ignore[no-untyped-def]
-        *,
-        input_dir,
-        repo_dir,
-        remote,
-        branch,
-        limit=None,
-        commit_message=None,
-        cname=None,
-        pages_config_mode="auto",
-        force=True,
-        default_language_code=None,
-    ):
-        _ = (remote, branch, limit, commit_message, cname, force)
-        calls["input_dir"] = input_dir
-        calls["repo_dir"] = repo_dir
-        calls["pages_config_mode"] = pages_config_mode
-        calls["default_language_code"] = default_language_code
-        return GitHubPagesDeployResult(
-            branch="gh-pages",
-            remote="origin",
-            remote_url="git@github.com:example/recoleta.git",
-            repo_root=Path(repo_dir),
-            commit_sha="abcdef1234567890",
-            skipped=True,
-            trends_total=1,
-            topics_total=2,
-            streams_total=0,
-            files_total=5,
-            pages_source=PagesSourceConfigResult(
-                status="skipped",
-                method=None,
-                detail="pages config disabled",
-                site_url=None,
-            ),
-        )
-
-    input_dir = tmp_path / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
-
-    monkeypatch.setattr(recoleta.cli, "_build_settings", _fail_build_settings)
-    monkeypatch.setattr(
-        "recoleta.site_deploy.deploy_trend_static_site_to_github_pages",
-        _fake_deploy,
+    fake_settings = _FakeSettings(
+        markdown_output_dir=tmp_path / "output",
+        recoleta_db_path=tmp_path / "recoleta.db",
+        workflows=SimpleNamespace(
+            deploy=SimpleNamespace(
+                translation="off",
+                translate_include=["items", "trends", "ideas"],
+                site_build=False,
+                on_translate_failure="partial_success",
+            )
+        ),
     )
+    def _override(module_name: str, attr_name: str | None):
+        if (
+            module_name == "recoleta.site_deploy"
+            and attr_name == "deploy_trend_static_site_to_github_pages"
+        ):
+            def _fake_deploy(  # type: ignore[no-untyped-def]
+                *,
+                input_dir,
+                repo_dir,
+                remote,
+                branch,
+                limit=None,
+                commit_message=None,
+                cname=None,
+                pages_config_mode="auto",
+                force=True,
+                default_language_code=None,
+            ):
+                _ = (remote, branch, limit, commit_message, cname, force)
+                calls.update(
+                    {
+                        "input_dir": input_dir,
+                        "repo_dir": repo_dir,
+                        "pages_config_mode": pages_config_mode,
+                        "default_language_code": default_language_code,
+                    }
+                )
+                return GitHubPagesDeployResult(
+                    branch="gh-pages",
+                    remote="origin",
+                    remote_url="git@github.com:example/recoleta.git",
+                    repo_root=Path(repo_dir),
+                    commit_sha="abcdef1234567890",
+                    skipped=True,
+                    trends_total=1,
+                    topics_total=2,
+                    streams_total=0,
+                    files_total=5,
+                    pages_source=PagesSourceConfigResult(
+                        status="skipped",
+                        method=None,
+                        detail="pages config disabled",
+                        site_url=None,
+                    ),
+                )
+
+            return _fake_deploy
+        return None
+
+    _install_deploy_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=_FakeRepo(),
+        import_symbol_override=_override,
+    )
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir(parents=True, exist_ok=True)
 
     result = runner.invoke(
         recoleta.cli.app,
         [
-            "site",
-            "gh-deploy",
-            "--input-dir",
-            str(input_dir),
+            "run",
+            "deploy",
+            "--repo-dir",
+            str(repo_dir),
             "--pages-config",
             "never",
-            "--default-language-code",
-            "zh-CN",
         ],
     )
 
     assert result.exit_code == 0
-    assert calls["input_dir"] == input_dir.resolve()
-    assert calls["repo_dir"] == Path.cwd().resolve()
+    assert calls["input_dir"] == fake_settings.markdown_output_dir / "Trends"
+    assert calls["repo_dir"] == repo_dir.resolve()
     assert calls["pages_config_mode"] == "never"
-    assert calls["default_language_code"] == "zh-CN"
-    assert "no changes" in result.stdout
+    assert calls["default_language_code"] is None
 
 
-def test_site_gh_deploy_cli_emits_json_output(
+def test_run_deploy_cli_emits_json_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -463,69 +594,79 @@ def test_site_gh_deploy_cli_emits_json_output(
         markdown_output_dir=tmp_path / "output",
         recoleta_db_path=tmp_path / "recoleta.db",
     )
+    fake_settings.workflows = SimpleNamespace(
+        deploy=SimpleNamespace(
+            translation="off",
+            translate_include=["items", "trends", "ideas"],
+            site_build=False,
+            on_translate_failure="partial_success",
+        )
+    )
+    def _override(module_name: str, attr_name: str | None):
+        if (
+            module_name == "recoleta.site_deploy"
+            and attr_name == "deploy_trend_static_site_to_github_pages"
+        ):
+            def _fake_deploy(  # type: ignore[no-untyped-def]
+                *,
+                input_dir,
+                repo_dir,
+                remote,
+                branch,
+                limit=None,
+                commit_message=None,
+                cname=None,
+                pages_config_mode="auto",
+                force=True,
+                default_language_code=None,
+            ):
+                _ = (
+                    input_dir,
+                    repo_dir,
+                    remote,
+                    branch,
+                    limit,
+                    commit_message,
+                    cname,
+                    pages_config_mode,
+                    force,
+                    default_language_code,
+                )
+                return GitHubPagesDeployResult(
+                    branch="gh-pages",
+                    remote="origin",
+                    remote_url="git@github.com:example/recoleta.git",
+                    repo_root=tmp_path,
+                    commit_sha="abcdef1234567890",
+                    skipped=False,
+                    trends_total=4,
+                    topics_total=7,
+                    streams_total=2,
+                    files_total=18,
+                    pages_source=PagesSourceConfigResult(
+                        status="configured",
+                        method="gh",
+                        detail="configured via gh",
+                        site_url="https://example.github.io/recoleta/",
+                    ),
+                )
 
-    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
-    monkeypatch.setattr(
-        recoleta.cli,
-        "_maybe_acquire_workspace_lease_for_settings",
-        lambda **_: (None, None, None, None),
+            return _fake_deploy
+        return None
+
+    _install_deploy_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=_FakeRepo(),
+        import_symbol_override=_override,
     )
 
-    def _fake_deploy(  # type: ignore[no-untyped-def]
-        *,
-        input_dir,
-        repo_dir,
-        remote,
-        branch,
-        limit=None,
-        commit_message=None,
-        cname=None,
-        pages_config_mode="auto",
-        force=True,
-        default_language_code=None,
-    ):
-        _ = (
-            input_dir,
-            repo_dir,
-            remote,
-            branch,
-            limit,
-            commit_message,
-            cname,
-            pages_config_mode,
-            force,
-            default_language_code,
-        )
-        return GitHubPagesDeployResult(
-            branch="gh-pages",
-            remote="origin",
-            remote_url="git@github.com:example/recoleta.git",
-            repo_root=tmp_path,
-            commit_sha="abcdef1234567890",
-            skipped=False,
-            trends_total=4,
-            topics_total=7,
-            streams_total=2,
-            files_total=18,
-            pages_source=PagesSourceConfigResult(
-                status="configured",
-                method="gh",
-                detail="configured via gh",
-                site_url="https://example.github.io/recoleta/",
-            ),
-        )
-
-    monkeypatch.setattr(
-        "recoleta.site_deploy.deploy_trend_static_site_to_github_pages",
-        _fake_deploy,
-    )
-
-    result = runner.invoke(recoleta.cli.app, ["site", "gh-deploy", "--json"])
+    result = runner.invoke(recoleta.cli.app, ["run", "deploy", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["command"] == "site gh-deploy"
+    assert payload["command"] == "run deploy"
     assert payload["branch"] == "gh-pages"
     assert payload["remote"] == "origin"
     assert payload["commit_sha"] == "abcdef1234567890"

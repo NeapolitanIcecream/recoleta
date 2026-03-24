@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import json
 from typing import Any, cast
 from uuid import uuid4
 
@@ -13,6 +14,8 @@ from recoleta.models import (
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCEEDED,
+    RUN_TERMINAL_STATE_FAILED,
+    RUN_TERMINAL_STATE_SUCCEEDED_CLEAN,
 )
 from recoleta.types import MetricPoint, utc_now
 
@@ -37,14 +40,30 @@ class RunStoreMixin:
             session.refresh(run)
             return run
 
-    def finish_run(self, run_id: str, success: bool) -> None:
+    def finish_run(
+        self,
+        run_id: str,
+        success: bool,
+        *,
+        terminal_state: str | None = None,
+    ) -> None:
         final_status = RUN_STATUS_SUCCEEDED if success else RUN_STATUS_FAILED
+        resolved_terminal_state = (
+            terminal_state
+            if terminal_state is not None
+            else (
+                RUN_TERMINAL_STATE_SUCCEEDED_CLEAN
+                if success
+                else RUN_TERMINAL_STATE_FAILED
+            )
+        )
         finished_at = utc_now()
         with Session(self.engine) as session:
             run = session.get(Run, run_id)
             if run is None:
                 return
             run.status = final_status
+            run.terminal_state = resolved_terminal_state
             run.finished_at = finished_at
             run.heartbeat_at = finished_at
             session.add(run)
@@ -55,17 +74,47 @@ class RunStoreMixin:
         *,
         run_id: str,
         command: str | None = None,
+        operation_kind: str | None = None,
         scope: str | None = None,
         granularity: str | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        target_granularity: str | None = None,
+        target_period_start: datetime | None = None,
+        target_period_end: datetime | None = None,
+        requested_steps: list[str] | None = None,
+        executed_steps: list[str] | None = None,
+        skipped_steps: list[str] | None = None,
+        billing_by_step: dict[str, Any] | None = None,
     ) -> None:
         normalized_run_id = str(run_id or "").strip()
         if not normalized_run_id:
             return
         normalized_command = str(command or "").strip() or None
+        normalized_operation_kind = str(operation_kind or "").strip() or None
         normalized_scope = str(scope or "").strip() or None
         normalized_granularity = str(granularity or "").strip() or None
+        normalized_target_granularity = str(target_granularity or "").strip() or None
+        requested_steps_json = (
+            json.dumps(requested_steps, ensure_ascii=False, sort_keys=True)
+            if requested_steps is not None
+            else None
+        )
+        executed_steps_json = (
+            json.dumps(executed_steps, ensure_ascii=False, sort_keys=True)
+            if executed_steps is not None
+            else None
+        )
+        skipped_steps_json = (
+            json.dumps(skipped_steps, ensure_ascii=False, sort_keys=True)
+            if skipped_steps is not None
+            else None
+        )
+        billing_by_step_json = (
+            json.dumps(billing_by_step, ensure_ascii=False, sort_keys=True)
+            if billing_by_step is not None
+            else None
+        )
         with Session(self.engine) as session:
             run = session.get(Run, normalized_run_id)
             if run is None:
@@ -73,10 +122,18 @@ class RunStoreMixin:
             changed = False
             for name, value in (
                 ("command", normalized_command),
+                ("operation_kind", normalized_operation_kind),
                 ("scope", normalized_scope),
                 ("granularity", normalized_granularity),
                 ("period_start", period_start),
                 ("period_end", period_end),
+                ("target_granularity", normalized_target_granularity),
+                ("target_period_start", target_period_start),
+                ("target_period_end", target_period_end),
+                ("requested_steps_json", requested_steps_json),
+                ("executed_steps_json", executed_steps_json),
+                ("skipped_steps_json", skipped_steps_json),
+                ("billing_by_step_json", billing_by_step_json),
             ):
                 if value is None or getattr(run, name, None) == value:
                     continue
