@@ -55,6 +55,9 @@ Use these replacements:
 | `recoleta runs list` | `recoleta inspect runs list` |
 | `recoleta runs show` | `recoleta inspect runs show` |
 
+`recoleta run week` is a broader end-to-end replacement for `trends-week`. It
+reruns the weekly workflow instead of only generating weekly trends.
+
 ## Scheduler config
 
 The old interval keys are gone:

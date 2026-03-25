@@ -59,10 +59,10 @@ COPY recoleta.example.yaml /app/recoleta.example.yaml
 RUN mkdir -p /data/outputs /data/artifacts /data/lancedb /config
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD ["recoleta", "doctor", "--healthcheck"]
+    CMD ["recoleta", "inspect", "health", "--healthcheck"]
 
 ENTRYPOINT ["recoleta"]
-CMD ["run"]
+CMD ["daemon", "start"]
 
 
 FROM runtime AS runtime-full
