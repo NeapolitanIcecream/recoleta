@@ -137,12 +137,14 @@ Or use the bundled Compose file for a long-running daemon:
 ```bash
 mkdir -p config data
 cp recoleta.example.yaml config/recoleta.yaml
+# edit config/recoleta.yaml and enable workflows + daemon.schedules first
 docker compose up -d
 ```
 
 Compose runs `recoleta daemon start` by default. Set `workflows` and
 `daemon.schedules` in `config/recoleta.yaml` before using `docker compose up -d`
-for long-running execution.
+for long-running execution. With the stock example file, the daemon will stay up
+but no workflow will run until you enable at least one schedule.
 
 The bundled healthcheck uses:
 

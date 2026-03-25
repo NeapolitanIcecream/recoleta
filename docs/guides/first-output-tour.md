@@ -34,8 +34,8 @@ If you started from a preset, use the output paths in that preset YAML file.
 ## 2. Rerender one surface only
 
 A normal `run now` already attempts publish, day-level trends, day-level ideas,
-translation, and site build. Use these commands only when you want to rerender
-one surface:
+and site build. It also attempts translation when `localization.targets` is
+configured. Use these commands only when you want to rerender one surface:
 
 ```bash
 uv run recoleta stage trends --granularity day --date 2026-03-14
