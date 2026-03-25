@@ -424,6 +424,7 @@ def run_translate(
         force=force,
         context_assist=context_assist,
         json_output=json_output,
+        command_name="run translate",
     )
 
 
@@ -470,6 +471,7 @@ def run_site_build(
         limit=limit,
         default_language_code=default_language_code,
         json_output=json_output,
+        command_name="run site build",
     )
 
 
@@ -526,6 +528,8 @@ def run_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        command_name="run site serve",
+        build_command_name="run site build",
     )
 
 
@@ -565,6 +569,7 @@ def inspect_health(
         db_path=db_path,
         config_path=config_path,
         max_success_age_minutes=max_success_age_minutes,
+        command_name="inspect health",
     )
 
 
@@ -611,6 +616,7 @@ def inspect_why_empty(
         stream=stream,
         min_relevance_score=min_relevance_score,
         json_output=json_output,
+        command_name="inspect why-empty",
     )
 
 
@@ -650,6 +656,7 @@ def inspect_llm(
         json_output=json_output,
         db_path=db_path,
         config_path=config_path,
+        command_name="inspect llm",
     )
 
 
@@ -672,6 +679,7 @@ def inspect_stats(
         json_output=json_output,
         db_path=db_path,
         config_path=config_path,
+        command_name="inspect stats",
     )
 
 
@@ -722,6 +730,7 @@ def repair_streams(
         anchor_date=anchor_date,
         streams=streams,
         json_output=json_output,
+        command_name="repair streams",
     )
 
 
@@ -911,6 +920,7 @@ def stage_translate_run(
         force=force,
         context_assist=context_assist,
         json_output=json_output,
+        command_name="stage translate run",
     )
 
 
@@ -959,6 +969,7 @@ def stage_translate_backfill(
         emit_mirror_targets=emit_mirror_targets,
         all_history=all_history,
         json_output=json_output,
+        command_name="stage translate backfill",
     )
 
 
@@ -977,6 +988,7 @@ def stage_site_build(
         limit=limit,
         default_language_code=default_language_code,
         json_output=json_output,
+        command_name="stage site build",
     )
 
 
@@ -995,6 +1007,7 @@ def stage_site_stage(
         limit=limit,
         default_language_code=default_language_code,
         json_output=json_output,
+        command_name="stage site stage",
     )
 
 
@@ -1017,6 +1030,8 @@ def stage_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        command_name="stage site serve",
+        build_command_name="stage site build",
     )
 
 

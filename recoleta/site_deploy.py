@@ -238,7 +238,7 @@ def _ensure_no_symlinks(path: Path) -> None:
         if child.is_symlink():
             raise ValueError(
                 "GitHub Pages branch publishing does not support symbolic links; "
-                "use `recoleta site build` for manual hosting or a custom workflow instead."
+                "use `recoleta run site build` for manual hosting or a custom workflow instead."
             )
 
 

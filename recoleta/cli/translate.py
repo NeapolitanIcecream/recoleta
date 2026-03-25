@@ -46,6 +46,7 @@ def run_translate_run_command(
     force: bool,
     context_assist: str,
     json_output: bool = False,
+    command_name: str = "translate run",
 ) -> None:
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
@@ -63,7 +64,7 @@ def run_translate_run_command(
         settings=settings,
         repository=repository,
         console=console,
-        command="translate run",
+        command=command_name,
         log_module="cli.translate.run",
     )
     metrics: list[Any] = []
@@ -137,7 +138,7 @@ def run_translate_run_command(
         cli._emit_json(
             {
                 "status": "aborted" if result.aborted else "ok",
-                "command": "translate run",
+                "command": command_name,
                 "run_id": run_id,
                 "db_path": str(resolved_db_path),
                 "scope": scope,
@@ -159,7 +160,7 @@ def run_translate_run_command(
 
     if result.aborted:
         console.print(
-            "[yellow]translate run aborted[/yellow] "
+            f"[yellow]{command_name} aborted[/yellow] "
             f"translated={result.translated_total} "
             f"skipped={result.skipped_total} "
             f"failed={result.failed_total} "
@@ -169,7 +170,7 @@ def run_translate_run_command(
         return
 
     console.print(
-        "[green]translate run completed[/green] "
+        f"[green]{command_name} completed[/green] "
         f"translated={result.translated_total} "
         f"skipped={result.skipped_total} "
         f"failed={result.failed_total}"
@@ -191,6 +192,7 @@ def run_translate_backfill_command(
     emit_mirror_targets: bool,
     all_history: bool,
     json_output: bool = False,
+    command_name: str = "translate backfill",
 ) -> None:
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
@@ -208,7 +210,7 @@ def run_translate_backfill_command(
         settings=settings,
         repository=repository,
         console=console,
-        command="translate backfill",
+        command=command_name,
         log_module="cli.translate.backfill",
     )
     metrics: list[Any] = []
@@ -285,7 +287,7 @@ def run_translate_backfill_command(
         cli._emit_json(
             {
                 "status": "aborted" if result.aborted else "ok",
-                "command": "translate backfill",
+                "command": command_name,
                 "run_id": run_id,
                 "db_path": str(resolved_db_path),
                 "scope": scope,
@@ -310,7 +312,7 @@ def run_translate_backfill_command(
 
     if result.aborted:
         console.print(
-            "[yellow]translate backfill aborted[/yellow] "
+            f"[yellow]{command_name} aborted[/yellow] "
             f"translated={result.translated_total} "
             f"mirrored={result.mirrored_total} "
             f"skipped={result.skipped_total} "
@@ -321,7 +323,7 @@ def run_translate_backfill_command(
         return
 
     console.print(
-        "[green]translate backfill completed[/green] "
+        f"[green]{command_name} completed[/green] "
         f"translated={result.translated_total} "
         f"mirrored={result.mirrored_total} "
         f"skipped={result.skipped_total} "

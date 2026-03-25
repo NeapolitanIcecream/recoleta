@@ -44,7 +44,7 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Trends/`: canonical trend markdown notes
 - `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs
 - `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading surfaces derived from canonical outputs
-- `site/`: optional derived static site output from `recoleta site build`
+- `site/`: optional derived static site output from `recoleta run site build`
 
 When `TOPIC_STREAMS` is configured, each stream gets its own subtree instead:
 
@@ -57,9 +57,11 @@ Item notes contain YAML frontmatter and sections such as `Summary` and `Links`.
 Trend notes are the canonical source for all downstream trend surfaces:
 
 - Telegram trend PDFs render from `MARKDOWN_OUTPUT_DIR/Trends/*.md`
-- `recoleta site build` renders from a trend markdown directory
-- `recoleta site stage` mirrors trend markdown/PDF artifacts into a repo-local deployment directory
-- `recoleta materialize outputs` rerenders trend markdown from stored trend documents and can optionally refresh PDFs/site output in the same pass
+- `recoleta run site build` renders from a trend markdown directory
+- `recoleta stage site stage` mirrors trend markdown/PDF artifacts into a
+  repo-local deployment directory
+- `recoleta repair outputs` rerenders trend markdown from stored trend
+  documents and can optionally refresh PDFs/site output in the same pass
 - when available, trend note frontmatter also carries `pass_output_id` / `pass_kind` so projections can be traced back to canonical `trend_synthesis` output
 
 Idea notes follow the same projection contract:
@@ -71,8 +73,10 @@ Idea notes follow the same projection contract:
 
 Localized notes are projections, not canonical state:
 
-- `recoleta translate run` writes incremental translations for canonical item, trend, and idea outputs
-- `recoleta translate backfill` writes translated source-language overrides plus optional mirror variants for historical corpora
+- `recoleta run translate` writes incremental translations for canonical item,
+  trend, and idea outputs
+- `recoleta stage translate backfill` writes translated source-language
+  overrides plus optional mirror variants for historical corpora
 - localized notes are materialized under `MARKDOWN_OUTPUT_DIR/Localized/<language>/...`
 - canonical `analyses`, `pass_outputs`, and `documents` remain unchanged
 
@@ -110,27 +114,46 @@ This keeps the canonical markdown unchanged while giving a reproducible record o
 
 The static site exporter turns trend markdown notes into a standalone website:
 
-- `recoleta site serve`: build the site locally and serve it on a loopback HTTP endpoint for preview
-- `recoleta site build`: render a clean static site to `MARKDOWN_OUTPUT_DIR/site` by default
-- `recoleta site gh-deploy`: build the public site and push a dedicated GitHub Pages branch (default: `gh-pages`)
-- `recoleta site stage`: mirror trend markdown/PDF artifacts to `./site-content/Trends` by default, or `./site-content/Streams/<stream>/Trends` in topic-stream mode
+- `recoleta run site serve`: build the site locally and serve it on a loopback
+  HTTP endpoint for preview
+- `recoleta run site build`: render a clean static site to
+  `MARKDOWN_OUTPUT_DIR/site` by default
+- `recoleta run deploy`: build the public site and push a dedicated GitHub
+  Pages branch (default: `gh-pages`)
+- `recoleta stage site stage`: mirror trend markdown/PDF artifacts to
+  `./site-content/Trends` by default, or
+  `./site-content/Streams/<stream>/Trends` in topic-stream mode
 
 Important behavior:
 
-- `recoleta site serve` uses Python's standard-library HTTP server; it is a preview helper, not a full dev server.
-- `recoleta materialize outputs` is the offline repair path for existing outputs: it backfills item notes, repairs sibling Obsidian notes when settings expose a vault path, rerenders trend markdown from stored DB documents without mutating upstream ingest/analyze state, and can optionally refresh site/PDF artifacts.
-- when stored trend/idea metadata includes projection provenance, `recoleta materialize outputs` preserves that provenance in the regenerated markdown/obsidian notes instead of dropping it.
-- `recoleta materialize outputs --scope <stream>` lets you repair a single stream without rewriting every configured stream.
-- `recoleta materialize outputs` does not rebuild derived `documents` projections from pass outputs; searchable corpus repair stays separate from filesystem/site repair on purpose.
+- `recoleta run site serve` uses Python's standard-library HTTP server; it is a
+  preview helper, not a full dev server.
+- `recoleta repair outputs` is the offline repair path for existing outputs: it
+  backfills item notes, repairs sibling Obsidian notes when settings expose a
+  vault path, rerenders trend markdown from stored DB documents without
+  mutating upstream ingest/analyze state, and can optionally refresh
+  site/PDF artifacts.
+- when stored trend/idea metadata includes projection provenance,
+  `recoleta repair outputs` preserves that provenance in the regenerated
+  markdown/obsidian notes instead of dropping it.
+- `recoleta repair outputs --scope <stream>` lets you repair a single stream
+  without rewriting every configured stream.
+- `recoleta repair outputs` does not rebuild derived `documents` projections
+  from pass outputs; searchable corpus repair stays separate from
+  filesystem/site repair on purpose.
 - All commands that rebuild site output treat their output directories as managed artifacts and clear stale files before writing.
 - When `--input-dir` and `--output-dir` are passed explicitly, they do not require a full Recoleta runtime config. This is intentional so CI and GitHub Pages can build from a staged content snapshot.
 - When multilingual content exists, the exporter emits one site subtree per language, for example `/en/...` and `/zh-cn/...`, plus a root `index.html` redirect page.
 - The root redirect prefers the browser's remembered language and then falls back to the configured default language.
 - Every page renders a language switcher that stores the chosen language in the browser and routes to the peer page when available.
 - `--default-language-code` is required for multilingual exports only when the exporter is running without runtime settings that already expose `localization.site_default_language_code`.
-- `recoleta site gh-deploy` keeps `main` free of committed site snapshots and Pages-specific workflow files by publishing a derived branch instead.
-- `recoleta site stage` remains useful for custom CI pipelines and non-GitHub static hosts when you want an explicit repo-local snapshot.
-- In topic-stream mode, `recoleta site build` and `recoleta site gh-deploy` aggregate stream-local `Trends/` trees and expose a `Streams` navigation surface instead of flattening mixed domains together.
+- `recoleta run deploy` keeps `main` free of committed site snapshots and
+  Pages-specific workflow files by publishing a derived branch instead.
+- `recoleta stage site stage` remains useful for custom CI pipelines and
+  non-GitHub static hosts when you want an explicit repo-local snapshot.
+- In topic-stream mode, `recoleta run site build` and `recoleta run deploy`
+  aggregate stream-local `Trends/` trees and expose a `Streams` navigation
+  surface instead of flattening mixed domains together.
 
 ## CLI UX
 
@@ -144,12 +167,13 @@ After `recoleta trends`, the CLI prints:
 - trend completion info (`doc_id`, `granularity`, `period_start`, `period_end`)
 - the billing report table
 
-After `recoleta site serve` / `recoleta site build` / `recoleta site stage` / `recoleta site gh-deploy`, the CLI prints:
+After `recoleta run site serve` / `recoleta run site build` /
+`recoleta stage site stage` / `recoleta run deploy`, the CLI prints:
 
 - exported trend/topic counts
 - output directory path
 
-After `recoleta materialize outputs`, the CLI prints:
+After `recoleta repair outputs`, the CLI prints:
 
 - per-scope item/trend/pdf totals
 - trend materialization failures and canonical-link rewrite totals

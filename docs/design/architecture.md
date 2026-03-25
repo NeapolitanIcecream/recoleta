@@ -8,23 +8,30 @@ For long-running runtime, retention, migration, and deployment concerns, see `do
 
 Recoleta is a CLI-first application with a small set of commands:
 
-- `recoleta ingest`: run **prepare** work (ingest + enrich + optional triage) and persist a Stage 4-ready backlog. `--date` scopes the run to one UTC day.
-- `recoleta analyze`: run **Stage 4 only** (LLM analysis on prepared items); no network enrichment or triage in this command. `--date` scopes the run to one UTC day.
-- `recoleta publish`: publish to configured targets (local Markdown by default; optional Obsidian and Telegram). `--date` scopes the run to one UTC day.
-- `recoleta trends` / `recoleta trends-week`: generate day/week/month trend documents from analyzed items or lower-granularity trend documents, with optional backfill.
-- `recoleta site`: build, stage, or GitHub Pages-deploy a static site from canonical trend markdown notes.
-- `recoleta materialize outputs`: rebuild Markdown/PDF/site artifacts from stored DB state without rerunning ingest/analyze.
-- `recoleta rag`: prewarm or rebuild the LanceDB vector workspace used by trend semantic search.
-- `recoleta db`: destructive reset helpers for clean-slate or trends-only resets.
-- `recoleta run`: schedule ingest/analyze/publish periodically, or use `run --once --date ...` for a one-shot UTC-day pipeline.
-- `recoleta doctor`, `recoleta stats`, and `recoleta runs`: operator diagnostics and run inspection surfaces.
-- `recoleta repair-streams`, `recoleta gc`, `recoleta vacuum`, `recoleta backup`, and `recoleta restore`: targeted recovery and maintenance commands for long-running workspaces.
+- `recoleta stage ingest`, `recoleta stage analyze`, and
+  `recoleta stage publish`: run one primitive at a time. `--date` scopes the
+  supported stage to one UTC day.
+- `recoleta stage trends` and `recoleta stage ideas`: rerun one day/week/month
+  synthesis primitive from stored analyzed or lower-level state.
+- `recoleta run now|day|week|month`: workflow-first entry points that
+  orchestrate ingest, analyze, publish, downstream trends/ideas, translation,
+  and site build according to workflow policy.
+- `recoleta run translate`, `recoleta run site build|serve`, and
+  `recoleta run deploy`: derived workflows from stored state.
+- `recoleta repair outputs`: rebuild Markdown/PDF/site artifacts from stored DB
+  state without rerunning ingest/analyze.
+- `recoleta daemon start`: run configured workflow schedules locally.
+- `recoleta inspect health|stats|runs|llm|why-empty`: operator diagnostics and
+  run inspection surfaces.
+- `recoleta repair streams` plus `recoleta admin gc|vacuum|backup|restore|db`:
+  targeted recovery and maintenance commands for long-running workspaces.
 
 ## Module boundaries
 
 Current module layout:
 
-- `recoleta/cli/`: command implementations for ingest, analyze, publish, run, trends, site, RAG, DB, and maintenance commands
+- `recoleta/cli/`: command implementations for workflow, stage, inspection,
+  repair, site, RAG, DB, and maintenance commands
 - `recoleta/cli.py`: compatibility shim that re-exports the package CLI entry points
 - `recoleta/config.py`: typed config, env loading, validation
 - `recoleta/sources.py`: source connectors and incremental pull-state helpers (watermarks, ETag, Last-Modified)
@@ -169,7 +176,8 @@ Trend generation is a sibling pipeline, not just an extra publish target:
 - `recoleta trends` builds or refreshes a scoped document corpus (`documents` + `document_chunks`) from analyzed items or lower-granularity trend docs.
 - Semantic search uses a local LanceDB workspace to retrieve related summaries and representative sources for clusters.
 - Optional overview packs (`TRENDS_SELF_SIMILAR_ENABLED`) and bounded peer-history packs (`TRENDS_PEER_HISTORY_ENABLED`) are injected into the trend agent prompt before the final payload is materialized.
-- `recoleta materialize outputs` can rerender canonical markdown notes, PDFs, and site output from stored trend documents after the fact.
+- `recoleta repair outputs` can rerender canonical markdown notes, PDFs, and
+  site output from stored trend documents after the fact.
 
 ## Durable pre-ranking boundary
 
@@ -181,14 +189,21 @@ This keeps Stage 3/3.5 cache-friendly and makes Stage 4 a clean, lazy compute bo
 
 Two supported modes:
 
-- **External scheduler**: run `recoleta run --once` via cron/launchd/systemd, or use explicit stage commands when finer control is needed.  
-  (`ingest` now means prepare: Stage 1 + Stage 3 + Stage 3.5)
-- **Internal scheduler**: `recoleta run` uses APScheduler to run jobs on intervals with the same stage mapping.
+- **External scheduler**: run `recoleta run now` or
+  `recoleta run day --date ...` via cron/launchd/systemd, or use explicit stage
+  commands when finer control is needed.
+- **Internal scheduler**: `recoleta daemon start` runs configured workflows from
+  `DAEMON.schedules`.
 
 Windowed catch-up is part of the same execution model:
 
-- `recoleta ingest --date`, `recoleta analyze --date`, and `recoleta publish --date` target one UTC day for manual replays or backfills
-- `recoleta run --once --date` threads the same UTC-day window through all three stages
+- `recoleta stage ingest --date`, `recoleta stage analyze --date`, and
+  `recoleta stage publish --date` target one UTC day for manual replays or
+  backfills
+- `recoleta run day --date` threads the same UTC-day window through the
+  workflow
+- `recoleta run week --date` and `recoleta run month --date` extend that replay
+  model across higher-level recursive windows
 - when no explicit window is requested, the default behavior remains incremental backlog processing
 
 For v0, concurrency should be conservative:

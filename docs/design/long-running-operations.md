@@ -20,11 +20,14 @@ These assumptions are important because they rule out a large class of designs t
 Recoleta's long-running operating model is now implemented around a few concrete primitives:
 
 - source-level deduplication, incremental ingest, and persisted pull state
-- stage-separated commands (`ingest`, `analyze`, `publish`, `trends`, `site`)
+- workflow and stage-separated commands (`run`, `daemon`, `stage`, `repair`)
 - SQLite as the durable local index plus `PRAGMA user_version` compatibility checks
 - a SQLite-backed workspace lease and run heartbeat for singleton writes
-- maintenance and recovery commands (`gc`, `vacuum`, `backup`, `restore`)
-- diagnostics and repair commands (`doctor`, `stats`, `runs`, `repair-streams`) plus a documented container contract
+- maintenance and recovery commands (`admin gc`, `admin vacuum`,
+  `admin backup`, `admin restore`)
+- diagnostics and repair commands (`inspect health`, `inspect stats`,
+  `inspect runs`, `inspect llm`, `inspect why-empty`, `repair streams`) plus a
+  documented container contract
 
 The remaining design questions are mostly about defaults and future policy, for example retention windows, cache pruning scope, and how much schema migration machinery the project should eventually adopt.
 
@@ -65,7 +68,8 @@ Neither mode is legacy or test-only. They serve different operator environments.
 
 ### Built-in scheduler mode
 
-`recoleta run` remains a valid primary entry point for local long-running usage.
+`recoleta daemon start` remains a valid primary entry point for local
+long-running usage.
 
 Current invariant:
 
@@ -73,7 +77,8 @@ Current invariant:
 
 ### External scheduler mode
 
-`recoleta run --once` remains important, but it should be treated as the external orchestration primitive rather than as a special testing path.
+`recoleta run now` remains important, but it should be treated as the external
+orchestration primitive rather than as a special testing path.
 
 Typical uses:
 
@@ -85,7 +90,7 @@ Typical uses:
 In practice, the primitive remains:
 
 ```bash
-uv run recoleta run --once
+uv run recoleta run now
 ```
 
 or explicit stage commands when the operator wants finer control.
@@ -284,7 +289,8 @@ Requirements:
 
 - lock ownership must be visible in diagnostics
 - stale locks must be recoverable
-- `run --once`, stage commands, and built-in scheduler should all use the same mechanism
+- `run now`, date-scoped workflow commands, stage commands, and the built-in
+  scheduler should all use the same mechanism
 
 #### Run heartbeat
 
@@ -313,7 +319,7 @@ Current implementation:
 
 - support one Dockerfile with `runtime` and `runtime-full` targets
 - standardize example container paths under `/data` and `/config`
-- add a read-only `doctor --healthcheck` contract
+- add a read-only `inspect health --healthcheck` contract
 
 See `docs/adr/0028-container-deployment-and-healthcheck-contract.md` for the focused proposal.
 
@@ -355,14 +361,14 @@ Operators should be able to answer these questions quickly:
 
 Recoleta exposes two small operator-facing interfaces for this:
 
-- `recoleta doctor`
-- `recoleta stats --json`
-- `recoleta runs show` / `recoleta runs list`
+- `recoleta inspect health`
+- `recoleta inspect stats --json`
+- `recoleta inspect runs show` / `recoleta inspect runs list`
 - a container/system healthcheck command built on the same checks
 
 Targeted recovery remains separate from the read-only checks:
 
-- `recoleta repair-streams --date ... --streams ...` repairs explicit
+- `recoleta repair streams --date ... --streams ...` repairs explicit
   stream-analysis state for one UTC day without introducing a general rerun
   workflow engine.
 
@@ -413,9 +419,9 @@ This is the highest-value first implementation slice.
 
 - official Dockerfile(s)
 - Compose example
-- `doctor` command
-- `runs` inspection commands
-- targeted repair helpers such as `repair-streams`
+- `inspect health` command
+- `inspect runs` inspection commands
+- targeted repair helpers such as `repair streams`
 - documented healthcheck contract
 
 ## Implementation workstreams
@@ -482,9 +488,12 @@ Scope:
 
 Outcome:
 
-- `doctor`, `stats`, and `runs` now provide the intended lightweight operator surface
-- `doctor why-empty` and `doctor llm` cover the two most common incident-response questions
-- `repair-streams` provides a bounded write-capable repair path without adding a top-level rerun orchestrator
+- `inspect health`, `inspect stats`, and `inspect runs` now provide the
+  intended lightweight operator surface
+- `inspect why-empty` and `inspect llm` cover the two most common
+  incident-response questions
+- `repair streams` provides a bounded write-capable repair path without adding
+  a top-level rerun orchestrator
 - deployment recipes are documented for cron/systemd/containers
 - retention defaults remain internal on purpose for now
 
