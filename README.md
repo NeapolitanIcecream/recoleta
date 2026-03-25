@@ -12,7 +12,7 @@ RSS from one local workspace. It keeps state in SQLite, writes Markdown first,
 and can turn the same corpus into trend briefs, idea briefs, PDFs, and a static
 site.
 
-**Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Preset gallery](./presets/README.md)
+**Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Preset gallery](./presets/README.md) · [CLI v2 migration](./docs/guides/cli-v2-migration.md)
 
 - Run one topic list or several topic streams from the same workspace.
 - Keep SQLite as the source of truth and regenerate Markdown, site pages, and
@@ -88,8 +88,8 @@ uv run recoleta --help
 Use `runtime` for normal CLI usage. Use `runtime-full` when you need Pandoc or
 browser-rendered PDFs.
 
-- `runtime`: full CLI surface for ingest, analyze, publish, trends, site, RAG,
-  DB, and maintenance commands
+- `runtime`: workflow-first CLI surface, stage primitives, inspection, repair,
+  admin, and related utilities
 - `runtime-full`: `runtime` plus Pandoc and Chromium
 
 The image uses these default paths:
@@ -122,17 +122,17 @@ Build the PDF/browser image:
 docker build --target runtime-full -t recoleta:runtime-full .
 ```
 
-Run the pipeline once:
+Run the current UTC-day workflow once:
 
 ```bash
 docker run --rm \
   --env-file .env \
   -v "$(pwd)/data:/data" \
   -v "$(pwd)/config:/config:ro" \
-  recoleta:runtime run --once
+  recoleta:runtime run now
 ```
 
-Or use the bundled Compose file:
+Or use the bundled Compose file for a long-running daemon:
 
 ```bash
 mkdir -p config data
@@ -140,16 +140,26 @@ cp recoleta.example.yaml config/recoleta.yaml
 docker compose up -d
 ```
 
-Compose runs `recoleta run` by default and uses the read-only healthcheck:
+Compose runs `recoleta daemon start` by default. Set `workflows` and
+`daemon.schedules` in `config/recoleta.yaml` before using `docker compose up -d`
+for long-running execution.
+
+The bundled healthcheck uses:
 
 ```bash
-recoleta doctor --healthcheck
+recoleta inspect health --healthcheck
 ```
 
 For a machine-readable workspace snapshot:
 
 ```bash
-recoleta stats --json
+recoleta inspect stats --json
+```
+
+If you want a one-shot test run from the same service definition:
+
+```bash
+docker compose run --rm recoleta run now
 ```
 
 If you need browser/PDF output, switch the Compose build target from `runtime`
@@ -174,17 +184,23 @@ RECOLETA_CONFIG_PATH=/config/recoleta.yaml
 RECOLETA_LLM_API_KEY="sk-replace-me"
 ENV
 
-docker compose run --rm recoleta run --once --analyze-limit 50 --publish-limit 20
+docker compose run --rm recoleta run now
 ```
 
 Check these paths after the run:
 
 - `./data/outputs/latest.md`
 - `./data/outputs/Inbox/`
+- `./data/outputs/Trends/`
+- `./data/outputs/site/index.html`
 - `./data/recoleta.db`
+- When the day has enough evidence: `./data/outputs/Ideas/`
 
 Then open the [first output tour](./docs/guides/first-output-tour.md) to compare
 your local files with sample output.
+
+Use `docker compose up -d` later when you want the bundled `daemon start`
+service to keep running from `daemon.schedules`.
 
 #### Run from source
 
@@ -277,58 +293,66 @@ RECOLETA_LLM_API_KEY="sk-replace-me"
 ENV
 ```
 
-Run stage by stage:
+Run the default UTC-day workflow:
 
 ```bash
-uv run recoleta ingest
-uv run recoleta analyze --limit 50
-uv run recoleta publish --limit 20
+uv run recoleta run now
 ```
 
-Or run the whole pipeline once:
+Use these commands when you want more control:
 
 ```bash
-uv run recoleta run --once --analyze-limit 50 --publish-limit 20
+uv run recoleta run day --date 2026-01-02
+uv run recoleta run week --date 2026-03-02
+uv run recoleta run month --date 2026-03-02
+```
+
+Use `stage` only when you want one primitive without workflow orchestration:
+
+```bash
+uv run recoleta stage ingest --date 2026-01-02
+uv run recoleta stage analyze --date 2026-01-02 --limit 50
+uv run recoleta stage publish --date 2026-01-02 --limit 20
 ```
 
 If `localization` is configured, derive translated reading surfaces after the
 canonical outputs exist:
 
 ```bash
-uv run recoleta translate run --include items,trends,ideas
+uv run recoleta run translate --include items,trends,ideas
 ```
 
 If you are migrating a historical corpus that was written in another canonical
 language, run the one-time backfill:
 
 ```bash
-uv run recoleta translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
+uv run recoleta stage translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
 ```
 
-To replay one UTC day:
+How workflows behave:
 
-```bash
-uv run recoleta ingest --date 2026-01-02
-uv run recoleta analyze --date 2026-01-02 --limit 50
-uv run recoleta publish --date 2026-01-02 --limit 20
-uv run recoleta run --once --date 2026-01-02 --analyze-limit 50 --publish-limit 20
-```
-
-What each command does:
-
-- `recoleta ingest`: fetch, enrich, and optionally semantically triage items
-- `recoleta analyze`: run the LLM analysis stage on prepared items
-- `recoleta publish`: write or send analyzed items
-- `recoleta run --once`: run `ingest -> analyze -> publish` once and exit
+- `recoleta run now`: run the current UTC day end to end
+- `recoleta run day`: run one UTC day end to end
+- `recoleta run week`: run one ISO week end to end, including day-level and
+  week-level trends and ideas
+- `recoleta run month`: run one month end to end, including day/week/month
+  trends and ideas
+- `recoleta run translate`, `recoleta run site build`, and
+  `recoleta run deploy`: derived workflows from stored state
+- `recoleta stage ...`: run one primitive only, with no recursive orchestration
 
 How reruns work:
 
-- `--date` scopes `ingest`, `analyze`, `publish`, and `run --once` to one UTC
-  day.
+- `recoleta run day --date YYYY-MM-DD` replays one UTC day end to end.
+- `recoleta stage ingest|analyze|publish|trends|ideas --date YYYY-MM-DD`
+  reruns one primitive when you do not want the full workflow.
 - Without `--date`, connectors reuse saved pull state such as watermarks and
   conditional fetch headers when available.
 - Source diagnostics are written to SQLite metrics, including values such as
   `filtered_out_total`, `in_window_total`, and `not_modified_total`.
+
+If you are coming from older CLI docs or automation, start with
+[`docs/guides/cli-v2-migration.md`](./docs/guides/cli-v2-migration.md).
 
 Where outputs go:
 
@@ -369,42 +393,44 @@ full example config first.
 ### 🧰 Common commands
 
 ```bash
-# run the full pipeline once
-uv run recoleta run --once --analyze-limit 50 --publish-limit 20
+# run the current UTC day end to end
+uv run recoleta run now
 
-# generate a daily or weekly trend brief
-uv run recoleta trends --granularity day
-uv run recoleta trends-week --date 2026-03-02
+# replay one UTC day, week, or month
+uv run recoleta run day --date 2026-03-09
+uv run recoleta run week --date 2026-03-02
+uv run recoleta run month --date 2026-03-02
 
-# derive idea briefs from an existing trend window
-uv run recoleta ideas --granularity day --date 2026-03-09
+# rerun one primitive only
+uv run recoleta stage trends --granularity day --date 2026-03-09
+uv run recoleta stage ideas --granularity day --date 2026-03-09
 
-# translate canonical outputs into derived language variants
-uv run recoleta translate run --include items,trends,ideas
+# translate derived language variants
+uv run recoleta run translate --include items,trends,ideas
 
-# one-time backfill when migrating legacy canonical content
-uv run recoleta translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
+# one-time backfill for historical canonical content
+uv run recoleta stage translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
 
-# build or preview the public site
-uv run recoleta site build
-uv run recoleta site serve
+# build, preview, or deploy the public site
+uv run recoleta run site build
+uv run recoleta run site serve
+uv run recoleta run deploy --branch gh-pages --pages-config auto
 
-# operator checks
-uv run recoleta doctor --healthcheck --max-success-age-minutes 180
-uv run recoleta stats --json
-uv run recoleta doctor llm --json
-uv run recoleta doctor why-empty --date 2026-03-15 --granularity day --stream agents_lab --json
-uv run recoleta repair-streams --date 2026-03-15 --streams agents_lab --json
-uv run recoleta runs show --run-id <run-id> --json
-uv run recoleta runs list --limit 5 --json
+# inspect or repair a workspace
+uv run recoleta inspect health --healthcheck --max-success-age-minutes 180
+uv run recoleta inspect stats --json
+uv run recoleta inspect llm --json
+uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --stream agents_lab --json
+uv run recoleta repair streams --date 2026-03-15 --streams agents_lab --json
+uv run recoleta repair outputs --site --pdf --json
+uv run recoleta inspect runs show --run-id <run-id> --json
+uv run recoleta inspect runs list --limit 5 --json
 ```
 
-For automation, `analyze`, `publish`, `trends`, `trends-week`, `ideas`,
-`translate run`, `translate backfill`, `materialize outputs`, `site build`,
-`site stage`, and `site gh-deploy` also accept `--json`.
+When you are scripting a subcommand, check `--help` for its `--json` support.
 
-For backfills, site deploy, cron, systemd, maintenance, and recovery workflows,
-see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).
+For daemon schedules, translation backfills, repair workflows, and admin
+commands, see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).
 
 <a id="recoleta-guides"></a>
 ## 📚 Guides & reference
@@ -415,6 +441,8 @@ see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).
   check what a good first run should create
 - [`docs/guides/usage-recipes.md`](docs/guides/usage-recipes.md) - common CLI
   workflows, site tasks, and operator recipes
+- [`docs/guides/cli-v2-migration.md`](docs/guides/cli-v2-migration.md) - map
+  older command names to the workflow-first CLI surface
 - [`presets/README.md`](presets/README.md) - choose a starter preset and follow
   its guide
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) - contribution, issue, and preset request

@@ -42,6 +42,6 @@ If you want screenshots and sample pages for comparison, start with
 
 1. Copy the preset you want to `recoleta.yaml`.
 2. Set `RECOLETA_CONFIG_PATH` and your LLM credentials in `.env`.
-3. Run `uv run recoleta run --once` or
-   `docker compose run --rm recoleta run --once`.
+3. Run `uv run recoleta run now` or
+   `docker compose run --rm recoleta run now`.
 4. Open the preset guide and check the output paths listed there.

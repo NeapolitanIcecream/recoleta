@@ -2,6 +2,9 @@
 
 Recoleta CLI v2 changes the top-level interface.
 
+If you are starting fresh, use the README quickstart. Use this guide only when
+you need to map older commands to the workflow-first CLI surface.
+
 Use this guide if you were using `run --once`, `trends-week`, `repair-streams`, `materialize outputs`, or `site gh-deploy`.
 
 ## New top-level groups

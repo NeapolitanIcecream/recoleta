@@ -15,9 +15,12 @@ Config file:
 
 ## Default outputs
 
-- Markdown inbox notes after `run --once`
-- Robotics-oriented trend briefs after `recoleta trends`
-- Optional static site after `recoleta site build`
+With default workflow settings:
+
+- Markdown inbox notes after `run now`
+- Day-level trend briefs after `run now`
+- Day-level idea briefs when the window has enough evidence
+- Static site output after `run now`
 
 Default local paths:
 
@@ -34,28 +37,28 @@ RECOLETA_CONFIG_PATH=./recoleta.yaml
 RECOLETA_LLM_API_KEY="sk-replace-me"
 ENV
 
-uv run recoleta run --once --analyze-limit 50 --publish-limit 20
+uv run recoleta run now
 ```
 
 ## Check the first run
 
-Open these paths after `run --once`:
+Open these paths after `run now`:
 
 - `~/.local/share/recoleta/presets/robotics-radar/outputs/latest.md`
 - `~/.local/share/recoleta/presets/robotics-radar/outputs/Inbox/`
-
-Then run:
-
-```bash
-uv run recoleta trends --granularity day
-uv run recoleta trends-week --date 2026-03-02
-uv run recoleta site build
-```
-
-That should create:
-
 - `~/.local/share/recoleta/presets/robotics-radar/outputs/Trends/`
 - `~/.local/share/recoleta/presets/robotics-radar/outputs/site/index.html`
+- If ideas were emitted:
+  `~/.local/share/recoleta/presets/robotics-radar/outputs/Ideas/`
+
+Use these follow-up commands when you want a weekly workflow or a targeted
+rebuild:
+
+```bash
+uv run recoleta run week --date 2026-03-02
+uv run recoleta stage trends --granularity day --date 2026-03-02
+uv run recoleta run site build
+```
 
 ## Compare with the public example
 

@@ -1,21 +1,20 @@
 # Recoleta First Output Tour
 
-Use this guide after your first `run --once`. It tells you where to look, what
-to run next, and which public examples are closest to the local files you
-should see.
+Use this guide after your first `run now`. It tells you where to look after the
+default workflow and how to rerender one surface if you need to.
 
 ## 1. Check that the first run worked
 
 If you ran:
 
 ```bash
-uv run recoleta run --once --analyze-limit 50 --publish-limit 20
+uv run recoleta run now
 ```
 
 or:
 
 ```bash
-docker compose run --rm recoleta run --once --analyze-limit 50 --publish-limit 20
+docker compose run --rm recoleta run now
 ```
 
 open these paths first:
@@ -23,33 +22,35 @@ open these paths first:
 - `MARKDOWN_OUTPUT_DIR/latest.md` or `./data/outputs/latest.md`: summary page
   for the latest run
 - `MARKDOWN_OUTPUT_DIR/Inbox/`: one Markdown note per published item
-- `RECOLETA_DB_PATH`: the SQLite database that later trend, idea, and site
-  steps build from
+- `MARKDOWN_OUTPUT_DIR/Trends/`: day-level trend briefs from the same workflow
+- `MARKDOWN_OUTPUT_DIR/site/index.html`: the rebuilt static site
+- `RECOLETA_DB_PATH`: the SQLite database that later workflows build from
+- `MARKDOWN_OUTPUT_DIR/Ideas/` when the day has enough evidence
+- `MARKDOWN_OUTPUT_DIR/Localized/<language>/` when `localization.targets` is
+  configured
 
 If you started from a preset, use the output paths in that preset YAML file.
 
-## 2. Add trends and the site
+## 2. Rerender one surface only
 
-Once the first batch of item notes looks right, run:
-
-```bash
-uv run recoleta trends --granularity day
-uv run recoleta site build
-```
-
-That should create:
-
-- `MARKDOWN_OUTPUT_DIR/Trends/`: trend briefs in Markdown
-- `MARKDOWN_OUTPUT_DIR/site/index.html`: a browsable static site
-
-If you want idea briefs too, run:
+A normal `run now` already attempts publish, day-level trends, day-level ideas,
+translation, and site build. Use these commands only when you want to rerender
+one surface:
 
 ```bash
-uv run recoleta ideas --granularity day --date 2026-03-14
+uv run recoleta stage trends --granularity day --date 2026-03-14
+uv run recoleta stage ideas --granularity day --date 2026-03-14
+uv run recoleta run site build
 ```
 
-That writes to `MARKDOWN_OUTPUT_DIR/Ideas/`. Run `recoleta site build` again if
-you want those pages included in the site.
+That updates:
+
+- `MARKDOWN_OUTPUT_DIR/Trends/`
+- `MARKDOWN_OUTPUT_DIR/Ideas/` when the selected day has enough evidence
+- `MARKDOWN_OUTPUT_DIR/site/index.html` and the related trend or idea pages
+
+`stage ideas` needs an existing trend synthesis output for the same window.
+Low-evidence windows can still be suppressed.
 
 ## 3. Compare your output with the public examples
 
@@ -67,10 +68,10 @@ Public example:
 
 ### Trend brief
 
-Create it with:
+If `run now` already created a day brief, open it. To rerender a specific day:
 
 ```bash
-uv run recoleta trends --granularity day
+uv run recoleta stage trends --granularity day --date 2026-03-14
 ```
 
 Local paths:
@@ -87,10 +88,11 @@ Public examples:
 
 ### Idea brief
 
-Create it with:
+If the workflow created ideas for that day, open them. To rerender a specific
+day:
 
 ```bash
-uv run recoleta ideas --granularity day --date 2026-03-14
+uv run recoleta stage ideas --granularity day --date 2026-03-14
 ```
 
 Local paths:
@@ -112,7 +114,8 @@ Public examples:
 - Start from: [`presets/agents-radar.yaml`](../../presets/agents-radar.yaml)
 - Closest public example:
   <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
-- Expect: `latest.md`, `Inbox/`, trend briefs, idea briefs, and the static site
+- Expect: `latest.md`, `Inbox/`, trend briefs, idea briefs when evidence is
+  strong enough, and the static site
 
 ### Robotics radar
 

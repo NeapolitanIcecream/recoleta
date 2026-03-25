@@ -13,9 +13,9 @@ services:
     volumes:
       - ./data:/data
       - ./config:/config:ro
-    command: ["run"]
+    command: ["daemon", "start"]
     healthcheck:
-      test: ["CMD", "recoleta", "doctor", "--healthcheck"]
+      test: ["CMD", "recoleta", "inspect", "health", "--healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
