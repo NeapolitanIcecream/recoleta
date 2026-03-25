@@ -160,6 +160,106 @@ def test_runs_show_json_reports_run_context_and_failure_summary(
     assert payload["run"]["failure_summary"]["http_status"]["401"] == 1
 
 
+def test_inspect_runs_show_json_includes_workflow_metadata_fields(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-workflow", run_id="run-workflow")
+    repository.update_run_context(
+        run_id=run.id,
+        command="run month --date 2026-03-16",
+        operation_kind="workflow.run.month",
+        scope="default",
+        granularity="month",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 4, 1, tzinfo=UTC),
+        target_granularity="month",
+        target_period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        target_period_end=datetime(2026, 4, 1, tzinfo=UTC),
+        requested_steps=[
+            "ingest",
+            "analyze",
+            "publish",
+            "trends:day",
+            "ideas:day",
+            "trends:week",
+            "ideas:week",
+            "trends:month",
+            "ideas:month",
+            "site-build",
+        ],
+        executed_steps=[
+            "ingest",
+            "analyze",
+            "publish",
+            "trends:day",
+            "ideas:day",
+            "trends:week",
+            "ideas:week",
+            "trends:month",
+            "ideas:month",
+            "site-build",
+        ],
+        skipped_steps=["translate"],
+        billing_by_step={
+            "trends:month": {
+                "total_cost_usd": 0.12,
+                "components": {"trends_llm": {"calls": 4}},
+            }
+        },
+    )
+    repository.finish_run(
+        run.id,
+        success=True,
+        terminal_state="succeeded_partial",
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "inspect",
+            "runs",
+            "show",
+            "--db-path",
+            str(db_path),
+            "--run-id",
+            "run-workflow",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    run_payload = payload["run"]
+    assert run_payload["command"] == "run month --date 2026-03-16"
+    assert run_payload["operation_kind"] == "workflow.run.month"
+    assert run_payload["granularity"] == "month"
+    assert run_payload["target_granularity"] == "month"
+    assert run_payload["target_period_start"] == "2026-03-01T00:00:00+00:00"
+    assert run_payload["target_period_end"] == "2026-04-01T00:00:00+00:00"
+    assert run_payload["requested_steps"] == [
+        "ingest",
+        "analyze",
+        "publish",
+        "trends:day",
+        "ideas:day",
+        "trends:week",
+        "ideas:week",
+        "trends:month",
+        "ideas:month",
+        "site-build",
+    ]
+    assert run_payload["executed_steps"] == run_payload["requested_steps"]
+    assert run_payload["skipped_steps"] == ["translate"]
+    assert run_payload["billing_by_step"]["trends:month"]["total_cost_usd"] == 0.12
+    assert run_payload["billing_by_step"]["trends:month"]["components"]["trends_llm"]["calls"] == 4
+    assert run_payload["terminal_state"] == "succeeded_partial"
+
+
 def test_runs_show_json_includes_stream_billing_breakdown(
     tmp_path: Path,
 ) -> None:

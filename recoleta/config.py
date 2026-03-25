@@ -69,6 +69,11 @@ _ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
 _ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
 _ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
 _ALLOWED_TRENDS_EMBEDDING_FAILURE_MODES = {"continue", "fail_fast", "threshold"}
+_ALLOWED_WORKFLOW_DELIVERY_MODES = {"all", "local_only", "none"}
+_ALLOWED_WORKFLOW_TRANSLATION_MODES = {"auto", "off"}
+_ALLOWED_WORKFLOW_TRANSLATE_INCLUDE = {"items", "trends", "ideas"}
+_ALLOWED_WORKFLOW_TRANSLATE_FAILURE = {"fail", "partial_success", "skip"}
+_ALLOWED_DAEMON_WEEKDAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LANGUAGE_CODE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 
@@ -136,6 +141,36 @@ def _normalize_publish_targets(values: list[str], *, field_name: str) -> list[st
             f"Unsupported {field_name} value(s): "
             + ", ".join(unknown)
             + " (allowed: markdown, obsidian, telegram)"
+        )
+    return normalized
+
+
+def _normalize_workflow_translate_include(
+    values: list[str],
+    *,
+    field_name: str,
+) -> list[str]:
+    normalized: list[str] = []
+    for raw in values:
+        if not isinstance(raw, str):
+            continue
+        token = raw.strip().lower()
+        if not token:
+            continue
+        normalized.append(token)
+    normalized = list(dict.fromkeys(normalized))
+    if not normalized:
+        raise ValueError(
+            f"{field_name} must include at least one value: items, trends, ideas"
+        )
+    unknown = sorted(
+        {token for token in normalized if token not in _ALLOWED_WORKFLOW_TRANSLATE_INCLUDE}
+    )
+    if unknown:
+        raise ValueError(
+            f"Unsupported {field_name} value(s): "
+            + ", ".join(unknown)
+            + " (allowed: items, trends, ideas)"
         )
     return normalized
 
@@ -323,6 +358,280 @@ class LocalizationConfig(BaseModel):
         return self
 
 
+class WorkflowPolicyConfig(BaseModel):
+    recursive_lower_levels: bool = True
+    delivery_mode: str = "all"
+    translation: str = "auto"
+    translate_include: list[str] = Field(
+        default_factory=lambda: ["items", "trends", "ideas"]
+    )
+    site_build: bool = True
+    on_translate_failure: str = "partial_success"
+
+    @field_validator("delivery_mode", mode="before")
+    @classmethod
+    def _normalize_delivery_mode(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower() or "all"
+        if normalized not in _ALLOWED_WORKFLOW_DELIVERY_MODES:
+            raise ValueError(
+                "workflows.granularities.*.delivery_mode must be one of: all, local_only, none"
+            )
+        return normalized
+
+    @field_validator("translation", mode="before")
+    @classmethod
+    def _normalize_translation_mode(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower() or "auto"
+        if normalized not in _ALLOWED_WORKFLOW_TRANSLATION_MODES:
+            raise ValueError(
+                "workflows.granularities.*.translation must be one of: auto, off"
+            )
+        return normalized
+
+    @field_validator("translate_include", mode="before")
+    @classmethod
+    def _parse_translate_include(cls, value: Any) -> Any:
+        if value is None:
+            return ["items", "trends", "ideas"]
+        if isinstance(value, str):
+            return _parse_str_list(value)
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+    @field_validator("on_translate_failure", mode="before")
+    @classmethod
+    def _normalize_translate_failure_policy(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower() or "partial_success"
+        if normalized not in _ALLOWED_WORKFLOW_TRANSLATE_FAILURE:
+            raise ValueError(
+                "workflows.granularities.*.on_translate_failure must be one of: fail, partial_success, skip"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_translate_include(self) -> "WorkflowPolicyConfig":
+        self.translate_include = _normalize_workflow_translate_include(
+            self.translate_include,
+            field_name="workflows.granularities.*.translate_include",
+        )
+        return self
+
+
+class WorkflowPolicyOverrideConfig(BaseModel):
+    recursive_lower_levels: bool | None = None
+    delivery_mode: str | None = None
+    translation: str | None = None
+    translate_include: list[str] | None = None
+    site_build: bool | None = None
+    on_translate_failure: str | None = None
+
+    @field_validator("delivery_mode", mode="before")
+    @classmethod
+    def _normalize_delivery_mode(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return None
+        if normalized not in _ALLOWED_WORKFLOW_DELIVERY_MODES:
+            raise ValueError(
+                "workflows.granularities.*.delivery_mode must be one of: all, local_only, none"
+            )
+        return normalized
+
+    @field_validator("translation", mode="before")
+    @classmethod
+    def _normalize_translation_mode(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return None
+        if normalized not in _ALLOWED_WORKFLOW_TRANSLATION_MODES:
+            raise ValueError(
+                "workflows.granularities.*.translation must be one of: auto, off"
+            )
+        return normalized
+
+    @field_validator("translate_include", mode="before")
+    @classmethod
+    def _parse_translate_include(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return _parse_str_list(value)
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+    @field_validator("on_translate_failure", mode="before")
+    @classmethod
+    def _normalize_translate_failure_policy(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return None
+        if normalized not in _ALLOWED_WORKFLOW_TRANSLATE_FAILURE:
+            raise ValueError(
+                "workflows.granularities.*.on_translate_failure must be one of: fail, partial_success, skip"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_translate_include(self) -> "WorkflowPolicyOverrideConfig":
+        if self.translate_include is not None:
+            self.translate_include = _normalize_workflow_translate_include(
+                self.translate_include,
+                field_name="workflows.granularities.*.translate_include",
+            )
+        return self
+
+    def resolved(self, *, default: WorkflowPolicyConfig) -> WorkflowPolicyConfig:
+        return WorkflowPolicyConfig(
+            recursive_lower_levels=(
+                default.recursive_lower_levels
+                if self.recursive_lower_levels is None
+                else self.recursive_lower_levels
+            ),
+            delivery_mode=default.delivery_mode if self.delivery_mode is None else self.delivery_mode,
+            translation=default.translation if self.translation is None else self.translation,
+            translate_include=(
+                list(default.translate_include)
+                if self.translate_include is None
+                else list(self.translate_include)
+            ),
+            site_build=default.site_build if self.site_build is None else self.site_build,
+            on_translate_failure=(
+                default.on_translate_failure
+                if self.on_translate_failure is None
+                else self.on_translate_failure
+            ),
+        )
+
+
+class GranularityWorkflowConfig(BaseModel):
+    default: WorkflowPolicyConfig = Field(default_factory=WorkflowPolicyConfig)
+    day: WorkflowPolicyOverrideConfig = Field(default_factory=WorkflowPolicyOverrideConfig)
+    week: WorkflowPolicyOverrideConfig = Field(default_factory=WorkflowPolicyOverrideConfig)
+    month: WorkflowPolicyOverrideConfig = Field(default_factory=WorkflowPolicyOverrideConfig)
+
+
+class DeployWorkflowConfig(BaseModel):
+    translation: str = "auto"
+    translate_include: list[str] = Field(
+        default_factory=lambda: ["items", "trends", "ideas"]
+    )
+    site_build: bool = True
+    on_translate_failure: str = "partial_success"
+
+    @field_validator("translation", mode="before")
+    @classmethod
+    def _normalize_translation_mode(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower() or "auto"
+        if normalized not in _ALLOWED_WORKFLOW_TRANSLATION_MODES:
+            raise ValueError("workflows.deploy.translation must be one of: auto, off")
+        return normalized
+
+    @field_validator("translate_include", mode="before")
+    @classmethod
+    def _parse_translate_include(cls, value: Any) -> Any:
+        if value is None:
+            return ["items", "trends", "ideas"]
+        if isinstance(value, str):
+            return _parse_str_list(value)
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return value
+
+    @field_validator("on_translate_failure", mode="before")
+    @classmethod
+    def _normalize_translate_failure_policy(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower() or "partial_success"
+        if normalized not in _ALLOWED_WORKFLOW_TRANSLATE_FAILURE:
+            raise ValueError(
+                "workflows.deploy.on_translate_failure must be one of: fail, partial_success, skip"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_translate_include(self) -> "DeployWorkflowConfig":
+        self.translate_include = _normalize_workflow_translate_include(
+            self.translate_include,
+            field_name="workflows.deploy.translate_include",
+        )
+        return self
+
+
+class WorkflowsConfig(BaseModel):
+    granularities: GranularityWorkflowConfig = Field(
+        default_factory=GranularityWorkflowConfig
+    )
+    deploy: DeployWorkflowConfig = Field(default_factory=DeployWorkflowConfig)
+
+    def policy_for_granularity(self, granularity: str) -> WorkflowPolicyConfig:
+        normalized = str(granularity or "").strip().lower()
+        if normalized not in {"day", "week", "month"}:
+            raise ValueError("workflow granularity must be one of: day, week, month")
+        overrides = getattr(self.granularities, normalized)
+        return overrides.resolved(default=self.granularities.default)
+
+
+class DaemonScheduleConfig(BaseModel):
+    workflow: str
+    interval_minutes: int | None = Field(default=None, ge=1)
+    weekday: str | None = None
+    hour_utc: int | None = Field(default=None, ge=0, le=23)
+    minute_utc: int | None = Field(default=None, ge=0, le=59)
+
+    @field_validator("workflow", mode="before")
+    @classmethod
+    def _normalize_workflow(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized not in {"day", "week", "month", "deploy", "now"}:
+            raise ValueError("daemon.schedules.workflow must be one of: now, day, week, month, deploy")
+        return normalized
+
+    @field_validator("weekday", mode="before")
+    @classmethod
+    def _normalize_weekday(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return None
+        if normalized not in _ALLOWED_DAEMON_WEEKDAYS:
+            raise ValueError(
+                "daemon.schedules.weekday must be one of: mon, tue, wed, thu, fri, sat, sun"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_schedule_shape(self) -> "DaemonScheduleConfig":
+        has_interval = self.interval_minutes is not None
+        has_weekly = (
+            self.weekday is not None
+            or self.hour_utc is not None
+            or self.minute_utc is not None
+        )
+        if has_interval and has_weekly:
+            raise ValueError(
+                "daemon.schedules entries must use either interval_minutes or weekday/hour_utc/minute_utc"
+            )
+        if has_interval:
+            return self
+        if self.weekday is None or self.hour_utc is None or self.minute_utc is None:
+            raise ValueError(
+                "daemon.schedules weekly entries require weekday, hour_utc, and minute_utc"
+            )
+        return self
+
+
+class DaemonConfig(BaseModel):
+    schedules: list[DaemonScheduleConfig] = Field(default_factory=list)
+
+
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
     _KEY_MAP: dict[str, str] = {
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
@@ -356,9 +665,6 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "ANALYZE_MAX_CONCURRENCY": "analyze_max_concurrency",
         "ANALYZE_WRITE_BATCH_SIZE": "analyze_write_batch_size",
         "ANALYZE_CONTENT_MAX_CHARS": "analyze_content_max_chars",
-        "INGEST_INTERVAL_MINUTES": "ingest_interval_minutes",
-        "ANALYZE_INTERVAL_MINUTES": "analyze_interval_minutes",
-        "PUBLISH_INTERVAL_MINUTES": "publish_interval_minutes",
         "ARTIFACTS_DIR": "artifacts_dir",
         "OBSIDIAN_BASE_FOLDER": "obsidian_base_folder",
         "PUBLISH_TARGETS": "publish_targets",
@@ -384,6 +690,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "TRENDS_PEER_HISTORY_MAX_CHARS": "trends_peer_history_max_chars",
         "TRENDS_EVOLUTION_MAX_SIGNALS": "trends_evolution_max_signals",
         "LOCALIZATION": "localization",
+        "WORKFLOWS": "workflows",
+        "DAEMON": "daemon",
     }
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
@@ -666,6 +974,10 @@ class Settings(BaseSettings):
     localization: LocalizationConfig | None = Field(
         default=None, validation_alias="LOCALIZATION"
     )
+    workflows: WorkflowsConfig = Field(
+        default_factory=WorkflowsConfig, validation_alias="WORKFLOWS"
+    )
+    daemon: DaemonConfig = Field(default_factory=DaemonConfig, validation_alias="DAEMON")
     llm_api_key: SecretStr | None = Field(
         default=None, validation_alias="RECOLETA_LLM_API_KEY"
     )
@@ -764,16 +1076,6 @@ class Settings(BaseSettings):
     )
     analyze_content_max_chars: int = Field(
         default=32_768, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS"
-    )
-
-    ingest_interval_minutes: int = Field(
-        default=60, validation_alias="INGEST_INTERVAL_MINUTES"
-    )
-    analyze_interval_minutes: int = Field(
-        default=120, validation_alias="ANALYZE_INTERVAL_MINUTES"
-    )
-    publish_interval_minutes: int = Field(
-        default=120, validation_alias="PUBLISH_INTERVAL_MINUTES"
     )
 
     artifacts_dir: Path | None = Field(default=None, validation_alias="ARTIFACTS_DIR")
@@ -912,6 +1214,30 @@ class Settings(BaseSettings):
             loaded = _parse_json_or_yaml(value)
             if not isinstance(loaded, dict):
                 raise ValueError("LOCALIZATION must be a JSON/YAML object")
+            return loaded
+        return value
+
+    @field_validator("workflows", mode="before")
+    @classmethod
+    def _parse_workflows_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            loaded = _parse_json_or_yaml(value)
+            if not isinstance(loaded, dict):
+                raise ValueError("WORKFLOWS must be a JSON/YAML object")
+            return loaded
+        return value
+
+    @field_validator("daemon", mode="before")
+    @classmethod
+    def _parse_daemon_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            loaded = _parse_json_or_yaml(value)
+            if not isinstance(loaded, dict):
+                raise ValueError("DAEMON must be a JSON/YAML object")
             return loaded
         return value
 
@@ -1336,6 +1662,14 @@ class Settings(BaseSettings):
                 )
             )
         return runtimes
+
+    def workflow_policy_for_granularity(self, granularity: str) -> WorkflowPolicyConfig:
+        return self.workflows.policy_for_granularity(granularity)
+
+    def localization_target_codes(self) -> list[str]:
+        if self.localization is None:
+            return []
+        return [target.code for target in self.localization.targets]
 
     def safe_fingerprint(self) -> str:
         payload = self.model_dump(mode="json")

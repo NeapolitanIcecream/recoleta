@@ -128,10 +128,18 @@ def _update_run_context(
     *,
     run_id: str,
     command: str | None = None,
+    operation_kind: str | None = None,
     scope: str | None = None,
     granularity: str | None = None,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
+    target_granularity: str | None = None,
+    target_period_start: datetime | None = None,
+    target_period_end: datetime | None = None,
+    requested_steps: list[str] | None = None,
+    executed_steps: list[str] | None = None,
+    skipped_steps: list[str] | None = None,
+    billing_by_step: dict[str, Any] | None = None,
 ) -> None:
     method = getattr(repository, "update_run_context", None)
     if not callable(method):
@@ -139,6 +147,8 @@ def _update_run_context(
     kwargs: dict[str, Any] = {"run_id": run_id}
     if command is not None:
         kwargs["command"] = command
+    if operation_kind is not None:
+        kwargs["operation_kind"] = operation_kind
     if scope is not None:
         kwargs["scope"] = scope
     if granularity is not None:
@@ -147,6 +157,20 @@ def _update_run_context(
         kwargs["period_start"] = period_start
     if period_end is not None:
         kwargs["period_end"] = period_end
+    if target_granularity is not None:
+        kwargs["target_granularity"] = target_granularity
+    if target_period_start is not None:
+        kwargs["target_period_start"] = target_period_start
+    if target_period_end is not None:
+        kwargs["target_period_end"] = target_period_end
+    if requested_steps is not None:
+        kwargs["requested_steps"] = requested_steps
+    if executed_steps is not None:
+        kwargs["executed_steps"] = executed_steps
+    if skipped_steps is not None:
+        kwargs["skipped_steps"] = skipped_steps
+    if billing_by_step is not None:
+        kwargs["billing_by_step"] = billing_by_step
     if len(kwargs) <= 1:
         return
     try:
@@ -165,6 +189,39 @@ def _update_run_context(
     )
     if len(supported_kwargs) <= 1:
         return
+    method(**supported_kwargs)
+
+
+def _finish_run(
+    repository: Any,
+    *,
+    run_id: str,
+    success: bool,
+    terminal_state: str | None = None,
+) -> None:
+    method = getattr(repository, "finish_run", None)
+    if not callable(method):
+        return
+    kwargs: dict[str, Any] = {
+        "run_id": run_id,
+        "success": success,
+    }
+    if terminal_state is not None:
+        kwargs["terminal_state"] = terminal_state
+    try:
+        signature = inspect.signature(method)
+    except Exception:
+        method(**kwargs)
+        return
+    accepts_var_kwargs = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    supported_kwargs = (
+        kwargs
+        if accepts_var_kwargs
+        else {key: value for key, value in kwargs.items() if key in signature.parameters}
+    )
     method(**supported_kwargs)
 
 
@@ -651,6 +708,12 @@ def _prune_inactive_lancedb_tables(
 
 _app_module = importlib.import_module("recoleta.cli.app")
 app = _app_module.app
+run_app = _app_module.run_app
+daemon_app = _app_module.daemon_app
+inspect_app = _app_module.inspect_app
+repair_app = _app_module.repair_app
+stage_app = _app_module.stage_app
+admin_app = _app_module.admin_app
 db_app = _app_module.db_app
 rag_app = _app_module.rag_app
 site_app = _app_module.site_app
@@ -661,6 +724,12 @@ main = _app_module.main
 
 __all__ = [
     "app",
+    "run_app",
+    "daemon_app",
+    "inspect_app",
+    "repair_app",
+    "stage_app",
+    "admin_app",
     "db_app",
     "rag_app",
     "site_app",

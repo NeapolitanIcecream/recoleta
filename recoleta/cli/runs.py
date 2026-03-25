@@ -104,12 +104,28 @@ def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
         }
     )
     command = str(getattr(run, "command", "") or "").strip() or None
+    operation_kind = str(getattr(run, "operation_kind", "") or "").strip() or None
     scope = str(getattr(run, "scope", "") or "").strip() or None
     granularity = str(getattr(run, "granularity", "") or "").strip() or None
     period_start = cli._isoformat_or_none(getattr(run, "period_start", None))
     period_end = cli._isoformat_or_none(getattr(run, "period_end", None))
+    target_granularity = (
+        str(getattr(run, "target_granularity", "") or "").strip() or None
+    )
+    target_period_start = cli._isoformat_or_none(
+        getattr(run, "target_period_start", None)
+    )
+    target_period_end = cli._isoformat_or_none(
+        getattr(run, "target_period_end", None)
+    )
+    requested_steps = _parse_json_list(getattr(run, "requested_steps_json", None))
+    executed_steps = _parse_json_list(getattr(run, "executed_steps_json", None))
+    skipped_steps = _parse_json_list(getattr(run, "skipped_steps_json", None))
+    billing_by_step = _parse_json_object(getattr(run, "billing_by_step_json", None))
+    terminal_state = str(getattr(run, "terminal_state", "") or "").strip() or None
     return {
         "command": command,
+        "operation_kind": operation_kind,
         "scope": scope or (scope_candidates[0] if len(scope_candidates) == 1 else None),
         "scope_candidates": scope_candidates,
         "granularity": (
@@ -125,6 +141,14 @@ def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
             period_start or (period_starts[0] if len(period_starts) == 1 else None)
         ),
         "period_end": period_end or (period_ends[0] if len(period_ends) == 1 else None),
+        "target_granularity": target_granularity,
+        "target_period_start": target_period_start,
+        "target_period_end": target_period_end,
+        "requested_steps": requested_steps,
+        "executed_steps": executed_steps,
+        "skipped_steps": skipped_steps,
+        "billing_by_step": billing_by_step,
+        "terminal_state": terminal_state,
     }
 
 

@@ -230,19 +230,8 @@ def test_trends_cli_accepts_yyyymmdd_date(
     )
 
 
-def test_trends_week_cli_accepts_yyyymmdd_date_and_enables_backfill(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_trends_week_cli_surfaces_v2_migration_guidance() -> None:
     runner = CliRunner()
-    fake_settings = _FakeSettings()
-    fake_repo = _FakeRepo()
-    fake_service = _FakeService()
-
-    monkeypatch.setattr(
-        recoleta.cli,
-        "_build_runtime",
-        lambda: (fake_settings, fake_repo, fake_service),
-    )
 
     result = runner.invoke(
         recoleta.cli.app,
@@ -252,14 +241,8 @@ def test_trends_week_cli_accepts_yyyymmdd_date_and_enables_backfill(
             "20260101",
         ],
     )
-    assert result.exit_code == 0
-    assert "Billing report" in result.stdout
-    assert fake_service.calls
-    call = fake_service.calls[0]
-    assert call["granularity"] == "week"
-    assert call["backfill"] is True
-    assert call["backfill_mode"] == "missing"
-    assert call["anchor_date"] == date(2026, 1, 1)
+    assert result.exit_code == 2
+    assert "run week" in result.stdout
 
 
 def test_trends_cli_forwards_debug_pdf_flag(

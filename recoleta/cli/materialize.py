@@ -16,6 +16,7 @@ def run_materialize_outputs_command(
     site: bool,
     debug_pdf: bool,
     json_output: bool = False,
+    command_name: str = "materialize outputs",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -32,7 +33,7 @@ def run_materialize_outputs_command(
     owner_token, lease_log, heartbeat_monitor = cli._acquire_workspace_lease_for_command(
         repository=repository,
         console=console,
-        command="materialize outputs",
+        command=command_name,
         log_module="cli.materialize.outputs",
     )
     try:
@@ -190,7 +191,7 @@ def run_materialize_outputs_command(
         cli._emit_json(
             {
                 "status": "ok",
-                "command": "materialize outputs",
+                "command": command_name,
                 "db_path": str(resolved_db_path),
                 "scope": normalized_scope,
                 "granularity": granularity,
@@ -236,7 +237,7 @@ def run_materialize_outputs_command(
         )
         return
     console.print(
-        "[green]materialize outputs completed[/green] "
+        f"[green]{command_name} completed[/green] "
         f"scopes={len(result.scopes)} "
         f"items={item_notes_total} "
         f"trends={trend_notes_total}/{trend_docs_total} "

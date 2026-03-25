@@ -519,7 +519,8 @@ def test_repair_streams_requeues_existing_and_missing_stream_rows(
     result = runner.invoke(
         recoleta.cli.app,
         [
-            "repair-streams",
+            "repair",
+            "streams",
             "--db-path",
             str(db_path),
             "--date",
@@ -638,7 +639,8 @@ def test_repair_streams_applies_startup_safe_migrations_before_repair(
     result = runner.invoke(
         recoleta.cli.app,
         [
-            "repair-streams",
+            "repair",
+            "streams",
             "--db-path",
             str(db_path),
             "--date",
