@@ -13,7 +13,8 @@ Tracks each managed run for auditing, leases, and freshness checks.
 - `heartbeat_at` (datetime): refreshed while long-running commands hold the workspace lease
 - `finished_at` (datetime, nullable)
 - `status` (text): `running|succeeded|failed`
-- `command` (text, nullable): CLI command that created the run, for example `trends` or `site gh-deploy`
+- `command` (text, nullable): CLI command that created the run, for example
+  `run week --date 2026-03-16` or `run deploy`
 - `scope` (text, nullable): stream or logical scope when one applies
 - `granularity` (text, nullable): `day|week|month` for run-scoped trend/idea windows
 - `period_start` / `period_end` (datetime, nullable): UTC bounds for windowed runs

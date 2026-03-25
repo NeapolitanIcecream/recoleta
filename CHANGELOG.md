@@ -9,13 +9,15 @@ Versioning.
 
 ### Added
 
-- `recoleta doctor llm` for effective LLM config inspection and optional probe
+- `recoleta inspect llm` for effective LLM config inspection and optional probe
   checks.
-- `recoleta doctor why-empty` for machine-readable empty-corpus diagnostics.
-- `recoleta repair-streams` for stream-state repair by UTC day.
-- `recoleta runs show` and `recoleta runs list` for aggregated run inspection.
-- `--json` output for `analyze`, `publish`, `trends`, `trends-week`, `ideas`,
-  `materialize outputs`, `site build`, `site stage`, and `site gh-deploy`.
+- `recoleta inspect why-empty` for machine-readable empty-corpus diagnostics.
+- `recoleta repair streams` for stream-state repair by UTC day.
+- `recoleta inspect runs show` and `recoleta inspect runs list` for aggregated
+  run inspection.
+- `--json` output for `stage analyze`, `stage publish`, `stage trends`,
+  `stage ideas`, `repair outputs`, `run site build`, `stage site stage`, and
+  `run deploy`.
 
 ### Changed
 

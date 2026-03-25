@@ -558,3 +558,41 @@ def test_settings_rejects_invalid_daemon_schedule_shape(
 
     with pytest.raises(ValueError, match="either interval_minutes or weekday/hour_utc/minute_utc"):
         Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_legacy_scheduler_interval_env_vars(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: CLI v2 must fail fast when old scheduler env vars are still set."""
+
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("INGEST_INTERVAL_MINUTES", "60")
+
+    with pytest.raises(ValueError, match="INGEST_INTERVAL_MINUTES"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_legacy_scheduler_interval_keys_in_config_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: old config keys must not be silently ignored after CLI v2."""
+
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                "ingest_interval_minutes: 60",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    with pytest.raises(ValueError, match="ingest_interval_minutes"):
+        Settings()  # pyright: ignore[reportCallIssue]

@@ -603,6 +603,7 @@ def run_repair_streams_command(
     anchor_date: str,
     streams: str,
     json_output: bool,
+    command_name: str = "repair streams",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -611,7 +612,7 @@ def run_repair_streams_command(
     log = logger.bind(module="cli.repair_streams", json=json_output)
 
     def _exit_with_error(message: str, *, code: int = 1) -> NoReturn:
-        log.warning("repair-streams failed error={}", message)
+        log.warning("{} failed error={}", command_name, message)
         if json_output:
             cli.typer.echo(
                 json.dumps(
@@ -621,7 +622,7 @@ def run_repair_streams_command(
                 )
             )
         else:
-            console.print(f"[red]repair-streams failed[/red] {message}")
+            console.print(f"[red]{command_name} failed[/red] {message}")
         raise cli.typer.Exit(code=code)
 
     try:
@@ -649,7 +650,7 @@ def run_repair_streams_command(
     owner_token, lease_log, heartbeat_monitor = cli._acquire_workspace_lease_for_command(
         repository=repository,
         console=console,
-        command="repair-streams",
+        command=command_name,
         log_module="cli.repair_streams",
     )
     try:
@@ -672,7 +673,7 @@ def run_repair_streams_command(
         return
 
     console.print(
-        "[green]repair-streams completed[/green] "
+        f"[green]{command_name} completed[/green] "
         f"period_start={payload['period_start']} "
         f"period_end={payload['period_end']} "
         f"item_total={payload['item_total']} "
@@ -693,6 +694,7 @@ def run_doctor_why_empty_command(
     stream: str,
     min_relevance_score: float | None,
     json_output: bool,
+    command_name: str = "doctor why-empty",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -701,7 +703,7 @@ def run_doctor_why_empty_command(
     log = logger.bind(module="cli.doctor.why_empty", json=json_output)
 
     def _exit_with_error(message: str, *, code: int = 1) -> NoReturn:
-        log.warning("doctor why-empty failed error={}", message)
+        log.warning("{} failed error={}", command_name, message)
         if json_output:
             cli.typer.echo(
                 json.dumps(
@@ -711,7 +713,7 @@ def run_doctor_why_empty_command(
                 )
             )
         else:
-            console.print(f"[red]doctor why-empty failed[/red] {message}")
+            console.print(f"[red]{command_name} failed[/red] {message}")
         raise cli.typer.Exit(code=code)
 
     try:
@@ -741,7 +743,8 @@ def run_doctor_why_empty_command(
             )
         except Exception as exc:  # noqa: BLE001
             log.warning(
-                "doctor why-empty settings load skipped error_type={} error={}",
+                "{} settings load skipped error_type={} error={}",
+                command_name,
                 type(exc).__name__,
                 str(exc),
             )
@@ -774,7 +777,7 @@ def run_doctor_why_empty_command(
         cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
         return
 
-    console.print("[green]doctor why-empty[/green]")
+    console.print(f"[green]{command_name}[/green]")
     console.print(
         f"scope={payload['scope']} granularity={payload['granularity']} "
         f"period_start={payload['period_start']} period_end={payload['period_end']}"
@@ -991,6 +994,7 @@ def run_stats_command(
     json_output: bool,
     db_path: Path | None,
     config_path: Path | None,
+    command_name: str = "stats",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -1009,7 +1013,7 @@ def run_stats_command(
                 )
             )
         else:
-            console.print(f"[red]stats failed[/red] {message}")
+            console.print(f"[red]{command_name} failed[/red] {message}")
         raise cli.typer.Exit(code=code)
 
     resolved_db_path: Path | None = None
@@ -1029,7 +1033,7 @@ def run_stats_command(
                 )
             )
         else:
-            console.print(f"[red]stats failed[/red] {message}")
+            console.print(f"[red]{command_name} failed[/red] {message}")
         raise cli.typer.Exit(code=1) from exc
 
     if not resolved_db_path.exists():
@@ -1158,7 +1162,7 @@ def run_stats_command(
         for state, count in payload["runs_by_status"].items()
         if int(count) > 0
     ]
-    console.print("[green]stats ok[/green]")
+    console.print(f"[green]{command_name} ok[/green]")
     console.print(f"db={payload['db_path']}")
     console.print(
         f"schema_version={payload['schema_version']} db_bytes={payload['db_bytes']}"
@@ -1242,6 +1246,7 @@ def run_doctor_command(
     db_path: Path | None,
     config_path: Path | None,
     max_success_age_minutes: int | None,
+    command_name: str = "doctor",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -1258,7 +1263,7 @@ def run_doctor_command(
         message = f"db path resolution failed: {exc}"
         log.warning(message)
         console.print(
-            f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+            f"[red]{'healthcheck failed' if healthcheck else command_name + ' failed'}[/red] {message}"
         )
         raise cli.typer.Exit(code=1) from exc
 
@@ -1278,7 +1283,7 @@ def run_doctor_command(
             message = f"settings load failed: {exc}"
             log.warning(message)
             console.print(
-                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+                f"[red]{'healthcheck failed' if healthcheck else command_name + ' failed'}[/red] {message}"
             )
             raise cli.typer.Exit(code=1) from exc
 
@@ -1286,7 +1291,7 @@ def run_doctor_command(
         message = f"db does not exist: {resolved_db_path}"
         log.warning(message)
         console.print(
-            f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+            f"[red]{'healthcheck failed' if healthcheck else command_name + ' failed'}[/red] {message}"
         )
         raise cli.typer.Exit(code=1)
 
@@ -1297,7 +1302,7 @@ def run_doctor_command(
         message = str(exc)
         log.warning("Schema compatibility check failed error={}", message)
         console.print(
-            f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+            f"[red]{'healthcheck failed' if healthcheck else command_name + ' failed'}[/red] {message}"
         )
         raise cli.typer.Exit(code=1) from exc
 
@@ -1319,7 +1324,7 @@ def run_doctor_command(
             )
             log.warning(message)
             console.print(
-                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+                f"[red]{'healthcheck failed' if healthcheck else command_name + ' failed'}[/red] {message}"
             )
             raise cli.typer.Exit(code=1)
     else:
@@ -1361,7 +1366,7 @@ def run_doctor_command(
             message = "latest successful run is too old: no successful runs recorded"
             log.warning(message)
             console.print(
-                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+                f"[red]{'healthcheck failed' if healthcheck else command_name + ' failed'}[/red] {message}"
             )
             raise cli.typer.Exit(code=1)
         age_seconds = max(
@@ -1375,7 +1380,7 @@ def run_doctor_command(
             )
             log.warning(message)
             console.print(
-                f"[red]{'healthcheck failed' if healthcheck else 'doctor failed'}[/red] {message}"
+                f"[red]{'healthcheck failed' if healthcheck else command_name + ' failed'}[/red] {message}"
             )
             raise cli.typer.Exit(code=1)
 
@@ -1391,7 +1396,7 @@ def run_doctor_command(
         )
         return
 
-    console.print("[green]doctor ok[/green]")
+    console.print(f"[green]{command_name} ok[/green]")
     console.print(f"db={resolved_db_path}")
     console.print(f"schema_version={schema_version}")
     console.print(f"settings={settings_status}")
@@ -1409,6 +1414,7 @@ def run_doctor_llm_command(
     json_output: bool,
     db_path: Path | None,
     config_path: Path | None,
+    command_name: str = "doctor llm",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -1427,7 +1433,7 @@ def run_doctor_llm_command(
         if json_output:
             cli._emit_json({"status": "error", "error": message})
         else:
-            console.print(f"[red]doctor llm failed[/red] {message}")
+            console.print(f"[red]{command_name} failed[/red] {message}")
         raise cli.typer.Exit(code=1) from exc
 
     repository: Any | None = None
@@ -1441,7 +1447,7 @@ def run_doctor_llm_command(
             if json_output:
                 cli._emit_json({"status": "error", "error": message})
             else:
-                console.print(f"[red]doctor llm failed[/red] {message}")
+                console.print(f"[red]{command_name} failed[/red] {message}")
             raise cli.typer.Exit(code=1)
         try:
             repository = cast(
@@ -1453,16 +1459,16 @@ def run_doctor_llm_command(
             run_id, log = cli._begin_observed_run_for_settings(
                 settings=settings,
                 repository=repository,
-                command="doctor llm",
+                command=command_name,
                 log_module="cli.doctor.llm",
             )
         except Exception as exc:  # noqa: BLE001
-            message = f"doctor llm run setup failed: {exc}"
+            message = f"{command_name} run setup failed: {exc}"
             log.warning(message)
             if json_output:
                 cli._emit_json({"status": "error", "error": message})
             else:
-                console.print(f"[red]doctor llm failed[/red] {message}")
+                console.print(f"[red]{command_name} failed[/red] {message}")
             raise cli.typer.Exit(code=1) from exc
 
     try:
@@ -1508,7 +1514,7 @@ def run_doctor_llm_command(
                 }
             )
         else:
-            console.print(f"[red]doctor llm failed[/red] {message}")
+            console.print(f"[red]{command_name} failed[/red] {message}")
             if repository is not None and run_id is not None:
                 cli._print_billing_report(
                     console=console,
@@ -1542,7 +1548,7 @@ def run_doctor_llm_command(
             )
         else:
             console.print(
-                "[red]doctor llm failed[/red] "
+                f"[red]{command_name} failed[/red] "
                 f"{message} error_type={ping_payload.get('error_type')} "
                 f"error={ping_payload.get('error_message')}"
             )
@@ -1563,7 +1569,7 @@ def run_doctor_llm_command(
         return
 
     console.print(
-        "[green]doctor llm ok[/green] "
+        f"[green]{command_name} ok[/green] "
         f"ready={str(payload['ready']).lower()} "
         f"provider={payload['provider']} model={payload['model']}"
     )

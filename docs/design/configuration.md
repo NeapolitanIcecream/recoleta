@@ -50,7 +50,8 @@ and exported into a multilingual static site.
   - `code`: language code, for example `zh-CN`.
   - `llm_label`: prompt label passed to the translation model, for example `Chinese (Simplified)`.
 - `LOCALIZATION.site_default_language_code`: default site language when multilingual site export is enabled.
-- `LOCALIZATION.legacy_backfill_source_language_code`: language code used by historical canonical rows during `recoleta translate backfill`.
+- `LOCALIZATION.legacy_backfill_source_language_code`: language code used by
+  historical canonical rows during `recoleta stage translate backfill`.
 
 Validation rules:
 
@@ -61,8 +62,10 @@ Validation rules:
 
 Operational notes:
 
-- `recoleta translate run` fills derived translations for new canonical rows.
-- `recoleta translate backfill` projects historical canonical content into the configured `source_language_code` without rewriting `analyses`, `pass_outputs`, or `documents`.
+- `recoleta run translate` fills derived translations for new canonical rows.
+- `recoleta stage translate backfill` projects historical canonical content
+  into the configured `source_language_code` without rewriting `analyses`,
+  `pass_outputs`, or `documents`.
 
 Example:
 
@@ -242,10 +245,31 @@ Operational notes:
 Choose one:
 
 - External: use cron/launchd, no scheduler config needed.
-- Internal (`recoleta run`): configure job intervals:
-  - `INGEST_INTERVAL_MINUTES` (default 60)
-  - `ANALYZE_INTERVAL_MINUTES` (default 120)
-  - `PUBLISH_INTERVAL_MINUTES` (default 120)
+- Internal (`recoleta daemon start`): configure workflow policy plus one or more daemon schedules.
+
+Workflow policy:
+
+- `WORKFLOWS.granularities.default`
+  - `recursive_lower_levels` (default `true`)
+  - `delivery_mode`: `all|local_only|none` (default `all`)
+  - `translation`: `auto|off` (default `auto`)
+  - `translate_include`: any of `items|trends|ideas` (default all three)
+  - `site_build` (default `true`)
+  - `on_translate_failure`: `fail|partial_success|skip` (default `partial_success`)
+- `WORKFLOWS.granularities.day|week|month`: optional overrides for the same fields
+- `WORKFLOWS.deploy`: translation/site-build policy for `run deploy` and `daemon` deploy jobs
+
+Daemon schedules:
+
+- `DAEMON.schedules`: list of workflow triggers
+  - `workflow`: `now|day|week|month|deploy`
+  - either `interval_minutes`
+  - or `weekday` + `hour_utc` + `minute_utc`
+
+Migration note:
+
+- `INGEST_INTERVAL_MINUTES`, `ANALYZE_INTERVAL_MINUTES`, and `PUBLISH_INTERVAL_MINUTES` were removed in CLI v2 and are rejected during settings load.
+- If you want the pre-v2 ingest/analyze/publish-only timer behavior, use an external scheduler and invoke `recoleta stage ingest`, `recoleta stage analyze`, and `recoleta stage publish` explicitly. `daemon start` now schedules named workflows rather than the old three-stage loop.
 
 ## Outputs
 
@@ -270,10 +294,20 @@ Notes:
 
 - Telegram trend delivery uses browser rendering first and falls back to the Story renderer when browser launch or browser PDF export fails.
 - `recoleta trends --debug-pdf` is a CLI flag, not a persistent config setting. It exports a per-render debug bundle under `MARKDOWN_OUTPUT_DIR/Trends/.pdf-debug/`.
-- `recoleta materialize outputs --pdf --debug-pdf` uses the same debug-bundle contract when regenerating PDFs offline.
-- `recoleta site build --input-dir ... --output-dir ...` and `recoleta site stage --input-dir ... --output-dir ...` intentionally work without loading the full runtime config so CI can build from staged trend notes only.
-- In `TOPIC_STREAMS` mode, `recoleta site build` auto-discovers `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` and `recoleta site stage` mirrors them under `./site-content/Streams/<stream>/Trends/` by default.
-- When localized markdown trees are present, `recoleta site build`, `recoleta site stage`, `recoleta site serve`, and `recoleta site gh-deploy` use `LOCALIZATION.site_default_language_code` by default when runtime settings are loaded. Use `--default-language-code <code>` when building from explicit input/output paths without full config loading.
+- `recoleta repair outputs --pdf --debug-pdf` uses the same debug-bundle
+  contract when regenerating PDFs offline.
+- `recoleta run site build --input-dir ... --output-dir ...` and
+  `recoleta stage site stage --input-dir ... --output-dir ...` intentionally
+  work without loading the full runtime config so CI can build from staged
+  trend notes only.
+- In `TOPIC_STREAMS` mode, `recoleta run site build` auto-discovers
+  `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` and `recoleta stage site stage`
+  mirrors them under `./site-content/Streams/<stream>/Trends/` by default.
+- When localized markdown trees are present, `recoleta run site build`,
+  `recoleta stage site stage`, `recoleta run site serve`, and
+  `recoleta run deploy` use `LOCALIZATION.site_default_language_code` by
+  default when runtime settings are loaded. Use `--default-language-code <code>`
+  when building from explicit input/output paths without full config loading.
 
 ## Logging and diagnostics
 

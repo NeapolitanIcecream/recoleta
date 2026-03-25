@@ -33,6 +33,7 @@ def run_site_build_command(
     limit: int | None,
     default_language_code: str | None = None,
     json_output: bool = False,
+    command_name: str = "site build",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -81,7 +82,7 @@ def run_site_build_command(
         cli._maybe_acquire_workspace_lease_for_settings(
             settings=settings,
             console=console,
-            command="site build",
+            command=command_name,
             log_module="cli.site.build",
         )
     )
@@ -117,7 +118,7 @@ def run_site_build_command(
         cli._emit_json(
             {
                 "status": "ok",
-                "command": "site build",
+                "command": command_name,
                 "input_dir": str(resolved_input_dir),
                 "output_dir": str(resolved_output_dir),
                 "manifest_path": str(manifest_path),
@@ -134,7 +135,7 @@ def run_site_build_command(
         segments.append(f"streams={manifest['streams_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
-        "[green]site build completed[/green] " + " ".join(segments)
+        f"[green]{command_name} completed[/green] " + " ".join(segments)
     )
 
 
@@ -145,6 +146,7 @@ def run_site_stage_command(
     limit: int | None,
     default_language_code: str | None = None,
     json_output: bool = False,
+    command_name: str = "site stage",
 ) -> None:
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
@@ -196,7 +198,7 @@ def run_site_stage_command(
         cli._maybe_acquire_workspace_lease_for_settings(
             settings=settings,
             console=console,
-            command="site stage",
+            command=command_name,
             log_module="cli.site.stage",
         )
     )
@@ -230,7 +232,7 @@ def run_site_stage_command(
         cli._emit_json(
             {
                 "status": "ok",
-                "command": "site stage",
+                "command": command_name,
                 "input_dir": str(resolved_input_dir),
                 "output_dir": str(resolved_output_dir),
                 "manifest_path": str(manifest_path),
@@ -247,7 +249,7 @@ def run_site_stage_command(
         segments.append(f"streams={manifest['streams_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
-        "[green]site stage completed[/green] " + " ".join(segments)
+        f"[green]{command_name} completed[/green] " + " ".join(segments)
     )
 
 
@@ -260,6 +262,8 @@ def run_site_serve_command(
     port: int,
     build: bool,
     default_language_code: str | None = None,
+    command_name: str = "site serve",
+    build_command_name: str = "site build",
 ) -> None:
     resolved_output_dir = (
         output_dir.expanduser().resolve() if output_dir is not None else None
@@ -279,6 +283,7 @@ def run_site_serve_command(
             output_dir=resolved_output_dir,
             limit=limit,
             default_language_code=default_language_code,
+            command_name=build_command_name,
         )
 
     if not resolved_output_dir.exists() or not resolved_output_dir.is_dir():
@@ -305,7 +310,7 @@ def run_site_serve_command(
             served_port = int(server.server_address[1])
             log.info("Site preview server started")
             console.print(
-                "[green]site serve ready[/green] "
+                f"[green]{command_name} ready[/green] "
                 f"url=http://{served_host}:{served_port} "
                 f"output={resolved_output_dir}"
             )

@@ -76,7 +76,7 @@ Optional alternatives (not required for v0):
 
 - `python-telegram-bot`: async bot client with built-in patterns for flood-limit avoidance and error handling.
 
-### Optional (recommended for `recoleta run`)
+### Optional (recommended for `recoleta daemon start`)
 
 - `apscheduler`: lightweight in-process scheduler for interval jobs.
 

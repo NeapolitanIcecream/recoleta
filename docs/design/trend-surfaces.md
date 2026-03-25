@@ -110,7 +110,7 @@ GitHub Pages deployment now prefers a derived branch workflow, similar to `mkdoc
 Flow:
 
 1. Generate/update canonical trend notes locally.
-2. Run `recoleta site gh-deploy`.
+2. Run `recoleta run deploy`.
 3. Recoleta builds the public site in a temporary directory.
 4. Recoleta commits that derived output to a dedicated deployment branch such as `gh-pages`.
 5. GitHub Pages publishes directly from that branch.
@@ -120,7 +120,8 @@ Why this shape:
 - `main` stays free of `site-content/` snapshots and Pages-specific workflow files.
 - Deployment does not require CI access to local Recoleta state, local config files, or private output directories.
 - The deployment branch remains an explicit, inspectable public artifact, but it is clearly segregated from source code.
-- `site build` and `site stage` still exist for custom CI or non-GitHub static hosts when an explicit repo-local snapshot is useful.
+- `run site build` and `stage site stage` still exist for custom CI or
+  non-GitHub static hosts when an explicit repo-local snapshot is useful.
 
 ## Observability
 

@@ -1435,7 +1435,7 @@ def run_translation(
 ) -> TranslationRunResult:
     localization = settings.localization
     if localization is None or not localization.targets:
-        raise ValueError("localization.targets must be configured for translate run")
+        raise ValueError("localization.targets must be configured for translation")
 
     normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
     normalized_granularity = (
@@ -1527,7 +1527,7 @@ def run_translation_backfill(
 ) -> TranslationRunResult:
     localization = settings.localization
     if localization is None:
-        raise ValueError("localization must be configured for translate backfill")
+        raise ValueError("localization must be configured for translation backfill")
 
     normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
     normalized_granularity = (
@@ -1547,7 +1547,7 @@ def run_translation_backfill(
     )
     if not source_language_code:
         raise ValueError(
-            "legacy_source_language or localization.legacy_backfill_source_language_code is required for translate backfill"
+            "legacy_source_language or localization.legacy_backfill_source_language_code is required for translation backfill"
         )
     target_language_code = str(localization.source_language_code).strip()
     target_language_label = _target_language_label(

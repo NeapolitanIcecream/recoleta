@@ -74,6 +74,11 @@ _ALLOWED_WORKFLOW_TRANSLATION_MODES = {"auto", "off"}
 _ALLOWED_WORKFLOW_TRANSLATE_INCLUDE = {"items", "trends", "ideas"}
 _ALLOWED_WORKFLOW_TRANSLATE_FAILURE = {"fail", "partial_success", "skip"}
 _ALLOWED_DAEMON_WEEKDAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+_DEPRECATED_SCHEDULER_INTERVAL_KEYS = (
+    "INGEST_INTERVAL_MINUTES",
+    "ANALYZE_INTERVAL_MINUTES",
+    "PUBLISH_INTERVAL_MINUTES",
+)
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LANGUAGE_CODE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 
@@ -182,6 +187,17 @@ def _load_secret_from_env(env_name: str | None) -> SecretStr | None:
     if not raw:
         return None
     return SecretStr(raw)
+
+
+def _legacy_scheduler_interval_message(keys: list[str]) -> str:
+    normalized = list(dict.fromkeys(str(key).strip() for key in keys if str(key).strip()))
+    rendered = ", ".join(f"`{key}`" for key in normalized)
+    return (
+        "CLI v2 removed legacy scheduler interval settings: "
+        f"{rendered}. Use `WORKFLOWS`/`DAEMON` (`workflows`/`daemon` in YAML) "
+        "for workflow scheduling, or an external scheduler plus `recoleta stage ...` "
+        "if you need ingest/analyze/publish-only runs."
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -747,6 +763,16 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
                 "Config file must contain a mapping/object at the top level"
             )
 
+        deprecated_scheduler_keys = [
+            key
+            for key in loaded
+            if isinstance(key, str) and key.upper() in _DEPRECATED_SCHEDULER_INTERVAL_KEYS
+        ]
+        if deprecated_scheduler_keys:
+            raise ValueError(
+                _legacy_scheduler_interval_message(deprecated_scheduler_keys)
+            )
+
         for key in loaded:
             if key in self._FORBIDDEN_TOP_LEVEL_KEYS:
                 raise ValueError(
@@ -978,6 +1004,24 @@ class Settings(BaseSettings):
         default_factory=WorkflowsConfig, validation_alias="WORKFLOWS"
     )
     daemon: DaemonConfig = Field(default_factory=DaemonConfig, validation_alias="DAEMON")
+    legacy_ingest_interval_minutes: int | None = Field(
+        default=None,
+        validation_alias="INGEST_INTERVAL_MINUTES",
+        exclude=True,
+        repr=False,
+    )
+    legacy_analyze_interval_minutes: int | None = Field(
+        default=None,
+        validation_alias="ANALYZE_INTERVAL_MINUTES",
+        exclude=True,
+        repr=False,
+    )
+    legacy_publish_interval_minutes: int | None = Field(
+        default=None,
+        validation_alias="PUBLISH_INTERVAL_MINUTES",
+        exclude=True,
+        repr=False,
+    )
     llm_api_key: SecretStr | None = Field(
         default=None, validation_alias="RECOLETA_LLM_API_KEY"
     )
@@ -1178,6 +1222,19 @@ class Settings(BaseSettings):
                 )
         return self
 
+    @model_validator(mode="after")
+    def _reject_legacy_scheduler_intervals(self) -> "Settings":
+        deprecated_keys: list[str] = []
+        if self.legacy_ingest_interval_minutes is not None:
+            deprecated_keys.append("INGEST_INTERVAL_MINUTES")
+        if self.legacy_analyze_interval_minutes is not None:
+            deprecated_keys.append("ANALYZE_INTERVAL_MINUTES")
+        if self.legacy_publish_interval_minutes is not None:
+            deprecated_keys.append("PUBLISH_INTERVAL_MINUTES")
+        if deprecated_keys:
+            raise ValueError(_legacy_scheduler_interval_message(deprecated_keys))
+        return self
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -1240,6 +1297,23 @@ class Settings(BaseSettings):
                 raise ValueError("DAEMON must be a JSON/YAML object")
             return loaded
         return value
+
+    @field_validator(
+        "legacy_ingest_interval_minutes",
+        "legacy_analyze_interval_minutes",
+        "legacy_publish_interval_minutes",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_legacy_scheduler_interval(cls, value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            value = stripped
+        return int(value)
 
     @field_validator("publish_targets", mode="before")
     @classmethod
