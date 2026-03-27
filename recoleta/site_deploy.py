@@ -233,6 +233,16 @@ def _sanitize_public_manifest(*, manifest_path: Path) -> dict[str, Any]:
     return sanitized
 
 
+def _sanitize_public_manifests(*, site_dir: Path) -> dict[str, Any]:
+    root_manifest_path = site_dir / "manifest.json"
+    root_manifest = _sanitize_public_manifest(manifest_path=root_manifest_path)
+    for manifest_path in sorted(site_dir.rglob("manifest.json")):
+        if manifest_path == root_manifest_path:
+            continue
+        _sanitize_public_manifest(manifest_path=manifest_path)
+    return root_manifest
+
+
 def _ensure_no_symlinks(path: Path) -> None:
     for child in path.rglob("*"):
         if child.is_symlink():
@@ -285,7 +295,13 @@ def _publish_site_snapshot(
 ) -> tuple[str, bool]:
     author_name, author_email = _deployment_identity(repo_root=repo_root)
 
-    with tempfile.TemporaryDirectory(prefix="recoleta-gh-pages-branch-") as tmp_dir:
+    # Git housekeeping or filesystem indexing can leave transient entries in the
+    # temporary checkout during teardown on macOS. Treat cleanup as best-effort so
+    # a completed publish is not reported as failed after the push succeeded.
+    with tempfile.TemporaryDirectory(
+        prefix="recoleta-gh-pages-branch-",
+        ignore_cleanup_errors=True,
+    ) as tmp_dir:
         deploy_root = Path(tmp_dir).resolve()
         branch_exists = _prepare_deploy_checkout(
             deploy_root=deploy_root,
@@ -534,7 +550,10 @@ def deploy_trend_static_site_to_github_pages(
         remote_name=str(remote or "origin").strip() or "origin",
     )
 
-    with tempfile.TemporaryDirectory(prefix="recoleta-gh-pages-site-") as tmp_dir:
+    with tempfile.TemporaryDirectory(
+        prefix="recoleta-gh-pages-site-",
+        ignore_cleanup_errors=True,
+    ) as tmp_dir:
         site_dir = Path(tmp_dir).resolve() / "site"
         manifest_path = export_trend_static_site(
             input_dir=input_dir,
@@ -542,7 +561,8 @@ def deploy_trend_static_site_to_github_pages(
             limit=limit,
             default_language_code=default_language_code,
         )
-        manifest = _sanitize_public_manifest(manifest_path=manifest_path)
+        _ = manifest_path
+        manifest = _sanitize_public_manifests(site_dir=site_dir)
         if cname is not None:
             _write_cname(site_dir=site_dir, cname=cname)
         _ensure_no_symlinks(site_dir)

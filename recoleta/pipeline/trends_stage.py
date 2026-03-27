@@ -11,7 +11,6 @@ from typing import Any, Protocol, cast
 import orjson
 from loguru import logger
 
-from recoleta.config import TopicStreamRuntime
 from recoleta.delivery import TelegramSender
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
@@ -26,7 +25,7 @@ from recoleta.pipeline.pass_runner import (
     run_pass_definition,
 )
 from recoleta.passes import TREND_SYNTHESIS_PASS_KIND, build_trend_synthesis_pass_output
-from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
+from recoleta.ports import TrendStageRepositoryPort
 from recoleta.publish import (
     build_telegram_trend_document_caption,
     export_trend_note_pdf_debug_bundle,
@@ -63,8 +62,6 @@ class TrendStageService(Protocol):
     analyzer: Any
     semantic_triage: Any
     telegram_sender: Any | None
-    _topic_streams: list[TopicStreamRuntime]
-    _explicit_topic_streams: bool
     _llm_connection: Any
 
     @property
@@ -82,10 +79,6 @@ class TrendStageService(Protocol):
         debug_pdf: bool = False,
         reuse_existing_corpus: bool = False,
     ) -> TrendResult: ...
-
-    def _settings_for_topic_stream(self, stream: TopicStreamRuntime) -> Any: ...
-
-    def _telegram_sender_for_stream(self, stream: TopicStreamRuntime) -> Any: ...
 
     def _telegram_delivery_destination(self) -> str: ...
 
@@ -145,18 +138,6 @@ def run_trends_stage(
     scope: str = DEFAULT_TOPIC_STREAM,
     reuse_existing_corpus: bool = False,
 ) -> TrendResult:
-    if service._explicit_topic_streams:
-        return run_trends_topic_streams_stage(
-            service,
-            run_id=run_id,
-            granularity=granularity,
-            anchor_date=anchor_date,
-            llm_model=llm_model,
-            backfill=backfill,
-            backfill_mode=backfill_mode,
-            debug_pdf=debug_pdf,
-            reuse_existing_corpus=reuse_existing_corpus,
-        )
     log = logger.bind(module="pipeline.trends", run_id=run_id)
     metric_namespace = _trend_metric_name("pipeline.trends", scope=scope)
     started = time.perf_counter()
@@ -1793,91 +1774,3 @@ def run_trends_stage(
         )
         log.warning("Trends failed: {}", sanitized_error)
         raise
-
-
-def run_trends_topic_streams_stage(
-    service: TrendStageService,
-    *,
-    run_id: str,
-    granularity: str = "day",
-    anchor_date: date | None = None,
-    llm_model: str | None = None,
-    backfill: bool = False,
-    backfill_mode: str = "missing",
-    debug_pdf: bool = False,
-    reuse_existing_corpus: bool = False,
-) -> TrendResult:
-    log = logger.bind(module="pipeline.trends", run_id=run_id)
-    results: list[TrendResult] = []
-
-    for stream in service._topic_streams:
-        stream_settings = service._settings_for_topic_stream(stream)
-        stream_targets = set(stream.publish_targets)
-        stream_sender: Any | None = None
-        if "telegram" in stream_targets:
-            stream_sender = service._telegram_sender_for_stream(stream)
-        service_factory = cast(Any, service.__class__)
-        child_service = service_factory(
-            settings=stream_settings,
-            repository=cast(RepositoryPort, service.repository),
-            analyzer=service.analyzer,
-            triage=service.semantic_triage,
-            telegram_sender=stream_sender,
-        )
-        result = run_trends_stage(
-            child_service,
-            run_id=run_id,
-            granularity=granularity,
-            anchor_date=anchor_date,
-            llm_model=llm_model,
-            backfill=backfill,
-            backfill_mode=backfill_mode,
-            debug_pdf=debug_pdf,
-            scope=stream.name,
-            reuse_existing_corpus=reuse_existing_corpus,
-        )
-        result.stream = stream.name
-        results.append(result)
-
-    service.repository.record_metric(
-        run_id=run_id,
-        name="pipeline.trends.streams_total",
-        value=len(results),
-        unit="count",
-    )
-    if not results:
-        anchor = anchor_date or utc_now().date()
-        if granularity == "week":
-            period_start, period_end = trends.week_period_bounds(anchor)
-        elif granularity == "month":
-            period_start, period_end = trends.month_period_bounds(anchor)
-        else:
-            period_start, period_end = trends.day_period_bounds(anchor)
-        return TrendResult(
-            doc_id=0,
-            granularity=str(granularity or "").strip().lower() or "day",
-            period_start=period_start,
-            period_end=period_end,
-            title="Trend",
-            pass_output_id=None,
-            stream_results=[],
-        )
-
-    first = results[0]
-    log.info(
-        "Topic stream trends completed streams={} granularity={} period_start={} period_end={}",
-        len(results),
-        first.granularity,
-        first.period_start.isoformat(),
-        first.period_end.isoformat(),
-    )
-    return TrendResult(
-        doc_id=first.doc_id,
-        granularity=first.granularity,
-        period_start=first.period_start,
-        period_end=first.period_end,
-        title=first.title,
-        pass_output_id=first.pass_output_id,
-        stream=first.stream,
-        stream_results=results,
-    )

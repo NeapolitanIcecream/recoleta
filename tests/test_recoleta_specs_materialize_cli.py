@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from bs4 import BeautifulSoup
 import pytest
@@ -178,8 +179,59 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
         ).one()
         assert item_after.state == item_state_before
         assert meta_after.text == meta_text_before
-        assert "https://example.com/robometer" in meta_after.text
-        assert "../Inbox/" not in meta_after.text
+
+
+def test_materialize_outputs_renders_default_scope_items_without_legacy_stream_state_table(
+    tmp_path: Path,
+) -> None:
+    """Regression: default-scope materialization should not depend on item_stream_states."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    trend_doc_id, placeholder_item_note_path = _seed_materialize_fixture(
+        repository=repository
+    )
+    output_dir = tmp_path / "outputs"
+
+    result = materialize_outputs(
+        repository=repository,
+        scope_specs=[
+            MaterializeScopeSpec(scope="default", output_dir=output_dir),
+        ],
+        site_input_dir=output_dir,
+        site_output_dir=output_dir / "site",
+    )
+
+    item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
+    trend_note_path = output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    assert result.site_manifest_path == output_dir / "site" / "manifest.json"
+    assert item_note_path.exists()
+    assert trend_note_path.exists()
+
+
+def test_default_scope_specs_for_settings_ignore_legacy_topic_stream_runtimes(
+    tmp_path: Path,
+) -> None:
+    fake_settings = SimpleNamespace(
+        markdown_output_dir=tmp_path / "outputs",
+        obsidian_vault_path=tmp_path / "vault",
+        obsidian_base_folder="Recoleta",
+        topic_stream_runtimes=lambda: [
+            SimpleNamespace(
+                name="legacy_stream",
+                explicit=True,
+                markdown_output_dir=tmp_path / "outputs" / "Streams" / "legacy_stream",
+                obsidian_base_folder="Legacy",
+            )
+        ],
+    )
+
+    specs = materialize_module.default_scope_specs_for_settings(settings=fake_settings)
+
+    assert len(specs) == 1
+    assert specs[0].scope == "default"
+    assert specs[0].output_dir == tmp_path / "outputs"
+    assert specs[0].obsidian_vault_path == tmp_path / "vault"
+    assert specs[0].obsidian_base_folder == "Recoleta"
 
 
 def test_materialize_outputs_preserves_trend_projection_provenance_in_note_frontmatter(

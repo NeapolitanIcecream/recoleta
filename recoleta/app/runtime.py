@@ -27,6 +27,18 @@ _WORKSPACE_LEASE_TIMEOUT_SECONDS = 90
 _RUN_HEARTBEAT_INTERVAL_SECONDS = 15
 
 
+class TopicStreamsMigrationRequiredError(ValueError):
+    """Raised when runtime loading encounters legacy topic stream configs."""
+
+
+def _topic_streams_migration_required_message() -> str:
+    return (
+        "Explicit TOPIC_STREAMS are no longer supported by the main runtime. "
+        "Run `recoleta admin migrate topic-streams-to-instances --config <old-config> "
+        "--db <old-db> --out <fleet-dir>` first."
+    )
+
+
 def _import_symbol(module_name: str, *, attr_name: str | None = None) -> Any:
     module = importlib.import_module(module_name)
     if attr_name is None:
@@ -103,22 +115,11 @@ def _build_settings(
         init_kwargs["recoleta_db_path"] = db_path.expanduser().resolve()
     settings = settings_cls(**init_kwargs)  # pyright: ignore[reportCallIssue]
     configure_process_logging(level=settings.log_level, log_json=settings.log_json)
+    if list(getattr(settings, "topic_streams", []) or []):
+        raise TopicStreamsMigrationRequiredError(
+            _topic_streams_migration_required_message()
+        )
     return settings
-
-
-def _has_explicit_topic_streams(settings: Any) -> bool:
-    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
-    if not callable(runtime_builder):
-        return False
-    try:
-        runtimes = runtime_builder()
-    except Exception:
-        return False
-    if not isinstance(runtimes, list):
-        return False
-    return any(bool(getattr(stream, "explicit", False)) for stream in runtimes)
-
-
 def _parse_anchor_date_option(value: str) -> date:
     raw = str(value or "").strip()
     if not raw:
@@ -397,6 +398,8 @@ def _begin_managed_run(
     *,
     command: str,
     log_module: str,
+    config_path: Any | None = None,
+    db_path: Any | None = None,
 ) -> tuple[Any, Any, Any, Any, str, str, Any, _LeaseHeartbeatMonitor]:
     symbols = _runtime_symbols()
     logger = symbols["logger"]
@@ -404,7 +407,12 @@ def _begin_managed_run(
     workspace_lease_held_error = symbols["WorkspaceLeaseHeldError"]
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
 
-    settings, repository, service = _build_runtime()
+    build_runtime_kwargs: dict[str, Any] = {}
+    if config_path is not None:
+        build_runtime_kwargs["config_path"] = config_path
+    if db_path is not None:
+        build_runtime_kwargs["db_path"] = db_path
+    settings, repository, service = _build_runtime(**build_runtime_kwargs)
     console = console_cls(stderr=bool(getattr(settings, "log_json", False)))
     run_id = str(uuid4())
     owner_token = str(uuid4())

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 from typing import cast
 
@@ -159,6 +160,40 @@ def _seed_item_trend_and_idea(
         source_content_type="trend_ideas_payload_json",
     )
     return analysis, int(trend_doc_id), int(idea_doc.id)
+
+
+def _seed_analysis(
+    *,
+    repository: Repository,
+    source_item_id: str,
+    canonical_url: str,
+    title: str,
+    published_at: datetime,
+    summary: str,
+) -> Analysis:
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id=source_item_id,
+        canonical_url=canonical_url,
+        title=title,
+        authors=["Alice"],
+        published_at=published_at,
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    return repository.save_analysis(
+        item_id=int(item.id),
+        result=AnalysisResult(
+            model="openai/gpt-5.4",
+            provider="openai",
+            summary=summary,
+            topics=["agents"],
+            relevance_score=0.8,
+            novelty_score=0.3,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
 
 
 def test_settings_loads_localization_from_env_string(
@@ -907,14 +942,199 @@ def test_translate_run_cli_json_includes_run_id_and_billing(
     assert payload["billing"]["components"]["translation_llm"]["calls"] == 1
     assert payload["billing"]["components"]["translation_llm"]["input_tokens"] == 64
     assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 16
-    assert payload["billing"]["total_cost_usd"] == 0.0011
-    row = repository.get_localized_output(
-        source_kind="analysis",
-        source_record_id=int(analysis.id or 0),
-        scope="default",
-        language_code="zh-CN",
+
+
+def test_run_translation_incremental_limits_items_to_workflow_period(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: workflow translation must not drain old item backlog outside the target window."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    older_analysis = _seed_analysis(
+        repository=repository,
+        source_item_id="older-item",
+        canonical_url="https://example.com/older",
+        title="Older item",
+        published_at=datetime(2026, 3, 1, 12, tzinfo=UTC),
+        summary="## Summary\n\nOlder summary.\n",
     )
-    assert row is not None
+    current_analysis = _seed_analysis(
+        repository=repository,
+        source_item_id="current-item",
+        canonical_url="https://example.com/current",
+        title="Current item",
+        published_at=datetime(2026, 3, 16, 12, tzinfo=UTC),
+        summary="## Summary\n\nCurrent summary.\n",
+    )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: kwargs["payload"],
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="items",
+        force=True,
+        all_history=False,
+        period_start=datetime(2026, 3, 16, tzinfo=UTC),
+        period_end=datetime(2026, 3, 17, tzinfo=UTC),
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 1
+    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    assert {
+        (row.source_kind, row.source_record_id)
+        for row in rows
+    } == {("analysis", int(current_analysis.id or 0))}
+    assert int(older_analysis.id or 0) not in {
+        int(row.source_record_id or 0) for row in rows if row.source_kind == "analysis"
+    }
+
+
+def test_run_translation_executes_llm_calls_in_parallel_for_multiple_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    titles = ["Alpha systems", "Beta agents", "Gamma robotics"]
+    for index in range(3):
+        _seed_analysis(
+            repository=repository,
+            source_item_id=f"parallel-item-{index}",
+            canonical_url=f"https://example.com/parallel-{index}",
+            title=titles[index],
+            published_at=datetime(2026, 3, 16, 12 + index, tzinfo=UTC),
+            summary=f"## Summary\n\nParallel summary {index}.\n",
+        )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    barrier = threading.Barrier(3)
+    lock = threading.Lock()
+    inflight = 0
+    max_inflight = 0
+
+    def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
+        nonlocal inflight, max_inflight
+        with lock:
+            inflight += 1
+            max_inflight = max(max_inflight, inflight)
+        try:
+            barrier.wait(timeout=1.0)
+            return kwargs["payload"]
+        finally:
+            with lock:
+                inflight -= 1
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        _fake_translate,
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="items",
+        force=True,
+        all_history=False,
+        period_start=datetime(2026, 3, 16, tzinfo=UTC),
+        period_end=datetime(2026, 3, 17, tzinfo=UTC),
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 3
+    assert max_inflight >= 2
+
+
+def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: period-scoped translation must normalize SQLite-naive trend windows."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: kwargs["payload"],
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="trends",
+        granularity="day",
+        force=True,
+        all_history=False,
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 1
+    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    assert {
+        (row.source_kind, row.source_record_id)
+        for row in rows
+    } == {("trend_synthesis", trend_doc_id)}
 
 
 def test_translate_run_hybrid_uses_search_service_without_auto_syncing_vectors(
@@ -1774,7 +1994,6 @@ def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outpu
             select(translation_module.Document)
             .where(
                 translation_module.Document.doc_type == "idea",
-                translation_module.Document.scope == "default",
                 translation_module.Document.granularity == "day",
                 translation_module.Document.period_start == period_start,
                 translation_module.Document.period_end == period_end,

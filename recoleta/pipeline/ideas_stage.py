@@ -8,7 +8,6 @@ from typing import Any, Protocol, cast
 
 from loguru import logger
 
-from recoleta.config import TopicStreamRuntime
 from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
 from recoleta.pipeline.pass_runner import (
     PassDefinition,
@@ -26,7 +25,7 @@ from recoleta.passes import (
     build_trend_snapshot_pack_md,
     normalize_trend_ideas_payload,
 )
-from recoleta.ports import RepositoryPort, TrendStageRepositoryPort
+from recoleta.ports import TrendStageRepositoryPort
 from recoleta.provenance import (
     build_projection_provenance,
     inject_projection_provenance,
@@ -48,8 +47,6 @@ class IdeasStageService(Protocol):
     analyzer: Any
     semantic_triage: Any
     telegram_sender: Any | None
-    _topic_streams: list[TopicStreamRuntime]
-    _explicit_topic_streams: bool
     _llm_connection: Any
 
     @property
@@ -63,8 +60,6 @@ class IdeasStageService(Protocol):
         anchor_date: date | None = None,
         llm_model: str | None = None,
     ) -> IdeasResult: ...
-
-    def _settings_for_topic_stream(self, stream: TopicStreamRuntime) -> Any: ...
 
     def _sanitize_error_message(self, message: str) -> str: ...
 
@@ -294,15 +289,6 @@ def run_ideas_stage(
     llm_model: str | None = None,
     scope: str = DEFAULT_TOPIC_STREAM,
 ) -> IdeasResult:
-    if service._explicit_topic_streams:
-        return run_ideas_topic_streams_stage(
-            service,
-            run_id=run_id,
-            granularity=granularity,
-            anchor_date=anchor_date,
-            llm_model=llm_model,
-        )
-
     log = logger.bind(module="pipeline.trends.pass.ideas", run_id=run_id, scope=scope)
     started = time.perf_counter()
     normalized_granularity = str(granularity or "").strip().lower()
@@ -681,71 +667,4 @@ def run_ideas_stage(
         status=status.value,
         note_path=note_path,
         upstream_pass_output_id=upstream_pass_output_id,
-    )
-
-
-def run_ideas_topic_streams_stage(
-    service: IdeasStageService,
-    *,
-    run_id: str,
-    granularity: str = "day",
-    anchor_date: date | None = None,
-    llm_model: str | None = None,
-) -> IdeasResult:
-    results: list[IdeasResult] = []
-    for stream in service._topic_streams:
-        stream_settings = service._settings_for_topic_stream(stream)
-        service_factory = cast(Any, service.__class__)
-        child_service = service_factory(
-            settings=stream_settings,
-            repository=cast(RepositoryPort, service.repository),
-            analyzer=service.analyzer,
-            triage=service.semantic_triage,
-            telegram_sender=service.telegram_sender,
-        )
-        result = run_ideas_stage(
-            child_service,
-            run_id=run_id,
-            granularity=granularity,
-            anchor_date=anchor_date,
-            llm_model=llm_model,
-            scope=stream.name,
-        )
-        result.stream = stream.name
-        results.append(result)
-
-    service.repository.record_metric(
-        run_id=run_id,
-        name="pipeline.trends.pass.ideas.streams_total",
-        value=len(results),
-        unit="count",
-    )
-    anchor = anchor_date or utc_now().date()
-    period_start, period_end = _period_bounds_for_granularity(
-        granularity=granularity,
-        anchor=anchor,
-    )
-    if not results:
-        return IdeasResult(
-            pass_output_id=None,
-            granularity=str(granularity or "").strip().lower() or "day",
-            period_start=period_start,
-            period_end=period_end,
-            title="Ideas",
-            status=PassStatus.SUPPRESSED.value,
-            note_path=None,
-            stream_results=[],
-        )
-    first = results[0]
-    return IdeasResult(
-        pass_output_id=first.pass_output_id,
-        granularity=first.granularity,
-        period_start=first.period_start,
-        period_end=first.period_end,
-        title=first.title,
-        status=first.status,
-        note_path=first.note_path,
-        upstream_pass_output_id=first.upstream_pass_output_id,
-        stream=first.stream,
-        stream_results=results,
     )

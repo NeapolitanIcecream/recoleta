@@ -71,24 +71,9 @@ def run_materialize_outputs_command(
                 resolved_obsidian_vault_path = getattr(
                     settings, "obsidian_vault_path", None
                 )
-                if cli._has_explicit_topic_streams(settings):
-                    runtimes = list(getattr(settings, "topic_stream_runtimes")())
-                    matched_runtime = next(
-                        (
-                            runtime
-                            for runtime in runtimes
-                            if str(getattr(runtime, "name", "") or "") == normalized_scope
-                        ),
-                        None,
-                    )
-                    if matched_runtime is not None:
-                        resolved_obsidian_base_folder = str(
-                            getattr(matched_runtime, "obsidian_base_folder", "") or ""
-                        ).strip() or None
-                if resolved_obsidian_base_folder is None:
-                    resolved_obsidian_base_folder = str(
-                        getattr(settings, "obsidian_base_folder", "") or ""
-                    ).strip() or None
+                resolved_obsidian_base_folder = str(
+                    getattr(settings, "obsidian_base_folder", "") or ""
+                ).strip() or None
             scope_specs = [
                 materialize_scope_spec_cls(
                     scope=normalized_scope,
@@ -131,12 +116,8 @@ def run_materialize_outputs_command(
             site_input_dir = None
             site_output_dir = None
             if site:
-                if cli._has_explicit_topic_streams(settings):
-                    site_input_dir = Path(settings.markdown_output_dir)
-                    site_output_dir = Path(settings.markdown_output_dir) / "site"
-                else:
-                    site_input_dir = Path(scope_specs[0].output_dir)
-                    site_output_dir = Path(scope_specs[0].output_dir) / "site"
+                site_input_dir = Path(scope_specs[0].output_dir)
+                site_output_dir = Path(scope_specs[0].output_dir) / "site"
             output_language = settings.llm_output_language
 
         result = materialize_outputs(

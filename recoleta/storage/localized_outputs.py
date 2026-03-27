@@ -35,7 +35,7 @@ class LocalizedOutputStoreMixin:
         normalized_source_record_id = int(source_record_id)
         if normalized_source_record_id <= 0:
             raise ValueError("source_record_id must be > 0")
-        normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
+        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_language_code = str(language_code or "").strip()
         if not normalized_language_code:
             raise ValueError("language_code must not be empty")
@@ -57,7 +57,6 @@ class LocalizedOutputStoreMixin:
                 select(LocalizedOutput).where(
                     LocalizedOutput.source_kind == normalized_source_kind,
                     LocalizedOutput.source_record_id == normalized_source_record_id,
-                    LocalizedOutput.scope == normalized_scope,
                     LocalizedOutput.language_code == normalized_language_code,
                 )
             ).first()
@@ -65,7 +64,6 @@ class LocalizedOutputStoreMixin:
                 row = LocalizedOutput(
                     source_kind=normalized_source_kind,
                     source_record_id=normalized_source_record_id,
-                    scope=normalized_scope,
                     language_code=normalized_language_code,
                     status=normalized_status,
                     schema_version=max(1, int(schema_version)),
@@ -103,7 +101,7 @@ class LocalizedOutputStoreMixin:
         normalized_source_record_id = int(source_record_id)
         if not normalized_source_kind or normalized_source_record_id <= 0:
             return None
-        normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
+        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_language_code = str(language_code or "").strip()
         if not normalized_language_code:
             return None
@@ -112,7 +110,6 @@ class LocalizedOutputStoreMixin:
                 select(LocalizedOutput).where(
                     LocalizedOutput.source_kind == normalized_source_kind,
                     LocalizedOutput.source_record_id == normalized_source_record_id,
-                    LocalizedOutput.scope == normalized_scope,
                     LocalizedOutput.language_code == normalized_language_code,
                 )
             ).first()
@@ -124,13 +121,11 @@ class LocalizedOutputStoreMixin:
         language_code: str | None = None,
         source_kind: str | None = None,
     ) -> list[LocalizedOutput]:
-        normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
+        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_language_code = str(language_code or "").strip()
         normalized_source_kind = str(source_kind or "").strip().lower()
         with Session(self.engine) as session:
-            statement = select(LocalizedOutput).where(
-                LocalizedOutput.scope == normalized_scope
-            )
+            statement = select(LocalizedOutput)
             if normalized_language_code:
                 statement = statement.where(
                     LocalizedOutput.language_code == normalized_language_code

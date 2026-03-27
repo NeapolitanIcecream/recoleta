@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
-from typing import Any
+from typing import Any, NoReturn
 import importlib
 from uuid import uuid4
 
@@ -16,10 +16,10 @@ from recoleta.app.runtime import (
     _LeaseHeartbeatMonitor,
     _RUN_HEARTBEAT_INTERVAL_SECONDS,
     _WORKSPACE_LEASE_TIMEOUT_SECONDS,
+    TopicStreamsMigrationRequiredError,
     _cleanup_managed_run as _cleanup_managed_run,
     _cleanup_workspace_lease as _cleanup_workspace_lease,
     _graceful_shutdown_signals as _graceful_shutdown_signals,
-    _has_explicit_topic_streams as _has_explicit_topic_streams,
     _import_symbol,
     _interrupt_exit_code as _interrupt_exit_code,
     _interrupt_signal_name as _interrupt_signal_name,
@@ -67,13 +67,23 @@ def _runtime_symbols() -> dict[str, Any]:
     return _runtime_symbols_impl()
 
 
+def _raise_typer_exit_for_topic_stream_migration_required(
+    exc: TopicStreamsMigrationRequiredError,
+) -> NoReturn:
+    typer.echo(str(exc))
+    raise typer.Exit(code=2) from None
+
+
 def _build_settings(
     *,
     config_path: Any | None = None,
     db_path: Any | None = None,
 ) -> Any:
     _sync_cli_runtime_state(clear_runtime_symbols=True)
-    return _build_settings_impl(config_path=config_path, db_path=db_path)
+    try:
+        return _build_settings_impl(config_path=config_path, db_path=db_path)
+    except TopicStreamsMigrationRequiredError as exc:
+        _raise_typer_exit_for_topic_stream_migration_required(exc)
 
 
 def _build_runtime(
@@ -82,16 +92,32 @@ def _build_runtime(
     db_path: Any | None = None,
 ) -> tuple[Any, Any, Any]:
     _sync_cli_runtime_state(clear_runtime_symbols=True)
-    return _build_runtime_impl(config_path=config_path, db_path=db_path)
+    try:
+        return _build_runtime_impl(config_path=config_path, db_path=db_path)
+    except TopicStreamsMigrationRequiredError as exc:
+        _raise_typer_exit_for_topic_stream_migration_required(exc)
 
 
 def _begin_managed_run(
     *,
     command: str,
     log_module: str,
+    config_path: Any | None = None,
+    db_path: Any | None = None,
 ) -> tuple[Any, Any, Any, Any, str, str, Any, _LeaseHeartbeatMonitor]:
     _sync_cli_runtime_state()
-    return _begin_managed_run_impl(command=command, log_module=log_module)
+    begin_kwargs: dict[str, Any] = {
+        "command": command,
+        "log_module": log_module,
+    }
+    if config_path is not None:
+        begin_kwargs["config_path"] = config_path
+    if db_path is not None:
+        begin_kwargs["db_path"] = db_path
+    try:
+        return _begin_managed_run_impl(**begin_kwargs)
+    except TopicStreamsMigrationRequiredError as exc:
+        _raise_typer_exit_for_topic_stream_migration_required(exc)
 
 
 def _execute_stage(
@@ -600,20 +626,7 @@ def _delete_path_if_present(*, path: Path, dry_run: bool = False) -> bool:
 
 
 def _collect_markdown_output_dirs(settings: Any) -> set[Path]:
-    dirs: set[Path] = {Path(settings.markdown_output_dir).expanduser().resolve()}
-    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
-    if callable(runtime_builder):
-        try:
-            runtimes = runtime_builder()
-        except Exception:
-            runtimes = []
-        if isinstance(runtimes, list):
-            for runtime in runtimes:
-                raw_dir = getattr(runtime, "markdown_output_dir", None)
-                if raw_dir is None:
-                    continue
-                dirs.add(Path(raw_dir).expanduser().resolve())
-    return dirs
+    return {Path(settings.markdown_output_dir).expanduser().resolve()}
 
 
 def _prune_expired_pdf_debug_dirs(

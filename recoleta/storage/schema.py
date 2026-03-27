@@ -5,15 +5,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlmodel import SQLModel
 
-from recoleta.models import (
-    ITEM_STATE_ANALYZED,
-    ITEM_STATE_FAILED,
-    ITEM_STATE_PUBLISHED,
-    ITEM_STATE_RETRYABLE_FAILED,
-    ITEM_STATE_TRIAGED,
-)
 from recoleta.storage_common import CURRENT_SCHEMA_VERSION, SchemaVersionError
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 class SchemaStoreMixin:
@@ -30,19 +22,21 @@ class SchemaStoreMixin:
         if user_version < CURRENT_SCHEMA_VERSION:
             self._apply_startup_safe_migrations()
         SQLModel.metadata.create_all(self.engine)
-        self._backfill_default_stream_states()
         self._ensure_chunk_fts()
         self._prune_chunk_fts_meta_rows()
         if user_version < CURRENT_SCHEMA_VERSION:
             self._set_user_version(CURRENT_SCHEMA_VERSION)
 
     def _apply_startup_safe_migrations(self) -> None:
-        self._migrate_analyses_add_scope()
-        self._migrate_documents_add_scope()
+        self._migrate_analyses_drop_scope()
+        self._migrate_documents_drop_scope()
+        self._migrate_pass_outputs_drop_scope()
+        self._migrate_localized_outputs_drop_scope()
         self._migrate_runs_add_heartbeat()
         self._migrate_runs_add_context()
         self._migrate_runs_add_workflow_metadata()
         self._migrate_artifacts_add_details_json()
+        self._migrate_drop_item_stream_states()
 
     def _get_user_version(self) -> int:
         with self.engine.begin() as conn:
@@ -107,9 +101,9 @@ class SchemaStoreMixin:
                 columns.add(str(row[1]))
         return columns
 
-    def _migrate_analyses_add_scope(self) -> None:
+    def _migrate_analyses_drop_scope(self) -> None:
         columns = self._table_columns("analyses")
-        if not columns or "scope" in columns:
+        if not columns or "scope" not in columns:
             return
 
         ddl = [
@@ -117,7 +111,6 @@ class SchemaStoreMixin:
             CREATE TABLE analyses__new (
                 id INTEGER PRIMARY KEY,
                 item_id INTEGER NOT NULL,
-                scope VARCHAR(64) NOT NULL DEFAULT 'default',
                 model VARCHAR(128) NOT NULL,
                 provider VARCHAR(64) NOT NULL,
                 summary TEXT NOT NULL,
@@ -134,7 +127,6 @@ class SchemaStoreMixin:
             INSERT INTO analyses__new (
                 id,
                 item_id,
-                scope,
                 model,
                 provider,
                 summary,
@@ -148,7 +140,6 @@ class SchemaStoreMixin:
             SELECT
                 id,
                 item_id,
-                'default',
                 model,
                 provider,
                 summary,
@@ -163,16 +154,15 @@ class SchemaStoreMixin:
             "DROP TABLE analyses;",
             "ALTER TABLE analyses__new RENAME TO analyses;",
             "CREATE INDEX IF NOT EXISTS ix_analyses_item_id ON analyses (item_id);",
-            "CREATE INDEX IF NOT EXISTS ix_analyses_scope ON analyses (scope);",
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_analyses_item_scope ON analyses (item_id, scope);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_analyses_item ON analyses (item_id);",
         ]
         with self.engine.begin() as conn:
             for statement in ddl:
                 conn.execute(text(statement))
 
-    def _migrate_documents_add_scope(self) -> None:
+    def _migrate_documents_drop_scope(self) -> None:
         columns = self._table_columns("documents")
-        if not columns or "scope" in columns:
+        if not columns or "scope" not in columns:
             return
 
         ddl = [
@@ -180,7 +170,6 @@ class SchemaStoreMixin:
             CREATE TABLE documents__new (
                 id INTEGER PRIMARY KEY,
                 doc_type VARCHAR(16) NOT NULL,
-                scope VARCHAR(64) NOT NULL DEFAULT 'default',
                 item_id INTEGER,
                 source VARCHAR(32),
                 canonical_url TEXT,
@@ -198,7 +187,6 @@ class SchemaStoreMixin:
             INSERT INTO documents__new (
                 id,
                 doc_type,
-                scope,
                 item_id,
                 source,
                 canonical_url,
@@ -213,7 +201,6 @@ class SchemaStoreMixin:
             SELECT
                 id,
                 doc_type,
-                'default',
                 item_id,
                 source,
                 canonical_url,
@@ -229,14 +216,151 @@ class SchemaStoreMixin:
             "DROP TABLE documents;",
             "ALTER TABLE documents__new RENAME TO documents;",
             "CREATE INDEX IF NOT EXISTS ix_documents_doc_type ON documents (doc_type);",
-            "CREATE INDEX IF NOT EXISTS ix_documents_scope ON documents (scope);",
             "CREATE INDEX IF NOT EXISTS ix_documents_item_id ON documents (item_id);",
             "CREATE INDEX IF NOT EXISTS ix_documents_published_at ON documents (published_at);",
             "CREATE INDEX IF NOT EXISTS ix_documents_granularity ON documents (granularity);",
             "CREATE INDEX IF NOT EXISTS ix_documents_period_start ON documents (period_start);",
             "CREATE INDEX IF NOT EXISTS ix_documents_period_end ON documents (period_end);",
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_type_item_scope ON documents (doc_type, item_id, scope);",
-            "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_type_scope_granularity_period ON documents (doc_type, scope, granularity, period_start, period_end);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_type_item ON documents (doc_type, item_id);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_type_granularity_period ON documents (doc_type, granularity, period_start, period_end);",
+        ]
+        with self.engine.begin() as conn:
+            for statement in ddl:
+                conn.execute(text(statement))
+
+    def _migrate_pass_outputs_drop_scope(self) -> None:
+        columns = self._table_columns("pass_outputs")
+        if not columns or "scope" not in columns:
+            return
+
+        ddl = [
+            """
+            CREATE TABLE pass_outputs__new (
+                id INTEGER PRIMARY KEY,
+                run_id VARCHAR NOT NULL,
+                pass_kind VARCHAR(64) NOT NULL,
+                status VARCHAR(24) NOT NULL,
+                granularity VARCHAR(16),
+                period_start DATETIME,
+                period_end DATETIME,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                content_hash VARCHAR(64) NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                diagnostics_json TEXT NOT NULL DEFAULT '{}',
+                input_refs_json TEXT NOT NULL DEFAULT '[]',
+                created_at DATETIME NOT NULL,
+                FOREIGN KEY(run_id) REFERENCES runs (id)
+            );
+            """,
+            """
+            INSERT INTO pass_outputs__new (
+                id,
+                run_id,
+                pass_kind,
+                status,
+                granularity,
+                period_start,
+                period_end,
+                schema_version,
+                content_hash,
+                payload_json,
+                diagnostics_json,
+                input_refs_json,
+                created_at
+            )
+            SELECT
+                id,
+                run_id,
+                pass_kind,
+                status,
+                granularity,
+                period_start,
+                period_end,
+                schema_version,
+                content_hash,
+                payload_json,
+                diagnostics_json,
+                input_refs_json,
+                created_at
+            FROM pass_outputs;
+            """,
+            "DROP TABLE pass_outputs;",
+            "ALTER TABLE pass_outputs__new RENAME TO pass_outputs;",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_run_id ON pass_outputs (run_id);",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_pass_kind ON pass_outputs (pass_kind);",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_status ON pass_outputs (status);",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_granularity ON pass_outputs (granularity);",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_period_start ON pass_outputs (period_start);",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_period_end ON pass_outputs (period_end);",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_content_hash ON pass_outputs (content_hash);",
+            "CREATE INDEX IF NOT EXISTS ix_pass_outputs_created_at ON pass_outputs (created_at);",
+        ]
+        with self.engine.begin() as conn:
+            for statement in ddl:
+                conn.execute(text(statement))
+
+    def _migrate_localized_outputs_drop_scope(self) -> None:
+        columns = self._table_columns("localized_outputs")
+        if not columns or "scope" not in columns:
+            return
+
+        ddl = [
+            """
+            CREATE TABLE localized_outputs__new (
+                id INTEGER PRIMARY KEY,
+                source_kind VARCHAR(32) NOT NULL,
+                source_record_id INTEGER NOT NULL,
+                language_code VARCHAR(32) NOT NULL,
+                status VARCHAR(24) NOT NULL DEFAULT 'succeeded',
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                source_hash VARCHAR(64) NOT NULL,
+                variant_role VARCHAR(16) NOT NULL DEFAULT 'translation',
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                diagnostics_json TEXT NOT NULL DEFAULT '{}',
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+            """,
+            """
+            INSERT INTO localized_outputs__new (
+                id,
+                source_kind,
+                source_record_id,
+                language_code,
+                status,
+                schema_version,
+                source_hash,
+                variant_role,
+                payload_json,
+                diagnostics_json,
+                created_at,
+                updated_at
+            )
+            SELECT
+                id,
+                source_kind,
+                source_record_id,
+                language_code,
+                status,
+                schema_version,
+                source_hash,
+                variant_role,
+                payload_json,
+                diagnostics_json,
+                created_at,
+                updated_at
+            FROM localized_outputs;
+            """,
+            "DROP TABLE localized_outputs;",
+            "ALTER TABLE localized_outputs__new RENAME TO localized_outputs;",
+            "CREATE INDEX IF NOT EXISTS ix_localized_outputs_source_kind ON localized_outputs (source_kind);",
+            "CREATE INDEX IF NOT EXISTS ix_localized_outputs_source_record_id ON localized_outputs (source_record_id);",
+            "CREATE INDEX IF NOT EXISTS ix_localized_outputs_language_code ON localized_outputs (language_code);",
+            "CREATE INDEX IF NOT EXISTS ix_localized_outputs_status ON localized_outputs (status);",
+            "CREATE INDEX IF NOT EXISTS ix_localized_outputs_source_hash ON localized_outputs (source_hash);",
+            "CREATE INDEX IF NOT EXISTS ix_localized_outputs_variant_role ON localized_outputs (variant_role);",
+            "CREATE INDEX IF NOT EXISTS ix_localized_outputs_updated_at ON localized_outputs (updated_at);",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_localized_outputs_source_language ON localized_outputs (source_kind, source_record_id, language_code);",
         ]
         with self.engine.begin() as conn:
             for statement in ddl:
@@ -361,48 +485,11 @@ class SchemaStoreMixin:
                 )
             )
 
-    def _backfill_default_stream_states(self) -> None:
-        statement = """
-        INSERT INTO item_stream_states (
-            item_id,
-            stream,
-            state,
-            created_at,
-            updated_at
-        )
-        SELECT
-            items.id,
-            :stream,
-            items.state,
-            items.created_at,
-            items.updated_at
-        FROM items
-        WHERE items.state IN (
-            :triaged_state,
-            :analyzed_state,
-            :published_state,
-            :retryable_failed_state,
-            :failed_state
-        )
-        AND NOT EXISTS (
-            SELECT 1
-            FROM item_stream_states stream_states
-            WHERE stream_states.item_id = items.id
-              AND stream_states.stream = :stream
-        );
-        """
+    def _migrate_drop_item_stream_states(self) -> None:
+        if not self.has_table("item_stream_states"):
+            return
         with self.engine.begin() as conn:
-            conn.execute(
-                text(statement),
-                {
-                    "stream": DEFAULT_TOPIC_STREAM,
-                    "triaged_state": ITEM_STATE_TRIAGED,
-                    "analyzed_state": ITEM_STATE_ANALYZED,
-                    "published_state": ITEM_STATE_PUBLISHED,
-                    "retryable_failed_state": ITEM_STATE_RETRYABLE_FAILED,
-                    "failed_state": ITEM_STATE_FAILED,
-                },
-            )
+            conn.execute(text("DROP TABLE item_stream_states;"))
 
     def _ensure_chunk_fts(self) -> None:
         ddl = """

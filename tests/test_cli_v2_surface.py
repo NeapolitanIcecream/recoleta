@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -17,6 +18,7 @@ def test_cli_root_help_exposes_only_v2_top_level_groups() -> None:
     result = runner.invoke(recoleta.cli.app, ["--help"])
 
     assert result.exit_code == 0
+    assert "fleet" in result.stdout
     assert "run" in result.stdout
     assert "daemon" in result.stdout
     assert "inspect" in result.stdout
@@ -33,11 +35,27 @@ def test_removed_cli_entrypoints_show_migration_guidance() -> None:
 
     site_result = runner.invoke(recoleta.cli.app, ["site", "gh-deploy"])
     materialize_result = runner.invoke(recoleta.cli.app, ["materialize", "outputs"])
+    repair_result = runner.invoke(
+        recoleta.cli.app,
+        ["repair", "streams", "--date", "2026-03-16", "--streams", "agents_lab"],
+    )
 
     assert site_result.exit_code == 2
     assert "run deploy" in site_result.stdout
     assert materialize_result.exit_code == 2
     assert "repair outputs" in materialize_result.stdout
+    assert repair_result.exit_code == 2
+    assert "topic-streams-to-instances" in repair_result.stdout
+
+
+def test_repair_help_hides_legacy_streams_entrypoint() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(recoleta.cli.app, ["repair", "--help"])
+
+    assert result.exit_code == 0
+    assert "outputs" in result.stdout
+    assert "streams" not in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -47,14 +65,26 @@ def test_removed_cli_entrypoints_show_migration_guidance() -> None:
         (["inspect", "stats"], "run_stats_command", {"command_name": "inspect stats"}),
         (["inspect", "llm"], "run_doctor_llm_command", {"command_name": "inspect llm"}),
         (
+            ["fleet", "run", "day", "--manifest", "/tmp/fleet.yaml"],
+            "execute_fleet_granularity_workflow",
+                {
+                    "workflow_name": "day",
+                    "command": "fleet run day",
+                    "manifest_path": Path("/tmp/fleet.yaml").resolve(),
+                },
+            ),
+        (
+            ["fleet", "site", "build", "--manifest", "/tmp/fleet.yaml"],
+            "run_fleet_site_build_command",
+            {
+                "command_name": "fleet site build",
+                "manifest_path": Path("/tmp/fleet.yaml").resolve(),
+            },
+        ),
+        (
             ["inspect", "why-empty", "--date", "2026-03-16"],
             "run_doctor_why_empty_command",
             {"command_name": "inspect why-empty"},
-        ),
-        (
-            ["repair", "streams", "--date", "2026-03-16", "--streams", "agents_lab"],
-            "run_repair_streams_command",
-            {"command_name": "repair streams"},
         ),
         (["run", "translate"], "run_translate_run_command", {"command_name": "run translate"}),
         (

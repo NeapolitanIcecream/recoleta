@@ -699,12 +699,12 @@ def _prune_item_documents_for_period(
     scope: str,
     keep_item_ids: set[int],
 ) -> int:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         docs = list(
             session.exec(
                 select(Document).where(
                     Document.doc_type == "item",
-                    cast(Any, Document.scope) == scope,
                     cast(Any, Document.published_at).is_not(None),
                     cast(Any, Document.published_at) >= period_start,
                     cast(Any, Document.published_at) < period_end,
@@ -1304,7 +1304,6 @@ def _index_items_as_documents_batched(
             session.exec(
                 select(Document).where(
                     Document.doc_type == "item",
-                    cast(Any, Document.scope) == scope,
                     cast(Any, Document.item_id).in_(item_ids),
                 )
             )
@@ -1333,7 +1332,6 @@ def _index_items_as_documents_batched(
             if existing is None:
                 existing = Document(
                     doc_type="item",
-                    scope=scope,
                     item_id=item_id,
                     source=str(getattr(item, "source", "") or "").strip() or None,
                     canonical_url=(

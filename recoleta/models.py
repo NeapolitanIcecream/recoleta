@@ -108,12 +108,11 @@ class Content(SQLModel, table=True):
 class Analysis(SQLModel, table=True):
     __tablename__ = "analyses"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
     __table_args__ = (
-        UniqueConstraint("item_id", "scope", name="uq_analyses_item_scope"),
+        UniqueConstraint("item_id", name="uq_analyses_item"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
     item_id: int = Field(foreign_key="items.id", index=True)
-    scope: str = Field(default="default", max_length=64, index=True)
     model: str = Field(max_length=128)
     provider: str = Field(max_length=64)
     summary: str = Field(sa_type=Text)
@@ -123,24 +122,6 @@ class Analysis(SQLModel, table=True):
     cost_usd: float | None = None
     latency_ms: int | None = None
     created_at: datetime = Field(default_factory=utc_now)
-
-
-class ItemStreamState(SQLModel, table=True):
-    __tablename__ = "item_stream_states"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
-    __table_args__ = (
-        UniqueConstraint(
-            "item_id",
-            "stream",
-            name="uq_item_stream_states_item_stream",
-        ),
-    )
-
-    id: int | None = Field(default=None, primary_key=True)
-    item_id: int = Field(foreign_key="items.id", index=True)
-    stream: str = Field(max_length=64, index=True)
-    state: str = Field(max_length=24, index=True)
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class Delivery(SQLModel, table=True):
@@ -202,7 +183,6 @@ class PassOutput(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     run_id: str = Field(foreign_key="runs.id", index=True)
-    scope: str = Field(default="default", max_length=64, index=True)
     pass_kind: str = Field(max_length=64, index=True)
     status: str = Field(max_length=24, index=True)
     granularity: str | None = Field(default=None, max_length=16, index=True)
@@ -222,16 +202,14 @@ class LocalizedOutput(SQLModel, table=True):
         UniqueConstraint(
             "source_kind",
             "source_record_id",
-            "scope",
             "language_code",
-            name="uq_localized_outputs_source_scope_language",
+            name="uq_localized_outputs_source_language",
         ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
     source_kind: str = Field(max_length=32, index=True)
     source_record_id: int = Field(index=True)
-    scope: str = Field(default="default", max_length=64, index=True)
     language_code: str = Field(max_length=32, index=True)
     status: str = Field(default="succeeded", max_length=24, index=True)
     schema_version: int = Field(default=1)
@@ -284,22 +262,19 @@ class Document(SQLModel, table=True):
         UniqueConstraint(
             "doc_type",
             "item_id",
-            "scope",
-            name="uq_documents_doc_type_item_scope",
+            name="uq_documents_doc_type_item",
         ),
         UniqueConstraint(
             "doc_type",
-            "scope",
             "granularity",
             "period_start",
             "period_end",
-            name="uq_documents_doc_type_scope_granularity_period",
+            name="uq_documents_doc_type_granularity_period",
         ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
     doc_type: str = Field(index=True, max_length=16)
-    scope: str = Field(default="default", max_length=64, index=True)
 
     # For doc_type == "item"
     item_id: int | None = Field(default=None, foreign_key="items.id", index=True)

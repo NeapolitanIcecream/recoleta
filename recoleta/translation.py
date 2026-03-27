@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import json
@@ -9,7 +10,7 @@ from typing import Any, cast
 
 from loguru import logger
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlmodel import Session, select
 
 from recoleta.analyzer import (
@@ -41,6 +42,7 @@ _PROVIDER_FAILURE_ERROR_TYPES = {
     "Timeout",
 }
 _PROVIDER_FAILURE_ABORT_THRESHOLD = 5
+_DEFAULT_TRANSLATION_PARALLELISM = 4
 
 _ITEM_CONTENT_TYPES = (
     "html_maintext",
@@ -85,6 +87,21 @@ class TranslationRunResult:
     failed_total: int = 0
     aborted: bool = False
     abort_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedTranslationTask:
+    candidate: TranslationCandidate
+    target: TranslationTarget
+    source_hash: str
+    context: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _CompletedTranslationTask:
+    translated_payload: dict[str, Any]
+    debug: dict[str, Any]
+    duration_ms: int
 
 
 @dataclass(slots=True)
@@ -159,6 +176,14 @@ def _provider_failure_signature(exc: Exception) -> tuple[str, str] | None:
     if len(message) > 240:
         message = message[:240]
     return error_type, message
+
+
+def _normalize_utc_datetime(value: datetime | None) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _coerce_payload_dict(
@@ -654,11 +679,11 @@ def _idea_translation_context(
         and isinstance(period_end, datetime)
         and granularity is not None
     ):
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(repository.engine) as session:
             trend_doc = session.exec(
                 select(Document).where(
                     Document.doc_type == "trend",
-                    Document.scope == scope,
                     Document.granularity == granularity,
                     Document.period_start == period_start,
                     Document.period_end == period_end,
@@ -703,15 +728,24 @@ def _load_item_candidates(
     repository: Any,
     scope: str,
     limit: int | None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+    all_history: bool = True,
 ) -> list[tuple[Analysis, Item]]:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     normalized_limit = None if limit is None else max(1, int(limit))
     with Session(repository.engine) as session:
+        event_at = func.coalesce(cast(Any, Item.published_at), cast(Any, Item.created_at))
         statement = (
             select(Analysis, Item)
             .join(Item, cast(Any, Analysis.item_id) == cast(Any, Item.id))
-            .where(Analysis.scope == scope)
             .order_by(desc(cast(Any, Analysis.id)))
         )
+        if not all_history:
+            if period_start is not None:
+                statement = statement.where(event_at >= period_start)
+            if period_end is not None:
+                statement = statement.where(event_at < period_end)
         if normalized_limit is not None:
             statement = statement.limit(normalized_limit)
         return list(session.exec(statement))
@@ -773,15 +807,17 @@ def _load_trend_candidates(
     scope: str,
     granularity: str | None,
     limit: int | None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
     all_history: bool = True,
 ) -> list[tuple[Document, dict[str, Any]]]:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
+    normalized_period_start = _normalize_utc_datetime(period_start)
+    normalized_period_end = _normalize_utc_datetime(period_end)
     with Session(repository.engine) as session:
         statement = (
             select(Document)
-            .where(
-                Document.doc_type == "trend",
-                Document.scope == scope,
-            )
+            .where(Document.doc_type == "trend")
             .order_by(
                 desc(cast(Any, Document.period_start)),
                 desc(cast(Any, Document.id)),
@@ -789,11 +825,31 @@ def _load_trend_candidates(
         )
         if granularity is not None:
             statement = statement.where(Document.granularity == granularity)
-        documents = _limit_documents_for_backfill(
-            documents=list(session.exec(statement)),
-            all_history=all_history,
-            limit=limit,
-        )
+        documents = list(session.exec(statement))
+        if not all_history and (period_start is not None or period_end is not None):
+            filtered: list[Document] = []
+            for document in documents:
+                doc_period_start = _normalize_utc_datetime(
+                    getattr(document, "period_start", None)
+                )
+                doc_period_end = _normalize_utc_datetime(getattr(document, "period_end", None))
+                if doc_period_start is None or doc_period_end is None:
+                    continue
+                if normalized_period_start is not None and doc_period_start < normalized_period_start:
+                    continue
+                if normalized_period_end is not None and doc_period_end > normalized_period_end:
+                    continue
+                filtered.append(document)
+            documents = filtered
+            normalized_limit = None if limit is None else max(1, int(limit))
+            if normalized_limit is not None:
+                documents = documents[:normalized_limit]
+        else:
+            documents = _limit_documents_for_backfill(
+                documents=documents,
+                all_history=all_history,
+                limit=limit,
+            )
 
         candidates: list[tuple[Document, dict[str, Any]]] = []
         for document in documents:
@@ -833,8 +889,13 @@ def _load_idea_candidates(
     scope: str,
     granularity: str | None,
     limit: int | None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
     all_history: bool = True,
 ) -> list[tuple[Document, dict[str, Any]]]:
+    normalized_period_start = _normalize_utc_datetime(period_start)
+    normalized_period_end = _normalize_utc_datetime(period_end)
+
     def _render_idea_document_chunk_text(idea: Any) -> str:
         evidence_reasons = [
             str(getattr(ref, "reason", "") or "").strip()
@@ -880,11 +941,11 @@ def _load_idea_candidates(
         return None
 
     def _latest_idea_pass_outputs() -> list[PassOutput]:
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(repository.engine) as session:
             statement = select(PassOutput).where(
                 PassOutput.pass_kind == "trend_ideas",
                 cast(Any, PassOutput.status) == "succeeded",
-                cast(Any, PassOutput.scope) == scope,
             )
             if granularity is not None:
                 statement = statement.where(PassOutput.granularity == granularity)
@@ -902,7 +963,22 @@ def _load_idea_candidates(
                 continue
             seen_windows.add(key)
             selected.append(row)
-        if not all_history:
+        if not all_history and (period_start is not None or period_end is not None):
+            filtered: list[PassOutput] = []
+            for row in selected:
+                row_period_start = _normalize_utc_datetime(
+                    getattr(row, "period_start", None)
+                )
+                row_period_end = _normalize_utc_datetime(getattr(row, "period_end", None))
+                if row_period_start is None or row_period_end is None:
+                    continue
+                if normalized_period_start is not None and row_period_start < normalized_period_start:
+                    continue
+                if normalized_period_end is not None and row_period_end > normalized_period_end:
+                    continue
+                filtered.append(row)
+            selected = filtered
+        elif not all_history:
             latest_only: list[PassOutput] = []
             latest_by_granularity: set[str | None] = set()
             for row in selected:
@@ -989,10 +1065,7 @@ def _load_idea_candidates(
     with Session(repository.engine) as session:
         statement = (
             select(Document)
-            .where(
-                Document.doc_type == "idea",
-                Document.scope == scope,
-            )
+            .where(Document.doc_type == "idea")
             .order_by(
                 desc(cast(Any, Document.period_start)),
                 desc(cast(Any, Document.id)),
@@ -1065,7 +1138,6 @@ def _load_idea_candidates(
                 select(Document)
                 .where(
                     Document.doc_type == "idea",
-                    Document.scope == scope,
                     Document.granularity == granularity_value,
                     Document.period_start == period_start,
                     Document.period_end == period_end,
@@ -1093,6 +1165,8 @@ def _incremental_candidates(
     include: set[str],
     limit: int | None,
     source_language_code: str,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
     all_history: bool = True,
 ) -> list[TranslationCandidate]:
     candidates: list[TranslationCandidate] = []
@@ -1102,6 +1176,9 @@ def _incremental_candidates(
             repository=repository,
             scope=scope,
             limit=limit,
+            period_start=period_start,
+            period_end=period_end,
+            all_history=all_history,
         ):
             analysis_id = int(getattr(analysis, "id") or 0)
             item_id = int(getattr(item, "id") or 0)
@@ -1128,6 +1205,8 @@ def _incremental_candidates(
             scope=scope,
             granularity=granularity,
             limit=limit,
+            period_start=period_start,
+            period_end=period_end,
             all_history=all_history,
         ):
             doc_id = int(getattr(document, "id") or 0)
@@ -1154,6 +1233,8 @@ def _incremental_candidates(
             scope=scope,
             granularity=granularity,
             limit=limit,
+            period_start=period_start,
+            period_end=period_end,
             all_history=all_history,
         ):
             doc_id = int(getattr(document, "id") or 0)
@@ -1241,6 +1322,130 @@ def _target_language_label(
     return language_code
 
 
+def _translation_parallelism(task_total: int) -> int:
+    if task_total <= 1:
+        return 1
+    return max(1, min(_DEFAULT_TRANSLATION_PARALLELISM, int(task_total)))
+
+
+def _prepare_translation_task(
+    *,
+    repository: Any,
+    settings: Settings,
+    candidate: TranslationCandidate,
+    target: TranslationTarget,
+    context_assist: str,
+    force: bool,
+    run_id: str | None = None,
+) -> tuple[str, _PreparedTranslationTask | None]:
+    source_hash = _payload_hash(candidate.payload)
+    existing = repository.get_localized_output(
+        source_kind=candidate.source_kind,
+        source_record_id=candidate.source_record_id,
+        scope=candidate.scope,
+        language_code=target.code,
+    )
+    if (
+        existing is not None
+        and str(getattr(existing, "source_hash", "") or "") == source_hash
+        and not force
+    ):
+        return "skipped", None
+
+    context = _candidate_context(
+        repository=repository,
+        settings=settings,
+        candidate=candidate,
+        context_assist=context_assist,
+        run_id=run_id,
+    )
+    return (
+        "pending",
+        _PreparedTranslationTask(
+            candidate=candidate,
+            target=target,
+            source_hash=source_hash,
+            context=context,
+        ),
+    )
+
+
+def _execute_prepared_translation_task(
+    *,
+    task: _PreparedTranslationTask,
+    llm_model: str,
+    source_language_code: str,
+    source_language_label: str,
+    llm_connection: LLMConnectionConfig,
+) -> _CompletedTranslationTask:
+    started = time.perf_counter()
+    translated_result = translate_structured_payload(
+        model=llm_model,
+        source_kind=task.candidate.source_kind,
+        payload=task.candidate.payload,
+        source_language_code=source_language_code,
+        target_language_code=task.target.code,
+        source_language_label=source_language_label,
+        target_language_label=task.target.llm_label,
+        context=task.context,
+        payload_model=task.candidate.payload_model,
+        llm_connection=llm_connection,
+        return_debug=True,
+    )
+    if (
+        isinstance(translated_result, tuple)
+        and len(translated_result) == 2
+        and isinstance(translated_result[0], dict)
+        and isinstance(translated_result[1], dict)
+    ):
+        translated_payload, debug = translated_result
+    else:
+        translated_payload = cast(dict[str, Any], translated_result)
+        debug = {}
+    return _CompletedTranslationTask(
+        translated_payload=translated_payload,
+        debug=debug,
+        duration_ms=int((time.perf_counter() - started) * 1000),
+    )
+
+
+def _persist_completed_translation_task(
+    *,
+    repository: Any,
+    task: _PreparedTranslationTask,
+    completed: _CompletedTranslationTask,
+    context_assist: str,
+    source_language_code: str,
+    run_id: str | None = None,
+) -> None:
+    if str(run_id or "").strip():
+        _record_translation_llm_metrics(
+            repository=repository,
+            run_id=str(run_id),
+            debug=completed.debug,
+            duration_ms=completed.duration_ms,
+        )
+    repository.upsert_localized_output(
+        source_kind=task.candidate.source_kind,
+        source_record_id=task.candidate.source_record_id,
+        scope=task.candidate.scope,
+        language_code=task.target.code,
+        status="succeeded",
+        source_hash=task.source_hash,
+        payload=completed.translated_payload,
+        diagnostics={
+            "context_assist": context_assist,
+            "source_language_code": source_language_code,
+            "target_language_code": task.target.code,
+            "translated_at": datetime.now(tz=UTC).isoformat(),
+            "context_keys": sorted(task.context.keys()),
+            "hybrid_status": task.context.get("hybrid_status"),
+            "hybrid_query": task.context.get("hybrid_query"),
+        },
+        variant_role="translation",
+    )
+
+
 def _translate_candidate_into_language(
     *,
     repository: Any,
@@ -1255,76 +1460,31 @@ def _translate_candidate_into_language(
     force: bool,
     run_id: str | None = None,
 ) -> tuple[str, bool]:
-    source_hash = _payload_hash(candidate.payload)
-    existing = repository.get_localized_output(
-        source_kind=candidate.source_kind,
-        source_record_id=candidate.source_record_id,
-        scope=candidate.scope,
-        language_code=target.code,
-    )
-    if (
-        existing is not None
-        and str(getattr(existing, "source_hash", "") or "") == source_hash
-        and not force
-    ):
-        return "skipped", False
-
-    context = _candidate_context(
+    status, prepared = _prepare_translation_task(
         repository=repository,
         settings=settings,
         candidate=candidate,
+        target=target,
         context_assist=context_assist,
+        force=force,
         run_id=run_id,
     )
-    started = time.perf_counter()
-    translated_result = translate_structured_payload(
-        model=llm_model,
-        source_kind=candidate.source_kind,
-        payload=candidate.payload,
+    if status == "skipped" or prepared is None:
+        return "skipped", False
+    completed = _execute_prepared_translation_task(
+        task=prepared,
+        llm_model=llm_model,
         source_language_code=source_language_code,
-        target_language_code=target.code,
         source_language_label=source_language_label,
-        target_language_label=target.llm_label,
-        context=context,
-        payload_model=candidate.payload_model,
         llm_connection=llm_connection,
-        return_debug=True,
     )
-    if (
-        isinstance(translated_result, tuple)
-        and len(translated_result) == 2
-        and isinstance(translated_result[0], dict)
-        and isinstance(translated_result[1], dict)
-    ):
-        translated_payload, debug = translated_result
-    else:
-        translated_payload = cast(dict[str, Any], translated_result)
-        debug = {}
-    if str(run_id or "").strip():
-        _record_translation_llm_metrics(
-            repository=repository,
-            run_id=str(run_id),
-            debug=debug,
-            duration_ms=int((time.perf_counter() - started) * 1000),
-        )
-    repository.upsert_localized_output(
-        source_kind=candidate.source_kind,
-        source_record_id=candidate.source_record_id,
-        scope=candidate.scope,
-        language_code=target.code,
-        status="succeeded",
-        source_hash=source_hash,
-        payload=translated_payload,
-        diagnostics={
-            "context_assist": context_assist,
-            "source_language_code": source_language_code,
-            "target_language_code": target.code,
-            "translated_at": datetime.now(tz=UTC).isoformat(),
-            "context_keys": sorted(context.keys()),
-            "hybrid_status": context.get("hybrid_status"),
-            "hybrid_query": context.get("hybrid_query"),
-        },
-        variant_role="translation",
+    _persist_completed_translation_task(
+        repository=repository,
+        task=prepared,
+        completed=completed,
+        context_assist=context_assist,
+        source_language_code=source_language_code,
+        run_id=run_id,
     )
     return "translated", True
 
@@ -1429,6 +1589,9 @@ def run_translation(
     granularity: str | None = None,
     include: str | list[str] | None = None,
     limit: int | None = None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+    all_history: bool = True,
     force: bool = False,
     context_assist: str = "direct",
     run_id: str | None = None,
@@ -1463,24 +1626,22 @@ def run_translation(
         include=normalized_include,
         limit=limit,
         source_language_code=source_language_code,
-        all_history=True,
+        period_start=period_start,
+        period_end=period_end,
+        all_history=all_history,
     )
     log = logger.bind(module="translation.run", scope=normalized_scope)
-
+    prepared_tasks: list[_PreparedTranslationTask] = []
     for candidate in candidates:
         for target in targets:
             result.scanned_total += 1
             try:
-                status, changed = _translate_candidate_into_language(
+                status, prepared = _prepare_translation_task(
                     repository=repository,
                     settings=settings,
                     candidate=candidate,
                     target=target,
-                    llm_model=llm_model,
-                    source_language_code=source_language_code,
-                    source_language_label=source_language_label,
                     context_assist=normalized_context_assist,
-                    llm_connection=llm_connection,
                     force=force,
                     run_id=run_id,
                 )
@@ -1502,11 +1663,97 @@ def run_translation(
                     log.warning(abort_reason)
                     return result
                 continue
-            provider_failures.reset()
             if status == "skipped":
                 result.skipped_total += 1
-            elif changed:
-                result.translated_total += 1
+                provider_failures.reset()
+                continue
+            if prepared is not None:
+                prepared_tasks.append(prepared)
+
+    parallelism = _translation_parallelism(len(prepared_tasks))
+    if parallelism <= 1:
+        for task in prepared_tasks:
+            try:
+                completed = _execute_prepared_translation_task(
+                    task=task,
+                    llm_model=llm_model,
+                    source_language_code=source_language_code,
+                    source_language_label=source_language_label,
+                    llm_connection=llm_connection,
+                )
+            except Exception as exc:  # noqa: BLE001
+                result.failed_total += 1
+                log.bind(
+                    source_kind=task.candidate.source_kind,
+                    source_record_id=task.candidate.source_record_id,
+                    target_language_code=task.target.code,
+                ).warning(
+                    "translation failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
+                abort_reason = provider_failures.record(exc)
+                if abort_reason is not None:
+                    result.aborted = True
+                    result.abort_reason = abort_reason
+                    log.warning(abort_reason)
+                    return result
+                continue
+            provider_failures.reset()
+            _persist_completed_translation_task(
+                repository=repository,
+                task=task,
+                completed=completed,
+                context_assist=normalized_context_assist,
+                source_language_code=source_language_code,
+                run_id=run_id,
+            )
+            result.translated_total += 1
+        return result
+
+    with ThreadPoolExecutor(max_workers=parallelism) as executor:
+        futures = [
+            executor.submit(
+                _execute_prepared_translation_task,
+                task=task,
+                llm_model=llm_model,
+                source_language_code=source_language_code,
+                source_language_label=source_language_label,
+                llm_connection=llm_connection,
+            )
+            for task in prepared_tasks
+        ]
+        for task, future in zip(prepared_tasks, futures, strict=False):
+            try:
+                completed = future.result()
+            except Exception as exc:  # noqa: BLE001
+                result.failed_total += 1
+                log.bind(
+                    source_kind=task.candidate.source_kind,
+                    source_record_id=task.candidate.source_record_id,
+                    target_language_code=task.target.code,
+                ).warning(
+                    "translation failed error_type={} error={}",
+                    type(exc).__name__,
+                    str(exc),
+                )
+                abort_reason = provider_failures.record(exc)
+                if abort_reason is not None:
+                    result.aborted = True
+                    result.abort_reason = abort_reason
+                    log.warning(abort_reason)
+                    return result
+                continue
+            provider_failures.reset()
+            _persist_completed_translation_task(
+                repository=repository,
+                task=task,
+                completed=completed,
+                context_assist=normalized_context_assist,
+                source_language_code=source_language_code,
+                run_id=run_id,
+            )
+            result.translated_total += 1
     return result
 
 

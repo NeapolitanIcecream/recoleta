@@ -8,8 +8,7 @@ import shutil
 from typing import Any, cast
 
 from loguru import logger
-from sqlalchemy import and_, desc, func
-from sqlalchemy.orm import aliased
+from sqlalchemy import desc, func
 from sqlmodel import Session, select
 
 from recoleta.models import (
@@ -19,7 +18,6 @@ from recoleta.models import (
     ITEM_STATE_ANALYZED,
     ITEM_STATE_PUBLISHED,
     Item,
-    ItemStreamState,
 )
 from recoleta.config import LocalizationConfig
 from recoleta.publish import (
@@ -111,11 +109,9 @@ def _materialize_idea_documents(
     scope: str,
     granularity: str | None,
 ) -> list[Document]:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
-        statement = select(Document).where(
-            Document.doc_type == "idea",
-            cast(Any, Document.scope) == scope,
-        )
+        statement = select(Document).where(Document.doc_type == "idea")
         if granularity is not None:
             statement = statement.where(Document.granularity == granularity)
         statement = statement.order_by(
@@ -178,11 +174,11 @@ def _localized_idea_topics(
     period_start: datetime,
     period_end: datetime,
 ) -> list[str]:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         trend_doc = session.exec(
             select(Document).where(
                 Document.doc_type == "trend",
-                cast(Any, Document.scope) == scope,
                 Document.granularity == granularity,
                 Document.period_start == period_start,
                 Document.period_end == period_end,
@@ -207,6 +203,7 @@ def _localized_idea_payload_for_pass_output(
     row: PassOutput,
     language_code: str | None,
 ) -> dict[str, Any] | None:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     normalized_language_code = str(language_code or "").strip()
     if not normalized_language_code:
         return None
@@ -220,7 +217,6 @@ def _localized_idea_payload_for_pass_output(
             select(Document)
             .where(
                 Document.doc_type == "idea",
-                cast(Any, Document.scope) == scope,
                 Document.granularity == granularity,
                 Document.period_start == period_start,
                 Document.period_end == period_end,
@@ -429,7 +425,7 @@ def _materialize_localized_scope_outputs(
 
 
 def _materialize_item_pairs(*, repository: Any, scope: str) -> list[tuple[Any, Any]]:
-    stream_state = aliased(ItemStreamState)
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         event_at = func.coalesce(
             cast(Any, Item.published_at), cast(Any, Item.created_at)
@@ -437,19 +433,7 @@ def _materialize_item_pairs(*, repository: Any, scope: str) -> list[tuple[Any, A
         statement = (
             select(Item, Analysis)
             .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
-            .join(
-                stream_state,
-                and_(
-                    cast(Any, stream_state.item_id) == cast(Any, Item.id),
-                    cast(Any, stream_state.stream) == scope,
-                ),
-            )
-            .where(
-                cast(Any, Analysis.scope) == scope,
-                cast(Any, stream_state.state).in_(
-                    [ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED]
-                ),
-            )
+            .where(cast(Any, Item.state).in_([ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED]))
             .order_by(desc(cast(Any, event_at)), desc(cast(Any, Item.id)))
         )
         return list(session.exec(statement))
@@ -461,11 +445,9 @@ def _materialize_trend_documents(
     scope: str,
     granularity: str | None,
 ) -> list[Document]:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
-        statement = select(Document).where(
-            Document.doc_type == "trend",
-            cast(Any, Document.scope) == scope,
-        )
+        statement = select(Document).where(Document.doc_type == "trend")
         if granularity is not None:
             statement = statement.where(Document.granularity == granularity)
         statement = statement.order_by(
@@ -527,11 +509,11 @@ def _materialize_idea_pass_outputs(
     scope: str,
     granularity: str | None,
 ) -> list[PassOutput]:
+    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         statement = select(PassOutput).where(
             PassOutput.pass_kind == "trend_ideas",
             cast(Any, PassOutput.status).in_(("succeeded", "suppressed")),
-            cast(Any, PassOutput.scope) == scope,
         )
         if granularity is not None:
             statement = statement.where(PassOutput.granularity == granularity)
@@ -1079,22 +1061,6 @@ def materialize_outputs(
 
 
 def default_scope_specs_for_settings(*, settings: Any) -> list[MaterializeScopeSpec]:
-    topic_stream_runtimes = getattr(settings, "topic_stream_runtimes", None)
-    if callable(topic_stream_runtimes):
-        runtimes = cast(list[Any], topic_stream_runtimes())
-        if any(bool(getattr(runtime, "explicit", False)) for runtime in runtimes):
-            return [
-                MaterializeScopeSpec(
-                    scope=str(getattr(runtime, "name", "") or DEFAULT_TOPIC_STREAM),
-                    output_dir=Path(getattr(runtime, "markdown_output_dir")),
-                    obsidian_vault_path=getattr(settings, "obsidian_vault_path", None),
-                    obsidian_base_folder=str(
-                        getattr(runtime, "obsidian_base_folder", "") or ""
-                    )
-                    or None,
-                )
-                for runtime in runtimes
-            ]
     return [
         MaterializeScopeSpec(
             scope=DEFAULT_TOPIC_STREAM,

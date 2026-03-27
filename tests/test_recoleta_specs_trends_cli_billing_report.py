@@ -704,7 +704,7 @@ def test_site_stage_cli_with_explicit_paths_does_not_require_settings(
     assert "site stage completed" in result.stdout
 
 
-def test_site_build_cli_uses_markdown_root_default_for_topic_streams(
+def test_site_build_cli_uses_trends_subdirectory_even_when_legacy_topic_streams_are_present(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -751,13 +751,13 @@ def test_site_build_cli_uses_markdown_root_default_for_topic_streams(
     )
 
     assert result.exit_code == 0
-    assert calls["input_dir"] == fake_settings.markdown_output_dir
+    assert calls["input_dir"] == fake_settings.markdown_output_dir / "Trends"
     assert calls["output_dir"] == fake_settings.markdown_output_dir / "site"
     assert calls["limit"] is None
     assert "site build completed" in result.stdout
 
 
-def test_site_stage_cli_uses_repo_local_root_default_for_topic_streams(
+def test_site_stage_cli_uses_trends_subdirectory_even_when_legacy_topic_streams_are_present(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -805,8 +805,8 @@ def test_site_stage_cli_uses_repo_local_root_default_for_topic_streams(
     )
 
     assert result.exit_code == 0
-    assert calls["input_dir"] == fake_settings.markdown_output_dir
-    assert calls["output_dir"] == tmp_path / "site-content"
+    assert calls["input_dir"] == fake_settings.markdown_output_dir / "Trends"
+    assert calls["output_dir"] == tmp_path / "site-content" / "Trends"
     assert calls["limit"] is None
     assert "site stage completed" in result.stdout
 

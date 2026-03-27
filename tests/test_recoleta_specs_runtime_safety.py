@@ -20,6 +20,7 @@ from recoleta.storage import (
     SchemaVersionError,
     WorkspaceLeaseHeldError,
 )
+from recoleta.types import AnalysisResult, ItemDraft
 
 
 def test_init_schema_sets_user_version_and_runtime_tables(tmp_path: Path) -> None:
@@ -48,6 +49,7 @@ def test_init_schema_sets_user_version_and_runtime_tables(tmp_path: Path) -> Non
     assert "period_end" in run_columns
     assert "workspace_leases" in lease_tables
     assert "pass_outputs" in lease_tables
+    assert "item_stream_states" not in lease_tables
 
 
 def test_init_schema_migrates_run_context_and_artifact_details_columns(
@@ -106,11 +108,10 @@ def test_init_schema_prunes_legacy_meta_rows_from_chunk_fts(tmp_path: Path) -> N
 
     with sqlite3.connect(repository.db_path) as conn:
         conn.execute(
-            "INSERT INTO documents(doc_type, scope, granularity, period_start, period_end, title, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            "INSERT INTO documents(doc_type, granularity, period_start, period_end, title, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
             (
                 "idea",
-                "default",
                 "day",
                 "2026-03-02T00:00:00+00:00",
                 "2026-03-03T00:00:00+00:00",
@@ -151,6 +152,337 @@ def test_init_schema_prunes_legacy_meta_rows_from_chunk_fts(tmp_path: Path) -> N
         )
 
     assert remaining == 0
+
+
+def test_init_schema_drops_legacy_item_stream_states_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "recoleta.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE item_stream_states (
+                id INTEGER PRIMARY KEY,
+                item_id INTEGER NOT NULL,
+                stream VARCHAR(64) NOT NULL,
+                state VARCHAR(24) NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.execute("PRAGMA user_version = 6")
+        conn.commit()
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    with sqlite3.connect(repository.db_path) as conn:
+        legacy_tables = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+
+    assert "item_stream_states" not in legacy_tables
+
+
+def test_init_schema_rewrites_legacy_scope_columns_out_of_child_tables(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "legacy-scope.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE items (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL,
+                source_item_id TEXT,
+                canonical_url TEXT NOT NULL,
+                canonical_url_hash TEXT NOT NULL,
+                title TEXT NOT NULL,
+                authors TEXT,
+                published_at DATETIME,
+                raw_metadata_json TEXT NOT NULL DEFAULT '{}',
+                state TEXT NOT NULL DEFAULT 'ingested',
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE runs (
+                id TEXT PRIMARY KEY,
+                started_at DATETIME NOT NULL,
+                heartbeat_at DATETIME NOT NULL,
+                finished_at DATETIME,
+                status TEXT NOT NULL,
+                command TEXT,
+                operation_kind TEXT,
+                scope TEXT,
+                granularity TEXT,
+                period_start DATETIME,
+                period_end DATETIME,
+                target_granularity TEXT,
+                target_period_start DATETIME,
+                target_period_end DATETIME,
+                requested_steps_json TEXT NOT NULL DEFAULT '[]',
+                executed_steps_json TEXT NOT NULL DEFAULT '[]',
+                skipped_steps_json TEXT NOT NULL DEFAULT '[]',
+                billing_by_step_json TEXT NOT NULL DEFAULT '{}',
+                terminal_state TEXT,
+                config_fingerprint TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE analyses (
+                id INTEGER PRIMARY KEY,
+                item_id INTEGER NOT NULL,
+                scope VARCHAR(64) NOT NULL DEFAULT 'default',
+                model VARCHAR(128) NOT NULL,
+                provider VARCHAR(64) NOT NULL,
+                summary TEXT NOT NULL,
+                topics_json TEXT NOT NULL DEFAULT '[]',
+                relevance_score FLOAT NOT NULL DEFAULT 0.0,
+                novelty_score FLOAT,
+                cost_usd FLOAT,
+                latency_ms INTEGER,
+                created_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY,
+                doc_type VARCHAR(16) NOT NULL,
+                scope VARCHAR(64) NOT NULL DEFAULT 'default',
+                item_id INTEGER,
+                source VARCHAR(32),
+                canonical_url TEXT,
+                title TEXT,
+                published_at DATETIME,
+                granularity VARCHAR(16),
+                period_start DATETIME,
+                period_end DATETIME,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE pass_outputs (
+                id INTEGER PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                scope VARCHAR(64) NOT NULL DEFAULT 'default',
+                pass_kind VARCHAR(64) NOT NULL,
+                status VARCHAR(24) NOT NULL,
+                granularity VARCHAR(16),
+                period_start DATETIME,
+                period_end DATETIME,
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                content_hash VARCHAR(64) NOT NULL,
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                diagnostics_json TEXT NOT NULL DEFAULT '{}',
+                input_refs_json TEXT NOT NULL DEFAULT '[]',
+                created_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE localized_outputs (
+                id INTEGER PRIMARY KEY,
+                source_kind VARCHAR(32) NOT NULL,
+                source_record_id INTEGER NOT NULL,
+                scope VARCHAR(64) NOT NULL DEFAULT 'default',
+                language_code VARCHAR(32) NOT NULL,
+                status VARCHAR(24) NOT NULL DEFAULT 'succeeded',
+                schema_version INTEGER NOT NULL DEFAULT 1,
+                source_hash VARCHAR(64) NOT NULL,
+                variant_role VARCHAR(16) NOT NULL DEFAULT 'translation',
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                diagnostics_json TEXT NOT NULL DEFAULT '{}',
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO items (
+                id, source, source_item_id, canonical_url, canonical_url_hash, title,
+                raw_metadata_json, state, created_at, updated_at
+            ) VALUES (
+                1, 'rss', 'legacy-item-1', 'https://example.com/legacy-item-1',
+                'legacy-item-hash-1', 'Legacy Item', '{}', 'analyzed',
+                '2026-03-20 00:00:00', '2026-03-20 00:00:00'
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO runs (
+                id, started_at, heartbeat_at, status, scope, config_fingerprint
+            ) VALUES (
+                'run-1', '2026-03-20 00:00:00', '2026-03-20 00:00:00',
+                'succeeded', 'default', 'fp-legacy-scope'
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO analyses (
+                id, item_id, scope, model, provider, summary, topics_json,
+                relevance_score, created_at
+            ) VALUES (
+                1, 1, 'default', 'test/model', 'test', 'summary', '[]', 0.9,
+                '2026-03-20 00:00:00'
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO documents (
+                id, doc_type, scope, item_id, title, created_at, updated_at
+            ) VALUES (
+                1, 'item', 'default', 1, 'Legacy Item',
+                '2026-03-20 00:00:00', '2026-03-20 00:00:00'
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO pass_outputs (
+                id, run_id, scope, pass_kind, status, schema_version, content_hash,
+                payload_json, diagnostics_json, input_refs_json, created_at
+            ) VALUES (
+                1, 'run-1', 'default', 'trend_synthesis', 'succeeded', 1,
+                'legacy-pass-output', '{}', '{}', '[]', '2026-03-20 00:00:00'
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO localized_outputs (
+                id, source_kind, source_record_id, scope, language_code, status,
+                schema_version, source_hash, variant_role, payload_json,
+                diagnostics_json, created_at, updated_at
+            ) VALUES (
+                1, 'analysis', 1, 'default', 'zh-CN', 'succeeded', 1,
+                'legacy-loc-hash', 'translation', '{}', '{}',
+                '2026-03-20 00:00:00', '2026-03-20 00:00:00'
+            );
+            """
+        )
+        conn.execute("PRAGMA user_version = 7")
+        conn.commit()
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    with sqlite3.connect(repository.db_path) as conn:
+        for table_name in ("analyses", "documents", "pass_outputs", "localized_outputs"):
+            columns = {
+                str(row[1]) for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            }
+            assert "scope" not in columns
+        assert int(conn.execute("SELECT COUNT(*) FROM analyses").fetchone()[0]) == 1
+        assert int(conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]) == 1
+        assert int(conn.execute("SELECT COUNT(*) FROM pass_outputs").fetchone()[0]) == 1
+        assert int(conn.execute("SELECT COUNT(*) FROM localized_outputs").fetchone()[0]) == 1
+
+
+def test_save_analysis_and_publish_work_without_item_stream_states_table(
+    tmp_path: Path,
+) -> None:
+    """Regression: default-scope runtime should not depend on a legacy item_stream_states table."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="runtime-safety-item-2",
+            canonical_url="https://example.com/runtime-safety-item-2",
+            title="Runtime Safety Item 2",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 3, tzinfo=UTC),
+        )
+    )
+    assert item.id is not None
+
+    repository.save_analysis(
+        item_id=item.id,
+        result=AnalysisResult(
+            model="test/runtime-safety",
+            provider="test",
+            summary="## Summary\n\nRuntime safety analysis.\n",
+            topics=["systems"],
+            relevance_score=0.9,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    repository.mark_item_published(item_id=item.id)
+
+    with sqlite3.connect(repository.db_path) as conn:
+        legacy_tables = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+
+    assert "item_stream_states" not in legacy_tables
+
+
+def test_list_items_for_publish_uses_item_state_without_legacy_stream_state_table(
+    tmp_path: Path,
+) -> None:
+    """Regression: publish selection should continue to work without item_stream_states."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="runtime-safety-item-3",
+            canonical_url="https://example.com/runtime-safety-item-3",
+            title="Runtime Safety Item 3",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 4, tzinfo=UTC),
+        )
+    )
+    assert item.id is not None
+
+    repository.save_analysis(
+        item_id=item.id,
+        result=AnalysisResult(
+            model="test/runtime-safety",
+            provider="test",
+            summary="## Summary\n\nPublish candidate.\n",
+            topics=["systems"],
+            relevance_score=0.95,
+            novelty_score=0.5,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+
+    candidates = repository.list_items_for_publish(
+        limit=10,
+        min_relevance_score=0.5,
+    )
+
+    assert len(candidates) == 1
+    selected_item, selected_analysis = candidates[0]
+    assert selected_item.id == item.id
+    assert selected_analysis.item_id == item.id
 
 
 def test_init_schema_rejects_newer_schema_version(tmp_path: Path) -> None:
