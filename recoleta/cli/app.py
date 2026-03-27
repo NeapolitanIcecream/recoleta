@@ -11,11 +11,6 @@ from recoleta.cli.db import (
     run_db_clear_command,
     run_db_reset_command,
 )
-from recoleta.cli.fleet import (
-    execute_fleet_deploy_workflow,
-    execute_fleet_granularity_workflow,
-    run_fleet_site_build_command,
-)
 from recoleta.cli.ideas import run_ideas_command
 from recoleta.cli.ingest import run_ingest_command
 from recoleta.cli.materialize import run_materialize_outputs_command
@@ -50,6 +45,24 @@ from recoleta.cli.workflows import (
     execute_granularity_workflow,
     run_daemon_start_command,
 )
+
+
+def execute_fleet_granularity_workflow(**kwargs: object) -> object:
+    from recoleta.cli.fleet import execute_fleet_granularity_workflow as impl
+
+    return impl(**kwargs)
+
+
+def execute_fleet_deploy_workflow(**kwargs: object) -> object:
+    from recoleta.cli.fleet import execute_fleet_deploy_workflow as impl
+
+    return impl(**kwargs)
+
+
+def run_fleet_site_build_command(**kwargs: object) -> object:
+    from recoleta.cli.fleet import run_fleet_site_build_command as impl
+
+    return impl(**kwargs)
 
 app = typer.Typer(
     help="Recoleta workflow-first CLI.", no_args_is_help=True

@@ -101,6 +101,7 @@ def test_search_text_excludes_meta_chunks_from_agent_visible_hits(
 def test_doc_id_helpers_respect_active_corpus_bounds(
     tmp_path: Path,
 ) -> None:
+    """Regression: instance-local corpus helpers must still hide out-of-window docs."""
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
 
@@ -130,19 +131,13 @@ def test_doc_id_helpers_respect_active_corpus_bounds(
     assert visible_doc.id is not None
     assert hidden_scope_doc.id is not None
     assert hidden_window_doc.id is not None
+    assert int(hidden_scope_doc.id) == int(visible_doc.id)
 
     repository.upsert_document_chunk(
         doc_id=int(visible_doc.id),
         chunk_index=0,
         kind="summary",
         text_value="Visible summary.",
-        source_content_type="trend_ideas_summary",
-    )
-    repository.upsert_document_chunk(
-        doc_id=int(hidden_scope_doc.id),
-        chunk_index=0,
-        kind="summary",
-        text_value="Other stream summary.",
         source_content_type="trend_ideas_summary",
     )
     repository.upsert_document_chunk(
@@ -178,21 +173,16 @@ def test_doc_id_helpers_respect_active_corpus_bounds(
     visible_doc_result = service.get_doc(doc_id=int(visible_doc.id))
     assert visible_doc_result["doc"] is not None
     assert visible_doc_result["doc"]["doc_id"] == int(visible_doc.id)
-    assert service.get_doc(doc_id=int(hidden_scope_doc.id)) == {"doc": None}
     assert service.get_doc(doc_id=int(hidden_window_doc.id)) == {"doc": None}
 
     visible_bundle = service.get_doc_bundle(doc_id=int(visible_doc.id))
     assert visible_bundle["bundle"] is not None
     assert visible_bundle["bundle"]["doc"]["doc_id"] == int(visible_doc.id)
-    assert service.get_doc_bundle(doc_id=int(hidden_scope_doc.id)) == {"bundle": None}
     assert service.get_doc_bundle(doc_id=int(hidden_window_doc.id)) == {"bundle": None}
 
     visible_chunk = service.read_chunk(doc_id=int(visible_doc.id), chunk_index=0)
     assert visible_chunk["chunk"] is not None
     assert visible_chunk["chunk"]["text"] == "Visible summary."
-    assert service.read_chunk(doc_id=int(hidden_scope_doc.id), chunk_index=0) == {
-        "chunk": None
-    }
     assert service.read_chunk(doc_id=int(hidden_window_doc.id), chunk_index=0) == {
         "chunk": None
     }
