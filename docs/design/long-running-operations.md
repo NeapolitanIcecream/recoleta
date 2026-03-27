@@ -26,8 +26,12 @@ Recoleta's long-running operating model is now implemented around a few concrete
 - maintenance and recovery commands (`admin gc`, `admin vacuum`,
   `admin backup`, `admin restore`)
 - diagnostics and repair commands (`inspect health`, `inspect stats`,
-  `inspect runs`, `inspect llm`, `inspect why-empty`, `repair streams`) plus a
-  documented container contract
+  `inspect runs`, `inspect llm`, `inspect why-empty`) plus a documented
+  container contract
+
+Legacy note:
+
+- the older shared-stream runtime also exposed `repair streams`
 
 The remaining design questions are mostly about defaults and future policy, for example retention windows, cache pruning scope, and how much schema migration machinery the project should eventually adopt.
 
@@ -368,9 +372,11 @@ Recoleta exposes two small operator-facing interfaces for this:
 
 Targeted recovery remains separate from the read-only checks:
 
-- `recoleta repair streams --date ... --streams ...` repairs explicit
-  stream-analysis state for one UTC day without introducing a general rerun
-  workflow engine.
+- legacy `recoleta repair streams --date ... --streams ...` repaired explicit
+  stream-analysis state for one UTC day in the old shared-stream runtime.
+- in the instance-first runtime, choose the child instance config you want to
+  fix, rerun the needed `stage ...` commands, and use `repair outputs` when the
+  DB is already correct.
 
 ## Dependency stance
 
@@ -421,7 +427,7 @@ This is the highest-value first implementation slice.
 - Compose example
 - `inspect health` command
 - `inspect runs` inspection commands
-- targeted repair helpers such as `repair streams`
+- targeted repair helpers for the active runtime model
 - documented healthcheck contract
 
 ## Implementation workstreams
@@ -492,8 +498,8 @@ Outcome:
   intended lightweight operator surface
 - `inspect why-empty` and `inspect llm` cover the two most common
   incident-response questions
-- `repair streams` provides a bounded write-capable repair path without adding
-  a top-level rerun orchestrator
+- the old `repair streams` helper is now legacy; instance-first recovery flows
+  use child-instance configs plus targeted reruns instead of stream-row repair
 - deployment recipes are documented for cron/systemd/containers
 - retention defaults remain internal on purpose for now
 

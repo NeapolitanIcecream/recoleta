@@ -41,7 +41,7 @@ Use these replacements:
 | `recoleta run --once` | `recoleta run now` |
 | `recoleta run --once --date 2026-03-16` | `recoleta run day --date 2026-03-16` |
 | `recoleta trends-week --date 2026-03-16` | `recoleta run week --date 2026-03-16` |
-| `recoleta repair-streams --date ... --streams ...` | `recoleta repair streams --date ... --streams ...` |
+| `recoleta repair-streams --date ... --streams ...` | no direct replacement; migrate legacy `topic_streams` deployments with `recoleta admin migrate topic-streams-to-instances ...` |
 | `recoleta materialize outputs --site --pdf` | `recoleta repair outputs --site --pdf` |
 | `recoleta site gh-deploy` | `recoleta run deploy` |
 | `recoleta gc` | `recoleta admin gc` |
@@ -57,6 +57,11 @@ Use these replacements:
 
 `recoleta run week` is a broader end-to-end replacement for `trends-week`. It
 reruns the weekly workflow instead of only generating weekly trends.
+
+`repair streams` was only meaningful for the legacy shared-stream model. In the
+instance-first runtime, pick the child instance config you want to repair and
+rerun the needed `stage ...` commands or use `repair outputs` when the DB is
+already correct.
 
 ## Scheduler config
 

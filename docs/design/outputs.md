@@ -46,7 +46,7 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading surfaces derived from canonical outputs
 - `site/`: optional derived static site output from `recoleta run site build`
 
-When `TOPIC_STREAMS` is configured, each stream gets its own subtree instead:
+Legacy shared-stream layout:
 
 - `Streams/<stream>/Inbox/`
 - `Streams/<stream>/Trends/`
@@ -122,7 +122,7 @@ The static site exporter turns trend markdown notes into a standalone website:
   Pages branch (default: `gh-pages`)
 - `recoleta stage site stage`: mirror trend markdown/PDF artifacts to
   `./site-content/Trends` by default, or
-  `./site-content/Streams/<stream>/Trends` in topic-stream mode
+  `./site-content/Streams/<stream>/Trends` in the legacy shared-stream layout
 
 Important behavior:
 
@@ -136,8 +136,9 @@ Important behavior:
 - when stored trend/idea metadata includes projection provenance,
   `recoleta repair outputs` preserves that provenance in the regenerated
   markdown/obsidian notes instead of dropping it.
-- `recoleta repair outputs --scope <stream>` lets you repair a single stream
-  without rewriting every configured stream.
+- in the instance-first runtime, `recoleta repair outputs` always repairs the
+  instance-local `default` scope; choose the target child instance with
+  `--config-path` when needed.
 - `recoleta repair outputs` does not rebuild derived `documents` projections
   from pass outputs; searchable corpus repair stays separate from
   filesystem/site repair on purpose.
@@ -151,9 +152,10 @@ Important behavior:
   Pages-specific workflow files by publishing a derived branch instead.
 - `recoleta stage site stage` remains useful for custom CI pipelines and
   non-GitHub static hosts when you want an explicit repo-local snapshot.
-- In topic-stream mode, `recoleta run site build` and `recoleta run deploy`
-  aggregate stream-local `Trends/` trees and expose a `Streams` navigation
-  surface instead of flattening mixed domains together.
+- Legacy note: the older shared-stream runtime aggregated stream-local
+  `Trends/` trees and exposed a `Streams` navigation surface. The current
+  instance-first runtime keeps one canonical output tree per child instance and
+  uses fleet-level aggregation when you want a combined site.
 
 ## CLI UX
 

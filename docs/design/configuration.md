@@ -277,7 +277,10 @@ Migration note:
 - `OBSIDIAN_BASE_FOLDER` (default `Recoleta`): base folder under the Vault.
 - `PUBLISH_TARGETS` (default `["markdown"]`): which publish integrations are enabled.
 - `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`, `Trends/`, `Ideas/`, `Localized/<language>/...`, and derived `site/` output).
-- When `TOPIC_STREAMS` is enabled, Markdown defaults to `MARKDOWN_OUTPUT_DIR/Streams/<stream>/...` for stream-local notes and trend surfaces.
+- Legacy note: older shared `TOPIC_STREAMS` deployments wrote stream-local
+  notes under `MARKDOWN_OUTPUT_DIR/Streams/<stream>/...`. The current
+  instance-first runtime uses one `MARKDOWN_OUTPUT_DIR` per standalone
+  instance or per child instance.
 
 ### Browser trend PDF rendering
 
@@ -300,9 +303,11 @@ Notes:
   `recoleta stage site stage --input-dir ... --output-dir ...` intentionally
   work without loading the full runtime config so CI can build from staged
   trend notes only.
-- In `TOPIC_STREAMS` mode, `recoleta run site build` auto-discovers
-  `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/` and `recoleta stage site stage`
-  mirrors them under `./site-content/Streams/<stream>/Trends/` by default.
+- Legacy note: the older shared `TOPIC_STREAMS` runtime auto-discovered
+  `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`, and `recoleta stage site stage`
+  mirrored them under `./site-content/Streams/<stream>/Trends/`. The
+  instance-first runtime replaces that with one trend tree per child instance,
+  plus fleet-level aggregation when needed.
 - When localized markdown trees are present, `recoleta run site build`,
   `recoleta stage site stage`, `recoleta run site serve`, and
   `recoleta run deploy` use `LOCALIZATION.site_default_language_code` by

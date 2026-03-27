@@ -58,6 +58,23 @@ def test_repair_help_hides_legacy_streams_entrypoint() -> None:
     assert "streams" not in result.stdout
 
 
+def test_legacy_translate_help_matches_instance_first_scope_contract() -> None:
+    runner = CliRunner()
+
+    run_result = runner.invoke(recoleta.cli.app, ["translate", "run", "--help"])
+    backfill_result = runner.invoke(
+        recoleta.cli.app,
+        ["translate", "backfill", "--help"],
+    )
+
+    assert run_result.exit_code == 0
+    assert "Instance-local" in run_result.stdout
+    assert "instance-first" in run_result.stdout
+    assert backfill_result.exit_code == 0
+    assert "Instance-local" in backfill_result.stdout
+    assert "instance-first" in backfill_result.stdout
+
+
 @pytest.mark.parametrize(
     ("argv", "target_name", "expected"),
     [

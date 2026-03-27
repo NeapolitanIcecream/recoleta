@@ -23,8 +23,15 @@ Recoleta is a CLI-first application with a small set of commands:
 - `recoleta daemon start`: run configured workflow schedules locally.
 - `recoleta inspect health|stats|runs|llm|why-empty`: operator diagnostics and
   run inspection surfaces.
-- `recoleta repair streams` plus `recoleta admin gc|vacuum|backup|restore|db`:
-  targeted recovery and maintenance commands for long-running workspaces.
+- `recoleta admin gc|vacuum|backup|restore|db`: maintenance commands for
+  long-running workspaces.
+
+Legacy note:
+
+- `recoleta repair streams` belonged to the older shared `topic_streams`
+  runtime. The instance-first runtime replaces that flow with child-instance
+  configs, targeted `stage ...` reruns, and `repair outputs` when the DB is
+  already correct.
 
 ## Module boundaries
 

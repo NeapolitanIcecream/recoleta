@@ -33,7 +33,7 @@ After a successful run, check:
 - `MARKDOWN_OUTPUT_DIR/Trends/`
 - `MARKDOWN_OUTPUT_DIR/site/`
 - `MARKDOWN_OUTPUT_DIR/Ideas/` when the current window has enough evidence
-- `MARKDOWN_OUTPUT_DIR/Streams/<stream>/...` when `topic_streams` is enabled
+- for a migrated fleet, check each child instance's `MARKDOWN_OUTPUT_DIR`
 
 ## Run one stage only
 
@@ -59,7 +59,7 @@ briefs already exist in SQLite:
 
 ```bash
 uv run recoleta run translate --include items,trends,ideas
-uv run recoleta run translate --scope agents_lab --granularity week --include trends,ideas
+uv run recoleta run translate --config-path /path/to/instance/recoleta.yaml --granularity week --include trends,ideas
 uv run recoleta run translate --include items --force
 ```
 
@@ -67,6 +67,8 @@ What to know:
 
 - `run translate` reads canonical rows and writes derived variants to
   `localized_outputs`.
+- instance-first runtime only supports `--scope default`; choose the target
+  child instance with `--config-path`.
 - `--include` accepts `items`, `trends`, and `ideas`.
 - `--force` rewrites localized outputs even when the source hash is unchanged.
 - `--context-assist` defaults to `direct`.
@@ -81,13 +83,15 @@ one language and future canonical output should be in another:
 
 ```bash
 uv run recoleta stage translate backfill --all-history --include items,trends,ideas --emit-mirror-targets
-uv run recoleta stage translate backfill --scope agents_lab --granularity week --include trends,ideas --legacy-source-language zh-CN
+uv run recoleta stage translate backfill --config-path /path/to/instance/recoleta.yaml --granularity week --include trends,ideas --legacy-source-language zh-CN
 ```
 
 What to know:
 
 - `localization.source_language_code` is the language you want future canonical
   output to use.
+- instance-first runtime only supports `--scope default`; choose the target
+  child instance with `--config-path`.
 - `localization.legacy_backfill_source_language_code` or
   `--legacy-source-language` tells Recoleta what language the historical
   canonical rows currently use.
@@ -108,8 +112,10 @@ uv run recoleta run site build
 uv run recoleta run site serve
 uv run recoleta run site build --default-language-code en
 uv run recoleta run deploy --branch gh-pages --pages-config auto
+uv run recoleta fleet site build --manifest /path/to/fleet.yaml
+uv run recoleta fleet run deploy --manifest /path/to/fleet.yaml
 uv run recoleta repair outputs --site --pdf
-uv run recoleta repair outputs --scope agents_lab --granularity week --site
+uv run recoleta repair outputs --config-path /path/to/instance/recoleta.yaml --granularity week --site
 ```
 
 What to know:
@@ -119,6 +125,10 @@ What to know:
 - `run site serve` rebuilds and serves a local preview on `127.0.0.1:8000`.
 - `run deploy` translates if configured, builds the site, and pushes a derived
   deployment branch.
+- `fleet site build` reads child outputs and writes one aggregate site tree for
+  a migrated multi-instance deployment.
+- `fleet run deploy` runs per-instance deploy preparation, then publishes the
+  aggregate site for the fleet manifest.
 - `repair outputs` repairs Markdown, PDFs, and site files from stored DB state
   without rerunning ingest or analyze.
 - When localized markdown trees exist, site export writes one subtree per
@@ -245,27 +255,24 @@ What to know:
 - `inspect runs list` gives a compact recent-run view that is easier to
   automate than scraping logs.
 
-## Repair outputs or stream state
+## Repair outputs or rerun one window
 
-Use these commands when you need to repair one stream or rebuild output files
-from stored state:
+Use these commands when you need to rerun one bad window or rebuild output
+files from stored state:
 
 ```bash
-uv run recoleta repair streams --date 2026-03-15 --streams agents_lab --json
 uv run recoleta stage analyze --date 2026-03-15 --limit 50
 uv run recoleta stage trends --granularity day --date 2026-03-15
 uv run recoleta stage ideas --granularity day --date 2026-03-15
 
 uv run recoleta repair outputs --site --pdf
-uv run recoleta repair outputs --scope agents_lab --granularity week --site
+uv run recoleta repair outputs --config-path /path/to/instance/recoleta.yaml --granularity week --site
 ```
 
 What to know:
 
-- `repair streams` marks the selected stream rows `retryable_failed` for one
-  UTC day. It does not rerun analysis, trends, or ideas by itself.
-- Follow `repair streams` with `stage analyze`, then downstream `stage trends`
-  and `stage ideas` if you need new documents for that window.
+- rerun the affected `stage ...` command when stored DB state is wrong and you
+  need fresh derived rows for that window.
 - `repair outputs` is the safer path when the database is already correct and
   only Markdown, PDF, or site output drifted.
 

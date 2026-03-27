@@ -21,6 +21,7 @@ def run_materialize_outputs_command(
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
     console = console_cls()
+    normalized_scope = cli._require_default_scope(scope)
 
     try:
         resolved_db_path = cli._resolve_db_path(db_path=db_path, config_path=config_path)
@@ -59,7 +60,6 @@ def run_materialize_outputs_command(
             attr_name="default_scope_specs_for_settings",
         )
 
-        normalized_scope = str(scope or "").strip() or "default"
         resolved_output_dir = (
             output_dir.expanduser().resolve() if output_dir is not None else None
         )

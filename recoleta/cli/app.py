@@ -538,7 +538,11 @@ def run_translate(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option("default", "--scope", help="Scope name to translate."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(
         None,
         "--granularity",
@@ -950,12 +954,12 @@ def repair_outputs(
         dir_okay=True,
         writable=True,
         resolve_path=True,
-        help="Markdown output root to rewrite in single-stream mode.",
+        help="Markdown output root to rewrite for one standalone instance or one child instance.",
     ),
     scope: str = typer.Option(
         "default",
         "--scope",
-        help="Scope name for materialization.",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
     ),
     granularity: str | None = typer.Option(
         None,
@@ -1090,7 +1094,11 @@ def stage_translate_run(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option("default", "--scope", help="Scope name to translate."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea translations to day, week, or month windows."),
     include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to translate: items, trends, ideas."),
     limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
@@ -1133,7 +1141,11 @@ def stage_translate_backfill(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option("default", "--scope", help="Scope name to backfill."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea backfill to day, week, or month windows."),
     include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to backfill: items, trends, ideas."),
     limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
@@ -1228,8 +1240,12 @@ def stage_site_serve(
 def stage_materialize(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="SQLite database path."),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="Optional YAML/JSON config path used to resolve the database and default output directories."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Markdown output root to rewrite in single-stream mode."),
-    scope: str = typer.Option("default", "--scope", help="Scope name for materialization."),
+    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Markdown output root to rewrite for one standalone instance or one child instance."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally rerender only day, week, or month trend notes."),
     pdf: bool = typer.Option(False, "--pdf/--no-pdf", help="Regenerate trend PDFs from the rerendered markdown notes."),
     site: bool = typer.Option(False, "--site/--no-site", help="Rebuild the static site after markdown outputs are materialized."),
@@ -1627,7 +1643,11 @@ def legacy_site_serve(
 def legacy_translate_run(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    scope: str = typer.Option("default", "--scope"),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),
@@ -1652,7 +1672,11 @@ def legacy_translate_run(
 def legacy_translate_backfill(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    scope: str = typer.Option("default", "--scope"),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),

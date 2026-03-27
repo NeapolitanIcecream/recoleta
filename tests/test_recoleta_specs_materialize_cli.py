@@ -387,6 +387,34 @@ def test_materialize_outputs_cli_emits_json_summary(
     assert payload["scopes"][0]["trend_notes_total"] == 1
 
 
+def test_materialize_outputs_cli_rejects_non_default_scope_in_instance_first_runtime(
+    tmp_path: Path,
+) -> None:
+    """Regression: instance-first output repair must target the default scope only."""
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _seed_materialize_fixture(repository=repository)
+    output_dir = tmp_path / "outputs"
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "repair",
+            "outputs",
+            "--db-path",
+            str(repository.db_path),
+            "--output-dir",
+            str(output_dir),
+            "--scope",
+            "agents_lab",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--scope default" in result.stdout
+
+
 def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_site(
     tmp_path: Path,
 ) -> None:

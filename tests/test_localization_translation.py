@@ -944,6 +944,50 @@ def test_translate_run_cli_json_includes_run_id_and_billing(
     assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 16
 
 
+def test_translate_run_cli_rejects_non_default_scope_in_instance_first_runtime(
+    tmp_path: Path,
+) -> None:
+    """Regression: instance-first translate runs must target the default scope only."""
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'recoleta_db_path: "{repository.db_path}"',
+                'llm_model: "openai/gpt-5.4"',
+                'publish_targets: ["markdown"]',
+                f'markdown_output_dir: "{tmp_path / "outputs"}"',
+                'llm_output_language: "English"',
+                "localization:",
+                "  source_language_code: en",
+                "  targets:",
+                '    - code: "zh-CN"',
+                '      llm_label: "Chinese (Simplified)"',
+                "  site_default_language_code: en",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "translate",
+            "--config-path",
+            str(config_path),
+            "--scope",
+            "agents_lab",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--scope default" in result.stdout
+
+
 def test_run_translation_incremental_limits_items_to_workflow_period(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1689,6 +1733,52 @@ def test_translate_backfill_cli_json_includes_run_id_and_billing(
     assert payload["billing"]["components"]["translation_llm"]["input_tokens"] == 88
     assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 22
     assert payload["billing"]["total_cost_usd"] == 0.0019
+
+
+def test_translate_backfill_cli_rejects_non_default_scope_in_instance_first_runtime(
+    tmp_path: Path,
+) -> None:
+    """Regression: instance-first translation backfill must target the default scope only."""
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    config_path = tmp_path / "recoleta-backfill.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'recoleta_db_path: "{repository.db_path}"',
+                'llm_model: "openai/gpt-5.4"',
+                'publish_targets: ["markdown"]',
+                f'markdown_output_dir: "{tmp_path / "outputs"}"',
+                'llm_output_language: "English"',
+                "localization:",
+                "  source_language_code: en",
+                "  targets:",
+                '    - code: "zh-CN"',
+                '      llm_label: "Chinese (Simplified)"',
+                "  site_default_language_code: en",
+                '  legacy_backfill_source_language_code: "zh-CN"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "stage",
+            "translate",
+            "backfill",
+            "--config-path",
+            str(config_path),
+            "--scope",
+            "agents_lab",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--scope default" in result.stdout
 
 
 def test_translate_run_preserves_success_when_billing_metrics_lookup_fails(
