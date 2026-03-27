@@ -200,6 +200,125 @@ def test_trends_cli_emits_json_output_with_billing_summary(
     assert payload["billing"]["total_cost_usd"] == 0.0067
 
 
+def test_trends_cli_ignores_legacy_stream_results_surface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+
+    class _FakeLegacyStreamService:
+        def trends(  # type: ignore[no-untyped-def]
+            self,
+            *,
+            run_id: str,
+            granularity: str,
+            anchor_date=None,
+            llm_model=None,
+            backfill: bool = False,
+            backfill_mode: str = "missing",
+            debug_pdf: bool = False,
+        ):
+            _ = (
+                run_id,
+                granularity,
+                anchor_date,
+                llm_model,
+                backfill,
+                backfill_mode,
+                debug_pdf,
+            )
+            return SimpleNamespace(
+                doc_id=1,
+                granularity="day",
+                period_start=datetime(2026, 3, 9, tzinfo=UTC),
+                period_end=datetime(2026, 3, 10, tzinfo=UTC),
+                title="Daily Trend",
+                stream_results=[
+                    SimpleNamespace(stream="embodied_ai", doc_id=5),
+                    SimpleNamespace(stream="software_intelligence", doc_id=6),
+                ],
+            )
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, _FakeLegacyStreamService()),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["trends", "--granularity", "day", "--date", "20260309"],
+    )
+
+    assert result.exit_code == 0
+    assert "trends completed" in result.stdout
+    assert "doc_id=1" in result.stdout
+    assert "streams=2" not in result.stdout
+    assert "embodied_ai" not in result.stdout
+    assert "software_intelligence" not in result.stdout
+
+
+def test_trends_cli_json_ignores_legacy_stream_results_surface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+
+    class _FakeLegacyStreamService:
+        def trends(  # type: ignore[no-untyped-def]
+            self,
+            *,
+            run_id: str,
+            granularity: str,
+            anchor_date=None,
+            llm_model=None,
+            backfill: bool = False,
+            backfill_mode: str = "missing",
+            debug_pdf: bool = False,
+        ):
+            _ = (
+                run_id,
+                granularity,
+                anchor_date,
+                llm_model,
+                backfill,
+                backfill_mode,
+                debug_pdf,
+            )
+            return SimpleNamespace(
+                doc_id=1,
+                granularity="day",
+                period_start=datetime(2026, 3, 9, tzinfo=UTC),
+                period_end=datetime(2026, 3, 10, tzinfo=UTC),
+                title="Daily Trend",
+                stream_results=[
+                    SimpleNamespace(stream="embodied_ai", doc_id=5),
+                    SimpleNamespace(stream="software_intelligence", doc_id=6),
+                ],
+            )
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, _FakeLegacyStreamService()),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["trends", "--granularity", "day", "--date", "20260309", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["command"] == "trends"
+    assert payload["doc_id"] == 1
+    assert "stream_results_total" not in payload
+    assert "stream_results" not in payload
+
+
 def test_trends_cli_accepts_yyyymmdd_date(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -330,7 +449,7 @@ def test_site_build_cli_emits_json_output(
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(
-            '{"trends_total": 3, "ideas_total": 2, "topics_total": 5, "streams_total": 2}\n',
+            '{"trends_total": 3, "ideas_total": 2, "topics_total": 5}\n',
             encoding="utf-8",
         )
         return manifest_path
@@ -449,7 +568,7 @@ def test_site_build_cli_accepts_explicit_default_language_code_without_settings(
     assert calls["default_language_code"] == "zh-CN"
 
 
-def test_site_build_cli_formats_ideas_and_stream_counts_cleanly(
+def test_site_build_cli_formats_ideas_counts_cleanly(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -464,7 +583,7 @@ def test_site_build_cli_formats_ideas_and_stream_counts_cleanly(
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(
-            '{"trends_total": 3, "ideas_total": 2, "topics_total": 5, "streams_total": 2}\n',
+            '{"trends_total": 3, "ideas_total": 2, "topics_total": 5}\n',
             encoding="utf-8",
         )
         return manifest_path
@@ -481,7 +600,7 @@ def test_site_build_cli_formats_ideas_and_stream_counts_cleanly(
     )
 
     assert result.exit_code == 0
-    assert "trends=3 ideas=2 topics=5 streams=2" in result.stdout
+    assert "trends=3 ideas=2 topics=5" in result.stdout
 
 
 def test_site_stage_cli_uses_repo_local_default_output_dir(
@@ -542,7 +661,7 @@ def test_site_stage_cli_emits_json_output(
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(
-            '{"trends_total": 4, "ideas_total": 2, "pdf_total": 2, "streams_total": 2}\n',
+            '{"trends_total": 4, "ideas_total": 2, "pdf_total": 2}\n',
             encoding="utf-8",
         )
         return manifest_path
@@ -564,7 +683,7 @@ def test_site_stage_cli_emits_json_output(
     assert payload["output_dir"] == str(tmp_path / "site-content" / "Trends")
 
 
-def test_site_stage_cli_formats_ideas_and_stream_counts_cleanly(
+def test_site_stage_cli_formats_ideas_counts_cleanly(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -580,7 +699,7 @@ def test_site_stage_cli_formats_ideas_and_stream_counts_cleanly(
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(
-            '{"trends_total": 4, "ideas_total": 2, "pdf_total": 2, "streams_total": 2}\n',
+            '{"trends_total": 4, "ideas_total": 2, "pdf_total": 2}\n',
             encoding="utf-8",
         )
         return manifest_path
@@ -597,7 +716,7 @@ def test_site_stage_cli_formats_ideas_and_stream_counts_cleanly(
     )
 
     assert result.exit_code == 0
-    assert "trends=4 ideas=2 pdfs=2 streams=2" in result.stdout
+    assert "trends=4 ideas=2 pdfs=2" in result.stdout
 
 
 def test_site_build_cli_with_explicit_paths_does_not_require_settings(
@@ -734,7 +853,7 @@ def test_site_build_cli_uses_trends_subdirectory_even_when_legacy_topic_streams_
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(
-            '{"trends_total": 3, "topics_total": 5, "streams_total": 2}\n',
+            '{"trends_total": 3, "topics_total": 5}\n',
             encoding="utf-8",
         )
         return manifest_path
@@ -788,7 +907,7 @@ def test_site_stage_cli_uses_trends_subdirectory_even_when_legacy_topic_streams_
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(
-            '{"trends_total": 4, "pdf_total": 2, "streams_total": 2}\n',
+            '{"trends_total": 4, "pdf_total": 2}\n',
             encoding="utf-8",
         )
         return manifest_path

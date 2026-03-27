@@ -48,7 +48,6 @@ class GitHubPagesDeployResult:
     skipped: bool
     trends_total: int
     topics_total: int
-    streams_total: int
     files_total: int
     pages_source: PagesSourceConfigResult
 
@@ -219,7 +218,6 @@ def _sanitize_public_manifest(*, manifest_path: Path) -> dict[str, Any]:
     loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
     sanitized = {
         "files": loaded.get("files") or {},
-        "streams_total": int(loaded.get("streams_total") or 0),
         "topics_total": int(loaded.get("topics_total") or 0),
         "trends_total": int(loaded.get("trends_total") or 0),
     }
@@ -594,7 +592,6 @@ def deploy_trend_static_site_to_github_pages(
         skipped=skipped,
         trends_total=int(manifest.get("trends_total") or 0),
         topics_total=int(manifest.get("topics_total") or 0),
-        streams_total=int(manifest.get("streams_total") or 0),
         files_total=files_total,
         pages_source=pages_source,
     )
@@ -606,7 +603,6 @@ def deploy_trend_static_site_to_github_pages(
         skipped=result.skipped,
         trends_total=result.trends_total,
         topics_total=result.topics_total,
-        streams_total=result.streams_total,
         pages_source_status=result.pages_source.status,
     ).info("GitHub Pages branch deployment completed")
     return result

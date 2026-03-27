@@ -541,7 +541,7 @@ def test_run_deploy_cli_uses_default_paths_and_prints_summary(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 4, "ideas_total": 4, "topics_total": 7, "streams_total": 2}',
+                    '{"trends_total": 4, "ideas_total": 4, "topics_total": 7}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -587,7 +587,6 @@ def test_run_deploy_cli_uses_default_paths_and_prints_summary(
                     skipped=False,
                     trends_total=4,
                     topics_total=7,
-                    streams_total=2,
                     files_total=18,
                     pages_source=PagesSourceConfigResult(
                         status="configured",
@@ -673,7 +672,6 @@ def test_run_deploy_cli_passes_repo_dir_and_pages_config(
                     skipped=True,
                     trends_total=1,
                     topics_total=2,
-                    streams_total=0,
                     files_total=5,
                     pages_source=PagesSourceConfigResult(
                         status="skipped",
@@ -770,7 +768,6 @@ def test_run_deploy_cli_emits_json_output(
                     skipped=False,
                     trends_total=4,
                     topics_total=7,
-                    streams_total=2,
                     files_total=18,
                     pages_source=PagesSourceConfigResult(
                         status="configured",

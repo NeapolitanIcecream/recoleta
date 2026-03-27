@@ -301,7 +301,7 @@ def test_run_week_executes_recursive_day_and_week_synthesis_workflow(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 9, "ideas_total": 9, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 9, "ideas_total": 9, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -404,7 +404,7 @@ def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_bu
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -475,7 +475,7 @@ def test_run_day_allows_skipping_ingest_analyze_and_publish_for_downstream_repla
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -538,7 +538,7 @@ def test_run_week_allows_skipping_recursive_day_steps_for_settled_week_replay(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -620,7 +620,7 @@ def test_run_day_passes_incremental_translation_window_to_workflow_step(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -692,7 +692,7 @@ def test_run_day_ignores_legacy_topic_stream_runtime_fanout(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 0}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -738,7 +738,7 @@ def test_run_month_executes_recursive_day_week_and_month_synthesis_workflow(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 39, "ideas_total": 39, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 39, "ideas_total": 39, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -853,7 +853,7 @@ def test_run_now_aliases_run_day_for_today_utc(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -915,7 +915,7 @@ def test_run_day_defaults_to_latest_complete_utc_day(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -981,7 +981,7 @@ def test_run_day_json_stdout_stays_machine_readable_when_steps_write_stdout(
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path
@@ -1073,7 +1073,7 @@ def test_run_day_include_site_build_removes_reenabled_step_from_skipped_metadata
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
                 manifest_path.write_text(
-                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1, "streams_total": 1}',
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
                     encoding="utf-8",
                 )
                 return manifest_path

@@ -127,8 +127,6 @@ def run_site_build_command(
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
     segments.append(f"topics={manifest['topics_total']}")
-    if int(manifest.get("streams_total") or 0) > 1:
-        segments.append(f"streams={manifest['streams_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
         f"[green]{command_name} completed[/green] " + " ".join(segments)
@@ -233,8 +231,6 @@ def run_site_stage_command(
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
     segments.append(f"pdfs={manifest['pdf_total']}")
-    if int(manifest.get("streams_total") or 0) > 1:
-        segments.append(f"streams={manifest['streams_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
         f"[green]{command_name} completed[/green] " + " ".join(segments)

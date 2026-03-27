@@ -223,7 +223,6 @@ def test_fleet_site_build_reads_child_outputs_only(
                     "trends_total": 0,
                     "ideas_total": 0,
                     "topics_total": 0,
-                    "streams_total": 2,
                 }
             ),
             encoding="utf-8",

@@ -26,18 +26,6 @@ def _print_trends_result(
     console: Any,
     result: Any,
 ) -> None:
-    if len(getattr(result, "stream_results", []) or []) > 1:
-        console.print(
-            "[green]trends completed[/green] "
-            f"streams={len(result.stream_results)} granularity={result.granularity} "
-            f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
-        )
-        for stream_result in result.stream_results:
-            console.print(
-                f"[cyan]{stream_result.stream}[/cyan] "
-                f"doc_id={stream_result.doc_id}"
-            )
-        return
     console.print(
         "[green]trends completed[/green] "
         f"doc_id={result.doc_id} granularity={result.granularity} "
@@ -46,7 +34,6 @@ def _print_trends_result(
 
 
 def _serialize_trends_result(result: Any) -> dict[str, Any]:
-    stream_results = list(getattr(result, "stream_results", []) or [])
     payload: dict[str, Any] = {
         "doc_id": int(getattr(result, "doc_id", 0) or 0),
         "pass_output_id": (
@@ -58,13 +45,7 @@ def _serialize_trends_result(result: Any) -> dict[str, Any]:
         "period_start": cli._isoformat_or_none(getattr(result, "period_start", None)),
         "period_end": cli._isoformat_or_none(getattr(result, "period_end", None)),
         "title": str(getattr(result, "title", "") or ""),
-        "stream": str(getattr(result, "stream", "") or "") or None,
     }
-    if stream_results:
-        payload["stream_results"] = [
-            _serialize_trends_result(child) for child in stream_results
-        ]
-        payload["stream_results_total"] = len(stream_results)
     return payload
 
 
@@ -101,11 +82,7 @@ def run_trends_command(
         repository,
         run_id=run_id,
         command="trends",
-        scope=(
-            str(getattr(result, "stream", "") or "").strip() or "default"
-            if not list(getattr(result, "stream_results", []) or [])
-            else None
-        ),
+        scope=str(getattr(result, "stream", "") or "").strip() or "default",
         granularity=str(getattr(result, "granularity", "") or "").strip() or None,
         period_start=getattr(result, "period_start", None),
         period_end=getattr(result, "period_end", None),

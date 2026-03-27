@@ -2011,18 +2011,9 @@ class PipelineService:
         analysis_rows_total: int,
         state_batches_total: int,
         state_rows_total: int,
-        streams_total: int | None = None,
         extra_metrics: list[MetricPoint] | None = None,
     ) -> list[MetricPoint]:
         metrics: list[MetricPoint] = []
-        if streams_total is not None:
-            metrics.append(
-                MetricPoint(
-                    name="pipeline.analyze.streams_total",
-                    value=streams_total,
-                    unit="count",
-                )
-            )
         metrics.extend(
             [
                 MetricPoint(

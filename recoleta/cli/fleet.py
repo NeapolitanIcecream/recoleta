@@ -81,7 +81,7 @@ def run_fleet_site_build_command(
     console.print(
         f"[green]{command_name} completed[/green] "
         f"instances={len(manifest.instances)} "
-        f"streams={site_manifest.get('streams_total', 0)} "
+        f"trends={site_manifest.get('trends_total', 0)} "
         f"output={resolved_output_dir}"
     )
     return payload
