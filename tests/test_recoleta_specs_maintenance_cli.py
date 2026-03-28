@@ -473,7 +473,7 @@ def test_gc_prune_caches_with_db_path_only_skips_filesystem_cache_pruning(
     assert repository.read_document_chunk(doc_id=doc_id, chunk_index=0) is None
 
 
-def test_repair_streams_reports_instance_migration_required(
+def test_repair_streams_reports_removed_command_without_migration_guidance(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -494,7 +494,8 @@ def test_repair_streams_reports_instance_migration_required(
     payload = json.loads(result.stdout)
     assert payload["status"] == "error"
     assert payload["command"] == "repair streams"
-    assert "topic-streams-to-instances" in payload["error"]
+    assert "no longer supported" in payload["error"]
+    assert "topic-streams-to-instances" not in payload["error"]
 
 
 def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> None:
@@ -545,7 +546,7 @@ def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> Non
     assert payload["exclusion_reasons"]["stream_state_retryable_failed"] == 1
 
 
-def test_repair_streams_fails_before_touching_legacy_database(
+def test_repair_streams_fails_closed_before_touching_database(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -585,7 +586,8 @@ def test_repair_streams_fails_before_touching_legacy_database(
     )
 
     assert result.exit_code == 2
-    assert "topic-streams-to-instances" in result.stdout
+    assert "no longer supported" in result.stdout
+    assert "topic-streams-to-instances" not in result.stdout
 
     with sqlite3.connect(db_path) as conn:
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])

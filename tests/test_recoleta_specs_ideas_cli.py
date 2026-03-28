@@ -134,7 +134,7 @@ def test_ideas_cli_ignores_legacy_stream_results_surface(
     fake_settings = _FakeSettings()
     fake_repo = _FakeRepo()
 
-    class _FakeTopicStreamService:
+    class _FakeIdeasService:
         def ideas(  # type: ignore[no-untyped-def]
             self,
             *,
@@ -178,7 +178,7 @@ def test_ideas_cli_ignores_legacy_stream_results_surface(
     monkeypatch.setattr(
         recoleta.cli,
         "_build_runtime",
-        lambda: (fake_settings, fake_repo, _FakeTopicStreamService()),
+        lambda: (fake_settings, fake_repo, _FakeIdeasService()),
     )
 
     result = runner.invoke(
@@ -207,7 +207,7 @@ def test_ideas_cli_json_ignores_legacy_stream_results_surface(
     fake_settings = _FakeSettings()
     fake_repo = _FakeRepo()
 
-    class _FakeTopicStreamService:
+    class _FakeIdeasService:
         def ideas(  # type: ignore[no-untyped-def]
             self,
             *,
@@ -252,7 +252,7 @@ def test_ideas_cli_json_ignores_legacy_stream_results_surface(
     monkeypatch.setattr(
         recoleta.cli,
         "_build_runtime",
-        lambda: (fake_settings, fake_repo, _FakeTopicStreamService()),
+        lambda: (fake_settings, fake_repo, _FakeIdeasService()),
     )
 
     result = runner.invoke(

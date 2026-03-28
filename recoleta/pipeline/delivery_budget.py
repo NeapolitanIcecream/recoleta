@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from recoleta.config import TopicStreamRuntime
 from recoleta.models import DELIVERY_CHANNEL_TELEGRAM
 from recoleta.observability import mask_value
 from recoleta.types import utc_now
@@ -12,12 +11,6 @@ from recoleta.types import utc_now
 def telegram_delivery_destination(settings: Any) -> str:
     if settings.telegram_chat_id is not None:
         return mask_value(settings.telegram_chat_id.get_secret_value())
-    return "__telegram_sender__"
-
-
-def telegram_destination_for_stream(stream: TopicStreamRuntime) -> str:
-    if stream.telegram_chat_id is not None:
-        return mask_value(stream.telegram_chat_id.get_secret_value())
     return "__telegram_sender__"
 
 

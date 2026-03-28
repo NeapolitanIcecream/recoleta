@@ -30,7 +30,7 @@ def test_cli_root_help_exposes_only_v2_top_level_groups() -> None:
     assert "materialize" not in result.stdout
 
 
-def test_removed_cli_entrypoints_show_migration_guidance() -> None:
+def test_removed_cli_entrypoints_show_direct_replacements_or_fail_closed() -> None:
     runner = CliRunner()
 
     site_result = runner.invoke(recoleta.cli.app, ["site", "gh-deploy"])
@@ -45,7 +45,8 @@ def test_removed_cli_entrypoints_show_migration_guidance() -> None:
     assert materialize_result.exit_code == 2
     assert "repair outputs" in materialize_result.stdout
     assert repair_result.exit_code == 2
-    assert "topic-streams-to-instances" in repair_result.stdout
+    assert "no longer supported" in repair_result.stdout
+    assert "topic-streams-to-instances" not in repair_result.stdout
 
 
 def test_repair_help_hides_legacy_streams_entrypoint() -> None:
@@ -56,6 +57,15 @@ def test_repair_help_hides_legacy_streams_entrypoint() -> None:
     assert result.exit_code == 0
     assert "outputs" in result.stdout
     assert "streams" not in result.stdout
+
+
+def test_admin_help_hides_removed_migrate_group() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(recoleta.cli.app, ["admin", "--help"])
+
+    assert result.exit_code == 0
+    assert "migrate" not in result.stdout
 
 
 def test_legacy_translate_help_matches_instance_first_scope_contract() -> None:

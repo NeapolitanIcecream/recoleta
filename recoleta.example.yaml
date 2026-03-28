@@ -56,36 +56,6 @@ topics:
   - agents
   - ml-systems
 
-# Optional: replace the single global `topics` list with multiple virtual topic streams.
-# Each stream reuses the same ingest/enrich backlog, but analyzes and publishes separately.
-#
-# When `topic_streams` is set:
-# - omit the top-level `topics`
-# - each stream gets its own Markdown/Obsidian subdirectory by default
-# - Telegram credentials can come from distinct env vars per stream
-#
-# topic_streams:
-#   - name: agents_lab
-#     topics:
-#       - agents
-#       - tooling
-#     publish_targets:
-#       - markdown
-#       - telegram
-#     telegram_bot_token_env: "AGENTS_LAB_TELEGRAM_BOT_TOKEN"
-#     telegram_chat_id_env: "AGENTS_LAB_TELEGRAM_CHAT_ID"
-#   - name: bio_watch
-#     topics:
-#       - biology
-#       - therapeutics
-#     publish_targets:
-#       - markdown
-#     # Optional overrides:
-#     # allow_tags: ["biology"]
-#     # deny_tags: ["crypto"]
-#     # markdown_output_dir: "~/.local/share/recoleta/outputs/custom-bio-watch"
-#     # obsidian_base_folder: "Recoleta/BioWatch"
-
 # min_relevance_score: 0.6  # Default: 0.6
 # max_deliveries_per_day: 10  # Default: 10
 

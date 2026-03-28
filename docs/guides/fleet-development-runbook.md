@@ -10,6 +10,34 @@ This is the development-mode operating model:
 - keep the old shared DB as a read-only archive
 - do not wire the fleet into an automatic scheduler until you are ready
 
+## Current deployment closure note
+
+For the current migrated playground fleet, the migration work is complete for
+the purpose of future incremental runs.
+
+This means:
+
+- each child instance now has its own config, DB, output tree, and LanceDB root
+- `embodied_ai` keeps only the embodied arXiv query
+- `software_intelligence` keeps only the software-intelligence arXiv query
+- `hn` and `hf_daily` remain enabled in both children by design
+- stale per-query `source_pull_states` were removed so future incremental pulls
+  follow the live child config
+
+This does not mean the historical corpus was repartitioned perfectly. Historical
+`items`, `contents`, and other migrated user-facing rows can remain duplicated
+across child DBs. That is acceptable for this deployment and should not be
+treated as unfinished migration work as long as future incremental ingestion is
+correct.
+
+Treat the current source of truth as:
+
+- the live child `recoleta.yaml` files
+- the current child DB state
+
+Do not treat `migration-manifest.json` as the live source configuration after
+manual cleanup. It records the original migration snapshot, not later hand edits.
+
 ## What is canonical now
 
 For a migrated multi-instance deployment, these assets are the live entry

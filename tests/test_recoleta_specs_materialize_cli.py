@@ -208,21 +208,13 @@ def test_materialize_outputs_renders_default_scope_items_without_legacy_stream_s
     assert trend_note_path.exists()
 
 
-def test_default_scope_specs_for_settings_ignore_legacy_topic_stream_runtimes(
+def test_default_scope_specs_for_settings_use_instance_output_roots(
     tmp_path: Path,
 ) -> None:
     fake_settings = SimpleNamespace(
         markdown_output_dir=tmp_path / "outputs",
         obsidian_vault_path=tmp_path / "vault",
         obsidian_base_folder="Recoleta",
-        topic_stream_runtimes=lambda: [
-            SimpleNamespace(
-                name="legacy_stream",
-                explicit=True,
-                markdown_output_dir=tmp_path / "outputs" / "Streams" / "legacy_stream",
-                obsidian_base_folder="Legacy",
-            )
-        ],
     )
 
     specs = materialize_module.default_scope_specs_for_settings(settings=fake_settings)

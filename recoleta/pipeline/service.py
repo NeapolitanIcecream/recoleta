@@ -46,10 +46,10 @@ from recoleta.observability import (
     get_rich_console,
 )
 from recoleta.pipeline import artifacts as pipeline_artifacts
+from recoleta.pipeline import delivery_budget as pipeline_delivery_budget
 from recoleta.pipeline import metrics as pipeline_metrics
 from recoleta.pipeline.publish_stage import run_publish_stage
 from recoleta.pipeline.ideas_stage import run_ideas_stage
-from recoleta.pipeline import topic_streams as pipeline_topic_streams
 from recoleta.pipeline.trends_stage import run_trends_stage
 from recoleta.ports import RepositoryPort
 from recoleta import sources
@@ -566,13 +566,13 @@ class PipelineService:
         )
 
     def _telegram_delivery_destination(self) -> str:
-        return pipeline_topic_streams.telegram_delivery_destination(self.settings)
+        return pipeline_delivery_budget.telegram_delivery_destination(self.settings)
 
     def _metric_token(self, value: str, *, max_len: int = 48) -> str:
         return pipeline_metrics.metric_token(value, max_len=max_len)
 
     def _telegram_delivery_budget(self) -> tuple[str, int, int]:
-        return pipeline_topic_streams.telegram_delivery_budget(
+        return pipeline_delivery_budget.telegram_delivery_budget(
             repository=self.repository,
             settings=self.settings,
         )

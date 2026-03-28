@@ -2,7 +2,7 @@
 
 Date: 2026-03-25
 
-Status: Proposed
+Status: Landed for current deployment cutover; product de-migration decision recorded and migration-tooling follow-up intentionally dropped
 
 ## Executive Summary
 
@@ -23,6 +23,46 @@ The key constraint is not data size. The current main DB is moderate and
 tractable. The real constraint is semantics: stream-scoped historical content
 can be split cleanly, but source pull state and old run history cannot be
 derived from DB scope alone.
+
+## Current Deployment Closure Note
+
+Implementation note as of 2026-03-28:
+
+- for the active playground deployment, this refactor is considered complete for
+  the purpose of future incremental operation
+- the fleet cutover is done and the runtime now runs from child instance configs
+  plus child instance DBs
+- the live child configs were hand-cleaned so each instance keeps only its own
+  arXiv query, while `hn` and `hf_daily` remain enabled in both children by
+  design
+- matching stale per-query `source_pull_states` were removed from each child DB
+  so future incremental pulls follow the live child config
+- historical migrated user-facing rows were intentionally left in place; they
+  may remain duplicated across child DBs and that is accepted for this
+  deployment
+
+Therefore the remaining work in this plan should be read as product/tooling
+hardening, migration auditability, or optional cleanup work. It is no longer a
+blocker for the current deployment as long as future incremental ingestion and
+publish flows continue to run from the cleaned child configs.
+
+## De-migration Decision Note
+
+Decision recorded as of 2026-03-28:
+
+- the one-time migration and manual child-config cleanup performed for the live
+  playground deployment are considered sufficient
+- Recoleta will not continue productizing or maintaining in-tree migration
+  tooling for the old shared `topic_streams` world
+- the runtime and CLI should expose only the instance-first model
+- configs that still contain `TOPIC_STREAMS` / `topic_streams` are treated as
+  unsupported input and should fail fast without migration guidance
+- historical migration plans, runbooks, backups, and old git history remain the
+  recovery boundary; they are not a promise of future product support
+
+As a result, the migration-tooling hardening items elsewhere in this document
+should now be read as superseded historical context unless a future plan
+explicitly revives productized migration support.
 
 ## Goals
 

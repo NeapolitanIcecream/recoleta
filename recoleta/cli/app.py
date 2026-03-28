@@ -102,9 +102,7 @@ app.add_typer(stage_app, name="stage")
 
 admin_app = typer.Typer(help="Administrative maintenance commands.", no_args_is_help=True)
 admin_db_app = typer.Typer(help="Administrative DB commands.", no_args_is_help=True)
-admin_migrate_app = typer.Typer(help="Explicit one-off migrations.", no_args_is_help=True)
 admin_app.add_typer(admin_db_app, name="db")
-admin_app.add_typer(admin_migrate_app, name="migrate")
 app.add_typer(admin_app, name="admin")
 
 # Hidden legacy groups retained only where they still map cleanly.
@@ -133,10 +131,13 @@ app.add_typer(translate_app, name="translate", hidden=True)
 def _legacy_error(
     *,
     command: str,
-    replacement: str,
+    replacement: str | None = None,
     json_output: bool = False,
 ) -> None:
-    message = f"`{command}` was removed in CLI v2. Use `{replacement}`."
+    if replacement is None:
+        message = f"`{command}` was removed in CLI v2 and is no longer supported."
+    else:
+        message = f"`{command}` was removed in CLI v2. Use `{replacement}`."
     if json_output:
         typer.echo(
             json.dumps(
@@ -932,12 +933,8 @@ def repair_streams(
     _db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
     _config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
 ) -> None:
-    """Legacy compatibility entrypoint retained only to direct migrations."""
-    _legacy_error(
-        command="repair streams",
-        replacement="admin migrate topic-streams-to-instances --config <old-config> --db <old-db> --out <fleet-dir>",
-        json_output=json_output,
-    )
+    """Legacy compatibility entrypoint retained only to fail closed."""
+    _legacy_error(command="repair streams", json_output=json_output)
 
 
 @repair_app.command("outputs")
@@ -1377,69 +1374,7 @@ def admin_db_cleanup_instance_first_schema(
     )
 
 
-@admin_migrate_app.command("topic-streams-to-instances")
-def admin_migrate_topic_streams_to_instances(
-    config_path: Path = typer.Option(
-        ...,
-        "--config",
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-        resolve_path=True,
-        help="Legacy YAML/JSON config that still declares TOPIC_STREAMS.",
-    ),
-    db_path: Path = typer.Option(
-        ...,
-        "--db",
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-        resolve_path=True,
-        help="Legacy SQLite DB path to split into child instances.",
-    ),
-    output_dir: Path = typer.Option(
-        ...,
-        "--out",
-        file_okay=False,
-        dir_okay=True,
-        writable=True,
-        resolve_path=True,
-        help="Fleet output root where child configs, DBs, and manifests will be created.",
-    ),
-    ambiguous_source_mode: str = typer.Option("fail", "--ambiguous-source-mode"),
-    shared_delivery_mode: str = typer.Option("fail", "--shared-delivery-mode"),
-    default_scope_mode: str = typer.Option("archive", "--default-scope-mode"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Plan the migration without writing child configs, child DBs, or manifests."),
-    json_output: bool = typer.Option(False, "--json"),
-) -> None:
-    """Split a legacy TOPIC_STREAMS deployment into isolated child instances."""
-    from recoleta.instance_migration import migrate_topic_streams_to_instances
-
-    result = migrate_topic_streams_to_instances(
-        config_path=config_path,
-        db_path=db_path,
-        output_dir=output_dir,
-        ambiguous_source_mode=ambiguous_source_mode,
-        shared_delivery_mode=shared_delivery_mode,
-        default_scope_mode=default_scope_mode,
-        dry_run=dry_run,
-    )
-    if json_output:
-        typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        return
-    summary_prefix = (
-        "admin migrate topic-streams-to-instances dry-run completed"
-        if dry_run
-        else "admin migrate topic-streams-to-instances completed"
-    )
-    typer.echo(
-        f"{summary_prefix} "
-        f"children={len(result['children'])} "
-        f"fleet_manifest={result['fleet_manifest_path']}"
-    )
-
-
-# Hidden legacy commands and groups that should fail with migration guidance.
+# Hidden legacy commands and groups that should fail cleanly.
 @app.command("trends-week", hidden=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def legacy_trends_week(ctx: Context) -> None:  # noqa: ARG001
     _legacy_error(command="trends-week", replacement="run week --date <YYYY-MM-DD>")
@@ -1450,11 +1385,7 @@ def legacy_repair_streams(
     ctx: Context,  # noqa: ARG001
     json_output: bool = typer.Option(False, "--json", hidden=True),
 ) -> None:
-    _legacy_error(
-        command="repair-streams",
-        replacement="admin migrate topic-streams-to-instances --config <old-config> --db <old-db> --out <fleet-dir>",
-        json_output=json_output,
-    )
+    _legacy_error(command="repair-streams", json_output=json_output)
 
 
 @materialize_app.command("outputs", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})

@@ -16,7 +16,6 @@ from recoleta.app.runtime import (
     _LeaseHeartbeatMonitor,
     _RUN_HEARTBEAT_INTERVAL_SECONDS,
     _WORKSPACE_LEASE_TIMEOUT_SECONDS,
-    TopicStreamsMigrationRequiredError,
     _cleanup_managed_run as _cleanup_managed_run,
     _cleanup_workspace_lease as _cleanup_workspace_lease,
     _graceful_shutdown_signals as _graceful_shutdown_signals,
@@ -67,9 +66,7 @@ def _runtime_symbols() -> dict[str, Any]:
     return _runtime_symbols_impl()
 
 
-def _raise_typer_exit_for_topic_stream_migration_required(
-    exc: TopicStreamsMigrationRequiredError,
-) -> NoReturn:
+def _raise_typer_exit_for_invalid_settings(exc: ValueError) -> NoReturn:
     typer.echo(str(exc))
     raise typer.Exit(code=2) from None
 
@@ -98,8 +95,8 @@ def _build_settings(
     _sync_cli_runtime_state(clear_runtime_symbols=True)
     try:
         return _build_settings_impl(config_path=config_path, db_path=db_path)
-    except TopicStreamsMigrationRequiredError as exc:
-        _raise_typer_exit_for_topic_stream_migration_required(exc)
+    except ValueError as exc:
+        _raise_typer_exit_for_invalid_settings(exc)
 
 
 def _build_runtime(
@@ -110,8 +107,8 @@ def _build_runtime(
     _sync_cli_runtime_state(clear_runtime_symbols=True)
     try:
         return _build_runtime_impl(config_path=config_path, db_path=db_path)
-    except TopicStreamsMigrationRequiredError as exc:
-        _raise_typer_exit_for_topic_stream_migration_required(exc)
+    except ValueError as exc:
+        _raise_typer_exit_for_invalid_settings(exc)
 
 
 def _begin_managed_run(
@@ -130,10 +127,7 @@ def _begin_managed_run(
         begin_kwargs["config_path"] = config_path
     if db_path is not None:
         begin_kwargs["db_path"] = db_path
-    try:
-        return _begin_managed_run_impl(**begin_kwargs)
-    except TopicStreamsMigrationRequiredError as exc:
-        _raise_typer_exit_for_topic_stream_migration_required(exc)
+    return _begin_managed_run_impl(**begin_kwargs)
 
 
 def _execute_stage(

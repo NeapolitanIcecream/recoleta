@@ -117,11 +117,7 @@ def load_fleet_manifest(manifest_path: Path) -> FleetManifest:
             raise ValueError(
                 f"Fleet child config must not declare DAEMON: {config_path}"
             )
-        settings = load_child_settings(config_path)
-        if list(getattr(settings, "topic_streams", []) or []):
-            raise ValueError(
-                f"Fleet child config must not declare TOPIC_STREAMS: {config_path}"
-            )
+        _ = load_child_settings(config_path)
         instances.append(FleetInstance(name=name, config_path=config_path))
     return FleetManifest(
         manifest_path=resolved_manifest_path,

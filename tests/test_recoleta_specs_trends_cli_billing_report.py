@@ -823,25 +823,13 @@ def test_site_stage_cli_with_explicit_paths_does_not_require_settings(
     assert "site stage completed" in result.stdout
 
 
-def test_site_build_cli_uses_trends_subdirectory_even_when_legacy_topic_streams_are_present(
+def test_site_build_cli_uses_trends_subdirectory_for_instance_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
     fake_settings = _FakeSettings()
     fake_settings.markdown_output_dir = tmp_path / "output"
-    fake_settings.topic_stream_runtimes = lambda: [  # type: ignore[attr-defined]
-        SimpleNamespace(
-            name="agents_lab",
-            explicit=True,
-            markdown_output_dir=fake_settings.markdown_output_dir / "Streams" / "agents_lab",
-        ),
-        SimpleNamespace(
-            name="bio_watch",
-            explicit=True,
-            markdown_output_dir=fake_settings.markdown_output_dir / "Streams" / "bio_watch",
-        ),
-    ]
     calls: dict[str, object] = {}
 
     monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
@@ -876,25 +864,13 @@ def test_site_build_cli_uses_trends_subdirectory_even_when_legacy_topic_streams_
     assert "site build completed" in result.stdout
 
 
-def test_site_stage_cli_uses_trends_subdirectory_even_when_legacy_topic_streams_are_present(
+def test_site_stage_cli_uses_trends_subdirectory_for_instance_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
     fake_settings = _FakeSettings()
     fake_settings.markdown_output_dir = tmp_path / "output"
-    fake_settings.topic_stream_runtimes = lambda: [  # type: ignore[attr-defined]
-        SimpleNamespace(
-            name="agents_lab",
-            explicit=True,
-            markdown_output_dir=fake_settings.markdown_output_dir / "Streams" / "agents_lab",
-        ),
-        SimpleNamespace(
-            name="bio_watch",
-            explicit=True,
-            markdown_output_dir=fake_settings.markdown_output_dir / "Streams" / "bio_watch",
-        ),
-    ]
     calls: dict[str, object] = {}
 
     monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)

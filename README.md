@@ -249,13 +249,6 @@ topics:
   - agents
   - ml-systems
 
-# topic_streams is legacy. New runtime rejects it.
-# If you have an older shared-stream deployment, migrate it explicitly:
-# uv run recoleta admin migrate topic-streams-to-instances \
-#   --config ./recoleta.yaml \
-#   --db ~/.local/share/recoleta/recoleta.db \
-#   --out ./fleet
-
 sources:
   hn:
     enabled: true

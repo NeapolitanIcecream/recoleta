@@ -415,14 +415,10 @@ class _FakeSettings:
     markdown_output_dir: Path = Path("/tmp/recoleta-output")
     recoleta_db_path: Path = Path("/tmp/recoleta.db")
     localization: object | None = None
-    topic_streams: list[object] | None = None
     workflows: object | None = None
 
     def safe_fingerprint(self) -> str:
         return "fp-gh-deploy"
-
-    def topic_stream_runtimes(self) -> list[SimpleNamespace]:
-        return [SimpleNamespace(name="default", explicit=False)]
 
     def localization_target_codes(self) -> list[str]:
         if self.localization is None:

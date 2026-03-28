@@ -27,18 +27,6 @@ _WORKSPACE_LEASE_TIMEOUT_SECONDS = 90
 _RUN_HEARTBEAT_INTERVAL_SECONDS = 15
 
 
-class TopicStreamsMigrationRequiredError(ValueError):
-    """Raised when runtime loading encounters legacy topic stream configs."""
-
-
-def _topic_streams_migration_required_message() -> str:
-    return (
-        "Explicit TOPIC_STREAMS are no longer supported by the main runtime. "
-        "Run `recoleta admin migrate topic-streams-to-instances --config <old-config> "
-        "--db <old-db> --out <fleet-dir>` first."
-    )
-
-
 def _import_symbol(module_name: str, *, attr_name: str | None = None) -> Any:
     module = importlib.import_module(module_name)
     if attr_name is None:
@@ -115,11 +103,9 @@ def _build_settings(
         init_kwargs["recoleta_db_path"] = db_path.expanduser().resolve()
     settings = settings_cls(**init_kwargs)  # pyright: ignore[reportCallIssue]
     configure_process_logging(level=settings.log_level, log_json=settings.log_json)
-    if list(getattr(settings, "topic_streams", []) or []):
-        raise TopicStreamsMigrationRequiredError(
-            _topic_streams_migration_required_message()
-        )
     return settings
+
+
 def _parse_anchor_date_option(value: str) -> date:
     raw = str(value or "").strip()
     if not raw:

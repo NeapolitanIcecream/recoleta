@@ -99,7 +99,6 @@ class _FakeSettings:
         self.analyze_limit = 8
         self.localization = localization
         self.workflows = workflows or _FakeWorkflows()
-        self.topic_streams: list[object] = []
 
     def safe_fingerprint(self) -> str:
         return "fp-v2"
@@ -111,9 +110,6 @@ class _FakeSettings:
         if self.localization is None:
             return []
         return [target.code for target in self.localization.targets]
-
-    def topic_stream_runtimes(self) -> list[SimpleNamespace]:
-        return [SimpleNamespace(name="default", explicit=False)]
 
 
 class _FakeRepo:
@@ -648,22 +644,14 @@ def test_run_day_passes_incremental_translation_window_to_workflow_step(
     assert translation_calls[0]["period_end"] == datetime(2026, 3, 17, tzinfo=UTC)
 
 
-def test_run_day_ignores_legacy_topic_stream_runtime_fanout(
+def test_run_day_keeps_default_scope_for_instance_first_workflows(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Regression: instance-first workflows should always run against the default scope."""
     runner = CliRunner()
     tmp_path: Path = configured_env
-
-    class _LegacyRuntimeSettings(_FakeSettings):
-        def topic_stream_runtimes(self) -> list[SimpleNamespace]:
-            return [
-                SimpleNamespace(name="embodied_ai", explicit=True),
-                SimpleNamespace(name="software_intelligence", explicit=True),
-            ]
-
-    fake_settings = _LegacyRuntimeSettings(
+    fake_settings = _FakeSettings(
         tmp_path=tmp_path,
         localization=_FakeLocalization(),
     )
