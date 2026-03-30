@@ -109,6 +109,14 @@ def test_legacy_translate_help_matches_instance_first_scope_contract() -> None:
             },
         ),
         (
+            ["fleet", "site", "serve", "--manifest", "/tmp/fleet.yaml"],
+            "run_fleet_site_serve_command",
+            {
+                "command_name": "fleet site serve",
+                "manifest_path": Path("/tmp/fleet.yaml").resolve(),
+            },
+        ),
+        (
             ["inspect", "why-empty", "--date", "2026-03-16"],
             "run_doctor_why_empty_command",
             {"command_name": "inspect why-empty"},
@@ -217,6 +225,13 @@ def test_v2_public_routes_forward_public_command_names(
             "run_fleet_site_build_command",
             {
                 "command_name": "fleet site build",
+            },
+        ),
+        (
+            ["fleet", "site", "serve"],
+            "run_fleet_site_serve_command",
+            {
+                "command_name": "fleet site serve",
             },
         ),
     ],

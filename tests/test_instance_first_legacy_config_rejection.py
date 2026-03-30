@@ -413,3 +413,121 @@ def test_fleet_deploy_stops_when_child_translation_aborts_pr_23(
 
     assert captured_translate_calls
     assert captured_translate_calls[0]["raise_on_abort"] is True
+
+
+def test_fleet_site_serve_builds_then_serves_explicit_output_dir_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    manifest_path, _config_path = _write_fleet_manifest(tmp_path=tmp_path)
+    run_fleet_site_serve_command = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="run_fleet_site_serve_command",
+    )
+    fleet_cli_module = recoleta.cli._import_symbol("recoleta.cli.fleet")
+    captured: dict[str, list[dict[str, object]]] = {
+        "build": [],
+        "serve": [],
+    }
+
+    monkeypatch.setattr(
+        fleet_cli_module,
+        "run_fleet_site_build_command",
+        lambda **kwargs: captured["build"].append(dict(kwargs)),
+    )
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.cli.site"),
+        "run_site_serve_command",
+        lambda **kwargs: captured["serve"].append(dict(kwargs)),
+    )
+
+    output_dir = tmp_path / "preview-site"
+    run_fleet_site_serve_command(
+        manifest_path=manifest_path,
+        output_dir=output_dir,
+        limit=3,
+        host="0.0.0.0",
+        port=4173,
+        build=True,
+        default_language_code="en",
+        command_name="fleet site serve",
+        build_command_name="fleet site build",
+    )
+
+    assert captured["build"] == [
+        {
+            "manifest_path": manifest_path,
+            "output_dir": output_dir,
+            "limit": 3,
+            "default_language_code": "en",
+            "json_output": False,
+            "command_name": "fleet site build",
+        }
+    ]
+    assert captured["serve"] == [
+        {
+            "input_dir": None,
+            "output_dir": output_dir,
+            "limit": 3,
+            "host": "0.0.0.0",
+            "port": 4173,
+            "build": False,
+            "default_language_code": "en",
+            "command_name": "fleet site serve",
+            "build_command_name": "fleet site build",
+        }
+    ]
+
+
+def test_fleet_site_serve_skips_build_and_uses_manifest_site_dir_by_default_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    manifest_path, _config_path = _write_fleet_manifest(tmp_path=tmp_path)
+    run_fleet_site_serve_command = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="run_fleet_site_serve_command",
+    )
+    fleet_cli_module = recoleta.cli._import_symbol("recoleta.cli.fleet")
+    captured_serve_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        fleet_cli_module,
+        "run_fleet_site_build_command",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("fleet build must not run when build=False")
+        ),
+    )
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.cli.site"),
+        "run_site_serve_command",
+        lambda **kwargs: captured_serve_calls.append(dict(kwargs)),
+    )
+
+    run_fleet_site_serve_command(
+        manifest_path=manifest_path,
+        output_dir=None,
+        limit=5,
+        host="127.0.0.1",
+        port=8000,
+        build=False,
+        default_language_code="zh-cn",
+        command_name="fleet site serve",
+        build_command_name="fleet site build",
+    )
+
+    assert captured_serve_calls == [
+        {
+            "input_dir": None,
+            "output_dir": manifest_path.parent / "site",
+            "limit": 5,
+            "host": "127.0.0.1",
+            "port": 8000,
+            "build": False,
+            "default_language_code": "zh-cn",
+            "command_name": "fleet site serve",
+            "build_command_name": "fleet site build",
+        }
+    ]

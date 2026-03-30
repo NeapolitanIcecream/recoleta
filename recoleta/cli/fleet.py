@@ -36,6 +36,13 @@ def _fleet_default_language(manifest: Any, explicit: str | None) -> str | None:
     return None
 
 
+def _fleet_site_output_dir(manifest_path: Path, output_dir: Path | None) -> Path:
+    if output_dir is not None:
+        return output_dir.expanduser().resolve()
+    manifest = load_fleet_manifest(manifest_path)
+    return manifest.manifest_path.parent / "site"
+
+
 def run_fleet_site_build_command(
     *,
     manifest_path: Path,
@@ -54,11 +61,7 @@ def run_fleet_site_build_command(
     )
 
     manifest, input_dirs = _fleet_input_dirs(manifest_path)
-    resolved_output_dir = (
-        output_dir.expanduser().resolve()
-        if output_dir is not None
-        else manifest.manifest_path.parent / "site"
-    )
+    resolved_output_dir = _fleet_site_output_dir(manifest.manifest_path, output_dir)
     resolved_default_language_code = _fleet_default_language(
         manifest,
         default_language_code,
@@ -90,6 +93,46 @@ def run_fleet_site_build_command(
         f"output={resolved_output_dir}"
     )
     return payload
+
+
+def run_fleet_site_serve_command(
+    *,
+    manifest_path: Path,
+    output_dir: Path | None,
+    limit: int | None,
+    host: str,
+    port: int,
+    build: bool,
+    default_language_code: str | None = None,
+    command_name: str = "fleet site serve",
+    build_command_name: str = "fleet site build",
+) -> None:
+    resolved_output_dir = _fleet_site_output_dir(manifest_path, output_dir)
+    if build:
+        run_fleet_site_build_command(
+            manifest_path=manifest_path,
+            output_dir=resolved_output_dir,
+            limit=limit,
+            default_language_code=default_language_code,
+            json_output=False,
+            command_name=build_command_name,
+        )
+
+    run_site_serve_command = cli._import_symbol(
+        "recoleta.cli.site",
+        attr_name="run_site_serve_command",
+    )
+    run_site_serve_command(
+        input_dir=None,
+        output_dir=resolved_output_dir,
+        limit=limit,
+        host=host,
+        port=port,
+        build=False,
+        default_language_code=default_language_code,
+        command_name=command_name,
+        build_command_name=build_command_name,
+    )
 
 
 def execute_fleet_granularity_workflow(

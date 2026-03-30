@@ -142,6 +142,7 @@ uv run recoleta run site serve
 uv run recoleta run site build --default-language-code en
 uv run recoleta run deploy --branch gh-pages --pages-config auto
 uv run recoleta fleet site build --manifest /path/to/fleet.yaml
+uv run recoleta fleet site serve --manifest /path/to/fleet.yaml
 uv run recoleta fleet run deploy --manifest /path/to/fleet.yaml
 uv run recoleta repair outputs --site --pdf
 uv run recoleta repair outputs --config-path /path/to/instance/recoleta.yaml --granularity week --site
@@ -151,11 +152,14 @@ What to know:
 
 - `run site build` writes a managed static export to `MARKDOWN_OUTPUT_DIR/site`
   unless you pass explicit paths.
-- `run site serve` rebuilds and serves a local preview on `127.0.0.1:8000`.
+- `run site serve` rebuilds and serves a single-instance local preview on
+  `127.0.0.1:8000`.
 - `run deploy` translates if configured, builds the site, and pushes a derived
   deployment branch.
 - `fleet site build` reads child outputs and writes one aggregate site tree for
   a migrated multi-instance deployment.
+- `fleet site serve` optionally rebuilds that aggregate site, then serves the
+  local fleet preview on `127.0.0.1:8000`.
 - `fleet run deploy` runs per-instance deploy preparation, then publishes the
   aggregate site for the fleet manifest.
 - `repair outputs` repairs Markdown, PDFs, and site files from stored DB state

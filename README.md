@@ -400,6 +400,7 @@ uv run recoleta fleet run day --manifest ./fleet/fleet.yaml
 uv run recoleta fleet run week --manifest ./fleet/fleet.yaml
 uv run recoleta fleet run month --manifest ./fleet/fleet.yaml
 uv run recoleta fleet site build --manifest ./fleet/fleet.yaml
+uv run recoleta fleet site serve --manifest ./fleet/fleet.yaml
 uv run recoleta fleet run deploy --manifest ./fleet/fleet.yaml
 
 # replay one UTC day, week, or month

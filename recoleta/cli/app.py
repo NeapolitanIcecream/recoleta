@@ -64,6 +64,12 @@ def run_fleet_site_build_command(**kwargs: object) -> object:
 
     return impl(**kwargs)
 
+
+def run_fleet_site_serve_command(**kwargs: object) -> object:
+    from recoleta.cli.fleet import run_fleet_site_serve_command as impl
+
+    return impl(**kwargs)
+
 app = typer.Typer(
     help="Recoleta workflow-first CLI.", no_args_is_help=True
 )
@@ -640,6 +646,65 @@ def fleet_site_build(
         default_language_code=default_language_code,
         json_output=json_output,
         command_name="fleet site build",
+    )
+
+
+@fleet_site_app.command("serve")
+def fleet_site_serve(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Directory containing the built aggregate fleet static site.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind the preview server to."),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        min=0,
+        max=65535,
+        help="TCP port for the local preview server. Use 0 to auto-select.",
+    ),
+    build: bool = typer.Option(
+        True,
+        "--build/--no-build",
+        help="Build the aggregate fleet static site before serving it.",
+    ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code for multilingual aggregate site builds performed before serving.",
+    ),
+) -> None:
+    """Build and serve the aggregate fleet static site locally."""
+    run_fleet_site_serve_command(
+        manifest_path=manifest_path,
+        output_dir=output_dir,
+        limit=limit,
+        host=host,
+        port=port,
+        build=build,
+        default_language_code=default_language_code,
+        command_name="fleet site serve",
+        build_command_name="fleet site build",
     )
 
 
