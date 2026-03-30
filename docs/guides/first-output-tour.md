@@ -81,8 +81,8 @@ Local paths:
 
 Public examples:
 
-- <https://neapolitanicecream.github.io/recoleta/trends/>
-- <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
+- <https://neapolitanicecream.github.io/recoleta/en/trends/index.html>
+- <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
 
 ![Recoleta trend brief](../assets/sample-output-trend-brief.png)
 
@@ -102,8 +102,8 @@ Local paths:
 
 Public examples:
 
-- <https://neapolitanicecream.github.io/recoleta/ideas/>
-- <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
+- <https://neapolitanicecream.github.io/recoleta/en/ideas/index.html>
+- <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
 
 ![Recoleta idea brief](../assets/sample-output-idea-brief.png)
 
@@ -113,7 +113,7 @@ Public examples:
 
 - Start from: [`presets/agents-radar.yaml`](../../presets/agents-radar.yaml)
 - Closest public example:
-  <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
+  <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
 - Expect: `latest.md`, `Inbox/`, trend briefs, idea briefs when evidence is
   strong enough, and the static site
 
@@ -121,11 +121,11 @@ Public examples:
 
 - Start from: [`presets/robotics-radar.yaml`](../../presets/robotics-radar.yaml)
 - Closest public example:
-  <https://neapolitanicecream.github.io/recoleta/streams/embodied-ai.html>
+  <https://neapolitanicecream.github.io/recoleta/en/streams/embodied-ai.html>
 - Expect the same output structure, but with robotics-heavy source material
 
 ### arXiv digest
 
 - Start from: [`presets/arxiv-digest.yaml`](../../presets/arxiv-digest.yaml)
-- Closest public example: <https://neapolitanicecream.github.io/recoleta/trends/>
+- Closest public example: <https://neapolitanicecream.github.io/recoleta/en/trends/index.html>
 - Expect the same output structure, but from a paper-only corpus

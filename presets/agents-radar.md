@@ -65,12 +65,13 @@ uv run recoleta run site build
 - First-output guide:
   [`../docs/guides/first-output-tour.md#agents-radar`](../docs/guides/first-output-tour.md#agents-radar)
 - Closest live page:
-  <https://neapolitanicecream.github.io/recoleta/streams/software-intelligence.html>
+  <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
 - Demo home: <https://neapolitanicecream.github.io/recoleta/>
 
 ## Common tweaks
 
 - Add `obsidian` to `publish_targets`.
 - Narrow or expand the arXiv queries.
-- Enable `topic_streams` if you want separate scopes such as `agents` and
+- Copy this preset into a second child instance config and combine both under a
+  `fleet.yaml` manifest if you want separate radars such as `agents` and
   `research-ops`.

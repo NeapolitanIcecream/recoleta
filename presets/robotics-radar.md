@@ -65,12 +65,13 @@ uv run recoleta run site build
 - First-output guide:
   [`../docs/guides/first-output-tour.md#robotics-radar`](../docs/guides/first-output-tour.md#robotics-radar)
 - Closest live page:
-  <https://neapolitanicecream.github.io/recoleta/streams/embodied-ai.html>
+  <https://neapolitanicecream.github.io/recoleta/en/streams/embodied-ai.html>
 - Demo home: <https://neapolitanicecream.github.io/recoleta/>
 
 ## Common tweaks
 
 - Add RSS feeds from robotics labs or newsletters.
 - Add `obsidian` or `telegram` to `publish_targets`.
-- Split the preset into stream-local scopes such as `robotics` and
-  `embodied-ai`.
+- Copy this preset into one child instance config and pair it with another
+  child config under a `fleet.yaml` manifest if you want separate robotics and
+  embodied-AI radars.

@@ -64,7 +64,7 @@ uv run recoleta run site build
 
 - First-output guide:
   [`../docs/guides/first-output-tour.md#arxiv-digest`](../docs/guides/first-output-tour.md#arxiv-digest)
-- Closest live page: <https://neapolitanicecream.github.io/recoleta/trends/>
+- Closest live page: <https://neapolitanicecream.github.io/recoleta/en/trends/index.html>
 - Demo home: <https://neapolitanicecream.github.io/recoleta/>
 
 ## Common tweaks

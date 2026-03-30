@@ -43,6 +43,12 @@ One workspace can run a single instance. A migrated deployment can also run a
 fleet manifest that points at several isolated child instances. Each child keeps
 its own config, DB, outputs, and delivery state.
 
+If you still have `TOPIC_STREAMS` or `topic_streams` in a config file, `.env`,
+or shell environment, remove it first. The old shared multi-scope runtime and
+in-tree migration commands are no longer part of the supported product surface.
+Multi-instance deployments now use one child config per instance plus a
+`fleet.yaml` manifest.
+
 <a id="recoleta-features"></a>
 ## ✨ Features
 
@@ -88,8 +94,8 @@ uv run recoleta --help
 Use `runtime` for normal CLI usage. Use `runtime-full` when you need Pandoc or
 browser-rendered PDFs.
 
-- `runtime`: workflow-first CLI surface, stage primitives, inspection, repair,
-  admin, and related utilities
+- `runtime`: single-instance workflows, fleet orchestration, stage primitives,
+  inspection, repair, admin, and related utilities
 - `runtime-full`: `runtime` plus Pandoc and Chromium
 
 The image uses these default paths:
@@ -335,8 +341,10 @@ How workflows behave:
 How reruns work:
 
 - `recoleta run day --date YYYY-MM-DD` replays one UTC day end to end.
-- `recoleta stage ingest|analyze|publish|trends|ideas --date YYYY-MM-DD`
-  reruns one primitive when you do not want the full workflow.
+- `recoleta stage ingest|analyze|publish --date YYYY-MM-DD` reruns one
+  primitive when you do not want the full workflow.
+- `recoleta stage trends|ideas --granularity day|week|month --date YYYY-MM-DD`
+  reruns one trend or idea window without the full workflow.
 - Without `--date`, connectors reuse saved pull state such as watermarks and
   conditional fetch headers when available.
 - Source diagnostics are written to SQLite metrics, including values such as
@@ -390,6 +398,8 @@ uv run recoleta run now
 # run a migrated multi-instance deployment from one fleet manifest
 uv run recoleta fleet run day --manifest ./fleet/fleet.yaml
 uv run recoleta fleet run week --manifest ./fleet/fleet.yaml
+uv run recoleta fleet run month --manifest ./fleet/fleet.yaml
+uv run recoleta fleet site build --manifest ./fleet/fleet.yaml
 uv run recoleta fleet run deploy --manifest ./fleet/fleet.yaml
 
 # replay one UTC day, week, or month
@@ -424,8 +434,9 @@ uv run recoleta inspect runs list --limit 5 --json
 
 When you are scripting a subcommand, check `--help` for its `--json` support.
 
-For daemon schedules, translation backfills, repair workflows, and admin
-commands, see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).
+For fleet operator recipes, daemon schedules, translation backfills, repair
+workflows, and admin commands, see
+[`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).
 
 <a id="recoleta-guides"></a>
 ## 📚 Guides & reference
@@ -439,7 +450,8 @@ commands, see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).
 - [`docs/guides/usage-recipes.md`](docs/guides/usage-recipes.md) - common CLI
   workflows, site tasks, and operator recipes
 - [`docs/guides/cli-v2-migration.md`](docs/guides/cli-v2-migration.md) - map
-  older command names to the workflow-first CLI surface
+  older command names and legacy runtime expectations to the current CLI
+  surface
 - [`presets/README.md`](presets/README.md) - choose a starter preset and follow
   its guide
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) - contribution, issue, and preset request

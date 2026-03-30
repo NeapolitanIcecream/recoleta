@@ -6,6 +6,9 @@ file first.
 Each preset uses its own SQLite database and Markdown output directory, so you
 can try them side by side without mixing state.
 
+If you want to keep multiple presets running together, keep them as separate
+child configs and drive them from one `fleet.yaml` manifest.
+
 If you want screenshots and sample pages for comparison, start with
 [`../docs/guides/first-output-tour.md`](../docs/guides/first-output-tour.md).
 

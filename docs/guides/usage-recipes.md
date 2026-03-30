@@ -6,6 +6,10 @@ exact v2 command for a workflow, repair, or maintenance task.
 Start with `recoleta run ...`. Use `recoleta stage ...` only when you want one
 primitive without workflow orchestration.
 
+Use `recoleta fleet ...` when one manifest points at several child instance
+configs. Shared `TOPIC_STREAMS` / `topic_streams` configs are unsupported in
+the current runtime.
+
 ## Run a full workflow
 
 ```bash
@@ -34,6 +38,31 @@ After a successful run, check:
 - `MARKDOWN_OUTPUT_DIR/site/`
 - `MARKDOWN_OUTPUT_DIR/Ideas/` when the current window has enough evidence
 - for a migrated fleet, check each child instance's `MARKDOWN_OUTPUT_DIR`
+
+## Run a fleet by hand
+
+Use a fleet manifest when you already have separate child configs and want one
+manual entrypoint:
+
+```bash
+uv run recoleta fleet run day --manifest /path/to/fleet.yaml
+uv run recoleta fleet run week --manifest /path/to/fleet.yaml
+uv run recoleta fleet run month --manifest /path/to/fleet.yaml
+uv run recoleta fleet site build --manifest /path/to/fleet.yaml
+uv run recoleta fleet run deploy --manifest /path/to/fleet.yaml
+```
+
+What to know:
+
+- fleet commands run every child instance listed in the manifest.
+- there is no fleet-aware `daemon` command. Schedule `recoleta fleet run ...`
+  from cron, systemd, CI, or another external scheduler when you need recurring
+  fleet runs.
+- `fleet run day`, `fleet run week`, `fleet run month`, and
+  `fleet run deploy` accept the same `--include` / `--skip` pattern as the
+  single-instance workflow commands.
+- inspect, translate, or repair one child by pointing the single-instance
+  command at that child config or output root.
 
 ## Run one stage only
 
@@ -179,6 +208,9 @@ containers:
 uv run recoleta run now
 ```
 
+`daemon start` schedules one instance config at a time. If you operate a fleet,
+schedule `recoleta fleet run ...` externally instead.
+
 Read-only operator checks:
 
 ```bash
@@ -234,7 +266,7 @@ you rerun a date or repair state:
 ```bash
 uv run recoleta inspect llm --json
 uv run recoleta inspect llm --ping --json
-uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --stream agents_lab --json
+uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --stream default --config /path/to/instance/recoleta.yaml --json
 uv run recoleta inspect runs show --run-id <run-id> --json
 uv run recoleta inspect runs list --limit 10 --json
 ```
@@ -250,6 +282,9 @@ What to know:
   items. It reports candidate counts, selected counts, filtered-out totals, and
   exclusion reasons such as `missing_analysis` or
   `stream_state_retryable_failed`.
+- in the instance-first runtime, point `inspect why-empty` at one child config
+  with `--config` and keep `--stream default` unless you are inspecting older
+  archived data.
 - `inspect runs show` aggregates run status, billing, metrics, pass outputs,
   artifacts, run context, and structured failure summaries in one JSON payload.
 - `inspect runs list` gives a compact recent-run view that is easier to
@@ -310,6 +345,7 @@ Scope notes:
 ## Further reference
 
 - [`docs/guides/first-output-tour.md`](./first-output-tour.md)
+- [`docs/guides/fleet-development-runbook.md`](./fleet-development-runbook.md)
 - [`docs/guides/cli-v2-migration.md`](./cli-v2-migration.md)
 - [`docs/design/configuration.md`](../design/configuration.md)
 - [`docs/design/system-overview.md`](../design/system-overview.md)

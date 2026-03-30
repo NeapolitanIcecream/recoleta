@@ -3,9 +3,15 @@
 Recoleta CLI v2 changes the top-level interface.
 
 If you are starting fresh, use the README quickstart. Use this guide only when
-you need to map older commands to the workflow-first CLI surface.
+you need to map older commands to the current CLI surface.
 
 Use this guide if you were using `run --once`, `trends-week`, `materialize outputs`, or `site gh-deploy`.
+
+If your config or `.env` still contains `TOPIC_STREAMS` / `topic_streams`, stop
+here. The shared multi-scope runtime and
+`recoleta admin migrate topic-streams-to-instances` command are removed. Split
+the deployment into child instance configs plus a fleet manifest, then follow
+[`fleet-development-runbook.md`](./fleet-development-runbook.md).
 
 ## New top-level groups
 
@@ -13,6 +19,7 @@ Run these commands from the new surface:
 
 ```bash
 recoleta run ...
+recoleta fleet ...
 recoleta daemon start
 recoleta inspect ...
 recoleta repair ...
@@ -27,6 +34,9 @@ recoleta admin ...
 - `run week --date YYYY-MM-DD` means "run one ISO week end to end"
 - `run month --date YYYY-MM-DD` means "run one month end to end"
 - `run deploy` means "translate if configured, build the site, then deploy it"
+
+`fleet` is the manual entrypoint for multi-instance deployments that already use
+separate child configs.
 
 `daemon start` replaces the old built-in scheduler mode.
 
@@ -56,6 +66,15 @@ Use these replacements:
 
 `recoleta run week` is a broader end-to-end replacement for `trends-week`. It
 reruns the weekly workflow instead of only generating weekly trends.
+
+These older surfaces are removed rather than renamed:
+
+- shared `TOPIC_STREAMS` / `topic_streams` config and runtime
+- `recoleta repair streams`
+- `recoleta admin migrate topic-streams-to-instances`
+
+For multi-instance deployments, move to child instance configs plus
+`recoleta fleet ...`.
 
 ## Scheduler config
 

@@ -9,10 +9,11 @@ Versioning.
 
 ### Added
 
+- `recoleta fleet run day|week|month|deploy` and `recoleta fleet site build`
+  for manual multi-instance orchestration from one fleet manifest.
 - `recoleta inspect llm` for effective LLM config inspection and optional probe
   checks.
 - `recoleta inspect why-empty` for machine-readable empty-corpus diagnostics.
-- `recoleta repair streams` for stream-state repair by UTC day.
 - `recoleta inspect runs show` and `recoleta inspect runs list` for aggregated
   run inspection.
 - `--json` output for `stage analyze`, `stage publish`, `stage trends`,
@@ -21,14 +22,20 @@ Versioning.
 
 ### Changed
 
-- Explicit stream reruns no longer depend on the global `items.state` being
-  below `analyzed`.
-- `401` and `403` auth failures are now classified as retryable for stream
-  recovery.
+- Multi-instance runtime is now instance-first: use child configs plus a fleet
+  manifest instead of shared `topic_streams`.
+- Config files, `.env`, or shell env containing `TOPIC_STREAMS` /
+  `topic_streams` now fail fast.
 - Runs now persist minimal context such as command, scope, granularity, and
   period bounds.
 - Artifacts now persist lightweight structured failure summaries alongside
   artifact paths.
+
+### Removed
+
+- `recoleta repair streams`.
+- In-tree `topic_streams` migration and recovery commands, including
+  `recoleta admin migrate topic-streams-to-instances`.
 
 ## [0.1.0] - 2026-03-16
 
