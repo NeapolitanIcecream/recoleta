@@ -1129,6 +1129,108 @@ def test_run_translation_executes_llm_calls_in_parallel_for_multiple_candidates(
     assert max_inflight >= 2
 
 
+def test_run_translation_stops_submitting_new_tasks_after_provider_failure_threshold_pr_23(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: aborting on provider failures must stop submitting the full batch."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+    candidates = [
+        translation_module.TranslationCandidate(
+            source_kind="analysis",
+            source_record_id=index + 1,
+            scope="default",
+            payload={"summary": f"Candidate {index + 1}"},
+            payload_model=None,
+            canonical_language_code="en",
+        )
+        for index in range(10)
+    ]
+    submitted_source_record_ids: list[int] = []
+
+    class APIConnectionError(Exception):
+        pass
+
+    class _FailedFuture:
+        def result(self) -> translation_module._CompletedTranslationTask:
+            raise APIConnectionError("rate limited")
+
+    class _FakeExecutor:
+        def __init__(self, *, max_workers: int) -> None:
+            self.max_workers = max_workers
+
+        def __enter__(self) -> "_FakeExecutor":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:  # type: ignore[no-untyped-def]
+            return False
+
+        def submit(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+            _ = fn, args
+            task = kwargs["task"]
+            submitted_source_record_ids.append(task.candidate.source_record_id)
+            return _FailedFuture()
+
+    monkeypatch.setattr(
+        translation_module,
+        "_incremental_candidates",
+        lambda **kwargs: candidates,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "_prepare_translation_task",
+        lambda **kwargs: (
+            "prepared",
+            translation_module._PreparedTranslationTask(
+                candidate=kwargs["candidate"],
+                target=kwargs["target"],
+                source_hash=f"hash-{kwargs['candidate'].source_record_id}",
+                context={},
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "_translation_parallelism",
+        lambda task_total: 2 if task_total > 1 else 1,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "ThreadPoolExecutor",
+        _FakeExecutor,
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="items",
+        force=True,
+        all_history=True,
+    )
+
+    assert result.aborted is True
+    assert result.failed_total == translation_module._PROVIDER_FAILURE_ABORT_THRESHOLD
+    assert submitted_source_record_ids == [1, 2, 3, 4, 5, 6]
+
+
 def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

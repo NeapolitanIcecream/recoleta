@@ -396,6 +396,7 @@ def fleet_run_day(
     manifest_path: Path = typer.Option(
         ...,
         "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
         file_okay=True,
         dir_okay=False,
         readable=True,
@@ -428,6 +429,7 @@ def fleet_run_week(
     manifest_path: Path = typer.Option(
         ...,
         "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
         file_okay=True,
         dir_okay=False,
         readable=True,
@@ -460,6 +462,7 @@ def fleet_run_month(
     manifest_path: Path = typer.Option(
         ...,
         "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
         file_okay=True,
         dir_okay=False,
         readable=True,
@@ -492,6 +495,7 @@ def fleet_run_deploy(
     manifest_path: Path = typer.Option(
         ...,
         "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
         file_okay=True,
         dir_okay=False,
         readable=True,
@@ -609,6 +613,7 @@ def fleet_site_build(
     manifest_path: Path = typer.Option(
         ...,
         "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
         file_okay=True,
         dir_okay=False,
         readable=True,

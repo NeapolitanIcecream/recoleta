@@ -176,3 +176,69 @@ def test_v2_public_routes_forward_public_command_names(
     assert result.exit_code == 0, result.stdout
     for key, value in expected.items():
         assert captured[key] == value
+
+
+@pytest.mark.parametrize(
+    ("argv", "target_name", "expected"),
+    [
+        (
+            ["fleet", "run", "day"],
+            "execute_fleet_granularity_workflow",
+            {
+                "workflow_name": "day",
+                "command": "fleet run day",
+            },
+        ),
+        (
+            ["fleet", "run", "week"],
+            "execute_fleet_granularity_workflow",
+            {
+                "workflow_name": "week",
+                "command": "fleet run week",
+            },
+        ),
+        (
+            ["fleet", "run", "month"],
+            "execute_fleet_granularity_workflow",
+            {
+                "workflow_name": "month",
+                "command": "fleet run month",
+            },
+        ),
+        (
+            ["fleet", "run", "deploy"],
+            "execute_fleet_deploy_workflow",
+            {
+                "command": "fleet run deploy",
+            },
+        ),
+        (
+            ["fleet", "site", "build"],
+            "run_fleet_site_build_command",
+            {
+                "command_name": "fleet site build",
+            },
+        ),
+    ],
+)
+def test_fleet_commands_accept_manifest_path_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    target_name: str,
+    expected: dict[str, object],
+) -> None:
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("RECOLETA_FLEET_MANIFEST", "/tmp/fleet.yaml")
+
+    def _fake_command(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli_app_module, target_name, _fake_command)
+
+    result = runner.invoke(recoleta.cli.app, argv)
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["manifest_path"] == Path("/tmp/fleet.yaml").resolve()
+    for key, value in expected.items():
+        assert captured[key] == value

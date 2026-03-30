@@ -1744,8 +1744,13 @@ def run_translation(
         return result
 
     with ThreadPoolExecutor(max_workers=parallelism) as executor:
-        futures = [
-            executor.submit(
+        in_flight: list[tuple[_PreparedTranslationTask, Any]] = []
+        next_task_index = 0
+
+        while next_task_index < len(prepared_tasks) and len(in_flight) < parallelism:
+            task = prepared_tasks[next_task_index]
+            next_task_index += 1
+            future = executor.submit(
                 _execute_prepared_translation_task,
                 task=task,
                 llm_model=llm_model,
@@ -1753,9 +1758,10 @@ def run_translation(
                 source_language_label=source_language_label,
                 llm_connection=llm_connection,
             )
-            for task in prepared_tasks
-        ]
-        for task, future in zip(prepared_tasks, futures, strict=False):
+            in_flight.append((task, future))
+
+        while in_flight:
+            task, future = in_flight.pop(0)
             try:
                 completed = future.result()
             except Exception as exc:  # noqa: BLE001
@@ -1775,17 +1781,30 @@ def run_translation(
                     result.abort_reason = abort_reason
                     log.warning(abort_reason)
                     return result
-                continue
-            provider_failures.reset()
-            _persist_completed_translation_task(
-                repository=repository,
-                task=task,
-                completed=completed,
-                context_assist=normalized_context_assist,
-                source_language_code=source_language_code,
-                run_id=run_id,
-            )
-            result.translated_total += 1
+            else:
+                provider_failures.reset()
+                _persist_completed_translation_task(
+                    repository=repository,
+                    task=task,
+                    completed=completed,
+                    context_assist=normalized_context_assist,
+                    source_language_code=source_language_code,
+                    run_id=run_id,
+                )
+                result.translated_total += 1
+
+            if next_task_index < len(prepared_tasks):
+                next_task = prepared_tasks[next_task_index]
+                next_task_index += 1
+                next_future = executor.submit(
+                    _execute_prepared_translation_task,
+                    task=next_task,
+                    llm_model=llm_model,
+                    source_language_code=source_language_code,
+                    source_language_label=source_language_label,
+                    llm_connection=llm_connection,
+                )
+                in_flight.append((next_task, next_future))
     return result
 
 

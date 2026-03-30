@@ -203,7 +203,7 @@ def test_fleet_manifest_validation_rejects_child_configs_with_daemon(
         load_fleet_manifest(manifest_path)
 
 
-def test_fleet_site_build_reads_child_outputs_only(
+def test_fleet_site_build_reads_child_output_roots_to_include_localized_pages_pr_23(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -273,6 +273,6 @@ def test_fleet_site_build_reads_child_outputs_only(
     )
 
     assert captured["input_dir"] == [
-        child_one_output / "Trends",
-        child_two_output / "Trends",
+        child_one_output,
+        child_two_output,
     ]

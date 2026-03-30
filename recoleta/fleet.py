@@ -76,7 +76,7 @@ def load_child_settings(config_path: Path) -> Settings:
 
 def child_site_input_dir(config_path: Path) -> Path:
     settings = load_child_settings(config_path)
-    return Path(settings.markdown_output_dir).expanduser().resolve() / "Trends"
+    return Path(settings.markdown_output_dir).expanduser().resolve()
 
 
 def child_default_language_code(config_path: Path) -> str | None:
