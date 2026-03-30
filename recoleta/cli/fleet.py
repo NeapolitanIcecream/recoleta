@@ -21,9 +21,19 @@ from recoleta.fleet import (
 )
 
 
-def _fleet_input_dirs(manifest_path: Path) -> tuple[Any, list[Path]]:
+def _fleet_input_dirs(manifest_path: Path) -> tuple[Any, list[Any]]:
     manifest = load_fleet_manifest(manifest_path)
-    return manifest, [child_site_input_dir(instance.config_path) for instance in manifest.instances]
+    TrendSiteInputSpec = cli._import_symbol(
+        "recoleta.site",
+        attr_name="TrendSiteInputSpec",
+    )
+    return manifest, [
+        TrendSiteInputSpec(
+            path=child_site_input_dir(instance.config_path),
+            instance=instance.name,
+        )
+        for instance in manifest.instances
+    ]
 
 
 def _fleet_default_language(manifest: Any, explicit: str | None) -> str | None:
@@ -94,7 +104,7 @@ def run_fleet_site_build_command(
         "status": "ok",
         "command": command_name,
         "manifest_path": str(manifest.manifest_path),
-        "input_dir": [str(path) for path in input_dirs],
+        "input_dir": [str(input_spec.path) for input_spec in input_dirs],
         "output_dir": str(resolved_output_dir),
         "site_manifest_path": str(manifest_result_path),
         "default_language_code": resolved_default_language_code,

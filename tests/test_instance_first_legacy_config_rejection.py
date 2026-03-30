@@ -10,6 +10,7 @@ import yaml
 
 import recoleta.cli
 from recoleta.app.runtime import _build_settings as runtime_build_settings
+from recoleta.site import TrendSiteInputSpec
 
 
 def _clear_runtime_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -300,8 +301,8 @@ def test_fleet_site_build_reads_child_output_roots_to_include_localized_pages_pr
     )
 
     assert captured["input_dir"] == [
-        child_one_output,
-        child_two_output,
+        TrendSiteInputSpec(path=child_one_output, instance="alpha"),
+        TrendSiteInputSpec(path=child_two_output, instance="beta"),
     ]
 
 

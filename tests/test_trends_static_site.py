@@ -8,6 +8,7 @@ from pathlib import Path
 from recoleta.site import (
     RECOLETA_QUICKSTART_URL,
     RECOLETA_REPO_URL,
+    TrendSiteInputSpec,
     _item_action_label,
     export_trend_static_site,
     stage_trend_site_source,
@@ -746,22 +747,142 @@ def test_export_trend_static_site_discovers_legacy_grouped_localized_roots(
     assert (site_dir / "zh-cn" / "index.html").exists()
     assert not (site_dir / "en" / "streams" / "embodied-ai.html").exists()
     assert not (site_dir / "zh-cn" / "streams" / "software-intelligence.html").exists()
-    assert (site_dir / "en" / "trends" / f"{embodied_note.stem}.html").exists()
-    assert (site_dir / "zh-cn" / "trends" / f"{software_note.stem}.html").exists()
+    assert (
+        site_dir / "en" / "trends" / f"embodied-ai--{embodied_note.stem}.html"
+    ).exists()
+    assert (
+        site_dir
+        / "zh-cn"
+        / "trends"
+        / f"software-intelligence--{software_note.stem}.html"
+    ).exists()
     root_index = (site_dir / "index.html").read_text(encoding="utf-8")
     assert "localStorage" in root_index
     assert "en/index.html" in root_index
     assert "Streams" not in root_index
     en_embodied_detail = (
-        site_dir / "en" / "trends" / f"{embodied_note.stem}.html"
+        site_dir / "en" / "trends" / f"embodied-ai--{embodied_note.stem}.html"
     ).read_text(encoding="utf-8")
     zh_embodied_detail = (
-        site_dir / "zh-cn" / "trends" / f"{embodied_note.stem}.html"
+        site_dir / "zh-cn" / "trends" / f"embodied-ai--{embodied_note.stem}.html"
     ).read_text(encoding="utf-8")
     assert "Embodied Weekly" in en_embodied_detail
     assert "具身周报" not in en_embodied_detail
     assert "具身周报" in zh_embodied_detail
     assert "Embodied Weekly" not in zh_embodied_detail
+
+
+def test_export_trend_static_site_preserves_explicit_instance_names_across_languages(
+    tmp_path: Path,
+) -> None:
+    embodied_root = tmp_path / "embodied"
+    embodied_zh_root = embodied_root / "Localized" / "zh-cn"
+    software_root = tmp_path / "software"
+    software_zh_root = software_root / "Localized" / "zh-cn"
+
+    embodied_en = write_markdown_trend_note(
+        output_dir=embodied_root,
+        trend_doc_id=601,
+        title="Embodied Weekly",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-instance-en-embodied",
+        overview_md="## Overview\n\nEnglish embodied note.\n",
+        topics=["robotics"],
+        clusters=[],
+        highlights=[],
+        language_code="en",
+    )
+    write_markdown_trend_note(
+        output_dir=embodied_zh_root,
+        trend_doc_id=601,
+        title="具身周报",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-instance-zh-embodied",
+        overview_md="## Overview\n\n中文具身笔记。\n",
+        topics=["robotics"],
+        clusters=[],
+        highlights=[],
+        language_code="zh-CN",
+    )
+    software_en = write_markdown_trend_note(
+        output_dir=software_root,
+        trend_doc_id=601,
+        title="Software Weekly",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-instance-en-software",
+        overview_md="## Overview\n\nEnglish software note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="en",
+    )
+    write_markdown_trend_note(
+        output_dir=software_zh_root,
+        trend_doc_id=601,
+        title="软件周报",
+        granularity="week",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 16, tzinfo=UTC),
+        run_id="run-instance-zh-software",
+        overview_md="## Overview\n\n中文软件笔记。\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        language_code="zh-CN",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=[
+            TrendSiteInputSpec(path=embodied_root, instance="embodied_ai"),
+            TrendSiteInputSpec(path=software_root, instance="software_intelligence"),
+        ],
+        output_dir=site_dir,
+        default_language_code="en",
+    )
+
+    assert (site_dir / "en" / "trends" / f"embodied-ai--{embodied_en.stem}.html").exists()
+    assert (
+        site_dir
+        / "en"
+        / "trends"
+        / f"software-intelligence--{software_en.stem}.html"
+    ).exists()
+    assert (
+        site_dir / "zh-cn" / "trends" / f"embodied-ai--{embodied_en.stem}.html"
+    ).exists()
+    assert (
+        site_dir
+        / "zh-cn"
+        / "trends"
+        / f"software-intelligence--{software_en.stem}.html"
+    ).exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["languages"] == ["en", "zh-cn"]
+    assert manifest["files"]["by_language"]["en"]["trend_pages"] == [
+        f"trends/embodied-ai--{embodied_en.stem}.html",
+        f"trends/software-intelligence--{software_en.stem}.html",
+    ]
+    assert manifest["files"]["by_language"]["zh-cn"]["trend_pages"] == [
+        f"trends/embodied-ai--{embodied_en.stem}.html",
+        f"trends/software-intelligence--{software_en.stem}.html",
+    ]
+
+    en_manifest = json.loads(
+        (site_dir / "en" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert [entry["instance"] for entry in en_manifest["input_dirs"]] == [
+        "embodied_ai",
+        "software_intelligence",
+    ]
+    assert all("stream" not in entry for entry in en_manifest["input_dirs"])
 
 
 def test_stage_trend_site_source_round_trips_stream_localized_roots(
@@ -832,8 +953,10 @@ def test_stage_trend_site_source_round_trips_stream_localized_roots(
 
     site_manifest = json.loads(site_manifest_path.read_text(encoding="utf-8"))
     assert site_manifest["languages"] == ["en", "zh-cn"]
-    assert (site_dir / "en" / "trends" / f"{en_note.stem}.html").exists()
-    assert (site_dir / "zh-cn" / "trends" / f"{zh_note.stem}.html").exists()
+    assert (site_dir / "en" / "trends" / f"agents-lab--{en_note.stem}.html").exists()
+    assert (
+        site_dir / "zh-cn" / "trends" / f"agents-lab--{zh_note.stem}.html"
+    ).exists()
 
 
 def test_export_trend_static_site_hides_legacy_topics_body_section(
@@ -2245,8 +2368,8 @@ def test_export_trend_static_site_aggregates_legacy_grouped_inputs_without_writi
     assert not (site_dir / "streams" / "index.html").exists()
     assert not (site_dir / "streams" / "agents-lab.html").exists()
     assert not (site_dir / "streams" / "bio-watch.html").exists()
-    assert (site_dir / "trends" / f"{agents_note.stem}.html").exists()
-    assert (site_dir / "trends" / f"{bio_note.stem}.html").exists()
+    assert (site_dir / "trends" / f"agents-lab--{agents_note.stem}.html").exists()
+    assert (site_dir / "trends" / f"bio-watch--{bio_note.stem}.html").exists()
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["trends_total"] == 2
@@ -2258,10 +2381,12 @@ def test_export_trend_static_site_aggregates_legacy_grouped_inputs_without_writi
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert "Topic streams" not in index_html
 
-    detail_html = (site_dir / "trends" / f"{agents_note.stem}.html").read_text(
+    detail_html = (
+        site_dir / "trends" / f"agents-lab--{agents_note.stem}.html"
+    ).read_text(
         encoding="utf-8"
     )
-    assert "Agents Lab" not in detail_html
+    assert "Agents Lab" in detail_html
 
 
 def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_across_legacy_grouped_inputs(
@@ -2358,6 +2483,155 @@ def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_across_lega
         "ideas/research-ops--day--2026-03-09--ideas.html"
         in manifest["files"]["idea_pages"]
     )
+
+
+def test_export_trend_static_site_namespaces_duplicate_pages_and_artifacts_by_instance(
+    tmp_path: Path,
+) -> None:
+    period_start = datetime(2026, 3, 16, tzinfo=UTC)
+    period_end = datetime(2026, 3, 23, tzinfo=UTC)
+
+    def write_instance_notes(
+        *,
+        output_dir: Path,
+        instance_label: str,
+        topic: str,
+    ) -> tuple[Path, Path, Path]:
+        item_note = write_markdown_note(
+            output_dir=output_dir,
+            item_id=41,
+            title="Shared Item",
+            source="rss",
+            canonical_url="https://example.com/shared-item",
+            published_at=period_start,
+            authors=["Alice"],
+            topics=[topic],
+            relevance_score=0.91,
+            run_id=f"run-{instance_label.lower().replace(' ', '-')}-item",
+            summary=f"## Summary\n\n{instance_label} item summary.\n",
+        )
+        trend_note = write_markdown_trend_note(
+            output_dir=output_dir,
+            trend_doc_id=501,
+            title=f"{instance_label} Weekly",
+            granularity="week",
+            period_start=period_start,
+            period_end=period_end,
+            run_id=f"run-{instance_label.lower().replace(' ', '-')}-trend",
+            overview_md=(
+                "## Overview\n\n"
+                f"{instance_label} trend note.\n\n"
+                f"See [Shared Item](../Inbox/{item_note.name}).\n"
+            ),
+            topics=[topic],
+            clusters=[],
+            highlights=[f"{instance_label} signal."],
+        )
+        trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
+
+        ideas_dir = output_dir / "Ideas"
+        ideas_dir.mkdir(parents=True, exist_ok=True)
+        idea_note = ideas_dir / "week--2026-W12--ideas.md"
+        idea_note.write_text(
+            "---\n"
+            "kind: ideas\n"
+            "granularity: week\n"
+            "period_start: 2026-03-16T00:00:00+00:00\n"
+            "period_end: 2026-03-23T00:00:00+00:00\n"
+            "status: succeeded\n"
+            f"topics:\n  - {topic}\n"
+            "---\n\n"
+            f"# {instance_label} ideas\n\n"
+            "## Summary\n\n"
+            f"Derived from [the weekly trend](../Trends/{trend_note.name}) and "
+            f"[the shared item](../Inbox/{item_note.name}).\n",
+            encoding="utf-8",
+        )
+        return trend_note, idea_note, item_note
+
+    alpha_root = tmp_path / "alpha"
+    beta_root = tmp_path / "beta"
+    alpha_trend, alpha_idea, alpha_item = write_instance_notes(
+        output_dir=alpha_root,
+        instance_label="Alpha Lab",
+        topic="agents",
+    )
+    beta_trend, beta_idea, beta_item = write_instance_notes(
+        output_dir=beta_root,
+        instance_label="Beta Lab",
+        topic="robotics",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=[
+            TrendSiteInputSpec(path=alpha_root, instance="alpha_lab"),
+            TrendSiteInputSpec(path=beta_root, instance="beta_lab"),
+        ],
+        output_dir=site_dir,
+    )
+
+    alpha_trend_page = site_dir / "trends" / f"alpha-lab--{alpha_trend.stem}.html"
+    beta_trend_page = site_dir / "trends" / f"beta-lab--{beta_trend.stem}.html"
+    alpha_idea_page = site_dir / "ideas" / f"alpha-lab--{alpha_idea.stem}.html"
+    beta_idea_page = site_dir / "ideas" / f"beta-lab--{beta_idea.stem}.html"
+    alpha_item_page = site_dir / "items" / f"alpha-lab--{alpha_item.stem}.html"
+    beta_item_page = site_dir / "items" / f"beta-lab--{beta_item.stem}.html"
+
+    assert alpha_trend_page.exists()
+    assert beta_trend_page.exists()
+    assert alpha_idea_page.exists()
+    assert beta_idea_page.exists()
+    assert alpha_item_page.exists()
+    assert beta_item_page.exists()
+
+    assert (site_dir / "artifacts" / f"alpha-lab--{alpha_trend.name}").exists()
+    assert (site_dir / "artifacts" / f"beta-lab--{beta_trend.name}").exists()
+    assert (
+        site_dir / "artifacts" / f"alpha-lab--{alpha_trend.with_suffix('.pdf').name}"
+    ).exists()
+    assert (
+        site_dir / "artifacts" / f"beta-lab--{beta_trend.with_suffix('.pdf').name}"
+    ).exists()
+    assert (site_dir / "artifacts" / "ideas" / f"alpha-lab--{alpha_idea.name}").exists()
+    assert (site_dir / "artifacts" / "ideas" / f"beta-lab--{beta_idea.name}").exists()
+    assert (site_dir / "artifacts" / "items" / f"alpha-lab--{alpha_item.name}").exists()
+    assert (site_dir / "artifacts" / "items" / f"beta-lab--{beta_item.name}").exists()
+
+    alpha_trend_html = alpha_trend_page.read_text(encoding="utf-8")
+    beta_idea_html = beta_idea_page.read_text(encoding="utf-8")
+    ideas_index_html = (site_dir / "ideas" / "index.html").read_text(encoding="utf-8")
+    assert "<div class='meta-panel-label'>Instance</div>" in alpha_trend_html
+    assert "<div class='meta-panel-value'>Alpha Lab</div>" in alpha_trend_html
+    assert "Beta Lab" in beta_idea_html
+    assert "Alpha Lab" not in beta_idea_html
+    assert "Alpha Lab" in ideas_index_html
+    assert "Beta Lab" in ideas_index_html
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["trends_total"] == 2
+    assert manifest["ideas_total"] == 2
+    assert manifest["items_total"] == 2
+    assert len(set(manifest["files"]["trend_pages"])) == manifest["trends_total"]
+    assert len(set(manifest["files"]["idea_pages"])) == manifest["ideas_total"]
+    assert len(set(manifest["files"]["item_pages"])) == manifest["items_total"]
+    assert manifest["files"]["trend_pages"] == [
+        f"trends/alpha-lab--{alpha_trend.stem}.html",
+        f"trends/beta-lab--{beta_trend.stem}.html",
+    ]
+    assert manifest["files"]["idea_pages"] == [
+        f"ideas/alpha-lab--{alpha_idea.stem}.html",
+        f"ideas/beta-lab--{beta_idea.stem}.html",
+    ]
+    assert manifest["files"]["item_pages"] == [
+        f"items/alpha-lab--{alpha_item.stem}.html",
+        f"items/beta-lab--{beta_item.stem}.html",
+    ]
+    assert [entry["instance"] for entry in manifest["input_dirs"]] == [
+        "alpha_lab",
+        "beta_lab",
+    ]
+    assert all("stream" not in entry for entry in manifest["input_dirs"])
 
 
 def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
@@ -2485,7 +2759,7 @@ def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_strea
     built_manifest = json.loads(built_manifest_path.read_text(encoding="utf-8"))
     assert built_manifest["trends_total"] == 2
     assert (site_dir / "trends" / f"{legacy_note.stem}.html").exists()
-    assert (site_dir / "trends" / f"{stream_note.stem}.html").exists()
+    assert (site_dir / "trends" / f"agents-lab--{stream_note.stem}.html").exists()
 
 
 def test_stage_trend_site_source_stages_item_notes_next_to_trends(

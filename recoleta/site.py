@@ -41,6 +41,12 @@ RECOLETA_REPO_URL = "https://github.com/NeapolitanIcecream/recoleta"
 RECOLETA_QUICKSTART_URL = f"{RECOLETA_REPO_URL}#recoleta-quickstart"
 
 
+@dataclass(slots=True, frozen=True)
+class TrendSiteInputSpec:
+    path: Path
+    instance: str | None = None
+
+
 @dataclass(slots=True)
 class TrendSiteDocument:
     markdown_path: Path
@@ -54,7 +60,7 @@ class TrendSiteDocument:
     period_start: datetime | None
     period_end: datetime | None
     topics: list[str]
-    stream: str | None
+    instance: str | None
     body_html: str
     excerpt: str
     evolution_insight: str | None
@@ -67,7 +73,7 @@ class TrendSiteInputDirectory:
     root_path: Path
     inbox_path: Path | None
     ideas_path: Path | None
-    stream: str | None
+    instance: str | None
     language_code: str | None = None
     language_slug: str | None = None
     is_localized_root: bool = False
@@ -84,7 +90,7 @@ class TrendSiteSourceDocument:
     period_start: datetime | None
     period_end: datetime | None
     topics: list[str]
-    stream: str | None
+    instance: str | None
 
 
 @dataclass(slots=True)
@@ -100,7 +106,7 @@ class ItemSiteSourceDocument:
     authors: list[str]
     topics: list[str]
     relevance_score: float | None
-    stream: str | None
+    instance: str | None
 
 
 @dataclass(slots=True)
@@ -115,7 +121,7 @@ class ItemSiteDocument:
     published_at: datetime | None
     authors: list[str]
     topics: list[str]
-    stream: str | None
+    instance: str | None
     relevance_score: float | None
     body_html: str
     excerpt: str
@@ -132,7 +138,7 @@ class IdeaSiteSourceDocument:
     period_start: datetime | None
     period_end: datetime | None
     topics: list[str]
-    stream: str | None
+    instance: str | None
     status: str
 
 
@@ -148,7 +154,7 @@ class IdeaSiteDocument:
     period_start: datetime | None
     period_end: datetime | None
     topics: list[str]
-    stream: str | None
+    instance: str | None
     status: str
     opportunity_count: int
     evidence_count: int
@@ -292,12 +298,12 @@ def _topic_slug(topic: str) -> str:
     return slugify(str(topic or "").strip(), lowercase=True) or "topic"
 
 
-def _stream_slug(stream: str) -> str:
-    return slugify(str(stream or "").strip(), lowercase=True) or "stream"
+def _instance_slug(instance: str) -> str:
+    return slugify(str(instance or "").strip(), lowercase=True) or "instance"
 
 
-def _normalize_site_stream(stream: str | None) -> str | None:
-    cleaned = str(stream or "").strip()
+def _normalize_site_instance(instance: str | None) -> str | None:
+    cleaned = str(instance or "").strip()
     if not cleaned or cleaned == DEFAULT_TOPIC_STREAM:
         return None
     return cleaned
@@ -344,8 +350,8 @@ _STREAM_DISPLAY_INITIALISMS = {
 }
 
 
-def _display_site_stream(stream: str | None) -> str | None:
-    cleaned = _normalize_site_stream(stream)
+def _display_site_instance(instance: str | None) -> str | None:
+    cleaned = _normalize_site_instance(instance)
     if cleaned is None:
         return None
     normalized = re.sub(r"[_-]+", " ", cleaned).strip()
@@ -356,6 +362,13 @@ def _display_site_stream(stream: str | None) -> str | None:
         for token in normalized.split()
     ]
     return " ".join(tokens) if tokens else cleaned
+
+
+def _render_instance_meta_pill(instance: str | None) -> str:
+    display_instance = _display_site_instance(instance)
+    if display_instance is None:
+        return ""
+    return f"<span class='meta-pill subdued'>{html.escape(display_instance)}</span>"
 
 
 def _paths_overlap(path_a: Path, path_b: Path) -> bool:
@@ -513,21 +526,37 @@ def _reset_stage_output_root(*, stage_root: Path, trends_output_dir: Path) -> No
     trends_output_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _coerce_site_input_paths(input_dir: Path | Sequence[Path]) -> list[Path]:
-    raw_inputs = [input_dir] if isinstance(input_dir, Path) else list(input_dir)
+def _coerce_site_input_specs(
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
+) -> list[TrendSiteInputSpec]:
+    raw_inputs = (
+        [input_dir]
+        if isinstance(input_dir, Path | TrendSiteInputSpec)
+        else list(input_dir)
+    )
     if not raw_inputs:
         raise ValueError("Trend input directory list must not be empty")
 
-    resolved_inputs: list[Path] = []
+    resolved_inputs: list[TrendSiteInputSpec] = []
     for raw_input in raw_inputs:
-        resolved_input = raw_input.expanduser().resolve()
+        input_spec = (
+            raw_input
+            if isinstance(raw_input, TrendSiteInputSpec)
+            else TrendSiteInputSpec(path=raw_input)
+        )
+        resolved_input = input_spec.path.expanduser().resolve()
         if not resolved_input.exists() or not resolved_input.is_dir():
             raise ValueError(f"Trend input directory must exist: {resolved_input}")
-        resolved_inputs.append(resolved_input)
+        resolved_inputs.append(
+            TrendSiteInputSpec(
+                path=resolved_input,
+                instance=_normalize_site_instance(input_spec.instance),
+            )
+        )
     return resolved_inputs
 
 
-def _infer_stream_name_from_trends_dir(path: Path) -> str | None:
+def _infer_instance_name_from_trends_dir(path: Path) -> str | None:
     if path.name != "Trends":
         return None
     if len(path.parts) < 3:
@@ -544,20 +573,23 @@ def _infer_stream_name_from_trends_dir(path: Path) -> str | None:
 
 
 def _discover_trend_site_input_dirs(
-    raw_inputs: Sequence[Path],
+    raw_inputs: Sequence[TrendSiteInputSpec],
     *,
     include_localized_children: bool = True,
 ) -> list[TrendSiteInputDirectory]:
     discovered: list[TrendSiteInputDirectory] = []
-    seen_paths: set[Path] = set()
+    seen_paths: set[tuple[Path, str | None]] = set()
 
-    def add_candidate(candidate: Path) -> None:
+    def add_candidate(candidate: Path, *, instance: str | None) -> None:
         resolved_candidate = candidate.expanduser().resolve()
+        resolved_instance = _normalize_site_instance(
+            instance or _infer_instance_name_from_trends_dir(resolved_candidate)
+        )
         if not resolved_candidate.exists() or not resolved_candidate.is_dir():
             return
-        if resolved_candidate in seen_paths:
+        if (resolved_candidate, resolved_instance) in seen_paths:
             return
-        seen_paths.add(resolved_candidate)
+        seen_paths.add((resolved_candidate, resolved_instance))
         root_path = (
             resolved_candidate.parent
             if resolved_candidate.name == "Trends"
@@ -578,7 +610,7 @@ def _discover_trend_site_input_dirs(
                     and (root_path / "Ideas").is_dir()
                     else None
                 ),
-                stream=_infer_stream_name_from_trends_dir(resolved_candidate),
+                instance=resolved_instance,
                 language_code=language_code,
                 language_slug=language_slug_from_code(language_code) or None,
                 is_localized_root=root_path.parent.name == "Localized",
@@ -586,16 +618,17 @@ def _discover_trend_site_input_dirs(
         )
 
     for raw_input in raw_inputs:
+        raw_path = raw_input.path
         candidates: list[Path] = []
-        if raw_input.name == "Trends":
-            candidates.append(raw_input)
+        if raw_path.name == "Trends":
+            candidates.append(raw_path)
 
-        direct_trends_dir = raw_input / "Trends"
+        direct_trends_dir = raw_path / "Trends"
         if direct_trends_dir.exists() and direct_trends_dir.is_dir():
             candidates.append(direct_trends_dir)
 
         if include_localized_children:
-            localized_root = raw_input / "Localized"
+            localized_root = raw_path / "Localized"
             if localized_root.exists() and localized_root.is_dir():
                 for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
                     child_trends_dir = child / "Trends"
@@ -612,7 +645,7 @@ def _discover_trend_site_input_dirs(
                         )
 
         streams_root = (
-            raw_input if raw_input.name == "Streams" else raw_input / "Streams"
+            raw_path if raw_path.name == "Streams" else raw_path / "Streams"
         )
         if streams_root.exists() and streams_root.is_dir():
             for stream_root in sorted(path for path in streams_root.iterdir() if path.is_dir()):
@@ -632,10 +665,10 @@ def _discover_trend_site_input_dirs(
                         candidates.append(child)
 
         if not candidates:
-            candidates.append(raw_input)
+            candidates.append(raw_path)
 
         for candidate in candidates:
-            add_candidate(candidate)
+            add_candidate(candidate, instance=raw_input.instance)
 
     return discovered
 
@@ -777,6 +810,8 @@ def _render_trend_card(
     meta_pills = [
         f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
     ]
+    if instance_pill := _render_instance_meta_pill(document.instance):
+        meta_pills.append(instance_pill)
     actions = [
         f"<a class='action-link' href='{trend_href}'>Open brief</a>",
         f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>",
@@ -907,7 +942,7 @@ def _render_collection_summary_section(
 
 def _trend_site_meta_rows(document: TrendSiteDocument) -> list[tuple[str, str]]:
     topic_count = len([topic for topic in document.topics if str(topic).strip()])
-    return [
+    rows = [
         ("Window", document.period_token),
         ("Granularity", document.granularity.title()),
         ("Topics", str(topic_count) if topic_count > 0 else "None"),
@@ -920,6 +955,9 @@ def _trend_site_meta_rows(document: TrendSiteDocument) -> list[tuple[str, str]]:
             ),
         ),
     ]
+    if display_instance := _display_site_instance(document.instance):
+        rows.insert(2, ("Instance", display_instance))
+    return rows
 
 
 def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path) -> str:
@@ -1104,6 +1142,8 @@ def _render_item_page(
         if len(document.authors) > 6:
             authors_value += "; …"
         meta_rows.append(("Authors", authors_value))
+    if display_instance := _display_site_instance(document.instance):
+        meta_rows.insert(2, ("Instance", display_instance))
     meta_items = "".join(
         "<div class='meta-panel'>"
         f"<div class='meta-panel-label'>{html.escape(label)}</div>"
@@ -1185,6 +1225,8 @@ def _render_idea_card(
     meta_pills = [
         f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
     ]
+    if instance_pill := _render_instance_meta_pill(document.instance):
+        meta_pills.append(instance_pill)
     if document.status and document.status != "succeeded":
         meta_pills.append(
             f"<span class='meta-pill subdued'>{html.escape(document.status.title())}</span>"
@@ -1259,6 +1301,8 @@ def _render_idea_page(
         ("Evidence", str(document.evidence_count or 0)),
         ("Status", (document.status or "Unknown").title()),
     ]
+    if display_instance := _display_site_instance(document.instance):
+        meta_rows.insert(2, ("Instance", display_instance))
     meta_items = "".join(
         "<div class='meta-panel'>"
         f"<div class='meta-panel-label'>{html.escape(label)}</div>"
@@ -2881,8 +2925,13 @@ def _load_trend_source_documents(
             )
             topics = _parse_site_string_list(frontmatter.get("topics"))
 
-            stream = _normalize_site_stream(
-                str(frontmatter.get("stream") or input_info.stream or "").strip()
+            instance = _normalize_site_instance(
+                str(
+                    frontmatter.get("instance")
+                    or frontmatter.get("stream")
+                    or input_info.instance
+                    or ""
+                ).strip()
                 or None
             )
             source_pdf_path = markdown_path.with_suffix(".pdf")
@@ -2902,7 +2951,7 @@ def _load_trend_source_documents(
                     period_start=period_start,
                     period_end=period_end,
                     topics=topics,
-                    stream=stream,
+                    instance=instance,
                 )
             )
 
@@ -2910,18 +2959,18 @@ def _load_trend_source_documents(
     return source_documents[:limit] if limit is not None else source_documents
 
 
-def _item_site_page_stem(*, stem: str, stream: str | None) -> str:
-    cleaned_stream = str(stream or "").strip()
-    if not cleaned_stream:
+def _site_namespaced_page_stem(*, stem: str, instance: str | None) -> str:
+    cleaned_instance = str(instance or "").strip()
+    if not cleaned_instance:
         return stem
-    return f"{_stream_slug(cleaned_stream)}--{stem}"
+    return f"{_instance_slug(cleaned_instance)}--{stem}"
 
 
-def _item_site_asset_name(*, name: str, stream: str | None) -> str:
-    cleaned_stream = str(stream or "").strip()
-    if not cleaned_stream:
+def _site_namespaced_asset_name(*, name: str, instance: str | None) -> str:
+    cleaned_instance = str(instance or "").strip()
+    if not cleaned_instance:
         return name
-    return f"{_stream_slug(cleaned_stream)}--{name}"
+    return f"{_instance_slug(cleaned_instance)}--{name}"
 
 
 def _extract_markdown_h1(markdown_body: str, *, fallback: str) -> str:
@@ -3026,7 +3075,15 @@ def _load_item_source_documents(
                     authors=_parse_site_string_list(frontmatter.get("authors")),
                     topics=_parse_site_string_list(frontmatter.get("topics")),
                     relevance_score=relevance_score,
-                    stream=_normalize_site_stream(input_info.stream),
+                    instance=_normalize_site_instance(
+                        str(
+                            frontmatter.get("instance")
+                            or frontmatter.get("stream")
+                            or input_info.instance
+                            or ""
+                        ).strip()
+                        or None
+                    ),
                 )
             )
 
@@ -3091,8 +3148,13 @@ def _load_idea_source_documents(
                     period_start=period_start,
                     period_end=period_end,
                     topics=_parse_site_string_list(frontmatter.get("topics")),
-                    stream=_normalize_site_stream(
-                        str(frontmatter.get("stream") or input_info.stream or "").strip()
+                    instance=_normalize_site_instance(
+                        str(
+                            frontmatter.get("instance")
+                            or frontmatter.get("stream")
+                            or input_info.instance
+                            or ""
+                        ).strip()
                         or None
                     ),
                     status=str(frontmatter.get("status") or "").strip().lower() or "unknown",
@@ -3530,14 +3592,14 @@ def _load_item_site_documents(
         rendered_html = markdown.render(normalized_markdown)
         title, raw_body_html, excerpt = _extract_item_body_html(body_html=rendered_html)
         body_html = _build_item_browser_body_html(body_html=raw_body_html)
-        page_stem = _item_site_page_stem(
+        page_stem = _site_namespaced_page_stem(
             stem=source_document.stem,
-            stream=source_document.stream,
+            instance=source_document.instance,
         )
         page_path = items_dir / f"{page_stem}.html"
-        markdown_asset_path = item_artifacts_dir / _item_site_asset_name(
+        markdown_asset_path = item_artifacts_dir / _site_namespaced_asset_name(
             name=source_document.markdown_path.name,
-            stream=source_document.stream,
+            instance=source_document.instance,
         )
         shutil.copy2(source_document.markdown_path, markdown_asset_path)
         documents.append(
@@ -3552,7 +3614,7 @@ def _load_item_site_documents(
                 published_at=source_document.published_at,
                 authors=source_document.authors,
                 topics=source_document.topics,
-                stream=source_document.stream,
+                instance=source_document.instance,
                 relevance_score=source_document.relevance_score,
                 body_html=body_html,
                 excerpt=excerpt,
@@ -3578,7 +3640,7 @@ def _load_idea_site_documents(
     page_by_markdown_path = {
         source_document.markdown_path.resolve(): (
             ideas_dir
-            / f"{_item_site_page_stem(stem=source_document.stem, stream=source_document.stream)}.html"
+            / f"{_site_namespaced_page_stem(stem=source_document.stem, instance=source_document.instance)}.html"
         )
         for source_document in source_documents
     }
@@ -3606,9 +3668,9 @@ def _load_idea_site_documents(
             if source_document.period_start is not None
             else source_document.stem
         )
-        markdown_asset_path = idea_artifacts_dir / _item_site_asset_name(
+        markdown_asset_path = idea_artifacts_dir / _site_namespaced_asset_name(
             name=source_document.markdown_path.name,
-            stream=source_document.stream,
+            instance=source_document.instance,
         )
         shutil.copy2(source_document.markdown_path, markdown_asset_path)
         documents.append(
@@ -3623,7 +3685,7 @@ def _load_idea_site_documents(
                 period_start=source_document.period_start,
                 period_end=source_document.period_end,
                 topics=source_document.topics,
-                stream=source_document.stream,
+                instance=source_document.instance,
                 status=source_document.status,
                 opportunity_count=idea_body.opportunity_count,
                 evidence_count=idea_body.evidence_count,
@@ -3651,7 +3713,8 @@ def _load_trend_site_documents(
 
     trend_pages_by_markdown_path = {
         source_document.markdown_path.resolve(): (
-            trends_dir / f"{source_document.stem}.html"
+            trends_dir
+            / f"{_site_namespaced_page_stem(stem=source_document.stem, instance=source_document.instance)}.html"
         )
         for source_document in source_documents
     }
@@ -3691,12 +3754,18 @@ def _load_trend_site_documents(
             else source_document.stem
         )
 
-        markdown_asset_path = artifacts_dir / source_document.markdown_path.name
+        markdown_asset_path = artifacts_dir / _site_namespaced_asset_name(
+            name=source_document.markdown_path.name,
+            instance=source_document.instance,
+        )
         shutil.copy2(source_document.markdown_path, markdown_asset_path)
 
         pdf_asset_path: Path | None = None
         if source_document.pdf_path is not None:
-            pdf_asset_path = artifacts_dir / source_document.pdf_path.name
+            pdf_asset_path = artifacts_dir / _site_namespaced_asset_name(
+                name=source_document.pdf_path.name,
+                instance=source_document.instance,
+            )
             shutil.copy2(source_document.pdf_path, pdf_asset_path)
 
         documents.append(
@@ -3712,7 +3781,7 @@ def _load_trend_site_documents(
                 period_start=source_document.period_start,
                 period_end=source_document.period_end,
                 topics=source_document.topics,
-                stream=source_document.stream,
+                instance=source_document.instance,
                 body_html=browser_body_html,
                 excerpt=excerpt,
                 evolution_insight=evolution_insight,
@@ -3749,51 +3818,60 @@ def _infer_site_language_code_from_root(root_path: Path) -> str | None:
 
 
 def _discover_site_language_inputs(
-    raw_inputs: Sequence[Path],
-) -> list[tuple[str | None, str, tuple[Path, ...]]]:
-    discovered: list[tuple[str | None, str, tuple[Path, ...]]] = []
-    grouped_roots: dict[str, list[Path]] = {}
+    raw_inputs: Sequence[TrendSiteInputSpec],
+) -> list[tuple[str | None, str, tuple[TrendSiteInputSpec, ...]]]:
+    discovered: list[tuple[str | None, str, tuple[TrendSiteInputSpec, ...]]] = []
+    grouped_roots: dict[str, list[TrendSiteInputSpec]] = {}
     language_code_by_slug: dict[str, str] = {}
-    seen_roots: set[Path] = set()
+    seen_roots: set[tuple[Path, str | None]] = set()
 
-    def add_root(root_path: Path) -> None:
+    def add_root(root_path: Path, *, instance: str | None) -> None:
         resolved_root = root_path.expanduser().resolve()
-        if resolved_root in seen_roots or not resolved_root.exists() or not resolved_root.is_dir():
+        resolved_instance = _normalize_site_instance(instance)
+        if (
+            (resolved_root, resolved_instance) in seen_roots
+            or not resolved_root.exists()
+            or not resolved_root.is_dir()
+        ):
             return
-        seen_roots.add(resolved_root)
+        seen_roots.add((resolved_root, resolved_instance))
         language_code = _infer_site_language_code_from_root(resolved_root)
         language_slug = (
             language_slug_from_code(language_code)
             if language_code is not None
             else ""
         )
+        input_spec = TrendSiteInputSpec(
+            path=resolved_root,
+            instance=resolved_instance,
+        )
         if language_code is None or not language_slug:
-            discovered.append((language_code, language_slug, (resolved_root,)))
+            discovered.append((language_code, language_slug, (input_spec,)))
             return
-        grouped_roots.setdefault(language_slug, []).append(resolved_root)
+        grouped_roots.setdefault(language_slug, []).append(input_spec)
         language_code_by_slug[language_slug] = str(language_code)
 
     for raw_input in raw_inputs:
         base_root = (
-            raw_input.parent if raw_input.name == "Trends" else raw_input
+            raw_input.path.parent if raw_input.path.name == "Trends" else raw_input.path
         ).expanduser().resolve()
-        add_root(base_root)
+        add_root(base_root, instance=raw_input.instance)
         localized_root = base_root / "Localized"
         if localized_root.exists() and localized_root.is_dir():
             for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
-                add_root(child)
+                add_root(child, instance=raw_input.instance)
         streams_root = (
             base_root if base_root.name == "Streams" else base_root / "Streams"
         )
         if streams_root.exists() and streams_root.is_dir():
             for stream_root in sorted(path for path in streams_root.iterdir() if path.is_dir()):
-                add_root(stream_root)
+                add_root(stream_root, instance=raw_input.instance)
                 stream_localized_root = stream_root / "Localized"
                 if stream_localized_root.exists() and stream_localized_root.is_dir():
                     for child in sorted(
                         path for path in stream_localized_root.iterdir() if path.is_dir()
                     ):
-                        add_root(child)
+                        add_root(child, instance=raw_input.instance)
     for language_slug in sorted(grouped_roots):
         discovered.append(
             (
@@ -4026,14 +4104,14 @@ def _render_language_redirect_page(
 
 def _export_trend_static_site_single_language(
     *,
-    input_dir: Path | Sequence[Path],
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
     output_dir: Path,
     limit: int | None = None,
     item_export_scope: str = "linked",
     include_localized_children: bool = True,
 ) -> Path:
     normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
-    resolved_input_roots = _coerce_site_input_paths(input_dir)
+    resolved_input_roots = _coerce_site_input_specs(input_dir)
     resolved_input_dirs = _discover_trend_site_input_dirs(
         resolved_input_roots,
         include_localized_children=include_localized_children,
@@ -4205,16 +4283,16 @@ def _export_trend_static_site_single_language(
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "input_dir": (
-            str(resolved_input_roots[0])
+            str(resolved_input_roots[0].path)
             if len(resolved_input_roots) == 1
-            else [str(path) for path in resolved_input_roots]
+            else [str(input_spec.path) for input_spec in resolved_input_roots]
         ),
         "input_dirs": [
             {
                 "path": str(input_info.path),
                 "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
                 "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
-                "stream": input_info.stream,
+                "instance": input_info.instance,
             }
             for input_info in resolved_input_dirs
         ],
@@ -4273,14 +4351,14 @@ def _export_trend_static_site_single_language(
 
 def export_trend_static_site(
     *,
-    input_dir: Path | Sequence[Path],
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
     output_dir: Path,
     limit: int | None = None,
     default_language_code: str | None = None,
     item_export_scope: str = "linked",
 ) -> Path:
     normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
-    resolved_input_roots = _coerce_site_input_paths(input_dir)
+    resolved_input_roots = _coerce_site_input_specs(input_dir)
     language_inputs = _discover_site_language_inputs(resolved_input_roots)
     valid_language_inputs = [
         (language_code, language_slug, root_paths)
@@ -4396,14 +4474,14 @@ def export_trend_static_site(
 
 def stage_trend_site_source(
     *,
-    input_dir: Path | Sequence[Path],
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
     output_dir: Path,
     limit: int | None = None,
     default_language_code: str | None = None,
     item_export_scope: str = "linked",
 ) -> Path:
     normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
-    resolved_input_roots = _coerce_site_input_paths(input_dir)
+    resolved_input_roots = _coerce_site_input_specs(input_dir)
     resolved_input_dirs = _discover_trend_site_input_dirs(resolved_input_roots)
     resolved_output_dir = output_dir.expanduser().resolve()
     stage_root = (
@@ -4436,8 +4514,8 @@ def stage_trend_site_source(
         item_export_scope=normalized_item_export_scope,
     )
     item_source_documents = item_selection.source_documents
-    has_stream_documents = any(
-        bool(source_document.stream) for source_document in source_documents
+    has_instance_documents = any(
+        bool(source_document.instance) for source_document in source_documents
     )
     staged_markdown_files: list[str] = []
     staged_idea_files: list[str] = []
@@ -4449,7 +4527,7 @@ def stage_trend_site_source(
 
     def stage_root_for_surface(
         *,
-        stream: str | None,
+        instance: str | None,
         source_input: TrendSiteInputDirectory | None,
     ) -> Path:
         language_slug = (
@@ -4457,8 +4535,8 @@ def stage_trend_site_source(
             if source_input is not None and getattr(source_input, "is_localized_root", False)
             else ""
         )
-        if stream:
-            base_root = stage_root / "Streams" / stream
+        if instance:
+            base_root = stage_root / "Streams" / instance
             return base_root / "Localized" / language_slug if language_slug else base_root
         if language_slug:
             return stage_root / "Localized" / language_slug
@@ -4474,12 +4552,12 @@ def stage_trend_site_source(
             None,
         )
         surface_root = stage_root_for_surface(
-            stream=source_document.stream,
+            instance=source_document.instance,
             source_input=source_input,
         )
         target_dir = (
             surface_root / "Trends"
-            if source_document.stream or has_stream_documents or surface_root != stage_root
+            if source_document.instance or has_instance_documents or surface_root != stage_root
             else resolved_output_dir
         )
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -4503,7 +4581,7 @@ def stage_trend_site_source(
             None,
         )
         surface_root = stage_root_for_surface(
-            stream=source_document.stream,
+            instance=source_document.instance,
             source_input=source_input,
         )
         target_dir = surface_root / "Inbox"
@@ -4522,7 +4600,7 @@ def stage_trend_site_source(
             None,
         )
         surface_root = stage_root_for_surface(
-            stream=source_document.stream,
+            instance=source_document.instance,
             source_input=source_input,
         )
         target_dir = surface_root / "Ideas"
@@ -4534,16 +4612,16 @@ def stage_trend_site_source(
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "input_dir": (
-            str(resolved_input_roots[0])
+            str(resolved_input_roots[0].path)
             if len(resolved_input_roots) == 1
-            else [str(path) for path in resolved_input_roots]
+            else [str(input_spec.path) for input_spec in resolved_input_roots]
         ),
         "input_dirs": [
             {
                 "path": str(input_info.path),
                 "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
                 "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
-                "stream": input_info.stream,
+                "instance": input_info.instance,
                 "language_code": input_info.language_code,
                 "language_slug": input_info.language_slug,
                 "is_localized_root": bool(input_info.is_localized_root),
