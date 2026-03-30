@@ -371,6 +371,22 @@ def _render_instance_meta_pill(instance: str | None) -> str:
     return f"<span class='meta-pill subdued'>{html.escape(display_instance)}</span>"
 
 
+def _resolve_site_instance(
+    *,
+    input_instance: str | None,
+    frontmatter: dict[str, Any],
+) -> str | None:
+    if resolved_input_instance := _normalize_site_instance(input_instance):
+        return resolved_input_instance
+    if resolved_frontmatter_instance := _normalize_site_instance(
+        frontmatter.get("instance")
+    ):
+        return resolved_frontmatter_instance
+    if resolved_legacy_stream := _normalize_site_instance(frontmatter.get("stream")):
+        return resolved_legacy_stream
+    return None
+
+
 def _paths_overlap(path_a: Path, path_b: Path) -> bool:
     return path_a == path_b or path_a in path_b.parents or path_b in path_a.parents
 
@@ -2925,14 +2941,9 @@ def _load_trend_source_documents(
             )
             topics = _parse_site_string_list(frontmatter.get("topics"))
 
-            instance = _normalize_site_instance(
-                str(
-                    frontmatter.get("instance")
-                    or frontmatter.get("stream")
-                    or input_info.instance
-                    or ""
-                ).strip()
-                or None
+            instance = _resolve_site_instance(
+                input_instance=input_info.instance,
+                frontmatter=frontmatter,
             )
             source_pdf_path = markdown_path.with_suffix(".pdf")
             pdf_path = (
@@ -3075,14 +3086,9 @@ def _load_item_source_documents(
                     authors=_parse_site_string_list(frontmatter.get("authors")),
                     topics=_parse_site_string_list(frontmatter.get("topics")),
                     relevance_score=relevance_score,
-                    instance=_normalize_site_instance(
-                        str(
-                            frontmatter.get("instance")
-                            or frontmatter.get("stream")
-                            or input_info.instance
-                            or ""
-                        ).strip()
-                        or None
+                    instance=_resolve_site_instance(
+                        input_instance=input_info.instance,
+                        frontmatter=frontmatter,
                     ),
                 )
             )
@@ -3148,14 +3154,9 @@ def _load_idea_source_documents(
                     period_start=period_start,
                     period_end=period_end,
                     topics=_parse_site_string_list(frontmatter.get("topics")),
-                    instance=_normalize_site_instance(
-                        str(
-                            frontmatter.get("instance")
-                            or frontmatter.get("stream")
-                            or input_info.instance
-                            or ""
-                        ).strip()
-                        or None
+                    instance=_resolve_site_instance(
+                        input_instance=input_info.instance,
+                        frontmatter=frontmatter,
                     ),
                     status=str(frontmatter.get("status") or "").strip().lower() or "unknown",
                 )

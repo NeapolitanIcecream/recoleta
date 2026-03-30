@@ -2539,6 +2539,7 @@ def test_export_trend_static_site_namespaces_duplicate_pages_and_artifacts_by_in
             "period_start: 2026-03-16T00:00:00+00:00\n"
             "period_end: 2026-03-23T00:00:00+00:00\n"
             "status: succeeded\n"
+            "stream: default\n"
             f"topics:\n  - {topic}\n"
             "---\n\n"
             f"# {instance_label} ideas\n\n"
