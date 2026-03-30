@@ -1181,6 +1181,80 @@ def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite
     } == {("trend_synthesis", trend_doc_id)}
 
 
+def test_run_translation_period_filter_includes_cross_boundary_week_windows_pr_23(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: month-scoped translation must include overlapping week trends."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    month_start = datetime(2026, 3, 1, tzinfo=UTC)
+    month_end = datetime(2026, 4, 1, tzinfo=UTC)
+    week_start = datetime(2026, 2, 24, tzinfo=UTC)
+    week_end = datetime(2026, 3, 3, tzinfo=UTC)
+    trend_doc_id = persist_trend_payload(
+        repository=repository,
+        granularity="week",
+        period_start=week_start,
+        period_end=week_end,
+        payload=TrendPayload.model_validate(
+            {
+                "title": "Cross-boundary week",
+                "granularity": "week",
+                "period_start": week_start.isoformat(),
+                "period_end": week_end.isoformat(),
+                "overview_md": "## Overview\n\nCross-boundary trend overview.\n",
+                "topics": ["agents"],
+                "clusters": [],
+                "highlights": [],
+                "evolution": None,
+            }
+        ),
+    )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: kwargs["payload"],
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="trends",
+        granularity="week",
+        force=True,
+        all_history=False,
+        period_start=month_start,
+        period_end=month_end,
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 1
+    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    assert {
+        (row.source_kind, row.source_record_id)
+        for row in rows
+    } == {("trend_synthesis", int(trend_doc_id))}
+
+
 def test_translate_run_hybrid_uses_search_service_without_auto_syncing_vectors(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

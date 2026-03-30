@@ -186,6 +186,32 @@ def _normalize_utc_datetime(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
+def _periods_overlap(
+    *,
+    candidate_start: datetime | None,
+    candidate_end: datetime | None,
+    period_start: datetime | None,
+    period_end: datetime | None,
+) -> bool:
+    normalized_candidate_start = _normalize_utc_datetime(candidate_start)
+    normalized_candidate_end = _normalize_utc_datetime(candidate_end)
+    normalized_period_start = _normalize_utc_datetime(period_start)
+    normalized_period_end = _normalize_utc_datetime(period_end)
+    if normalized_candidate_start is None or normalized_candidate_end is None:
+        return False
+    if (
+        normalized_period_start is not None
+        and normalized_candidate_end <= normalized_period_start
+    ):
+        return False
+    if (
+        normalized_period_end is not None
+        and normalized_candidate_start >= normalized_period_end
+    ):
+        return False
+    return True
+
+
 def _coerce_payload_dict(
     payload: BaseModel | dict[str, Any] | Any,
     *,
@@ -812,8 +838,6 @@ def _load_trend_candidates(
     all_history: bool = True,
 ) -> list[tuple[Document, dict[str, Any]]]:
     _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
-    normalized_period_start = _normalize_utc_datetime(period_start)
-    normalized_period_end = _normalize_utc_datetime(period_end)
     with Session(repository.engine) as session:
         statement = (
             select(Document)
@@ -829,15 +853,12 @@ def _load_trend_candidates(
         if not all_history and (period_start is not None or period_end is not None):
             filtered: list[Document] = []
             for document in documents:
-                doc_period_start = _normalize_utc_datetime(
-                    getattr(document, "period_start", None)
-                )
-                doc_period_end = _normalize_utc_datetime(getattr(document, "period_end", None))
-                if doc_period_start is None or doc_period_end is None:
-                    continue
-                if normalized_period_start is not None and doc_period_start < normalized_period_start:
-                    continue
-                if normalized_period_end is not None and doc_period_end > normalized_period_end:
+                if not _periods_overlap(
+                    candidate_start=getattr(document, "period_start", None),
+                    candidate_end=getattr(document, "period_end", None),
+                    period_start=period_start,
+                    period_end=period_end,
+                ):
                     continue
                 filtered.append(document)
             documents = filtered
@@ -893,9 +914,6 @@ def _load_idea_candidates(
     period_end: datetime | None = None,
     all_history: bool = True,
 ) -> list[tuple[Document, dict[str, Any]]]:
-    normalized_period_start = _normalize_utc_datetime(period_start)
-    normalized_period_end = _normalize_utc_datetime(period_end)
-
     def _render_idea_document_chunk_text(idea: Any) -> str:
         evidence_reasons = [
             str(getattr(ref, "reason", "") or "").strip()
@@ -966,15 +984,12 @@ def _load_idea_candidates(
         if not all_history and (period_start is not None or period_end is not None):
             filtered: list[PassOutput] = []
             for row in selected:
-                row_period_start = _normalize_utc_datetime(
-                    getattr(row, "period_start", None)
-                )
-                row_period_end = _normalize_utc_datetime(getattr(row, "period_end", None))
-                if row_period_start is None or row_period_end is None:
-                    continue
-                if normalized_period_start is not None and row_period_start < normalized_period_start:
-                    continue
-                if normalized_period_end is not None and row_period_end > normalized_period_end:
+                if not _periods_overlap(
+                    candidate_start=getattr(row, "period_start", None),
+                    candidate_end=getattr(row, "period_end", None),
+                    period_start=period_start,
+                    period_end=period_end,
+                ):
                     continue
                 filtered.append(row)
             selected = filtered
@@ -1073,11 +1088,28 @@ def _load_idea_candidates(
         )
         if granularity is not None:
             statement = statement.where(Document.granularity == granularity)
-        documents = _limit_documents_for_backfill(
-            documents=list(session.exec(statement)),
-            all_history=all_history,
-            limit=limit,
-        )
+        documents = list(session.exec(statement))
+        if not all_history and (period_start is not None or period_end is not None):
+            filtered: list[Document] = []
+            for document in documents:
+                if not _periods_overlap(
+                    candidate_start=getattr(document, "period_start", None),
+                    candidate_end=getattr(document, "period_end", None),
+                    period_start=period_start,
+                    period_end=period_end,
+                ):
+                    continue
+                filtered.append(document)
+            documents = filtered
+            normalized_limit = None if limit is None else max(1, int(limit))
+            if normalized_limit is not None:
+                documents = documents[:normalized_limit]
+        else:
+            documents = _limit_documents_for_backfill(
+                documents=documents,
+                all_history=all_history,
+                limit=limit,
+            )
 
         candidates: list[tuple[Document, dict[str, Any]]] = []
         seen_windows: set[tuple[str | None, datetime | None, datetime | None]] = set()

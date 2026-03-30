@@ -161,6 +161,10 @@ def _unsupported_config_format_message(keys: list[str]) -> str:
     return f"Unsupported config format: {rendered} {verb} no longer supported."
 
 
+def _normalize_env_key(key: str) -> str:
+    return str(key or "").strip().upper()
+
+
 def _configured_env_files(settings_cls: type[BaseSettings]) -> list[Path]:
     env_file = settings_cls.model_config.get("env_file")
     if env_file is None:
@@ -180,13 +184,14 @@ def _configured_env_files(settings_cls: type[BaseSettings]) -> list[Path]:
 def _scan_env_file_for_keys(path: Path, *, keys: tuple[str, ...]) -> list[str]:
     if not path.exists() or not path.is_file():
         return []
+    normalized_keys = {_normalize_env_key(key) for key in keys}
     found: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         match = _ENV_FILE_ASSIGNMENT_RE.match(line)
         if match is None:
             continue
         key = match.group(1)
-        if key in keys:
+        if _normalize_env_key(key) in normalized_keys:
             found.append(key)
     return found
 
@@ -194,9 +199,10 @@ def _scan_env_file_for_keys(path: Path, *, keys: tuple[str, ...]) -> list[str]:
 def _reject_unsupported_topic_stream_environment(
     settings_cls: type[BaseSettings],
 ) -> None:
-    found = [
-        key for key in _UNSUPPORTED_TOPIC_STREAM_ENV_KEYS if key in os.environ
-    ]
+    normalized_keys = {
+        _normalize_env_key(key) for key in _UNSUPPORTED_TOPIC_STREAM_ENV_KEYS
+    }
+    found = [key for key in os.environ if _normalize_env_key(key) in normalized_keys]
     for env_path in _configured_env_files(settings_cls):
         found.extend(
             _scan_env_file_for_keys(

@@ -20,6 +20,7 @@ def _clear_runtime_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PUBLISH_TARGETS",
         "TOPICS",
         "TOPIC_STREAMS",
+        "topic_streams",
         "TELEGRAM_BOT_TOKEN",
         "TELEGRAM_CHAT_ID",
         "SOURCES",
@@ -91,17 +92,19 @@ def test_runtime_build_settings_rejects_topic_stream_keys_in_config_files(
     assert "topic-streams-to-instances" not in message
 
 
+@pytest.mark.parametrize("env_key", ["TOPIC_STREAMS", "topic_streams"])
 def test_runtime_build_settings_rejects_topic_streams_env_var(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    env_key: str,
 ) -> None:
-    """Regression: TOPIC_STREAMS in the environment must fail fast too."""
+    """Regression: topic_streams env vars must fail fast regardless of case."""
     _clear_runtime_env(monkeypatch)
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
     monkeypatch.setenv("TOPICS", "agents")
     monkeypatch.setenv(
-        "TOPIC_STREAMS",
+        env_key,
         '[{"name": "agents_lab", "topics": ["agents"]}]',
     )
 
@@ -109,15 +112,17 @@ def test_runtime_build_settings_rejects_topic_streams_env_var(
         runtime_build_settings()
 
     message = str(exc_info.value)
-    assert "TOPIC_STREAMS" in message
+    assert env_key in message
     assert "topic-streams-to-instances" not in message
 
 
+@pytest.mark.parametrize("env_key", ["TOPIC_STREAMS", "topic_streams"])
 def test_runtime_build_settings_rejects_topic_streams_in_dotenv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    env_key: str,
 ) -> None:
-    """Regression: TOPIC_STREAMS in .env must not be silently ignored."""
+    """Regression: topic_streams in .env must not be silently ignored."""
     _clear_runtime_env(monkeypatch)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text(
@@ -126,7 +131,7 @@ def test_runtime_build_settings_rejects_topic_streams_in_dotenv(
                 f"RECOLETA_DB_PATH={tmp_path / 'recoleta.db'}",
                 "LLM_MODEL=openai/gpt-4o-mini",
                 "TOPICS=agents",
-                "TOPIC_STREAMS=[]",
+                f"{env_key}=[]",
             ]
         ),
         encoding="utf-8",
@@ -135,7 +140,7 @@ def test_runtime_build_settings_rejects_topic_streams_in_dotenv(
     with pytest.raises(ValueError, match="Unsupported config format") as exc_info:
         runtime_build_settings()
 
-    assert "TOPIC_STREAMS" in str(exc_info.value)
+    assert env_key in str(exc_info.value)
 
 
 def test_cli_run_day_reports_generic_unsupported_config_format(
