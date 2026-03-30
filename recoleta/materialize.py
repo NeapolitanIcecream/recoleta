@@ -1008,6 +1008,7 @@ def materialize_outputs(
     site_input_dir: Path | None = None,
     site_output_dir: Path | None = None,
     localization: LocalizationConfig | None = None,
+    item_export_scope: str = "linked",
 ) -> MaterializeOutputsResult:
     normalized_granularity = _normalize_granularity(granularity)
     results: list[MaterializeScopeResult] = []
@@ -1039,15 +1040,21 @@ def materialize_outputs(
 
     site_manifest_path: Path | None = None
     if site_input_dir is not None and site_output_dir is not None:
-        site_manifest_path = export_trend_static_site(
-            input_dir=site_input_dir,
-            output_dir=site_output_dir,
-            default_language_code=(
+        normalized_item_export_scope = (
+            str(item_export_scope or "").strip().lower() or "linked"
+        )
+        site_export_kwargs: dict[str, Any] = {
+            "input_dir": site_input_dir,
+            "output_dir": site_output_dir,
+            "default_language_code": (
                 str(localization.site_default_language_code)
                 if localization is not None
                 else None
             ),
-        )
+        }
+        if normalized_item_export_scope != "linked":
+            site_export_kwargs["item_export_scope"] = normalized_item_export_scope
+        site_manifest_path = export_trend_static_site(**site_export_kwargs)
         logger.bind(
             module="materialize.outputs.site",
             input_dir=str(site_input_dir),

@@ -376,6 +376,11 @@ def run_deploy(
         "--force/--no-force",
         help="Force-push the deployment branch. Defaults to force for derived site output.",
     ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -394,6 +399,7 @@ def run_deploy(
         cname=cname,
         pages_config=pages_config,
         force=force,
+        item_export_scope=item_export_scope,
         json_output=json_output,
     )
 
@@ -524,6 +530,11 @@ def fleet_run_deploy(
     cname: str | None = typer.Option(None, "--cname"),
     pages_config: str = typer.Option("auto", "--pages-config"),
     force: bool = typer.Option(True, "--force/--no-force"),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Deploy the aggregate fleet static site."""
@@ -539,6 +550,7 @@ def fleet_run_deploy(
         cname=cname,
         pages_config=pages_config,
         force=force,
+        item_export_scope=item_export_scope,
         json_output=json_output,
     )
 
@@ -1073,6 +1085,7 @@ def repair_outputs(
     ),
     pdf: bool = typer.Option(False, "--pdf/--no-pdf", help="Regenerate trend PDFs from the rerendered markdown notes."),
     site: bool = typer.Option(False, "--site/--no-site", help="Rebuild the static site after markdown outputs are materialized."),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
     debug_pdf: bool = typer.Option(False, "--debug-pdf/--no-debug-pdf", help="Export PDF render debug bundles beside regenerated PDFs."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
@@ -1085,6 +1098,7 @@ def repair_outputs(
         granularity=granularity,
         pdf=pdf,
         site=site,
+        item_export_scope=item_export_scope,
         debug_pdf=debug_pdf,
         json_output=json_output,
         command_name="repair outputs",
@@ -1360,6 +1374,7 @@ def stage_materialize(
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally rerender only day, week, or month trend notes."),
     pdf: bool = typer.Option(False, "--pdf/--no-pdf", help="Regenerate trend PDFs from the rerendered markdown notes."),
     site: bool = typer.Option(False, "--site/--no-site", help="Rebuild the static site after markdown outputs are materialized."),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
     debug_pdf: bool = typer.Option(False, "--debug-pdf/--no-debug-pdf", help="Export PDF render debug bundles beside regenerated PDFs."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
@@ -1372,6 +1387,7 @@ def stage_materialize(
         granularity=granularity,
         pdf=pdf,
         site=site,
+        item_export_scope=item_export_scope,
         debug_pdf=debug_pdf,
         json_output=json_output,
         command_name="stage materialize",

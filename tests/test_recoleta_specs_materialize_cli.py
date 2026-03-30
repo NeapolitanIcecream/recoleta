@@ -208,6 +208,60 @@ def test_materialize_outputs_renders_default_scope_items_without_legacy_stream_s
     assert trend_note_path.exists()
 
 
+def test_materialize_outputs_forwards_explicit_item_export_scope_to_site_export(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: site rebuilds during materialization must preserve the full item export override."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _seed_materialize_fixture(repository=repository)
+    output_dir = tmp_path / "outputs"
+    captured: dict[str, object] = {}
+
+    def _fake_export_trend_static_site(  # type: ignore[no-untyped-def]
+        *,
+        input_dir,
+        output_dir,
+        default_language_code=None,
+        item_export_scope="linked",
+    ):
+        captured.update(
+            {
+                "input_dir": input_dir,
+                "output_dir": output_dir,
+                "default_language_code": default_language_code,
+                "item_export_scope": item_export_scope,
+            }
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            '{"trends_total": 1, "topics_total": 2}\n',
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(
+        materialize_module,
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+
+    result = materialize_outputs(
+        repository=repository,
+        scope_specs=[
+            MaterializeScopeSpec(scope="default", output_dir=output_dir),
+        ],
+        site_input_dir=output_dir,
+        site_output_dir=output_dir / "site",
+        item_export_scope="all",
+    )
+
+    assert result.site_manifest_path == output_dir / "site" / "manifest.json"
+    assert captured["item_export_scope"] == "all"
+
+
 def test_default_scope_specs_for_settings_use_instance_output_roots(
     tmp_path: Path,
 ) -> None:
@@ -344,6 +398,56 @@ def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
     assert (output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.pdf").exists()
 
 
+def test_repair_outputs_cli_forwards_explicit_item_export_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: repair outputs must forward the full item export override."""
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    calls: dict[str, object] = {}
+
+    def _fake_materialize_outputs(**kwargs: object) -> materialize_module.MaterializeOutputsResult:
+        calls.update(kwargs)
+        output_dir = tmp_path / "outputs"
+        site_dir = output_dir / "site"
+        site_dir.mkdir(parents=True, exist_ok=True)
+        return materialize_module.MaterializeOutputsResult(
+            scopes=[
+                materialize_module.MaterializeScopeResult(
+                    scope="default",
+                    output_dir=output_dir,
+                )
+            ],
+            site_manifest_path=site_dir / "manifest.json",
+        )
+
+    monkeypatch.setattr(
+        materialize_module,
+        "materialize_outputs",
+        _fake_materialize_outputs,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "repair",
+            "outputs",
+            "--db-path",
+            str(repository.db_path),
+            "--output-dir",
+            str(tmp_path / "outputs"),
+            "--site",
+            "--item-export-scope",
+            "all",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["item_export_scope"] == "all"
+
+
 def test_materialize_outputs_cli_emits_json_summary(
     tmp_path: Path,
 ) -> None:
@@ -377,6 +481,35 @@ def test_materialize_outputs_cli_emits_json_summary(
     assert payload["site_manifest_path"] == str(output_dir / "site" / "manifest.json")
     assert payload["scopes"][0]["scope"] == "default"
     assert payload["scopes"][0]["trend_notes_total"] == 1
+
+
+def test_stage_materialize_cli_forwards_explicit_item_export_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: stage materialize must forward the full item export override."""
+    runner = CliRunner()
+    calls: dict[str, object] = {}
+    app_module = recoleta.cli._import_symbol("recoleta.cli.app")
+
+    monkeypatch.setattr(
+        app_module,
+        "run_materialize_outputs_command",
+        lambda **kwargs: calls.update(kwargs),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "stage",
+            "materialize",
+            "--item-export-scope",
+            "all",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["item_export_scope"] == "all"
 
 
 def test_materialize_outputs_cli_rejects_non_default_scope_in_instance_first_runtime(

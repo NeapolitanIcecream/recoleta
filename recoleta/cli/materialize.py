@@ -15,6 +15,7 @@ def run_materialize_outputs_command(
     pdf: bool,
     site: bool,
     debug_pdf: bool,
+    item_export_scope: str = "linked",
     json_output: bool = False,
     command_name: str = "materialize outputs",
 ) -> None:
@@ -120,16 +121,26 @@ def run_materialize_outputs_command(
                 site_output_dir = Path(scope_specs[0].output_dir) / "site"
             output_language = settings.llm_output_language
 
+        normalized_item_export_scope = (
+            str(item_export_scope or "").strip().lower() or "linked"
+        )
+        materialize_kwargs: dict[str, object] = {
+            "repository": repository,
+            "scope_specs": list(scope_specs),
+            "granularity": granularity,
+            "generate_pdf": pdf,
+            "debug_pdf": debug_pdf,
+            "output_language": output_language,
+            "site_input_dir": site_input_dir,
+            "site_output_dir": site_output_dir,
+            "localization": (
+                getattr(settings, "localization", None) if settings is not None else None
+            ),
+        }
+        if normalized_item_export_scope != "linked":
+            materialize_kwargs["item_export_scope"] = normalized_item_export_scope
         result = materialize_outputs(
-            repository=repository,
-            scope_specs=list(scope_specs),
-            granularity=granularity,
-            generate_pdf=pdf,
-            debug_pdf=debug_pdf,
-            output_language=output_language,
-            site_input_dir=site_input_dir,
-            site_output_dir=site_output_dir,
-            localization=getattr(settings, "localization", None) if settings is not None else None,
+            **materialize_kwargs,
         )
         heartbeat_monitor.raise_if_failed()
     finally:

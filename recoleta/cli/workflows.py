@@ -529,18 +529,28 @@ def _run_translation_step(
     return totals
 
 
-def _run_site_build_step(*, settings: Any) -> dict[str, Any]:
+def _run_site_build_step(
+    *,
+    settings: Any,
+    item_export_scope: str = "linked",
+) -> dict[str, Any]:
     export_trend_static_site = cli._import_symbol(
         "recoleta.site",
         attr_name="export_trend_static_site",
     )
     input_dir = _site_input_dir_from_settings(settings)
     output_dir = _site_output_dir_from_settings(settings)
-    manifest_path = export_trend_static_site(
-        input_dir=input_dir,
-        output_dir=output_dir,
-        default_language_code=_default_language_code_from_settings(settings),
+    normalized_item_export_scope = (
+        str(item_export_scope or "").strip().lower() or "linked"
     )
+    export_kwargs: dict[str, Any] = {
+        "input_dir": input_dir,
+        "output_dir": output_dir,
+        "default_language_code": _default_language_code_from_settings(settings),
+    }
+    if normalized_item_export_scope != "linked":
+        export_kwargs["item_export_scope"] = normalized_item_export_scope
+    manifest_path = export_trend_static_site(**export_kwargs)
     return {
         "manifest_path": str(manifest_path),
         "input_dir": str(input_dir),
@@ -558,22 +568,29 @@ def _run_site_deploy_step(
     cname: str | None,
     pages_config: str,
     force: bool,
+    item_export_scope: str = "linked",
 ) -> dict[str, Any]:
     deploy_site = cli._import_symbol(
         "recoleta.site_deploy",
         attr_name="deploy_trend_static_site_to_github_pages",
     )
-    result = deploy_site(
-        input_dir=_site_input_dir_from_settings(settings),
-        repo_dir=(repo_dir or Path.cwd()).expanduser().resolve(),
-        remote=remote,
-        branch=branch,
-        commit_message=commit_message,
-        cname=cname,
-        pages_config_mode=pages_config,
-        force=force,
-        default_language_code=_default_language_code_from_settings(settings),
+    normalized_item_export_scope = (
+        str(item_export_scope or "").strip().lower() or "linked"
     )
+    deploy_kwargs: dict[str, Any] = {
+        "input_dir": _site_input_dir_from_settings(settings),
+        "repo_dir": (repo_dir or Path.cwd()).expanduser().resolve(),
+        "remote": remote,
+        "branch": branch,
+        "commit_message": commit_message,
+        "cname": cname,
+        "pages_config_mode": pages_config,
+        "force": force,
+        "default_language_code": _default_language_code_from_settings(settings),
+    }
+    if normalized_item_export_scope != "linked":
+        deploy_kwargs["item_export_scope"] = normalized_item_export_scope
+    result = deploy_site(**deploy_kwargs)
     return {
         "remote": str(result.remote),
         "branch": str(result.branch),
@@ -958,6 +975,7 @@ def execute_deploy_workflow(
     cname: str | None = None,
     pages_config: str = "auto",
     force: bool = True,
+    item_export_scope: str = "linked",
     json_output: bool = False,
     config_path: Path | None = None,
     emit_output: bool = True,
@@ -1027,7 +1045,10 @@ def execute_deploy_workflow(
                             run_id=run_id,
                         )
                     elif step_id == STEP_SITE_BUILD:
-                        step_payload = _run_site_build_step(settings=settings)
+                        step_payload = _run_site_build_step(
+                            settings=settings,
+                            item_export_scope=item_export_scope,
+                        )
                     elif step_id == STEP_SITE_DEPLOY:
                         step_payload = _run_site_deploy_step(
                             settings=settings,
@@ -1038,6 +1059,7 @@ def execute_deploy_workflow(
                             cname=cname,
                             pages_config=pages_config,
                             force=force,
+                            item_export_scope=item_export_scope,
                         )
                     else:
                         raise ValueError(f"unsupported deploy step: {step_id}")

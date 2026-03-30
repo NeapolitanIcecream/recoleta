@@ -224,6 +224,7 @@ def execute_fleet_deploy_workflow(
     cname: str | None = None,
     pages_config: str = "auto",
     force: bool = True,
+    item_export_scope: str = "linked",
     json_output: bool = False,
 ) -> dict[str, Any]:
     symbols = cli._runtime_symbols()
@@ -296,17 +297,23 @@ def execute_fleet_deploy_workflow(
         )
 
     input_dirs = [Path(child["site_input_dir"]) for child in child_results]
-    deploy_result = deploy_site(
-        input_dir=input_dirs,
-        repo_dir=(repo_dir or Path.cwd()).expanduser().resolve(),
-        remote=remote,
-        branch=branch,
-        commit_message=commit_message,
-        cname=cname,
-        pages_config_mode=pages_config,
-        force=force,
-        default_language_code=_fleet_default_language(manifest, None),
+    normalized_item_export_scope = (
+        str(item_export_scope or "").strip().lower() or "linked"
     )
+    deploy_kwargs: dict[str, Any] = {
+        "input_dir": input_dirs,
+        "repo_dir": (repo_dir or Path.cwd()).expanduser().resolve(),
+        "remote": remote,
+        "branch": branch,
+        "commit_message": commit_message,
+        "cname": cname,
+        "pages_config_mode": pages_config,
+        "force": force,
+        "default_language_code": _fleet_default_language(manifest, None),
+    }
+    if normalized_item_export_scope != "linked":
+        deploy_kwargs["item_export_scope"] = normalized_item_export_scope
+    deploy_result = deploy_site(**deploy_kwargs)
     payload = {
         "status": "ok",
         "command": command,

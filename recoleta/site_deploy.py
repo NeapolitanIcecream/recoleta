@@ -549,6 +549,7 @@ def deploy_trend_static_site_to_github_pages(
     pages_config_mode: str = "auto",
     force: bool = True,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
 ) -> GitHubPagesDeployResult:
     normalized_mode = _normalize_pages_config_mode(pages_config_mode)
     resolved_repo_root = _resolve_git_repo_root(repo_dir.expanduser().resolve())
@@ -562,11 +563,19 @@ def deploy_trend_static_site_to_github_pages(
         ignore_cleanup_errors=True,
     ) as tmp_dir:
         site_dir = Path(tmp_dir).resolve() / "site"
+        normalized_item_export_scope = (
+            str(item_export_scope or "").strip().lower() or "linked"
+        )
+        export_kwargs: dict[str, Any] = {
+            "input_dir": input_dir,
+            "output_dir": site_dir,
+            "limit": limit,
+            "default_language_code": default_language_code,
+        }
+        if normalized_item_export_scope != "linked":
+            export_kwargs["item_export_scope"] = normalized_item_export_scope
         manifest_path = export_trend_static_site(
-            input_dir=input_dir,
-            output_dir=site_dir,
-            limit=limit,
-            default_language_code=default_language_code,
+            **export_kwargs,
         )
         _ = manifest_path
         manifest = _sanitize_public_manifests(site_dir=site_dir)

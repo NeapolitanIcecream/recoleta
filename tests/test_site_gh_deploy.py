@@ -409,6 +409,97 @@ def test_gh_deploy_prefers_push_url_when_remote_endpoints_diverge(
     assert (published / "trends" / f"{trend_note.stem}.html").exists()
 
 
+def test_gh_deploy_forwards_explicit_item_export_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: gh deploy must preserve the explicit full item export override."""
+    captured: dict[str, object] = {}
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(site_deploy, "_resolve_git_repo_root", lambda repo_root: repo_root)
+    monkeypatch.setattr(
+        site_deploy,
+        "_resolve_git_remote",
+        lambda *, repo_root, remote_name: SimpleNamespace(  # noqa: ARG005
+            name=remote_name,
+            url="https://example.com/recoleta.git",
+        ),
+    )
+
+    def _fake_export_trend_static_site(  # type: ignore[no-untyped-def]
+        *,
+        input_dir,
+        output_dir,
+        limit=None,
+        default_language_code=None,
+        item_export_scope="linked",
+    ):
+        captured.update(
+            {
+                "input_dir": input_dir,
+                "output_dir": output_dir,
+                "limit": limit,
+                "default_language_code": default_language_code,
+                "item_export_scope": item_export_scope,
+            }
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "index.html").write_text("site\n", encoding="utf-8")
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "trends_total": 1,
+                    "topics_total": 2,
+                    "items_total": 3,
+                    "item_export_scope": item_export_scope,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(
+        site_deploy,
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+    monkeypatch.setattr(
+        site_deploy,
+        "_sanitize_public_manifests",
+        lambda *, site_dir: {"trends_total": 1, "topics_total": 2},
+    )
+    monkeypatch.setattr(site_deploy, "_write_cname", lambda **_: None)
+    monkeypatch.setattr(site_deploy, "_ensure_no_symlinks", lambda *_: None)
+    monkeypatch.setattr(
+        site_deploy,
+        "_publish_site_snapshot",
+        lambda **_: ("deadbeef", False),
+    )
+    monkeypatch.setattr(
+        site_deploy,
+        "_configure_pages_source",
+        lambda **_: PagesSourceConfigResult(
+            status="skipped",
+            method=None,
+            detail="pages config disabled",
+            site_url=None,
+        ),
+    )
+
+    result = deploy_trend_static_site_to_github_pages(
+        input_dir=tmp_path / "notes" / "Trends",
+        repo_dir=repo_dir,
+        pages_config_mode="never",
+        item_export_scope="all",
+    )
+
+    assert result.skipped is False
+    assert captured["item_export_scope"] == "all"
+
+
 @dataclass(slots=True)
 class _FakeSettings:
     log_json: bool = False
@@ -793,3 +884,92 @@ def test_run_deploy_cli_emits_json_output(
     assert payload["remote"] == "origin"
     assert payload["commit_sha"] == "abcdef1234567890"
     assert payload["pages_source"]["site_url"] == "https://example.github.io/recoleta/"
+
+
+def test_run_deploy_cli_forwards_explicit_item_export_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: run deploy must forward the full item export override."""
+    runner = CliRunner()
+    calls: dict[str, object] = {}
+    fake_settings = _FakeSettings(
+        markdown_output_dir=tmp_path / "output",
+        recoleta_db_path=tmp_path / "recoleta.db",
+        workflows=SimpleNamespace(
+            deploy=SimpleNamespace(
+                translation="off",
+                translate_include=["items", "trends", "ideas"],
+                site_build=False,
+                on_translate_failure="partial_success",
+            )
+        ),
+    )
+
+    def _override(module_name: str, attr_name: str | None):
+        if (
+            module_name == "recoleta.site_deploy"
+            and attr_name == "deploy_trend_static_site_to_github_pages"
+        ):
+            def _fake_deploy(  # type: ignore[no-untyped-def]
+                *,
+                input_dir,
+                repo_dir,
+                remote,
+                branch,
+                limit=None,
+                commit_message=None,
+                cname=None,
+                pages_config_mode="auto",
+                force=True,
+                default_language_code=None,
+                item_export_scope="linked",
+            ):
+                _ = (
+                    input_dir,
+                    repo_dir,
+                    remote,
+                    branch,
+                    limit,
+                    commit_message,
+                    cname,
+                    pages_config_mode,
+                    force,
+                    default_language_code,
+                )
+                calls["item_export_scope"] = item_export_scope
+                return GitHubPagesDeployResult(
+                    branch="gh-pages",
+                    remote="origin",
+                    remote_url="git@github.com:example/recoleta.git",
+                    repo_root=tmp_path,
+                    commit_sha="deadbeef",
+                    skipped=False,
+                    trends_total=1,
+                    topics_total=2,
+                    files_total=5,
+                    pages_source=PagesSourceConfigResult(
+                        status="configured",
+                        method="gh",
+                        detail="configured via gh",
+                        site_url="https://example.github.io/recoleta/",
+                    ),
+                )
+
+            return _fake_deploy
+        return None
+
+    _install_deploy_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=_FakeRepo(),
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "deploy", "--item-export-scope", "all"],
+    )
+
+    assert result.exit_code == 0
+    assert calls["item_export_scope"] == "all"

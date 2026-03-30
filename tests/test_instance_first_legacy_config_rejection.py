@@ -378,6 +378,39 @@ def test_fleet_site_build_forwards_explicit_item_export_scope_pr_23(
     assert captured["item_export_scope"] == "all"
 
 
+def test_fleet_run_deploy_cli_forwards_explicit_item_export_scope_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    manifest_path, _config_path = _write_fleet_manifest(tmp_path=tmp_path)
+    runner = CliRunner()
+    captured: dict[str, object] = {}
+    app_module = recoleta.cli._import_symbol("recoleta.cli.app")
+
+    monkeypatch.setattr(
+        app_module,
+        "execute_fleet_deploy_workflow",
+        lambda **kwargs: captured.update(kwargs),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "fleet",
+            "run",
+            "deploy",
+            "--manifest",
+            str(manifest_path),
+            "--item-export-scope",
+            "all",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["item_export_scope"] == "all"
+
+
 @pytest.mark.parametrize(
     ("include", "skip", "match"),
     [
@@ -486,6 +519,65 @@ def test_fleet_deploy_stops_when_child_translation_aborts_pr_23(
 
     assert captured_translate_calls
     assert captured_translate_calls[0]["raise_on_abort"] is True
+
+
+def test_fleet_deploy_forwards_explicit_item_export_scope_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    manifest_path, _config_path = _write_fleet_manifest(tmp_path=tmp_path)
+    execute_fleet_deploy_workflow = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="execute_fleet_deploy_workflow",
+    )
+    fleet_cli_module = recoleta.cli._import_symbol("recoleta.cli.fleet")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        fleet_cli_module,
+        "run_translate_run_command",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        fleet_cli_module,
+        "run_materialize_outputs_command",
+        lambda **_: None,
+    )
+
+    def _fake_deploy(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            remote="origin",
+            branch="gh-pages",
+            remote_url="https://example.com/repo.git",
+            repo_root=tmp_path,
+            commit_sha="deadbeef",
+            skipped=False,
+            pages_source=SimpleNamespace(
+                site_url="https://example.com/site",
+                status="published",
+            ),
+        )
+
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.site_deploy"),
+        "deploy_trend_static_site_to_github_pages",
+        _fake_deploy,
+    )
+
+    payload = execute_fleet_deploy_workflow(
+        manifest_path=manifest_path,
+        command="fleet run deploy",
+        include=None,
+        skip=None,
+        repo_dir=tmp_path / "site-repo",
+        item_export_scope="all",
+        json_output=True,
+    )
+
+    assert payload["status"] == "ok"
+    assert captured["item_export_scope"] == "all"
 
 
 def test_fleet_site_serve_builds_then_serves_explicit_output_dir_pr_23(
