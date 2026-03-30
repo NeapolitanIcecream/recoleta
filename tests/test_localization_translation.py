@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 from typer.testing import CliRunner
 
 import recoleta.cli as recoleta_cli
+import recoleta.cli.translate as translate_cli
 from recoleta import translation as translation_module
 from recoleta.cli.app import app
 from recoleta.config import LocalizationConfig, Settings
@@ -2181,6 +2182,104 @@ def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window
         ("trend_ideas", int(older_idea_doc.id)),
         ("trend_ideas", latest_idea_doc_id),
     }
+
+
+def test_translate_run_command_raises_when_abort_requested_pr_23(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: callers must be able to fail closed on translation aborts."""
+
+    class _FakeRepo:
+        def __init__(self) -> None:
+            self.finished: list[tuple[str, bool]] = []
+
+        def init_schema(self) -> None:
+            return None
+
+        def finish_run(self, run_id: str, *, success: bool) -> None:
+            self.finished.append((run_id, success))
+
+        def list_metrics(self, *, run_id: str) -> list[object]:
+            _ = run_id
+            return []
+
+    class _FakeLog:
+        def __init__(self) -> None:
+            self.warning_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        def warning(self, *args: object, **kwargs: object) -> None:
+            self.warning_calls.append((args, kwargs))
+
+        def exception(self, *args: object, **kwargs: object) -> None:
+            self.warning_calls.append((args, kwargs))
+
+    class _FakeHeartbeat:
+        def raise_if_failed(self) -> None:
+            return None
+
+    class _FakeConsole:
+        def __init__(self) -> None:
+            self.lines: list[str] = []
+
+        def print(self, *values: object, **kwargs: object) -> None:
+            _ = kwargs
+            self.lines.append(" ".join(str(value) for value in values))
+
+    fake_repo = _FakeRepo()
+    fake_log = _FakeLog()
+    fake_console = _FakeConsole()
+    fake_settings = SimpleNamespace(log_json=False)
+
+    monkeypatch.setattr(
+        translate_cli,
+        "_load_settings_for_translate",
+        lambda **_: (Path("/tmp/recoleta.db"), fake_settings, fake_repo, fake_console),
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_begin_managed_run_for_settings",
+        lambda **_: ("run-translate", "owner", fake_log, _FakeHeartbeat()),
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_cleanup_managed_run",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_print_billing_report",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_update_run_context",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "run_translation",
+        lambda **_: translation_module.TranslationRunResult(
+            aborted=True,
+            abort_reason="5 consecutive provider failures",
+            failed_total=5,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="provider failures"):
+        translate_cli.run_translate_run_command(
+            db_path=None,
+            config_path=None,
+            scope="default",
+            granularity=None,
+            include="items",
+            limit=None,
+            force=False,
+            context_assist="direct",
+            json_output=False,
+            raise_on_abort=True,
+        )
+
+    assert fake_repo.finished == [("run-translate", False)]
 
 
 def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outputs(

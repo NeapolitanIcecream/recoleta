@@ -47,6 +47,7 @@ def run_translate_run_command(
     context_assist: str,
     json_output: bool = False,
     command_name: str = "translate run",
+    raise_on_abort: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
@@ -168,6 +169,8 @@ def run_translate_run_command(
             f"reason={result.abort_reason}"
         )
         cli._print_billing_report(console=console, repository=repository, run_id=run_id)
+        if raise_on_abort:
+            raise RuntimeError(str(result.abort_reason or "translation aborted"))
         return
 
     console.print(

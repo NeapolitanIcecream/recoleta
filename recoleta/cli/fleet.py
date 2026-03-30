@@ -7,7 +7,12 @@ from typing import Any
 import recoleta.cli as cli
 from recoleta.cli.materialize import run_materialize_outputs_command
 from recoleta.cli.translate import run_translate_run_command
-from recoleta.cli.workflows import execute_granularity_workflow
+from recoleta.cli.workflows import (
+    STEP_TRANSLATE,
+    _parse_step_list,
+    _validate_step_overrides,
+    execute_granularity_workflow,
+)
 from recoleta.fleet import (
     child_default_language_code,
     child_site_input_dir,
@@ -156,29 +161,26 @@ def execute_fleet_deploy_workflow(
         "recoleta.site_deploy",
         attr_name="deploy_trend_static_site_to_github_pages",
     )
+    include_steps = _parse_step_list(include)
+    skip_steps = _parse_step_list(skip)
+    _validate_step_overrides(
+        workflow_name="deploy",
+        include_steps=include_steps,
+        skip_steps=skip_steps,
+    )
     manifest = load_fleet_manifest(manifest_path)
 
-    normalized_include = {
-        token.strip().lower()
-        for token in str(include or "").split(",")
-        if token.strip()
-    }
-    normalized_skip = {
-        token.strip().lower()
-        for token in str(skip or "").split(",")
-        if token.strip()
-    }
-    if normalized_skip & {"site-build", "site-deploy"}:
-        raise ValueError("fleet deploy does not allow skipping aggregate site build/deploy")
+    normalized_include = set(include_steps)
+    normalized_skip = set(skip_steps)
 
     child_results: list[dict[str, Any]] = []
     for instance in manifest.instances:
         settings = load_child_settings(instance.config_path)
         translation_requested = (
             (
-                not normalized_skip.__contains__("translate")
+                STEP_TRANSLATE not in normalized_skip
                 and (
-                    "translate" in normalized_include
+                    STEP_TRANSLATE in normalized_include
                     or (
                         str(settings.workflows.deploy.translation or "").strip().lower() == "auto"
                         and bool(settings.localization_target_codes())
@@ -198,6 +200,7 @@ def execute_fleet_deploy_workflow(
                 context_assist="direct",
                 json_output=False,
                 command_name=f"{command} translate --instance {instance.name}",
+                raise_on_abort=True,
             )
         run_materialize_outputs_command(
             db_path=None,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -54,6 +55,32 @@ def _instance_config(*, db_path: Path, output_dir: Path) -> dict[str, object]:
         "publish_targets": ["markdown"],
         "markdown_output_dir": str(output_dir),
     }
+
+
+def _write_fleet_manifest(
+    *,
+    tmp_path: Path,
+    instance_name: str = "alpha",
+) -> tuple[Path, Path]:
+    output_dir = tmp_path / f"{instance_name}-outputs"
+    output_dir.mkdir(parents=True)
+    config_path = _write_config(
+        tmp_path / f"{instance_name}.yaml",
+        _instance_config(
+            db_path=tmp_path / f"{instance_name}.db",
+            output_dir=output_dir,
+        ),
+    )
+    manifest_path = _write_config(
+        tmp_path / "fleet.yaml",
+        {
+            "schema_version": 1,
+            "instances": [
+                {"name": instance_name, "config_path": str(config_path)},
+            ],
+        },
+    )
+    return manifest_path, config_path
 
 
 @pytest.mark.parametrize(
@@ -276,3 +303,113 @@ def test_fleet_site_build_reads_child_output_roots_to_include_localized_pages_pr
         child_one_output,
         child_two_output,
     ]
+
+
+@pytest.mark.parametrize(
+    ("include", "skip", "match"),
+    [
+        ("publish", None, "only supports --include/--skip"),
+        (None, "tranlsate", "unknown step id"),
+    ],
+)
+def test_fleet_deploy_validates_step_ids_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    include: str | None,
+    skip: str | None,
+    match: str,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    manifest_path, _config_path = _write_fleet_manifest(tmp_path=tmp_path)
+    execute_fleet_deploy_workflow = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="execute_fleet_deploy_workflow",
+    )
+
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.cli.fleet"),
+        "run_translate_run_command",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.cli.fleet"),
+        "run_materialize_outputs_command",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.site_deploy"),
+        "deploy_trend_static_site_to_github_pages",
+        lambda **_: SimpleNamespace(
+            remote="origin",
+            branch="gh-pages",
+            remote_url="https://example.com/repo.git",
+            repo_root=tmp_path,
+            commit_sha="deadbeef",
+            skipped=False,
+            pages_source=SimpleNamespace(
+                site_url="https://example.com/site",
+                status="published",
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match=match):
+        execute_fleet_deploy_workflow(
+            manifest_path=manifest_path,
+            command="fleet run deploy",
+            include=include,
+            skip=skip,
+            repo_dir=tmp_path / "site-repo",
+            json_output=False,
+        )
+
+
+def test_fleet_deploy_stops_when_child_translation_aborts_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    manifest_path, _config_path = _write_fleet_manifest(tmp_path=tmp_path)
+    execute_fleet_deploy_workflow = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="execute_fleet_deploy_workflow",
+    )
+    fleet_cli_module = recoleta.cli._import_symbol("recoleta.cli.fleet")
+    captured_translate_calls: list[dict[str, object]] = []
+
+    def _aborting_translate(**kwargs: object) -> None:
+        captured_translate_calls.append(dict(kwargs))
+        raise RuntimeError("translation aborted")
+
+    monkeypatch.setattr(
+        fleet_cli_module,
+        "run_translate_run_command",
+        _aborting_translate,
+    )
+    monkeypatch.setattr(
+        fleet_cli_module,
+        "run_materialize_outputs_command",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("materialize must not run after translation abort")
+        ),
+    )
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.site_deploy"),
+        "deploy_trend_static_site_to_github_pages",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("deploy must not run after translation abort")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="translation aborted"):
+        execute_fleet_deploy_workflow(
+            manifest_path=manifest_path,
+            command="fleet run deploy",
+            include="translate",
+            skip=None,
+            repo_dir=tmp_path / "site-repo",
+            json_output=False,
+        )
+
+    assert captured_translate_calls
+    assert captured_translate_calls[0]["raise_on_abort"] is True
