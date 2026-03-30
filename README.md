@@ -12,9 +12,9 @@ RSS from one local workspace. It keeps state in SQLite, writes Markdown first,
 and can turn the same corpus into trend briefs, idea briefs, PDFs, and a static
 site.
 
-**Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Preset gallery](./presets/README.md) · [CLI v2 migration](./docs/guides/cli-v2-migration.md)
+**Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Fleet development runbook](./docs/guides/fleet-development-runbook.md) · [Preset gallery](./presets/README.md) · [CLI v2 migration](./docs/guides/cli-v2-migration.md)
 
-- Run one topic list or several topic streams from the same workspace.
+- Run one instance or a fleet of isolated instances from one manifest.
 - Keep SQLite as the source of truth and regenerate Markdown, site pages, and
   delivery outputs from stored state.
 - Start from a preset if you want a smaller first run.
@@ -39,9 +39,9 @@ Recoleta is local-first by design. The database is the durable record of what
 was ingested, analyzed, and published. Markdown notes, PDFs, Telegram messages,
 and site pages are rebuildable outputs on top of that state.
 
-One workspace can run a single topic list or several topic streams. That lets
-you share ingest and enrich state across related domains while keeping item
-publishing, trend briefs, and follow-on idea briefs separate.
+One workspace can run a single instance. A migrated deployment can also run a
+fleet manifest that points at several isolated child instances. Each child keeps
+its own config, DB, outputs, and delivery state.
 
 <a id="recoleta-features"></a>
 ## ✨ Features
@@ -50,7 +50,7 @@ publishing, trend briefs, and follow-on idea briefs separate.
   custom RSS feeds.
 - Reuse saved pull state so reruns stay incremental and idempotent.
 - Validate JSON-only LLM analysis with Pydantic.
-- Split a workspace into topic streams with separate outputs and delivery sinks.
+- Run several isolated child instances from one fleet manifest.
 - Pre-rank items semantically before the LLM when backlog pressure matters.
 - Publish to local Markdown by default, with optional Obsidian and Telegram
   delivery.
@@ -249,17 +249,6 @@ topics:
   - agents
   - ml-systems
 
-# Optional: define multiple topic streams instead of one global topic list.
-# topic_streams:
-#   - name: agents_lab
-#     topics: ["agents", "tooling"]
-#     publish_targets: ["markdown", "telegram"]
-#     telegram_bot_token_env: "AGENTS_LAB_TELEGRAM_BOT_TOKEN"
-#     telegram_chat_id_env: "AGENTS_LAB_TELEGRAM_CHAT_ID"
-#   - name: bio_watch
-#     topics: ["biology", "therapeutics"]
-#     publish_targets: ["markdown"]
-
 sources:
   hn:
     enabled: true
@@ -360,11 +349,8 @@ Where outputs go:
 
 - Local Markdown: `MARKDOWN_OUTPUT_DIR/latest.md` and
   `MARKDOWN_OUTPUT_DIR/Inbox/`
-- Topic streams: `MARKDOWN_OUTPUT_DIR/Streams/<stream>/`
-- Trend briefs: `MARKDOWN_OUTPUT_DIR/Trends/` or
-  `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Trends/`
-- Idea briefs: `MARKDOWN_OUTPUT_DIR/Ideas/` or
-  `MARKDOWN_OUTPUT_DIR/Streams/<stream>/Ideas/`
+- Trend briefs: `MARKDOWN_OUTPUT_DIR/Trends/`
+- Idea briefs: `MARKDOWN_OUTPUT_DIR/Ideas/`
 - Localized Markdown: `MARKDOWN_OUTPUT_DIR/Localized/<language>/Inbox/`,
   `Trends/`, and `Ideas/` when `localization` is configured
 - Static site: `MARKDOWN_OUTPUT_DIR/site/`; multilingual builds emit
@@ -372,6 +358,9 @@ Where outputs go:
   last language choice
 - Obsidian notes: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
 - Telegram: sent to `TELEGRAM_CHAT_ID`
+
+For a migrated fleet, each child instance gets its own `MARKDOWN_OUTPUT_DIR`.
+The fleet manifest sits above those child output trees.
 - SQLite state: `RECOLETA_DB_PATH`
 
 <a id="recoleta-presets"></a>
@@ -398,6 +387,11 @@ full example config first.
 # run the current UTC day end to end
 uv run recoleta run now
 
+# run a migrated multi-instance deployment from one fleet manifest
+uv run recoleta fleet run day --manifest ./fleet/fleet.yaml
+uv run recoleta fleet run week --manifest ./fleet/fleet.yaml
+uv run recoleta fleet run deploy --manifest ./fleet/fleet.yaml
+
 # replay one UTC day, week, or month
 uv run recoleta run day --date 2026-03-09
 uv run recoleta run week --date 2026-03-02
@@ -422,8 +416,7 @@ uv run recoleta run deploy --branch gh-pages --pages-config auto
 uv run recoleta inspect health --healthcheck --max-success-age-minutes 180
 uv run recoleta inspect stats --json
 uv run recoleta inspect llm --json
-uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --stream agents_lab --json
-uv run recoleta repair streams --date 2026-03-15 --streams agents_lab --json
+uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --json
 uv run recoleta repair outputs --site --pdf --json
 uv run recoleta inspect runs show --run-id <run-id> --json
 uv run recoleta inspect runs list --limit 5 --json
@@ -441,6 +434,8 @@ commands, see [`docs/guides/usage-recipes.md`](./docs/guides/usage-recipes.md).
 
 - [`docs/guides/first-output-tour.md`](docs/guides/first-output-tour.md) -
   check what a good first run should create
+- [`docs/guides/fleet-development-runbook.md`](docs/guides/fleet-development-runbook.md) -
+  run a migrated fleet by hand and keep the old shared DB archived
 - [`docs/guides/usage-recipes.md`](docs/guides/usage-recipes.md) - common CLI
   workflows, site tasks, and operator recipes
 - [`docs/guides/cli-v2-migration.md`](docs/guides/cli-v2-migration.md) - map

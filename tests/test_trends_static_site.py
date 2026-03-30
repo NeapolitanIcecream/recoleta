@@ -665,7 +665,7 @@ def test_stage_trend_site_source_preserves_localized_roots_for_round_trip(
     assert (site_dir / "zh-cn" / "trends" / f"{trend_note.stem}.html").exists()
 
 
-def test_export_trend_static_site_discovers_stream_localized_roots(
+def test_export_trend_static_site_discovers_legacy_grouped_localized_roots(
     tmp_path: Path,
 ) -> None:
     notes_root = tmp_path / "notes"
@@ -744,13 +744,14 @@ def test_export_trend_static_site_discovers_stream_localized_roots(
     assert (site_dir / "index.html").exists()
     assert (site_dir / "en" / "index.html").exists()
     assert (site_dir / "zh-cn" / "index.html").exists()
-    assert (site_dir / "en" / "streams" / "embodied-ai.html").exists()
-    assert (site_dir / "zh-cn" / "streams" / "software-intelligence.html").exists()
+    assert not (site_dir / "en" / "streams" / "embodied-ai.html").exists()
+    assert not (site_dir / "zh-cn" / "streams" / "software-intelligence.html").exists()
     assert (site_dir / "en" / "trends" / f"{embodied_note.stem}.html").exists()
     assert (site_dir / "zh-cn" / "trends" / f"{software_note.stem}.html").exists()
     root_index = (site_dir / "index.html").read_text(encoding="utf-8")
     assert "localStorage" in root_index
     assert "en/index.html" in root_index
+    assert "Streams" not in root_index
     en_embodied_detail = (
         site_dir / "en" / "trends" / f"{embodied_note.stem}.html"
     ).read_text(encoding="utf-8")
@@ -1915,7 +1916,7 @@ def test_export_trend_static_site_keeps_fixed_evolution_ui_terms_in_english_for_
     assert "历史窗口" not in detail_html
 
 
-def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stream_pages(
+def test_export_trend_static_site_aggregates_legacy_grouped_inputs_without_writing_stream_pages(
     tmp_path: Path,
 ) -> None:
     notes_root = tmp_path / "notes"
@@ -1958,35 +1959,29 @@ def test_export_trend_static_site_aggregates_topic_stream_inputs_and_writes_stre
     )
 
     assert manifest_path == site_dir / "manifest.json"
-    assert (site_dir / "streams" / "index.html").exists()
-    assert (site_dir / "streams" / "agents-lab.html").exists()
-    assert (site_dir / "streams" / "bio-watch.html").exists()
+    assert not (site_dir / "streams" / "index.html").exists()
+    assert not (site_dir / "streams" / "agents-lab.html").exists()
+    assert not (site_dir / "streams" / "bio-watch.html").exists()
     assert (site_dir / "trends" / f"{agents_note.stem}.html").exists()
     assert (site_dir / "trends" / f"{bio_note.stem}.html").exists()
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["trends_total"] == 2
-    assert manifest["streams_total"] == 2
     assert len(manifest["input_dirs"]) == 2
+    assert "streams_total" not in manifest
+    assert "streams_index" not in manifest["files"]
+    assert "stream_pages" not in manifest["files"]
 
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
-    assert "Agents Lab" in index_html
-    assert "Bio Watch" in index_html
-
-    stream_html = (site_dir / "streams" / "agents-lab.html").read_text(encoding="utf-8")
-    assert "Agent Systems" in stream_html
-    assert "Agents Lab" in stream_html
-    assert ">Stream summary<" in stream_html
-    assert ">Trend briefs<" in stream_html
-    assert ">Idea briefs<" in stream_html
+    assert "Topic streams" not in index_html
 
     detail_html = (site_dir / "trends" / f"{agents_note.stem}.html").read_text(
         encoding="utf-8"
     )
-    assert "Agents Lab" in detail_html
+    assert "Agents Lab" not in detail_html
 
 
-def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_per_stream(
+def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_across_legacy_grouped_inputs(
     tmp_path: Path,
 ) -> None:
     notes_root = tmp_path / "notes"
@@ -2074,10 +2069,6 @@ def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_per_stream(
     assert "Research ops lane" in research_html
     assert "Agents lane" not in research_html
 
-    stream_html = (site_dir / "streams" / "agents-lab.html").read_text(encoding="utf-8")
-    assert "../ideas/agents-lab--day--2026-03-09--ideas.html" in stream_html
-    assert "../ideas/research-ops--day--2026-03-09--ideas.html" not in stream_html
-
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert "ideas/agents-lab--day--2026-03-09--ideas.html" in manifest["files"]["idea_pages"]
     assert (
@@ -2144,7 +2135,7 @@ def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["trends_total"] == 2
     assert manifest["pdf_total"] == 1
-    assert manifest["streams_total"] == 2
+    assert "streams_total" not in manifest
 
 
 def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_streams_exist(

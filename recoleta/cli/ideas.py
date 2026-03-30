@@ -27,23 +27,6 @@ def _print_ideas_result(
     console: Any,
     result: Any,
 ) -> None:
-    if len(getattr(result, "stream_results", []) or []) > 1:
-        console.print(
-            "[green]ideas completed[/green] "
-            f"streams={len(result.stream_results)} granularity={result.granularity} "
-            f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
-        )
-        for stream_result in result.stream_results:
-            note_suffix = (
-                f" note_path={Path(stream_result.note_path).as_posix()}"
-                if getattr(stream_result, "note_path", None)
-                else ""
-            )
-            console.print(
-                f"[cyan]{stream_result.stream}[/cyan] "
-                f"status={stream_result.status} pass_output_id={stream_result.pass_output_id}{note_suffix}"
-            )
-        return
     note_suffix = f" note_path={Path(result.note_path).as_posix()}" if result.note_path else ""
     console.print(
         "[green]ideas completed[/green] "
@@ -54,7 +37,6 @@ def _print_ideas_result(
 
 
 def _serialize_ideas_result(result: Any) -> dict[str, Any]:
-    stream_results = list(getattr(result, "stream_results", []) or [])
     payload: dict[str, Any] = {
         "pass_output_id": (
             int(getattr(result, "pass_output_id", 0) or 0)
@@ -72,13 +54,7 @@ def _serialize_ideas_result(result: Any) -> dict[str, Any]:
         "title": str(getattr(result, "title", "") or ""),
         "status": str(getattr(result, "status", "") or ""),
         "note_path": cli._path_or_none(getattr(result, "note_path", None)),
-        "stream": str(getattr(result, "stream", "") or "") or None,
     }
-    if stream_results:
-        payload["stream_results"] = [
-            _serialize_ideas_result(child) for child in stream_results
-        ]
-        payload["stream_results_total"] = len(stream_results)
     return payload
 
 
@@ -108,11 +84,7 @@ def run_ideas_command(
         repository,
         run_id=run_id,
         command="ideas",
-        scope=(
-            str(getattr(result, "stream", "") or "").strip() or "default"
-            if not list(getattr(result, "stream_results", []) or [])
-            else None
-        ),
+        scope=str(getattr(result, "stream", "") or "").strip() or "default",
         granularity=str(getattr(result, "granularity", "") or "").strip() or None,
         period_start=getattr(result, "period_start", None),
         period_end=getattr(result, "period_end", None),

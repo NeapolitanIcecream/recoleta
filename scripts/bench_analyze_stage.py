@@ -59,7 +59,6 @@ class _BenchAnalyzer:
 def _configure_env(
     *,
     root: Path,
-    mode: str,
     max_concurrency: int,
     write_batch_size: int,
 ) -> None:
@@ -72,17 +71,7 @@ def _configure_env(
     os.environ["TITLE_DEDUP_THRESHOLD"] = "0"
     os.environ["ANALYZE_MAX_CONCURRENCY"] = str(max_concurrency)
     os.environ["ANALYZE_WRITE_BATCH_SIZE"] = str(write_batch_size)
-    if mode == "topic-streams":
-        os.environ.pop("TOPICS", None)
-        os.environ["TOPIC_STREAMS"] = json.dumps(
-            [
-                {"name": "agents_lab", "topics": ["agents"]},
-                {"name": "bio_watch", "topics": ["biology"]},
-            ]
-        )
-    else:
-        os.environ["TOPICS"] = json.dumps(["agents", "ml-systems"])
-        os.environ.pop("TOPIC_STREAMS", None)
+    os.environ["TOPICS"] = json.dumps(["agents", "ml-systems"])
 
 
 def _seed_items(repository: Repository, *, items: int) -> None:
@@ -117,7 +106,6 @@ def _seed_items(repository: Repository, *, items: int) -> None:
 
 def _run_once(
     *,
-    mode: str,
     items: int,
     sleep_ms: int,
     max_concurrency: int,
@@ -128,7 +116,6 @@ def _run_once(
         root = Path(tmpdir)
         _configure_env(
             root=root,
-            mode=mode,
             max_concurrency=max_concurrency,
             write_batch_size=write_batch_size,
         )
@@ -188,11 +175,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run a controlled analyze-stage benchmark and print JSON."
     )
-    parser.add_argument(
-        "--mode",
-        choices=("default", "topic-streams"),
-        default="default",
-    )
     parser.add_argument("--items", type=int, default=8)
     parser.add_argument("--sleep-ms", type=int, default=0)
     parser.add_argument("--max-concurrency", type=int, default=1)
@@ -203,7 +185,6 @@ def main() -> int:
 
     runs: list[dict[str, Any]] = [
         _run_once(
-            mode=args.mode,
             items=args.items,
             sleep_ms=args.sleep_ms,
             max_concurrency=args.max_concurrency,
@@ -237,7 +218,6 @@ def main() -> int:
 
     output = {
         "config": {
-            "mode": args.mode,
             "items": args.items,
             "sleep_ms": args.sleep_ms,
             "max_concurrency": args.max_concurrency,

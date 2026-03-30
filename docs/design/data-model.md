@@ -71,7 +71,9 @@ LLM outputs (validated structured payload).
 
 - `id` (PK, integer)
 - `item_id` (FK -> items.id)
-- `scope` (text): topic stream / publish scope (`default` in single-stream mode)
+- `scope` (text): historical topic-stream / publish scope. In the current
+  instance-first runtime this is effectively `default`, and the remaining
+  references exist for compatibility and historical context.
 - `model` (text): e.g. `openai/gpt-5.4`
 - `provider` (text): LiteLLM provider label
 - `summary` (text)
@@ -277,7 +279,7 @@ Recommended folders:
 - `Recoleta/Trends/` (weekly/monthly trend notes)
 - `Recoleta/Artifacts/` (optional links to raw files)
 
-With `topic_streams`, the default layout becomes:
+Legacy shared-stream layout:
 
 - `Recoleta/Streams/<stream>/Inbox/`
 - `Recoleta/Streams/<stream>/Trends/`
@@ -327,7 +329,7 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
 - `site/` (optional static site export derived from `Trends/`)
 
-With `topic_streams`, the default layout becomes:
+Legacy shared-stream layout:
 
 - `Streams/<stream>/latest.md`
 - `Streams/<stream>/Inbox/`
@@ -337,5 +339,6 @@ Trend markdown notes are the canonical source for the richer trend surfaces:
 
 - Telegram trend PDFs render from `Trends/*.md`
 - the static site exporter renders from a trend markdown directory
-- a repository can mirror selected trend notes into `site-content/` while preserving `Streams/<stream>/Trends/` when topic streams are enabled
+- legacy shared-stream deployments could mirror selected trend notes into
+  `site-content/` while preserving `Streams/<stream>/Trends/`
 - when localized markdown trees exist, the site exporter also aggregates `Localized/<language>/...` and emits one site subtree per language

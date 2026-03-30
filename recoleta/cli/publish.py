@@ -36,7 +36,7 @@ def run_publish_command(
     cli._update_run_context(
         repository,
         run_id=run_id,
-        scope=None if cli._has_explicit_topic_streams(settings) else "default",
+        scope="default",
         period_start=period_start,
         period_end=period_end,
     )

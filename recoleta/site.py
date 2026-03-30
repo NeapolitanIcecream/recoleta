@@ -658,34 +658,6 @@ def _render_topic_link_pills(
         else "<span class='meta-pill subdued'>No tracked topics</span>"
     )
 
-
-def _render_stream_link_pill(
-    *,
-    stream: str | None,
-    from_page: Path,
-    stream_pages: dict[str, Path],
-) -> str:
-    cleaned = _normalize_site_stream(stream)
-    if not cleaned:
-        return ""
-    display_stream = _display_site_stream(cleaned) or cleaned
-    slug = _stream_slug(cleaned)
-    page_path = stream_pages.get(slug)
-    if page_path is None:
-        return (
-            "<span class='meta-pill stream-pill'>"
-            f"{html.escape(display_stream)}"
-            "</span>"
-        )
-    href = _site_href(from_page=from_page, to_page=page_path)
-    return (
-        "<a class='meta-pill stream-pill stream-pill-link' href='{}'>{}</a>".format(
-            href,
-            html.escape(display_stream),
-        )
-    )
-
-
 def _site_page_shell(
     *,
     title: str,
@@ -708,10 +680,6 @@ def _site_page_shell(
     ideas_href = _site_href(from_page=page_path, to_page=output_dir / "ideas" / "index.html")
     topics_href = _site_href(
         from_page=page_path, to_page=output_dir / "topics" / "index.html"
-    )
-    streams_href = _site_href(
-        from_page=page_path,
-        to_page=output_dir / "streams" / "index.html",
     )
 
     def nav_link(label: str, href: str, key: str) -> str:
@@ -755,7 +723,6 @@ def _site_page_shell(
         f"{nav_link('Trends', trends_href, 'trends')}"
         f"{nav_link('Ideas', ideas_href, 'ideas')}"
         f"{nav_link('Topics', topics_href, 'topics')}"
-        f"{nav_link('Streams', streams_href, 'streams')}"
         f"{nav_link('Archive', archive_href, 'archive')}"
         "</nav>"
         "<div class='nav-actions'>"
@@ -778,7 +745,6 @@ def _render_trend_card(
     document: TrendSiteDocument,
     from_page: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     trend_href = _site_href(from_page=from_page, to_page=document.page_path)
     pdf_href = (
@@ -794,16 +760,9 @@ def _render_trend_card(
         from_page=from_page,
         topic_pages=topic_pages,
     )
-    stream_link = _render_stream_link_pill(
-        stream=document.stream,
-        from_page=from_page,
-        stream_pages=stream_pages,
-    )
     meta_pills = [
         f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
     ]
-    if stream_link:
-        meta_pills.append(stream_link)
     actions = [
         f"<a class='action-link' href='{trend_href}'>Open brief</a>",
         f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>",
@@ -846,25 +805,6 @@ def _render_topic_card(
     return (
         "<article class='topic-card'>"
         f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(topic)}</a></h2>"
-        f"<div class='topic-card-meta'>{html.escape(_format_collection_meta(trend_count=trend_count, idea_count=idea_count, latest_token=latest_token))}</div>"
-        "</article>"
-    )
-
-
-def _render_stream_card(
-    *,
-    stream: str,
-    trend_count: int,
-    idea_count: int,
-    latest_token: str,
-    page_path: Path,
-    stream_page_path: Path,
-) -> str:
-    href = _site_href(from_page=page_path, to_page=stream_page_path)
-    display_stream = _display_site_stream(stream) or stream
-    return (
-        "<article class='topic-card'>"
-        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(display_stream)}</a></h2>"
         f"<div class='topic-card-meta'>{html.escape(_format_collection_meta(trend_count=trend_count, idea_count=idea_count, latest_token=latest_token))}</div>"
         "</article>"
     )
@@ -985,9 +925,7 @@ def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path)
         items = "".join(
             "<li class='archive-item'>"
             f"<a href='{_site_href(from_page=from_page, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
-            f"<span>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}"
-            + (f" · {html.escape(document.stream)}" if document.stream else "")
-            + "</span>"
+            f"<span>{html.escape(document.granularity.title())} · {html.escape(document.period_token)}</span>"
             "</li>"
             for document in month_documents
         )
@@ -1005,7 +943,6 @@ def _render_detail_page(
     document: TrendSiteDocument,
     output_dir: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
     previous_document: TrendSiteDocument | None,
     next_document: TrendSiteDocument | None,
 ) -> str:
@@ -1028,11 +965,6 @@ def _render_detail_page(
         topics=document.topics,
         from_page=document.page_path,
         topic_pages=topic_pages,
-    )
-    stream_link = _render_stream_link_pill(
-        stream=document.stream,
-        from_page=document.page_path,
-        stream_pages=stream_pages,
     )
     meta_items = "".join(
         "<div class='meta-panel'>"
@@ -1071,9 +1003,6 @@ def _render_detail_page(
             0, f"<a class='action-link' href='{pdf_href}'>Download PDF</a>"
         )
 
-    detail_stream_html = (
-        f"<div class='detail-stream-row'>{stream_link}</div>" if stream_link else ""
-    )
     hero_dek = document.excerpt or _trend_pdf_hero_dek(document.frontmatter)
     insight_html = ""
     if document.evolution_insight:
@@ -1103,7 +1032,6 @@ def _render_detail_page(
         f"<p class='detail-dek'>{html.escape(hero_dek)}</p>"
         f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
         f"{insight_html}"
-        f"{detail_stream_html}"
         f"<div class='topic-pill-row'>{topic_links}</div>"
         f"<div class='card-actions detail-actions'>{''.join(action_links)}</div>"
         "</div>"
@@ -1133,7 +1061,6 @@ def _render_item_page(
     document: ItemSiteDocument,
     output_dir: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     breadcrumb_home = _site_href(
         from_page=document.page_path, to_page=output_dir / "index.html"
@@ -1146,11 +1073,6 @@ def _render_item_page(
         topics=document.topics,
         from_page=document.page_path,
         topic_pages=topic_pages,
-    )
-    stream_link = _render_stream_link_pill(
-        stream=document.stream,
-        from_page=document.page_path,
-        stream_pages=stream_pages,
     )
     meta_rows: list[tuple[str, str]] = [
         ("Source", document.source or "Item"),
@@ -1191,9 +1113,6 @@ def _render_item_page(
                 ),
             ),
         )
-    detail_stream_html = (
-        f"<div class='detail-stream-row'>{stream_link}</div>" if stream_link else ""
-    )
     content_html = (
         "<nav class='breadcrumbs'>"
         f"<a href='{breadcrumb_home}'>Home</a>"
@@ -1205,7 +1124,6 @@ def _render_item_page(
         "<div class='hero-kicker'>Recoleta Item Note</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
         f"<p class='detail-dek'>{html.escape(document.excerpt or 'Curated item note with summary and source metadata.')}</p>"
-        f"{detail_stream_html}"
         f"<div class='topic-pill-row'>{topic_links}</div>"
         f"<div class='card-actions detail-actions'>{''.join(action_links)}</div>"
         "</div>"
@@ -1233,7 +1151,6 @@ def _render_idea_card(
     document: IdeaSiteDocument,
     from_page: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     idea_href = _site_href(from_page=from_page, to_page=document.page_path)
     markdown_href = _site_href(
@@ -1251,16 +1168,9 @@ def _render_idea_card(
     topic_links_html = (
         f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
     )
-    stream_link = _render_stream_link_pill(
-        stream=document.stream,
-        from_page=from_page,
-        stream_pages=stream_pages,
-    )
     meta_pills = [
         f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
     ]
-    if stream_link:
-        meta_pills.append(stream_link)
     if document.status and document.status != "succeeded":
         meta_pills.append(
             f"<span class='meta-pill subdued'>{html.escape(document.status.title())}</span>"
@@ -1305,7 +1215,6 @@ def _render_idea_page(
     document: IdeaSiteDocument,
     output_dir: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     breadcrumb_home = _site_href(
         from_page=document.page_path, to_page=output_dir / "index.html"
@@ -1329,11 +1238,6 @@ def _render_idea_page(
     topic_links_html = (
         f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
     )
-    stream_link = _render_stream_link_pill(
-        stream=document.stream,
-        from_page=document.page_path,
-        stream_pages=stream_pages,
-    )
     meta_rows = [
         ("Window", document.period_token),
         ("Granularity", document.granularity.title()),
@@ -1348,9 +1252,6 @@ def _render_idea_page(
         "</div>"
         for label, value in meta_rows
     )
-    detail_stream_html = (
-        f"<div class='detail-stream-row'>{stream_link}</div>" if stream_link else ""
-    )
     content_html = (
         "<nav class='breadcrumbs'>"
         f"<a href='{breadcrumb_home}'>Home</a>"
@@ -1364,7 +1265,6 @@ def _render_idea_page(
         f"<div class='hero-kicker'>Idea brief · {html.escape(document.period_token)}</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
         f"<p class='detail-dek'>{html.escape(document.excerpt or 'Evidence-grounded opportunity brief derived from a trend window.')}</p>"
-        f"{detail_stream_html}"
         f"{topic_links_html}"
         "<div class='card-actions detail-actions'>"
         f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"
@@ -1394,7 +1294,6 @@ def _render_trends_index_page(
     documents: list[TrendSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     page_path = output_dir / "trends" / "index.html"
     cards = "".join(
@@ -1402,7 +1301,6 @@ def _render_trends_index_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         )
         for document in documents
     )
@@ -1432,7 +1330,6 @@ def _render_ideas_index_page(
     documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     page_path = output_dir / "ideas" / "index.html"
     cards = "".join(
@@ -1440,7 +1337,6 @@ def _render_ideas_index_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         )
         for document in documents
     )
@@ -1471,7 +1367,6 @@ def _render_home_page(
     idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     page_path = output_dir / "index.html"
     latest_cards = "".join(
@@ -1479,7 +1374,6 @@ def _render_home_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         )
         for document in documents[:4]
     )
@@ -1488,7 +1382,6 @@ def _render_home_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         )
         for document in idea_documents[:4]
     )
@@ -1540,48 +1433,6 @@ def _render_home_page(
         if slug in topic_pages
     )
 
-    stream_counter: Counter[str] = Counter()
-    stream_trend_counter: Counter[str] = Counter()
-    stream_idea_counter: Counter[str] = Counter()
-    latest_by_stream: dict[str, TrendSiteDocument | IdeaSiteDocument] = {}
-    for document in documents:
-        cleaned_stream = str(document.stream or "").strip()
-        if not cleaned_stream:
-            continue
-        slug = _stream_slug(cleaned_stream)
-        stream_counter[slug] += 1
-        stream_trend_counter[slug] += 1
-        _record_latest_document(
-            latest_by_slug=latest_by_stream,
-            slug=slug,
-            document=document,
-        )
-    for document in idea_documents:
-        cleaned_stream = str(document.stream or "").strip()
-        if not cleaned_stream:
-            continue
-        slug = _stream_slug(cleaned_stream)
-        stream_counter[slug] += 1
-        stream_idea_counter[slug] += 1
-        _record_latest_document(
-            latest_by_slug=latest_by_stream,
-            slug=slug,
-            document=document,
-        )
-
-    stream_cards = "".join(
-        _render_stream_card(
-            stream=latest_by_stream[slug].stream or slug,
-            trend_count=stream_trend_counter[slug],
-            idea_count=stream_idea_counter[slug],
-            latest_token=latest_by_stream[slug].period_token,
-            page_path=page_path,
-            stream_page_path=stream_pages[slug],
-        )
-        for slug, _count in stream_counter.most_common(12)
-        if slug in stream_pages
-    )
-
     archive_preview = "".join(
         "<li class='timeline-item'>"
         f"<a href='{_site_href(from_page=page_path, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
@@ -1592,16 +1443,6 @@ def _render_home_page(
 
     generated_span = _collection_window_span([*documents, *idea_documents])
 
-    stream_section_html = (
-        "<section class='home-section'>"
-        "<div class='section-heading-row'>"
-        "<h2 class='section-title'>Topic streams</h2>"
-        "</div>"
-        f"<div class='topic-card-grid'>{stream_cards}</div>"
-        "</section>"
-        if stream_cards
-        else ""
-    )
     content_html = (
         "<section class='home-hero-card'>"
         "<div class='home-hero-copy'>"
@@ -1628,7 +1469,6 @@ def _render_home_page(
         f"{_render_collection_section(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=latest_cards, empty_copy='No trend briefs available yet.', action_label='Browse trends', action_href=_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html'))}"
         f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=latest_idea_cards, empty_copy='No idea briefs available yet.', action_label='Browse ideas', action_href=_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html'))}"
         "</section>"
-        f"{stream_section_html}"
         "<section class='home-section split-layout'>"
         "<div>"
         "<h2 class='section-title'>Topic radar</h2>"
@@ -1730,80 +1570,6 @@ def _render_topics_index_page(
         content_html=content_html,
     )
 
-
-def _render_streams_index_page(
-    *,
-    documents: list[TrendSiteDocument],
-    idea_documents: list[IdeaSiteDocument],
-    output_dir: Path,
-    stream_pages: dict[str, Path],
-) -> str:
-    page_path = output_dir / "streams" / "index.html"
-    stream_counter: Counter[str] = Counter()
-    trend_counter: Counter[str] = Counter()
-    idea_counter: Counter[str] = Counter()
-    latest_by_stream: dict[str, TrendSiteDocument | IdeaSiteDocument] = {}
-
-    for document in documents:
-        cleaned_stream = str(document.stream or "").strip()
-        if not cleaned_stream:
-            continue
-        slug = _stream_slug(cleaned_stream)
-        stream_counter[slug] += 1
-        trend_counter[slug] += 1
-        _record_latest_document(
-            latest_by_slug=latest_by_stream,
-            slug=slug,
-            document=document,
-        )
-    for document in idea_documents:
-        cleaned_stream = str(document.stream or "").strip()
-        if not cleaned_stream:
-            continue
-        slug = _stream_slug(cleaned_stream)
-        stream_counter[slug] += 1
-        idea_counter[slug] += 1
-        _record_latest_document(
-            latest_by_slug=latest_by_stream,
-            slug=slug,
-            document=document,
-        )
-
-    cards = "".join(
-        _render_stream_card(
-            stream=latest_by_stream[slug].stream or slug,
-            trend_count=trend_counter[slug],
-            idea_count=idea_counter[slug],
-            latest_token=latest_by_stream[slug].period_token,
-            page_path=page_path,
-            stream_page_path=stream_pages[slug],
-        )
-        for slug, _count in stream_counter.most_common()
-        if slug in stream_pages
-    )
-
-    content_html = (
-        "<section class='home-section'>"
-        "<div class='section-heading-row'>"
-        "<h1 class='section-title page-section-title'>Topic streams</h1>"
-        f"<span class='meta-date'>{html.escape(_count_label(len(stream_pages), singular='stream'))}</span>"
-        "</div>"
-        f"<div class='topic-card-grid'>{cards or '<div class="empty-card">No topic streams available yet.</div>'}</div>"
-        "</section>"
-    )
-
-    return _site_page_shell(
-        title="Streams · Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading="Streams",
-        page_subtitle="",
-        body_class="page-streams",
-        active_nav="streams",
-        content_html=content_html,
-    )
-
-
 def _render_topic_page(
     *,
     topic: str,
@@ -1812,7 +1578,6 @@ def _render_topic_page(
     idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
 ) -> str:
     page_path = topic_pages[topic_slug]
     cards = "".join(
@@ -1820,7 +1585,6 @@ def _render_topic_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         )
         for document in documents
     )
@@ -1829,7 +1593,6 @@ def _render_topic_page(
             document=document,
             from_page=page_path,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         )
         for document in idea_documents
     )
@@ -1851,56 +1614,6 @@ def _render_topic_page(
         active_nav="topics",
         content_html=content_html,
     )
-
-
-def _render_stream_page(
-    *,
-    stream: str,
-    stream_slug: str,
-    documents: list[TrendSiteDocument],
-    idea_documents: list[IdeaSiteDocument],
-    output_dir: Path,
-    topic_pages: dict[str, Path],
-    stream_pages: dict[str, Path],
-) -> str:
-    page_path = stream_pages[stream_slug]
-    cards = "".join(
-        _render_trend_card(
-            document=document,
-            from_page=page_path,
-            topic_pages=topic_pages,
-            stream_pages=stream_pages,
-        )
-        for document in documents
-    )
-    idea_cards = "".join(
-        _render_idea_card(
-            document=document,
-            from_page=page_path,
-            topic_pages=topic_pages,
-            stream_pages=stream_pages,
-        )
-        for document in idea_documents
-    )
-    latest_token = _latest_collection_token([*documents, *idea_documents])
-    content_html = (
-        f"{_render_collection_summary_section(summary_label='Stream summary', title=stream, trend_count=len(documents), idea_count=len(idea_documents), latest_token=latest_token)}"
-        "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=cards, empty_copy='No trend briefs available yet.')}"
-        f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No idea briefs available yet.')}"
-        "</section>"
-    )
-    return _site_page_shell(
-        title=f"{stream} · Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading=stream,
-        page_subtitle="",
-        body_class="page-stream",
-        active_nav="streams",
-        content_html=content_html,
-    )
-
 
 def _render_archive_page(
     *, documents: list[TrendSiteDocument], output_dir: Path
@@ -2332,11 +2045,6 @@ iframe {
   word-break: break-word;
   white-space: normal;
 }
-.stream-pill {
-  border-color: rgba(21, 98, 76, 0.16);
-  background: rgba(21, 98, 76, 0.08);
-  color: #1e6a55;
-}
 .meta-pill.subdued {
   border-color: rgba(17, 41, 71, 0.08);
   background: rgba(255, 255, 255, 0.65);
@@ -2349,7 +2057,6 @@ iframe {
   margin-top: 16px;
 }
 .topic-pill-link:hover,
-.stream-pill-link:hover,
 .action-link:hover,
 .trend-card a:hover,
 .topic-card a:hover {
@@ -2359,7 +2066,6 @@ iframe {
 .nav-link:focus-visible,
 .action-link:focus-visible,
 .topic-pill-link:focus-visible,
-.stream-pill-link:focus-visible,
 .pager-card:focus-visible,
 .breadcrumbs a:focus-visible,
 .language-switcher-link:focus-visible {
@@ -4294,35 +4000,6 @@ def _export_trend_static_site_single_language(
         slug: resolved_output_dir / "topics" / f"{slug}.html"
         for slug in sorted(set(topic_documents.keys()) | set(idea_documents_by_topic.keys()))
     }
-    label_by_stream_slug: dict[str, str] = {}
-    stream_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)
-    for document in documents:
-        cleaned_stream = str(document.stream or "").strip()
-        if not cleaned_stream:
-            continue
-        slug = _stream_slug(cleaned_stream)
-        label_by_stream_slug.setdefault(
-            slug,
-            _display_site_stream(cleaned_stream) or cleaned_stream,
-        )
-        stream_documents[slug].append(document)
-
-    stream_pages = {
-        slug: resolved_output_dir / "streams" / f"{slug}.html"
-        for slug in sorted(stream_documents.keys())
-    }
-    idea_documents_by_stream: dict[str, list[IdeaSiteDocument]] = defaultdict(list)
-    for document in idea_documents:
-        cleaned_stream = str(document.stream or "").strip()
-        if not cleaned_stream:
-            continue
-        slug = _stream_slug(cleaned_stream)
-        label_by_stream_slug.setdefault(
-            slug,
-            _display_site_stream(cleaned_stream) or cleaned_stream,
-        )
-        idea_documents_by_stream[slug].append(document)
-        stream_pages.setdefault(slug, resolved_output_dir / "streams" / f"{slug}.html")
 
     (resolved_output_dir / "assets" / "site.css").write_text(
         _SITE_CSS.strip() + "\n",
@@ -4336,7 +4013,6 @@ def _export_trend_static_site_single_language(
             idea_documents=idea_documents,
             output_dir=resolved_output_dir,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         ),
         encoding="utf-8",
     )
@@ -4345,7 +4021,6 @@ def _export_trend_static_site_single_language(
             documents=documents,
             output_dir=resolved_output_dir,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         ),
         encoding="utf-8",
     )
@@ -4365,21 +4040,11 @@ def _export_trend_static_site_single_language(
         ),
         encoding="utf-8",
     )
-    (resolved_output_dir / "streams" / "index.html").write_text(
-        _render_streams_index_page(
-            documents=documents,
-            idea_documents=idea_documents,
-            output_dir=resolved_output_dir,
-            stream_pages=stream_pages,
-        ),
-        encoding="utf-8",
-    )
     (resolved_output_dir / "ideas" / "index.html").write_text(
         _render_ideas_index_page(
             documents=idea_documents,
             output_dir=resolved_output_dir,
             topic_pages=topic_pages,
-            stream_pages=stream_pages,
         ),
         encoding="utf-8",
     )
@@ -4392,7 +4057,6 @@ def _export_trend_static_site_single_language(
                 document=document,
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
-                stream_pages=stream_pages,
                 previous_document=previous_document,
                 next_document=next_document,
             ),
@@ -4405,7 +4069,6 @@ def _export_trend_static_site_single_language(
                 document=document,
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
-                stream_pages=stream_pages,
             ),
             encoding="utf-8",
         )
@@ -4416,7 +4079,6 @@ def _export_trend_static_site_single_language(
                 document=document,
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
-                stream_pages=stream_pages,
             ),
             encoding="utf-8",
         )
@@ -4430,21 +4092,6 @@ def _export_trend_static_site_single_language(
                 idea_documents=idea_documents_by_topic.get(slug, []),
                 output_dir=resolved_output_dir,
                 topic_pages=topic_pages,
-                stream_pages=stream_pages,
-            ),
-            encoding="utf-8",
-        )
-
-    for slug, page_path in stream_pages.items():
-        page_path.write_text(
-            _render_stream_page(
-                stream=label_by_stream_slug[slug],
-                stream_slug=slug,
-                documents=stream_documents[slug],
-                idea_documents=idea_documents_by_stream.get(slug, []),
-                output_dir=resolved_output_dir,
-                topic_pages=topic_pages,
-                stream_pages=stream_pages,
             ),
             encoding="utf-8",
         )
@@ -4470,7 +4117,6 @@ def _export_trend_static_site_single_language(
         "ideas_total": len(idea_documents),
         "items_total": len(item_documents),
         "topics_total": len(topic_pages),
-        "streams_total": len(stream_pages),
         "files": {
             "index": "index.html",
             "archive": "archive.html",
@@ -4478,7 +4124,6 @@ def _export_trend_static_site_single_language(
             "trends_index": "trends/index.html",
             "ideas_index": "ideas/index.html",
             "topics_index": "topics/index.html",
-            "streams_index": "streams/index.html",
             "stylesheet": "assets/site.css",
             "trend_pages": [
                 str(document.page_path.relative_to(resolved_output_dir))
@@ -4496,10 +4141,6 @@ def _export_trend_static_site_single_language(
                 str(path.relative_to(resolved_output_dir))
                 for path in topic_pages.values()
             ],
-            "stream_pages": [
-                str(path.relative_to(resolved_output_dir))
-                for path in stream_pages.values()
-            ],
         },
     }
     manifest_path = resolved_output_dir / "manifest.json"
@@ -4514,7 +4155,6 @@ def _export_trend_static_site_single_language(
         ideas_total=len(idea_documents),
         items_total=len(item_documents),
         topics_total=len(topic_pages),
-        streams_total=len(stream_pages),
     ).info("Trend static site export completed")
     return manifest_path
 
@@ -4799,24 +4439,6 @@ def stage_trend_site_source(
         "ideas_total": len(idea_source_documents),
         "items_total": len(item_source_documents),
         "pdf_total": len(staged_pdf_files),
-        "streams_total": len(
-            {
-                stream
-                for stream in [
-                    *[
-                        source_document.stream
-                        for source_document in source_documents
-                        if source_document.stream
-                    ],
-                    *[
-                        source_document.stream
-                        for source_document in idea_source_documents
-                        if source_document.stream
-                    ],
-                ]
-                if stream
-            }
-        ),
         "files": {
             "markdown": staged_markdown_files,
             "ideas_markdown": staged_idea_files,
@@ -4836,6 +4458,5 @@ def stage_trend_site_source(
         ideas_total=len(idea_source_documents),
         items_total=len(item_source_documents),
         pdf_total=len(staged_pdf_files),
-        streams_total=manifest["streams_total"],
     ).info("Trend site source staging completed")
     return manifest_path

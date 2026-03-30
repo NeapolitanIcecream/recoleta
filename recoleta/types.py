@@ -132,7 +132,6 @@ class TrendResult:
     title: str
     pass_output_id: int | None = None
     stream: str | None = None
-    stream_results: list["TrendResult"] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -146,4 +145,3 @@ class IdeasResult:
     note_path: Path | None = None
     upstream_pass_output_id: int | None = None
     stream: str | None = None
-    stream_results: list["IdeasResult"] = field(default_factory=list)

@@ -5,7 +5,7 @@ Recoleta CLI v2 changes the top-level interface.
 If you are starting fresh, use the README quickstart. Use this guide only when
 you need to map older commands to the workflow-first CLI surface.
 
-Use this guide if you were using `run --once`, `trends-week`, `repair-streams`, `materialize outputs`, or `site gh-deploy`.
+Use this guide if you were using `run --once`, `trends-week`, `materialize outputs`, or `site gh-deploy`.
 
 ## New top-level groups
 
@@ -41,7 +41,6 @@ Use these replacements:
 | `recoleta run --once` | `recoleta run now` |
 | `recoleta run --once --date 2026-03-16` | `recoleta run day --date 2026-03-16` |
 | `recoleta trends-week --date 2026-03-16` | `recoleta run week --date 2026-03-16` |
-| `recoleta repair-streams --date ... --streams ...` | `recoleta repair streams --date ... --streams ...` |
 | `recoleta materialize outputs --site --pdf` | `recoleta repair outputs --site --pdf` |
 | `recoleta site gh-deploy` | `recoleta run deploy` |
 | `recoleta gc` | `recoleta admin gc` |

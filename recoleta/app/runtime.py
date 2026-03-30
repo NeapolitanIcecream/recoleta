@@ -106,19 +106,6 @@ def _build_settings(
     return settings
 
 
-def _has_explicit_topic_streams(settings: Any) -> bool:
-    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
-    if not callable(runtime_builder):
-        return False
-    try:
-        runtimes = runtime_builder()
-    except Exception:
-        return False
-    if not isinstance(runtimes, list):
-        return False
-    return any(bool(getattr(stream, "explicit", False)) for stream in runtimes)
-
-
 def _parse_anchor_date_option(value: str) -> date:
     raw = str(value or "").strip()
     if not raw:
@@ -397,6 +384,8 @@ def _begin_managed_run(
     *,
     command: str,
     log_module: str,
+    config_path: Any | None = None,
+    db_path: Any | None = None,
 ) -> tuple[Any, Any, Any, Any, str, str, Any, _LeaseHeartbeatMonitor]:
     symbols = _runtime_symbols()
     logger = symbols["logger"]
@@ -404,7 +393,12 @@ def _begin_managed_run(
     workspace_lease_held_error = symbols["WorkspaceLeaseHeldError"]
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
 
-    settings, repository, service = _build_runtime()
+    build_runtime_kwargs: dict[str, Any] = {}
+    if config_path is not None:
+        build_runtime_kwargs["config_path"] = config_path
+    if db_path is not None:
+        build_runtime_kwargs["db_path"] = db_path
+    settings, repository, service = _build_runtime(**build_runtime_kwargs)
     console = console_cls(stderr=bool(getattr(settings, "log_json", False)))
     run_id = str(uuid4())
     owner_token = str(uuid4())

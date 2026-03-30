@@ -127,14 +127,14 @@ def test_ideas_cli_accepts_yyyymmdd_date_and_prints_status(
     assert fake_service.calls[0]["anchor_date"] == date(2026, 3, 2)
 
 
-def test_ideas_cli_prints_all_stream_results_for_topic_stream_runs(
+def test_ideas_cli_ignores_legacy_stream_results_surface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = CliRunner()
     fake_settings = _FakeSettings()
     fake_repo = _FakeRepo()
 
-    class _FakeTopicStreamService:
+    class _FakeIdeasService:
         def ideas(  # type: ignore[no-untyped-def]
             self,
             *,
@@ -178,7 +178,7 @@ def test_ideas_cli_prints_all_stream_results_for_topic_stream_runs(
     monkeypatch.setattr(
         recoleta.cli,
         "_build_runtime",
-        lambda: (fake_settings, fake_repo, _FakeTopicStreamService()),
+        lambda: (fake_settings, fake_repo, _FakeIdeasService()),
     )
 
     result = runner.invoke(
@@ -188,24 +188,26 @@ def test_ideas_cli_prints_all_stream_results_for_topic_stream_runs(
 
     assert result.exit_code == 0
     assert "ideas completed" in result.stdout
-    assert "streams=2" in result.stdout
-    assert "embodied_ai" in result.stdout
+    assert "streams=2" not in result.stdout
     assert "status=succeeded" in result.stdout
     assert "pass_output_id=5" in result.stdout
-    assert "software_intelligence" in result.stdout
-    assert "status=suppressed" in result.stdout
-    assert "pass_output_id=6" in result.stdout
-    assert "note_path=/tmp/recoleta/Streams/embodied_ai/Ideas/day--2026-03-09--ideas.md" in result.stdout
+    assert "software_intelligence" not in result.stdout
+    assert "status=suppressed" not in result.stdout
+    assert "pass_output_id=6" not in result.stdout
+    assert (
+        "note_path=/tmp/recoleta/Streams/embodied_ai/Ideas/day--2026-03-09--ideas.md"
+        in result.stdout
+    )
 
 
-def test_ideas_cli_emits_json_output_with_stream_results(
+def test_ideas_cli_json_ignores_legacy_stream_results_surface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = CliRunner()
     fake_settings = _FakeSettings()
     fake_repo = _FakeRepo()
 
-    class _FakeTopicStreamService:
+    class _FakeIdeasService:
         def ideas(  # type: ignore[no-untyped-def]
             self,
             *,
@@ -250,7 +252,7 @@ def test_ideas_cli_emits_json_output_with_stream_results(
     monkeypatch.setattr(
         recoleta.cli,
         "_build_runtime",
-        lambda: (fake_settings, fake_repo, _FakeTopicStreamService()),
+        lambda: (fake_settings, fake_repo, _FakeIdeasService()),
     )
 
     result = runner.invoke(
@@ -265,10 +267,8 @@ def test_ideas_cli_emits_json_output_with_stream_results(
     assert payload["run_id"] == "run-ideas"
     assert payload["pass_output_id"] == 5
     assert payload["upstream_pass_output_id"] == 4
-    assert payload["stream_results_total"] == 2
-    assert payload["stream_results"][0]["stream"] == "embodied_ai"
-    assert payload["stream_results"][0]["note_path"] == (
+    assert payload["note_path"] == (
         "/tmp/recoleta/Streams/embodied_ai/Ideas/day--2026-03-09--ideas.md"
     )
-    assert payload["stream_results"][1]["stream"] == "software_intelligence"
-    assert payload["stream_results"][1]["status"] == "suppressed"
+    assert "stream_results_total" not in payload
+    assert "stream_results" not in payload

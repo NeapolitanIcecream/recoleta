@@ -21,6 +21,7 @@ def run_materialize_outputs_command(
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
     console = console_cls()
+    normalized_scope = cli._require_default_scope(scope)
 
     try:
         resolved_db_path = cli._resolve_db_path(db_path=db_path, config_path=config_path)
@@ -59,7 +60,6 @@ def run_materialize_outputs_command(
             attr_name="default_scope_specs_for_settings",
         )
 
-        normalized_scope = str(scope or "").strip() or "default"
         resolved_output_dir = (
             output_dir.expanduser().resolve() if output_dir is not None else None
         )
@@ -71,24 +71,9 @@ def run_materialize_outputs_command(
                 resolved_obsidian_vault_path = getattr(
                     settings, "obsidian_vault_path", None
                 )
-                if cli._has_explicit_topic_streams(settings):
-                    runtimes = list(getattr(settings, "topic_stream_runtimes")())
-                    matched_runtime = next(
-                        (
-                            runtime
-                            for runtime in runtimes
-                            if str(getattr(runtime, "name", "") or "") == normalized_scope
-                        ),
-                        None,
-                    )
-                    if matched_runtime is not None:
-                        resolved_obsidian_base_folder = str(
-                            getattr(matched_runtime, "obsidian_base_folder", "") or ""
-                        ).strip() or None
-                if resolved_obsidian_base_folder is None:
-                    resolved_obsidian_base_folder = str(
-                        getattr(settings, "obsidian_base_folder", "") or ""
-                    ).strip() or None
+                resolved_obsidian_base_folder = str(
+                    getattr(settings, "obsidian_base_folder", "") or ""
+                ).strip() or None
             scope_specs = [
                 materialize_scope_spec_cls(
                     scope=normalized_scope,
@@ -131,12 +116,8 @@ def run_materialize_outputs_command(
             site_input_dir = None
             site_output_dir = None
             if site:
-                if cli._has_explicit_topic_streams(settings):
-                    site_input_dir = Path(settings.markdown_output_dir)
-                    site_output_dir = Path(settings.markdown_output_dir) / "site"
-                else:
-                    site_input_dir = Path(scope_specs[0].output_dir)
-                    site_output_dir = Path(scope_specs[0].output_dir) / "site"
+                site_input_dir = Path(scope_specs[0].output_dir)
+                site_output_dir = Path(scope_specs[0].output_dir) / "site"
             output_language = settings.llm_output_language
 
         result = materialize_outputs(

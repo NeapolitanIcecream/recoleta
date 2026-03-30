@@ -19,6 +19,7 @@ class DocumentStoreMixin:
     def upsert_document_for_item(
         self, *, item: Item, scope: str = DEFAULT_TOPIC_STREAM
     ) -> Document:
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         raw_item_id = getattr(item, "id", None)
         if raw_item_id is None:
             raise ValueError("item must have an id")
@@ -31,13 +32,11 @@ class DocumentStoreMixin:
                 select(Document).where(
                     Document.doc_type == "item",
                     Document.item_id == item_id,
-                    cast(Any, Document.scope) == scope,
                 )
             ).first()
             if existing is None:
                 doc = Document(
                     doc_type="item",
-                    scope=scope,
                     item_id=item_id,
                     source=str(getattr(item, "source", "") or "").strip() or None,
                     canonical_url=str(getattr(item, "canonical_url", "") or "").strip()
@@ -116,11 +115,11 @@ class DocumentStoreMixin:
             raise ValueError("unsupported doc_type")
         fallback_title = "Idea" if normalized_doc_type == "idea" else "Trend"
         normalized_title = str(title or "").strip() or fallback_title
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(self.engine) as session:
             existing = session.exec(
                 select(Document).where(
                     Document.doc_type == normalized_doc_type,
-                    cast(Any, Document.scope) == scope,
                     Document.granularity == normalized_granularity,
                     Document.period_start == period_start,
                     Document.period_end == period_end,
@@ -129,7 +128,6 @@ class DocumentStoreMixin:
             if existing is None:
                 doc = Document(
                     doc_type=normalized_doc_type,
-                    scope=scope,
                     granularity=normalized_granularity,
                     period_start=period_start,
                     period_end=period_end,
@@ -350,13 +348,11 @@ class DocumentStoreMixin:
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         if normalized_limit <= 0:
             return []
         with Session(self.engine) as session:
-            statement = select(Document).where(
-                Document.doc_type == normalized_type,
-                cast(Any, Document.scope) == scope,
-            )
+            statement = select(Document).where(Document.doc_type == normalized_type)
             if normalized_type == "item":
                 statement = statement.where(
                     cast(Any, Document.published_at).is_not(None),
@@ -449,6 +445,7 @@ class DocumentStoreMixin:
             return []
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(1, min(int(limit), 50))
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
 
         if normalized_type == "item":
             period_pred = "d.published_at >= :period_start AND d.published_at < :period_end"
@@ -461,7 +458,6 @@ class DocumentStoreMixin:
         params = {
             "query": fts_query,
             "doc_type": normalized_type,
-            "scope": scope,
             "period_start": period_start,
             "period_end": period_end,
             "limit": normalized_limit,
@@ -488,7 +484,6 @@ class DocumentStoreMixin:
         WHERE
             chunk_fts MATCH :query
             AND d.doc_type = :doc_type
-            AND d.scope = :scope
             AND dc.kind IN ('summary', 'content')
             AND {period_pred}
             {"AND " + " AND ".join(extra_predicates) if extra_predicates else ""}
@@ -537,6 +532,7 @@ class DocumentStoreMixin:
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         if normalized_limit <= 0:
             return []
 
@@ -546,7 +542,6 @@ class DocumentStoreMixin:
                 .join(Document, cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id))
                 .where(
                     Document.doc_type == normalized_type,
-                    cast(Any, Document.scope) == scope,
                     DocumentChunk.kind == "summary",
                 )
             )
@@ -587,6 +582,7 @@ class DocumentStoreMixin:
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
+        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         if normalized_limit <= 0:
             return []
 
@@ -596,7 +592,6 @@ class DocumentStoreMixin:
                 .join(Document, cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id))
                 .where(
                     Document.doc_type == normalized_type,
-                    cast(Any, Document.scope) == scope,
                     DocumentChunk.kind == "summary",
                 )
             )

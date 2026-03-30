@@ -17,10 +17,7 @@ from recoleta.models import (
     Artifact,
     ChunkEmbedding,
     DocumentChunk,
-    ITEM_STATE_ANALYZED,
-    ITEM_STATE_RETRYABLE_FAILED,
     Item,
-    ItemStreamState,
     Metric,
     Run,
 )
@@ -476,53 +473,15 @@ def test_gc_prune_caches_with_db_path_only_skips_filesystem_cache_pruning(
     assert repository.read_document_chunk(doc_id=doc_id, chunk_index=0) is None
 
 
-def test_repair_streams_requeues_existing_and_missing_stream_rows(
+def test_repair_streams_reports_removed_command_without_migration_guidance(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
-    db_path = tmp_path / "recoleta.db"
-    repository = Repository(db_path=db_path)
-    repository.init_schema()
-
-    first, _ = repository.upsert_item(
-        ItemDraft.from_values(
-            source="rss",
-            source_item_id="repair-stream-1",
-            canonical_url="https://example.com/repair-stream-1",
-            title="Repair Stream Existing State",
-            authors=["Alice"],
-            raw_metadata={"source": "test"},
-            published_at=datetime(2026, 3, 15, 10, tzinfo=UTC),
-        )
-    )
-    second, _ = repository.upsert_item(
-        ItemDraft.from_values(
-            source="rss",
-            source_item_id="repair-stream-2",
-            canonical_url="https://example.com/repair-stream-2",
-            title="Repair Stream Missing State",
-            authors=["Bob"],
-            raw_metadata={"source": "test"},
-            published_at=datetime(2026, 3, 15, 11, tzinfo=UTC),
-        )
-    )
-    assert first.id is not None
-    assert second.id is not None
-    repository.mark_item_enriched(item_id=int(first.id))
-    repository.mark_item_enriched(item_id=int(second.id))
-    repository.mark_item_stream_state(
-        item_id=int(first.id),
-        stream="agents_lab",
-        state=ITEM_STATE_ANALYZED,
-    )
-
     result = runner.invoke(
         recoleta.cli.app,
         [
             "repair",
             "streams",
-            "--db-path",
-            str(db_path),
             "--date",
             "2026-03-15",
             "--streams",
@@ -531,26 +490,12 @@ def test_repair_streams_requeues_existing_and_missing_stream_rows(
         ],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 2
     payload = json.loads(result.stdout)
-    assert payload["status"] == "ok"
-    assert payload["candidate_total"] == 2
-    assert payload["updated_total"] == 1
-    assert payload["inserted_total"] == 1
-    assert payload["streams"] == ["agents_lab"]
-
-    with Session(repository.engine) as session:
-        rows = list(
-            session.exec(
-                select(ItemStreamState).where(ItemStreamState.stream == "agents_lab")
-            )
-        )
-
-    assert len(rows) == 2
-    assert {int(row.item_id): row.state for row in rows} == {
-        int(first.id): ITEM_STATE_RETRYABLE_FAILED,
-        int(second.id): ITEM_STATE_RETRYABLE_FAILED,
-    }
+    assert payload["status"] == "error"
+    assert payload["command"] == "repair streams"
+    assert "no longer supported" in payload["error"]
+    assert "topic-streams-to-instances" not in payload["error"]
 
 
 def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> None:
@@ -570,18 +515,7 @@ def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> Non
         )
     )
     assert item.id is not None
-    repository.mark_item_enriched(item_id=int(item.id))
-    repository.mark_item_stream_state(
-        item_id=int(item.id),
-        stream="agents_lab",
-        state=ITEM_STATE_RETRYABLE_FAILED,
-    )
-    with Session(repository.engine) as session:
-        row = session.get(Item, int(item.id))
-        assert row is not None
-        row.state = ITEM_STATE_ANALYZED
-        session.add(row)
-        session.commit()
+    repository.mark_item_retryable_failed(item_id=int(item.id))
 
     result = runner.invoke(
         recoleta.cli.app,
@@ -607,12 +541,12 @@ def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> Non
     assert payload["candidate_total"] == 1
     assert payload["selected_total"] == 0
     assert payload["filtered_out_total"] == 1
-    assert payload["item_states"]["analyzed"] == 1
+    assert payload["item_states"]["retryable_failed"] == 1
     assert payload["exclusion_reasons"]["missing_analysis"] == 1
     assert payload["exclusion_reasons"]["stream_state_retryable_failed"] == 1
 
 
-def test_repair_streams_applies_startup_safe_migrations_before_repair(
+def test_repair_streams_fails_closed_before_touching_database(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -651,12 +585,11 @@ def test_repair_streams_applies_startup_safe_migrations_before_repair(
         ],
     )
 
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["status"] == "ok"
-    assert payload["inserted_total"] == 1
+    assert result.exit_code == 2
+    assert "no longer supported" in result.stdout
+    assert "topic-streams-to-instances" not in result.stdout
 
     with sqlite3.connect(db_path) as conn:
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])
 
-    assert version == CURRENT_SCHEMA_VERSION
+    assert version == 3

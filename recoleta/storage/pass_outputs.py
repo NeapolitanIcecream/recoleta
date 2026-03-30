@@ -41,7 +41,7 @@ class PassOutputStoreMixin:
         normalized_status = str(status or "").strip()
         if not normalized_status:
             raise ValueError("status must not be empty")
-        normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
+        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_granularity = (
             str(granularity or "").strip().lower() or None
             if granularity is not None
@@ -60,7 +60,6 @@ class PassOutputStoreMixin:
         with Session(self.engine) as session:
             row = PassOutput(
                 run_id=normalized_run_id,
-                scope=normalized_scope,
                 pass_kind=normalized_pass_kind,
                 status=normalized_status,
                 granularity=normalized_granularity,
@@ -97,15 +96,14 @@ class PassOutputStoreMixin:
         normalized_pass_kind = str(pass_kind or "").strip()
         if not normalized_pass_kind:
             raise ValueError("pass_kind must not be empty")
-        normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
+        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_status = str(status or "").strip() if status is not None else ""
         normalized_granularity = (
             str(granularity or "").strip().lower() if granularity is not None else ""
         )
         with Session(self.engine) as session:
             statement = select(PassOutput).where(
-                PassOutput.pass_kind == normalized_pass_kind,
-                PassOutput.scope == normalized_scope,
+                PassOutput.pass_kind == normalized_pass_kind
             )
             if normalized_status:
                 statement = statement.where(PassOutput.status == normalized_status)

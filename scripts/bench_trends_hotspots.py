@@ -274,7 +274,6 @@ def _index_items_batched(
                 item_id = int(raw_item_id)
                 doc = Document(
                     doc_type="item",
-                    scope="default",
                     item_id=item_id,
                     source=str(getattr(item, "source", "") or "").strip() or None,
                     canonical_url=str(getattr(item, "canonical_url", "") or "").strip()

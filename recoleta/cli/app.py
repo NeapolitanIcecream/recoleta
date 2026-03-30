@@ -6,7 +6,11 @@ from pathlib import Path
 
 from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
-from recoleta.cli.db import run_db_clear_command, run_db_reset_command
+from recoleta.cli.db import (
+    run_db_cleanup_instance_first_schema_command,
+    run_db_clear_command,
+    run_db_reset_command,
+)
 from recoleta.cli.ideas import run_ideas_command
 from recoleta.cli.ingest import run_ingest_command
 from recoleta.cli.materialize import run_materialize_outputs_command
@@ -16,7 +20,6 @@ from recoleta.cli.maintenance import (
     run_doctor_llm_command,
     run_doctor_why_empty_command,
     run_gc_command,
-    run_repair_streams_command,
     run_restore_command,
     run_stats_command,
     run_vacuum_command,
@@ -43,6 +46,24 @@ from recoleta.cli.workflows import (
     run_daemon_start_command,
 )
 
+
+def execute_fleet_granularity_workflow(**kwargs: object) -> object:
+    from recoleta.cli.fleet import execute_fleet_granularity_workflow as impl
+
+    return impl(**kwargs)
+
+
+def execute_fleet_deploy_workflow(**kwargs: object) -> object:
+    from recoleta.cli.fleet import execute_fleet_deploy_workflow as impl
+
+    return impl(**kwargs)
+
+
+def run_fleet_site_build_command(**kwargs: object) -> object:
+    from recoleta.cli.fleet import run_fleet_site_build_command as impl
+
+    return impl(**kwargs)
+
 app = typer.Typer(
     help="Recoleta workflow-first CLI.", no_args_is_help=True
 )
@@ -51,6 +72,13 @@ run_app = typer.Typer(help="Workflow entrypoints.", no_args_is_help=True)
 run_site_app = typer.Typer(help="Common site workflows.", no_args_is_help=True)
 run_app.add_typer(run_site_app, name="site")
 app.add_typer(run_app, name="run")
+
+fleet_app = typer.Typer(help="Fleet orchestration workflows.", no_args_is_help=True)
+fleet_run_app = typer.Typer(help="Fleet workflow entrypoints.", no_args_is_help=True)
+fleet_site_app = typer.Typer(help="Fleet site workflows.", no_args_is_help=True)
+fleet_app.add_typer(fleet_run_app, name="run")
+fleet_app.add_typer(fleet_site_app, name="site")
+app.add_typer(fleet_app, name="fleet")
 
 daemon_app = typer.Typer(help="Background workflow scheduling.", no_args_is_help=True)
 app.add_typer(daemon_app, name="daemon")
@@ -103,10 +131,13 @@ app.add_typer(translate_app, name="translate", hidden=True)
 def _legacy_error(
     *,
     command: str,
-    replacement: str,
+    replacement: str | None = None,
     json_output: bool = False,
 ) -> None:
-    message = f"`{command}` was removed in CLI v2. Use `{replacement}`."
+    if replacement is None:
+        message = f"`{command}` was removed in CLI v2 and is no longer supported."
+    else:
+        message = f"`{command}` was removed in CLI v2. Use `{replacement}`."
     if json_output:
         typer.echo(
             json.dumps(
@@ -191,7 +222,7 @@ def run_day(
     anchor_date: str | None = typer.Option(
         None,
         "--date",
-        help="Target UTC day (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
+        help="Target UTC day (YYYY-MM-DD or YYYYMMDD). Defaults to the latest complete UTC day.",
     ),
     include: str | None = typer.Option(
         None,
@@ -360,6 +391,151 @@ def run_deploy(
     )
 
 
+@fleet_run_app.command("day")
+def fleet_run_day(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC day (YYYY-MM-DD or YYYYMMDD). Defaults to the latest complete UTC day.",
+    ),
+    include: str | None = typer.Option(None, "--include"),
+    skip: str | None = typer.Option(None, "--skip"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the full UTC-day workflow for every child instance."""
+    execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        command="fleet run day",
+        anchor_date=anchor_date,
+        include=include,
+        skip=skip,
+        json_output=json_output,
+    )
+
+
+@fleet_run_app.command("week")
+def fleet_run_week(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Anchor UTC date for the target ISO week (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
+    ),
+    include: str | None = typer.Option(None, "--include"),
+    skip: str | None = typer.Option(None, "--skip"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the full ISO-week workflow for every child instance."""
+    execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="week",
+        command="fleet run week",
+        anchor_date=anchor_date,
+        include=include,
+        skip=skip,
+        json_output=json_output,
+    )
+
+
+@fleet_run_app.command("month")
+def fleet_run_month(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Anchor UTC date for the target month (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
+    ),
+    include: str | None = typer.Option(None, "--include"),
+    skip: str | None = typer.Option(None, "--skip"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the full month workflow for every child instance."""
+    execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="month",
+        command="fleet run month",
+        anchor_date=anchor_date,
+        include=include,
+        skip=skip,
+        json_output=json_output,
+    )
+
+
+@fleet_run_app.command("deploy")
+def fleet_run_deploy(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    include: str | None = typer.Option(None, "--include"),
+    skip: str | None = typer.Option(None, "--skip"),
+    repo_dir: Path | None = typer.Option(
+        None,
+        "--repo-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+    ),
+    remote: str = typer.Option("origin", "--remote"),
+    branch: str = typer.Option("gh-pages", "--branch"),
+    commit_message: str | None = typer.Option(None, "--message"),
+    cname: str | None = typer.Option(None, "--cname"),
+    pages_config: str = typer.Option("auto", "--pages-config"),
+    force: bool = typer.Option(True, "--force/--no-force"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Deploy the aggregate fleet static site."""
+    execute_fleet_deploy_workflow(
+        manifest_path=manifest_path,
+        command="fleet run deploy",
+        include=include,
+        skip=skip,
+        repo_dir=repo_dir,
+        remote=remote,
+        branch=branch,
+        commit_message=commit_message,
+        cname=cname,
+        pages_config=pages_config,
+        force=force,
+        json_output=json_output,
+    )
+
+
 @run_app.command("translate")
 def run_translate(
     db_path: Path | None = typer.Option(
@@ -380,7 +556,11 @@ def run_translate(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option("default", "--scope", help="Scope/stream name to translate."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(
         None,
         "--granularity",
@@ -425,6 +605,41 @@ def run_translate(
         context_assist=context_assist,
         json_output=json_output,
         command_name="run translate",
+    )
+
+
+@fleet_site_app.command("build")
+def fleet_site_build(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    limit: int | None = typer.Option(None, min=1),
+    default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Build the aggregate fleet static site from child outputs only."""
+    run_fleet_site_build_command(
+        manifest_path=manifest_path,
+        output_dir=output_dir,
+        limit=limit,
+        default_language_code=default_language_code,
+        json_output=json_output,
+        command_name="fleet site build",
     )
 
 
@@ -715,23 +930,16 @@ def inspect_runs_list(
     )
 
 
-@repair_app.command("streams")
+@repair_app.command("streams", hidden=True)
 def repair_streams(
-    anchor_date: str = typer.Option(..., "--date", help="Target UTC day to repair (YYYY-MM-DD or YYYYMMDD)."),
-    streams: str = typer.Option(..., "--streams", help="Comma-separated topic stream names to requeue for analysis."),
+    _anchor_date: str = typer.Option(..., "--date", help="Target UTC day to repair (YYYY-MM-DD or YYYYMMDD)."),
+    _streams: str = typer.Option(..., "--streams", help="Comma-separated topic stream names to requeue for analysis."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON instead of human-readable text."),
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
+    _db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
+    _config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
 ) -> None:
-    """Requeue stream-analysis state for a day window."""
-    run_repair_streams_command(
-        db_path=db_path,
-        config_path=config_path,
-        anchor_date=anchor_date,
-        streams=streams,
-        json_output=json_output,
-        command_name="repair streams",
-    )
+    """Legacy compatibility entrypoint retained only to fail closed."""
+    _legacy_error(command="repair streams", json_output=json_output)
 
 
 @repair_app.command("outputs")
@@ -761,12 +969,12 @@ def repair_outputs(
         dir_okay=True,
         writable=True,
         resolve_path=True,
-        help="Markdown output root to rewrite in single-stream mode.",
+        help="Markdown output root to rewrite for one standalone instance or one child instance.",
     ),
     scope: str = typer.Option(
         "default",
         "--scope",
-        help="Scope/stream name for single-stream materialization.",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
     ),
     granularity: str | None = typer.Option(
         None,
@@ -901,7 +1109,11 @@ def stage_translate_run(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option("default", "--scope", help="Scope/stream name to translate."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea translations to day, week, or month windows."),
     include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to translate: items, trends, ideas."),
     limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
@@ -944,7 +1156,11 @@ def stage_translate_backfill(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option("default", "--scope", help="Scope/stream name to backfill."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea backfill to day, week, or month windows."),
     include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to backfill: items, trends, ideas."),
     limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
@@ -1039,8 +1255,12 @@ def stage_site_serve(
 def stage_materialize(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="SQLite database path."),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="Optional YAML/JSON config path used to resolve the database and default output directories."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Markdown output root to rewrite in single-stream mode."),
-    scope: str = typer.Option("default", "--scope", help="Scope/stream name for single-stream materialization."),
+    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Markdown output root to rewrite for one standalone instance or one child instance."),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally rerender only day, week, or month trend notes."),
     pdf: bool = typer.Option(False, "--pdf/--no-pdf", help="Regenerate trend PDFs from the rerendered markdown notes."),
     site: bool = typer.Option(False, "--site/--no-site", help="Rebuild the static site after markdown outputs are materialized."),
@@ -1143,15 +1363,34 @@ def admin_db_reset(
     )
 
 
-# Hidden legacy commands and groups that should fail with migration guidance.
+@admin_db_app.command("cleanup-instance-first-schema")
+def admin_db_cleanup_instance_first_schema(
+    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm dropping legacy stream-state tables."),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Drop legacy stream-state tables after instance-first cutover."""
+    run_db_cleanup_instance_first_schema_command(
+        db_path=db_path,
+        config_path=config_path,
+        yes=yes,
+        json_output=json_output,
+    )
+
+
+# Hidden legacy commands and groups that should fail cleanly.
 @app.command("trends-week", hidden=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def legacy_trends_week(ctx: Context) -> None:  # noqa: ARG001
     _legacy_error(command="trends-week", replacement="run week --date <YYYY-MM-DD>")
 
 
 @app.command("repair-streams", hidden=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def legacy_repair_streams(ctx: Context) -> None:  # noqa: ARG001
-    _legacy_error(command="repair-streams", replacement="repair streams --date <YYYY-MM-DD> --streams <name[,name]>")
+def legacy_repair_streams(
+    ctx: Context,  # noqa: ARG001
+    json_output: bool = typer.Option(False, "--json", hidden=True),
+) -> None:
+    _legacy_error(command="repair-streams", json_output=json_output)
 
 
 @materialize_app.command("outputs", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -1353,7 +1592,11 @@ def legacy_site_serve(
 def legacy_translate_run(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    scope: str = typer.Option("default", "--scope"),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),
@@ -1378,7 +1621,11 @@ def legacy_translate_run(
 def legacy_translate_backfill(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    scope: str = typer.Option("default", "--scope"),
+    scope: str = typer.Option(
+        "default",
+        "--scope",
+        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
+    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),

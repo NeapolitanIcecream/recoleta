@@ -55,11 +55,7 @@ def run_site_build_command(
     )
     if resolved_input_dir is None:
         assert settings is not None
-        resolved_input_dir = (
-            settings.markdown_output_dir
-            if cli._has_explicit_topic_streams(settings)
-            else settings.markdown_output_dir / "Trends"
-        )
+        resolved_input_dir = settings.markdown_output_dir / "Trends"
     if resolved_output_dir is None:
         assert settings is not None
         resolved_output_dir = settings.markdown_output_dir / "site"
@@ -131,8 +127,6 @@ def run_site_build_command(
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
     segments.append(f"topics={manifest['topics_total']}")
-    if int(manifest.get("streams_total") or 0) > 1:
-        segments.append(f"streams={manifest['streams_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
         f"[green]{command_name} completed[/green] " + " ".join(segments)
@@ -168,17 +162,9 @@ def run_site_stage_command(
     )
     if resolved_input_dir is None:
         assert settings is not None
-        resolved_input_dir = (
-            settings.markdown_output_dir
-            if cli._has_explicit_topic_streams(settings)
-            else settings.markdown_output_dir / "Trends"
-        )
+        resolved_input_dir = settings.markdown_output_dir / "Trends"
     if resolved_output_dir is None:
-        resolved_output_dir = (
-            (Path.cwd() / "site-content").resolve()
-            if settings is not None and cli._has_explicit_topic_streams(settings)
-            else (Path.cwd() / "site-content" / "Trends").resolve()
-        )
+        resolved_output_dir = (Path.cwd() / "site-content" / "Trends").resolve()
     resolved_default_language_code = str(default_language_code or "").strip() or None
     if (
         resolved_default_language_code is None
@@ -245,8 +231,6 @@ def run_site_stage_command(
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
     segments.append(f"pdfs={manifest['pdf_total']}")
-    if int(manifest.get("streams_total") or 0) > 1:
-        segments.append(f"streams={manifest['streams_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
         f"[green]{command_name} completed[/green] " + " ".join(segments)

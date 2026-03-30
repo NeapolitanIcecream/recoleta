@@ -23,7 +23,7 @@ from rich.progress import (
 )
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
-from recoleta.config import Settings, TopicStreamRuntime
+from recoleta.config import Settings
 from recoleta.delivery import TelegramSender
 from recoleta.extract import (
     extract_arxiv_latex_source,
@@ -46,17 +46,11 @@ from recoleta.observability import (
     get_rich_console,
 )
 from recoleta.pipeline import artifacts as pipeline_artifacts
+from recoleta.pipeline import delivery_budget as pipeline_delivery_budget
 from recoleta.pipeline import metrics as pipeline_metrics
-from recoleta.pipeline.publish_stage import (
-    run_publish_stage,
-    run_publish_topic_streams_stage,
-)
+from recoleta.pipeline.publish_stage import run_publish_stage
 from recoleta.pipeline.ideas_stage import run_ideas_stage
-from recoleta.pipeline import topic_streams as pipeline_topic_streams
-from recoleta.pipeline.trends_stage import (
-    run_trends_stage,
-    run_trends_topic_streams_stage,
-)
+from recoleta.pipeline.trends_stage import run_trends_stage
 from recoleta.ports import RepositoryPort
 from recoleta import sources
 from recoleta.triage import SemanticTriage, TriageCandidate
@@ -99,7 +93,6 @@ class _AnalyzeWorkItem:
     content_text: str
     scope: str
     mirror_item_state: bool
-    stream_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -160,41 +153,6 @@ class PipelineService:
         self._scrub_secrets = tuple(dict.fromkeys(scrub_candidates))
         self._llm_connection = llm_connection_from_settings(settings)
         self._progress_console = get_rich_console()
-        runtime_builder = getattr(settings, "topic_stream_runtimes", None)
-        self._topic_streams: list[TopicStreamRuntime]
-        if callable(runtime_builder):
-            self._topic_streams = cast(list[TopicStreamRuntime], runtime_builder())
-        else:
-            self._topic_streams = [
-                TopicStreamRuntime(
-                    name=DEFAULT_TOPIC_STREAM,
-                    topics=list(getattr(settings, "topics", []) or []),
-                    allow_tags=list(getattr(settings, "allow_tags", []) or []),
-                    deny_tags=list(getattr(settings, "deny_tags", []) or []),
-                    publish_targets=list(
-                        getattr(settings, "publish_targets", []) or []
-                    ),
-                    markdown_output_dir=Path(
-                        getattr(settings, "markdown_output_dir", ".")
-                    ).expanduser(),
-                    obsidian_base_folder=str(
-                        getattr(settings, "obsidian_base_folder", "Recoleta")
-                    ),
-                    min_relevance_score=float(
-                        getattr(settings, "min_relevance_score", 0.0) or 0.0
-                    ),
-                    max_deliveries_per_day=int(
-                        getattr(settings, "max_deliveries_per_day", 0) or 0
-                    ),
-                    telegram_bot_token=getattr(settings, "telegram_bot_token", None),
-                    telegram_chat_id=getattr(settings, "telegram_chat_id", None),
-                    explicit=False,
-                )
-            ]
-        self._explicit_topic_streams = any(
-            bool(getattr(stream, "explicit", False)) for stream in self._topic_streams
-        )
-        self._mirror_item_states = not self._explicit_topic_streams
         self.analyzer = analyzer or LiteLLMAnalyzer(
             model=settings.llm_model,
             output_language=settings.llm_output_language,
@@ -209,11 +167,7 @@ class PipelineService:
         self.telegram_sender = telegram_sender
         self._telegram_senders: dict[str, Any] = {}
         self._pandoc_unavailable_warned = False
-        if (
-            self.telegram_sender is None
-            and not self._explicit_topic_streams
-            and "telegram" in settings.publish_targets
-        ):
+        if self.telegram_sender is None and "telegram" in settings.publish_targets:
             if (
                 settings.telegram_bot_token is not None
                 and settings.telegram_chat_id is not None
@@ -612,60 +566,13 @@ class PipelineService:
         )
 
     def _telegram_delivery_destination(self) -> str:
-        return pipeline_topic_streams.telegram_delivery_destination(self.settings)
+        return pipeline_delivery_budget.telegram_delivery_destination(self.settings)
 
     def _metric_token(self, value: str, *, max_len: int = 48) -> str:
         return pipeline_metrics.metric_token(value, max_len=max_len)
 
-    def _stream_metric_name(self, *, stage: str, stream: str, suffix: str) -> str:
-        return pipeline_metrics.stream_metric_name(
-            stage=stage,
-            stream=stream,
-            suffix=suffix,
-        )
-
-    def _telegram_destination_for_stream(self, stream: TopicStreamRuntime) -> str:
-        return pipeline_topic_streams.telegram_destination_for_stream(stream)
-
-    def _telegram_sender_for_stream(self, stream: TopicStreamRuntime) -> Any:
-        return pipeline_topic_streams.telegram_sender_for_stream(self, stream)
-
-    def _telegram_delivery_budget_for_stream(
-        self, stream: TopicStreamRuntime
-    ) -> tuple[str, int, int]:
-        return pipeline_topic_streams.telegram_delivery_budget_for_stream(
-            repository=self.repository,
-            stream=stream,
-        )
-
-    def _record_stream_metric(
-        self,
-        *,
-        run_id: str,
-        stage: str,
-        stream: str,
-        suffix: str,
-        value: float,
-        unit: str,
-    ) -> None:
-        pipeline_metrics.record_stream_metric(
-            repository=self.repository,
-            run_id=run_id,
-            stage=stage,
-            stream=stream,
-            suffix=suffix,
-            value=value,
-            unit=unit,
-        )
-
-    def _settings_for_topic_stream(self, stream: TopicStreamRuntime) -> Settings:
-        return pipeline_topic_streams.settings_for_topic_stream(
-            settings=self.settings,
-            stream=stream,
-        )
-
     def _telegram_delivery_budget(self) -> tuple[str, int, int]:
-        return pipeline_topic_streams.telegram_delivery_budget(
+        return pipeline_delivery_budget.telegram_delivery_budget(
             repository=self.repository,
             settings=self.settings,
         )
@@ -945,14 +852,13 @@ class PipelineService:
             period_start=period_start,
             period_end=period_end,
         )
-        if not self._explicit_topic_streams:
-            self.triage(
-                run_id=run_id,
-                limit=effective_limit,
-                candidate_limit=candidate_limit,
-                period_start=period_start,
-                period_end=period_end,
-            )
+        self.triage(
+            run_id=run_id,
+            limit=effective_limit,
+            candidate_limit=candidate_limit,
+            period_start=period_start,
+            period_end=period_end,
+        )
         return ingest_result
 
     def enrich(
@@ -1637,12 +1543,6 @@ class PipelineService:
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> None:
-        if self._explicit_topic_streams:
-            logger.bind(module="pipeline.triage", run_id=run_id).info(
-                "Triage deferred to topic-stream analyze stage streams={}",
-                len(self._topic_streams),
-            )
-            return
         triage_enabled = bool(self.settings.triage_enabled) and bool(
             self.settings.topics
         )
@@ -2111,18 +2011,9 @@ class PipelineService:
         analysis_rows_total: int,
         state_batches_total: int,
         state_rows_total: int,
-        streams_total: int | None = None,
         extra_metrics: list[MetricPoint] | None = None,
     ) -> list[MetricPoint]:
         metrics: list[MetricPoint] = []
-        if streams_total is not None:
-            metrics.append(
-                MetricPoint(
-                    name="pipeline.analyze.streams_total",
-                    value=streams_total,
-                    unit="count",
-                )
-            )
         metrics.extend(
             [
                 MetricPoint(
@@ -2277,13 +2168,6 @@ class PipelineService:
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> AnalyzeResult:
-        if self._explicit_topic_streams:
-            return self._analyze_topic_streams(
-                run_id=run_id,
-                limit=limit,
-                period_start=period_start,
-                period_end=period_end,
-            )
         log = logger.bind(module="pipeline.analyze", run_id=run_id)
         started = time.perf_counter()
         triage_required = bool(self.settings.triage_enabled) and bool(
@@ -2610,627 +2494,6 @@ class PipelineService:
         )
         return analyze_result
 
-    def _select_items_for_topic_stream_analysis(
-        self,
-        *,
-        run_id: str,
-        stream: TopicStreamRuntime,
-        limit: int,
-        include_debug: bool,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
-    ) -> list[Any]:
-        triage_enabled = bool(self.settings.triage_enabled) and bool(stream.topics)
-        if not triage_enabled:
-            return self._invoke_repository_method(
-                "list_items_for_stream_analysis",
-                stream=stream.name,
-                limit=limit,
-                selected_only=False,
-                period_start=period_start,
-                period_end=period_end,
-            )
-
-        log = logger.bind(module="pipeline.triage", run_id=run_id, stream=stream.name)
-        candidate_limit = self._resolve_triage_candidate_limit(limit=limit)
-        items = self._invoke_repository_method(
-            "list_items_for_stream_analysis",
-            stream=stream.name,
-            limit=candidate_limit,
-            selected_only=False,
-            period_start=period_start,
-            period_end=period_end,
-        )
-        triage_items = [
-            item
-            for item in items
-            if getattr(item, "state", None) == ITEM_STATE_ENRICHED
-        ]
-        triage_candidates, content_fetch_failed, content_fetch_error = (
-            self._build_triage_candidates(items=triage_items)
-        )
-
-        def write_and_record_artifact(
-            *, item_id: int | None, kind: str, payload: dict[str, Any]
-        ) -> None:
-            self._record_debug_artifact(
-                run_id=run_id,
-                item_id=item_id,
-                kind=kind,
-                payload={"stream": stream.name, **payload},
-                log=log.bind(item_id=item_id),
-                failure_message=f"Topic stream triage {kind} artifact record failed: {{}}",
-            )
-
-        if content_fetch_failed and include_debug and content_fetch_error is not None:
-            write_and_record_artifact(
-                item_id=None,
-                kind="error_context",
-                payload=content_fetch_error,
-            )
-
-        triage_started = time.perf_counter()
-        if not triage_candidates:
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="candidates_total",
-                value=0,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="selected_total",
-                value=0,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="failed_total",
-                value=0,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="duration_ms",
-                value=0,
-                unit="ms",
-            )
-            return []
-
-        try:
-            triage_output = self.semantic_triage.select(
-                run_id=run_id,
-                candidates=triage_candidates,
-                topics=stream.topics,
-                limit=limit,
-                mode=self.settings.triage_mode,
-                query_mode=self.settings.triage_query_mode,
-                embedding_model=self.settings.triage_embedding_model,
-                embedding_dimensions=self.settings.triage_embedding_dimensions,
-                min_similarity=self.settings.triage_min_similarity,
-                exploration_rate=self.settings.triage_exploration_rate,
-                recency_floor=self.settings.triage_recency_floor,
-                include_debug=include_debug,
-            )
-            stats = triage_output.stats
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="candidates_total",
-                value=stats.candidates_total,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="selected_total",
-                value=stats.selected_total,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="failed_total",
-                value=0,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="duration_ms",
-                value=stats.duration_ms,
-                unit="ms",
-            )
-            for kind, payload in triage_output.artifacts.items():
-                write_and_record_artifact(item_id=None, kind=kind, payload=payload)
-
-            selected_items: list[Any] = []
-            for entry in triage_output.selected:
-                selected_item_id = getattr(entry.candidate.item, "id", None)
-                if selected_item_id is None:
-                    continue
-                try:
-                    self.repository.mark_item_stream_state(
-                        item_id=int(selected_item_id),
-                        stream=stream.name,
-                        state=ITEM_STATE_TRIAGED,
-                        mirror_item_state=False,
-                    )
-                except Exception as mark_exc:
-                    log.bind(item_id=selected_item_id).warning(
-                        "Topic stream triage mark_item_stream_state failed: {}",
-                        self._sanitize_error_message(str(mark_exc)),
-                    )
-                selected_items.append(entry.candidate.item)
-            return selected_items
-        except Exception as triage_exc:
-            triage_duration_ms = int((time.perf_counter() - triage_started) * 1000)
-            sanitized_error = self._sanitize_error_message(str(triage_exc))
-            if include_debug:
-                write_and_record_artifact(
-                    item_id=None,
-                    kind="error_context",
-                    payload={
-                        "stage": "triage",
-                        "error_type": type(triage_exc).__name__,
-                        "error_message": sanitized_error,
-                        **self._classify_exception(triage_exc),
-                    },
-                )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="candidates_total",
-                value=len(triage_candidates),
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="selected_total",
-                value=min(limit, len(items)),
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="failed_total",
-                value=1,
-                unit="count",
-            )
-            self._record_stream_metric(
-                run_id=run_id,
-                stage="triage",
-                stream=stream.name,
-                suffix="duration_ms",
-                value=triage_duration_ms,
-                unit="ms",
-            )
-            fallback_items = items[:limit]
-            for item in fallback_items:
-                fallback_item_id = getattr(item, "id", None)
-                if fallback_item_id is None:
-                    continue
-                try:
-                    self.repository.mark_item_stream_state(
-                        item_id=int(fallback_item_id),
-                        stream=stream.name,
-                        state=ITEM_STATE_TRIAGED,
-                        mirror_item_state=False,
-                    )
-                except Exception as mark_exc:
-                    log.bind(item_id=fallback_item_id).warning(
-                        "Topic stream triage fallback mark_item_stream_state failed: {}",
-                        self._sanitize_error_message(str(mark_exc)),
-                    )
-            log.warning(
-                "Topic stream triage failed, falling back to recency selected={} error={}",
-                len(fallback_items),
-                sanitized_error,
-            )
-            return fallback_items
-
-    def _analyze_topic_streams(
-        self,
-        *,
-        run_id: str,
-        limit: int | None = None,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
-    ) -> AnalyzeResult:
-        log = logger.bind(module="pipeline.analyze", run_id=run_id)
-        started = time.perf_counter()
-        effective_limit = self._resolve_analysis_limit(limit=limit)
-        analyze_result = AnalyzeResult()
-        llm_calls_total = 0
-        llm_errors_total = 0
-        missing_content_total = 0
-        llm_prompt_tokens_total = 0
-        llm_completion_tokens_total = 0
-        llm_tokens_seen = False
-        llm_cost_usd_total = 0.0
-        llm_cost_seen = False
-        llm_cost_missing_total = 0
-        llm_calls_by_provider_token: dict[str, int] = {}
-        llm_errors_by_provider_token: dict[str, int] = {}
-        llm_calls_by_model_token: dict[str, int] = {}
-        llm_errors_by_model_token: dict[str, int] = {}
-        include_debug = (
-            self.settings.write_debug_artifacts
-            and self.settings.artifacts_dir is not None
-        )
-        configured_provider = (
-            self.settings.llm_model.split("/", 1)[0]
-            if "/" in self.settings.llm_model
-            else "unknown"
-        )
-        configured_provider_token = self._metric_token(
-            configured_provider,
-            max_len=24,
-        )
-        configured_model_token = self._metric_token(self.settings.llm_model)
-
-        def bucket_provider_token(provider: str) -> str:
-            token = self._metric_token(provider, max_len=24)
-            if token == configured_provider_token:
-                return token
-            return "other"
-
-        def bucket_model_token(model: str) -> str:
-            token = self._metric_token(model)
-            if token == configured_model_token:
-                return token
-            return "other"
-
-        def write_and_record_artifact(
-            *,
-            stream_name: str,
-            item_id: int | None,
-            kind: str,
-            payload: dict[str, Any],
-        ) -> None:
-            self._record_debug_artifact(
-                run_id=run_id,
-                item_id=item_id,
-                kind=kind,
-                payload={"stream": stream_name, **payload},
-                log=log.bind(item_id=item_id, stream=stream_name),
-                failure_message=f"Topic stream analyze {kind} artifact record failed: {{}}",
-            )
-        with self.repository.sql_diagnostics() as sql_diag:
-            analysis_writes: list[AnalysisWrite] = []
-            state_updates: list[ItemStateUpdate] = []
-            stream_processed: dict[str, int] = {
-                stream.name: 0 for stream in self._topic_streams
-            }
-            stream_failed: dict[str, int] = {
-                stream.name: 0 for stream in self._topic_streams
-            }
-            overall_parallelism = _AnalyzeParallelismStats(
-                requested=self._requested_analyze_parallelism(),
-                effective=0,
-                max_inflight=0,
-            )
-
-            for stream in self._topic_streams:
-                stream_log = log.bind(stream=stream.name)
-                items = self._select_items_for_topic_stream_analysis(
-                    run_id=run_id,
-                    stream=stream,
-                    limit=effective_limit,
-                    include_debug=include_debug,
-                    period_start=period_start,
-                    period_end=period_end,
-                )
-                work_items: list[_AnalyzeWorkItem] = []
-
-                for item in items:
-                    raw_item_id = getattr(item, "id", None)
-                    if raw_item_id is None:
-                        stream_failed[stream.name] += 1
-                        analyze_result.failed += 1
-                        stream_log.warning("Analyze skipped: item has no id")
-                        continue
-                    item_id = int(raw_item_id)
-                    content_text = self._load_stored_content_for_analysis(item=item)
-                    if not content_text:
-                        missing_content_total += 1
-                        stream_failed[stream.name] += 1
-                        analyze_result.failed += 1
-                        state_updates.append(
-                            ItemStateUpdate(
-                                item_id=item_id,
-                                state=ITEM_STATE_RETRYABLE_FAILED,
-                                stream=stream.name,
-                            )
-                        )
-                        if include_debug:
-                            write_and_record_artifact(
-                                stream_name=stream.name,
-                                item_id=item_id,
-                                kind="error_context",
-                                payload={
-                                    "stage": "analyze",
-                                    "error_type": "MissingContent",
-                                    "error_message": "missing stored content before LLM analysis",
-                                    "item_id": item_id,
-                                    "error_category": "ordering",
-                                    "retryable": True,
-                                },
-                            )
-                        stream_log.bind(item_id=item_id).warning(
-                            "Analyze failed: missing stored content"
-                        )
-                        continue
-                    work_items.append(
-                        _AnalyzeWorkItem(
-                            item_id=item_id,
-                            title=item.title,
-                            canonical_url=item.canonical_url,
-                            user_topics=list(stream.topics),
-                            content_text=content_text,
-                            scope=stream.name,
-                            mirror_item_state=False,
-                            stream_name=stream.name,
-                        )
-                    )
-
-                llm_calls_total += len(work_items)
-                outcomes, stream_parallelism = self._run_analyze_calls(
-                    work_items=work_items,
-                    include_debug=include_debug,
-                    description=f"Analyzing topic stream {stream.name}",
-                )
-                overall_parallelism.effective = max(
-                    overall_parallelism.effective,
-                    stream_parallelism.effective,
-                )
-                overall_parallelism.max_inflight = max(
-                    overall_parallelism.max_inflight,
-                    stream_parallelism.max_inflight,
-                )
-
-                for outcome in outcomes:
-                    item_id = outcome.work_item.item_id
-                    try:
-                        if isinstance(outcome, _AnalyzeCallFailure):
-                            raise outcome.error
-
-                        analysis_result_payload = outcome.result
-                        debug = outcome.debug
-                        if include_debug and debug is None:
-                            raise RuntimeError(
-                                "Analyzer did not return debug payload while include_debug is enabled"
-                            )
-
-                        provider_token = bucket_provider_token(
-                            analysis_result_payload.provider
-                        )
-                        llm_calls_by_provider_token[provider_token] = (
-                            llm_calls_by_provider_token.get(provider_token, 0) + 1
-                        )
-                        model_token = bucket_model_token(analysis_result_payload.model)
-                        llm_calls_by_model_token[model_token] = (
-                            llm_calls_by_model_token.get(model_token, 0) + 1
-                        )
-                        if analysis_result_payload.prompt_tokens is not None:
-                            llm_prompt_tokens_total += int(
-                                analysis_result_payload.prompt_tokens
-                            )
-                            llm_tokens_seen = True
-                        if analysis_result_payload.completion_tokens is not None:
-                            llm_completion_tokens_total += int(
-                                analysis_result_payload.completion_tokens
-                            )
-                            llm_tokens_seen = True
-                        if analysis_result_payload.cost_usd is not None:
-                            llm_cost_usd_total += float(analysis_result_payload.cost_usd)
-                            llm_cost_seen = True
-                        else:
-                            llm_cost_missing_total += 1
-
-                        if include_debug and debug is not None:
-                            write_and_record_artifact(
-                                stream_name=stream.name,
-                                item_id=item_id,
-                                kind="llm_request",
-                                payload=debug.request,
-                            )
-                            write_and_record_artifact(
-                                stream_name=stream.name,
-                                item_id=item_id,
-                                kind="llm_response",
-                                payload=debug.response,
-                            )
-
-                        analysis_writes.append(
-                            AnalysisWrite(
-                                item_id=item_id,
-                                result=analysis_result_payload,
-                                scope=outcome.work_item.scope,
-                                mirror_item_state=False,
-                            )
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        stream_failed[stream.name] += 1
-                        analyze_result.failed += 1
-                        llm_errors_total += 1
-                        llm_errors_by_provider_token[configured_provider_token] = (
-                            llm_errors_by_provider_token.get(
-                                configured_provider_token,
-                                0,
-                            )
-                            + 1
-                        )
-                        llm_errors_by_model_token[configured_model_token] = (
-                            llm_errors_by_model_token.get(
-                                configured_model_token,
-                                0,
-                            )
-                            + 1
-                        )
-                        sanitized_error = self._sanitize_error_message(str(exc))
-                        classification = self._classify_exception(exc)
-                        state_updates.append(
-                            ItemStateUpdate(
-                                item_id=item_id,
-                                state=(
-                                    ITEM_STATE_RETRYABLE_FAILED
-                                    if classification.get("retryable") is True
-                                    else ITEM_STATE_FAILED
-                                ),
-                                stream=stream.name,
-                            )
-                        )
-                        write_and_record_artifact(
-                            stream_name=stream.name,
-                            item_id=item_id,
-                            kind="error_context",
-                            payload={
-                                "stage": "analyze",
-                                "error_type": type(exc).__name__,
-                                "error_message": sanitized_error,
-                                "item_id": item_id,
-                                **classification,
-                            },
-                        )
-                        stream_log.bind(item_id=item_id).warning(
-                            "Analyze failed: {}",
-                            sanitized_error,
-                        )
-
-            persisted_analyses = self._persist_analysis_writes(
-                analyses=analysis_writes,
-            )
-            analyze_result.processed += len(persisted_analyses.persisted)
-            for analysis in persisted_analyses.persisted:
-                stream_processed[analysis.scope] = (
-                    stream_processed.get(analysis.scope, 0) + 1
-                )
-            for failed_persist in persisted_analyses.failed:
-                item_id = failed_persist.analysis.item_id
-                stream_name = failed_persist.analysis.scope
-                stream_failed[stream_name] = stream_failed.get(stream_name, 0) + 1
-                analyze_result.failed += 1
-                llm_errors_total += 1
-                llm_errors_by_provider_token[configured_provider_token] = (
-                    llm_errors_by_provider_token.get(configured_provider_token, 0) + 1
-                )
-                llm_errors_by_model_token[configured_model_token] = (
-                    llm_errors_by_model_token.get(configured_model_token, 0) + 1
-                )
-                sanitized_error = self._sanitize_error_message(
-                    str(failed_persist.error)
-                )
-                classification = self._classify_exception(failed_persist.error)
-                state_updates.append(
-                    ItemStateUpdate(
-                        item_id=item_id,
-                        state=(
-                            ITEM_STATE_RETRYABLE_FAILED
-                            if classification.get("retryable") is True
-                            else ITEM_STATE_FAILED
-                        ),
-                        stream=stream_name,
-                    )
-                )
-                write_and_record_artifact(
-                    stream_name=stream_name,
-                    item_id=item_id,
-                    kind="error_context",
-                    payload={
-                        "stage": "analyze",
-                        "error_type": type(failed_persist.error).__name__,
-                        "error_message": sanitized_error,
-                        "item_id": item_id,
-                        **classification,
-                    },
-                )
-                log.bind(item_id=item_id, stream=stream_name).warning(
-                    "Analyze persistence failed: {}",
-                    sanitized_error,
-                )
-
-            state_batches_total, state_rows_total = self._persist_state_updates(
-                state_updates=state_updates,
-            )
-            stream_metrics = [
-                MetricPoint(
-                    name=self._stream_metric_name(
-                        stage="analyze",
-                        stream=stream.name,
-                        suffix="processed_total",
-                    ),
-                    value=stream_processed.get(stream.name, 0),
-                    unit="count",
-                )
-                for stream in self._topic_streams
-            ]
-            stream_metrics.extend(
-                [
-                    MetricPoint(
-                        name=self._stream_metric_name(
-                            stage="analyze",
-                            stream=stream.name,
-                            suffix="failed_total",
-                        ),
-                        value=stream_failed.get(stream.name, 0),
-                        unit="count",
-                    )
-                    for stream in self._topic_streams
-                ]
-            )
-
-            metric_points = self._build_analyze_metric_points(
-                analyze_result=analyze_result,
-                llm_calls_total=llm_calls_total,
-                llm_errors_total=llm_errors_total,
-                missing_content_total=missing_content_total,
-                llm_prompt_tokens_total=llm_prompt_tokens_total,
-                llm_completion_tokens_total=llm_completion_tokens_total,
-                llm_tokens_seen=llm_tokens_seen,
-                llm_cost_usd_total=llm_cost_usd_total,
-                llm_cost_seen=llm_cost_seen,
-                llm_cost_missing_total=llm_cost_missing_total,
-                llm_calls_by_provider_token=llm_calls_by_provider_token,
-                llm_errors_by_provider_token=llm_errors_by_provider_token,
-                llm_calls_by_model_token=llm_calls_by_model_token,
-                llm_errors_by_model_token=llm_errors_by_model_token,
-                duration_ms=int((time.perf_counter() - started) * 1000),
-                parallelism=overall_parallelism,
-                sql_queries_total=sql_diag.queries_total,
-                sql_commits_total=sql_diag.commits_total,
-                analysis_batches_total=persisted_analyses.analysis_batches_total,
-                analysis_rows_total=persisted_analyses.analysis_rows_total,
-                state_batches_total=state_batches_total,
-                state_rows_total=state_rows_total,
-                streams_total=len(self._topic_streams),
-                extra_metrics=stream_metrics,
-            )
-            self._record_metrics_batch(run_id=run_id, metrics=metric_points)
-        log.info(
-            "Topic stream analyze completed with processed={} failed={} streams={}",
-            analyze_result.processed,
-            analyze_result.failed,
-            len(self._topic_streams),
-        )
-        return analyze_result
-
     def _resolve_analysis_limit(self, *, limit: int | None) -> int:
         resolved = int(self.settings.analyze_limit if limit is None else limit)
         if resolved <= 0:
@@ -3238,8 +2501,8 @@ class PipelineService:
         return resolved
 
     def _resolve_triage_candidate_limit(self, *, limit: int) -> int:
-        triage_enabled = bool(self.settings.triage_enabled) and (
-            bool(self.settings.topics) or self._explicit_topic_streams
+        triage_enabled = bool(self.settings.triage_enabled) and bool(
+            self.settings.topics
         )
         if not triage_enabled:
             return limit
@@ -3876,9 +3139,6 @@ class PipelineService:
             period_end=period_end,
         )
 
-    def _publish_topic_streams(self, *, run_id: str, limit: int = 50) -> PublishResult:
-        return run_publish_topic_streams_stage(self, run_id=run_id, limit=limit)
-
     def trends(
         self,
         *,
@@ -3917,30 +3177,6 @@ class PipelineService:
             granularity=granularity,
             anchor_date=anchor_date,
             llm_model=llm_model,
-        )
-
-    def _trends_topic_streams(
-        self,
-        *,
-        run_id: str,
-        granularity: str = "day",
-        anchor_date: date | None = None,
-        llm_model: str | None = None,
-        backfill: bool = False,
-        backfill_mode: str = "missing",
-        debug_pdf: bool = False,
-        reuse_existing_corpus: bool = False,
-    ) -> TrendResult:
-        return run_trends_topic_streams_stage(
-            self,
-            run_id=run_id,
-            granularity=granularity,
-            anchor_date=anchor_date,
-            llm_model=llm_model,
-            backfill=backfill,
-            backfill_mode=backfill_mode,
-            debug_pdf=debug_pdf,
-            reuse_existing_corpus=reuse_existing_corpus,
         )
 
     def _pull_source_drafts(

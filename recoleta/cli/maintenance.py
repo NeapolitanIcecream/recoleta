@@ -223,43 +223,8 @@ def _period_bounds_for_granularity(
     return period_start.astimezone(UTC), period_end.astimezone(UTC)
 
 
-def _parse_stream_names(value: str) -> list[str]:
-    streams = sorted(
-        {
-            token
-            for token in (
-                str(part or "").strip() for part in str(value or "").split(",")
-            )
-            if token
-        }
-    )
-    if not streams:
-        raise ValueError("at least one stream name is required")
-    return streams
-
-
 def _min_relevance_score_for_scope(*, settings: Any | None, scope: str) -> float:
-    fallback = float(getattr(settings, "min_relevance_score", 0.0) or 0.0)
-    if settings is None or scope == "default":
-        return fallback
-    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
-    if not callable(runtime_builder):
-        return fallback
-    try:
-        runtimes = runtime_builder()
-    except Exception:
-        return fallback
-    if not isinstance(runtimes, list):
-        return fallback
-    for stream in runtimes:
-        if str(getattr(stream, "name", "") or "").strip() != scope:
-            continue
-        return float(
-            getattr(stream, "min_relevance_score", fallback)
-            if getattr(stream, "min_relevance_score", None) is not None
-            else fallback
-        )
-    return fallback
+    return float(getattr(settings, "min_relevance_score", 0.0) or 0.0)
 
 
 def _llm_provider_from_model(model: str) -> str:
@@ -594,96 +559,6 @@ def run_gc_command(
             heartbeat_monitor=heartbeat_monitor,
             log=log,
         )
-
-
-def run_repair_streams_command(
-    *,
-    db_path: Path | None,
-    config_path: Path | None,
-    anchor_date: str,
-    streams: str,
-    json_output: bool,
-    command_name: str = "repair streams",
-) -> None:
-    symbols = cli._runtime_symbols()
-    console_cls = symbols["Console"]
-    logger = symbols["logger"]
-    console = console_cls()
-    log = logger.bind(module="cli.repair_streams", json=json_output)
-
-    def _exit_with_error(message: str, *, code: int = 1) -> NoReturn:
-        log.warning("{} failed error={}", command_name, message)
-        if json_output:
-            cli.typer.echo(
-                json.dumps(
-                    {"status": "error", "error": message},
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            )
-        else:
-            console.print(f"[red]{command_name} failed[/red] {message}")
-        raise cli.typer.Exit(code=code)
-
-    try:
-        normalized_streams = _parse_stream_names(streams)
-        period_start, period_end = _period_bounds_for_granularity(
-            anchor_date=anchor_date,
-            granularity="day",
-        )
-        resolved_db_path = cli._resolve_db_path(
-            db_path=db_path,
-            config_path=config_path,
-        )
-    except Exception as exc:  # noqa: BLE001
-        _exit_with_error(str(exc))
-
-    if not resolved_db_path.exists():
-        _exit_with_error(f"db does not exist: {resolved_db_path}")
-
-    repository = cli._build_repository_for_db_path(db_path=resolved_db_path)
-    try:
-        repository.init_schema()
-    except Exception as exc:
-        _exit_with_error(str(exc))
-
-    owner_token, lease_log, heartbeat_monitor = cli._acquire_workspace_lease_for_command(
-        repository=repository,
-        console=console,
-        command=command_name,
-        log_module="cli.repair_streams",
-    )
-    try:
-        payload = repository.repair_stream_states_for_period(
-            period_start=period_start,
-            period_end=period_end,
-            streams=normalized_streams,
-        )
-    finally:
-        cli._cleanup_workspace_lease(
-            repository=repository,
-            owner_token=owner_token,
-            heartbeat_monitor=heartbeat_monitor,
-            log=lease_log,
-        )
-
-    payload["status"] = "ok"
-    if json_output:
-        cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-        return
-
-    console.print(
-        f"[green]{command_name} completed[/green] "
-        f"period_start={payload['period_start']} "
-        f"period_end={payload['period_end']} "
-        f"item_total={payload['item_total']} "
-        f"candidate_total={payload['candidate_total']} "
-        f"inserted={payload['inserted_total']} "
-        f"updated={payload['updated_total']} "
-        f"unchanged={payload['unchanged_total']}"
-    )
-    console.print("streams=" + ",".join(payload["streams"]))
-
 
 def run_doctor_why_empty_command(
     *,

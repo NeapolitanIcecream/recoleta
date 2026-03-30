@@ -47,9 +47,11 @@ def run_translate_run_command(
     context_assist: str,
     json_output: bool = False,
     command_name: str = "translate run",
+    raise_on_abort: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+    normalized_scope = cli._require_default_scope(scope)
     (
         resolved_db_path,
         settings,
@@ -72,7 +74,7 @@ def run_translate_run_command(
         cli._update_run_context(
             repository,
             run_id=run_id,
-            scope=scope,
+            scope=normalized_scope,
             granularity=granularity,
         )
         run_translation = cli._import_symbol(
@@ -83,7 +85,7 @@ def run_translate_run_command(
             result = run_translation(
                 repository=repository,
                 settings=settings,
-                scope=scope,
+                scope=normalized_scope,
                 granularity=granularity,
                 include=include,
                 limit=limit,
@@ -141,7 +143,7 @@ def run_translate_run_command(
                 "command": command_name,
                 "run_id": run_id,
                 "db_path": str(resolved_db_path),
-                "scope": scope,
+                "scope": normalized_scope,
                 "granularity": granularity,
                 "include": include,
                 "aborted": result.aborted,
@@ -167,6 +169,8 @@ def run_translate_run_command(
             f"reason={result.abort_reason}"
         )
         cli._print_billing_report(console=console, repository=repository, run_id=run_id)
+        if raise_on_abort:
+            raise RuntimeError(str(result.abort_reason or "translation aborted"))
         return
 
     console.print(
@@ -196,6 +200,7 @@ def run_translate_backfill_command(
 ) -> None:
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+    normalized_scope = cli._require_default_scope(scope)
     (
         resolved_db_path,
         settings,
@@ -218,7 +223,7 @@ def run_translate_backfill_command(
         cli._update_run_context(
             repository,
             run_id=run_id,
-            scope=scope,
+            scope=normalized_scope,
             granularity=granularity,
         )
         run_translation_backfill = cli._import_symbol(
@@ -229,7 +234,7 @@ def run_translate_backfill_command(
             result = run_translation_backfill(
                 repository=repository,
                 settings=settings,
-                scope=scope,
+                scope=normalized_scope,
                 granularity=granularity,
                 include=include,
                 limit=limit,
@@ -290,7 +295,7 @@ def run_translate_backfill_command(
                 "command": command_name,
                 "run_id": run_id,
                 "db_path": str(resolved_db_path),
-                "scope": scope,
+                "scope": normalized_scope,
                 "granularity": granularity,
                 "include": include,
                 "legacy_source_language": legacy_source_language,

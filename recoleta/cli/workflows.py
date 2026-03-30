@@ -51,8 +51,24 @@ _ALL_STEP_IDS = {
     STEP_SITE_DEPLOY,
 }
 _GRANULARITY_ORDER = ("day", "week", "month")
-_DAY_OR_WEEK_SKIP_STEPS = {STEP_PUBLISH, STEP_TRANSLATE, STEP_SITE_BUILD}
-_MONTH_SKIP_STEPS = {STEP_PUBLISH, STEP_TRANSLATE, STEP_SITE_BUILD}
+_DAY_OR_WEEK_SKIP_STEPS = {
+    STEP_INGEST,
+    STEP_ANALYZE,
+    STEP_PUBLISH,
+    STEP_TRENDS_DAY,
+    STEP_IDEAS_DAY,
+    STEP_TRENDS_WEEK,
+    STEP_IDEAS_WEEK,
+    STEP_TRANSLATE,
+    STEP_SITE_BUILD,
+}
+_MONTH_SKIP_STEPS = {
+    STEP_INGEST,
+    STEP_ANALYZE,
+    STEP_PUBLISH,
+    STEP_TRANSLATE,
+    STEP_SITE_BUILD,
+}
 _DEPLOY_SKIP_STEPS = {STEP_TRANSLATE, STEP_SITE_BUILD}
 
 
@@ -80,8 +96,18 @@ def _today_utc() -> date:
     return datetime.now(tz=UTC).date()
 
 
-def _normalize_anchor_date(anchor_date: str | None) -> date:
+def _latest_complete_utc_day() -> date:
+    return _today_utc() - timedelta(days=1)
+
+
+def _normalize_anchor_date(
+    anchor_date: str | None,
+    *,
+    workflow_name: str,
+) -> date:
     if anchor_date is None or not str(anchor_date).strip():
+        if workflow_name == "day":
+            return _latest_complete_utc_day()
         return _today_utc()
     return cli._parse_anchor_date_option(str(anchor_date).strip())
 
@@ -191,19 +217,8 @@ def _localization_targets_configured(settings: Any) -> bool:
 
 
 def _workflow_scopes(settings: Any) -> list[str]:
-    runtime_builder = getattr(settings, "topic_stream_runtimes", None)
-    if not callable(runtime_builder):
-        return [DEFAULT_TOPIC_STREAM]
-    try:
-        runtimes = runtime_builder()
-    except Exception:
-        return [DEFAULT_TOPIC_STREAM]
-    if not isinstance(runtimes, list) or not runtimes:
-        return [DEFAULT_TOPIC_STREAM]
-    return [
-        str(getattr(runtime, "name", "") or "").strip() or DEFAULT_TOPIC_STREAM
-        for runtime in runtimes
-    ]
+    _ = settings
+    return [DEFAULT_TOPIC_STREAM]
 
 
 @contextmanager
@@ -231,31 +246,15 @@ def _delivery_mode_override(*, settings: Any, delivery_mode: str) -> Iterator[No
     filtered_publish_targets = [
         target for target in original_publish_targets if target != "telegram"
     ]
-    topic_streams = list(getattr(settings, "topic_streams", []) or [])
-    original_stream_targets: list[tuple[Any, list[str] | None]] = []
     try:
         settings.publish_targets = filtered_publish_targets
-        for stream in topic_streams:
-            current_targets = getattr(stream, "publish_targets", None)
-            original_stream_targets.append(
-                (stream, None if current_targets is None else list(current_targets))
-            )
-            if current_targets is None:
-                continue
-            stream.publish_targets = [
-                target for target in current_targets if target != "telegram"
-            ]
         yield
     finally:
         settings.publish_targets = original_publish_targets
-        for stream, original_targets in original_stream_targets:
-            stream.publish_targets = original_targets
 
 
 def _site_input_dir_from_settings(settings: Any) -> Path:
     markdown_output_dir = Path(settings.markdown_output_dir).expanduser().resolve()
-    if cli._has_explicit_topic_streams(settings):
-        return markdown_output_dir
     return markdown_output_dir / "Trends"
 
 
@@ -324,7 +323,7 @@ def _build_granularity_plan(
 ) -> WorkflowPlan:
     target_granularity = "day" if workflow_name == "now" else workflow_name
     policy = settings.workflow_policy_for_granularity(target_granularity)
-    anchor = _normalize_anchor_date(anchor_date)
+    anchor = _normalize_anchor_date(anchor_date, workflow_name=workflow_name)
     target_period_start, target_period_end = _period_bounds_for_granularity(
         granularity=target_granularity,
         anchor=anchor,
@@ -491,6 +490,9 @@ def _run_translation_step(
     settings: Any,
     include: list[str],
     granularities: list[str] | None,
+    period_start: datetime | None,
+    period_end: datetime | None,
+    all_history: bool,
     run_id: str,
 ) -> dict[str, Any]:
     run_translation = cli._import_symbol("recoleta.translation", attr_name="run_translation")
@@ -512,6 +514,9 @@ def _run_translation_step(
                 scope=scope,
                 granularity=granularity,
                 include=normalized_include,
+                period_start=period_start,
+                period_end=period_end,
+                all_history=all_history,
                 run_id=run_id,
             )
             totals["scanned"] += int(result.scanned_total)
@@ -593,6 +598,8 @@ def _execute_invocation(
     settings: Any,
     run_id: str,
     target_granularity: str | None,
+    target_period_start: datetime | None,
+    target_period_end: datetime | None,
     translate_include: list[str],
     translate_granularities: list[str] | None,
     delivery_mode: str | None,
@@ -684,6 +691,11 @@ def _execute_invocation(
             settings=settings,
             include=translate_include,
             granularities=translate_granularities,
+            period_start=target_period_start,
+            period_end=target_period_end,
+            all_history=not (
+                target_period_start is not None or target_period_end is not None
+            ),
             run_id=run_id,
         )
     if step_id == STEP_SITE_BUILD:
@@ -710,7 +722,9 @@ def execute_granularity_workflow(
     include: str | None = None,
     skip: str | None = None,
     json_output: bool = False,
-) -> None:
+    config_path: Path | None = None,
+    emit_output: bool = True,
+) -> dict[str, Any]:
     include_steps = _parse_step_list(include)
     skip_steps = _parse_step_list(skip)
     _validate_step_overrides(
@@ -721,6 +735,12 @@ def execute_granularity_workflow(
 
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+    begin_kwargs: dict[str, Any] = {
+        "command": command,
+        "log_module": f"cli.workflow.{workflow_name}",
+    }
+    if config_path is not None:
+        begin_kwargs["config_path"] = config_path
     (
         settings,
         repository,
@@ -730,10 +750,7 @@ def execute_granularity_workflow(
         owner_token,
         log,
         heartbeat_monitor,
-    ) = cli._begin_managed_run(
-        command=command,
-        log_module=f"cli.workflow.{workflow_name}",
-    )
+    ) = cli._begin_managed_run(**begin_kwargs)
 
     plan: WorkflowPlan | None = None
     billing_metrics_by_step: dict[str, list[Any]] = defaultdict(list)
@@ -762,7 +779,7 @@ def execute_granularity_workflow(
             run_id=run_id,
             command=command,
             operation_kind=plan.operation_kind,
-            scope=None if cli._has_explicit_topic_streams(settings) else DEFAULT_TOPIC_STREAM,
+            scope=DEFAULT_TOPIC_STREAM,
             granularity=plan.target_granularity,
             period_start=plan.target_period_start,
             period_end=plan.target_period_end,
@@ -784,6 +801,8 @@ def execute_granularity_workflow(
                         settings=settings,
                         run_id=run_id,
                         target_granularity=plan.target_granularity,
+                        target_period_start=plan.target_period_start,
+                        target_period_end=plan.target_period_end,
                         translate_include=list(policy.translate_include),
                         translate_granularities=translate_granularities,
                         delivery_mode=policy.delivery_mode,
@@ -913,15 +932,18 @@ def execute_granularity_workflow(
         "steps": step_results,
     }
     if json_output:
-        cli._emit_json(payload)
-        return
+        if emit_output:
+            cli._emit_json(payload)
+        return payload
 
-    console.print(
-        f"[green]{command} completed[/green] "
-        f"run_id={run_id} terminal_state={terminal_state} "
-        f"steps={len(executed_steps)}/{len(plan.requested_steps)}"
-    )
-    cli._print_billing_report(console=console, repository=repository, run_id=run_id)
+    if emit_output:
+        console.print(
+            f"[green]{command} completed[/green] "
+            f"run_id={run_id} terminal_state={terminal_state} "
+            f"steps={len(executed_steps)}/{len(plan.requested_steps)}"
+        )
+        cli._print_billing_report(console=console, repository=repository, run_id=run_id)
+    return payload
 
 
 def execute_deploy_workflow(
@@ -937,7 +959,9 @@ def execute_deploy_workflow(
     pages_config: str = "auto",
     force: bool = True,
     json_output: bool = False,
-) -> None:
+    config_path: Path | None = None,
+    emit_output: bool = True,
+) -> dict[str, Any]:
     include_steps = _parse_step_list(include)
     skip_steps = _parse_step_list(skip)
     _validate_step_overrides(
@@ -948,6 +972,12 @@ def execute_deploy_workflow(
 
     symbols = cli._runtime_symbols()
     workspace_lease_lost_error = symbols["WorkspaceLeaseLostError"]
+    begin_kwargs: dict[str, Any] = {
+        "command": command,
+        "log_module": "cli.workflow.deploy",
+    }
+    if config_path is not None:
+        begin_kwargs["config_path"] = config_path
     (
         settings,
         repository,
@@ -957,10 +987,7 @@ def execute_deploy_workflow(
         owner_token,
         log,
         heartbeat_monitor,
-    ) = cli._begin_managed_run(
-        command=command,
-        log_module="cli.workflow.deploy",
-    )
+    ) = cli._begin_managed_run(**begin_kwargs)
     _ = service
     plan: WorkflowPlan | None = None
     billing_metrics_by_step: dict[str, list[Any]] = defaultdict(list)
@@ -994,6 +1021,9 @@ def execute_deploy_workflow(
                             settings=settings,
                             include=list(settings.workflows.deploy.translate_include),
                             granularities=None,
+                            period_start=None,
+                            period_end=None,
+                            all_history=True,
                             run_id=run_id,
                         )
                     elif step_id == STEP_SITE_BUILD:
@@ -1151,14 +1181,17 @@ def execute_deploy_workflow(
         "steps": step_results,
     }
     if json_output:
-        cli._emit_json(payload)
-        return
-    console.print(
-        f"[green]{command} completed[/green] "
-        f"run_id={run_id} terminal_state={terminal_state} "
-        f"steps={len(executed_steps)}/{len(plan.requested_steps)}"
-    )
-    cli._print_billing_report(console=console, repository=repository, run_id=run_id)
+        if emit_output:
+            cli._emit_json(payload)
+        return payload
+    if emit_output:
+        console.print(
+            f"[green]{command} completed[/green] "
+            f"run_id={run_id} terminal_state={terminal_state} "
+            f"steps={len(executed_steps)}/{len(plan.requested_steps)}"
+        )
+        cli._print_billing_report(console=console, repository=repository, run_id=run_id)
+    return payload
 
 
 def run_daemon_start_command() -> None:

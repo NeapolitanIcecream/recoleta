@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import recoleta.cli as cli
@@ -122,4 +123,49 @@ def run_db_reset_command(
     console.print(
         "[green]db trends reset[/green] "
         f"deleted_docs={docs_deleted_total} deleted_chunks={chunks_deleted_total} path={resolved}"
+    )
+
+
+def run_db_cleanup_instance_first_schema_command(
+    *,
+    db_path: Path | None,
+    config_path: Path | None,
+    yes: bool,
+    json_output: bool,
+) -> None:
+    if not yes:
+        cli.typer.echo(
+            "refusing to drop legacy instance-first tables without --yes"
+        )
+        raise cli.typer.Exit(code=2)
+
+    symbols = cli._runtime_symbols()
+    console_cls = symbols["Console"]
+    repository_cls = symbols["Repository"]
+    console = console_cls()
+
+    try:
+        resolved = cli._resolve_db_path(db_path=db_path, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]db path resolution failed[/red] {exc}")
+        raise cli.typer.Exit(code=2) from exc
+
+    if not resolved.exists():
+        console.print(f"[red]db does not exist[/red] path={resolved}")
+        raise cli.typer.Exit(code=2)
+
+    repository = repository_cls(db_path=resolved)
+    repository.ensure_schema_compatible()
+    payload = repository.cleanup_legacy_instance_first_schema()
+    payload["status"] = "ok"
+
+    if json_output:
+        cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
+
+    console.print(
+        "[green]db cleanup-instance-first-schema completed[/green] "
+        f"path={payload['db_path']} "
+        f"had_item_stream_states={payload['had_item_stream_states']} "
+        f"dropped_item_stream_state_rows={payload['dropped_item_stream_state_rows']}"
     )

@@ -16,13 +16,8 @@ from recoleta.models import (
     Artifact,
     Document,
     ITEM_STATE_ANALYZED,
-    ITEM_STATE_ENRICHED,
-    ITEM_STATE_FAILED,
     ITEM_STATE_PUBLISHED,
-    ITEM_STATE_RETRYABLE_FAILED,
-    ITEM_STATE_TRIAGED,
     Item,
-    ItemStreamState,
     Metric,
     Run,
     RUN_STATUS_FAILED,
@@ -49,6 +44,33 @@ class MaintenanceStoreMixin:
     def _commit(self, session: Session) -> None: ...
 
     def schema_version(self) -> int: ...
+
+    def cleanup_legacy_instance_first_schema(self) -> dict[str, Any]:
+        had_item_stream_states = False
+        dropped_item_stream_state_rows = 0
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'item_stream_states'
+                    LIMIT 1;
+                    """
+                )
+            ).fetchone()
+            had_item_stream_states = row is not None
+            if had_item_stream_states:
+                dropped_item_stream_state_rows = int(
+                    conn.execute(text("SELECT COUNT(*) FROM item_stream_states;")).scalar()
+                    or 0
+                )
+                conn.execute(text("DROP TABLE item_stream_states;"))
+        return {
+            "db_path": str(self.db_path),
+            "had_item_stream_states": had_item_stream_states,
+            "dropped_item_stream_state_rows": dropped_item_stream_state_rows,
+        }
 
     def add_artifact(
         self,
@@ -86,111 +108,6 @@ class MaintenanceStoreMixin:
             )
             return list(session.exec(statement))
 
-    def repair_stream_states_for_period(
-        self,
-        *,
-        period_start: datetime,
-        period_end: datetime,
-        streams: list[str],
-    ) -> dict[str, Any]:
-        normalized_streams = sorted(
-            {str(stream or "").strip() for stream in streams if str(stream or "").strip()}
-        )
-        if not normalized_streams:
-            return {
-                "period_start": period_start.isoformat(),
-                "period_end": period_end.isoformat(),
-                "streams": [],
-                "item_total": 0,
-                "candidate_total": 0,
-                "inserted_total": 0,
-                "updated_total": 0,
-                "unchanged_total": 0,
-            }
-
-        ready_item_states = [
-            ITEM_STATE_ENRICHED,
-            ITEM_STATE_TRIAGED,
-            ITEM_STATE_ANALYZED,
-            ITEM_STATE_PUBLISHED,
-            ITEM_STATE_RETRYABLE_FAILED,
-            ITEM_STATE_FAILED,
-        ]
-        with Session(self.engine) as session:
-            event_at = func.coalesce(
-                cast(Any, Item.published_at), cast(Any, Item.created_at)
-            )
-            items = list(
-                session.exec(
-                    select(Item)
-                    .where(
-                        event_at >= period_start,
-                        event_at < period_end,
-                        cast(Any, Item.state).in_(ready_item_states),
-                    )
-                    .order_by(
-                        desc(cast(Any, event_at)),
-                        desc(cast(Any, Item.updated_at)),
-                        desc(cast(Any, Item.created_at)),
-                    )
-                )
-            )
-            item_ids = [
-                int(raw_id)
-                for raw_id in (getattr(item, "id", None) for item in items)
-                if raw_id is not None and int(raw_id) > 0
-            ]
-            existing_states: dict[tuple[int, str], ItemStreamState] = {}
-            if item_ids:
-                for row in session.exec(
-                    select(ItemStreamState).where(
-                        cast(Any, ItemStreamState.item_id).in_(item_ids),
-                        cast(Any, ItemStreamState.stream).in_(normalized_streams),
-                    )
-                ):
-                    existing_states[(int(row.item_id), str(row.stream))] = row
-
-            inserted_total = 0
-            updated_total = 0
-            unchanged_total = 0
-            now = utc_now()
-            for item_id in item_ids:
-                for stream in normalized_streams:
-                    existing = existing_states.get((item_id, stream))
-                    if existing is None:
-                        session.add(
-                            ItemStreamState(
-                                item_id=item_id,
-                                stream=stream,
-                                state=ITEM_STATE_RETRYABLE_FAILED,
-                                created_at=now,
-                                updated_at=now,
-                            )
-                        )
-                        inserted_total += 1
-                        continue
-                    if str(getattr(existing, "state", "") or "") == ITEM_STATE_RETRYABLE_FAILED:
-                        unchanged_total += 1
-                        continue
-                    existing.state = ITEM_STATE_RETRYABLE_FAILED
-                    existing.updated_at = now
-                    session.add(existing)
-                    updated_total += 1
-
-            if inserted_total > 0 or updated_total > 0:
-                self._commit(session)
-
-        return {
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "streams": normalized_streams,
-            "item_total": len(item_ids),
-            "candidate_total": len(item_ids) * len(normalized_streams),
-            "inserted_total": inserted_total,
-            "updated_total": updated_total,
-            "unchanged_total": unchanged_total,
-        }
-
     def diagnose_corpus_window(
         self,
         *,
@@ -209,19 +126,11 @@ class MaintenanceStoreMixin:
             )
             rows = list(
                 session.exec(
-                    select(Item, Analysis, ItemStreamState)
+                    select(Item, Analysis)
                     .outerjoin(
                         Analysis,
                         and_(
                             cast(Any, Analysis.item_id) == cast(Any, Item.id),
-                            cast(Any, Analysis.scope) == normalized_scope,
-                        ),
-                    )
-                    .outerjoin(
-                        ItemStreamState,
-                        and_(
-                            cast(Any, ItemStreamState.item_id) == cast(Any, Item.id),
-                            cast(Any, ItemStreamState.stream) == normalized_scope,
                         ),
                     )
                     .where(event_at >= period_start, event_at < period_end)
@@ -238,7 +147,6 @@ class MaintenanceStoreMixin:
                     .select_from(Document)
                     .where(
                         Document.doc_type == "item",
-                        cast(Any, Document.scope) == normalized_scope,
                         cast(Any, Document.published_at).is_not(None),
                         cast(Any, Document.published_at) >= period_start,
                         cast(Any, Document.published_at) < period_end,
@@ -256,7 +164,7 @@ class MaintenanceStoreMixin:
         stream_state_present_total = 0
         excluded_samples: list[dict[str, Any]] = []
 
-        for item, analysis, stream_state in rows:
+        for item, analysis in rows:
             item_state = str(getattr(item, "state", "") or "unknown")
             item_states[item_state] = item_states.get(item_state, 0) + 1
             if analysis is not None:
@@ -266,17 +174,10 @@ class MaintenanceStoreMixin:
             if analysis is None:
                 blockers.add("missing_analysis")
 
-            if stream_state is None:
-                stream_states["missing"] = stream_states.get("missing", 0) + 1
-                blockers.add("missing_stream_state")
-            else:
-                stream_state_present_total += 1
-                stream_state_name = str(getattr(stream_state, "state", "") or "unknown")
-                stream_states[stream_state_name] = (
-                    stream_states.get(stream_state_name, 0) + 1
-                )
-                if stream_state_name not in selected_stream_states:
-                    blockers.add(f"stream_state_{stream_state_name}")
+            stream_state_present_total += 1
+            stream_states[item_state] = stream_states.get(item_state, 0) + 1
+            if item_state not in selected_stream_states:
+                blockers.add(f"stream_state_{item_state}")
 
             if analysis is not None and float(getattr(analysis, "relevance_score", 0.0) or 0.0) < min_relevance:
                 blockers.add("relevance_below_threshold")

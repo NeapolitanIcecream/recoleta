@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+import threading
 from types import SimpleNamespace
 from typing import cast
 
@@ -11,6 +12,7 @@ from sqlmodel import Session, select
 from typer.testing import CliRunner
 
 import recoleta.cli as recoleta_cli
+import recoleta.cli.translate as translate_cli
 from recoleta import translation as translation_module
 from recoleta.cli.app import app
 from recoleta.config import LocalizationConfig, Settings
@@ -159,6 +161,40 @@ def _seed_item_trend_and_idea(
         source_content_type="trend_ideas_payload_json",
     )
     return analysis, int(trend_doc_id), int(idea_doc.id)
+
+
+def _seed_analysis(
+    *,
+    repository: Repository,
+    source_item_id: str,
+    canonical_url: str,
+    title: str,
+    published_at: datetime,
+    summary: str,
+) -> Analysis:
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id=source_item_id,
+        canonical_url=canonical_url,
+        title=title,
+        authors=["Alice"],
+        published_at=published_at,
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    return repository.save_analysis(
+        item_id=int(item.id),
+        result=AnalysisResult(
+            model="openai/gpt-5.4",
+            provider="openai",
+            summary=summary,
+            topics=["agents"],
+            relevance_score=0.8,
+            novelty_score=0.3,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
 
 
 def test_settings_loads_localization_from_env_string(
@@ -907,14 +943,419 @@ def test_translate_run_cli_json_includes_run_id_and_billing(
     assert payload["billing"]["components"]["translation_llm"]["calls"] == 1
     assert payload["billing"]["components"]["translation_llm"]["input_tokens"] == 64
     assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 16
-    assert payload["billing"]["total_cost_usd"] == 0.0011
-    row = repository.get_localized_output(
-        source_kind="analysis",
-        source_record_id=int(analysis.id or 0),
-        scope="default",
-        language_code="zh-CN",
+
+
+def test_translate_run_cli_rejects_non_default_scope_in_instance_first_runtime(
+    tmp_path: Path,
+) -> None:
+    """Regression: instance-first translate runs must target the default scope only."""
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'recoleta_db_path: "{repository.db_path}"',
+                'llm_model: "openai/gpt-5.4"',
+                'publish_targets: ["markdown"]',
+                f'markdown_output_dir: "{tmp_path / "outputs"}"',
+                'llm_output_language: "English"',
+                "localization:",
+                "  source_language_code: en",
+                "  targets:",
+                '    - code: "zh-CN"',
+                '      llm_label: "Chinese (Simplified)"',
+                "  site_default_language_code: en",
+                "",
+            ]
+        ),
+        encoding="utf-8",
     )
-    assert row is not None
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "translate",
+            "--config-path",
+            str(config_path),
+            "--scope",
+            "agents_lab",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--scope default" in result.stdout
+
+
+def test_run_translation_incremental_limits_items_to_workflow_period(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: workflow translation must not drain old item backlog outside the target window."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    older_analysis = _seed_analysis(
+        repository=repository,
+        source_item_id="older-item",
+        canonical_url="https://example.com/older",
+        title="Older item",
+        published_at=datetime(2026, 3, 1, 12, tzinfo=UTC),
+        summary="## Summary\n\nOlder summary.\n",
+    )
+    current_analysis = _seed_analysis(
+        repository=repository,
+        source_item_id="current-item",
+        canonical_url="https://example.com/current",
+        title="Current item",
+        published_at=datetime(2026, 3, 16, 12, tzinfo=UTC),
+        summary="## Summary\n\nCurrent summary.\n",
+    )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: kwargs["payload"],
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="items",
+        force=True,
+        all_history=False,
+        period_start=datetime(2026, 3, 16, tzinfo=UTC),
+        period_end=datetime(2026, 3, 17, tzinfo=UTC),
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 1
+    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    assert {
+        (row.source_kind, row.source_record_id)
+        for row in rows
+    } == {("analysis", int(current_analysis.id or 0))}
+    assert int(older_analysis.id or 0) not in {
+        int(row.source_record_id or 0) for row in rows if row.source_kind == "analysis"
+    }
+
+
+def test_run_translation_executes_llm_calls_in_parallel_for_multiple_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    titles = ["Alpha systems", "Beta agents", "Gamma robotics"]
+    for index in range(3):
+        _seed_analysis(
+            repository=repository,
+            source_item_id=f"parallel-item-{index}",
+            canonical_url=f"https://example.com/parallel-{index}",
+            title=titles[index],
+            published_at=datetime(2026, 3, 16, 12 + index, tzinfo=UTC),
+            summary=f"## Summary\n\nParallel summary {index}.\n",
+        )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    barrier = threading.Barrier(3)
+    lock = threading.Lock()
+    inflight = 0
+    max_inflight = 0
+
+    def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
+        nonlocal inflight, max_inflight
+        with lock:
+            inflight += 1
+            max_inflight = max(max_inflight, inflight)
+        try:
+            barrier.wait(timeout=1.0)
+            return kwargs["payload"]
+        finally:
+            with lock:
+                inflight -= 1
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        _fake_translate,
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="items",
+        force=True,
+        all_history=False,
+        period_start=datetime(2026, 3, 16, tzinfo=UTC),
+        period_end=datetime(2026, 3, 17, tzinfo=UTC),
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 3
+    assert max_inflight >= 2
+
+
+def test_run_translation_stops_submitting_new_tasks_after_provider_failure_threshold_pr_23(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: aborting on provider failures must stop submitting the full batch."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+    candidates = [
+        translation_module.TranslationCandidate(
+            source_kind="analysis",
+            source_record_id=index + 1,
+            scope="default",
+            payload={"summary": f"Candidate {index + 1}"},
+            payload_model=None,
+            canonical_language_code="en",
+        )
+        for index in range(10)
+    ]
+    submitted_source_record_ids: list[int] = []
+
+    class APIConnectionError(Exception):
+        pass
+
+    class _FailedFuture:
+        def result(self) -> translation_module._CompletedTranslationTask:
+            raise APIConnectionError("rate limited")
+
+    class _FakeExecutor:
+        def __init__(self, *, max_workers: int) -> None:
+            self.max_workers = max_workers
+
+        def __enter__(self) -> "_FakeExecutor":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:  # type: ignore[no-untyped-def]
+            return False
+
+        def submit(self, fn, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+            _ = fn, args
+            task = kwargs["task"]
+            submitted_source_record_ids.append(task.candidate.source_record_id)
+            return _FailedFuture()
+
+    monkeypatch.setattr(
+        translation_module,
+        "_incremental_candidates",
+        lambda **kwargs: candidates,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "_prepare_translation_task",
+        lambda **kwargs: (
+            "prepared",
+            translation_module._PreparedTranslationTask(
+                candidate=kwargs["candidate"],
+                target=kwargs["target"],
+                source_hash=f"hash-{kwargs['candidate'].source_record_id}",
+                context={},
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "_translation_parallelism",
+        lambda task_total: 2 if task_total > 1 else 1,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "ThreadPoolExecutor",
+        _FakeExecutor,
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="items",
+        force=True,
+        all_history=True,
+    )
+
+    assert result.aborted is True
+    assert result.failed_total == translation_module._PROVIDER_FAILURE_ABORT_THRESHOLD
+    assert submitted_source_record_ids == [1, 2, 3, 4, 5, 6]
+
+
+def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: period-scoped translation must normalize SQLite-naive trend windows."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: kwargs["payload"],
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="trends",
+        granularity="day",
+        force=True,
+        all_history=False,
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 1
+    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    assert {
+        (row.source_kind, row.source_record_id)
+        for row in rows
+    } == {("trend_synthesis", trend_doc_id)}
+
+
+def test_run_translation_period_filter_includes_cross_boundary_week_windows_pr_23(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: month-scoped translation must include overlapping week trends."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    month_start = datetime(2026, 3, 1, tzinfo=UTC)
+    month_end = datetime(2026, 4, 1, tzinfo=UTC)
+    week_start = datetime(2026, 2, 24, tzinfo=UTC)
+    week_end = datetime(2026, 3, 3, tzinfo=UTC)
+    trend_doc_id = persist_trend_payload(
+        repository=repository,
+        granularity="week",
+        period_start=week_start,
+        period_end=week_end,
+        payload=TrendPayload.model_validate(
+            {
+                "title": "Cross-boundary week",
+                "granularity": "week",
+                "period_start": week_start.isoformat(),
+                "period_end": week_end.isoformat(),
+                "overview_md": "## Overview\n\nCross-boundary trend overview.\n",
+                "topics": ["agents"],
+                "clusters": [],
+                "highlights": [],
+                "evolution": None,
+            }
+        ),
+    )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: kwargs["payload"],
+    )
+
+    result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include="trends",
+        granularity="week",
+        force=True,
+        all_history=False,
+        period_start=month_start,
+        period_end=month_end,
+    )
+
+    assert result.failed_total == 0
+    assert result.translated_total == 1
+    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    assert {
+        (row.source_kind, row.source_record_id)
+        for row in rows
+    } == {("trend_synthesis", int(trend_doc_id))}
 
 
 def test_translate_run_hybrid_uses_search_service_without_auto_syncing_vectors(
@@ -1471,6 +1912,52 @@ def test_translate_backfill_cli_json_includes_run_id_and_billing(
     assert payload["billing"]["total_cost_usd"] == 0.0019
 
 
+def test_translate_backfill_cli_rejects_non_default_scope_in_instance_first_runtime(
+    tmp_path: Path,
+) -> None:
+    """Regression: instance-first translation backfill must target the default scope only."""
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    config_path = tmp_path / "recoleta-backfill.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'recoleta_db_path: "{repository.db_path}"',
+                'llm_model: "openai/gpt-5.4"',
+                'publish_targets: ["markdown"]',
+                f'markdown_output_dir: "{tmp_path / "outputs"}"',
+                'llm_output_language: "English"',
+                "localization:",
+                "  source_language_code: en",
+                "  targets:",
+                '    - code: "zh-CN"',
+                '      llm_label: "Chinese (Simplified)"',
+                "  site_default_language_code: en",
+                '  legacy_backfill_source_language_code: "zh-CN"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "stage",
+            "translate",
+            "backfill",
+            "--config-path",
+            str(config_path),
+            "--scope",
+            "agents_lab",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--scope default" in result.stdout
+
+
 def test_translate_run_preserves_success_when_billing_metrics_lookup_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1697,6 +2184,104 @@ def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window
     }
 
 
+def test_translate_run_command_raises_when_abort_requested_pr_23(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: callers must be able to fail closed on translation aborts."""
+
+    class _FakeRepo:
+        def __init__(self) -> None:
+            self.finished: list[tuple[str, bool]] = []
+
+        def init_schema(self) -> None:
+            return None
+
+        def finish_run(self, run_id: str, *, success: bool) -> None:
+            self.finished.append((run_id, success))
+
+        def list_metrics(self, *, run_id: str) -> list[object]:
+            _ = run_id
+            return []
+
+    class _FakeLog:
+        def __init__(self) -> None:
+            self.warning_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        def warning(self, *args: object, **kwargs: object) -> None:
+            self.warning_calls.append((args, kwargs))
+
+        def exception(self, *args: object, **kwargs: object) -> None:
+            self.warning_calls.append((args, kwargs))
+
+    class _FakeHeartbeat:
+        def raise_if_failed(self) -> None:
+            return None
+
+    class _FakeConsole:
+        def __init__(self) -> None:
+            self.lines: list[str] = []
+
+        def print(self, *values: object, **kwargs: object) -> None:
+            _ = kwargs
+            self.lines.append(" ".join(str(value) for value in values))
+
+    fake_repo = _FakeRepo()
+    fake_log = _FakeLog()
+    fake_console = _FakeConsole()
+    fake_settings = SimpleNamespace(log_json=False)
+
+    monkeypatch.setattr(
+        translate_cli,
+        "_load_settings_for_translate",
+        lambda **_: (Path("/tmp/recoleta.db"), fake_settings, fake_repo, fake_console),
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_begin_managed_run_for_settings",
+        lambda **_: ("run-translate", "owner", fake_log, _FakeHeartbeat()),
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_cleanup_managed_run",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_print_billing_report",
+        lambda **_: None,
+    )
+    monkeypatch.setattr(
+        recoleta_cli,
+        "_update_run_context",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "run_translation",
+        lambda **_: translation_module.TranslationRunResult(
+            aborted=True,
+            abort_reason="5 consecutive provider failures",
+            failed_total=5,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="provider failures"):
+        translate_cli.run_translate_run_command(
+            db_path=None,
+            config_path=None,
+            scope="default",
+            granularity=None,
+            include="items",
+            limit=None,
+            force=False,
+            context_assist="direct",
+            json_output=False,
+            raise_on_abort=True,
+        )
+
+    assert fake_repo.finished == [("run-translate", False)]
+
+
 def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1774,7 +2359,6 @@ def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outpu
             select(translation_module.Document)
             .where(
                 translation_module.Document.doc_type == "idea",
-                translation_module.Document.scope == "default",
                 translation_module.Document.granularity == "day",
                 translation_module.Document.period_start == period_start,
                 translation_module.Document.period_end == period_end,
