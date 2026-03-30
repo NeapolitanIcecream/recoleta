@@ -164,6 +164,13 @@ class IdeaBodyRenderResult:
     evidence_count: int
 
 
+@dataclass(slots=True)
+class ItemSiteSelection:
+    source_documents: list[ItemSiteSourceDocument]
+    available_total: int
+    unreferenced_total: int
+
+
 def _parse_site_datetime(value: Any) -> datetime | None:
     raw = str(value or "").strip()
     if not raw:
@@ -188,6 +195,13 @@ def _parse_site_bool(value: Any) -> bool:
         return value
     normalized = str(value or "").strip().lower()
     return normalized in {"1", "true", "yes", "on"}
+
+
+def _normalize_item_export_scope(item_export_scope: str | None) -> str:
+    normalized = str(item_export_scope or "").strip().lower() or "linked"
+    if normalized not in {"linked", "all"}:
+        raise ValueError("item_export_scope must be one of: linked, all")
+    return normalized
 
 
 def _safe_excerpt(value: str, *, limit: int = 220) -> str:
@@ -2969,6 +2983,7 @@ def _rewrite_site_markdown_links(
 def _load_item_source_documents(
     *,
     input_dirs: Sequence[TrendSiteInputDirectory],
+    allowed_markdown_paths: set[Path] | None = None,
 ) -> list[ItemSiteSourceDocument]:
     source_documents: list[ItemSiteSourceDocument] = []
     seen_paths: set[Path] = set()
@@ -2980,6 +2995,11 @@ def _load_item_source_documents(
             if resolved_markdown_path in seen_paths:
                 continue
             seen_paths.add(resolved_markdown_path)
+            if (
+                allowed_markdown_paths is not None
+                and resolved_markdown_path not in allowed_markdown_paths
+            ):
+                continue
             raw_markdown = resolved_markdown_path.read_text(encoding="utf-8")
             frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
             title = _extract_markdown_h1(
@@ -3018,6 +3038,24 @@ def _load_item_source_documents(
         reverse=True,
     )
     return source_documents
+
+
+def _discover_item_source_markdown_paths(
+    *,
+    input_dirs: Sequence[TrendSiteInputDirectory],
+) -> list[Path]:
+    discovered_paths: list[Path] = []
+    seen_paths: set[Path] = set()
+    for input_info in input_dirs:
+        if input_info.inbox_path is None:
+            continue
+        for markdown_path in sorted(input_info.inbox_path.glob("*.md")):
+            resolved_markdown_path = markdown_path.resolve()
+            if resolved_markdown_path in seen_paths:
+                continue
+            seen_paths.add(resolved_markdown_path)
+            discovered_paths.append(resolved_markdown_path)
+    return discovered_paths
 
 
 def _load_idea_source_documents(
@@ -3063,6 +3101,65 @@ def _load_idea_source_documents(
 
     source_documents.sort(key=_idea_site_sort_key, reverse=True)
     return source_documents[:limit] if limit is not None else source_documents
+
+
+def _collect_referenced_item_markdown_paths(
+    *,
+    source_documents: Sequence[TrendSiteSourceDocument | IdeaSiteSourceDocument],
+    available_item_paths: set[Path],
+) -> set[Path]:
+    if not source_documents or not available_item_paths:
+        return set()
+    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
+    referenced_paths: set[Path] = set()
+    for source_document in source_documents:
+        normalized_markdown = str(source_document.markdown_body or "").strip()
+        if not normalized_markdown:
+            continue
+        rendered_html = markdown.render(normalized_markdown)
+        soup = BeautifulSoup(rendered_html, "html.parser")
+        for anchor in soup.find_all("a", href=True):
+            target_path = _resolve_site_local_markdown_target(
+                source_markdown_path=source_document.markdown_path,
+                href=str(anchor.get("href") or ""),
+            )
+            if target_path is None or target_path not in available_item_paths:
+                continue
+            referenced_paths.add(target_path)
+    return referenced_paths
+
+
+def _select_item_source_documents(
+    *,
+    input_dirs: Sequence[TrendSiteInputDirectory],
+    trend_source_documents: Sequence[TrendSiteSourceDocument],
+    idea_source_documents: Sequence[IdeaSiteSourceDocument],
+    item_export_scope: str,
+) -> ItemSiteSelection:
+    available_item_paths = _discover_item_source_markdown_paths(input_dirs=input_dirs)
+    available_item_path_set = set(available_item_paths)
+    normalized_scope = _normalize_item_export_scope(item_export_scope)
+    selected_item_paths = (
+        available_item_path_set
+        if normalized_scope == "all"
+        else _collect_referenced_item_markdown_paths(
+            source_documents=[*trend_source_documents, *idea_source_documents],
+            available_item_paths=available_item_path_set,
+        )
+    )
+    source_documents = _load_item_source_documents(
+        input_dirs=input_dirs,
+        allowed_markdown_paths=selected_item_paths,
+    )
+    return ItemSiteSelection(
+        source_documents=source_documents,
+        available_total=len(available_item_paths),
+        unreferenced_total=(
+            0
+            if normalized_scope == "all"
+            else max(len(available_item_paths) - len(selected_item_paths), 0)
+        ),
+    )
 
 
 def _extract_item_body_html(*, body_html: str) -> tuple[str, str, str]:
@@ -3417,11 +3514,10 @@ def _build_idea_browser_body_html(*, body_html: str) -> IdeaBodyRenderResult:
 
 def _load_item_site_documents(
     *,
-    input_dirs: Sequence[TrendSiteInputDirectory],
+    source_documents: Sequence[ItemSiteSourceDocument],
     output_dir: Path,
 ) -> tuple[list[ItemSiteDocument], dict[Path, Path]]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
-    source_documents = _load_item_source_documents(input_dirs=input_dirs)
     items_dir = output_dir / "items"
     item_artifacts_dir = output_dir / "artifacts" / "items"
     items_dir.mkdir(parents=True, exist_ok=True)
@@ -3469,13 +3565,11 @@ def _load_item_site_documents(
 
 def _load_idea_site_documents(
     *,
-    input_dirs: Sequence[TrendSiteInputDirectory],
+    source_documents: Sequence[IdeaSiteSourceDocument],
     output_dir: Path,
     linked_page_by_markdown_path: dict[Path, Path],
-    limit: int | None = None,
 ) -> tuple[list[IdeaSiteDocument], dict[Path, Path]]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
-    source_documents = _load_idea_source_documents(input_dirs=input_dirs, limit=limit)
     ideas_dir = output_dir / "ideas"
     idea_artifacts_dir = output_dir / "artifacts" / "ideas"
     ideas_dir.mkdir(parents=True, exist_ok=True)
@@ -3543,14 +3637,12 @@ def _load_idea_site_documents(
 
 def _load_trend_site_documents(
     *,
-    input_dirs: Sequence[TrendSiteInputDirectory],
+    source_documents: Sequence[TrendSiteSourceDocument],
     output_dir: Path,
     item_pages_by_markdown_path: dict[Path, Path],
-    limit: int | None = None,
 ) -> list[TrendSiteDocument]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
     documents: list[TrendSiteDocument] = []
-    source_documents = _load_trend_source_documents(input_dirs=input_dirs, limit=limit)
 
     artifacts_dir = output_dir / "artifacts"
     trends_dir = output_dir / "trends"
@@ -3937,8 +4029,10 @@ def _export_trend_static_site_single_language(
     input_dir: Path | Sequence[Path],
     output_dir: Path,
     limit: int | None = None,
+    item_export_scope: str = "linked",
     include_localized_children: bool = True,
 ) -> Path:
+    normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
     resolved_input_roots = _coerce_site_input_paths(input_dir)
     resolved_input_dirs = _discover_trend_site_input_dirs(
         resolved_input_roots,
@@ -3957,15 +4051,28 @@ def _export_trend_static_site_single_language(
     (resolved_output_dir / "topics").mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "streams").mkdir(parents=True, exist_ok=True)
 
-    item_documents, item_pages_by_markdown_path = _load_item_site_documents(
+    trend_source_documents = _load_trend_source_documents(
         input_dirs=resolved_input_dirs,
+        limit=limit,
+    )
+    idea_source_documents = _load_idea_source_documents(
+        input_dirs=resolved_input_dirs,
+        limit=limit,
+    )
+    item_selection = _select_item_source_documents(
+        input_dirs=resolved_input_dirs,
+        trend_source_documents=trend_source_documents,
+        idea_source_documents=idea_source_documents,
+        item_export_scope=normalized_item_export_scope,
+    )
+    item_documents, item_pages_by_markdown_path = _load_item_site_documents(
+        source_documents=item_selection.source_documents,
         output_dir=resolved_output_dir,
     )
     documents = _load_trend_site_documents(
-        input_dirs=resolved_input_dirs,
+        source_documents=trend_source_documents,
         output_dir=resolved_output_dir,
         item_pages_by_markdown_path=item_pages_by_markdown_path,
-        limit=limit,
     )
     linked_page_by_markdown_path = dict(item_pages_by_markdown_path)
     linked_page_by_markdown_path.update(
@@ -3975,10 +4082,9 @@ def _export_trend_static_site_single_language(
         }
     )
     idea_documents, idea_pages_by_markdown_path = _load_idea_site_documents(
-        input_dirs=resolved_input_dirs,
+        source_documents=idea_source_documents,
         output_dir=resolved_output_dir,
         linked_page_by_markdown_path=linked_page_by_markdown_path,
-        limit=limit,
     )
     linked_page_by_markdown_path.update(idea_pages_by_markdown_path)
 
@@ -4113,9 +4219,12 @@ def _export_trend_static_site_single_language(
             for input_info in resolved_input_dirs
         ],
         "output_dir": str(resolved_output_dir),
+        "item_export_scope": normalized_item_export_scope,
         "trends_total": len(documents),
         "ideas_total": len(idea_documents),
         "items_total": len(item_documents),
+        "items_available_total": item_selection.available_total,
+        "items_unreferenced_total": item_selection.unreferenced_total,
         "topics_total": len(topic_pages),
         "files": {
             "index": "index.html",
@@ -4151,9 +4260,12 @@ def _export_trend_static_site_single_language(
     logger.bind(
         module="site.build",
         output_dir=str(resolved_output_dir),
+        item_export_scope=normalized_item_export_scope,
         trends_total=len(documents),
         ideas_total=len(idea_documents),
         items_total=len(item_documents),
+        items_available_total=item_selection.available_total,
+        items_unreferenced_total=item_selection.unreferenced_total,
         topics_total=len(topic_pages),
     ).info("Trend static site export completed")
     return manifest_path
@@ -4165,7 +4277,9 @@ def export_trend_static_site(
     output_dir: Path,
     limit: int | None = None,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
 ) -> Path:
+    normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
     resolved_input_roots = _coerce_site_input_paths(input_dir)
     language_inputs = _discover_site_language_inputs(resolved_input_roots)
     valid_language_inputs = [
@@ -4179,6 +4293,7 @@ def export_trend_static_site(
             input_dir=input_dir,
             output_dir=output_dir,
             limit=limit,
+            item_export_scope=normalized_item_export_scope,
         )
         if valid_language_inputs:
             language_code, language_slug, _root_paths = valid_language_inputs[0]
@@ -4218,6 +4333,7 @@ def export_trend_static_site(
             input_dir=list(root_paths),
             output_dir=language_output_dir,
             limit=limit,
+            item_export_scope=normalized_item_export_scope,
             include_localized_children=False,
         )
         manifest_by_language[language_slug] = json.loads(
@@ -4284,7 +4400,9 @@ def stage_trend_site_source(
     output_dir: Path,
     limit: int | None = None,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
 ) -> Path:
+    normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
     resolved_input_roots = _coerce_site_input_paths(input_dir)
     resolved_input_dirs = _discover_trend_site_input_dirs(resolved_input_roots)
     resolved_output_dir = output_dir.expanduser().resolve()
@@ -4311,7 +4429,13 @@ def stage_trend_site_source(
         input_dirs=resolved_input_dirs,
         limit=limit,
     )
-    item_source_documents = _load_item_source_documents(input_dirs=resolved_input_dirs)
+    item_selection = _select_item_source_documents(
+        input_dirs=resolved_input_dirs,
+        trend_source_documents=source_documents,
+        idea_source_documents=idea_source_documents,
+        item_export_scope=normalized_item_export_scope,
+    )
+    item_source_documents = item_selection.source_documents
     has_stream_documents = any(
         bool(source_document.stream) for source_document in source_documents
     )
@@ -4435,9 +4559,12 @@ def stage_trend_site_source(
                 if str(input_info.language_slug or "").strip()
             }
         ),
+        "item_export_scope": normalized_item_export_scope,
         "trends_total": len(source_documents),
         "ideas_total": len(idea_source_documents),
         "items_total": len(item_source_documents),
+        "items_available_total": item_selection.available_total,
+        "items_unreferenced_total": item_selection.unreferenced_total,
         "pdf_total": len(staged_pdf_files),
         "files": {
             "markdown": staged_markdown_files,
@@ -4454,9 +4581,12 @@ def stage_trend_site_source(
     logger.bind(
         module="site.stage",
         output_dir=str(resolved_output_dir),
+        item_export_scope=normalized_item_export_scope,
         trends_total=len(source_documents),
         ideas_total=len(idea_source_documents),
         items_total=len(item_source_documents),
+        items_available_total=item_selection.available_total,
+        items_unreferenced_total=item_selection.unreferenced_total,
         pdf_total=len(staged_pdf_files),
     ).info("Trend site source staging completed")
     return manifest_path

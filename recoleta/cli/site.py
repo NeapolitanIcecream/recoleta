@@ -4,6 +4,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
@@ -26,12 +27,25 @@ def _create_site_server(
     return ThreadingHTTPServer((host, port), handler)
 
 
+def _site_item_count_segment(manifest: dict[str, Any]) -> str | None:
+    if "items_total" not in manifest:
+        return None
+    items_total = int(manifest.get("items_total") or 0)
+    items_available_total = manifest.get("items_available_total")
+    if items_available_total is not None:
+        available_total = int(items_available_total or 0)
+        if available_total > items_total:
+            return f"items={items_total}/{available_total}"
+    return f"items={items_total}"
+
+
 def run_site_build_command(
     *,
     input_dir: Path | None,
     output_dir: Path | None,
     limit: int | None,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
     json_output: bool = False,
     command_name: str = "site build",
 ) -> None:
@@ -71,6 +85,7 @@ def run_site_build_command(
             None,
         )
         resolved_default_language_code = str(configured_default or "").strip() or None
+    normalized_item_export_scope = str(item_export_scope or "").strip().lower() or "linked"
     console = (
         console_cls(stderr=settings.log_json) if settings is not None else console_cls()
     )
@@ -90,6 +105,8 @@ def run_site_build_command(
         }
         if resolved_default_language_code is not None:
             export_kwargs["default_language_code"] = resolved_default_language_code
+        if normalized_item_export_scope != "linked":
+            export_kwargs["item_export_scope"] = normalized_item_export_scope
         manifest_path = export_trend_static_site(
             **export_kwargs,
         )
@@ -119,6 +136,9 @@ def run_site_build_command(
                 "output_dir": str(resolved_output_dir),
                 "manifest_path": str(manifest_path),
                 "default_language_code": resolved_default_language_code,
+                "item_export_scope": manifest.get(
+                    "item_export_scope", normalized_item_export_scope
+                ),
                 "manifest": manifest,
             }
         )
@@ -126,6 +146,8 @@ def run_site_build_command(
     segments = [f"trends={manifest['trends_total']}"]
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
+    if item_segment := _site_item_count_segment(manifest):
+        segments.append(item_segment)
     segments.append(f"topics={manifest['topics_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
@@ -139,6 +161,7 @@ def run_site_stage_command(
     output_dir: Path | None,
     limit: int | None,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
     json_output: bool = False,
     command_name: str = "site stage",
 ) -> None:
@@ -177,6 +200,7 @@ def run_site_stage_command(
             None,
         )
         resolved_default_language_code = str(configured_default or "").strip() or None
+    normalized_item_export_scope = str(item_export_scope or "").strip().lower() or "linked"
     console = (
         console_cls(stderr=settings.log_json) if settings is not None else console_cls()
     )
@@ -196,6 +220,8 @@ def run_site_stage_command(
         }
         if resolved_default_language_code is not None:
             stage_kwargs["default_language_code"] = resolved_default_language_code
+        if normalized_item_export_scope != "linked":
+            stage_kwargs["item_export_scope"] = normalized_item_export_scope
         manifest_path = stage_trend_site_source(**stage_kwargs)
         if lease_heartbeat_monitor is not None:
             lease_heartbeat_monitor.raise_if_failed()
@@ -223,6 +249,9 @@ def run_site_stage_command(
                 "output_dir": str(resolved_output_dir),
                 "manifest_path": str(manifest_path),
                 "default_language_code": resolved_default_language_code,
+                "item_export_scope": manifest.get(
+                    "item_export_scope", normalized_item_export_scope
+                ),
                 "manifest": manifest,
             }
         )
@@ -230,6 +259,8 @@ def run_site_stage_command(
     segments = [f"trends={manifest['trends_total']}"]
     if int(manifest.get("ideas_total") or 0) > 0:
         segments.append(f"ideas={manifest['ideas_total']}")
+    if item_segment := _site_item_count_segment(manifest):
+        segments.append(item_segment)
     segments.append(f"pdfs={manifest['pdf_total']}")
     segments.append(f"output={resolved_output_dir}")
     console.print(
@@ -246,6 +277,7 @@ def run_site_serve_command(
     port: int,
     build: bool,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
     command_name: str = "site serve",
     build_command_name: str = "site build",
 ) -> None:
@@ -267,6 +299,7 @@ def run_site_serve_command(
             output_dir=resolved_output_dir,
             limit=limit,
             default_language_code=default_language_code,
+            item_export_scope=item_export_scope,
             command_name=build_command_name,
         )
 

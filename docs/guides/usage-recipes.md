@@ -140,6 +140,7 @@ DB state:
 uv run recoleta run site build
 uv run recoleta run site serve
 uv run recoleta run site build --default-language-code en
+uv run recoleta stage site stage --item-export-scope all
 uv run recoleta run deploy --branch gh-pages --pages-config auto
 uv run recoleta fleet site build --manifest /path/to/fleet.yaml
 uv run recoleta fleet site serve --manifest /path/to/fleet.yaml
@@ -151,13 +152,20 @@ uv run recoleta repair outputs --config-path /path/to/instance/recoleta.yaml --g
 What to know:
 
 - `run site build` writes a managed static export to `MARKDOWN_OUTPUT_DIR/site`
-  unless you pass explicit paths.
+  unless you pass explicit paths. By default it only exports item pages and
+  item markdown artifacts that are actually linked from the selected trend and
+  idea pages.
 - `run site serve` rebuilds and serves a single-instance local preview on
-  `127.0.0.1:8000`.
+  `127.0.0.1:8000`. It uses the same linked-only item export behavior when it
+  rebuilds first.
+- `stage site stage` mirrors trend, idea, PDF, and linked item markdown into a
+  repo-local deployment tree. Pass `--item-export-scope all` if you need the
+  legacy full Inbox mirror.
 - `run deploy` translates if configured, builds the site, and pushes a derived
   deployment branch.
 - `fleet site build` reads child outputs and writes one aggregate site tree for
-  a migrated multi-instance deployment.
+  a migrated multi-instance deployment. It also defaults to linked-only item
+  export.
 - `fleet site serve` optionally rebuilds that aggregate site, then serves the
   local fleet preview on `127.0.0.1:8000`.
 - `fleet run deploy` runs per-instance deploy preparation, then publishes the
@@ -168,6 +176,9 @@ What to know:
   language, for example `/en/...` and `/zh-cn/...`.
 - The root `index.html` redirects to the remembered browser language first and
   then to the configured default language.
+- Every site build/stage command accepts `--item-export-scope linked|all`.
+  `linked` is the default; `all` restores the legacy behavior that exported
+  every item note under `Inbox/`.
 
 ## Keep Recoleta running
 

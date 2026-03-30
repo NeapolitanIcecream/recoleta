@@ -305,6 +305,79 @@ def test_fleet_site_build_reads_child_output_roots_to_include_localized_pages_pr
     ]
 
 
+def test_fleet_site_build_forwards_explicit_item_export_scope_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    child_one_output = tmp_path / "alpha-outputs"
+    child_two_output = tmp_path / "beta-outputs"
+    child_one_output.mkdir(parents=True)
+    child_two_output.mkdir(parents=True)
+    child_one_config = _write_config(
+        tmp_path / "alpha.yaml",
+        _instance_config(
+            db_path=tmp_path / "alpha.db",
+            output_dir=child_one_output,
+        ),
+    )
+    child_two_config = _write_config(
+        tmp_path / "beta.yaml",
+        _instance_config(
+            db_path=tmp_path / "beta.db",
+            output_dir=child_two_output,
+        ),
+    )
+    manifest_path = _write_config(
+        tmp_path / "fleet.yaml",
+        {
+            "schema_version": 1,
+            "instances": [
+                {"name": "alpha", "config_path": str(child_one_config)},
+                {"name": "beta", "config_path": str(child_two_config)},
+            ],
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_export_trend_static_site(**kwargs: object) -> Path:
+        captured.update(kwargs)
+        manifest = tmp_path / "site-manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "trends_total": 0,
+                    "ideas_total": 0,
+                    "topics_total": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return manifest
+
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.site"),
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+    run_fleet_site_build_command = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="run_fleet_site_build_command",
+    )
+
+    run_fleet_site_build_command(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "site",
+        limit=None,
+        default_language_code=None,
+        item_export_scope="all",
+        json_output=False,
+        command_name="fleet site build",
+    )
+
+    assert captured["item_export_scope"] == "all"
+
+
 @pytest.mark.parametrize(
     ("include", "skip", "match"),
     [
@@ -451,6 +524,7 @@ def test_fleet_site_serve_builds_then_serves_explicit_output_dir_pr_23(
         port=4173,
         build=True,
         default_language_code="en",
+        item_export_scope="all",
         command_name="fleet site serve",
         build_command_name="fleet site build",
     )
@@ -461,6 +535,7 @@ def test_fleet_site_serve_builds_then_serves_explicit_output_dir_pr_23(
             "output_dir": output_dir,
             "limit": 3,
             "default_language_code": "en",
+            "item_export_scope": "all",
             "json_output": False,
             "command_name": "fleet site build",
         }
@@ -474,6 +549,7 @@ def test_fleet_site_serve_builds_then_serves_explicit_output_dir_pr_23(
             "port": 4173,
             "build": False,
             "default_language_code": "en",
+            "item_export_scope": "all",
             "command_name": "fleet site serve",
             "build_command_name": "fleet site build",
         }
@@ -514,6 +590,7 @@ def test_fleet_site_serve_skips_build_and_uses_manifest_site_dir_by_default_pr_2
         port=8000,
         build=False,
         default_language_code="zh-cn",
+        item_export_scope="all",
         command_name="fleet site serve",
         build_command_name="fleet site build",
     )
@@ -527,6 +604,7 @@ def test_fleet_site_serve_skips_build_and_uses_manifest_site_dir_by_default_pr_2
             "port": 8000,
             "build": False,
             "default_language_code": "zh-cn",
+            "item_export_scope": "all",
             "command_name": "fleet site serve",
             "build_command_name": "fleet site build",
         }

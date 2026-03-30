@@ -43,12 +43,25 @@ def _fleet_site_output_dir(manifest_path: Path, output_dir: Path | None) -> Path
     return manifest.manifest_path.parent / "site"
 
 
+def _fleet_site_item_count_segment(manifest: dict[str, Any]) -> str | None:
+    if "items_total" not in manifest:
+        return None
+    items_total = int(manifest.get("items_total") or 0)
+    items_available_total = manifest.get("items_available_total")
+    if items_available_total is not None:
+        available_total = int(items_available_total or 0)
+        if available_total > items_total:
+            return f"items={items_total}/{available_total}"
+    return f"items={items_total}"
+
+
 def run_fleet_site_build_command(
     *,
     manifest_path: Path,
     output_dir: Path | None,
     limit: int | None,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
     json_output: bool = False,
     command_name: str = "fleet site build",
 ) -> dict[str, Any]:
@@ -66,12 +79,16 @@ def run_fleet_site_build_command(
         manifest,
         default_language_code,
     )
-    manifest_result_path = export_trend_static_site(
-        input_dir=input_dirs,
-        output_dir=resolved_output_dir,
-        limit=limit,
-        default_language_code=resolved_default_language_code,
-    )
+    normalized_item_export_scope = str(item_export_scope or "").strip().lower() or "linked"
+    export_kwargs: dict[str, Any] = {
+        "input_dir": input_dirs,
+        "output_dir": resolved_output_dir,
+        "limit": limit,
+        "default_language_code": resolved_default_language_code,
+    }
+    if normalized_item_export_scope != "linked":
+        export_kwargs["item_export_scope"] = normalized_item_export_scope
+    manifest_result_path = export_trend_static_site(**export_kwargs)
     site_manifest = json.loads(manifest_result_path.read_text(encoding="utf-8"))
     payload = {
         "status": "ok",
@@ -81,16 +98,25 @@ def run_fleet_site_build_command(
         "output_dir": str(resolved_output_dir),
         "site_manifest_path": str(manifest_result_path),
         "default_language_code": resolved_default_language_code,
+        "item_export_scope": site_manifest.get(
+            "item_export_scope", normalized_item_export_scope
+        ),
         "manifest": site_manifest,
     }
     if json_output:
         cli._emit_json(payload)
         return payload
+    segments = [
+        f"instances={len(manifest.instances)}",
+        f"trends={site_manifest.get('trends_total', 0)}",
+    ]
+    if int(site_manifest.get("ideas_total") or 0) > 0:
+        segments.append(f"ideas={site_manifest['ideas_total']}")
+    if item_segment := _fleet_site_item_count_segment(site_manifest):
+        segments.append(item_segment)
+    segments.append(f"output={resolved_output_dir}")
     console.print(
-        f"[green]{command_name} completed[/green] "
-        f"instances={len(manifest.instances)} "
-        f"trends={site_manifest.get('trends_total', 0)} "
-        f"output={resolved_output_dir}"
+        f"[green]{command_name} completed[/green] " + " ".join(segments)
     )
     return payload
 
@@ -104,6 +130,7 @@ def run_fleet_site_serve_command(
     port: int,
     build: bool,
     default_language_code: str | None = None,
+    item_export_scope: str = "linked",
     command_name: str = "fleet site serve",
     build_command_name: str = "fleet site build",
 ) -> None:
@@ -114,6 +141,7 @@ def run_fleet_site_serve_command(
             output_dir=resolved_output_dir,
             limit=limit,
             default_language_code=default_language_code,
+            item_export_scope=item_export_scope,
             json_output=False,
             command_name=build_command_name,
         )
@@ -130,6 +158,7 @@ def run_fleet_site_serve_command(
         port=port,
         build=False,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         command_name=command_name,
         build_command_name=build_command_name,
     )

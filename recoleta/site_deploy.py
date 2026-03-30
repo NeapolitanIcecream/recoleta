@@ -221,7 +221,16 @@ def _sanitize_public_manifest(*, manifest_path: Path) -> dict[str, Any]:
         "topics_total": int(loaded.get("topics_total") or 0),
         "trends_total": int(loaded.get("trends_total") or 0),
     }
-    for key in ("ideas_total", "items_total", "languages", "language_codes", "default_language_code"):
+    for key in (
+        "ideas_total",
+        "items_total",
+        "items_available_total",
+        "items_unreferenced_total",
+        "item_export_scope",
+        "languages",
+        "language_codes",
+        "default_language_code",
+    ):
         if key in loaded:
             sanitized[key] = loaded.get(key)
     manifest_path.write_text(

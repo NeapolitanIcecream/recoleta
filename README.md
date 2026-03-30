@@ -420,6 +420,7 @@ uv run recoleta stage translate backfill --all-history --include items,trends,id
 
 # build, preview, or deploy the public site
 uv run recoleta run site build
+# item pages are linked-only by default; pass --item-export-scope all to restore the legacy full export
 uv run recoleta run site serve
 uv run recoleta run deploy --branch gh-pages --pages-config auto
 

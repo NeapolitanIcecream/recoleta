@@ -471,6 +471,48 @@ def test_site_build_cli_emits_json_output(
     assert payload["output_dir"] == str(fake_settings.markdown_output_dir / "site")
 
 
+def test_site_build_cli_forwards_explicit_item_export_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_settings.markdown_output_dir = tmp_path / "output"
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+
+    def _fake_export_trend_static_site(  # type: ignore[no-untyped-def]
+        *,
+        input_dir,
+        output_dir,
+        limit=None,
+        item_export_scope="linked",
+    ):
+        calls["input_dir"] = input_dir
+        calls["output_dir"] = output_dir
+        calls["limit"] = limit
+        calls["item_export_scope"] = item_export_scope
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text('{"trends_total": 3, "topics_total": 5}\n', encoding="utf-8")
+        return manifest_path
+
+    monkeypatch.setattr(
+        recoleta.site,
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["site", "build", "--item-export-scope", "all"],
+    )
+
+    assert result.exit_code == 0
+    assert calls["item_export_scope"] == "all"
+
+
 def test_site_build_cli_passes_default_language_from_settings_localization(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -603,6 +645,41 @@ def test_site_build_cli_formats_ideas_counts_cleanly(
     assert "trends=3 ideas=2 topics=5" in result.stdout
 
 
+def test_site_build_cli_formats_item_fanout_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_settings.markdown_output_dir = tmp_path / "output"
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+
+    def _fake_export_trend_static_site(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+        _ = (input_dir, limit)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            (
+                '{"trends_total": 3, "topics_total": 5, "items_total": 1, '
+                '"items_available_total": 4, "items_unreferenced_total": 3}\n'
+            ),
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(
+        recoleta.site,
+        "export_trend_static_site",
+        _fake_export_trend_static_site,
+    )
+
+    result = runner.invoke(recoleta.cli.app, ["site", "build"])
+
+    assert result.exit_code == 0
+    assert "items=1/4" in result.stdout
+
+
 def test_site_stage_cli_uses_repo_local_default_output_dir(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -683,6 +760,49 @@ def test_site_stage_cli_emits_json_output(
     assert payload["output_dir"] == str(tmp_path / "site-content" / "Trends")
 
 
+def test_site_stage_cli_forwards_explicit_item_export_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_settings.markdown_output_dir = tmp_path / "output"
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+    monkeypatch.chdir(tmp_path)
+
+    def _fake_stage_trend_site_source(  # type: ignore[no-untyped-def]
+        *,
+        input_dir,
+        output_dir,
+        limit=None,
+        item_export_scope="linked",
+    ):
+        calls["input_dir"] = input_dir
+        calls["output_dir"] = output_dir
+        calls["limit"] = limit
+        calls["item_export_scope"] = item_export_scope
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text('{"trends_total": 4, "pdf_total": 2}\n', encoding="utf-8")
+        return manifest_path
+
+    monkeypatch.setattr(
+        recoleta.site,
+        "stage_trend_site_source",
+        _fake_stage_trend_site_source,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["site", "stage", "--item-export-scope", "all"],
+    )
+
+    assert result.exit_code == 0
+    assert calls["item_export_scope"] == "all"
+
+
 def test_site_stage_cli_formats_ideas_counts_cleanly(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -717,6 +837,42 @@ def test_site_stage_cli_formats_ideas_counts_cleanly(
 
     assert result.exit_code == 0
     assert "trends=4 ideas=2 pdfs=2" in result.stdout
+
+
+def test_site_stage_cli_formats_item_fanout_counts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_settings.markdown_output_dir = tmp_path / "output"
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", lambda: fake_settings)
+    monkeypatch.chdir(tmp_path)
+
+    def _fake_stage_trend_site_source(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+        _ = (input_dir, limit)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = output_dir / "manifest.json"
+        manifest_path.write_text(
+            (
+                '{"trends_total": 4, "pdf_total": 2, "items_total": 2, '
+                '"items_available_total": 5, "items_unreferenced_total": 3}\n'
+            ),
+            encoding="utf-8",
+        )
+        return manifest_path
+
+    monkeypatch.setattr(
+        recoleta.site,
+        "stage_trend_site_source",
+        _fake_stage_trend_site_source,
+    )
+
+    result = runner.invoke(recoleta.cli.app, ["site", "stage"])
+
+    assert result.exit_code == 0
+    assert "items=2/5" in result.stdout
 
 
 def test_site_build_cli_with_explicit_paths_does_not_require_settings(
@@ -1020,6 +1176,69 @@ def test_site_serve_cli_forwards_default_language_code_to_build(
     build_kwargs = calls["build_kwargs"]
     assert isinstance(build_kwargs, dict)
     assert build_kwargs["default_language_code"] == "zh-CN"
+    assert calls["serve_directory"] == output_dir.resolve()
+    assert fake_server.served is True
+
+
+def test_site_serve_cli_forwards_explicit_item_export_scope_to_build(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    calls: dict[str, object] = {}
+    fake_server = _FakeSiteServer(host="127.0.0.1", port=8100)
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "site"
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    def _fail_build_settings():  # type: ignore[no-untyped-def]
+        raise AssertionError("settings should not be loaded")
+
+    def _fake_run_site_build_command(**kwargs):  # type: ignore[no-untyped-def]
+        calls["build_kwargs"] = dict(kwargs)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "index.html").write_text("site\n", encoding="utf-8")
+        (output_dir / "manifest.json").write_text(
+            '{"trends_total": 1, "topics_total": 2}\n',
+            encoding="utf-8",
+        )
+
+    def _fake_create_site_server(*, directory, host, port):  # type: ignore[no-untyped-def]
+        calls["serve_directory"] = directory
+        calls["serve_host"] = host
+        calls["serve_port"] = port
+        return fake_server
+
+    monkeypatch.setattr(recoleta.cli, "_build_settings", _fail_build_settings)
+    monkeypatch.setattr(
+        recoleta.cli.site,
+        "run_site_build_command",
+        _fake_run_site_build_command,
+    )
+    monkeypatch.setattr(
+        recoleta.cli.site,
+        "_create_site_server",
+        _fake_create_site_server,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "site",
+            "serve",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--item-export-scope",
+            "all",
+        ],
+    )
+
+    assert result.exit_code == 0
+    build_kwargs = calls["build_kwargs"]
+    assert isinstance(build_kwargs, dict)
+    assert build_kwargs["item_export_scope"] == "all"
     assert calls["serve_directory"] == output_dir.resolve()
     assert fake_server.served is True
 

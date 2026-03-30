@@ -3,6 +3,7 @@ from __future__ import annotations
 from click import Context
 import json
 from pathlib import Path
+from typing import Any
 
 from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
@@ -47,25 +48,25 @@ from recoleta.cli.workflows import (
 )
 
 
-def execute_fleet_granularity_workflow(**kwargs: object) -> object:
+def execute_fleet_granularity_workflow(**kwargs: Any) -> Any:
     from recoleta.cli.fleet import execute_fleet_granularity_workflow as impl
 
     return impl(**kwargs)
 
 
-def execute_fleet_deploy_workflow(**kwargs: object) -> object:
+def execute_fleet_deploy_workflow(**kwargs: Any) -> Any:
     from recoleta.cli.fleet import execute_fleet_deploy_workflow as impl
 
     return impl(**kwargs)
 
 
-def run_fleet_site_build_command(**kwargs: object) -> object:
+def run_fleet_site_build_command(**kwargs: Any) -> Any:
     from recoleta.cli.fleet import run_fleet_site_build_command as impl
 
     return impl(**kwargs)
 
 
-def run_fleet_site_serve_command(**kwargs: object) -> object:
+def run_fleet_site_serve_command(**kwargs: Any) -> Any:
     from recoleta.cli.fleet import run_fleet_site_serve_command as impl
 
     return impl(**kwargs)
@@ -636,6 +637,11 @@ def fleet_site_build(
     ),
     limit: int | None = typer.Option(None, min=1),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Build the aggregate fleet static site from child outputs only."""
@@ -644,6 +650,7 @@ def fleet_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="fleet site build",
     )
@@ -693,6 +700,11 @@ def fleet_site_serve(
         "--default-language-code",
         help="Default language code for multilingual aggregate site builds performed before serving.",
     ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
 ) -> None:
     """Build and serve the aggregate fleet static site locally."""
     run_fleet_site_serve_command(
@@ -703,6 +715,7 @@ def fleet_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         command_name="fleet site serve",
         build_command_name="fleet site build",
     )
@@ -738,6 +751,11 @@ def run_site_build(
         "--default-language-code",
         help="Default language code for multilingual static site builds.",
     ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -750,6 +768,7 @@ def run_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="run site build",
     )
@@ -798,6 +817,11 @@ def run_site_serve(
         "--default-language-code",
         help="Default language code for multilingual builds performed before serving.",
     ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
 ) -> None:
     """Build and serve the static site locally."""
     run_site_serve_command(
@@ -808,6 +832,7 @@ def run_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         command_name="run site serve",
         build_command_name="run site build",
     )
@@ -1260,6 +1285,7 @@ def stage_site_build(
     output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Destination directory for the exported static site."),
     limit: int | None = typer.Option(None, min=1, help="Optionally export only the latest N trend notes and sibling idea briefs."),
     default_language_code: str | None = typer.Option(None, "--default-language-code", help="Default language code for multilingual static site builds."),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
     """Run the site build stage primitive."""
@@ -1268,6 +1294,7 @@ def stage_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="stage site build",
     )
@@ -1279,6 +1306,7 @@ def stage_site_stage(
     output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Repo-local directory to mirror trend markdown notes and sibling idea briefs for deployment."),
     limit: int | None = typer.Option(None, min=1, help="Optionally stage only the latest N trend notes and sibling idea briefs."),
     default_language_code: str | None = typer.Option(None, "--default-language-code", help="Default language code metadata for multilingual staged content."),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
     """Run the site stage primitive."""
@@ -1287,6 +1315,7 @@ def stage_site_stage(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="stage site stage",
     )
@@ -1301,6 +1330,7 @@ def stage_site_serve(
     port: int = typer.Option(8000, "--port", min=0, max=65535, help="TCP port for the local preview server. Use 0 to auto-select."),
     build: bool = typer.Option(True, "--build/--no-build", help="Build the static site before serving it."),
     default_language_code: str | None = typer.Option(None, "--default-language-code", help="Default language code for multilingual builds performed before serving."),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
 ) -> None:
     """Run the site serve primitive."""
     run_site_serve_command(
@@ -1311,6 +1341,7 @@ def stage_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         command_name="stage site serve",
         build_command_name="stage site build",
     )
@@ -1604,6 +1635,7 @@ def legacy_site_build(
     output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
     limit: int | None = typer.Option(None, min=1),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     run_site_build_command(
@@ -1611,6 +1643,7 @@ def legacy_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         json_output=json_output,
     )
 
@@ -1621,6 +1654,7 @@ def legacy_site_stage(
     output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, resolve_path=True, writable=True),
     limit: int | None = typer.Option(None, min=1),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     run_site_stage_command(
@@ -1628,6 +1662,7 @@ def legacy_site_stage(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
         json_output=json_output,
     )
 
@@ -1641,6 +1676,7 @@ def legacy_site_serve(
     port: int = typer.Option(8000, "--port", min=0, max=65535),
     build: bool = typer.Option(True, "--build/--no-build"),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
 ) -> None:
     run_site_serve_command(
         input_dir=input_dir,
@@ -1650,6 +1686,7 @@ def legacy_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
     )
 
 

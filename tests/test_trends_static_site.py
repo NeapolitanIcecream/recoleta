@@ -931,7 +931,10 @@ def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
     assert item_page.exists()
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "linked"
     assert manifest["items_total"] == 1
+    assert manifest["items_available_total"] == 1
+    assert manifest["items_unreferenced_total"] == 0
     assert f"items/{item_note.stem}.html" in manifest["files"]["item_pages"]
 
     detail_html = (site_dir / "trends" / f"{trend_note.stem}.html").read_text(
@@ -955,6 +958,141 @@ def test_export_trend_static_site_writes_item_pages_and_rewrites_trend_links(
     assert "summary-grid summary-grid-single" in item_html
     assert "surface-card section-card summary-card summary-card-primary" in item_html
     assert ">Link</h2>" in item_html
+
+
+def test_export_trend_static_site_skips_unreferenced_item_pages_by_default(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    linked_item = write_markdown_note(
+        output_dir=output_dir,
+        item_id=61,
+        title="Linked Item",
+        source="rss",
+        canonical_url="https://example.com/linked-item",
+        published_at=datetime(2026, 3, 3, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.93,
+        run_id="run-linked-item-1",
+        summary="## Summary\n\nThe linked note should survive export.\n",
+    )
+    unlinked_item = write_markdown_note(
+        output_dir=output_dir,
+        item_id=62,
+        title="Unlinked Item",
+        source="rss",
+        canonical_url="https://example.com/unlinked-item",
+        published_at=datetime(2026, 3, 3, tzinfo=UTC),
+        authors=["Bob"],
+        topics=["agents"],
+        relevance_score=0.31,
+        run_id="run-unlinked-item-1",
+        summary="## Summary\n\nThis note should stay out of the site build.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=75,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 3, tzinfo=UTC),
+        period_end=datetime(2026, 3, 4, tzinfo=UTC),
+        run_id="run-site-items-filtered-1",
+        overview_md=f"## Overview\n\nStart with [Linked Item](../Inbox/{linked_item.name}).\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "linked"
+    assert manifest["items_total"] == 1
+    assert manifest["items_available_total"] == 2
+    assert manifest["items_unreferenced_total"] == 1
+    assert f"items/{linked_item.stem}.html" in manifest["files"]["item_pages"]
+    assert f"items/{unlinked_item.stem}.html" not in manifest["files"]["item_pages"]
+
+    assert (site_dir / "items" / f"{linked_item.stem}.html").exists()
+    assert not (site_dir / "items" / f"{unlinked_item.stem}.html").exists()
+    assert (site_dir / "artifacts" / "items" / linked_item.name).exists()
+    assert not (site_dir / "artifacts" / "items" / unlinked_item.name).exists()
+
+    detail_html = (site_dir / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert f"../items/{linked_item.stem}.html" in detail_html
+    assert "../Inbox/" not in detail_html
+
+
+def test_export_trend_static_site_item_export_scope_all_preserves_full_item_export(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    linked_item = write_markdown_note(
+        output_dir=output_dir,
+        item_id=63,
+        title="Linked Item",
+        source="rss",
+        canonical_url="https://example.com/linked-item-all",
+        published_at=datetime(2026, 3, 4, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.94,
+        run_id="run-linked-item-all-1",
+        summary="## Summary\n\nThe linked note should survive export.\n",
+    )
+    unlinked_item = write_markdown_note(
+        output_dir=output_dir,
+        item_id=64,
+        title="Unlinked Item",
+        source="rss",
+        canonical_url="https://example.com/unlinked-item-all",
+        published_at=datetime(2026, 3, 4, tzinfo=UTC),
+        authors=["Bob"],
+        topics=["agents"],
+        relevance_score=0.28,
+        run_id="run-unlinked-item-all-1",
+        summary="## Summary\n\nThe compatibility mode should still export this note.\n",
+    )
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=76,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 4, tzinfo=UTC),
+        period_end=datetime(2026, 3, 5, tzinfo=UTC),
+        run_id="run-site-items-all-1",
+        overview_md=f"## Overview\n\nStart with [Linked Item](../Inbox/{linked_item.name}).\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+        item_export_scope="all",
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "all"
+    assert manifest["items_total"] == 2
+    assert manifest["items_available_total"] == 2
+    assert manifest["items_unreferenced_total"] == 0
+    assert f"items/{linked_item.stem}.html" in manifest["files"]["item_pages"]
+    assert f"items/{unlinked_item.stem}.html" in manifest["files"]["item_pages"]
+
+    assert (site_dir / "items" / f"{linked_item.stem}.html").exists()
+    assert (site_dir / "items" / f"{unlinked_item.stem}.html").exists()
+    assert (site_dir / "artifacts" / "items" / linked_item.name).exists()
+    assert (site_dir / "artifacts" / "items" / unlinked_item.name).exists()
 
 
 def test_export_trend_static_site_writes_idea_pages_and_rewrites_links(
@@ -1043,6 +1181,151 @@ def test_export_trend_static_site_writes_idea_pages_and_rewrites_links(
     assert "../Inbox/" not in detail_html
     assert "../Trends/" not in detail_html
     assert "Source markdown" in detail_html
+
+
+def test_export_trend_static_site_builds_item_page_when_only_idea_links_it(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    item_note = write_markdown_note(
+        output_dir=output_dir,
+        item_id=65,
+        title="Idea-linked Item",
+        source="rss",
+        canonical_url="https://example.com/idea-linked-item",
+        published_at=datetime(2026, 3, 10, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.92,
+        run_id="run-site-idea-only-item",
+        summary="## Summary\n\nIdeas can be the only referrer.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=94,
+        title="Code agents close the loop",
+        granularity="day",
+        period_start=datetime(2026, 3, 10, tzinfo=UTC),
+        period_end=datetime(2026, 3, 11, tzinfo=UTC),
+        run_id="run-site-idea-only-trend",
+        overview_md="## Overview\n\nNo direct item links here.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-10--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-10T00:00:00+00:00\n"
+        "period_end: 2026-03-11T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# Verification-first agent rollout\n\n"
+        "## Summary\n\n"
+        f"Start with [Idea-linked Item](../Inbox/{item_note.name}) and [the daily trend](../Trends/{trend_note.name}).\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "linked"
+    assert manifest["items_total"] == 1
+    assert manifest["items_available_total"] == 1
+    assert manifest["items_unreferenced_total"] == 0
+    assert (site_dir / "items" / f"{item_note.stem}.html").exists()
+
+    idea_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert f"../items/{item_note.stem}.html" in idea_html
+    assert "../Inbox/" not in idea_html
+
+
+def test_export_trend_static_site_limit_applies_before_item_reference_selection(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    older_item = write_markdown_note(
+        output_dir=output_dir,
+        item_id=66,
+        title="Older linked item",
+        source="rss",
+        canonical_url="https://example.com/older-linked-item",
+        published_at=datetime(2026, 3, 9, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.9,
+        run_id="run-site-limit-old-item",
+        summary="## Summary\n\nOlder trend evidence.\n",
+    )
+    newer_item = write_markdown_note(
+        output_dir=output_dir,
+        item_id=67,
+        title="Newer linked item",
+        source="rss",
+        canonical_url="https://example.com/newer-linked-item",
+        published_at=datetime(2026, 3, 10, tzinfo=UTC),
+        authors=["Bob"],
+        topics=["agents"],
+        relevance_score=0.95,
+        run_id="run-site-limit-new-item",
+        summary="## Summary\n\nNewer trend evidence.\n",
+    )
+    older_trend = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=95,
+        title="Older day",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-limit-old-trend",
+        overview_md=f"## Overview\n\nSee [Older linked item](../Inbox/{older_item.name}).\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    newer_trend = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=96,
+        title="Newer day",
+        granularity="day",
+        period_start=datetime(2026, 3, 10, tzinfo=UTC),
+        period_end=datetime(2026, 3, 11, tzinfo=UTC),
+        run_id="run-site-limit-new-trend",
+        overview_md=f"## Overview\n\nSee [Newer linked item](../Inbox/{newer_item.name}).\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+        limit=1,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "linked"
+    assert manifest["trends_total"] == 1
+    assert manifest["items_total"] == 1
+    assert manifest["items_available_total"] == 2
+    assert manifest["items_unreferenced_total"] == 1
+    assert (site_dir / "trends" / f"{newer_trend.stem}.html").exists()
+    assert not (site_dir / "trends" / f"{older_trend.stem}.html").exists()
+    assert (site_dir / "items" / f"{newer_item.stem}.html").exists()
+    assert not (site_dir / "items" / f"{older_item.stem}.html").exists()
 
 
 def test_export_trend_static_site_builds_peer_trend_navigation_and_detail_context(
@@ -2248,8 +2531,133 @@ def test_stage_trend_site_source_stages_item_notes_next_to_trends(
     assert (staged_trends_dir.parent / "Inbox" / item_note.name).exists()
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "linked"
     assert manifest["items_total"] == 1
+    assert manifest["items_available_total"] == 1
+    assert manifest["items_unreferenced_total"] == 0
     assert f"Inbox/{item_note.name}" in manifest["files"]["items_markdown"]
+
+
+def test_stage_trend_site_source_skips_unreferenced_item_notes_by_default(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    linked_item = write_markdown_note(
+        output_dir=notes_root,
+        item_id=68,
+        title="Linked stage item",
+        source="rss",
+        canonical_url="https://example.com/linked-stage-item",
+        published_at=datetime(2026, 3, 11, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.93,
+        run_id="run-stage-linked-item",
+        summary="## Summary\n\nThis staged note is referenced.\n",
+    )
+    unlinked_item = write_markdown_note(
+        output_dir=notes_root,
+        item_id=69,
+        title="Unlinked stage item",
+        source="rss",
+        canonical_url="https://example.com/unlinked-stage-item",
+        published_at=datetime(2026, 3, 11, tzinfo=UTC),
+        authors=["Bob"],
+        topics=["agents"],
+        relevance_score=0.22,
+        run_id="run-stage-unlinked-item",
+        summary="## Summary\n\nThis staged note should be skipped.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=114,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 11, tzinfo=UTC),
+        period_end=datetime(2026, 3, 12, tzinfo=UTC),
+        run_id="run-stage-items-filtered",
+        overview_md=f"## Overview\n\nSee [Linked stage item](../Inbox/{linked_item.name}).\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    staged_trends_dir = tmp_path / "site-content" / "Trends"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root / "Trends",
+        output_dir=staged_trends_dir,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "linked"
+    assert manifest["items_total"] == 1
+    assert manifest["items_available_total"] == 2
+    assert manifest["items_unreferenced_total"] == 1
+    assert (staged_trends_dir / trend_note.name).exists()
+    assert (staged_trends_dir.parent / "Inbox" / linked_item.name).exists()
+    assert not (staged_trends_dir.parent / "Inbox" / unlinked_item.name).exists()
+    assert f"Inbox/{linked_item.name}" in manifest["files"]["items_markdown"]
+    assert f"Inbox/{unlinked_item.name}" not in manifest["files"]["items_markdown"]
+
+
+def test_stage_trend_site_source_item_export_scope_all_preserves_full_staging(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    linked_item = write_markdown_note(
+        output_dir=notes_root,
+        item_id=70,
+        title="Linked stage item",
+        source="rss",
+        canonical_url="https://example.com/linked-stage-item-all",
+        published_at=datetime(2026, 3, 12, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.93,
+        run_id="run-stage-linked-item-all",
+        summary="## Summary\n\nThis staged note is referenced.\n",
+    )
+    unlinked_item = write_markdown_note(
+        output_dir=notes_root,
+        item_id=71,
+        title="Unlinked stage item",
+        source="rss",
+        canonical_url="https://example.com/unlinked-stage-item-all",
+        published_at=datetime(2026, 3, 12, tzinfo=UTC),
+        authors=["Bob"],
+        topics=["agents"],
+        relevance_score=0.22,
+        run_id="run-stage-unlinked-item-all",
+        summary="## Summary\n\nCompatibility mode should still stage this note.\n",
+    )
+    _ = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=115,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 12, tzinfo=UTC),
+        period_end=datetime(2026, 3, 13, tzinfo=UTC),
+        run_id="run-stage-items-all",
+        overview_md=f"## Overview\n\nSee [Linked stage item](../Inbox/{linked_item.name}).\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    staged_trends_dir = tmp_path / "site-content" / "Trends"
+    manifest_path = stage_trend_site_source(
+        input_dir=notes_root / "Trends",
+        output_dir=staged_trends_dir,
+        item_export_scope="all",
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["item_export_scope"] == "all"
+    assert manifest["items_total"] == 2
+    assert manifest["items_available_total"] == 2
+    assert manifest["items_unreferenced_total"] == 0
+    assert (staged_trends_dir.parent / "Inbox" / linked_item.name).exists()
+    assert (staged_trends_dir.parent / "Inbox" / unlinked_item.name).exists()
 
 
 def test_stage_trend_site_source_preserves_unrelated_parent_files_for_trends_output_dir(
