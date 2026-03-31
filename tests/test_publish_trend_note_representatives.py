@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 
+from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
 from recoleta.publish import write_markdown_trend_note
 
 
@@ -337,3 +339,78 @@ def test_publish_trend_note_deduplicates_history_window_title_after_link(
         in text
     )
     assert "](day--2026-03-08--trend--69.md)《机器人具身智能转向轻量适配、长时序增强与部署一致性》" not in text
+
+
+def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_refs(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=9,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="This week shifted from prev_1 toward evaluation discipline.",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Teams are using tighter release controls.",
+                "representative_chunks": [
+                    {
+                        "doc_id": 1,
+                        "chunk_index": 0,
+                        "title": "CodeScout",
+                        "url": "https://example.com/codescout",
+                    }
+                ],
+            }
+        ],
+        highlights=[],
+        evolution={
+            "summary_md": "Compared with prev_1, the conversation is more operational.",
+            "signals": [
+                {
+                    "theme": "Verification loops",
+                    "change_type": "continuing",
+                    "summary": "Compared with prev_1, teams now quantify release risk.",
+                    "history_windows": ["prev_1"],
+                },
+                {
+                    "theme": "Operator lanes",
+                    "change_type": "emerging",
+                    "summary": "Review queues are moving into the main workflow.",
+                    "history_windows": [],
+                },
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-W10",
+                "title": "Verification Gets Tighter",
+                "granularity": "week",
+                "period_start": "2026-03-02T00:00:00+00:00",
+                "trend_doc_id": 7,
+            }
+        },
+    )
+
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+    assert sidecar_path.exists()
+    assert sidecar["presentation_schema_version"] == 1
+    assert sidecar["surface_kind"] == "trend"
+    assert sidecar["source_markdown_path"] == f"Trends/{note_path.name}"
+    assert sidecar["content"]["hero"]["kicker"] == "Trend brief"
+    assert sidecar["content"]["ranked_shifts"][0]["history_refs"] == ["prev_1"]
+    assert "prev_1" not in sidecar["content"]["overview"]
+    assert "Verification Gets Tighter" in sidecar["content"]["overview"]
+    assert sidecar["content"]["representative_sources"][0]["title"] == "CodeScout"
+    assert validate_presentation_v1(sidecar) == []

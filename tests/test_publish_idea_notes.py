@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 
+from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish import write_markdown_ideas_note
 from recoleta.publish.item_notes import resolve_item_note_href
@@ -123,3 +125,94 @@ def test_write_markdown_ideas_note_deduplicates_evidence_refs_by_document(
     assert "The body chunk shows verifier loops over long traces." in note_text
     assert "; The body chunk shows verifier loops over long traces." not in note_text
     assert "(chunk 1)" not in note_text
+
+
+def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    note_path = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=tmp_path / "notes",
+        pass_output_id=7,
+        upstream_pass_output_id=3,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-ideas-sidecar",
+        status="succeeded",
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "Why now ideas",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "summary_md": "One idea is clearly grounded.",
+                "ideas": [
+                    {
+                        "title": "Auditable long-horizon eval workbench",
+                        "kind": "tooling_wedge",
+                        "thesis": "Build an evaluation workbench around grounded traces.",
+                        "why_now": "Grounded runtime traces are now practical.",
+                        "what_changed": "Teams can inspect long multi-step traces.",
+                        "user_or_job": "Evaluation teams need auditable agent runs.",
+                        "evidence_refs": [
+                            {
+                                "doc_id": 11,
+                                "chunk_index": 0,
+                                "reason": "Trace quality is visible in the corpus.",
+                            }
+                        ],
+                        "validation_next_step": "Prototype a trace viewer for one benchmark workflow.",
+                        "time_horizon": "now",
+                    },
+                    {
+                        "title": "Review queue for flaky eval regressions",
+                        "kind": "workflow_shift",
+                        "thesis": "Route unstable eval runs into a structured triage lane.",
+                        "why_now": "Teams are seeing repeated long-horizon failures.",
+                        "what_changed": "Higher usage creates recurring review patterns.",
+                        "user_or_job": "Applied AI ops",
+                        "evidence_refs": [
+                            {
+                                "doc_id": 12,
+                                "chunk_index": 0,
+                                "reason": "Repeated failures are visible in the corpus.",
+                            }
+                        ],
+                        "validation_next_step": "Pilot the queue on one benchmark family.",
+                        "time_horizon": "near",
+                    },
+                ],
+            }
+        ),
+        topics=["agents"],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+    assert "### Best bet: Auditable long-horizon eval workbench" in note_text
+    assert "### Alternate: Review queue for flaky eval regressions" in note_text
+    assert "- Type: Tooling wedge" in note_text
+    assert "- Horizon: Near-term" in note_text
+    assert "- Role: Evaluation teams need auditable agent runs." in note_text
+    assert "Kind:" not in note_text
+    assert "Time horizon:" not in note_text
+    assert "User/job:" not in note_text
+
+    assert sidecar_path.exists()
+    assert sidecar["presentation_schema_version"] == 1
+    assert sidecar["surface_kind"] == "idea"
+    assert sidecar["source_markdown_path"] == f"Ideas/{note_path.name}"
+    assert sidecar["display_labels"]["best_bet"] == "Best bet"
+    assert sidecar["content"]["opportunities"][0]["tier"] == "best_bet"
+    assert sidecar["content"]["opportunities"][1]["tier"] == "alternate"
+    assert sidecar["content"]["opportunities"][0]["display_kind"] == "Tooling wedge"
+    assert sidecar["content"]["opportunities"][1]["display_time_horizon"] == "Near-term"
+    assert validate_presentation_v1(sidecar) == []

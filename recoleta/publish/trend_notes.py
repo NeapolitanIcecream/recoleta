@@ -8,6 +8,11 @@ from typing import Any
 
 import yaml
 
+from recoleta.presentation import (
+    build_trend_presentation_v1,
+    is_localized_output_path,
+    write_presentation_sidecar,
+)
 from recoleta.provenance import ProjectionProvenance, build_projection_provenance
 from recoleta.publish.trend_render_shared import (
     _trend_date_token,
@@ -459,6 +464,7 @@ def _write_trend_note(
     pass_kind: str | None = None,
     site_exclude: bool = False,
     language_code: str | None = None,
+    emit_presentation_sidecar: bool = False,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
     note_path = resolve_trend_note_path(
@@ -494,6 +500,17 @@ def _write_trend_note(
         language_code=language_code,
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    if emit_presentation_sidecar:
+        presentation = build_trend_presentation_v1(
+            source_markdown_path=f"{note_dir.name}/{note_path.name}",
+            title=title,
+            overview_md=overview_md,
+            evolution=evolution,
+            history_window_refs=history_window_refs,
+            clusters=clusters,
+            language_code=language_code,
+        )
+        write_presentation_sidecar(note_path=note_path, presentation=presentation)
     return note_path
 
 
@@ -539,6 +556,7 @@ def write_obsidian_trend_note(
         pass_kind=pass_kind,
         site_exclude=site_exclude,
         language_code=language_code,
+        emit_presentation_sidecar=False,
     )
 
 
@@ -586,6 +604,7 @@ def write_markdown_trend_note(
         pass_kind=pass_kind,
         site_exclude=site_exclude,
         language_code=language_code,
+        emit_presentation_sidecar=not is_localized_output_path(output_dir),
     )
 
 
