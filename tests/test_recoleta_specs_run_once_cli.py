@@ -11,7 +11,6 @@ from typer.testing import CliRunner
 
 import recoleta.cli
 import recoleta.cli.workflows as workflow_cli
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 class _FakeConsole:
@@ -648,7 +647,7 @@ def test_run_day_keeps_default_scope_for_instance_first_workflows(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression: instance-first workflows should always run against the default scope."""
+    """Regression: workflows should not pass scope into translation internals, but runs still audit default."""
     runner = CliRunner()
     tmp_path: Path = configured_env
     fake_settings = _FakeSettings(
@@ -703,8 +702,8 @@ def test_run_day_keeps_default_scope_for_instance_first_workflows(
 
     assert result.exit_code == 0
     assert len(translation_calls) == 1
-    assert translation_calls[0]["scope"] == DEFAULT_TOPIC_STREAM
-    assert fake_repo.updated[0]["scope"] == DEFAULT_TOPIC_STREAM
+    assert "scope" not in translation_calls[0]
+    assert fake_repo.updated[0]["scope"] == "default"
 
 
 def test_run_month_executes_recursive_day_week_and_month_synthesis_workflow(

@@ -16,7 +16,6 @@ from recoleta.models import (
     RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL,
 )
 from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 STEP_INGEST = "ingest"
 STEP_ANALYZE = "analyze"
@@ -214,11 +213,6 @@ def _localization_targets_configured(settings: Any) -> bool:
             return False
     localization = getattr(settings, "localization", None)
     return bool(getattr(localization, "targets", []) if localization is not None else [])
-
-
-def _workflow_scopes(settings: Any) -> list[str]:
-    _ = settings
-    return [DEFAULT_TOPIC_STREAM]
 
 
 @contextmanager
@@ -503,29 +497,26 @@ def _run_translation_step(
         "skipped": 0,
         "failed": 0,
     }
-    scopes = _workflow_scopes(settings)
     normalized_include = ",".join(include)
     per_granularity = granularities if granularities is not None else [None]
-    for scope in scopes:
-        for granularity in per_granularity:
-            result = run_translation(
-                repository=repository,
-                settings=settings,
-                scope=scope,
-                granularity=granularity,
-                include=normalized_include,
-                period_start=period_start,
-                period_end=period_end,
-                all_history=all_history,
-                run_id=run_id,
-            )
-            totals["scanned"] += int(result.scanned_total)
-            totals["translated"] += int(result.translated_total)
-            totals["mirrored"] += int(result.mirrored_total)
-            totals["skipped"] += int(result.skipped_total)
-            totals["failed"] += int(result.failed_total)
-            if bool(result.aborted):
-                raise RuntimeError(str(result.abort_reason or "translation aborted"))
+    for granularity in per_granularity:
+        result = run_translation(
+            repository=repository,
+            settings=settings,
+            granularity=granularity,
+            include=normalized_include,
+            period_start=period_start,
+            period_end=period_end,
+            all_history=all_history,
+            run_id=run_id,
+        )
+        totals["scanned"] += int(result.scanned_total)
+        totals["translated"] += int(result.translated_total)
+        totals["mirrored"] += int(result.mirrored_total)
+        totals["skipped"] += int(result.skipped_total)
+        totals["failed"] += int(result.failed_total)
+        if bool(result.aborted):
+            raise RuntimeError(str(result.abort_reason or "translation aborted"))
     return totals
 
 
@@ -796,7 +787,7 @@ def execute_granularity_workflow(
             run_id=run_id,
             command=command,
             operation_kind=plan.operation_kind,
-            scope=DEFAULT_TOPIC_STREAM,
+            scope="default",
             granularity=plan.target_granularity,
             period_start=plan.target_period_start,
             period_end=plan.target_period_end,

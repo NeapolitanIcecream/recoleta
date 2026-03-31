@@ -676,7 +676,7 @@ def test_export_trend_static_site_discovers_legacy_grouped_localized_roots(
     en_software = notes_root / "Streams" / "software_intelligence"
     zh_software = en_software / "Localized" / "zh-cn"
 
-    embodied_note = write_markdown_trend_note(
+    _ = write_markdown_trend_note(
         output_dir=en_embodied,
         trend_doc_id=181,
         title="Embodied Weekly",
@@ -704,7 +704,7 @@ def test_export_trend_static_site_discovers_legacy_grouped_localized_roots(
         highlights=[],
         language_code="zh-CN",
     )
-    software_note = write_markdown_trend_note(
+    _ = write_markdown_trend_note(
         output_dir=en_software,
         trend_doc_id=182,
         title="Software Weekly",
@@ -734,43 +734,12 @@ def test_export_trend_static_site_discovers_legacy_grouped_localized_roots(
     )
 
     site_dir = tmp_path / "site"
-    manifest_path = export_trend_static_site(
-        input_dir=notes_root,
-        output_dir=site_dir,
-        default_language_code="en",
-    )
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["languages"] == ["en", "zh-cn"]
-    assert manifest["default_language_code"] == "en"
-    assert (site_dir / "index.html").exists()
-    assert (site_dir / "en" / "index.html").exists()
-    assert (site_dir / "zh-cn" / "index.html").exists()
-    assert not (site_dir / "en" / "streams" / "embodied-ai.html").exists()
-    assert not (site_dir / "zh-cn" / "streams" / "software-intelligence.html").exists()
-    assert (
-        site_dir / "en" / "trends" / f"embodied-ai--{embodied_note.stem}.html"
-    ).exists()
-    assert (
-        site_dir
-        / "zh-cn"
-        / "trends"
-        / f"software-intelligence--{software_note.stem}.html"
-    ).exists()
-    root_index = (site_dir / "index.html").read_text(encoding="utf-8")
-    assert "localStorage" in root_index
-    assert "en/index.html" in root_index
-    assert "Streams" not in root_index
-    en_embodied_detail = (
-        site_dir / "en" / "trends" / f"embodied-ai--{embodied_note.stem}.html"
-    ).read_text(encoding="utf-8")
-    zh_embodied_detail = (
-        site_dir / "zh-cn" / "trends" / f"embodied-ai--{embodied_note.stem}.html"
-    ).read_text(encoding="utf-8")
-    assert "Embodied Weekly" in en_embodied_detail
-    assert "具身周报" not in en_embodied_detail
-    assert "具身周报" in zh_embodied_detail
-    assert "Embodied Weekly" not in zh_embodied_detail
+    with pytest.raises(ValueError, match="legacy Streams layouts"):
+        export_trend_static_site(
+            input_dir=notes_root,
+            output_dir=site_dir,
+            default_language_code="en",
+        )
 
 
 def test_export_trend_static_site_preserves_explicit_instance_names_across_languages(
@@ -886,15 +855,15 @@ def test_export_trend_static_site_preserves_explicit_instance_names_across_langu
     assert all("stream" not in entry for entry in en_manifest["input_dirs"])
 
 
-def test_stage_trend_site_source_round_trips_stream_localized_roots(
+def test_stage_trend_site_source_rejects_legacy_stream_localized_roots(
     tmp_path: Path,
 ) -> None:
-    """Regression: staging stream-localized notes must preserve multilingual rebuilds."""
+    """Regression: legacy localized Streams trees must be rejected outright."""
     notes_root = tmp_path / "notes"
     en_stream = notes_root / "Streams" / "agents_lab"
     zh_stream = en_stream / "Localized" / "zh-cn"
 
-    en_note = write_markdown_trend_note(
+    _ = write_markdown_trend_note(
         output_dir=en_stream,
         trend_doc_id=281,
         title="Agent Systems",
@@ -908,7 +877,7 @@ def test_stage_trend_site_source_round_trips_stream_localized_roots(
         highlights=[],
         language_code="en",
     )
-    zh_note = write_markdown_trend_note(
+    _ = write_markdown_trend_note(
         output_dir=zh_stream,
         trend_doc_id=281,
         title="智能体系统",
@@ -924,40 +893,12 @@ def test_stage_trend_site_source_round_trips_stream_localized_roots(
     )
 
     staged_root = tmp_path / "site-content"
-    manifest_path = stage_trend_site_source(
-        input_dir=notes_root,
-        output_dir=staged_root,
-        default_language_code="en",
-    )
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["languages"] == ["en", "zh-cn"]
-    assert (
-        staged_root / "Streams" / "agents_lab" / "Trends" / en_note.name
-    ).exists()
-    assert (
-        staged_root
-        / "Streams"
-        / "agents_lab"
-        / "Localized"
-        / "zh-cn"
-        / "Trends"
-        / zh_note.name
-    ).exists()
-
-    site_dir = tmp_path / "site"
-    site_manifest_path = export_trend_static_site(
-        input_dir=staged_root,
-        output_dir=site_dir,
-        default_language_code="en",
-    )
-
-    site_manifest = json.loads(site_manifest_path.read_text(encoding="utf-8"))
-    assert site_manifest["languages"] == ["en", "zh-cn"]
-    assert (site_dir / "en" / "trends" / f"agents-lab--{en_note.stem}.html").exists()
-    assert (
-        site_dir / "zh-cn" / "trends" / f"agents-lab--{zh_note.stem}.html"
-    ).exists()
+    with pytest.raises(ValueError, match="legacy Streams layouts"):
+        stage_trend_site_source(
+            input_dir=notes_root,
+            output_dir=staged_root,
+            default_language_code="en",
+        )
 
 
 def test_export_trend_static_site_hides_legacy_topics_body_section(
@@ -2323,7 +2264,7 @@ def test_export_trend_static_site_keeps_fixed_evolution_ui_terms_in_english_for_
     assert "历史窗口" not in detail_html
 
 
-def test_export_trend_static_site_aggregates_legacy_grouped_inputs_without_writing_stream_pages(
+def test_export_trend_static_site_rejects_legacy_grouped_inputs(
     tmp_path: Path,
 ) -> None:
     notes_root = tmp_path / "notes"
@@ -2345,7 +2286,7 @@ def test_export_trend_static_site_aggregates_legacy_grouped_inputs_without_writi
     )
     agents_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
 
-    bio_note = write_markdown_trend_note(
+    _ = write_markdown_trend_note(
         output_dir=bio_root,
         trend_doc_id=92,
         title="Therapeutics Watch",
@@ -2360,37 +2301,14 @@ def test_export_trend_static_site_aggregates_legacy_grouped_inputs_without_writi
     )
 
     site_dir = tmp_path / "site"
-    manifest_path = export_trend_static_site(
-        input_dir=notes_root,
-        output_dir=site_dir,
-    )
-
-    assert manifest_path == site_dir / "manifest.json"
-    assert not (site_dir / "streams" / "index.html").exists()
-    assert not (site_dir / "streams" / "agents-lab.html").exists()
-    assert not (site_dir / "streams" / "bio-watch.html").exists()
-    assert (site_dir / "trends" / f"agents-lab--{agents_note.stem}.html").exists()
-    assert (site_dir / "trends" / f"bio-watch--{bio_note.stem}.html").exists()
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["trends_total"] == 2
-    assert len(manifest["input_dirs"]) == 2
-    assert "streams_total" not in manifest
-    assert "streams_index" not in manifest["files"]
-    assert "stream_pages" not in manifest["files"]
-
-    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
-    assert "Topic streams" not in index_html
-
-    detail_html = (
-        site_dir / "trends" / f"agents-lab--{agents_note.stem}.html"
-    ).read_text(
-        encoding="utf-8"
-    )
-    assert "Agents Lab" in detail_html
+    with pytest.raises(ValueError, match="legacy Streams layouts"):
+        export_trend_static_site(
+            input_dir=notes_root,
+            output_dir=site_dir,
+        )
 
 
-def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_across_legacy_grouped_inputs(
+def test_export_trend_static_site_rejects_legacy_grouped_idea_inputs(
     tmp_path: Path,
 ) -> None:
     notes_root = tmp_path / "notes"
@@ -2461,29 +2379,11 @@ def test_export_trend_static_site_keeps_same_day_idea_pages_distinct_across_lega
     )
 
     site_dir = tmp_path / "site"
-    manifest_path = export_trend_static_site(
-        input_dir=notes_root,
-        output_dir=site_dir,
-    )
-
-    agents_page = site_dir / "ideas" / "agents-lab--day--2026-03-09--ideas.html"
-    research_page = site_dir / "ideas" / "research-ops--day--2026-03-09--ideas.html"
-    assert agents_page.exists()
-    assert research_page.exists()
-
-    agents_html = agents_page.read_text(encoding="utf-8")
-    research_html = research_page.read_text(encoding="utf-8")
-    assert "Agents lane" in agents_html
-    assert "Research ops lane" not in agents_html
-    assert "Research ops lane" in research_html
-    assert "Agents lane" not in research_html
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert "ideas/agents-lab--day--2026-03-09--ideas.html" in manifest["files"]["idea_pages"]
-    assert (
-        "ideas/research-ops--day--2026-03-09--ideas.html"
-        in manifest["files"]["idea_pages"]
-    )
+    with pytest.raises(ValueError, match="legacy Streams layouts"):
+        export_trend_static_site(
+            input_dir=notes_root,
+            output_dir=site_dir,
+        )
 
 
 def test_export_trend_static_site_namespaces_duplicate_pages_and_artifacts_by_instance(
@@ -2540,7 +2440,6 @@ def test_export_trend_static_site_namespaces_duplicate_pages_and_artifacts_by_in
             "period_start: 2026-03-16T00:00:00+00:00\n"
             "period_end: 2026-03-23T00:00:00+00:00\n"
             "status: succeeded\n"
-            "stream: default\n"
             f"topics:\n  - {topic}\n"
             "---\n\n"
             f"# {instance_label} ideas\n\n"
@@ -2679,7 +2578,6 @@ def test_export_trend_static_site_keeps_duplicate_root_instances_separate(
         "period_start: 2026-03-18T00:00:00+00:00\n"
         "period_end: 2026-03-19T00:00:00+00:00\n"
         "status: succeeded\n"
-        "stream: default\n"
         "---\n\n"
         "# Shared root ideas\n\n"
         "## Summary\n\n"
@@ -2783,7 +2681,6 @@ def test_export_trend_static_site_preserves_grouped_child_identities_under_expli
             "period_start: 2026-03-21T00:00:00+00:00\n"
             "period_end: 2026-03-22T00:00:00+00:00\n"
             "status: succeeded\n"
-            "stream: default\n"
             "---\n\n"
             f"# {label} grouped-root ideas\n\n"
             "## Summary\n\n"
@@ -2803,71 +2700,11 @@ def test_export_trend_static_site_preserves_grouped_child_identities_under_expli
     )
 
     site_dir = tmp_path / "site"
-    manifest_path = export_trend_static_site(
-        input_dir=TrendSiteInputSpec(path=notes_root, instance="alpha"),
-        output_dir=site_dir,
-    )
-
-    expected_pages = [
-        site_dir / "trends" / f"agents-lab--{agents_trend.stem}.html",
-        site_dir / "trends" / f"research-ops--{research_trend.stem}.html",
-        site_dir / "ideas" / f"agents-lab--{agents_idea.stem}.html",
-        site_dir / "ideas" / f"research-ops--{research_idea.stem}.html",
-        site_dir / "items" / f"agents-lab--{agents_item.stem}.html",
-        site_dir / "items" / f"research-ops--{research_item.stem}.html",
-        site_dir / "artifacts" / f"agents-lab--{agents_trend.name}",
-        site_dir / "artifacts" / f"research-ops--{research_trend.name}",
-        site_dir / "artifacts" / f"agents-lab--{agents_trend.with_suffix('.pdf').name}",
-        site_dir / "artifacts" / f"research-ops--{research_trend.with_suffix('.pdf').name}",
-        site_dir / "artifacts" / "ideas" / f"agents-lab--{agents_idea.name}",
-        site_dir / "artifacts" / "ideas" / f"research-ops--{research_idea.name}",
-    ]
-    for page in expected_pages:
-        assert page.exists()
-
-    unexpected_parent_pages = [
-        site_dir / "trends" / f"alpha--{agents_trend.stem}.html",
-        site_dir / "ideas" / f"alpha--{agents_idea.stem}.html",
-        site_dir / "items" / f"alpha--{agents_item.stem}.html",
-        site_dir / "artifacts" / f"alpha--{agents_trend.name}",
-        site_dir / "artifacts" / "ideas" / f"alpha--{agents_idea.name}",
-    ]
-    for page in unexpected_parent_pages:
-        assert not page.exists()
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["trends_total"] == 2
-    assert manifest["ideas_total"] == 2
-    assert manifest["items_total"] == 2
-    assert manifest["files"]["trend_pages"] == [
-        f"trends/agents-lab--{agents_trend.stem}.html",
-        f"trends/research-ops--{research_trend.stem}.html",
-    ]
-    assert manifest["files"]["idea_pages"] == [
-        f"ideas/agents-lab--{agents_idea.stem}.html",
-        f"ideas/research-ops--{research_idea.stem}.html",
-    ]
-    assert manifest["files"]["item_pages"] == [
-        f"items/agents-lab--{agents_item.stem}.html",
-        f"items/research-ops--{research_item.stem}.html",
-    ]
-    assert [entry["instance"] for entry in manifest["input_dirs"]] == [
-        "agents_lab",
-        "research_ops",
-    ]
-
-    research_trend_html = (
-        site_dir / "trends" / f"research-ops--{research_trend.stem}.html"
-    ).read_text(encoding="utf-8")
-    research_idea_html = (
-        site_dir / "ideas" / f"research-ops--{research_idea.stem}.html"
-    ).read_text(encoding="utf-8")
-    assert f"../items/research-ops--{research_item.stem}.html" in research_trend_html
-    assert f"../items/agents-lab--{agents_item.stem}.html" not in research_trend_html
-    assert f"../trends/research-ops--{research_trend.stem}.html" in research_idea_html
-    assert f"../items/research-ops--{research_item.stem}.html" in research_idea_html
-    assert f"../trends/agents-lab--{agents_trend.stem}.html" not in research_idea_html
-    assert f"../items/agents-lab--{agents_item.stem}.html" not in research_idea_html
+    with pytest.raises(ValueError, match="legacy Streams layouts"):
+        export_trend_static_site(
+            input_dir=TrendSiteInputSpec(path=notes_root, instance="alpha"),
+            output_dir=site_dir,
+        )
 
 
 def test_export_trend_static_site_preserves_explicit_default_instance_name(
@@ -2897,7 +2734,6 @@ def test_export_trend_static_site_preserves_explicit_default_instance_name(
         "period_start: 2026-03-20T00:00:00+00:00\n"
         "period_end: 2026-03-21T00:00:00+00:00\n"
         "status: succeeded\n"
-        "stream: default\n"
         "---\n\n"
         "# Default instance ideas\n\n"
         "## Summary\n\n"
@@ -2964,7 +2800,7 @@ def test_export_trend_static_site_rejects_slug_colliding_instance_names(
         )
 
 
-def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
+def test_stage_trend_site_source_rejects_legacy_topic_stream_directory_layout(
     tmp_path: Path,
 ) -> None:
     notes_root = tmp_path / "notes"
@@ -2986,7 +2822,7 @@ def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
     )
     agents_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
 
-    bio_note = write_markdown_trend_note(
+    _ = write_markdown_trend_note(
         output_dir=bio_root,
         trend_doc_id=102,
         title="Therapeutics Watch",
@@ -3001,31 +2837,14 @@ def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
     )
 
     staged_root = tmp_path / "site-content"
-    manifest_path = stage_trend_site_source(
-        input_dir=notes_root,
-        output_dir=staged_root,
-    )
-
-    assert manifest_path == staged_root / "manifest.json"
-    assert (
-        staged_root / "Streams" / "agents_lab" / "Trends" / agents_note.name
-    ).exists()
-    assert (
-        staged_root
-        / "Streams"
-        / "agents_lab"
-        / "Trends"
-        / agents_note.with_suffix(".pdf").name
-    ).exists()
-    assert (staged_root / "Streams" / "bio_watch" / "Trends" / bio_note.name).exists()
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["trends_total"] == 2
-    assert manifest["pdf_total"] == 1
-    assert "streams_total" not in manifest
+    with pytest.raises(ValueError, match="legacy Streams layouts"):
+        stage_trend_site_source(
+            input_dir=notes_root,
+            output_dir=staged_root,
+        )
 
 
-def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_streams_exist(
+def test_stage_trend_site_source_rejects_mixed_legacy_stream_layouts(
     tmp_path: Path,
 ) -> None:
     notes_root = tmp_path / "notes"
@@ -3061,35 +2880,11 @@ def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_strea
     stream_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
 
     staged_root = tmp_path / "site-content"
-    manifest_path = stage_trend_site_source(
-        input_dir=notes_root,
-        output_dir=staged_root,
-    )
-
-    assert manifest_path == staged_root / "manifest.json"
-    assert (staged_root / "Trends" / legacy_note.name).exists()
-    assert (staged_root / "Trends" / legacy_note.with_suffix(".pdf").name).exists()
-    assert (
-        staged_root / "Streams" / "agents_lab" / "Trends" / stream_note.name
-    ).exists()
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert "Trends/" + legacy_note.name in manifest["files"]["markdown"]
-    assert (
-        "Streams/agents_lab/Trends/" + stream_note.name in manifest["files"]["markdown"]
-    )
-
-    site_dir = tmp_path / "site"
-    built_manifest_path = export_trend_static_site(
-        input_dir=staged_root,
-        output_dir=site_dir,
-    )
-
-    assert built_manifest_path == site_dir / "manifest.json"
-    built_manifest = json.loads(built_manifest_path.read_text(encoding="utf-8"))
-    assert built_manifest["trends_total"] == 2
-    assert (site_dir / "trends" / f"{legacy_note.stem}.html").exists()
-    assert (site_dir / "trends" / f"agents-lab--{stream_note.stem}.html").exists()
+    with pytest.raises(ValueError, match="legacy Streams layouts"):
+        stage_trend_site_source(
+            input_dir=notes_root,
+            output_dir=staged_root,
+        )
 
 
 def test_stage_trend_site_source_round_trips_explicit_default_instance_without_overwriting_root_pages(

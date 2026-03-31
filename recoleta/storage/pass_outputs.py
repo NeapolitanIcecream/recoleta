@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from recoleta.models import PassOutput
 from recoleta.storage_common import _to_json
-from recoleta.types import DEFAULT_TOPIC_STREAM, sha256_hex
+from recoleta.types import sha256_hex
 
 
 class PassOutputStoreMixin:
@@ -22,7 +22,6 @@ class PassOutputStoreMixin:
         run_id: str,
         pass_kind: str,
         status: str,
-        scope: str = DEFAULT_TOPIC_STREAM,
         granularity: str | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
@@ -41,7 +40,6 @@ class PassOutputStoreMixin:
         normalized_status = str(status or "").strip()
         if not normalized_status:
             raise ValueError("status must not be empty")
-        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_granularity = (
             str(granularity or "").strip().lower() or None
             if granularity is not None
@@ -87,7 +85,6 @@ class PassOutputStoreMixin:
         self,
         *,
         pass_kind: str,
-        scope: str = DEFAULT_TOPIC_STREAM,
         status: str | None = None,
         granularity: str | None = None,
         period_start: datetime | None = None,
@@ -96,7 +93,6 @@ class PassOutputStoreMixin:
         normalized_pass_kind = str(pass_kind or "").strip()
         if not normalized_pass_kind:
             raise ValueError("pass_kind must not be empty")
-        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_status = str(status or "").strip() if status is not None else ""
         normalized_granularity = (
             str(granularity or "").strip().lower() if granularity is not None else ""

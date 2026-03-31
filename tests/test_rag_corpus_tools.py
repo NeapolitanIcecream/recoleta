@@ -112,21 +112,18 @@ def test_doc_id_helpers_respect_active_corpus_bounds(
         period_start=period_start,
         period_end=period_end,
         title="Visible idea",
-        scope="default",
     )
     hidden_scope_doc = repository.upsert_document_for_idea(
         granularity="day",
         period_start=period_start,
         period_end=period_end,
         title="Other stream idea",
-        scope="other",
     )
     hidden_window_doc = repository.upsert_document_for_idea(
         granularity="day",
         period_start=datetime(2026, 2, 1, tzinfo=UTC),
         period_end=datetime(2026, 2, 2, tzinfo=UTC),
         title="Older idea",
-        scope="default",
     )
     assert visible_doc.id is not None
     assert hidden_scope_doc.id is not None
@@ -164,7 +161,6 @@ def test_doc_id_helpers_respect_active_corpus_bounds(
         embedding_dimensions=None,
         embedding_batch_max_inputs=8,
         embedding_batch_max_chars=2000,
-        scope="default",
     )
 
     listed = service.list_docs(doc_type="idea", granularity="day", limit=10)

@@ -2,20 +2,18 @@
   "version": 1,
   "windows": [
     {
-      "id": "day-2026-03-05-software-intelligence",
+      "id": "day-2026-03-05-default",
       "granularity": "day",
       "anchor_date": "2026-03-05",
-      "stream": "software_intelligence",
       "topics": ["agents", "evaluation"],
-      "notes": "Daily baseline window backed by the existing software_intelligence trend doc."
+      "notes": "Daily baseline window backed by the existing default-instance trend doc."
     },
     {
-      "id": "week-2026-03-05-software-intelligence",
+      "id": "week-2026-03-05-default",
       "granularity": "week",
       "anchor_date": "2026-03-05",
-      "stream": "software_intelligence",
       "topics": ["agents", "evaluation"],
-      "notes": "Weekly baseline window backed by the existing 2026-W10 software_intelligence trend doc."
+      "notes": "Weekly baseline window backed by the existing 2026-W10 default-instance trend doc."
     }
   ]
 }

@@ -99,7 +99,6 @@ def persist_pass_output_envelope(
             run_id=envelope.run_id,
             pass_kind=envelope.pass_kind,
             status=envelope.status.value,
-            scope=envelope.scope,
             granularity=envelope.granularity,
             period_start=period_start,
             period_end=period_end,

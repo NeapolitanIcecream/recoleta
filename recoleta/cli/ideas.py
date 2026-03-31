@@ -84,7 +84,7 @@ def run_ideas_command(
         repository,
         run_id=run_id,
         command="ideas",
-        scope=str(getattr(result, "stream", "") or "").strip() or "default",
+        scope="default",
         granularity=str(getattr(result, "granularity", "") or "").strip() or None,
         period_start=getattr(result, "period_start", None),
         period_end=getattr(result, "period_end", None),

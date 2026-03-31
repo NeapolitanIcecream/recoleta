@@ -1,6 +1,6 @@
 # Data Model (SQLite + LanceDB + Markdown)
 
-This document defines the current logical data model used by Recoleta: the SQLite truth store, the rebuildable LanceDB trend-search cache, and the Markdown/Obsidian output layout. The schema is scope-aware so one workspace can host multiple topic streams.
+This document defines the current logical data model used by Recoleta: the SQLite truth store, the rebuildable LanceDB trend-search cache, and the Markdown/Obsidian output layout. The current runtime is instance-first and single-scope: one workspace hosts one instance, and fleet manifests combine several child instances when needed.
 
 ## SQLite tables (logical)
 
@@ -15,7 +15,8 @@ Tracks each managed run for auditing, leases, and freshness checks.
 - `status` (text): `running|succeeded|failed`
 - `command` (text, nullable): CLI command that created the run, for example
   `run week --date 2026-03-16` or `run deploy`
-- `scope` (text, nullable): stream or logical scope when one applies
+- `scope` (text, nullable): instance-local scope audit field. Current runs write
+  `default`.
 - `granularity` (text, nullable): `day|week|month` for run-scoped trend/idea windows
 - `period_start` / `period_end` (datetime, nullable): UTC bounds for windowed runs
 - `config_fingerprint` (text): hash of effective config (excluding secrets)
@@ -71,9 +72,6 @@ LLM outputs (validated structured payload).
 
 - `id` (PK, integer)
 - `item_id` (FK -> items.id)
-- `scope` (text): historical topic-stream / publish scope. In the current
-  instance-first runtime this is effectively `default`, and the remaining
-  references exist for compatibility and historical context.
 - `model` (text): e.g. `openai/gpt-5.4`
 - `provider` (text): LiteLLM provider label
 - `summary` (text)
@@ -86,7 +84,7 @@ LLM outputs (validated structured payload).
 
 Constraint / index:
 
-- unique `(item_id, scope)`
+- unique `(item_id)`
 
 ### `localized_outputs`
 
@@ -96,7 +94,6 @@ and idea outputs.
 - `id` (PK, integer)
 - `source_kind` (text): `analysis|trend_synthesis|trend_ideas`
 - `source_record_id` (integer): canonical record id for the source row
-- `scope` (text): topic stream / publish scope
 - `language_code` (text): localized output language, for example `en` or `zh-CN`
 - `status` (text): localized projection status, usually `succeeded`
 - `schema_version` (integer): localized payload schema version
@@ -108,17 +105,7 @@ and idea outputs.
 
 Constraint / index:
 
-- unique `(source_kind, source_record_id, scope, language_code)`
-
-### `item_stream_states`
-
-Per-stream item state machine. This lets one ingested item participate in several topic streams without duplicating the raw item row.
-
-- `id` (PK, integer)
-- `item_id` (FK -> items.id)
-- `stream` (text)
-- `state` (text)
-- `created_at` / `updated_at`
+- unique `(source_kind, source_record_id, language_code)`
 
 ### `deliveries`
 
@@ -207,17 +194,16 @@ Constraint / index:
 Canonical trend/RAG document registry used by trend generation, materialization, and semantic search.
 
 - `id` (PK, integer)
-- `doc_type`: `item|trend`
-- `scope`: topic stream / trend scope
+- `doc_type`: `item|trend|idea`
 - `item_id` (nullable, for `doc_type=item`)
 - `source`, `canonical_url`, `title`, `published_at` (nullable item metadata copied for retrieval/export)
-- `granularity`, `period_start`, `period_end` (nullable trend metadata for `doc_type=trend`)
+- `granularity`, `period_start`, `period_end` (nullable period metadata for `doc_type in {"trend", "idea"}`)
 - `created_at` / `updated_at`
 
 Constraints / indexes:
 
-- unique `(doc_type, item_id, scope)` for item documents
-- unique `(doc_type, scope, granularity, period_start, period_end)` for trend documents
+- unique `(doc_type, item_id)` for item documents
+- unique `(doc_type, granularity, period_start, period_end)` for trend and idea documents
 
 ### `document_chunks`
 
@@ -279,10 +265,11 @@ Recommended folders:
 - `Recoleta/Trends/` (weekly/monthly trend notes)
 - `Recoleta/Artifacts/` (optional links to raw files)
 
-Legacy shared-stream layout:
+Historical note:
 
-- `Recoleta/Streams/<stream>/Inbox/`
-- `Recoleta/Streams/<stream>/Trends/`
+- older shared-stream deployments used `Recoleta/Streams/<stream>/Inbox/` and
+  `Recoleta/Streams/<stream>/Trends/`
+- current versions do not read or write that layout
 
 ### Note naming
 
@@ -329,16 +316,14 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
 - `site/` (optional static site export derived from `Trends/`)
 
-Legacy shared-stream layout:
-
-- `Streams/<stream>/latest.md`
-- `Streams/<stream>/Inbox/`
-- `Streams/<stream>/Trends/`
-
 Trend markdown notes are the canonical source for the richer trend surfaces:
 
 - Telegram trend PDFs render from `Trends/*.md`
 - the static site exporter renders from a trend markdown directory
-- legacy shared-stream deployments could mirror selected trend notes into
-  `site-content/` while preserving `Streams/<stream>/Trends/`
 - when localized markdown trees exist, the site exporter also aggregates `Localized/<language>/...` and emits one site subtree per language
+
+Historical note:
+
+- older shared-stream deployments wrote `Streams/<stream>/latest.md`,
+  `Streams/<stream>/Inbox/`, and `Streams/<stream>/Trends/`
+- current versions do not accept that layout as site-build input

@@ -121,7 +121,7 @@ def estimate_cost_usd_from_response(
     pricing_model_alias: str | None = None,
 ) -> float | None:
     try:
-        from litellm import completion_cost
+        from litellm.cost_calculator import completion_cost
     except Exception:
         return None
 

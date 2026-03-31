@@ -59,7 +59,6 @@ from recoleta.types import (
     AnalysisWrite,
     AnalyzeDebug,
     AnalyzeResult,
-    DEFAULT_TOPIC_STREAM,
     IngestResult,
     ItemDraft,
     ItemStateUpdate,
@@ -91,7 +90,6 @@ class _AnalyzeWorkItem:
     canonical_url: str
     user_topics: list[str]
     content_text: str
-    scope: str
     mirror_item_state: bool
 
 
@@ -426,8 +424,6 @@ class PipelineService:
             AnalysisWrite(
                 item_id=int(analysis.item_id),
                 result=analysis.result,
-                scope=str(analysis.scope or DEFAULT_TOPIC_STREAM).strip()
-                or DEFAULT_TOPIC_STREAM,
                 mirror_item_state=bool(analysis.mirror_item_state),
             )
             for analysis in analyses
@@ -445,7 +441,6 @@ class PipelineService:
             self.repository.save_analysis(
                 item_id=analysis.item_id,
                 result=analysis.result,
-                scope=analysis.scope,
                 mirror_item_state=analysis.mirror_item_state,
             )
         return len(normalized)
@@ -455,11 +450,6 @@ class PipelineService:
             ItemStateUpdate(
                 item_id=int(update.item_id),
                 state=str(update.state or "").strip(),
-                stream=(
-                    str(update.stream).strip()
-                    if update.stream is not None and str(update.stream).strip()
-                    else None
-                ),
                 mirror_item_state=bool(update.mirror_item_state),
             )
             for update in updates
@@ -475,14 +465,7 @@ class PipelineService:
             except TypeError:
                 pass
         for update in normalized:
-            if update.stream is not None:
-                self.repository.mark_item_stream_state(
-                    item_id=update.item_id,
-                    stream=update.stream,
-                    state=update.state,
-                    mirror_item_state=update.mirror_item_state,
-                )
-            elif update.state == ITEM_STATE_RETRYABLE_FAILED:
+            if update.state == ITEM_STATE_RETRYABLE_FAILED:
                 self.repository.mark_item_retryable_failed(item_id=update.item_id)
             elif update.state == ITEM_STATE_FAILED:
                 self.repository.mark_item_failed(item_id=update.item_id)
@@ -2306,7 +2289,6 @@ class PipelineService:
                         canonical_url=item.canonical_url,
                         user_topics=list(self.settings.topics),
                         content_text=content_text,
-                        scope=DEFAULT_TOPIC_STREAM,
                         mirror_item_state=True,
                     )
                 )
@@ -2372,7 +2354,6 @@ class PipelineService:
                         AnalysisWrite(
                             item_id=item_id,
                             result=analysis_result_payload,
-                            scope=outcome.work_item.scope,
                             mirror_item_state=outcome.work_item.mirror_item_state,
                         )
                     )

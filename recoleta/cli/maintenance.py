@@ -223,7 +223,7 @@ def _period_bounds_for_granularity(
     return period_start.astimezone(UTC), period_end.astimezone(UTC)
 
 
-def _min_relevance_score_for_scope(*, settings: Any | None, scope: str) -> float:
+def _default_min_relevance_score(*, settings: Any | None) -> float:
     return float(getattr(settings, "min_relevance_score", 0.0) or 0.0)
 
 
@@ -566,7 +566,6 @@ def run_doctor_why_empty_command(
     config_path: Path | None,
     anchor_date: str,
     granularity: str,
-    stream: str,
     min_relevance_score: float | None,
     json_output: bool,
     command_name: str = "doctor why-empty",
@@ -630,19 +629,14 @@ def run_doctor_why_empty_command(
     except Exception as exc:
         _exit_with_error(str(exc))
 
-    normalized_scope = str(stream or "").strip() or "default"
     effective_min_relevance = (
         float(min_relevance_score)
         if min_relevance_score is not None
-        else _min_relevance_score_for_scope(
-            settings=settings,
-            scope=normalized_scope,
-        )
+        else _default_min_relevance_score(settings=settings)
     )
     payload = repository.diagnose_corpus_window(
         period_start=period_start,
         period_end=period_end,
-        scope=normalized_scope,
         min_relevance_score=effective_min_relevance,
     )
     payload["status"] = "ok"
@@ -670,11 +664,12 @@ def run_doctor_why_empty_command(
                 f"{name}={count}" for name, count in payload["item_states"].items()
             )
         )
-    if payload["stream_states"]:
+    if payload["eligible_item_states"]:
         console.print(
-            "stream_states="
+            "eligible_item_states="
             + " ".join(
-                f"{name}={count}" for name, count in payload["stream_states"].items()
+                f"{name}={count}"
+                for name, count in payload["eligible_item_states"].items()
             )
         )
     if payload["exclusion_reasons"]:

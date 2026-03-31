@@ -16,7 +16,6 @@ from recoleta.rag.corpus_tools import CorpusSpec, SearchService
 from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.trends import TrendPayload
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
@@ -31,7 +30,6 @@ class IdeasAgentDeps:
     embedding_dimensions: int | None
     embedding_batch_max_inputs: int
     embedding_batch_max_chars: int
-    scope: str = DEFAULT_TOPIC_STREAM
     metric_namespace: str = "pipeline.trends.pass.ideas"
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
@@ -50,7 +48,6 @@ def _search_service_from_deps(deps: IdeasAgentDeps) -> SearchService:
         embedding_dimensions=deps.embedding_dimensions,
         embedding_batch_max_inputs=deps.embedding_batch_max_inputs,
         embedding_batch_max_chars=deps.embedding_batch_max_chars,
-        scope=deps.scope,
         metric_namespace=deps.metric_namespace,
         embedding_failure_mode=str(deps.embedding_failure_mode or "continue"),
         embedding_max_errors=int(deps.embedding_max_errors or 0),
@@ -307,7 +304,6 @@ def generate_trend_ideas_payload(
     trend_snapshot_pack_md: str,
     rag_sources: list[dict[str, Any]] | None = None,
     include_debug: bool = False,
-    scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str = "pipeline.trends.pass.ideas",
     llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendIdeasPayload, dict[str, Any] | None]:
@@ -330,7 +326,6 @@ def generate_trend_ideas_payload(
         embedding_batch_max_chars=embedding_batch_max_chars,
         embedding_failure_mode=str(embedding_failure_mode or "continue"),
         embedding_max_errors=int(embedding_max_errors or 0),
-        scope=scope,
         metric_namespace=metric_namespace,
         llm_connection=llm_connection,
     )

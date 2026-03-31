@@ -41,7 +41,6 @@ def _run_duration_seconds(*, run: Any, reference_now: datetime) -> int | None:
 def _serialize_pass_output(row: Any) -> dict[str, Any]:
     return {
         "id": int(getattr(row, "id", 0) or 0),
-        "scope": str(getattr(row, "scope", "") or ""),
         "pass_kind": str(getattr(row, "pass_kind", "") or ""),
         "status": str(getattr(row, "status", "") or ""),
         "granularity": str(getattr(row, "granularity", "") or "") or None,
@@ -69,13 +68,6 @@ def _serialize_artifact(row: Any) -> dict[str, Any]:
 
 
 def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
-    scope_candidates = sorted(
-        {
-            str(getattr(row, "scope", "") or "").strip()
-            for row in pass_outputs
-            if str(getattr(row, "scope", "") or "").strip()
-        }
-    )
     granularity_candidates = sorted(
         {
             str(getattr(row, "granularity", "") or "").strip()
@@ -123,10 +115,11 @@ def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
     skipped_steps = _parse_json_list(getattr(run, "skipped_steps_json", None))
     billing_by_step = _parse_json_object(getattr(run, "billing_by_step_json", None))
     terminal_state = str(getattr(run, "terminal_state", "") or "").strip() or None
+    scope_candidates = [scope] if scope is not None else []
     return {
         "command": command,
         "operation_kind": operation_kind,
-        "scope": scope or (scope_candidates[0] if len(scope_candidates) == 1 else None),
+        "scope": scope,
         "scope_candidates": scope_candidates,
         "granularity": (
             granularity

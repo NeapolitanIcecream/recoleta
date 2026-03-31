@@ -35,8 +35,6 @@ from recoleta.publish.trend_render_shared import (
     _trend_pdf_topics_summary,
     sanitize_trend_title,
 )
-from recoleta.types import DEFAULT_TOPIC_STREAM
-
 RECOLETA_REPO_URL = "https://github.com/NeapolitanIcecream/recoleta"
 RECOLETA_QUICKSTART_URL = f"{RECOLETA_REPO_URL}#recoleta-quickstart"
 
@@ -340,13 +338,19 @@ def _normalize_site_instance(instance: str | None) -> str | None:
     return cleaned
 
 
-def _normalize_legacy_site_stream(stream: str | None) -> str | None:
-    cleaned = _normalize_site_instance(stream)
-    if cleaned == DEFAULT_TOPIC_STREAM:
-        return None
-    return cleaned
-
-
+def _reject_legacy_stream_layout(path: Path, *, context: str) -> None:
+    resolved = path.expanduser().resolve()
+    if resolved.name == "Streams":
+        raise ValueError(
+            f"{context} no longer supports legacy Streams layouts: {resolved}"
+        )
+    legacy_streams_root = resolved / "Streams"
+    if legacy_streams_root.exists() and legacy_streams_root.is_dir():
+        if (resolved / "manifest.json").exists():
+            return
+        raise ValueError(
+            f"{context} no longer supports legacy Streams layouts: {legacy_streams_root}"
+        )
 def _repo_cta_links() -> str:
     repo_href = html.escape(RECOLETA_REPO_URL, quote=True)
     quickstart_href = html.escape(RECOLETA_QUICKSTART_URL, quote=True)
@@ -420,10 +424,6 @@ def _resolve_site_instance(
         frontmatter.get("instance")
     ):
         return resolved_frontmatter_instance
-    if resolved_legacy_stream := _normalize_legacy_site_stream(
-        frontmatter.get("stream")
-    ):
-        return resolved_legacy_stream
     return None
 
 
@@ -652,27 +652,6 @@ def _infer_instance_name_from_site_path(path: Path) -> str | None:
     )
 
 
-def _infer_grouped_child_instance_within_parent(
-    *,
-    path: Path,
-    parent_root: Path,
-) -> str | None:
-    resolved_path = path.expanduser().resolve()
-    resolved_parent_root = parent_root.expanduser().resolve()
-    try:
-        relative = resolved_path.relative_to(resolved_parent_root)
-    except ValueError:
-        return None
-    if not relative.parts:
-        return None
-    if resolved_parent_root.name == "Streams":
-        return relative.parts[0]
-    for index, part in enumerate(relative.parts[:-1]):
-        if part == "Streams":
-            return relative.parts[index + 1]
-    return None
-
-
 def _discover_trend_site_input_dirs(
     raw_inputs: Sequence[TrendSiteInputSpec],
     *,
@@ -724,6 +703,8 @@ def _discover_trend_site_input_dirs(
 
     for raw_input in raw_inputs:
         raw_path = raw_input.path
+        _reject_legacy_stream_layout(raw_path, context="Trend site input")
+        allow_staged_instance_roots = (raw_path / "manifest.json").exists()
         candidates: list[Path] = []
         if raw_path.name == "Trends":
             candidates.append(raw_path)
@@ -736,53 +717,47 @@ def _discover_trend_site_input_dirs(
             localized_root = raw_path / "Localized"
             if localized_root.exists() and localized_root.is_dir():
                 for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
+                    _reject_legacy_stream_layout(
+                        child,
+                        context="Localized trend site input",
+                    )
                     child_trends_dir = child / "Trends"
                     if child_trends_dir.exists() and child_trends_dir.is_dir():
                         candidates.append(child_trends_dir)
                     else:
                         candidates.append(child)
-                    child_streams_root = child / "Streams"
-                    if child_streams_root.exists() and child_streams_root.is_dir():
-                        candidates.extend(
-                            path
-                            for path in sorted(child_streams_root.glob("*/Trends"))
-                            if path.is_dir()
-                        )
-
-        streams_root = (
-            raw_path if raw_path.name == "Streams" else raw_path / "Streams"
-        )
-        if streams_root.exists() and streams_root.is_dir():
-            for stream_root in sorted(path for path in streams_root.iterdir() if path.is_dir()):
-                stream_trends_dir = stream_root / "Trends"
-                if stream_trends_dir.exists() and stream_trends_dir.is_dir():
-                    candidates.append(stream_trends_dir)
-                if not include_localized_children:
-                    continue
-                stream_localized_root = stream_root / "Localized"
-                if not stream_localized_root.exists() or not stream_localized_root.is_dir():
-                    continue
-                for child in sorted(path for path in stream_localized_root.iterdir() if path.is_dir()):
-                    child_trends_dir = child / "Trends"
-                    if child_trends_dir.exists() and child_trends_dir.is_dir():
-                        candidates.append(child_trends_dir)
-                    else:
-                        candidates.append(child)
-
+        if allow_staged_instance_roots:
+            streams_root = raw_path / "Streams"
+            if streams_root.exists() and streams_root.is_dir():
+                for stream_root in sorted(
+                    path for path in streams_root.iterdir() if path.is_dir()
+                ):
+                    stream_trends_dir = stream_root / "Trends"
+                    if stream_trends_dir.exists() and stream_trends_dir.is_dir():
+                        add_candidate(stream_trends_dir, instance=stream_root.name)
+                    if not include_localized_children:
+                        continue
+                    stream_localized_root = stream_root / "Localized"
+                    if (
+                        not stream_localized_root.exists()
+                        or not stream_localized_root.is_dir()
+                    ):
+                        continue
+                    for child in sorted(
+                        path
+                        for path in stream_localized_root.iterdir()
+                        if path.is_dir()
+                    ):
+                        child_trends_dir = child / "Trends"
+                        if child_trends_dir.exists() and child_trends_dir.is_dir():
+                            add_candidate(child_trends_dir, instance=stream_root.name)
+                        else:
+                            add_candidate(child, instance=stream_root.name)
         if not candidates:
             candidates.append(raw_path)
 
         for candidate in candidates:
-            candidate_instance = (
-                None
-                if _infer_grouped_child_instance_within_parent(
-                    path=candidate,
-                    parent_root=raw_path,
-                )
-                is not None
-                else raw_input.instance
-            )
-            add_candidate(candidate, instance=candidate_instance)
+            add_candidate(candidate, instance=raw_input.instance)
 
     _validate_unique_site_instance_slugs(
         [input_dir.instance for input_dir in discovered],
@@ -2058,9 +2033,6 @@ iframe {
 .detail-hero-main {
   display: grid;
   align-content: start;
-}
-.detail-stream-row {
-  margin-bottom: 10px;
 }
 .meta-panel {
   padding: 14px 16px;
@@ -4022,32 +3994,32 @@ def _discover_site_language_inputs(
         base_root = (
             raw_input.path.parent if raw_input.path.name == "Trends" else raw_input.path
         ).expanduser().resolve()
+        _reject_legacy_stream_layout(base_root, context="Trend site input")
+        allow_staged_instance_roots = (base_root / "manifest.json").exists()
         add_root(base_root, instance=raw_input.instance)
         localized_root = base_root / "Localized"
         if localized_root.exists() and localized_root.is_dir():
             for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
-                child_instance = (
-                    None
-                    if _infer_grouped_child_instance_within_parent(
-                        path=child,
-                        parent_root=base_root,
-                    )
-                    is not None
-                    else raw_input.instance
+                _reject_legacy_stream_layout(
+                    child,
+                    context="Localized trend site input",
                 )
-                add_root(child, instance=child_instance)
-        streams_root = (
-            base_root if base_root.name == "Streams" else base_root / "Streams"
-        )
-        if streams_root.exists() and streams_root.is_dir():
-            for stream_root in sorted(path for path in streams_root.iterdir() if path.is_dir()):
-                add_root(stream_root, instance=None)
-                stream_localized_root = stream_root / "Localized"
-                if stream_localized_root.exists() and stream_localized_root.is_dir():
-                    for child in sorted(
-                        path for path in stream_localized_root.iterdir() if path.is_dir()
-                    ):
-                        add_root(child, instance=None)
+                add_root(child, instance=raw_input.instance)
+        if allow_staged_instance_roots:
+            streams_root = base_root / "Streams"
+            if streams_root.exists() and streams_root.is_dir():
+                for stream_root in sorted(
+                    path for path in streams_root.iterdir() if path.is_dir()
+                ):
+                    add_root(stream_root, instance=stream_root.name)
+                    stream_localized_root = stream_root / "Localized"
+                    if stream_localized_root.exists() and stream_localized_root.is_dir():
+                        for child in sorted(
+                            path
+                            for path in stream_localized_root.iterdir()
+                            if path.is_dir()
+                        ):
+                            add_root(child, instance=stream_root.name)
     for language_slug in sorted(grouped_roots):
         discovered.append(
             (
@@ -4303,7 +4275,6 @@ def _export_trend_static_site_single_language(
     (resolved_output_dir / "ideas").mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "items").mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "topics").mkdir(parents=True, exist_ok=True)
-    (resolved_output_dir / "streams").mkdir(parents=True, exist_ok=True)
 
     trend_source_documents = _load_trend_source_documents(
         input_dirs=resolved_input_dirs,

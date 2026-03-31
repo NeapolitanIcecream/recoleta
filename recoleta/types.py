@@ -6,8 +6,6 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-DEFAULT_TOPIC_STREAM = "default"
-
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -83,7 +81,6 @@ class AnalyzeDebug:
 class AnalysisWrite:
     item_id: int
     result: AnalysisResult
-    scope: str = DEFAULT_TOPIC_STREAM
     mirror_item_state: bool = True
 
 
@@ -91,7 +88,6 @@ class AnalysisWrite:
 class ItemStateUpdate:
     item_id: int
     state: str
-    stream: str | None = None
     mirror_item_state: bool = False
 
 
@@ -131,7 +127,6 @@ class TrendResult:
     period_end: datetime
     title: str
     pass_output_id: int | None = None
-    stream: str | None = None
 
 
 @dataclass(slots=True)
@@ -144,4 +139,3 @@ class IdeasResult:
     status: str
     note_path: Path | None = None
     upstream_pass_output_id: int | None = None
-    stream: str | None = None

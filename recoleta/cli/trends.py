@@ -82,7 +82,7 @@ def run_trends_command(
         repository,
         run_id=run_id,
         command="trends",
-        scope=str(getattr(result, "stream", "") or "").strip() or "default",
+        scope="default",
         granularity=str(getattr(result, "granularity", "") or "").strip() or None,
         period_start=getattr(result, "period_start", None),
         period_end=getattr(result, "period_end", None),

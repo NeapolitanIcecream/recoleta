@@ -196,7 +196,7 @@ Recoleta data should be treated as four classes:
 
 1. Authoritative state
    - items
-   - latest successful analyses per scope
+   - latest successful analyses
    - deliveries / trend deliveries
 
 2. Rebuildable cache
@@ -372,11 +372,11 @@ Recoleta exposes two small operator-facing interfaces for this:
 
 Targeted recovery remains separate from the read-only checks:
 
-- legacy `recoleta repair streams --date ... --streams ...` repaired explicit
-  stream-analysis state for one UTC day in the old shared-stream runtime.
+- the old shared-stream runtime exposed `recoleta repair streams` for explicit
+  stream-row repair
 - in the instance-first runtime, choose the child instance config you want to
   fix, rerun the needed `stage ...` commands, and use `repair outputs` when the
-  DB is already correct.
+  DB is already correct
 
 ## Dependency stance
 

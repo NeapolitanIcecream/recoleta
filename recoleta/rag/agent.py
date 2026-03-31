@@ -18,7 +18,6 @@ from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.corpus_tools import (
     CorpusSpec,
     SearchService,
-    _collect_text_hits_with_backoff as _shared_collect_text_hits_with_backoff,
     _reciprocal_rank_fuse_search_hits as _shared_reciprocal_rank_fuse_search_hits,
     resolve_corpus_query_sources,
     serialize_document as _serialize_corpus_document,
@@ -30,7 +29,6 @@ from recoleta.trends import (
     TrendCluster,
     TrendPayload,
 )
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
@@ -45,7 +43,6 @@ class TrendAgentDeps:
     embedding_dimensions: int | None
     embedding_batch_max_inputs: int
     embedding_batch_max_chars: int
-    scope: str = DEFAULT_TOPIC_STREAM
     metric_namespace: str = "pipeline.trends"
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
@@ -64,7 +61,6 @@ def _search_service_from_deps(deps: TrendAgentDeps) -> SearchService:
         embedding_dimensions=deps.embedding_dimensions,
         embedding_batch_max_inputs=deps.embedding_batch_max_inputs,
         embedding_batch_max_chars=deps.embedding_batch_max_chars,
-        scope=deps.scope,
         metric_namespace=deps.metric_namespace,
         embedding_failure_mode=str(deps.embedding_failure_mode or "continue"),
         embedding_max_errors=int(deps.embedding_max_errors or 0),
@@ -304,30 +300,6 @@ def _candidate_text_queries(query: str) -> list[tuple[str, int]]:
             continue
         capped_candidates.append(candidate)
     return capped_candidates
-
-
-def _collect_text_hits_with_backoff(
-    *,
-    repository: TrendRepositoryPort,
-    query: str,
-    doc_type: str,
-    granularity: str | None,
-    period_start: datetime,
-    period_end: datetime,
-    scope: str,
-    limit: int,
-) -> tuple[list[dict[str, Any]], list[str]]:
-    return _shared_collect_text_hits_with_backoff(
-        repository=repository,
-        query=query,
-        doc_type=doc_type,
-        granularity=granularity,
-        period_start=period_start,
-        period_end=period_end,
-        scope=scope,
-        limit=limit,
-    )
-
 
 def _read_doc_content_chunks(
     *,
@@ -880,7 +852,6 @@ def _start_trend_generation_heartbeat(
     *,
     log: Any,
     granularity: str,
-    scope: str,
     prompt_chars: int,
 ) -> tuple[Event, Thread]:
     stop_event = Event()
@@ -891,9 +862,8 @@ def _start_trend_generation_heartbeat(
         while not stop_event.wait(timeout=interval_seconds):
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             log.info(
-                "Trend generation heartbeat granularity={} scope={} elapsed_ms={} prompt_chars={} tool_calls_observed_total={}",
+                "Trend generation heartbeat granularity={} elapsed_ms={} prompt_chars={} tool_calls_observed_total={}",
                 granularity,
-                scope,
                 elapsed_ms,
                 prompt_chars,
                 0,
@@ -901,7 +871,7 @@ def _start_trend_generation_heartbeat(
 
     thread = Thread(
         target=_heartbeat,
-        name=f"recoleta-trend-heartbeat-{granularity}-{scope or 'default'}",
+        name=f"recoleta-trend-heartbeat-{granularity}",
         daemon=True,
     )
     thread.start()
@@ -1005,7 +975,6 @@ def generate_trend_payload(
     rep_source_doc_type: str | None = None,
     evolution_max_signals: int | None = None,
     include_debug: bool = False,
-    scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str = "pipeline.trends",
     llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
@@ -1021,7 +990,6 @@ def generate_trend_payload(
         repository=repository,
         vector_store=vector_store,
         run_id=run_id,
-        scope=scope,
         metric_namespace=metric_namespace,
         period_start=period_start,
         period_end=period_end,
@@ -1054,9 +1022,8 @@ def generate_trend_payload(
     )
     prompt_chars = len(prompt)
     log.info(
-        "Trend generation started granularity={} scope={} prompt_chars={} corpus_doc_type={} corpus_granularity={}",
+        "Trend generation started granularity={} prompt_chars={} corpus_doc_type={} corpus_granularity={}",
         granularity,
-        scope,
         prompt_chars,
         corpus_doc_type,
         corpus_granularity or "-",
@@ -1065,7 +1032,6 @@ def generate_trend_payload(
     stop_event, heartbeat_thread = _start_trend_generation_heartbeat(
         log=log,
         granularity=granularity,
-        scope=scope,
         prompt_chars=prompt_chars,
     )
     try:
@@ -1089,9 +1055,8 @@ def generate_trend_payload(
             unit="count",
         )
         log.warning(
-            "Trend generation failed granularity={} scope={} elapsed_ms={} prompt_chars={} error_type={} error={}",
+            "Trend generation failed granularity={} elapsed_ms={} prompt_chars={} error_type={} error={}",
             granularity,
-            scope,
             agent_duration_ms,
             prompt_chars,
             type(exc).__name__,
@@ -1149,7 +1114,6 @@ def generate_trend_payload(
                 embedding_failure_mode=str(embedding_failure_mode or "continue"),
                 embedding_max_errors=int(embedding_max_errors or 0),
                 limit=int(n),
-                scope=scope,
                 metric_namespace=metric_namespace,
                 llm_connection=llm_connection,
             )
@@ -1166,9 +1130,8 @@ def generate_trend_payload(
         unit="ms",
     )
     log.info(
-        "Trend representative backfill done granularity={} scope={} duration_ms={} clusters_backfilled_total={} invalid_reps_dropped_total={} reps_backfilled_total={}",
+        "Trend representative backfill done granularity={} duration_ms={} clusters_backfilled_total={} invalid_reps_dropped_total={} reps_backfilled_total={}",
         granularity,
-        scope,
         rep_backfill_duration_ms,
         int(rep_stats.get("clusters_backfilled_total") or 0),
         int(rep_stats.get("invalid_reps_dropped_total") or 0),
@@ -1223,9 +1186,8 @@ def generate_trend_payload(
         "history_pack_chars": len(str(history_pack_md or "")),
     }
     log.info(
-        "Trend generation done granularity={} scope={} elapsed_ms={} include_debug={} cost_present={} tool_calls_total={}",
+        "Trend generation done granularity={} elapsed_ms={} include_debug={} cost_present={} tool_calls_total={}",
         granularity,
-        scope,
         agent_duration_ms,
         bool(include_debug),
         estimated_cost_usd is not None,

@@ -128,7 +128,6 @@ def _wrap_ensure_summary_vectors(
             else None,
             int(kwargs.get("limit") or 0),
             int(kwargs.get("offset") or 0),
-            str(kwargs.get("scope") or "").strip(),
         )
 
     def wrapped(*args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -212,7 +211,6 @@ def _seed_analyzed_items(
                 cost_usd=0.0,
                 latency_ms=1,
             ),
-            scope="default",
             mirror_item_state=True,
         )
 
@@ -231,7 +229,6 @@ def _index_items_current(
             run_id=run_id,
             period_start=period_start,
             period_end=period_end,
-            scope="default",
         )
         wall_ms = int((time.perf_counter() - started) * 1000)
     return {
@@ -256,7 +253,6 @@ def _index_items_batched(
         period_start=period_start,
         period_end=period_end,
         limit=2000,
-        scope="default",
     )
     pairs, filtered_out_total = _filter_pairs_by_min_relevance(
         pairs,
@@ -407,7 +403,6 @@ def _list_item_documents(
         doc_type="item",
         period_start=period_start,
         period_end=period_end,
-        scope="default",
         order_by="event_desc",
         limit=5000,
     )
@@ -428,7 +423,6 @@ def _seed_trend_documents(
             period_start=trend_start,
             period_end=trend_end,
             title=f"Trend bench cluster {idx}",
-            scope="default",
         )
         if doc.id is None:
             raise RuntimeError("trend doc missing id")
@@ -581,7 +575,6 @@ def _run_stage_rep_enforcement_like_current(
                 doc_type="item",
                 period_start=period_start,
                 period_end=period_end,
-                scope="default",
                 limit=limit,
             )
             for row in rows or []:
@@ -632,7 +625,6 @@ def _run_stage_rep_enforcement_like_current(
             max_batch_inputs=64,
             max_batch_chars=24000,
             limit=limit,
-            scope="default",
             metric_namespace=None,
             llm_connection=None,
         )
@@ -758,7 +750,6 @@ def _run_semantic_cache_benchmark(
                             max_batch_inputs=64,
                             max_batch_chars=24000,
                             limit=12,
-                            scope="default",
                             metric_namespace=None,
                             llm_connection=None,
                         )

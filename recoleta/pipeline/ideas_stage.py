@@ -8,7 +8,7 @@ from typing import Any, Protocol, cast
 
 from loguru import logger
 
-from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
+from recoleta.pipeline.metrics import metric_token
 from recoleta.pipeline.pass_runner import (
     PassDefinition,
     PassPersistSpec,
@@ -35,11 +35,11 @@ from recoleta.rag import ideas_agent
 from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 from recoleta import trends
 from recoleta.trends import TrendPayload
-from recoleta.types import DEFAULT_TOPIC_STREAM, IdeasResult, utc_now
+from recoleta.types import IdeasResult, utc_now
 
 
-def _trend_metric_name(name: str, *, scope: str) -> str:
-    return scoped_trends_metric_name(name, scope=scope)
+def _trend_metric_name(name: str) -> str:
+    return str(name or "").strip()
 
 
 class IdeasStageService(Protocol):
@@ -158,14 +158,12 @@ def _persist_ideas_document_projection(
     period_start: datetime,
     period_end: datetime,
     payload: TrendIdeasPayload,
-    scope: str,
 ) -> int:
     doc = repository.upsert_document_for_idea(
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
         title=str(payload.title or "").strip() or "Ideas",
-        scope=scope,
     )
     doc_id = int(getattr(doc, "id") or 0)
     if doc_id <= 0:
@@ -287,9 +285,8 @@ def run_ideas_stage(
     granularity: str = "day",
     anchor_date: date | None = None,
     llm_model: str | None = None,
-    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> IdeasResult:
-    log = logger.bind(module="pipeline.trends.pass.ideas", run_id=run_id, scope=scope)
+    log = logger.bind(module="pipeline.trends.pass.ideas", run_id=run_id)
     started = time.perf_counter()
     normalized_granularity = str(granularity or "").strip().lower()
     if normalized_granularity not in {"day", "week", "month"}:
@@ -303,14 +300,13 @@ def run_ideas_stage(
     def record_metric(*, name: str, value: float, unit: str | None = None) -> None:
         service.repository.record_metric(
             run_id=run_id,
-            name=_trend_metric_name(name, scope=scope),
+            name=_trend_metric_name(name),
             value=value,
             unit=unit,
         )
 
     upstream = service.repository.get_latest_pass_output(
         pass_kind=TREND_SYNTHESIS_PASS_KIND,
-        scope=scope,
         status=PassStatus.SUCCEEDED.value,
         granularity=normalized_granularity,
         period_start=period_start,
@@ -410,8 +406,7 @@ def run_ideas_stage(
             trend_snapshot_pack_md=trend_snapshot_pack_md,
             rag_sources=trends.rag_sources_for_granularity(normalized_granularity),
             include_debug=include_debug,
-            scope=scope,
-            metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas", scope=scope),
+            metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas"),
             llm_connection=service._llm_connection,
         )
     payload = normalize_trend_ideas_payload(payload)
@@ -425,7 +420,6 @@ def run_ideas_stage(
         PassInputRef(
             ref_kind="pass_output",
             pass_kind=TREND_SYNTHESIS_PASS_KIND,
-            scope=scope,
             granularity=normalized_granularity,
             period_start=period_start.isoformat(),
             period_end=period_end.isoformat(),
@@ -436,7 +430,6 @@ def run_ideas_stage(
     envelope = build_trend_ideas_pass_output(
         run_id=run_id,
         status=status,
-        scope=scope,
         granularity=normalized_granularity,
         period_start=period_start,
         period_end=period_end,
@@ -468,7 +461,6 @@ def run_ideas_stage(
                     period_start=period_start,
                     period_end=period_end,
                     payload=payload,
-                    scope=scope,
                 ),
                 warning_context={"pass_output_id": pass_output_id},
                 sanitize_error=service._sanitize_error_message,
@@ -493,7 +485,6 @@ def run_ideas_stage(
                     run_id=run_id,
                     status=status.value,
                     payload=payload,
-                    scope=scope,
                     topics=list(trend_payload.topics or []),
                 ),
                 warning_context={"pass_output_id": pass_output_id},
@@ -521,7 +512,6 @@ def run_ideas_stage(
                     run_id=run_id,
                     status=status.value,
                     payload=payload,
-                    scope=scope,
                     topics=list(trend_payload.topics or []),
                 ),
                 warning_context={"pass_output_id": pass_output_id},

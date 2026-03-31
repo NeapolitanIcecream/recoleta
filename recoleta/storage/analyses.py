@@ -17,7 +17,6 @@ from recoleta.models import (
 )
 from recoleta.storage_common import _to_json
 from recoleta.types import (
-    DEFAULT_TOPIC_STREAM,
     AnalysisResult,
     AnalysisWrite,
     utc_now,
@@ -70,10 +69,8 @@ class AnalysisStoreMixin:
         *,
         item_id: int,
         result: AnalysisResult,
-        scope: str = DEFAULT_TOPIC_STREAM,
         mirror_item_state: bool = True,
     ) -> Analysis:
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(self.engine) as session:
             analysis = session.exec(
                 select(Analysis).where(Analysis.item_id == item_id)
@@ -122,12 +119,10 @@ class AnalysisStoreMixin:
                 continue
             if item_id <= 0:
                 continue
-            _ = str(analysis.scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
             key = item_id
             normalized_write = AnalysisWrite(
                 item_id=item_id,
                 result=analysis.result,
-                scope=DEFAULT_TOPIC_STREAM,
                 mirror_item_state=bool(analysis.mirror_item_state),
             )
             existing_index = seen.get(key)
@@ -209,11 +204,9 @@ class AnalysisStoreMixin:
         *,
         limit: int,
         min_relevance_score: float,
-        scope: str = DEFAULT_TOPIC_STREAM,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]:
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(self.engine) as session:
             event_at = func.coalesce(
                 cast(Any, Item.published_at),
@@ -255,9 +248,7 @@ class AnalysisStoreMixin:
         period_end: datetime,
         limit: int,
         offset: int = 0,
-        scope: str = DEFAULT_TOPIC_STREAM,
     ) -> list[tuple[Item, Analysis]]:
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
         if normalized_limit <= 0:

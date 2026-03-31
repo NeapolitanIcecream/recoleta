@@ -8,7 +8,6 @@ import re
 from typing import Any
 
 from recoleta.publish.item_notes import resolve_item_note_href
-from recoleta.types import DEFAULT_TOPIC_STREAM
 from recoleta.publish.trend_render_shared import (
     clamp_trend_overview_markdown,
     sanitize_trend_title,
@@ -123,7 +122,6 @@ def materialize_trend_note_payload(
     output_language: str | None,
     language_code: str | None = None,
     item_note_href_by_url: dict[str, str] | None = None,
-    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> MaterializedTrendNotePayload:
     doc_cache: dict[int, Any | None] = {}
     item_cache: dict[int, Any | None] = {}
@@ -151,7 +149,6 @@ def materialize_trend_note_payload(
         localized_output = repository.get_localized_output(
             source_kind="trend_synthesis",
             source_record_id=doc_id_value,
-            scope=scope,
             language_code=normalized_language_code,
         )
         if localized_output is None:
@@ -315,7 +312,6 @@ def materialize_trend_note_payload(
             granularity=payload.granularity,
             period_start=window.period_start,
             period_end=window.period_end,
-            scope=scope,
             order_by="event_desc",
             limit=1,
         )

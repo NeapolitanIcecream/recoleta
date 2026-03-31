@@ -11,7 +11,7 @@ Recoleta is a local-first AI research radar. It pulls items from multiple source
   - high-signal summary
   - topic tags and a relevance score against user-defined interests
 - Let trend generation reuse stored item/trend documents plus a local LanceDB vector cache for retrieval-heavy prompts.
-- Support one or more topic streams that share ingest state while keeping analyze and publish scopes isolated.
+- Support one instance per workspace, with fleet manifests aggregating several child instances when you want a combined deployment.
 - Publish the best summaries to one or more user-facing targets:
   - local Markdown output (default)
   - Obsidian Vault (optional)
@@ -31,7 +31,7 @@ Recoleta is a local-first AI research radar. It pulls items from multiple source
 
 ## Primary user workflow
 
-1. Configure sources, topics or topic streams, output paths, LLM model, and publish targets.
+1. Configure sources, topics, output paths, LLM model, and publish targets.
 2. Run the pipeline on a schedule, manually stage by stage, or as a targeted `--date` catch-up for one UTC day.
 3. Read the local Markdown output (for example `latest.md`, `Inbox/`, and `Trends/`).
 4. Optionally receive a curated Telegram batch, browse notes in an Obsidian Vault, or publish a static trends site.

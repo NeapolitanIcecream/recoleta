@@ -275,7 +275,6 @@ def execute_fleet_deploy_workflow(
             run_translate_run_command(
                 db_path=None,
                 config_path=instance.config_path,
-                scope="default",
                 granularity=None,
                 include=",".join(list(settings.workflows.deploy.translate_include)),
                 limit=None,
@@ -289,7 +288,6 @@ def execute_fleet_deploy_workflow(
             db_path=None,
             config_path=instance.config_path,
             output_dir=None,
-            scope="default",
             granularity=None,
             pdf=False,
             site=False,

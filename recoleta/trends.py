@@ -26,7 +26,7 @@ from recoleta.publish.trend_render_shared import (
     clamp_trend_overview_markdown,
     sanitize_trend_title,
 )
-from recoleta.types import DEFAULT_TOPIC_STREAM, sha256_hex, utc_now
+from recoleta.types import sha256_hex, utc_now
 
 
 @dataclass(slots=True)
@@ -62,7 +62,6 @@ def semantic_search_summaries_in_period(
     embedding_max_errors: int = 0,
     limit: int = 10,
     corpus_limit: int = 500,
-    scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str | None = None,
     llm_connection: LLMConnectionConfig | None = None,
 ) -> list[SemanticSearchHit]:
@@ -94,7 +93,6 @@ def semantic_search_summaries_in_period(
         embedding_max_errors=embedding_max_errors,
         limit=limit,
         corpus_limit=corpus_limit,
-        scope=scope,
         metric_namespace=metric_namespace,
         llm_connection=llm_connection,
     )
@@ -696,10 +694,8 @@ def _prune_item_documents_for_period(
     repository: TrendRepositoryPort,
     period_start: datetime,
     period_end: datetime,
-    scope: str,
     keep_item_ids: set[int],
 ) -> int:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         docs = list(
             session.exec(
@@ -748,7 +744,6 @@ def build_overview_pack_md(
     item_overview_top_k: int,
     item_overview_item_max_chars: int,
     min_relevance_score: float = 0.0,
-    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> tuple[str, dict[str, Any]]:
     strategy = str(getattr(plan, "overview_pack_strategy", "") or "").strip().lower()
     stats: dict[str, Any] = {"strategy": strategy, "truncated": False}
@@ -769,7 +764,6 @@ def build_overview_pack_md(
             granularity=prev_level or None,
             period_start=period_start,
             period_end=period_end,
-            scope=scope,
             order_by="event_asc",
             limit=500,
         )
@@ -830,7 +824,6 @@ def build_overview_pack_md(
                 period_start=period_start,
                 period_end=period_end,
                 limit=candidate_limit,
-                scope=scope,
             )
             pairs, filtered_out_total = _filter_pairs_by_min_relevance(
                 pairs,
@@ -930,7 +923,6 @@ def build_history_pack_md(
     plan: TrendGenerationPlan,
     *,
     history_pack_max_chars: int,
-    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> tuple[str, dict[str, Any]]:
     windows = list(getattr(plan, "peer_history_windows", []) or [])
     current_period_token = _period_token_for_granularity(
@@ -978,7 +970,6 @@ def build_history_pack_md(
             granularity=plan.target_granularity,
             period_start=window.period_start,
             period_end=window.period_end,
-            scope=scope,
             order_by="event_desc",
             limit=1,
         )
@@ -1181,7 +1172,6 @@ def _index_items_as_documents_itemwise(
     content_types: list[str],
     content_chunk_chars: int,
     max_content_chunks_per_item: int,
-    scope: str,
     log: Any,
 ) -> dict[str, int]:
     docs_upserted = 0
@@ -1191,7 +1181,7 @@ def _index_items_as_documents_itemwise(
 
     for item, analysis in pairs:
         try:
-            doc = repository.upsert_document_for_item(item=item, scope=scope)
+            doc = repository.upsert_document_for_item(item=item)
             docs_upserted += 1
             doc_id = int(getattr(doc, "id"))
             repository.upsert_document_chunk(
@@ -1278,7 +1268,6 @@ def _index_items_as_documents_batched(
     content_types: list[str],
     content_chunk_chars: int,
     max_content_chunks_per_item: int,
-    scope: str,
 ) -> dict[str, int]:
     item_ids = [
         int(raw_id)
@@ -1555,7 +1544,6 @@ def index_items_as_documents(
     content_chunk_chars: int = 1200,
     max_content_chunks_per_item: int = 8,
     min_relevance_score: float = 0.0,
-    scope: str = DEFAULT_TOPIC_STREAM,
 ) -> dict[str, Any]:
     """Index analyzed items into documents + chunks (summary first, content optional)."""
     log = logger.bind(module="trends.index_items", run_id=run_id)
@@ -1564,7 +1552,6 @@ def index_items_as_documents(
         period_start=period_start,
         period_end=period_end,
         limit=limit,
-        scope=scope,
     )
     pairs, filtered_out_total = _filter_pairs_by_min_relevance(
         pairs,
@@ -1579,7 +1566,6 @@ def index_items_as_documents(
         repository=repository,
         period_start=period_start,
         period_end=period_end,
-        scope=scope,
         keep_item_ids=keep_item_ids,
     )
 
@@ -1598,7 +1584,6 @@ def index_items_as_documents(
             content_types=content_types,
             content_chunk_chars=content_chunk_chars,
             max_content_chunks_per_item=max_content_chunks_per_item,
-            scope=scope,
         )
     except Exception as exc:  # noqa: BLE001
         write_mode = "itemwise_fallback"
@@ -1614,7 +1599,6 @@ def index_items_as_documents(
             content_types=content_types,
             content_chunk_chars=content_chunk_chars,
             max_content_chunks_per_item=max_content_chunks_per_item,
-            scope=scope,
             log=log,
         )
 
@@ -1659,7 +1643,6 @@ def generate_trend_via_tools(
     rep_source_doc_type: str | None = None,
     evolution_max_signals: int | None = None,
     include_debug: bool = False,
-    scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str = "pipeline.trends",
     llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[TrendPayload, dict[str, Any] | None]:
@@ -1697,7 +1680,6 @@ def generate_trend_via_tools(
         rep_source_doc_type=rep_source_doc_type,
         evolution_max_signals=evolution_max_signals,
         include_debug=include_debug,
-        scope=scope,
         metric_namespace=metric_namespace,
         llm_connection=llm_connection,
     )
@@ -1710,7 +1692,6 @@ def persist_trend_payload(
     period_start: datetime,
     period_end: datetime,
     payload: TrendPayload,
-    scope: str = DEFAULT_TOPIC_STREAM,
     pass_output_id: int | None = None,
     pass_kind: str | None = None,
 ) -> int:
@@ -1720,7 +1701,6 @@ def persist_trend_payload(
         period_start=period_start,
         period_end=period_end,
         title=title,
-        scope=scope,
     )
     doc_id = int(getattr(doc, "id"))
 

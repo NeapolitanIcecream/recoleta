@@ -29,7 +29,7 @@ from recoleta.rag.corpus_tools import CorpusSpec, SearchService
 from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 from recoleta.storage.common import _to_json
 from recoleta.trends import TrendPayload
-from recoleta.types import DEFAULT_TOPIC_STREAM, sha256_hex
+from recoleta.types import sha256_hex
 
 TRANSLATION_CONTEXT_ASSIST_VALUES = {"none", "direct", "hybrid"}
 TRANSLATION_INCLUDE_VALUES = {"items", "trends", "ideas"}
@@ -67,7 +67,6 @@ class TranslationTarget:
 class TranslationCandidate:
     source_kind: str
     source_record_id: int
-    scope: str
     payload: dict[str, Any]
     payload_model: type[BaseModel] | None
     canonical_language_code: str | None
@@ -413,7 +412,6 @@ def _translation_search_service(
     repository: Any,
     settings: Settings,
     run_id: str | None,
-    scope: str,
     period_start: datetime,
     period_end: datetime,
     doc_type: str,
@@ -438,7 +436,6 @@ def _translation_search_service(
         embedding_dimensions=settings.trends_embedding_dimensions,
         embedding_batch_max_inputs=settings.trends_embedding_batch_max_inputs,
         embedding_batch_max_chars=settings.trends_embedding_batch_max_chars,
-        scope=scope,
         metric_namespace=(
             "pipeline.translate.context" if str(run_id or "").strip() else None
         ),
@@ -471,7 +468,6 @@ def _hybrid_context_for_query(
     repository: Any,
     settings: Settings,
     run_id: str | None,
-    scope: str,
     period_start: datetime | None,
     period_end: datetime | None,
     doc_type: str,
@@ -489,7 +485,6 @@ def _hybrid_context_for_query(
         repository=repository,
         settings=settings,
         run_id=run_id,
-        scope=scope,
         period_start=period_start,
         period_end=period_end,
         doc_type=doc_type,
@@ -497,7 +492,6 @@ def _hybrid_context_for_query(
     )
     log = logger.bind(
         module="translation.context",
-        scope=scope,
         doc_type=doc_type,
         granularity=granularity,
     )
@@ -560,7 +554,6 @@ def _item_translation_context(
     repository: Any,
     settings: Settings,
     run_id: str | None,
-    scope: str,
     item: Item,
     summary_text: str | None,
     context_assist: str,
@@ -595,7 +588,6 @@ def _item_translation_context(
                 repository=repository,
                 settings=settings,
                 run_id=run_id,
-                scope=scope,
                 period_start=period_start,
                 period_end=period_end,
                 doc_type="item",
@@ -615,7 +607,6 @@ def _trend_translation_context(
     repository: Any,
     settings: Settings,
     run_id: str | None,
-    scope: str,
     payload: dict[str, Any],
     granularity: str | None,
     period_start: datetime | None,
@@ -650,7 +641,6 @@ def _trend_translation_context(
                 repository=repository,
                 settings=settings,
                 run_id=run_id,
-                scope=scope,
                 period_start=period_start,
                 period_end=period_end,
                 doc_type="item",
@@ -671,7 +661,6 @@ def _idea_translation_context(
     settings: Settings,
     run_id: str | None,
     payload: dict[str, Any],
-    scope: str,
     granularity: str | None,
     period_start: datetime | None,
     period_end: datetime | None,
@@ -705,7 +694,6 @@ def _idea_translation_context(
         and isinstance(period_end, datetime)
         and granularity is not None
     ):
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(repository.engine) as session:
             trend_doc = session.exec(
                 select(Document).where(
@@ -734,7 +722,6 @@ def _idea_translation_context(
                 repository=repository,
                 settings=settings,
                 run_id=run_id,
-                scope=scope,
                 period_start=period_start,
                 period_end=period_end,
                 doc_type="item",
@@ -752,13 +739,11 @@ def _idea_translation_context(
 def _load_item_candidates(
     *,
     repository: Any,
-    scope: str,
     limit: int | None,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
     all_history: bool = True,
 ) -> list[tuple[Analysis, Item]]:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     normalized_limit = None if limit is None else max(1, int(limit))
     with Session(repository.engine) as session:
         event_at = func.coalesce(cast(Any, Item.published_at), cast(Any, Item.created_at))
@@ -781,7 +766,6 @@ def _latest_pass_output_payload(
     *,
     repository: Any,
     pass_kind: str,
-    scope: str,
     granularity: str | None,
     period_start: datetime | None,
     period_end: datetime | None,
@@ -789,7 +773,6 @@ def _latest_pass_output_payload(
 ) -> dict[str, Any] | None:
     row = repository.get_latest_pass_output(
         pass_kind=pass_kind,
-        scope=scope,
         status="succeeded",
         granularity=granularity,
         period_start=period_start,
@@ -830,14 +813,12 @@ def _limit_documents_for_backfill(
 def _load_trend_candidates(
     *,
     repository: Any,
-    scope: str,
     granularity: str | None,
     limit: int | None,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
     all_history: bool = True,
 ) -> list[tuple[Document, dict[str, Any]]]:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         statement = (
             select(Document)
@@ -880,7 +861,6 @@ def _load_trend_candidates(
             payload = _latest_pass_output_payload(
                 repository=repository,
                 pass_kind="trend_synthesis",
-                scope=scope,
                 granularity=str(getattr(document, "granularity", "") or "").strip() or None,
                 period_start=getattr(document, "period_start", None),
                 period_end=getattr(document, "period_end", None),
@@ -907,7 +887,6 @@ def _load_trend_candidates(
 def _load_idea_candidates(
     *,
     repository: Any,
-    scope: str,
     granularity: str | None,
     limit: int | None,
     period_start: datetime | None = None,
@@ -959,7 +938,6 @@ def _load_idea_candidates(
         return None
 
     def _latest_idea_pass_outputs() -> list[PassOutput]:
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(repository.engine) as session:
             statement = select(PassOutput).where(
                 PassOutput.pass_kind == "trend_ideas",
@@ -1023,7 +1001,6 @@ def _load_idea_candidates(
             period_start=period_start,
             period_end=period_end,
             title=str(payload.title or "").strip() or "Ideas",
-            scope=scope,
         )
         doc_id = int(getattr(doc, "id") or 0)
         if doc_id <= 0:
@@ -1120,7 +1097,6 @@ def _load_idea_candidates(
             payload = _latest_pass_output_payload(
                 repository=repository,
                 pass_kind="trend_ideas",
-                scope=scope,
                 granularity=str(getattr(document, "granularity", "") or "").strip() or None,
                 period_start=getattr(document, "period_start", None),
                 period_end=getattr(document, "period_end", None),
@@ -1192,7 +1168,6 @@ def _load_idea_candidates(
 def _incremental_candidates(
     *,
     repository: Any,
-    scope: str,
     granularity: str | None,
     include: set[str],
     limit: int | None,
@@ -1206,7 +1181,6 @@ def _incremental_candidates(
     if "items" in include:
         for analysis, item in _load_item_candidates(
             repository=repository,
-            scope=scope,
             limit=limit,
             period_start=period_start,
             period_end=period_end,
@@ -1223,7 +1197,6 @@ def _incremental_candidates(
                 TranslationCandidate(
                     source_kind="analysis",
                     source_record_id=analysis_id,
-                    scope=scope,
                     payload=payload,
                     payload_model=_AnalysisTranslationPayload,
                     canonical_language_code=source_language_code,
@@ -1234,7 +1207,6 @@ def _incremental_candidates(
     if "trends" in include:
         for document, payload in _load_trend_candidates(
             repository=repository,
-            scope=scope,
             granularity=granularity,
             limit=limit,
             period_start=period_start,
@@ -1248,7 +1220,6 @@ def _incremental_candidates(
                 TranslationCandidate(
                     source_kind="trend_synthesis",
                     source_record_id=doc_id,
-                    scope=scope,
                     payload=payload,
                     payload_model=TrendPayload,
                     canonical_language_code=source_language_code,
@@ -1262,7 +1233,6 @@ def _incremental_candidates(
     if "ideas" in include:
         for document, payload in _load_idea_candidates(
             repository=repository,
-            scope=scope,
             granularity=granularity,
             limit=limit,
             period_start=period_start,
@@ -1276,7 +1246,6 @@ def _incremental_candidates(
                 TranslationCandidate(
                     source_kind="trend_ideas",
                     source_record_id=doc_id,
-                    scope=scope,
                     payload=payload,
                     payload_model=TrendIdeasPayload,
                     canonical_language_code=source_language_code,
@@ -1308,7 +1277,6 @@ def _candidate_context(
             repository=repository,
             settings=settings,
             run_id=run_id,
-            scope=candidate.scope,
             item=item,
             summary_text=str(candidate.payload.get("summary") or "").strip() or None,
             context_assist=context_assist,
@@ -1318,7 +1286,6 @@ def _candidate_context(
             repository=repository,
             settings=settings,
             run_id=run_id,
-            scope=candidate.scope,
             payload=candidate.payload,
             granularity=candidate.granularity,
             period_start=candidate.period_start,
@@ -1331,7 +1298,6 @@ def _candidate_context(
             settings=settings,
             run_id=run_id,
             payload=candidate.payload,
-            scope=candidate.scope,
             granularity=candidate.granularity,
             period_start=candidate.period_start,
             period_end=candidate.period_end,
@@ -1374,7 +1340,6 @@ def _prepare_translation_task(
     existing = repository.get_localized_output(
         source_kind=candidate.source_kind,
         source_record_id=candidate.source_record_id,
-        scope=candidate.scope,
         language_code=target.code,
     )
     if (
@@ -1460,7 +1425,6 @@ def _persist_completed_translation_task(
     repository.upsert_localized_output(
         source_kind=task.candidate.source_kind,
         source_record_id=task.candidate.source_record_id,
-        scope=task.candidate.scope,
         language_code=task.target.code,
         status="succeeded",
         source_hash=task.source_hash,
@@ -1588,7 +1552,6 @@ def _mirror_candidate_into_language(
     existing = repository.get_localized_output(
         source_kind=candidate.source_kind,
         source_record_id=candidate.source_record_id,
-        scope=candidate.scope,
         language_code=language_code,
     )
     if (
@@ -1600,7 +1563,6 @@ def _mirror_candidate_into_language(
     repository.upsert_localized_output(
         source_kind=candidate.source_kind,
         source_record_id=candidate.source_record_id,
-        scope=candidate.scope,
         language_code=language_code,
         status="succeeded",
         source_hash=source_hash,
@@ -1617,7 +1579,6 @@ def run_translation(
     *,
     repository: Any,
     settings: Settings,
-    scope: str = DEFAULT_TOPIC_STREAM,
     granularity: str | None = None,
     include: str | list[str] | None = None,
     limit: int | None = None,
@@ -1632,7 +1593,6 @@ def run_translation(
     if localization is None or not localization.targets:
         raise ValueError("localization.targets must be configured for translation")
 
-    normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
     normalized_granularity = (
         str(granularity or "").strip().lower() or None if granularity is not None else None
     )
@@ -1653,7 +1613,6 @@ def run_translation(
     provider_failures = _ProviderFailureTracker()
     candidates = _incremental_candidates(
         repository=repository,
-        scope=normalized_scope,
         granularity=normalized_granularity,
         include=normalized_include,
         limit=limit,
@@ -1662,7 +1621,7 @@ def run_translation(
         period_end=period_end,
         all_history=all_history,
     )
-    log = logger.bind(module="translation.run", scope=normalized_scope)
+    log = logger.bind(module="translation.run")
     prepared_tasks: list[_PreparedTranslationTask] = []
     for candidate in candidates:
         for target in targets:
@@ -1812,7 +1771,6 @@ def run_translation_backfill(
     *,
     repository: Any,
     settings: Settings,
-    scope: str = DEFAULT_TOPIC_STREAM,
     granularity: str | None = None,
     include: str | list[str] | None = None,
     limit: int | None = None,
@@ -1827,7 +1785,6 @@ def run_translation_backfill(
     if localization is None:
         raise ValueError("localization must be configured for translation backfill")
 
-    normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
     normalized_granularity = (
         str(granularity or "").strip().lower() or None if granularity is not None else None
     )
@@ -1863,14 +1820,13 @@ def run_translation_backfill(
     provider_failures = _ProviderFailureTracker()
     candidates = _incremental_candidates(
         repository=repository,
-        scope=normalized_scope,
         granularity=normalized_granularity,
         include=normalized_include,
         limit=limit,
         source_language_code=source_language_code,
         all_history=all_history,
     )
-    log = logger.bind(module="translation.backfill", scope=normalized_scope)
+    log = logger.bind(module="translation.backfill")
 
     translation_target = TranslationTarget(
         code=target_language_code,
@@ -1951,13 +1907,12 @@ def run_translation_backfill(
     return result
 
 
-def materialize_localized_languages_for_scope(
+def materialize_localized_languages(
     *,
     repository: Any,
-    scope: str,
     localization: LocalizationConfig,
 ) -> list[str]:
-    _ = (repository, scope)
+    _ = repository
     languages = [target.code for target in localization.targets]
     ordered = []
     seen: set[str] = set()

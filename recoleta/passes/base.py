@@ -5,9 +5,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from recoleta.types import DEFAULT_TOPIC_STREAM
-
-
 class PassStatus(StrEnum):
     SUCCEEDED = "succeeded"
     SUPPRESSED = "suppressed"
@@ -17,7 +14,6 @@ class PassStatus(StrEnum):
 class PassInputRef(BaseModel):
     ref_kind: str
     pass_kind: str | None = None
-    scope: str | None = None
     granularity: str | None = None
     period_start: str | None = None
     period_end: str | None = None
@@ -37,7 +33,6 @@ class PassOutputEnvelope(BaseModel):
     pass_kind: str
     schema_version: int = 1
     status: PassStatus
-    scope: str = DEFAULT_TOPIC_STREAM
     granularity: str | None = None
     period_start: str | None = None
     period_end: str | None = None
@@ -53,9 +48,3 @@ class PassOutputEnvelope(BaseModel):
         if not normalized:
             raise ValueError("required text field must not be empty")
         return normalized
-
-    @field_validator("scope")
-    @classmethod
-    def _validate_scope(cls, value: str) -> str:
-        normalized = str(value or "").strip()
-        return normalized or DEFAULT_TOPIC_STREAM

@@ -1,7 +1,8 @@
 # Fleet Development Runbook
 
-Use this guide after you have migrated a shared `topic_streams` deployment to
-an instance-first fleet.
+Use this guide when you operate an instance-first fleet made of several child
+configs. If you arrived here from an older shared `topic_streams` deployment,
+finish the split first and keep the old workspace read-only.
 
 This is the development-mode operating model:
 

@@ -545,43 +545,6 @@ class ItemStoreMixin:
             session.refresh(content)
             return content, True
 
-    def list_items_for_stream_analysis(
-        self,
-        *,
-        stream: str,
-        limit: int,
-        selected_only: bool = False,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
-    ) -> list[Item]:
-        _ = str(stream or "").strip()
-        states = (
-            [ITEM_STATE_TRIAGED, ITEM_STATE_RETRYABLE_FAILED]
-            if selected_only
-            else [ITEM_STATE_ENRICHED, ITEM_STATE_TRIAGED, ITEM_STATE_RETRYABLE_FAILED]
-        )
-        with Session(self.engine) as session:
-            event_at = func.coalesce(
-                cast(Any, Item.published_at), cast(Any, Item.created_at)
-            )
-            statement = select(Item).where(cast(Any, Item.state).in_(states))
-            if period_start is not None and period_end is not None:
-                statement = statement.where(
-                    event_at >= period_start, event_at < period_end
-                )
-                statement = statement.order_by(
-                    desc(cast(Any, event_at)),
-                    desc(cast(Any, Item.updated_at)),
-                    desc(cast(Any, Item.created_at)),
-                )
-            else:
-                statement = statement.order_by(
-                    desc(cast(Any, Item.updated_at)),
-                    desc(cast(Any, Item.created_at)),
-                )
-            statement = statement.limit(limit)
-            return list(session.exec(statement))
-
     def mark_item_enriched(self, *, item_id: int) -> None:
         with Session(self.engine) as session:
             item = session.get(Item, item_id)
@@ -598,24 +561,6 @@ class ItemStoreMixin:
             if item is None:
                 return
             item.state = ITEM_STATE_TRIAGED
-            item.updated_at = utc_now()
-            session.add(item)
-            self._commit(session)
-
-    def mark_item_stream_state(
-        self,
-        *,
-        item_id: int,
-        stream: str,
-        state: str,
-        mirror_item_state: bool = False,
-    ) -> None:
-        with Session(self.engine) as session:
-            _ = (str(stream or "").strip(), bool(mirror_item_state))
-            item = session.get(Item, item_id)
-            if item is None:
-                return
-            item.state = state
             item.updated_at = utc_now()
             session.add(item)
             self._commit(session)
@@ -653,11 +598,9 @@ class ItemStoreMixin:
             state = str(update.state or "").strip()
             if not state:
                 continue
-            stream = str(update.stream).strip() if update.stream is not None else None
             normalized_update = ItemStateUpdate(
                 item_id=item_id,
                 state=state,
-                stream=stream,
                 mirror_item_state=bool(update.mirror_item_state),
             )
             existing_index = seen.get(item_id)

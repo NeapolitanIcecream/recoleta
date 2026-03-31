@@ -43,7 +43,6 @@ def test_runs_show_json_aggregates_metrics_pass_outputs_and_artifacts(
         run_id=run.id,
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=datetime(2026, 3, 17, tzinfo=UTC),
         period_end=datetime(2026, 3, 18, tzinfo=UTC),
@@ -101,6 +100,7 @@ def test_runs_show_json_aggregates_metrics_pass_outputs_and_artifacts(
     assert payload["run"]["pass_outputs"][0]["pass_kind"] == "trend_synthesis"
     assert payload["run"]["pass_outputs"][0]["diagnostics"]["selected_total"] == 7
     assert payload["run"]["pass_outputs"][0]["input_refs_total"] == 2
+    assert "scope" not in payload["run"]["pass_outputs"][0]
     assert payload["run"]["artifacts_total"] == 3
     assert payload["run"]["artifacts_by_kind"]["llm_debug_bundle"] == 2
     assert payload["run"]["artifacts_by_kind"]["trend_pdf"] == 1
@@ -260,7 +260,7 @@ def test_inspect_runs_show_json_includes_workflow_metadata_fields(
     assert run_payload["terminal_state"] == "succeeded_partial"
 
 
-def test_runs_show_json_includes_stream_billing_breakdown(
+def test_runs_show_json_ignores_legacy_scope_billing_metrics(
     tmp_path: Path,
 ) -> None:
     runner = CliRunner()
@@ -271,49 +271,73 @@ def test_runs_show_json_includes_stream_billing_breakdown(
     run = repository.create_run("fp-stream-billing", run_id="run-stream-billing")
     repository.record_metric(
         run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.llm_requests_total",
-        value=2,
-        unit="count",
-    )
-    repository.record_metric(
-        run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.llm_input_tokens_total",
-        value=180,
-        unit="count",
-    )
-    repository.record_metric(
-        run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.llm_output_tokens_total",
-        value=36,
-        unit="count",
-    )
-    repository.record_metric(
-        run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.estimated_cost_usd",
-        value=0.02,
-        unit="usd",
-    )
-    repository.record_metric(
-        run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.pass.ideas.llm_requests_total",
+        name="pipeline.trends.llm_requests_total",
         value=1,
         unit="count",
     )
     repository.record_metric(
         run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.pass.ideas.llm_input_tokens_total",
+        name="pipeline.trends.llm_input_tokens_total",
+        value=72,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.llm_output_tokens_total",
+        value=14,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.estimated_cost_usd",
+        value=0.005,
+        unit="usd",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.scope.agents_lab.llm_requests_total",
+        value=2,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.scope.agents_lab.llm_input_tokens_total",
+        value=180,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.scope.agents_lab.llm_output_tokens_total",
+        value=36,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.scope.agents_lab.estimated_cost_usd",
+        value=0.02,
+        unit="usd",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.scope.agents_lab.pass.ideas.llm_requests_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.trends.scope.agents_lab.pass.ideas.llm_input_tokens_total",
         value=90,
         unit="count",
     )
     repository.record_metric(
         run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.pass.ideas.llm_output_tokens_total",
+        name="pipeline.trends.scope.agents_lab.pass.ideas.llm_output_tokens_total",
         value=18,
         unit="count",
     )
     repository.record_metric(
         run_id=run.id,
-        name="pipeline.trends.stream.agents_lab.pass.ideas.estimated_cost_usd",
+        name="pipeline.trends.scope.agents_lab.pass.ideas.estimated_cost_usd",
         value=0.007,
         unit="usd",
     )
@@ -335,12 +359,13 @@ def test_runs_show_json_includes_stream_billing_breakdown(
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     billing = payload["run"]["billing"]
-    assert billing["components"]["trends_llm"]["calls"] == 2
-    assert billing["components"]["ideas_llm"]["calls"] == 1
-    assert billing["total_cost_usd"] == 0.027
-    assert billing["by_stream"]["agents_lab"]["components"]["trends_llm"]["calls"] == 2
-    assert billing["by_stream"]["agents_lab"]["components"]["ideas_llm"]["calls"] == 1
-    assert billing["by_stream"]["agents_lab"]["total_cost_usd"] == 0.027
+    assert billing["components"]["trends_llm"]["calls"] == 1
+    assert billing["components"]["trends_llm"]["input_tokens"] == 72
+    assert billing["components"]["trends_llm"]["output_tokens"] == 14
+    assert billing["components"]["trends_llm"]["cost_usd"] == 0.005
+    assert "ideas_llm" not in billing["components"]
+    assert billing["total_cost_usd"] == 0.005
+    assert "by_scope" not in billing
 
 
 def test_runs_show_json_errors_for_missing_run(tmp_path: Path) -> None:

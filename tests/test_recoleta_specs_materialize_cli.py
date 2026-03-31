@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 
 import recoleta.cli
 import recoleta.materialize as materialize_module
-from recoleta.materialize import MaterializeScopeSpec, materialize_outputs
+from recoleta.materialize import MaterializeTargetSpec, materialize_outputs
 from recoleta.models import Document, DocumentChunk, Item
 from recoleta.passes.base import PassInputRef
 from recoleta.passes.trend_ideas import TrendIdeasPayload
@@ -130,9 +130,7 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[
-            MaterializeScopeSpec(scope="default", output_dir=output_dir),
-        ],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=output_dir,
         site_output_dir=output_dir / "site",
     )
@@ -194,9 +192,7 @@ def test_materialize_outputs_renders_default_scope_items_without_legacy_stream_s
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[
-            MaterializeScopeSpec(scope="default", output_dir=output_dir),
-        ],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=output_dir,
         site_output_dir=output_dir / "site",
     )
@@ -250,9 +246,7 @@ def test_materialize_outputs_forwards_explicit_item_export_scope_to_site_export(
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[
-            MaterializeScopeSpec(scope="default", output_dir=output_dir),
-        ],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=output_dir,
         site_output_dir=output_dir / "site",
         item_export_scope="all",
@@ -262,7 +256,7 @@ def test_materialize_outputs_forwards_explicit_item_export_scope_to_site_export(
     assert captured["item_export_scope"] == "all"
 
 
-def test_default_scope_specs_for_settings_use_instance_output_roots(
+def test_default_target_spec_for_settings_uses_instance_output_roots(
     tmp_path: Path,
 ) -> None:
     fake_settings = SimpleNamespace(
@@ -271,13 +265,13 @@ def test_default_scope_specs_for_settings_use_instance_output_roots(
         obsidian_base_folder="Recoleta",
     )
 
-    specs = materialize_module.default_scope_specs_for_settings(settings=fake_settings)
+    target_spec = materialize_module.default_target_spec_for_settings(
+        settings=fake_settings
+    )
 
-    assert len(specs) == 1
-    assert specs[0].scope == "default"
-    assert specs[0].output_dir == tmp_path / "outputs"
-    assert specs[0].obsidian_vault_path == tmp_path / "vault"
-    assert specs[0].obsidian_base_folder == "Recoleta"
+    assert target_spec.output_dir == tmp_path / "outputs"
+    assert target_spec.obsidian_vault_path == tmp_path / "vault"
+    assert target_spec.obsidian_base_folder == "Recoleta"
 
 
 def test_materialize_outputs_preserves_trend_projection_provenance_in_note_frontmatter(
@@ -293,9 +287,7 @@ def test_materialize_outputs_preserves_trend_projection_provenance_in_note_front
 
     _ = materialize_outputs(
         repository=repository,
-        scope_specs=[
-            MaterializeScopeSpec(scope="default", output_dir=output_dir),
-        ],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=None,
         site_output_dir=None,
     )
@@ -332,9 +324,7 @@ def test_materialize_outputs_removes_stale_managed_scope_files(
 
     _ = materialize_outputs(
         repository=repository,
-        scope_specs=[
-            MaterializeScopeSpec(scope="default", output_dir=output_dir),
-        ],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=None,
         site_output_dir=None,
     )
@@ -414,12 +404,9 @@ def test_repair_outputs_cli_forwards_explicit_item_export_scope(
         site_dir = output_dir / "site"
         site_dir.mkdir(parents=True, exist_ok=True)
         return materialize_module.MaterializeOutputsResult(
-            scopes=[
-                materialize_module.MaterializeScopeResult(
-                    scope="default",
-                    output_dir=output_dir,
-                )
-            ],
+            output=materialize_module.MaterializeOutputResult(
+                output_dir=output_dir,
+            ),
             site_manifest_path=site_dir / "manifest.json",
         )
 
@@ -475,12 +462,11 @@ def test_materialize_outputs_cli_emits_json_summary(
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
     assert payload["command"] == "repair outputs"
-    assert payload["totals"]["scopes"] == 1
     assert payload["totals"]["items"] == 1
     assert payload["totals"]["trends"] == 1
     assert payload["site_manifest_path"] == str(output_dir / "site" / "manifest.json")
-    assert payload["scopes"][0]["scope"] == "default"
-    assert payload["scopes"][0]["trend_notes_total"] == 1
+    assert payload["output"]["output_dir"] == str(output_dir)
+    assert payload["output"]["trend_notes_total"] == 1
 
 
 def test_stage_materialize_cli_forwards_explicit_item_export_scope(
@@ -537,7 +523,6 @@ def test_materialize_outputs_cli_rejects_non_default_scope_in_instance_first_run
     )
 
     assert result.exit_code == 2
-    assert "--scope default" in result.stdout
 
 
 def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_site(
@@ -573,7 +558,6 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
         run_id="run-materialize-trend-pass",
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -618,7 +602,6 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
         run_id="run-materialize-ideas-pass",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -627,7 +610,6 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
             PassInputRef(
                 ref_kind="pass_output",
                 pass_kind="trend_synthesis",
-                scope="default",
                 granularity="day",
                 period_start=period_start.isoformat(),
                 period_end=period_end.isoformat(),
@@ -638,7 +620,7 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=output_dir,
         site_output_dir=output_dir / "site",
     )
@@ -701,7 +683,6 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
         run_id="run-materialize-trend-pass-dedup",
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -746,7 +727,6 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
         run_id="run-materialize-ideas-pass-dedup",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -755,7 +735,6 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
             PassInputRef(
                 ref_kind="pass_output",
                 pass_kind="trend_synthesis",
-                scope="default",
                 granularity="day",
                 period_start=period_start.isoformat(),
                 period_end=period_end.isoformat(),
@@ -766,7 +745,7 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
 
     _ = materialize_outputs(
         repository=repository,
-        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=output_dir,
         site_output_dir=output_dir / "site",
     )
@@ -839,7 +818,6 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
         run_id="run-materialize-trend-pass-obsidian",
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -884,7 +862,6 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
         run_id="run-materialize-ideas-pass-obsidian",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -893,7 +870,6 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
             PassInputRef(
                 ref_kind="pass_output",
                 pass_kind="trend_synthesis",
-                scope="default",
                 granularity="day",
                 period_start=period_start.isoformat(),
                 period_end=period_end.isoformat(),
@@ -904,14 +880,11 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[
-            MaterializeScopeSpec(
-                scope="default",
-                output_dir=output_dir,
-                obsidian_vault_path=vault_path,
-                obsidian_base_folder="Recoleta",
-            )
-        ],
+        target_spec=MaterializeTargetSpec(
+            output_dir=output_dir,
+            obsidian_vault_path=vault_path,
+            obsidian_base_folder="Recoleta",
+        ),
     )
 
     item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
@@ -926,8 +899,8 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
     assert obsidian_item_note.exists()
     assert obsidian_trend_note.exists()
     assert obsidian_idea_note.exists()
-    assert result.scopes[0].obsidian_notes_total == 3
-    assert result.scopes[0].obsidian_failures_total == 0
+    assert result.output.obsidian_notes_total == 3
+    assert result.output.obsidian_failures_total == 0
 
     idea_markdown = obsidian_idea_note.read_text(encoding="utf-8")
     assert f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)" in idea_markdown
@@ -960,7 +933,6 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
         run_id="run-materialize-trend-pass-latest-window",
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -994,7 +966,6 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
         run_id="run-materialize-ideas-pass-older-success",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1003,7 +974,6 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
             PassInputRef(
                 ref_kind="pass_output",
                 pass_kind="trend_synthesis",
-                scope="default",
                 granularity="day",
                 period_start=period_start.isoformat(),
                 period_end=period_end.isoformat(),
@@ -1026,7 +996,6 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
         run_id="run-materialize-ideas-pass-latest-suppressed",
         pass_kind="trend_ideas",
         status="suppressed",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1035,7 +1004,6 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
             PassInputRef(
                 ref_kind="pass_output",
                 pass_kind="trend_synthesis",
-                scope="default",
                 granularity="day",
                 period_start=period_start.isoformat(),
                 period_end=period_end.isoformat(),
@@ -1046,13 +1014,13 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
     )
 
     idea_note_path = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
     note_text = idea_note_path.read_text(encoding="utf-8")
 
-    assert result.scopes[0].ideas_outputs_total == 1
+    assert result.output.ideas_outputs_total == 1
     assert "status: suppressed" in note_text
     assert "# Latest suppressed ideas" in note_text
     assert "Evidence is too thin for a durable opportunity brief." in note_text
@@ -1078,7 +1046,6 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
         run_id="run-materialize-empty-trend-pass",
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1109,7 +1076,6 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
         run_id="run-materialize-empty-ideas-pass",
         pass_kind="trend_ideas",
         status="suppressed",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1119,7 +1085,6 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
             PassInputRef(
                 ref_kind="pass_output",
                 pass_kind="trend_synthesis",
-                scope="default",
                 granularity="day",
                 period_start=period_start.isoformat(),
                 period_end=period_end.isoformat(),
@@ -1130,7 +1095,7 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         site_input_dir=output_dir,
         site_output_dir=output_dir / "site",
     )
@@ -1173,7 +1138,6 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
         run_id="run-materialize-cli-trend-pass",
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1195,7 +1159,6 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
         run_id="run-materialize-cli-ideas-pass",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1236,7 +1199,6 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
             PassInputRef(
                 ref_kind="pass_output",
                 pass_kind="trend_synthesis",
-                scope="default",
                 granularity="day",
                 period_start=period_start.isoformat(),
                 period_end=period_end.isoformat(),

@@ -39,28 +39,28 @@ def test_billing_summary_and_table_include_ideas_llm_metrics() -> None:
     assert "No billing metrics recorded" not in rendered
 
 
-def test_billing_summary_rolls_stream_metrics_into_total_and_by_stream() -> None:
+def test_billing_summary_ignores_legacy_scope_metrics() -> None:
     metrics = [
         _metric("pipeline.trends.llm_requests_total", 1),
         _metric("pipeline.trends.llm_input_tokens_total", 100),
         _metric("pipeline.trends.llm_output_tokens_total", 20),
         _metric("pipeline.trends.estimated_cost_usd", 0.01, "usd"),
-        _metric("pipeline.trends.stream.agents_lab.llm_requests_total", 2),
-        _metric("pipeline.trends.stream.agents_lab.llm_input_tokens_total", 200),
-        _metric("pipeline.trends.stream.agents_lab.llm_output_tokens_total", 40),
-        _metric("pipeline.trends.stream.agents_lab.estimated_cost_usd", 0.02, "usd"),
-        _metric("pipeline.trends.stream.agents_lab.pass.ideas.llm_requests_total", 1),
-        _metric("pipeline.trends.stream.agents_lab.pass.ideas.llm_input_tokens_total", 80),
-        _metric("pipeline.trends.stream.agents_lab.pass.ideas.llm_output_tokens_total", 16),
+        _metric("pipeline.trends.scope.agents_lab.llm_requests_total", 2),
+        _metric("pipeline.trends.scope.agents_lab.llm_input_tokens_total", 200),
+        _metric("pipeline.trends.scope.agents_lab.llm_output_tokens_total", 40),
+        _metric("pipeline.trends.scope.agents_lab.estimated_cost_usd", 0.02, "usd"),
+        _metric("pipeline.trends.scope.agents_lab.pass.ideas.llm_requests_total", 1),
+        _metric("pipeline.trends.scope.agents_lab.pass.ideas.llm_input_tokens_total", 80),
+        _metric("pipeline.trends.scope.agents_lab.pass.ideas.llm_output_tokens_total", 16),
         _metric(
-            "pipeline.trends.stream.agents_lab.pass.ideas.estimated_cost_usd",
+            "pipeline.trends.scope.agents_lab.pass.ideas.estimated_cost_usd",
             0.008,
             "usd",
         ),
-        _metric("pipeline.trends.stream.robotics.embedding_calls_total", 3),
-        _metric("pipeline.trends.stream.robotics.embedding_prompt_tokens_total", 150),
+        _metric("pipeline.trends.scope.robotics.embedding_calls_total", 3),
+        _metric("pipeline.trends.scope.robotics.embedding_prompt_tokens_total", 150),
         _metric(
-            "pipeline.trends.stream.robotics.embedding_estimated_cost_usd",
+            "pipeline.trends.scope.robotics.embedding_estimated_cost_usd",
             0.003,
             "usd",
         ),
@@ -69,22 +69,14 @@ def test_billing_summary_rolls_stream_metrics_into_total_and_by_stream() -> None
     summary = summarize_billing_metrics(metrics)
 
     assert summary is not None
-    assert summary["components"]["trends_llm"]["calls"] == 3
-    assert summary["components"]["trends_llm"]["input_tokens"] == 300
-    assert summary["components"]["trends_llm"]["output_tokens"] == 60
-    assert summary["components"]["trends_llm"]["cost_usd"] == 0.03
-    assert summary["components"]["ideas_llm"]["calls"] == 1
-    assert summary["components"]["trends_embeddings"]["calls"] == 3
-    assert summary["components"]["trends_embeddings"]["input_tokens"] == 150
-    assert summary["total_cost_usd"] == 0.041
-    assert "by_stream" in summary
-    assert summary["by_stream"]["agents_lab"]["components"]["trends_llm"]["calls"] == 2
-    assert summary["by_stream"]["agents_lab"]["components"]["ideas_llm"]["calls"] == 1
-    assert summary["by_stream"]["agents_lab"]["total_cost_usd"] == 0.028
-    assert (
-        summary["by_stream"]["robotics"]["components"]["trends_embeddings"]["calls"] == 3
-    )
-    assert summary["by_stream"]["robotics"]["total_cost_usd"] == 0.003
+    assert summary["components"]["trends_llm"]["calls"] == 1
+    assert summary["components"]["trends_llm"]["input_tokens"] == 100
+    assert summary["components"]["trends_llm"]["output_tokens"] == 20
+    assert summary["components"]["trends_llm"]["cost_usd"] == 0.01
+    assert "ideas_llm" not in summary["components"]
+    assert "trends_embeddings" not in summary["components"]
+    assert summary["total_cost_usd"] == 0.01
+    assert "by_scope" not in summary
 
 
 def test_billing_summary_includes_translation_rag_sync_and_doctor_components() -> None:
@@ -117,4 +109,4 @@ def test_billing_summary_includes_translation_rag_sync_and_doctor_components() -
     assert summary["components"]["rag_sync_embeddings"]["calls"] == 4
     assert summary["components"]["doctor_llm"]["calls"] == 1
     assert summary["total_cost_usd"] == 0.01592
-    assert "by_stream" not in summary
+    assert "by_scope" not in summary

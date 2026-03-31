@@ -473,32 +473,7 @@ def test_gc_prune_caches_with_db_path_only_skips_filesystem_cache_pruning(
     assert repository.read_document_chunk(doc_id=doc_id, chunk_index=0) is None
 
 
-def test_repair_streams_reports_removed_command_without_migration_guidance(
-    tmp_path: Path,
-) -> None:
-    runner = CliRunner()
-    result = runner.invoke(
-        recoleta.cli.app,
-        [
-            "repair",
-            "streams",
-            "--date",
-            "2026-03-15",
-            "--streams",
-            "agents_lab",
-            "--json",
-        ],
-    )
-
-    assert result.exit_code == 2
-    payload = json.loads(result.stdout)
-    assert payload["status"] == "error"
-    assert payload["command"] == "repair streams"
-    assert "no longer supported" in payload["error"]
-    assert "topic-streams-to-instances" not in payload["error"]
-
-
-def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> None:
+def test_doctor_why_empty_reports_item_state_blockers_as_json(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"
     repository = Repository(db_path=db_path)
@@ -528,8 +503,6 @@ def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> Non
             "2026-03-15",
             "--granularity",
             "day",
-            "--stream",
-            "agents_lab",
             "--json",
         ],
     )
@@ -537,59 +510,11 @@ def test_doctor_why_empty_reports_stream_blockers_as_json(tmp_path: Path) -> Non
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
-    assert payload["scope"] == "agents_lab"
+    assert payload["scope"] == "default"
     assert payload["candidate_total"] == 1
     assert payload["selected_total"] == 0
     assert payload["filtered_out_total"] == 1
     assert payload["item_states"]["retryable_failed"] == 1
+    assert payload["eligible_item_states"]["retryable_failed"] == 1
     assert payload["exclusion_reasons"]["missing_analysis"] == 1
-    assert payload["exclusion_reasons"]["stream_state_retryable_failed"] == 1
-
-
-def test_repair_streams_fails_closed_before_touching_database(
-    tmp_path: Path,
-) -> None:
-    runner = CliRunner()
-    db_path = tmp_path / "recoleta.db"
-    repository = Repository(db_path=db_path)
-    repository.init_schema()
-    item, _ = repository.upsert_item(
-        ItemDraft.from_values(
-            source="rss",
-            source_item_id="repair-stream-migration",
-            canonical_url="https://example.com/repair-stream-migration",
-            title="Repair Streams Migrates First",
-            authors=["Alice"],
-            raw_metadata={"source": "test"},
-            published_at=datetime(2026, 3, 15, 12, tzinfo=UTC),
-        )
-    )
-    assert item.id is not None
-    repository.mark_item_enriched(item_id=int(item.id))
-
-    with repository.engine.begin() as conn:
-        conn.exec_driver_sql("PRAGMA user_version = 3")
-
-    result = runner.invoke(
-        recoleta.cli.app,
-        [
-            "repair",
-            "streams",
-            "--db-path",
-            str(db_path),
-            "--date",
-            "2026-03-15",
-            "--streams",
-            "agents_lab",
-            "--json",
-        ],
-    )
-
-    assert result.exit_code == 2
-    assert "no longer supported" in result.stdout
-    assert "topic-streams-to-instances" not in result.stdout
-
-    with sqlite3.connect(db_path) as conn:
-        version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-
-    assert version == 3
+    assert payload["exclusion_reasons"]["item_state_retryable_failed"] == 1
