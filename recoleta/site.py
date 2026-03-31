@@ -3422,16 +3422,16 @@ def _extract_idea_opportunity_meta_sections(
         return None
     for item in items:
         text = item.get_text(" ", strip=True)
-        if (value := _strip_labeled_value(text, labels=("Kind",))) is not None:
-            pills.append(_idea_meta_pill("Kind", value))
+        if (value := _strip_labeled_value(text, labels=("Type", "Kind"))) is not None:
+            pills.append(_idea_meta_pill("Type", value))
             continue
-        if (value := _strip_labeled_value(text, labels=("Time horizon",))) is not None:
-            pills.append(_idea_meta_pill("Time horizon", value))
+        if (value := _strip_labeled_value(
+            text,
+            labels=("Horizon", "Time horizon"),
+        )) is not None:
+            pills.append(_idea_meta_pill("Horizon", value))
             continue
-        if (value := _strip_labeled_value(text, labels=("User/job",))) is not None:
-            role_html = _render_idea_role_block(value)
-            continue
-        if (value := _strip_labeled_value(text, labels=("Role",))) is not None:
+        if (value := _strip_labeled_value(text, labels=("Role", "User/job"))) is not None:
             role_html = _render_idea_role_block(value)
             continue
         if " ".join(text.split()).strip():

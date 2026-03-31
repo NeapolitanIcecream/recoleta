@@ -25,6 +25,7 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - When `Trends` and `Ideas` appear side by side, keep the pair visually symmetric: equal-width columns, one stacked card column per side, and mirrored section chrome.
 - Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Keep `Evolution` as a secondary comparison surface rather than replacing the primary summary.
 - On `Ideas` detail pages, keep `Summary` and `Opportunities` as separate surfaces; render each opportunity as its own readable card with English field labels instead of collapsing multiple ideas into one long prose block.
+- For markdown-first `Ideas` detail flows, use English reader-facing labels such as `Best bet`, `Alternate`, `Type`, `Horizon`, and `Role`; do not expose raw `User/job` labels or enum tokens in published copy.
 - On `Ideas` cards and detail heroes, omit empty topic rows entirely instead of rendering placeholder chrome for missing topics.
 - On `Ideas` opportunity cards, keep only short metadata in pills; render the longer user/role audience as a separate `Role` field block instead of a wrapping pill.
 - On `Ideas` opportunity cards, `Role` field copy must fully expand; do not clamp or truncate multi-line role/audience text.
