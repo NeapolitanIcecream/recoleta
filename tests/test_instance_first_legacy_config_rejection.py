@@ -231,6 +231,49 @@ def test_fleet_manifest_validation_rejects_child_configs_with_daemon(
         load_fleet_manifest(manifest_path)
 
 
+def test_fleet_manifest_validation_rejects_slug_colliding_instance_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    alpha_output = tmp_path / "alpha-outputs"
+    beta_output = tmp_path / "beta-outputs"
+    alpha_output.mkdir(parents=True)
+    beta_output.mkdir(parents=True)
+    alpha_config = _write_config(
+        tmp_path / "agents-lab-spaced.yaml",
+        _instance_config(
+            db_path=tmp_path / "agents-lab-spaced.db",
+            output_dir=alpha_output,
+        ),
+    )
+    beta_config = _write_config(
+        tmp_path / "agents-lab-slug.yaml",
+        _instance_config(
+            db_path=tmp_path / "agents-lab-slug.db",
+            output_dir=beta_output,
+        ),
+    )
+    manifest_path = _write_config(
+        tmp_path / "fleet.yaml",
+        {
+            "schema_version": 1,
+            "instances": [
+                {"name": "Agents Lab", "config_path": str(alpha_config)},
+                {"name": "agents-lab", "config_path": str(beta_config)},
+            ],
+        },
+    )
+
+    load_fleet_manifest = recoleta.cli._import_symbol(
+        "recoleta.fleet",
+        attr_name="load_fleet_manifest",
+    )
+
+    with pytest.raises(ValueError, match="agents-lab"):
+        load_fleet_manifest(manifest_path)
+
+
 def test_fleet_site_build_reads_child_output_roots_to_include_localized_pages_pr_23(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

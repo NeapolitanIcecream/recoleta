@@ -305,6 +305,34 @@ def _instance_slug(instance: str) -> str:
     return slugify(str(instance or "").strip(), lowercase=True) or "instance"
 
 
+def _validate_unique_site_instance_slugs(
+    instances: Sequence[str | None],
+    *,
+    context: str,
+) -> None:
+    slug_to_instances: dict[str, list[str]] = {}
+    for instance in instances:
+        cleaned_instance = _normalize_site_instance(instance)
+        if cleaned_instance is None:
+            continue
+        instance_slug = _instance_slug(cleaned_instance)
+        bucket = slug_to_instances.setdefault(instance_slug, [])
+        if cleaned_instance not in bucket:
+            bucket.append(cleaned_instance)
+    collisions = {
+        instance_slug: names
+        for instance_slug, names in slug_to_instances.items()
+        if len(names) > 1
+    }
+    if not collisions:
+        return
+    details = "; ".join(
+        f"slug '{instance_slug}' is shared by {', '.join(names)}"
+        for instance_slug, names in sorted(collisions.items())
+    )
+    raise ValueError(f"{context} must produce unique public instance slugs: {details}")
+
+
 def _normalize_site_instance(instance: str | None) -> str | None:
     cleaned = str(instance or "").strip()
     if not cleaned:
@@ -581,6 +609,10 @@ def _coerce_site_input_specs(
                 instance=_normalize_site_instance(input_spec.instance),
             )
         )
+    _validate_unique_site_instance_slugs(
+        [input_spec.instance for input_spec in resolved_inputs],
+        context="Explicit trend site input instances",
+    )
     return resolved_inputs
 
 
@@ -752,6 +784,10 @@ def _discover_trend_site_input_dirs(
             )
             add_candidate(candidate, instance=candidate_instance)
 
+    _validate_unique_site_instance_slugs(
+        [input_dir.instance for input_dir in discovered],
+        context="Trend site input instances",
+    )
     return discovered
 
 

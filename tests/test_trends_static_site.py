@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+import pytest
 
 from recoleta.site import (
     RECOLETA_QUICKSTART_URL,
@@ -2924,6 +2925,43 @@ def test_export_trend_static_site_preserves_explicit_default_instance_name(
     idea_html = idea_page.read_text(encoding="utf-8")
     assert "<div class='meta-panel-value'>Default</div>" in trend_html
     assert "<div class='meta-panel-value'>Default</div>" in idea_html
+
+
+def test_export_trend_static_site_rejects_slug_colliding_instance_names(
+    tmp_path: Path,
+) -> None:
+    alpha_root = tmp_path / "agents-lab-spaced"
+    beta_root = tmp_path / "agents-lab-slug"
+    period_start = datetime(2026, 3, 24, tzinfo=UTC)
+    period_end = datetime(2026, 3, 25, tzinfo=UTC)
+
+    for output_dir, label in (
+        (alpha_root, "Agents Lab"),
+        (beta_root, "agents-lab"),
+    ):
+        trend_note = write_markdown_trend_note(
+            output_dir=output_dir,
+            trend_doc_id=901,
+            title=f"{label} daily",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            run_id=f"run-{label.lower().replace(' ', '-')}-trend",
+            overview_md="## Overview\n\nSlug-colliding instance names.\n",
+            topics=["agents"],
+            clusters=[],
+            highlights=[],
+        )
+        trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
+
+    with pytest.raises(ValueError, match="agents-lab"):
+        export_trend_static_site(
+            input_dir=[
+                TrendSiteInputSpec(path=alpha_root, instance="Agents Lab"),
+                TrendSiteInputSpec(path=beta_root, instance="agents-lab"),
+            ],
+            output_dir=tmp_path / "site",
+        )
 
 
 def test_stage_trend_site_source_preserves_topic_stream_directory_layout(

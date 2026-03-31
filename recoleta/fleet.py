@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from slugify import slugify
 
 from recoleta.config import Settings
 
@@ -87,6 +88,10 @@ def child_default_language_code(config_path: Path) -> str | None:
     return str(getattr(localization, "site_default_language_code", "") or "").strip() or None
 
 
+def _fleet_instance_slug(name: str) -> str:
+    return slugify(str(name or "").strip(), lowercase=True) or "instance"
+
+
 def load_fleet_manifest(manifest_path: Path) -> FleetManifest:
     resolved_manifest_path = manifest_path.expanduser().resolve()
     raw = _load_document(resolved_manifest_path)
@@ -99,6 +104,7 @@ def load_fleet_manifest(manifest_path: Path) -> FleetManifest:
 
     instances: list[FleetInstance] = []
     seen_names: set[str] = set()
+    seen_slugs: dict[str, str] = {}
     for entry in raw_instances:
         if not isinstance(entry, dict):
             raise ValueError("fleet instances entries must be mappings/objects")
@@ -108,6 +114,13 @@ def load_fleet_manifest(manifest_path: Path) -> FleetManifest:
         if name in seen_names:
             raise ValueError(f"Duplicate fleet instance name: {name}")
         seen_names.add(name)
+        name_slug = _fleet_instance_slug(name)
+        if name_slug in seen_slugs and seen_slugs[name_slug] != name:
+            raise ValueError(
+                "Fleet instance names must produce unique public slugs: "
+                f"slug '{name_slug}' is shared by {seen_slugs[name_slug]}, {name}"
+            )
+        seen_slugs[name_slug] = name
         config_path = _resolve_config_path(
             manifest_path=resolved_manifest_path,
             value=entry.get("config_path"),
