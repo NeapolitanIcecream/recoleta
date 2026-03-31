@@ -14,7 +14,7 @@ Backfill is intentionally out of scope for this study.
 ## Method
 
 Benchmarks are implemented in
-[scripts/bench_trends_hotspots.py](/Users/chenmohan/gits/recoleta/scripts/bench_trends_hotspots.py).
+[scripts/bench_trends_hotspots.py](../../scripts/bench_trends_hotspots.py).
 
 Properties of the benchmark:
 

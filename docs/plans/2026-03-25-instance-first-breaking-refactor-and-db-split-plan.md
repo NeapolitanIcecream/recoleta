@@ -483,7 +483,7 @@ constraints.
 
 Current config:
 
-- config: `/Users/chenmohan/Playground/recoleta-playground/recoleta.yaml`
+- config: `<playground-root>/recoleta.yaml`
 - DB: `~/.local/share/recoleta/recoleta.db`
 - streams: `embodied_ai`, `software_intelligence`
 - sources are still globally shared across both streams
