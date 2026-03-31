@@ -96,8 +96,7 @@ What to know:
 
 - `run translate` reads canonical rows and writes derived variants to
   `localized_outputs`.
-- instance-first runtime only supports `--scope default`; choose the target
-  child instance with `--config-path`.
+- choose the target child instance with `--config-path` when needed.
 - `--include` accepts `items`, `trends`, and `ideas`.
 - `--force` rewrites localized outputs even when the source hash is unchanged.
 - `--context-assist` defaults to `direct`.
@@ -119,8 +118,7 @@ What to know:
 
 - `localization.source_language_code` is the language you want future canonical
   output to use.
-- instance-first runtime only supports `--scope default`; choose the target
-  child instance with `--config-path`.
+- choose the target child instance with `--config-path` when needed.
 - `localization.legacy_backfill_source_language_code` or
   `--legacy-source-language` tells Recoleta what language the historical
   canonical rows currently use.
@@ -281,7 +279,7 @@ you rerun a date or repair state:
 ```bash
 uv run recoleta inspect llm --json
 uv run recoleta inspect llm --ping --json
-uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --stream default --config /path/to/instance/recoleta.yaml --json
+uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --config /path/to/instance/recoleta.yaml --json
 uv run recoleta inspect runs show --run-id <run-id> --json
 uv run recoleta inspect runs list --limit 10 --json
 ```
@@ -296,10 +294,9 @@ What to know:
 - `inspect why-empty` explains why a day, week, or month corpus selected zero
   items. It reports candidate counts, selected counts, filtered-out totals, and
   exclusion reasons such as `missing_analysis` or
-  `stream_state_retryable_failed`.
-- in the instance-first runtime, point `inspect why-empty` at one child config
-  with `--config` and keep `--stream default` unless you are inspecting older
-  archived data.
+  `item_state_retryable_failed`.
+- point `inspect why-empty` at one child config with `--config` when you want
+  to inspect one fleet member directly.
 - `inspect runs show` aggregates run status, billing, metrics, pass outputs,
   artifacts, run context, and structured failure summaries in one JSON payload.
 - `inspect runs list` gives a compact recent-run view that is easier to

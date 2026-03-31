@@ -28,7 +28,6 @@ class EvalWindow:
     window_id: str
     granularity: str
     anchor_date: str
-    stream: str
     topics: list[str]
     notes: str
 
@@ -95,13 +94,17 @@ def _parse_window(raw_window: Any) -> EvalWindow:
         raise ValueError(
             f"invalid anchor_date for window {window_id}: {anchor_date}"
         ) from exc
-    stream = str(raw_window.get("stream") or "default").strip() or "default"
+    legacy_stream = str(raw_window.get("stream") or "default").strip() or "default"
+    if legacy_stream != "default":
+        raise ValueError(
+            "non-default eval windows are unsupported in the single-instance runtime: "
+            f"{legacy_stream}"
+        )
     notes = str(raw_window.get("notes") or "").strip()
     return EvalWindow(
         window_id=window_id,
         granularity=granularity,
         anchor_date=anchor_date,
-        stream=stream,
         topics=_normalize_topics(raw_window.get("topics")),
         notes=notes,
     )
@@ -155,7 +158,6 @@ def build_eval_manifest(
                 "id": window.window_id,
                 "granularity": window.granularity,
                 "anchor_date": window.anchor_date,
-                "stream": window.stream,
                 "topics": list(window.topics),
                 "notes": window.notes,
                 "artifact_dir": str(artifact_dir),
@@ -189,17 +191,16 @@ def render_eval_manifest_md(*, manifest: dict[str, Any]) -> str:
         f"- out_dir: {manifest['out_dir']}",
         f"- window_count: {manifest['window_count']}",
         "",
-        "| id | granularity | anchor_date | stream | topics | artifact_dir |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| id | granularity | anchor_date | topics | artifact_dir |",
+        "| --- | --- | --- | --- | --- |",
     ]
     for window in manifest.get("windows", []):
         topics = ", ".join(str(topic) for topic in window.get("topics", []))
         lines.append(
-            "| {id} | {granularity} | {anchor_date} | {stream} | {topics} | {artifact_dir} |".format(
+            "| {id} | {granularity} | {anchor_date} | {topics} | {artifact_dir} |".format(
                 id=window.get("id", ""),
                 granularity=window.get("granularity", ""),
                 anchor_date=window.get("anchor_date", ""),
-                stream=window.get("stream", ""),
                 topics=topics,
                 artifact_dir=window.get("artifact_dir", ""),
             )
@@ -477,7 +478,6 @@ def _render_report_markdown(
     period_end: datetime,
     output_dir: Path,
     output_language: str | None,
-    scope: str,
 ) -> str:
     from recoleta.publish.trend_notes import write_markdown_trend_note
     from recoleta.trend_materialize import materialize_trend_note_payload
@@ -489,7 +489,6 @@ def _render_report_markdown(
         payload=payload,
         markdown_output_dir=output_dir,
         output_language=output_language,
-        scope=scope,
     )
     note_path = write_markdown_trend_note(
         output_dir=output_dir,
@@ -593,7 +592,6 @@ def _serialize_capture_source_document(document: Any) -> dict[str, Any]:
     period_end = getattr(document, "period_end", None)
     return {
         "doc_id": int(getattr(document, "id") or 0),
-        "scope": str(getattr(document, "scope", "") or ""),
         "granularity": str(getattr(document, "granularity", "") or ""),
         "title": str(getattr(document, "title", "") or ""),
         "period_start": period_start.isoformat()
@@ -616,7 +614,6 @@ def _find_existing_trend_document(
     repository: Any,
     granularity: str,
     anchor_date: str,
-    scope: str,
 ) -> tuple[Any, datetime, datetime]:
     period_start, period_end = _period_bounds(
         granularity=granularity,
@@ -627,7 +624,6 @@ def _find_existing_trend_document(
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
-        scope=scope,
         limit=10,
     )
     exact_matches = [
@@ -639,7 +635,7 @@ def _find_existing_trend_document(
     if not exact_matches:
         raise ValueError(
             "No existing trend document found for "
-            f"scope={scope} granularity={granularity} period_start={period_start.isoformat()}"
+            f"granularity={granularity} period_start={period_start.isoformat()}"
         )
     selected = sorted(
         exact_matches,
@@ -666,13 +662,11 @@ def capture_existing_trends_baseline(
         granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
         anchor_date = str(window_manifest.get("anchor_date", "") or "").strip()
         artifact_dir = Path(str(window_manifest.get("artifact_dir", "") or ""))
-        scope = str(window_manifest.get("stream", "") or "").strip() or "default"
         try:
             document, period_start, period_end = _find_existing_trend_document(
                 repository=repository,
                 granularity=granularity,
                 anchor_date=anchor_date,
-                scope=scope,
             )
             doc_id = int(getattr(document, "id") or 0)
             payload_json = _load_payload_json(repository=repository, doc_id=doc_id)
@@ -686,7 +680,6 @@ def capture_existing_trends_baseline(
                 period_end=period_end,
                 output_dir=artifact_dir / "rendered-note",
                 output_language=cli._build_settings().llm_output_language,
-                scope=scope,
             )
             tool_trace = {
                 "trace_status": "unavailable_from_existing_doc",
@@ -782,53 +775,9 @@ def _run_window_trends_capture(
     granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
     anchor_date = date.fromisoformat(str(window_manifest.get("anchor_date", "") or "").strip())
     stream = str(window_manifest.get("stream", "") or "").strip() or "default"
-    if bool(getattr(service, "_explicit_topic_streams", False)):
-        selected_stream = next(
-            (
-                stream_runtime
-                for stream_runtime in list(getattr(service, "_topic_streams", []) or [])
-                if str(getattr(stream_runtime, "name", "") or "").strip() == stream
-            ),
-            None,
-        )
-        if selected_stream is None:
-            raise ValueError(f"unknown topic stream for eval window: {stream}")
-        stream_settings = service._settings_for_topic_stream(selected_stream)
-        stream_settings = _apply_eval_publish_overrides(
-            base_settings=service.settings,
-            scoped_settings=stream_settings,
-        )
-        stream_targets = set(getattr(stream_settings, "publish_targets", []) or [])
-        stream_sender = (
-            service._telegram_sender_for_stream(selected_stream)
-            if "telegram" in stream_targets
-            else None
-        )
-        service_factory = cast(Any, service.__class__)
-        child_service = service_factory(
-            settings=stream_settings,
-            repository=service.repository,
-            analyzer=service.analyzer,
-            triage=service.semantic_triage,
-            telegram_sender=stream_sender,
-        )
-        from recoleta.pipeline.trends_stage import run_trends_stage
-
-        return run_trends_stage(
-            child_service,
-            run_id=stage_run_id,
-            granularity=granularity,
-            anchor_date=anchor_date,
-            llm_model=llm_model,
-            backfill=backfill,
-            backfill_mode="missing",
-            debug_pdf=False,
-            scope=stream,
-            reuse_existing_corpus=reuse_existing_corpus,
-        )
     if stream != "default":
         raise ValueError(
-            "stream-specific eval window requires explicit topic streams in settings: "
+            "non-default eval windows are unsupported in the single-instance runtime: "
             f"{stream}"
         )
     return service.trends(
@@ -946,8 +895,6 @@ def capture_trends_rerun_baseline(
                 period_end=period_end,
                 output_dir=artifact_dir / "rendered-note",
                 output_language=getattr(settings, "llm_output_language", None),
-                scope=str(window_manifest.get("stream", "") or "").strip()
-                or "default",
             )
             tool_trace = summarize_run_metrics(repository.list_metrics(run_id=run_id))
             debug_payload = _load_debug_payload(artifact_dir=artifact_dir, run_id=run_id)

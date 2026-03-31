@@ -17,7 +17,7 @@ from recoleta import translation as translation_module
 from recoleta.cli.app import app
 from recoleta.config import LocalizationConfig, Settings
 from recoleta.llm_connection import LLMConnectionConfig
-from recoleta.materialize import MaterializeScopeSpec, materialize_outputs
+from recoleta.materialize import MaterializeTargetSpec, materialize_outputs
 from recoleta.models import Analysis, DocumentChunk, LocalizedOutput
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish import write_markdown_trend_note
@@ -306,7 +306,6 @@ def test_repository_upsert_localized_output_reuses_unique_source_scope_language(
     row, created = repository.upsert_localized_output(
         source_kind="analysis",
         source_record_id=11,
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="hash-1",
@@ -317,7 +316,6 @@ def test_repository_upsert_localized_output_reuses_unique_source_scope_language(
     updated, created_again = repository.upsert_localized_output(
         source_kind="analysis",
         source_record_id=11,
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="hash-2",
@@ -362,7 +360,6 @@ def test_run_translation_backfill_aborts_after_repeated_provider_failures(
         translation_module.TranslationCandidate(
             source_kind="analysis",
             source_record_id=index + 1,
-            scope="default",
             payload={"summary": f"条目 {index + 1}"},
             payload_model=None,
             canonical_language_code="zh-CN",
@@ -410,7 +407,6 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     repository.upsert_localized_output(
         source_kind="analysis",
         source_record_id=int(analysis.id or 0),
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="analysis-hash",
@@ -421,7 +417,6 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     repository.upsert_localized_output(
         source_kind="trend_synthesis",
         source_record_id=trend_doc_id,
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="trend-hash",
@@ -442,7 +437,6 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     repository.upsert_localized_output(
         source_kind="trend_ideas",
         source_record_id=idea_doc_id,
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="idea-hash",
@@ -460,7 +454,7 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         localization=LocalizationConfig.model_validate(
             {
                 "source_language_code": "en",
@@ -528,7 +522,6 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
     repository.upsert_localized_output(
         source_kind="analysis",
         source_record_id=int(analysis.id or 0),
-        scope="default",
         language_code="en",
         status="succeeded",
         source_hash="analysis-en",
@@ -539,7 +532,6 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
     repository.upsert_localized_output(
         source_kind="analysis",
         source_record_id=int(analysis.id or 0),
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="analysis-zh",
@@ -550,7 +542,6 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
     repository.upsert_localized_output(
         source_kind="trend_synthesis",
         source_record_id=trend_doc_id,
-        scope="default",
         language_code="en",
         status="succeeded",
         source_hash="trend-en",
@@ -571,7 +562,6 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
     repository.upsert_localized_output(
         source_kind="trend_synthesis",
         source_record_id=trend_doc_id,
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="trend-zh",
@@ -592,7 +582,6 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
     repository.upsert_localized_output(
         source_kind="trend_ideas",
         source_record_id=idea_doc_id,
-        scope="default",
         language_code="en",
         status="succeeded",
         source_hash="ideas-en",
@@ -610,7 +599,6 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
     repository.upsert_localized_output(
         source_kind="trend_ideas",
         source_record_id=idea_doc_id,
-        scope="default",
         language_code="zh-CN",
         status="succeeded",
         source_hash="ideas-zh",
@@ -629,7 +617,6 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
         run_id="run-ideas-source",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 3, tzinfo=UTC),
@@ -645,7 +632,7 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
 
     result = materialize_outputs(
         repository=repository,
-        scope_specs=[MaterializeScopeSpec(scope="default", output_dir=output_dir)],
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
         localization=LocalizationConfig.model_validate(
             {
                 "source_language_code": "en",
@@ -986,7 +973,6 @@ def test_translate_run_cli_rejects_non_default_scope_in_instance_first_runtime(
     )
 
     assert result.exit_code == 2
-    assert "--scope default" in result.stdout
 
 
 def test_run_translation_incremental_limits_items_to_workflow_period(
@@ -1048,7 +1034,7 @@ def test_run_translation_incremental_limits_items_to_workflow_period(
 
     assert result.failed_total == 0
     assert result.translated_total == 1
-    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    rows = repository.list_localized_outputs(language_code="zh-CN")
     assert {
         (row.source_kind, row.source_record_id)
         for row in rows
@@ -1158,7 +1144,6 @@ def test_run_translation_stops_submitting_new_tasks_after_provider_failure_thres
         translation_module.TranslationCandidate(
             source_kind="analysis",
             source_record_id=index + 1,
-            scope="default",
             payload={"summary": f"Candidate {index + 1}"},
             payload_model=None,
             canonical_language_code="en",
@@ -1277,7 +1262,7 @@ def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite
 
     assert result.failed_total == 0
     assert result.translated_total == 1
-    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    rows = repository.list_localized_outputs(language_code="zh-CN")
     assert {
         (row.source_kind, row.source_record_id)
         for row in rows
@@ -1351,7 +1336,7 @@ def test_run_translation_period_filter_includes_cross_boundary_week_windows_pr_2
 
     assert result.failed_total == 0
     assert result.translated_total == 1
-    rows = repository.list_localized_outputs(scope="default", language_code="zh-CN")
+    rows = repository.list_localized_outputs(language_code="zh-CN")
     assert {
         (row.source_kind, row.source_record_id)
         for row in rows
@@ -1578,7 +1563,6 @@ def test_translate_run_hybrid_fails_open_when_search_service_raises(
     row = repository.get_localized_output(
         source_kind="analysis",
         source_record_id=int(analysis.id or 0),
-        scope="default",
         language_code="zh-CN",
     )
     assert row is not None
@@ -1598,7 +1582,6 @@ def test_translate_run_prefers_canonical_pass_outputs_for_trends_and_ideas(
         run_id="run-trend-pass",
         pass_kind="trend_synthesis",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1620,7 +1603,6 @@ def test_translate_run_prefers_canonical_pass_outputs_for_trends_and_ideas(
         run_id="run-idea-pass",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -1696,13 +1678,11 @@ def test_translate_run_prefers_canonical_pass_outputs_for_trends_and_ideas(
     trend_row = repository.get_localized_output(
         source_kind="trend_synthesis",
         source_record_id=trend_doc_id,
-        scope="default",
         language_code="zh-CN",
     )
     idea_row = repository.get_localized_output(
         source_kind="trend_ideas",
         source_record_id=idea_doc_id,
-        scope="default",
         language_code="zh-CN",
     )
     assert trend_row is not None
@@ -1955,7 +1935,6 @@ def test_translate_backfill_cli_rejects_non_default_scope_in_instance_first_runt
     )
 
     assert result.exit_code == 2
-    assert "--scope default" in result.stdout
 
 
 def test_translate_run_preserves_success_when_billing_metrics_lookup_fails(
@@ -2034,7 +2013,6 @@ def test_translate_run_preserves_success_when_billing_metrics_lookup_fails(
     translate_cli.run_translate_run_command(
         db_path=None,
         config_path=None,
-        scope="default",
         granularity=None,
         include="items",
         limit=None,
@@ -2148,7 +2126,6 @@ def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window
     )
     assert latest_only_result.failed_total == 0
     latest_only_rows = repository.list_localized_outputs(
-        scope="default",
         language_code="en",
     )
     latest_only_keys = {
@@ -2169,7 +2146,6 @@ def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window
     )
     assert all_history_result.failed_total == 0
     history_rows = repository.list_localized_outputs(
-        scope="default",
         language_code="en",
     )
     history_keys = {
@@ -2269,7 +2245,6 @@ def test_translate_run_command_raises_when_abort_requested_pr_23(
         translate_cli.run_translate_run_command(
             db_path=None,
             config_path=None,
-            scope="default",
             granularity=None,
             include="items",
             limit=None,
@@ -2294,7 +2269,6 @@ def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outpu
         run_id="run-ideas-backfill-doc",
         pass_kind="trend_ideas",
         status="succeeded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -2365,7 +2339,7 @@ def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outpu
             )
         ).first()
     assert idea_doc is not None
-    rows = repository.list_localized_outputs(scope="default", language_code="en")
+    rows = repository.list_localized_outputs(language_code="en")
     keys = {(row.source_kind, row.source_record_id) for row in rows}
     assert ("trend_ideas", int(idea_doc.id or 0)) in keys
     meta_chunk = repository.read_document_chunk(doc_id=int(idea_doc.id or 0), chunk_index=2)

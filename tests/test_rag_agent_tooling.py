@@ -183,6 +183,8 @@ def test_search_text_backoff_recovers_hits_for_long_conjunctive_query(
 def test_search_text_backoff_caps_candidate_budget_for_long_queries() -> None:
     from datetime import UTC, datetime
 
+    from recoleta.rag.corpus_tools import _collect_text_hits_with_backoff
+
     seen_queries: list[str] = []
 
     class _FakeRepository:
@@ -190,14 +192,13 @@ def test_search_text_backoff_caps_candidate_budget_for_long_queries() -> None:
             seen_queries.append(str(kwargs.get("query") or ""))
             return []
 
-    hits, matched_queries = rag_agent._collect_text_hits_with_backoff(
+    hits, matched_queries = _collect_text_hits_with_backoff(
         repository=cast(Any, _FakeRepository()),
         query=" ".join(f"term{i}" for i in range(40)),
         doc_type="item",
         granularity=None,
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 3, tzinfo=UTC),
-        scope="agents_lab",
         limit=5,
     )
 

@@ -7,8 +7,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from recoleta.passes.base import PassInputRef, PassOutputEnvelope, PassStatus
 from recoleta.trends import TrendPayload
-from recoleta.types import DEFAULT_TOPIC_STREAM
-
 TREND_IDEAS_PASS_KIND = "trend_ideas"
 TREND_IDEAS_SCHEMA_VERSION = 1
 TREND_IDEA_KIND_VALUES = (
@@ -254,7 +252,6 @@ def build_trend_ideas_pass_output(
     *,
     run_id: str,
     status: PassStatus,
-    scope: str = DEFAULT_TOPIC_STREAM,
     granularity: str,
     period_start: datetime,
     period_end: datetime,
@@ -262,13 +259,11 @@ def build_trend_ideas_pass_output(
     input_refs: list[PassInputRef] | None = None,
     diagnostics: dict[str, Any] | None = None,
 ) -> PassOutputEnvelope:
-    normalized_scope = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
     normalized_diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
     return PassOutputEnvelope(
         pass_kind=TREND_IDEAS_PASS_KIND,
         schema_version=TREND_IDEAS_SCHEMA_VERSION,
         status=status,
-        scope=normalized_scope,
         granularity=str(granularity or "").strip().lower() or None,
         period_start=period_start.isoformat(),
         period_end=period_end.isoformat(),

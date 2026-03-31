@@ -45,33 +45,6 @@ class MaintenanceStoreMixin:
 
     def schema_version(self) -> int: ...
 
-    def cleanup_legacy_instance_first_schema(self) -> dict[str, Any]:
-        had_item_stream_states = False
-        dropped_item_stream_state_rows = 0
-        with self.engine.begin() as conn:
-            row = conn.execute(
-                text(
-                    """
-                    SELECT name
-                    FROM sqlite_master
-                    WHERE type = 'table' AND name = 'item_stream_states'
-                    LIMIT 1;
-                    """
-                )
-            ).fetchone()
-            had_item_stream_states = row is not None
-            if had_item_stream_states:
-                dropped_item_stream_state_rows = int(
-                    conn.execute(text("SELECT COUNT(*) FROM item_stream_states;")).scalar()
-                    or 0
-                )
-                conn.execute(text("DROP TABLE item_stream_states;"))
-        return {
-            "db_path": str(self.db_path),
-            "had_item_stream_states": had_item_stream_states,
-            "dropped_item_stream_state_rows": dropped_item_stream_state_rows,
-        }
-
     def add_artifact(
         self,
         *,
@@ -113,12 +86,10 @@ class MaintenanceStoreMixin:
         *,
         period_start: datetime,
         period_end: datetime,
-        scope: str,
         min_relevance_score: float = 0.0,
     ) -> dict[str, Any]:
-        normalized_scope = str(scope or "").strip() or "default"
         min_relevance = float(min_relevance_score or 0.0)
-        selected_stream_states = {ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED}
+        selected_item_states = {ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED}
 
         with Session(self.engine) as session:
             event_at = func.coalesce(
@@ -156,12 +127,12 @@ class MaintenanceStoreMixin:
             )
 
         item_states: dict[str, int] = {}
-        stream_states: dict[str, int] = {}
+        eligible_item_states: dict[str, int] = {}
         exclusion_reasons: dict[str, int] = {}
         selected_total = 0
         filtered_out_total = 0
         analysis_present_total = 0
-        stream_state_present_total = 0
+        eligible_item_state_present_total = 0
         excluded_samples: list[dict[str, Any]] = []
 
         for item, analysis in rows:
@@ -174,10 +145,10 @@ class MaintenanceStoreMixin:
             if analysis is None:
                 blockers.add("missing_analysis")
 
-            stream_state_present_total += 1
-            stream_states[item_state] = stream_states.get(item_state, 0) + 1
-            if item_state not in selected_stream_states:
-                blockers.add(f"stream_state_{item_state}")
+            eligible_item_state_present_total += 1
+            eligible_item_states[item_state] = eligible_item_states.get(item_state, 0) + 1
+            if item_state not in selected_item_states:
+                blockers.add(f"item_state_{item_state}")
 
             if analysis is not None and float(getattr(analysis, "relevance_score", 0.0) or 0.0) < min_relevance:
                 blockers.add("relevance_below_threshold")
@@ -201,16 +172,16 @@ class MaintenanceStoreMixin:
         return {
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
-            "scope": normalized_scope,
+            "scope": "default",
             "min_relevance_score": min_relevance,
             "candidate_total": len(rows),
             "selected_total": selected_total,
             "filtered_out_total": filtered_out_total,
             "analysis_present_total": analysis_present_total,
-            "stream_state_present_total": stream_state_present_total,
+            "eligible_item_state_present_total": eligible_item_state_present_total,
             "indexed_item_docs_total": indexed_item_docs_total,
             "item_states": dict(sorted(item_states.items())),
-            "stream_states": dict(sorted(stream_states.items())),
+            "eligible_item_states": dict(sorted(eligible_item_states.items())),
             "exclusion_reasons": dict(
                 sorted(exclusion_reasons.items(), key=lambda entry: (-entry[1], entry[0]))
             ),

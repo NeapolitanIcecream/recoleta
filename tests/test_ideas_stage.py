@@ -32,7 +32,6 @@ def _persist_trend_synthesis_pass_output(
     *,
     repository,
     run_id: str,
-    scope: str,
     granularity: str,
     period_start: datetime,
     period_end: datetime,
@@ -41,7 +40,6 @@ def _persist_trend_synthesis_pass_output(
 ) -> int:
     envelope = build_trend_synthesis_pass_output(
         run_id=run_id,
-        scope=scope,
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
@@ -52,7 +50,6 @@ def _persist_trend_synthesis_pass_output(
         run_id=envelope.run_id,
         pass_kind=envelope.pass_kind,
         status=envelope.status.value,
-        scope=envelope.scope,
         granularity=envelope.granularity,
         period_start=period_start,
         period_end=period_end,
@@ -296,7 +293,6 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
     upstream_pass_output_id = _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -418,7 +414,6 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
             {
                 "ref_kind": "pass_output",
                 "pass_kind": TREND_SYNTHESIS_PASS_KIND,
-                "scope": "default",
                 "granularity": "day",
                 "period_start": period_start.isoformat(),
                 "period_end": period_end.isoformat(),
@@ -462,7 +457,6 @@ def test_ideas_stage_persists_suppressed_pass_output_without_projection(
     upstream_pass_output_id = _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-suppressed",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -555,7 +549,6 @@ def test_ideas_stage_skips_llm_when_upstream_trend_corpus_is_empty(
     upstream_pass_output_id = _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-empty-corpus",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -633,7 +626,6 @@ def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
     upstream_pass_output_id = _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-ungrounded",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -745,7 +737,6 @@ def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
     _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-obsidian",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,
@@ -849,7 +840,6 @@ def test_ideas_stage_projects_searchable_idea_documents(
     _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-docs",
-        scope="default",
         granularity="day",
         period_start=period_start,
         period_end=period_end,

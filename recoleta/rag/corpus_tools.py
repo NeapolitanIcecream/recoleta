@@ -12,7 +12,6 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import semantic_search_summaries_in_period
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 _SEARCH_TEXT_TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 _SEARCH_TEXT_BACKOFF_MAX_CANDIDATES = 24
@@ -175,17 +174,12 @@ def _document_source_key(doc: Any) -> tuple[str, str | None] | None:
 def _document_visible_in_corpus(
     *,
     doc: Any,
-    scope: str,
     period_start: datetime,
     period_end: datetime,
     corpus_spec: CorpusSpec,
 ) -> bool:
     source_key = _document_source_key(doc)
     if source_key is None:
-        return False
-
-    normalized_scope = str(getattr(doc, "scope", "") or "").strip() or DEFAULT_TOPIC_STREAM
-    if normalized_scope != (str(scope or "").strip() or DEFAULT_TOPIC_STREAM):
         return False
 
     active_period_start = _coerce_utc_datetime(period_start)
@@ -367,7 +361,6 @@ def _collect_text_hits_with_backoff(
     granularity: str | None,
     period_start: datetime,
     period_end: datetime,
-    scope: str,
     limit: int,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     normalized_limit = max(1, int(limit or 1))
@@ -382,7 +375,6 @@ def _collect_text_hits_with_backoff(
             granularity=granularity,
             period_start=period_start,
             period_end=period_end,
-            scope=scope,
             limit=normalized_limit,
         )
         matched_in_candidate = False
@@ -560,7 +552,6 @@ class SearchService:
     embedding_dimensions: int | None
     embedding_batch_max_inputs: int
     embedding_batch_max_chars: int
-    scope: str = DEFAULT_TOPIC_STREAM
     metric_namespace: str | None = "pipeline.trends"
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
@@ -576,7 +567,6 @@ class SearchService:
             return None
         if not _document_visible_in_corpus(
             doc=doc,
-            scope=self.scope,
             period_start=self.period_start,
             period_end=self.period_end,
             corpus_spec=self.corpus_spec,
@@ -626,7 +616,6 @@ class SearchService:
                 period_start=self.period_start,
                 period_end=self.period_end,
                 granularity=source_granularity,
-                scope=self.scope,
                 order_by=normalized_order,
                 offset=0,
                 limit=normalized_limit,
@@ -740,7 +729,6 @@ class SearchService:
                 granularity=source_granularity,
                 period_start=self.period_start,
                 period_end=self.period_end,
-                scope=self.scope,
                 limit=normalized_limit,
             )
             for matched_query in matched_for_source:
@@ -807,7 +795,6 @@ class SearchService:
                 embedding_failure_mode=str(self.embedding_failure_mode or "continue"),
                 embedding_max_errors=int(self.embedding_max_errors or 0),
                 limit=normalized_limit,
-                scope=self.scope,
                 metric_namespace=self.metric_namespace,
                 llm_connection=self.llm_connection,
                 auto_sync_vectors=bool(self.auto_sync_vectors),

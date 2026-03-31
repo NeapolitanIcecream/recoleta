@@ -116,7 +116,7 @@ def test_daemon_start_keeps_multiple_schedule_entries_for_same_workflow(monkeypa
         ("workflow:day:interval:60:0", "interval", {"minutes": 60}),
         ("workflow:day:cron:mon:2:0:1", "cron", {"day_of_week": "mon", "hour": 2, "minute": 0}),
     ]
-    assert len({job[0] for job in scheduler.jobs}) == 2
+    assert scheduler.jobs[0][0] != scheduler.jobs[1][0]
 
 
 def test_daemon_start_preserves_sigterm_exit_code(monkeypatch) -> None:

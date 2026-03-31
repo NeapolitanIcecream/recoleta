@@ -17,7 +17,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
-from recoleta.pipeline.metrics import metric_token, scoped_trends_metric_name
+from recoleta.pipeline.metrics import metric_token
 from recoleta.pipeline.pass_runner import (
     PassDefinition,
     PassPersistSpec,
@@ -38,11 +38,11 @@ from recoleta.trend_materialize import (
     materialize_trend_note_payload,
 )
 from recoleta import trends
-from recoleta.types import DEFAULT_TOPIC_STREAM, TrendResult, utc_now
+from recoleta.types import TrendResult, utc_now
 
 
-def _trend_metric_name(name: str, *, scope: str) -> str:
-    return scoped_trends_metric_name(name, scope=scope)
+def _trend_metric_name(name: str) -> str:
+    return str(name or "").strip()
 
 
 @dataclass(slots=True)
@@ -135,11 +135,10 @@ def run_trends_stage(
     backfill: bool = False,
     backfill_mode: str = "missing",
     debug_pdf: bool = False,
-    scope: str = DEFAULT_TOPIC_STREAM,
     reuse_existing_corpus: bool = False,
 ) -> TrendResult:
     log = logger.bind(module="pipeline.trends", run_id=run_id)
-    metric_namespace = _trend_metric_name("pipeline.trends", scope=scope)
+    metric_namespace = _trend_metric_name("pipeline.trends")
     started = time.perf_counter()
     normalized_granularity = str(granularity or "").strip().lower()
     if normalized_granularity not in {"day", "week", "month"}:
@@ -151,7 +150,7 @@ def run_trends_stage(
     def record_metric(*, name: str, value: float, unit: str | None = None) -> None:
         service.repository.record_metric(
             run_id=run_id,
-            name=_trend_metric_name(name, scope=scope),
+            name=_trend_metric_name(name),
             value=value,
             unit=unit,
         )
@@ -219,7 +218,6 @@ def run_trends_stage(
                     min_relevance_score=float(
                         getattr(service.settings, "min_relevance_score", 0.0) or 0.0
                     ),
-                    scope=scope,
                 )
             except Exception as exc:
                 failed_stats = {
@@ -383,7 +381,6 @@ def run_trends_stage(
                         granularity="day",
                         period_start=day_start,
                         period_end=day_end,
-                        scope=scope,
                         order_by="event_desc",
                         offset=0,
                         limit=1,
@@ -394,8 +391,7 @@ def run_trends_stage(
                     if normalized_backfill_mode == "missing" and not is_missing:
                         backfill_skipped_total += 1
                         log.info(
-                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
-                            scope,
+                            "Trends backfill progress target={} current={} total={} substage={} action={}",
                             day.isoformat(),
                             offset + 1,
                             backfill_days_total,
@@ -404,8 +400,7 @@ def run_trends_stage(
                         )
                         continue
                     log.info(
-                        "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
-                        scope,
+                        "Trends backfill progress target={} current={} total={} substage={} action={}",
                         day.isoformat(),
                         offset + 1,
                         backfill_days_total,
@@ -421,13 +416,11 @@ def run_trends_stage(
                             llm_model=model,
                             backfill=False,
                             backfill_mode="missing",
-                            scope=scope,
                             reuse_existing_corpus=reuse_existing_corpus,
                         )
                         backfill_generated_total += 1
                         log.info(
-                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
-                            scope,
+                            "Trends backfill progress target={} current={} total={} substage={} action={}",
                             day.isoformat(),
                             offset + 1,
                             backfill_days_total,
@@ -454,7 +447,6 @@ def run_trends_stage(
                         granularity="week",
                         period_start=week_start,
                         period_end=week_end,
-                        scope=scope,
                         order_by="event_desc",
                         offset=0,
                         limit=1,
@@ -465,8 +457,7 @@ def run_trends_stage(
                     if normalized_backfill_mode == "missing" and not is_missing:
                         backfill_skipped_total += 1
                         log.info(
-                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
-                            scope,
+                            "Trends backfill progress target={} current={} total={} substage={} action={}",
                             week_start.date().isoformat(),
                             backfill_days_total,
                             "-",
@@ -476,8 +467,7 @@ def run_trends_stage(
                         cursor = (week_start + timedelta(days=7)).date()
                         continue
                     log.info(
-                        "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
-                        scope,
+                        "Trends backfill progress target={} current={} total={} substage={} action={}",
                         week_start.date().isoformat(),
                         backfill_days_total,
                         "-",
@@ -493,13 +483,11 @@ def run_trends_stage(
                             llm_model=model,
                             backfill=False,
                             backfill_mode="missing",
-                            scope=scope,
                             reuse_existing_corpus=reuse_existing_corpus,
                         )
                         backfill_generated_total += 1
                         log.info(
-                            "Trends backfill progress scope={} target={} current={} total={} substage={} action={}",
-                            scope,
+                            "Trends backfill progress target={} current={} total={} substage={} action={}",
                             week_start.date().isoformat(),
                             backfill_days_total,
                             "-",
@@ -568,7 +556,6 @@ def run_trends_stage(
                 granularity=corpus_granularity if corpus_doc_type == "trend" else None,
                 period_start=period_start,
                 period_end=period_end,
-                scope=scope,
                 order_by="event_desc",
                 offset=0,
                 limit=1,
@@ -669,8 +656,7 @@ def run_trends_stage(
             if self_similar_enabled and plan is not None:
                 overview_pack_started = time.perf_counter()
                 log.info(
-                    "Trends overview pack building scope={} granularity={} strategy={}",
-                    scope,
+                    "Trends overview pack building granularity={} strategy={}",
                     normalized_granularity,
                     str(getattr(plan, "overview_pack_strategy", "") or "").strip()
                     or "-",
@@ -697,7 +683,6 @@ def run_trends_stage(
                     min_relevance_score=float(
                         getattr(service.settings, "min_relevance_score", 0.0) or 0.0
                     ),
-                    scope=scope,
                 )
                 overview_pack_duration_ms = record_duration_metric(
                     name="pipeline.trends.overview_pack.duration_ms",
@@ -710,8 +695,7 @@ def run_trends_stage(
                     getattr(plan, "rep_source_doc_type", "item") or "item"
                 ).strip()
                 log.info(
-                    "Trends overview pack built scope={} granularity={} duration_ms={} chars={} truncated={}",
-                    scope,
+                    "Trends overview pack built granularity={} duration_ms={} chars={} truncated={}",
                     normalized_granularity,
                     overview_pack_duration_ms,
                     len(str(overview_pack_md or "")),
@@ -726,8 +710,7 @@ def run_trends_stage(
             if peer_history_enabled and plan is not None:
                 history_pack_started = time.perf_counter()
                 log.info(
-                    "Trends history pack building scope={} granularity={} window_count={}",
-                    scope,
+                    "Trends history pack building granularity={} window_count={}",
                     normalized_granularity,
                     int(getattr(plan, "peer_history_window_count", 0) or 0),
                 )
@@ -742,15 +725,13 @@ def run_trends_stage(
                         )
                         or 6000
                     ),
-                    scope=scope,
                 )
                 history_pack_duration_ms = record_duration_metric(
                     name="pipeline.trends.history.pack.duration_ms",
                     started_at=history_pack_started,
                 )
                 log.info(
-                    "Trends history pack built scope={} granularity={} duration_ms={} chars={} available_windows={} missing_windows={}",
-                    scope,
+                    "Trends history pack built granularity={} duration_ms={} chars={} available_windows={} missing_windows={}",
                     normalized_granularity,
                     history_pack_duration_ms,
                     len(str(history_pack_md or "")),
@@ -782,8 +763,7 @@ def run_trends_stage(
                     getattr(service.settings, "trends_evolution_max_signals", 5) or 5
                 )
             log.info(
-                "Trends synthesis starting scope={} granularity={} corpus_doc_type={} corpus_docs_total={} overview_pack_chars={} history_pack_chars={}",
-                scope,
+                "Trends synthesis starting granularity={} corpus_doc_type={} corpus_docs_total={} overview_pack_chars={} history_pack_chars={}",
                 normalized_granularity,
                 corpus_doc_type,
                 corpus_docs_total,
@@ -819,7 +799,6 @@ def run_trends_stage(
                 rep_source_doc_type=rep_source_doc_type,
                 evolution_max_signals=evolution_max_signals,
                 include_debug=include_debug,
-                scope=scope,
                 metric_namespace=metric_namespace,
                 llm_connection=service._llm_connection,
             )
@@ -828,8 +807,7 @@ def run_trends_stage(
                 started_at=generate_started,
             )
             log.info(
-                "Trends synthesis completed scope={} granularity={} duration_ms={} tool_calls_total={}",
-                scope,
+                "Trends synthesis completed granularity={} duration_ms={} tool_calls_total={}",
                 normalized_granularity,
                 generate_duration_ms,
                 int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0,
@@ -1025,7 +1003,6 @@ def run_trends_stage(
                         doc_type="item",
                         period_start=period_start,
                         period_end=period_end,
-                        scope=scope,
                         limit=limit,
                     )
                 except Exception:
@@ -1084,7 +1061,6 @@ def run_trends_stage(
                         getattr(service.settings, "trends_embedding_max_errors", 0) or 0
                     ),
                     limit=limit,
-                    scope=scope,
                     metric_namespace=metric_namespace,
                     llm_connection=service._llm_connection,
                 )
@@ -1208,7 +1184,6 @@ def run_trends_stage(
             trend_synthesis_diagnostics["debug"] = debug
         trend_synthesis_envelope = build_trend_synthesis_pass_output(
             run_id=run_id,
-            scope=scope,
             granularity=normalized_granularity,
             period_start=period_start,
             period_end=period_end,
@@ -1262,7 +1237,6 @@ def run_trends_stage(
                 period_start=period_start,
                 period_end=period_end,
                 payload=payload,
-                scope=scope,
                 pass_output_id=pass_output_id,
                 pass_kind=TREND_SYNTHESIS_PASS_KIND,
             )
@@ -1271,7 +1245,6 @@ def run_trends_stage(
                 payload=payload,
                 markdown_output_dir=service.settings.markdown_output_dir,
                 output_language=service.settings.llm_output_language,
-                scope=scope,
             )
 
             rewrite_occurrences_total = (

@@ -39,24 +39,21 @@ from recoleta.provenance import (
 from recoleta.site import export_trend_static_site
 from recoleta.translation import (
     localized_language_root,
-    materialize_localized_languages_for_scope,
+    materialize_localized_languages,
 )
 from recoleta.trend_materialize import materialize_trend_note_payload
 from recoleta.trends import TrendPayload, is_empty_trend_payload
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
-class MaterializeScopeSpec:
-    scope: str
+class MaterializeTargetSpec:
     output_dir: Path
     obsidian_vault_path: Path | None = None
     obsidian_base_folder: str | None = None
 
 
 @dataclass(slots=True)
-class MaterializeScopeResult:
-    scope: str
+class MaterializeOutputResult:
     output_dir: Path
     item_notes_total: int = 0
     trend_notes_total: int = 0
@@ -77,7 +74,7 @@ class MaterializeScopeResult:
 
 @dataclass(slots=True)
 class MaterializeOutputsResult:
-    scopes: list[MaterializeScopeResult]
+    output: MaterializeOutputResult
     site_manifest_path: Path | None = None
 
 
@@ -92,7 +89,7 @@ def _normalize_granularity(value: str | None) -> str | None:
     return normalized
 
 
-def _reset_managed_scope_output_dirs(output_dir: Path) -> None:
+def _reset_managed_output_dirs(output_dir: Path) -> None:
     for name in ("Inbox", "Trends", "Ideas", "Localized"):
         managed_path = output_dir / name
         if not managed_path.exists():
@@ -106,10 +103,8 @@ def _reset_managed_scope_output_dirs(output_dir: Path) -> None:
 def _materialize_idea_documents(
     *,
     repository: Any,
-    scope: str,
     granularity: str | None,
 ) -> list[Document]:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         statement = select(Document).where(Document.doc_type == "idea")
         if granularity is not None:
@@ -134,7 +129,6 @@ def _localized_output_payload(
     repository: Any,
     source_kind: str,
     source_record_id: int,
-    scope: str,
     language_code: str | None,
 ) -> dict[str, Any] | None:
     normalized_language_code = str(language_code or "").strip()
@@ -143,7 +137,6 @@ def _localized_output_payload(
     row = repository.get_localized_output(
         source_kind=source_kind,
         source_record_id=source_record_id,
-        scope=scope,
         language_code=normalized_language_code,
     )
     if row is None:
@@ -151,13 +144,10 @@ def _localized_output_payload(
     return _load_localized_payload(row=row)
 
 
-def _canonical_language_code_for_scope(
+def _canonical_language_code(
     *,
-    repository: Any,
-    scope: str,
     localization: LocalizationConfig | None,
 ) -> str | None:
-    _ = (repository, scope)
     if localization is None:
         return None
     source_language_code = str(localization.source_language_code or "").strip()
@@ -169,12 +159,10 @@ def _canonical_language_code_for_scope(
 def _localized_idea_topics(
     *,
     repository: Any,
-    scope: str,
     granularity: str,
     period_start: datetime,
     period_end: datetime,
 ) -> list[str]:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         trend_doc = session.exec(
             select(Document).where(
@@ -199,11 +187,9 @@ def _localized_idea_topics(
 def _localized_idea_payload_for_pass_output(
     *,
     repository: Any,
-    scope: str,
     row: PassOutput,
     language_code: str | None,
 ) -> dict[str, Any] | None:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     normalized_language_code = str(language_code or "").strip()
     if not normalized_language_code:
         return None
@@ -232,22 +218,20 @@ def _localized_idea_payload_for_pass_output(
         repository=repository,
         source_kind="trend_ideas",
         source_record_id=doc_id,
-        scope=scope,
         language_code=normalized_language_code,
     )
 
 
-def _materialize_localized_scope_outputs(
+def _materialize_localized_outputs(
     *,
     repository: Any,
-    scope_spec: MaterializeScopeSpec,
+    target_spec: MaterializeTargetSpec,
     granularity: str | None,
     localization: LocalizationConfig,
 ) -> None:
-    output_dir = scope_spec.output_dir.expanduser().resolve()
-    languages = materialize_localized_languages_for_scope(
+    output_dir = target_spec.output_dir.expanduser().resolve()
+    languages = materialize_localized_languages(
         repository=repository,
-        scope=scope_spec.scope,
         localization=localization,
     )
     if not languages:
@@ -255,16 +239,13 @@ def _materialize_localized_scope_outputs(
 
     item_pairs = _materialize_item_pairs(
         repository=repository,
-        scope=scope_spec.scope,
     )
     trend_documents = _materialize_trend_documents(
         repository=repository,
-        scope=scope_spec.scope,
         granularity=granularity,
     )
     idea_documents = _materialize_idea_documents(
         repository=repository,
-        scope=scope_spec.scope,
         granularity=granularity,
     )
 
@@ -286,7 +267,6 @@ def _materialize_localized_scope_outputs(
             localized_output = repository.get_localized_output(
                 source_kind="analysis",
                 source_record_id=analysis_id,
-                scope=scope_spec.scope,
                 language_code=language_code,
             )
             if localized_output is None:
@@ -320,7 +300,6 @@ def _materialize_localized_scope_outputs(
             localized_output = repository.get_localized_output(
                 source_kind="trend_synthesis",
                 source_record_id=doc_id,
-                scope=scope_spec.scope,
                 language_code=language_code,
             )
             if localized_output is None:
@@ -355,7 +334,6 @@ def _materialize_localized_scope_outputs(
                 output_language=language_code,
                 language_code=language_code,
                 item_note_href_by_url=item_note_href_by_url,
-                scope=scope_spec.scope,
             )
             write_markdown_trend_note(
                 output_dir=language_root,
@@ -383,7 +361,6 @@ def _materialize_localized_scope_outputs(
             localized_output = repository.get_localized_output(
                 source_kind="trend_ideas",
                 source_record_id=doc_id,
-                scope=scope_spec.scope,
                 language_code=language_code,
             )
             if localized_output is None:
@@ -402,7 +379,6 @@ def _materialize_localized_scope_outputs(
             )
             topics = _localized_idea_topics(
                 repository=repository,
-                scope=scope_spec.scope,
                 granularity=granularity_value,
                 period_start=period_start,
                 period_end=period_end,
@@ -418,14 +394,12 @@ def _materialize_localized_scope_outputs(
                 run_id="materialize-outputs",
                 status=str(getattr(localized_output, "status", "") or "succeeded"),
                 payload=payload,
-                scope=scope_spec.scope,
                 topics=topics,
                 language_code=language_code,
             )
 
 
-def _materialize_item_pairs(*, repository: Any, scope: str) -> list[tuple[Any, Any]]:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
+def _materialize_item_pairs(*, repository: Any) -> list[tuple[Any, Any]]:
     with Session(repository.engine) as session:
         event_at = func.coalesce(
             cast(Any, Item.published_at), cast(Any, Item.created_at)
@@ -442,10 +416,8 @@ def _materialize_item_pairs(*, repository: Any, scope: str) -> list[tuple[Any, A
 def _materialize_trend_documents(
     *,
     repository: Any,
-    scope: str,
     granularity: str | None,
 ) -> list[Document]:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         statement = select(Document).where(Document.doc_type == "trend")
         if granularity is not None:
@@ -506,10 +478,8 @@ def _load_trend_payload(
 def _materialize_idea_pass_outputs(
     *,
     repository: Any,
-    scope: str,
     granularity: str | None,
 ) -> list[PassOutput]:
-    _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
     with Session(repository.engine) as session:
         statement = select(PassOutput).where(
             PassOutput.pass_kind == "trend_ideas",
@@ -614,39 +584,34 @@ def _ideas_topics_from_upstream_pass_output(
     return [str(topic).strip() for topic in payload.topics or [] if str(topic).strip()]
 
 
-def _materialize_scope_outputs(
+def _materialize_outputs_for_target(
     *,
     repository: Any,
-    scope_spec: MaterializeScopeSpec,
+    target_spec: MaterializeTargetSpec,
     granularity: str | None,
     generate_pdf: bool,
     debug_pdf: bool,
     output_language: str | None,
     language_code: str | None,
-) -> MaterializeScopeResult:
-    output_dir = scope_spec.output_dir.expanduser().resolve()
+) -> MaterializeOutputResult:
+    output_dir = target_spec.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    _reset_managed_scope_output_dirs(output_dir)
+    _reset_managed_output_dirs(output_dir)
     obsidian_vault_path = (
-        scope_spec.obsidian_vault_path.expanduser().resolve()
-        if scope_spec.obsidian_vault_path is not None
+        target_spec.obsidian_vault_path.expanduser().resolve()
+        if target_spec.obsidian_vault_path is not None
         else None
     )
-    obsidian_base_folder = str(scope_spec.obsidian_base_folder or "").strip() or None
-    result = MaterializeScopeResult(
-        scope=scope_spec.scope,
-        output_dir=output_dir,
-    )
+    obsidian_base_folder = str(target_spec.obsidian_base_folder or "").strip() or None
+    result = MaterializeOutputResult(output_dir=output_dir)
     log = logger.bind(
-        module="materialize.outputs.scope",
-        scope=scope_spec.scope,
+        module="materialize.outputs",
         output_dir=str(output_dir),
     )
 
     item_note_href_by_url: dict[str, str] = {}
     for item, analysis in _materialize_item_pairs(
         repository=repository,
-        scope=scope_spec.scope,
     ):
         item_id = getattr(item, "id", None)
         if item_id is None:
@@ -656,7 +621,6 @@ def _materialize_scope_outputs(
             repository=repository,
             source_kind="analysis",
             source_record_id=analysis_id,
-            scope=scope_spec.scope,
             language_code=language_code,
         )
         summary_text = (
@@ -714,7 +678,6 @@ def _materialize_scope_outputs(
 
     trend_documents = _materialize_trend_documents(
         repository=repository,
-        scope=scope_spec.scope,
         granularity=granularity,
     )
     result.trend_docs_total = len(trend_documents)
@@ -725,7 +688,6 @@ def _materialize_scope_outputs(
                 repository=repository,
                 source_kind="trend_synthesis",
                 source_record_id=doc_id,
-                scope=scope_spec.scope,
                 language_code=language_code,
             )
             if localized_trend_payload is not None:
@@ -752,7 +714,6 @@ def _materialize_scope_outputs(
                 output_language=output_language,
                 language_code=language_code,
                 item_note_href_by_url=item_note_href_by_url,
-                scope=scope_spec.scope,
             )
             note_path = write_markdown_trend_note(
                 output_dir=output_dir,
@@ -868,7 +829,6 @@ def _materialize_scope_outputs(
 
     idea_pass_outputs = _materialize_idea_pass_outputs(
         repository=repository,
-        scope=scope_spec.scope,
         granularity=granularity,
     )
     result.ideas_outputs_total = len(idea_pass_outputs)
@@ -877,7 +837,6 @@ def _materialize_scope_outputs(
         try:
             localized_idea_payload = _localized_idea_payload_for_pass_output(
                 repository=repository,
-                scope=scope_spec.scope,
                 row=row,
                 language_code=language_code,
             )
@@ -935,7 +894,6 @@ def _materialize_scope_outputs(
                 run_id=str(row.run_id),
                 status=str(row.status),
                 payload=payload,
-                scope=scope_spec.scope,
                 topics=topics,
                 language_code=language_code,
             )
@@ -962,7 +920,6 @@ def _materialize_scope_outputs(
                     run_id=str(row.run_id),
                     status=str(row.status),
                     payload=payload,
-                    scope=scope_spec.scope,
                     topics=topics,
                     language_code=language_code,
                 )
@@ -976,9 +933,8 @@ def _materialize_scope_outputs(
                 )
 
     log.info(
-        "scope materialization completed stats={}",
+        "output materialization completed stats={}",
         {
-            "scope": result.scope,
             "item_notes_total": result.item_notes_total,
             "trend_notes_total": result.trend_notes_total,
             "trend_docs_total": result.trend_docs_total,
@@ -1000,7 +956,7 @@ def _materialize_scope_outputs(
 def materialize_outputs(
     *,
     repository: Any,
-    scope_specs: list[MaterializeScopeSpec],
+    target_spec: MaterializeTargetSpec,
     granularity: str | None = None,
     generate_pdf: bool = False,
     debug_pdf: bool = False,
@@ -1011,32 +967,26 @@ def materialize_outputs(
     item_export_scope: str = "linked",
 ) -> MaterializeOutputsResult:
     normalized_granularity = _normalize_granularity(granularity)
-    results: list[MaterializeScopeResult] = []
-    for scope_spec in scope_specs:
-        canonical_language_code = _canonical_language_code_for_scope(
+    canonical_language_code = _canonical_language_code(
+        localization=localization,
+    )
+    canonical_output_language = canonical_language_code or output_language
+    output = _materialize_outputs_for_target(
+        repository=repository,
+        target_spec=target_spec,
+        granularity=normalized_granularity,
+        generate_pdf=generate_pdf,
+        debug_pdf=debug_pdf,
+        output_language=canonical_output_language,
+        language_code=canonical_language_code,
+    )
+    if localization is not None:
+        _materialize_localized_outputs(
             repository=repository,
-            scope=scope_spec.scope,
+            target_spec=target_spec,
+            granularity=normalized_granularity,
             localization=localization,
         )
-        canonical_output_language = canonical_language_code or output_language
-        results.append(
-            _materialize_scope_outputs(
-                repository=repository,
-                scope_spec=scope_spec,
-                granularity=normalized_granularity,
-                generate_pdf=generate_pdf,
-                debug_pdf=debug_pdf,
-                output_language=canonical_output_language,
-                language_code=canonical_language_code,
-            )
-        )
-        if localization is not None:
-            _materialize_localized_scope_outputs(
-                repository=repository,
-                scope_spec=scope_spec,
-                granularity=normalized_granularity,
-                localization=localization,
-            )
 
     site_manifest_path: Path | None = None
     if site_input_dir is not None and site_output_dir is not None:
@@ -1062,20 +1012,17 @@ def materialize_outputs(
         ).info("site materialization completed")
 
     return MaterializeOutputsResult(
-        scopes=results,
+        output=output,
         site_manifest_path=site_manifest_path,
     )
 
 
-def default_scope_specs_for_settings(*, settings: Any) -> list[MaterializeScopeSpec]:
-    return [
-        MaterializeScopeSpec(
-            scope=DEFAULT_TOPIC_STREAM,
-            output_dir=Path(settings.markdown_output_dir),
-            obsidian_vault_path=getattr(settings, "obsidian_vault_path", None),
-            obsidian_base_folder=str(
-                getattr(settings, "obsidian_base_folder", "") or ""
-            )
-            or None,
+def default_target_spec_for_settings(*, settings: Any) -> MaterializeTargetSpec:
+    return MaterializeTargetSpec(
+        output_dir=Path(settings.markdown_output_dir),
+        obsidian_vault_path=getattr(settings, "obsidian_vault_path", None),
+        obsidian_base_folder=str(
+            getattr(settings, "obsidian_base_folder", "") or ""
         )
-    ]
+        or None,
+    )

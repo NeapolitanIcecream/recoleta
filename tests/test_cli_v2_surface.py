@@ -35,18 +35,11 @@ def test_removed_cli_entrypoints_show_direct_replacements_or_fail_closed() -> No
 
     site_result = runner.invoke(recoleta.cli.app, ["site", "gh-deploy"])
     materialize_result = runner.invoke(recoleta.cli.app, ["materialize", "outputs"])
-    repair_result = runner.invoke(
-        recoleta.cli.app,
-        ["repair", "streams", "--date", "2026-03-16", "--streams", "agents_lab"],
-    )
 
     assert site_result.exit_code == 2
     assert "run deploy" in site_result.stdout
     assert materialize_result.exit_code == 2
     assert "repair outputs" in materialize_result.stdout
-    assert repair_result.exit_code == 2
-    assert "no longer supported" in repair_result.stdout
-    assert "topic-streams-to-instances" not in repair_result.stdout
 
 
 def test_repair_help_hides_legacy_streams_entrypoint() -> None:
@@ -68,7 +61,7 @@ def test_admin_help_hides_removed_migrate_group() -> None:
     assert "migrate" not in result.stdout
 
 
-def test_legacy_translate_help_matches_instance_first_scope_contract() -> None:
+def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
     runner = CliRunner()
 
     run_result = runner.invoke(recoleta.cli.app, ["translate", "run", "--help"])
@@ -78,11 +71,9 @@ def test_legacy_translate_help_matches_instance_first_scope_contract() -> None:
     )
 
     assert run_result.exit_code == 0
-    assert "Instance-local" in run_result.stdout
-    assert "instance-first" in run_result.stdout
+    assert "--scope" not in run_result.stdout
     assert backfill_result.exit_code == 0
-    assert "Instance-local" in backfill_result.stdout
-    assert "instance-first" in backfill_result.stdout
+    assert "--scope" not in backfill_result.stdout
 
 
 @pytest.mark.parametrize(

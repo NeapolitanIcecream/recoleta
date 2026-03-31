@@ -95,7 +95,6 @@ def test_write_markdown_ideas_note_deduplicates_evidence_refs_by_document(
                 ],
             }
         ),
-        scope="default",
         topics=["agents"],
     )
 

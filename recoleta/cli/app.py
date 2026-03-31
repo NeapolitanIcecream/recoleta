@@ -8,7 +8,6 @@ from typing import Any
 from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
 from recoleta.cli.db import (
-    run_db_cleanup_instance_first_schema_command,
     run_db_clear_command,
     run_db_reset_command,
 )
@@ -575,11 +574,6 @@ def run_translate(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option(
-        "default",
-        "--scope",
-        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
-    ),
     granularity: str | None = typer.Option(
         None,
         "--granularity",
@@ -616,7 +610,6 @@ def run_translate(
     run_translate_run_command(
         db_path=db_path,
         config_path=config_path,
-        scope=scope,
         granularity=granularity,
         include=include,
         limit=limit,
@@ -898,11 +891,6 @@ def inspect_why_empty(
         "--granularity",
         help="Corpus window granularity. Allowed: day, week, month.",
     ),
-    stream: str = typer.Option(
-        "default",
-        "--stream",
-        help="Topic stream / scope to inspect. Use default for the default corpus.",
-    ),
     min_relevance_score: float | None = typer.Option(
         None,
         "--min-relevance-score",
@@ -930,7 +918,6 @@ def inspect_why_empty(
         config_path=config_path,
         anchor_date=anchor_date,
         granularity=granularity,
-        stream=stream,
         min_relevance_score=min_relevance_score,
         json_output=json_output,
         command_name="inspect why-empty",
@@ -1032,18 +1019,6 @@ def inspect_runs_list(
     )
 
 
-@repair_app.command("streams", hidden=True)
-def repair_streams(
-    _anchor_date: str = typer.Option(..., "--date", help="Target UTC day to repair (YYYY-MM-DD or YYYYMMDD)."),
-    _streams: str = typer.Option(..., "--streams", help="Comma-separated topic stream names to requeue for analysis."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON instead of human-readable text."),
-    _db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    _config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-) -> None:
-    """Legacy compatibility entrypoint retained only to fail closed."""
-    _legacy_error(command="repair streams", json_output=json_output)
-
-
 @repair_app.command("outputs")
 def repair_outputs(
     db_path: Path | None = typer.Option(
@@ -1073,11 +1048,6 @@ def repair_outputs(
         resolve_path=True,
         help="Markdown output root to rewrite for one standalone instance or one child instance.",
     ),
-    scope: str = typer.Option(
-        "default",
-        "--scope",
-        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
-    ),
     granularity: str | None = typer.Option(
         None,
         "--granularity",
@@ -1094,7 +1064,6 @@ def repair_outputs(
         db_path=db_path,
         config_path=config_path,
         output_dir=output_dir,
-        scope=scope,
         granularity=granularity,
         pdf=pdf,
         site=site,
@@ -1213,11 +1182,6 @@ def stage_translate_run(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option(
-        "default",
-        "--scope",
-        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
-    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea translations to day, week, or month windows."),
     include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to translate: items, trends, ideas."),
     limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
@@ -1229,7 +1193,6 @@ def stage_translate_run(
     run_translate_run_command(
         db_path=db_path,
         config_path=config_path,
-        scope=scope,
         granularity=granularity,
         include=include,
         limit=limit,
@@ -1260,11 +1223,6 @@ def stage_translate_backfill(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    scope: str = typer.Option(
-        "default",
-        "--scope",
-        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
-    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea backfill to day, week, or month windows."),
     include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to backfill: items, trends, ideas."),
     limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
@@ -1279,7 +1237,6 @@ def stage_translate_backfill(
     run_translate_backfill_command(
         db_path=db_path,
         config_path=config_path,
-        scope=scope,
         granularity=granularity,
         include=include,
         limit=limit,
@@ -1366,11 +1323,6 @@ def stage_materialize(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="SQLite database path."),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="Optional YAML/JSON config path used to resolve the database and default output directories."),
     output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Markdown output root to rewrite for one standalone instance or one child instance."),
-    scope: str = typer.Option(
-        "default",
-        "--scope",
-        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
-    ),
     granularity: str | None = typer.Option(None, "--granularity", help="Optionally rerender only day, week, or month trend notes."),
     pdf: bool = typer.Option(False, "--pdf/--no-pdf", help="Regenerate trend PDFs from the rerendered markdown notes."),
     site: bool = typer.Option(False, "--site/--no-site", help="Rebuild the static site after markdown outputs are materialized."),
@@ -1383,7 +1335,6 @@ def stage_materialize(
         db_path=db_path,
         config_path=config_path,
         output_dir=output_dir,
-        scope=scope,
         granularity=granularity,
         pdf=pdf,
         site=site,
@@ -1475,35 +1426,10 @@ def admin_db_reset(
     )
 
 
-@admin_db_app.command("cleanup-instance-first-schema")
-def admin_db_cleanup_instance_first_schema(
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm dropping legacy stream-state tables."),
-    json_output: bool = typer.Option(False, "--json"),
-) -> None:
-    """Drop legacy stream-state tables after instance-first cutover."""
-    run_db_cleanup_instance_first_schema_command(
-        db_path=db_path,
-        config_path=config_path,
-        yes=yes,
-        json_output=json_output,
-    )
-
-
 # Hidden legacy commands and groups that should fail cleanly.
 @app.command("trends-week", hidden=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def legacy_trends_week(ctx: Context) -> None:  # noqa: ARG001
     _legacy_error(command="trends-week", replacement="run week --date <YYYY-MM-DD>")
-
-
-@app.command("repair-streams", hidden=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def legacy_repair_streams(
-    ctx: Context,  # noqa: ARG001
-    json_output: bool = typer.Option(False, "--json", hidden=True),
-) -> None:
-    _legacy_error(command="repair-streams", json_output=json_output)
-
 
 @materialize_app.command("outputs", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def legacy_materialize_outputs(
@@ -1710,11 +1636,6 @@ def legacy_site_serve(
 def legacy_translate_run(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    scope: str = typer.Option(
-        "default",
-        "--scope",
-        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
-    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),
@@ -1725,7 +1646,6 @@ def legacy_translate_run(
     run_translate_run_command(
         db_path=db_path,
         config_path=config_path,
-        scope=scope,
         granularity=granularity,
         include=include,
         limit=limit,
@@ -1739,11 +1659,6 @@ def legacy_translate_run(
 def legacy_translate_backfill(
     db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
     config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    scope: str = typer.Option(
-        "default",
-        "--scope",
-        help="Instance-local scope. Must stay 'default' in instance-first runtime.",
-    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),
@@ -1757,7 +1672,6 @@ def legacy_translate_backfill(
     run_translate_backfill_command(
         db_path=db_path,
         config_path=config_path,
-        scope=scope,
         granularity=granularity,
         include=include,
         limit=limit,
@@ -1822,7 +1736,6 @@ def legacy_doctor(
 def legacy_doctor_why_empty(
     anchor_date: str = typer.Option(..., "--date"),
     granularity: str = typer.Option("day", "--granularity"),
-    stream: str = typer.Option("default", "--stream"),
     min_relevance_score: float | None = typer.Option(None, "--min-relevance-score"),
     json_output: bool = typer.Option(False, "--json"),
     db_path: Path | None = typer.Option(None, "--db-path"),
@@ -1833,7 +1746,6 @@ def legacy_doctor_why_empty(
         config_path=config_path,
         anchor_date=anchor_date,
         granularity=granularity,
-        stream=stream,
         min_relevance_score=min_relevance_score,
         json_output=json_output,
     )

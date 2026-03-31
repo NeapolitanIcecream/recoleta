@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from scripts import eval_trends_agent_loop as harness
 from recoleta.storage import Repository
 
@@ -20,7 +22,6 @@ def test_load_eval_windows_normalizes_topics(tmp_path: Path) -> None:
                         "id": "week-agents",
                         "granularity": "week",
                         "anchor_date": "2026-03-05",
-                        "stream": " default ",
                         "topics": [" Agents ", "evaluation", ""],
                         "notes": "  weekly baseline  ",
                     }
@@ -34,7 +35,6 @@ def test_load_eval_windows_normalizes_topics(tmp_path: Path) -> None:
 
     assert len(windows) == 1
     assert windows[0].window_id == "week-agents"
-    assert windows[0].stream == "default"
     assert windows[0].topics == ["agents", "evaluation"]
     assert windows[0].notes == "weekly baseline"
 
@@ -45,7 +45,6 @@ def test_build_eval_manifest_includes_trends_commands_and_artifacts(tmp_path: Pa
             window_id="day-agents",
             granularity="day",
             anchor_date="2026-03-05",
-            stream="default",
             topics=["agents"],
             notes="daily baseline",
         ),
@@ -53,7 +52,6 @@ def test_build_eval_manifest_includes_trends_commands_and_artifacts(tmp_path: Pa
             window_id="week-agents",
             granularity="week",
             anchor_date="2026-03-05",
-            stream="default",
             topics=["agents"],
             notes="weekly baseline",
         ),
@@ -83,7 +81,6 @@ def test_default_eval_fixture_is_valid() -> None:
     windows = harness.load_eval_windows(fixture_path)
 
     assert [window.granularity for window in windows] == ["day", "week"]
-    assert all(window.stream == "software_intelligence" for window in windows)
 
 
 def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
@@ -92,7 +89,6 @@ def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
             window_id="month-agents",
             granularity="month",
             anchor_date="2026-03-12",
-            stream="default",
             topics=["agents", "evaluation"],
             notes="monthly baseline",
         )
@@ -116,7 +112,6 @@ def test_render_eval_runbook_sh_includes_window_commands(tmp_path: Path) -> None
             window_id="week-agents",
             granularity="week",
             anchor_date="2026-03-05",
-            stream="default",
             topics=["agents"],
             notes="weekly baseline",
         )
@@ -172,7 +167,6 @@ def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Pa
                 window_id="week-agents",
                 granularity="week",
                 anchor_date="2026-03-05",
-                stream="default",
                 topics=["agents"],
                 notes="weekly baseline",
             )
@@ -235,10 +229,9 @@ def test_capture_existing_trends_baseline_reuses_existing_docs(
         out_dir=tmp_path / "bench-out",
         windows=[
             harness.EvalWindow(
-                window_id="week-2026-w10-software-intelligence",
+                window_id="week-2026-w10",
                 granularity="week",
                 anchor_date="2026-03-05",
-                stream="software_intelligence",
                 topics=["agents"],
                 notes="weekly baseline",
             )
@@ -247,7 +240,6 @@ def test_capture_existing_trends_baseline_reuses_existing_docs(
 
     fake_document = SimpleNamespace(
         id=285,
-        scope="software_intelligence",
         granularity="week",
         period_start=datetime(2026, 3, 2),
         period_end=datetime(2026, 3, 9),
@@ -315,7 +307,6 @@ def test_write_window_capture_failure_artifacts_records_error_context(tmp_path: 
                 window_id="day-agents",
                 granularity="day",
                 anchor_date="2026-03-05",
-                stream="default",
                 topics=["agents"],
                 notes="daily baseline",
             )
@@ -356,7 +347,6 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
                 window_id="week-agents",
                 granularity="week",
                 anchor_date="2026-03-05",
-                stream="default",
                 topics=["agents"],
                 notes="weekly baseline",
             )
@@ -514,7 +504,6 @@ def test_capture_eval_baseline_records_failed_window_when_stage_raises(
                 window_id="day-agents",
                 granularity="day",
                 anchor_date="2026-03-05",
-                stream="default",
                 topics=["agents"],
                 notes="daily baseline",
             )
@@ -556,153 +545,27 @@ def test_capture_eval_baseline_records_failed_window_when_stage_raises(
     assert capture_summary["error"]["type"] == "RuntimeError"
 
 
-def test_run_window_trends_capture_targets_requested_topic_stream(monkeypatch) -> None:
-    from recoleta.pipeline import trends_stage as trends_stage_module
-
-    called: dict[str, Any] = {}
-
+def test_run_window_trends_capture_rejects_non_default_stream_window() -> None:
     class _FakeService:
-        def __init__(
-            self,
-            *,
-            settings: Any | None = None,
-            repository: Any | None = None,
-            analyzer: Any | None = None,
-            triage: Any | None = None,
-            telegram_sender: Any | None = None,
-        ) -> None:
-            self.settings = settings
-            self.repository = repository or object()
-            self.analyzer = analyzer or object()
-            self.semantic_triage = triage or object()
-            self._topic_streams = [
-                SimpleNamespace(name="embodied_ai", publish_targets=["markdown"]),
-                SimpleNamespace(
-                    name="software_intelligence", publish_targets=["markdown"]
-                ),
-            ]
-            self._explicit_topic_streams = True
-            self.telegram_sender = telegram_sender
+        def trends(self, **kwargs: Any) -> Any:  # pragma: no cover
+            raise AssertionError(f"unexpected trends call: {kwargs}")
 
-        def _settings_for_topic_stream(self, stream: Any) -> Any:
-            return SimpleNamespace(scope=stream.name)
-
-        def _telegram_sender_for_stream(self, stream: Any) -> Any:  # noqa: ARG002
-            return None
-
-    def _fake_run_trends_stage(service: Any, **kwargs: Any) -> Any:
-        called["service_scope"] = getattr(service.settings, "scope", None)
-        called.update(kwargs)
-        return SimpleNamespace(doc_id=99)
-
-    monkeypatch.setattr(trends_stage_module, "run_trends_stage", _fake_run_trends_stage)
-
-    result = harness._run_window_trends_capture(
-        _FakeService(),
-        stage_run_id="run-stream-window",
-        window_manifest={
-            "granularity": "week",
-            "anchor_date": "2026-03-05",
-            "stream": "software_intelligence",
-        },
-        llm_model="test/fake-model",
-        reuse_existing_corpus=True,
-        backfill=False,
-    )
-
-    assert result.doc_id == 99
-    assert called["service_scope"] == "software_intelligence"
-    assert called["scope"] == "software_intelligence"
-    assert called["reuse_existing_corpus"] is True
-    assert called["backfill"] is False
-
-
-def test_run_window_trends_capture_explicit_stream_preserves_eval_publish_overrides(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    from recoleta.pipeline import trends_stage as trends_stage_module
-
-    captured: dict[str, Any] = {}
-
-    class _FakeSettings:
-        def __init__(self, **kwargs: Any) -> None:
-            self.__dict__.update(kwargs)
-
-        def model_copy(self, *, update: dict[str, Any]) -> "_FakeSettings":
-            data = dict(self.__dict__)
-            data.update(update)
-            return _FakeSettings(**data)
-
-    class _FakeService:
-        def __init__(
-            self,
-            *,
-            settings: Any | None = None,
-            repository: Any | None = None,
-            analyzer: Any | None = None,
-            triage: Any | None = None,
-            telegram_sender: Any | None = None,
-        ) -> None:
-            self.settings = settings or _FakeSettings(
-                scope="default",
-                publish_targets=["markdown"],
-                markdown_output_dir=tmp_path / "eval-markdown",
-                artifacts_dir=tmp_path / "eval-artifacts",
-                write_debug_artifacts=True,
-            )
-            self.repository = repository or object()
-            self.analyzer = analyzer or object()
-            self.semantic_triage = triage or object()
-            self._topic_streams = [
-                SimpleNamespace(
-                    name="software_intelligence",
-                    publish_targets=["telegram"],
-                    markdown_output_dir=tmp_path / "unsafe-stream-output",
-                )
-            ]
-            self._explicit_topic_streams = True
-            self.telegram_sender = telegram_sender
-
-        def _settings_for_topic_stream(self, stream: Any) -> Any:
-            return _FakeSettings(
-                scope=stream.name,
-                publish_targets=list(getattr(stream, "publish_targets", []) or []),
-                markdown_output_dir=getattr(stream, "markdown_output_dir", None),
-                artifacts_dir=tmp_path / "unsafe-artifacts",
-                write_debug_artifacts=False,
-            )
-
-        def _telegram_sender_for_stream(self, stream: Any) -> Any:  # noqa: ARG002
-            return "unsafe-telegram-sender"
-
-    def _fake_run_trends_stage(service: Any, **kwargs: Any) -> Any:
-        captured["service"] = service
-        captured.update(kwargs)
-        return SimpleNamespace(doc_id=101)
-
-    monkeypatch.setattr(trends_stage_module, "run_trends_stage", _fake_run_trends_stage)
-
-    result = harness._run_window_trends_capture(
-        _FakeService(),
-        stage_run_id="run-stream-window-safe",
-        window_manifest={
-            "granularity": "week",
-            "anchor_date": "2026-03-05",
-            "stream": "software_intelligence",
-        },
-        llm_model="test/fake-model",
-        reuse_existing_corpus=True,
-        backfill=False,
-    )
-
-    assert result.doc_id == 101
-    child_service = captured["service"]
-    assert child_service.settings.publish_targets == ["markdown"]
-    assert child_service.settings.markdown_output_dir == tmp_path / "eval-markdown"
-    assert child_service.settings.artifacts_dir == tmp_path / "eval-artifacts"
-    assert child_service.settings.write_debug_artifacts is True
-    assert child_service.telegram_sender is None
+    with pytest.raises(
+        ValueError,
+        match="non-default eval windows are unsupported",
+    ):
+        harness._run_window_trends_capture(
+            _FakeService(),
+            stage_run_id="run-stream-window",
+            window_manifest={
+                "granularity": "week",
+                "anchor_date": "2026-03-05",
+                "stream": "software_intelligence",
+            },
+            llm_model="test/fake-model",
+            reuse_existing_corpus=True,
+            backfill=False,
+        )
 
 
 def test_prepare_isolated_eval_runtime_clones_db_and_lancedb(
@@ -758,7 +621,6 @@ def test_main_with_capture_baseline_emits_summary_path(
                         "id": "week-agents",
                         "granularity": "week",
                         "anchor_date": "2026-03-05",
-                        "stream": "default",
                         "topics": ["agents"],
                         "notes": "weekly baseline",
                     }
@@ -832,7 +694,6 @@ def test_main_with_live_workspace_disables_runtime_isolation(
                         "id": "day-agents",
                         "granularity": "day",
                         "anchor_date": "2026-03-05",
-                        "stream": "default",
                         "topics": ["agents"],
                         "notes": "daily baseline",
                     }

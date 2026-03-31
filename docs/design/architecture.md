@@ -28,10 +28,10 @@ Recoleta is a CLI-first application with a small set of commands:
 
 Legacy note:
 
-- `recoleta repair streams` belonged to the older shared `topic_streams`
-  runtime. The instance-first runtime replaces that flow with child-instance
+- the older shared `topic_streams` runtime exposed `recoleta repair streams`
+- the current instance-first runtime replaces that flow with child-instance
   configs, targeted `stage ...` reruns, and `repair outputs` when the DB is
-  already correct.
+  already correct
 
 ## Module boundaries
 
@@ -42,7 +42,7 @@ Current module layout:
 - `recoleta/cli.py`: compatibility shim that re-exports the package CLI entry points
 - `recoleta/config.py`: typed config, env loading, validation
 - `recoleta/sources.py`: source connectors and incremental pull-state helpers (watermarks, ETag, Last-Modified)
-- `recoleta/pipeline/`: orchestration, stage implementations, topic-stream handling, metrics, and managed artifacts
+- `recoleta/pipeline/`: orchestration, stage implementations, metrics, and managed artifacts
 - `recoleta/pipeline.py`: compatibility shim that re-exports pipeline service symbols
 - `recoleta/extract.py`: fulltext extraction (HTML/PDF), HTML cleanup, and Markdown conversion
 - `recoleta/analyzer.py`: LLM invocation via LiteLLM and PydanticAI
@@ -180,7 +180,7 @@ Operational guidance:
 
 Trend generation is a sibling pipeline, not just an extra publish target:
 
-- `recoleta trends` builds or refreshes a scoped document corpus (`documents` + `document_chunks`) from analyzed items or lower-granularity trend docs.
+- `recoleta trends` builds or refreshes a document corpus (`documents` + `document_chunks`) from analyzed items or lower-granularity trend docs.
 - Semantic search uses a local LanceDB workspace to retrieve related summaries and representative sources for clusters.
 - Optional overview packs (`TRENDS_SELF_SIMILAR_ENABLED`) and bounded peer-history packs (`TRENDS_PEER_HISTORY_ENABLED`) are injected into the trend agent prompt before the final payload is materialized.
 - `recoleta repair outputs` can rerender canonical markdown notes, PDFs, and
@@ -235,7 +235,7 @@ Recoleta persists state in two places:
 SQLite enables:
 - incremental runs (process only new/changed items)
 - persisted source pull state (watermarks, cursors, conditional request metadata)
-- scoped analyses/documents for topic streams and trend corpora
+- latest analyses, documents, chunks, deliveries, and run metadata for one child instance
 - delivery idempotency
 - auditing and re-processing
 

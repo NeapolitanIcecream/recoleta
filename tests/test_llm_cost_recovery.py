@@ -4,8 +4,7 @@ import json
 from typing import Any
 
 import pytest
-from litellm import completion_cost
-from litellm.cost_calculator import cost_per_token
+from litellm.cost_calculator import completion_cost, cost_per_token
 
 import recoleta.analyzer as analyzer_module
 import recoleta.cli.maintenance as maintenance_cli
@@ -53,12 +52,12 @@ def _litellm_like_response(
 
 
 def _expected_cost_usd(*, model: str, prompt_tokens: int, completion_tokens: int) -> float:
-    prompt_cost, completion_cost = cost_per_token(
+    prompt_cost, completion_cost_usd = cost_per_token(
         model=model,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
     )
-    return float(prompt_cost) + float(completion_cost)
+    return float(prompt_cost) + float(completion_cost_usd)
 
 
 def _expected_response_cost_usd(*, response: dict[str, Any], model: str) -> float:

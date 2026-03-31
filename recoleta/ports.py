@@ -92,22 +92,11 @@ class RepositoryPort(Protocol):
         artifact_path: str | None = None,
     ) -> tuple[Content, bool]: ...
 
-    def list_items_for_stream_analysis(
-        self,
-        *,
-        stream: str,
-        limit: int,
-        selected_only: bool = False,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
-    ) -> list[Item]: ...
-
     def save_analysis(
         self,
         *,
         item_id: int,
         result: AnalysisResult,
-        scope: str = "default",
         mirror_item_state: bool = True,
     ) -> Analysis: ...
 
@@ -116,15 +105,6 @@ class RepositoryPort(Protocol):
     def mark_item_enriched(self, *, item_id: int) -> None: ...
 
     def mark_item_triaged(self, *, item_id: int) -> None: ...
-
-    def mark_item_stream_state(
-        self,
-        *,
-        item_id: int,
-        stream: str,
-        state: str,
-        mirror_item_state: bool = False,
-    ) -> None: ...
 
     def mark_item_failed(self, *, item_id: int) -> None: ...
 
@@ -137,7 +117,6 @@ class RepositoryPort(Protocol):
         *,
         limit: int,
         min_relevance_score: float,
-        scope: str = "default",
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
@@ -206,7 +185,6 @@ class RepositoryPort(Protocol):
         run_id: str,
         pass_kind: str,
         status: str,
-        scope: str = "default",
         granularity: str | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
@@ -223,7 +201,6 @@ class RepositoryPort(Protocol):
         self,
         *,
         pass_kind: str,
-        scope: str = "default",
         status: str | None = None,
         granularity: str | None = None,
         period_start: datetime | None = None,
@@ -240,12 +217,9 @@ class RepositoryPort(Protocol):
         period_end: datetime,
         limit: int,
         offset: int = 0,
-        scope: str = "default",
     ) -> list[tuple[Item, Analysis]]: ...
 
-    def upsert_document_for_item(
-        self, *, item: Item, scope: str = "default"
-    ) -> Document: ...
+    def upsert_document_for_item(self, *, item: Item) -> Document: ...
 
     def upsert_document_for_trend(
         self,
@@ -254,7 +228,6 @@ class RepositoryPort(Protocol):
         period_start: datetime,
         period_end: datetime,
         title: str,
-        scope: str = "default",
     ) -> Document: ...
 
     def upsert_document_for_idea(
@@ -264,7 +237,6 @@ class RepositoryPort(Protocol):
         period_start: datetime,
         period_end: datetime,
         title: str,
-        scope: str = "default",
     ) -> Document: ...
 
     def upsert_document_chunk(
@@ -294,7 +266,6 @@ class RepositoryPort(Protocol):
         period_start: datetime,
         period_end: datetime,
         granularity: str | None = None,
-        scope: str = "default",
         order_by: str = "event_desc",
         offset: int = 0,
         limit: int = 50,
@@ -316,7 +287,6 @@ class RepositoryPort(Protocol):
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
-        scope: str = "default",
         limit: int = 10,
     ) -> list[dict[str, Any]]: ...
 
@@ -326,7 +296,6 @@ class RepositoryPort(Protocol):
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
-        scope: str = "default",
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]: ...
@@ -338,7 +307,6 @@ class RepositoryPort(Protocol):
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
-        scope: str = "default",
         limit: int = 500,
         offset: int = 0,
     ) -> list[dict[str, Any]]: ...
@@ -358,16 +326,6 @@ class AnalysisRepositoryPort(Protocol):
         period_end: datetime | None = None,
     ) -> list[Item]: ...
 
-    def list_items_for_stream_analysis(
-        self,
-        *,
-        stream: str,
-        limit: int,
-        selected_only: bool = False,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
-    ) -> list[Item]: ...
-
     def get_latest_content_texts(
         self, *, item_id: int, content_types: list[str]
     ) -> dict[str, str | None]: ...
@@ -377,18 +335,8 @@ class AnalysisRepositoryPort(Protocol):
         *,
         item_id: int,
         result: AnalysisResult,
-        scope: str = "default",
         mirror_item_state: bool = True,
     ) -> Analysis: ...
-
-    def mark_item_stream_state(
-        self,
-        *,
-        item_id: int,
-        stream: str,
-        state: str,
-        mirror_item_state: bool = False,
-    ) -> None: ...
 
     def mark_item_failed(self, *, item_id: int) -> None: ...
 
@@ -410,7 +358,6 @@ class AnalysisRepositoryPort(Protocol):
         run_id: str,
         pass_kind: str,
         status: str,
-        scope: str = "default",
         granularity: str | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
@@ -427,7 +374,6 @@ class AnalysisRepositoryPort(Protocol):
         self,
         *,
         pass_kind: str,
-        scope: str = "default",
         status: str | None = None,
         granularity: str | None = None,
         period_start: datetime | None = None,
@@ -445,7 +391,6 @@ class PublishRepositoryPort(Protocol):
         *,
         limit: int,
         min_relevance_score: float,
-        scope: str = "default",
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
@@ -466,15 +411,6 @@ class PublishRepositoryPort(Protocol):
     ) -> Delivery: ...
 
     def mark_item_published(self, *, item_id: int) -> None: ...
-
-    def mark_item_stream_state(
-        self,
-        *,
-        item_id: int,
-        stream: str,
-        state: str,
-        mirror_item_state: bool = False,
-    ) -> None: ...
 
     def add_artifact(
         self,
@@ -504,12 +440,9 @@ class TrendRepositoryPort(Protocol):
         period_end: datetime,
         limit: int,
         offset: int = 0,
-        scope: str = "default",
     ) -> list[tuple[Item, Analysis]]: ...
 
-    def upsert_document_for_item(
-        self, *, item: Item, scope: str = "default"
-    ) -> Document: ...
+    def upsert_document_for_item(self, *, item: Item) -> Document: ...
 
     def upsert_document_for_trend(
         self,
@@ -518,7 +451,6 @@ class TrendRepositoryPort(Protocol):
         period_start: datetime,
         period_end: datetime,
         title: str,
-        scope: str = "default",
     ) -> Document: ...
 
     def upsert_document_for_idea(
@@ -528,7 +460,6 @@ class TrendRepositoryPort(Protocol):
         period_start: datetime,
         period_end: datetime,
         title: str,
-        scope: str = "default",
     ) -> Document: ...
 
     def upsert_document_chunk(
@@ -558,7 +489,6 @@ class TrendRepositoryPort(Protocol):
         period_start: datetime,
         period_end: datetime,
         granularity: str | None = None,
-        scope: str = "default",
         order_by: str = "event_desc",
         offset: int = 0,
         limit: int = 50,
@@ -580,7 +510,6 @@ class TrendRepositoryPort(Protocol):
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
-        scope: str = "default",
         limit: int = 10,
     ) -> list[dict[str, Any]]: ...
 
@@ -590,7 +519,6 @@ class TrendRepositoryPort(Protocol):
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
-        scope: str = "default",
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]: ...
@@ -602,7 +530,6 @@ class TrendRepositoryPort(Protocol):
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
-        scope: str = "default",
         limit: int = 500,
         offset: int = 0,
     ) -> list[dict[str, Any]]: ...
@@ -637,7 +564,6 @@ class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
         run_id: str,
         pass_kind: str,
         status: str,
-        scope: str = "default",
         granularity: str | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
@@ -654,7 +580,6 @@ class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
         self,
         *,
         pass_kind: str,
-        scope: str = "default",
         status: str | None = None,
         granularity: str | None = None,
         period_start: datetime | None = None,

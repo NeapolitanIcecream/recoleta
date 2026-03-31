@@ -173,12 +173,10 @@ def test_materialize_trend_note_payload_localizes_history_window_titles_when_ava
             clusters=[],
             highlights=[],
         ),
-        scope="software_intelligence",
     )
     repository.upsert_localized_output(
         source_kind="trend_synthesis",
         source_record_id=doc_id,
-        scope="software_intelligence",
         language_code="en",
         status="succeeded",
         source_hash="history-doc-hash",
@@ -221,7 +219,6 @@ def test_materialize_trend_note_payload_localizes_history_window_titles_when_ava
         markdown_output_dir=tmp_path,
         output_language="English",
         language_code="en",
-        scope="software_intelligence",
     )
 
     assert materialized.history_window_refs == {

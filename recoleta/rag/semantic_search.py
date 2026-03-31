@@ -13,7 +13,6 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.embeddings import LiteLLMEmbedder, iter_embedding_batches
 from recoleta.rag.vector_store import LanceVectorStore, VectorRow
-from recoleta.types import DEFAULT_TOPIC_STREAM
 
 
 @dataclass(slots=True)
@@ -40,7 +39,6 @@ class _SummaryCorpusCacheKey:
     embedding_max_errors: int
     limit: int
     offset: int
-    scope: str
     vector_store_dir: str
     vector_store_table: str
 
@@ -73,7 +71,6 @@ def _summary_corpus_cache_key(
     embedding_max_errors: int,
     limit: int,
     offset: int,
-    scope: str,
 ) -> _SummaryCorpusCacheKey:
     return _SummaryCorpusCacheKey(
         run_id=str(run_id or "").strip(),
@@ -91,7 +88,6 @@ def _summary_corpus_cache_key(
         embedding_max_errors=int(embedding_max_errors or 0),
         limit=int(limit),
         offset=int(offset),
-        scope=str(scope or "").strip(),
         vector_store_dir=str(getattr(vector_store, "db_dir", "")),
         vector_store_table=str(getattr(vector_store, "table_name", "")),
     )
@@ -141,7 +137,6 @@ def ensure_summary_vectors_for_period(
     embedding_max_errors: int = 0,
     limit: int = 500,
     offset: int = 0,
-    scope: str = DEFAULT_TOPIC_STREAM,
     llm_connection: LLMConnectionConfig | None = None,
 ) -> dict[str, Any]:
     """Ensure summary chunks in period have vectors in LanceDB (idempotent by text_hash)."""
@@ -174,7 +169,6 @@ def ensure_summary_vectors_for_period(
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
-        scope=scope,
         limit=limit,
         offset=offset,
     )
@@ -366,7 +360,6 @@ def semantic_search_summaries_in_period(
     embedding_max_errors: int = 0,
     limit: int = 10,
     corpus_limit: int = 500,
-    scope: str = DEFAULT_TOPIC_STREAM,
     metric_namespace: str | None = None,
     llm_connection: LLMConnectionConfig | None = None,
     auto_sync_vectors: bool = True,
@@ -411,7 +404,6 @@ def semantic_search_summaries_in_period(
             embedding_max_errors=embedding_max_errors,
             limit=corpus_limit,
             offset=0,
-            scope=scope,
         )
         with _summary_corpus_cache_lock:
             cached_stats = _summary_corpus_cache.get(cache_key)
@@ -436,7 +428,6 @@ def semantic_search_summaries_in_period(
                 embedding_max_errors=embedding_max_errors,
                 limit=corpus_limit,
                 offset=0,
-                scope=scope,
                 llm_connection=llm_connection,
             )
             if _should_cache_summary_index_stats(fresh_index_stats):
@@ -455,7 +446,6 @@ def semantic_search_summaries_in_period(
             granularity=granularity,
             period_start=period_start,
             period_end=period_end,
-            scope=scope,
             limit=corpus_limit,
             offset=0,
         )

@@ -46,11 +46,11 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading surfaces derived from canonical outputs
 - `site/`: optional derived static site output from `recoleta run site build`
 
-Legacy shared-stream layout:
+Historical note:
 
-- `Streams/<stream>/Inbox/`
-- `Streams/<stream>/Trends/`
-- `Streams/<stream>/latest.md`
+- older shared-stream deployments wrote `Streams/<stream>/Inbox/`,
+  `Streams/<stream>/Trends/`, and `Streams/<stream>/latest.md`
+- current versions do not read or write that layout
 
 Item notes contain YAML frontmatter and sections such as `Summary` and `Links`.
 
@@ -121,8 +121,7 @@ The static site exporter turns trend markdown notes into a standalone website:
 - `recoleta run deploy`: build the public site and push a dedicated GitHub
   Pages branch (default: `gh-pages`)
 - `recoleta stage site stage`: mirror trend markdown/PDF artifacts to
-  `./site-content/Trends` by default, or
-  `./site-content/Streams/<stream>/Trends` in the legacy shared-stream layout
+  `./site-content/Trends` by default
 
 Important behavior:
 
@@ -137,7 +136,7 @@ Important behavior:
   `recoleta repair outputs` preserves that provenance in the regenerated
   markdown/obsidian notes instead of dropping it.
 - in the instance-first runtime, `recoleta repair outputs` always repairs the
-  instance-local `default` scope; choose the target child instance with
+  current child instance output tree; choose the target child instance with
   `--config-path` when needed.
 - `recoleta repair outputs` does not rebuild derived `documents` projections
   from pass outputs; searchable corpus repair stays separate from
@@ -152,7 +151,7 @@ Important behavior:
   Pages-specific workflow files by publishing a derived branch instead.
 - `recoleta stage site stage` remains useful for custom CI pipelines and
   non-GitHub static hosts when you want an explicit repo-local snapshot.
-- Legacy note: the older shared-stream runtime aggregated stream-local
+- Historical note: the older shared-stream runtime aggregated stream-local
   `Trends/` trees and exposed a `Streams` navigation surface. The current
   instance-first runtime keeps one canonical output tree per child instance and
   uses fleet-level aggregation when you want a combined site.
@@ -177,6 +176,6 @@ After `recoleta run site serve` / `recoleta run site build` /
 
 After `recoleta repair outputs`, the CLI prints:
 
-- per-scope item/trend/pdf totals
+- per-instance item/trend/pdf totals
 - trend materialization failures and canonical-link rewrite totals
 - site manifest path when `--site` is enabled

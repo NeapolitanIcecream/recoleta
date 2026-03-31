@@ -10,7 +10,6 @@ def run_materialize_outputs_command(
     db_path: Path | None,
     config_path: Path | None,
     output_dir: Path | None,
-    scope: str,
     granularity: str | None,
     pdf: bool,
     site: bool,
@@ -22,7 +21,6 @@ def run_materialize_outputs_command(
     symbols = cli._runtime_symbols()
     console_cls = symbols["Console"]
     console = console_cls()
-    normalized_scope = cli._require_default_scope(scope)
 
     try:
         resolved_db_path = cli._resolve_db_path(db_path=db_path, config_path=config_path)
@@ -52,13 +50,13 @@ def run_materialize_outputs_command(
             "recoleta.materialize",
             attr_name="materialize_outputs",
         )
-        materialize_scope_spec_cls = cli._import_symbol(
+        materialize_target_spec_cls = cli._import_symbol(
             "recoleta.materialize",
-            attr_name="MaterializeScopeSpec",
+            attr_name="MaterializeTargetSpec",
         )
-        default_scope_specs_for_settings = cli._import_symbol(
+        default_target_spec_for_settings = cli._import_symbol(
             "recoleta.materialize",
-            attr_name="default_scope_specs_for_settings",
+            attr_name="default_target_spec_for_settings",
         )
 
         resolved_output_dir = (
@@ -75,14 +73,11 @@ def run_materialize_outputs_command(
                 resolved_obsidian_base_folder = str(
                     getattr(settings, "obsidian_base_folder", "") or ""
                 ).strip() or None
-            scope_specs = [
-                materialize_scope_spec_cls(
-                    scope=normalized_scope,
-                    output_dir=resolved_output_dir,
-                    obsidian_vault_path=resolved_obsidian_vault_path,
-                    obsidian_base_folder=resolved_obsidian_base_folder,
-                )
-            ]
+            target_spec = materialize_target_spec_cls(
+                output_dir=resolved_output_dir,
+                obsidian_vault_path=resolved_obsidian_vault_path,
+                obsidian_base_folder=resolved_obsidian_base_folder,
+            )
             site_input_dir = resolved_output_dir if site else None
             site_output_dir = resolved_output_dir / "site" if site else None
             output_language = getattr(settings, "llm_output_language", None)
@@ -91,34 +86,13 @@ def run_materialize_outputs_command(
                 raise ValueError(
                     "output_dir is required when settings are unavailable"
                 )
-            default_specs = list(default_scope_specs_for_settings(settings=settings))
-            if (
-                normalized_scope != "default"
-                and any(spec.scope == normalized_scope for spec in default_specs)
-            ):
-                scope_specs = [
-                    spec for spec in default_specs if spec.scope == normalized_scope
-                ]
-            elif normalized_scope != "default" and len(default_specs) == 1:
-                scope_specs = [
-                    materialize_scope_spec_cls(
-                        scope=normalized_scope,
-                        output_dir=Path(default_specs[0].output_dir),
-                    )
-                ]
-            elif normalized_scope == "default":
-                scope_specs = default_specs
-            else:
-                available = ", ".join(sorted(spec.scope for spec in default_specs))
-                raise ValueError(
-                    f"unknown scope '{normalized_scope}' (available: {available})"
-                )
+            target_spec = default_target_spec_for_settings(settings=settings)
 
             site_input_dir = None
             site_output_dir = None
             if site:
-                site_input_dir = Path(scope_specs[0].output_dir)
-                site_output_dir = Path(scope_specs[0].output_dir) / "site"
+                site_input_dir = Path(target_spec.output_dir)
+                site_output_dir = Path(target_spec.output_dir) / "site"
             output_language = settings.llm_output_language
 
         normalized_item_export_scope = (
@@ -126,7 +100,7 @@ def run_materialize_outputs_command(
         )
         materialize_kwargs: dict[str, object] = {
             "repository": repository,
-            "scope_specs": list(scope_specs),
+            "target_spec": target_spec,
             "granularity": granularity,
             "generate_pdf": pdf,
             "debug_pdf": debug_pdf,
@@ -151,105 +125,63 @@ def run_materialize_outputs_command(
             log=lease_log,
         )
 
-    item_notes_total = sum(scope_result.item_notes_total for scope_result in result.scopes)
-    trend_notes_total = sum(
-        scope_result.trend_notes_total for scope_result in result.scopes
-    )
-    trend_docs_total = sum(scope_result.trend_docs_total for scope_result in result.scopes)
-    trend_failures_total = sum(
-        scope_result.trend_failures_total for scope_result in result.scopes
-    )
-    ideas_notes_total = sum(scope_result.ideas_notes_total for scope_result in result.scopes)
-    ideas_outputs_total = sum(
-        scope_result.ideas_outputs_total for scope_result in result.scopes
-    )
-    ideas_failures_total = sum(
-        scope_result.ideas_failures_total for scope_result in result.scopes
-    )
-    obsidian_notes_total = sum(
-        scope_result.obsidian_notes_total for scope_result in result.scopes
-    )
-    obsidian_failures_total = sum(
-        scope_result.obsidian_failures_total for scope_result in result.scopes
-    )
-    trend_pdf_total = sum(scope_result.trend_pdf_total for scope_result in result.scopes)
-    trend_pdf_failures_total = sum(
-        scope_result.trend_pdf_failures_total for scope_result in result.scopes
-    )
-    canonical_link_rewrites_total = sum(
-        scope_result.canonical_link_rewrites_total for scope_result in result.scopes
-    )
+    output = result.output
     if json_output:
         cli._emit_json(
             {
                 "status": "ok",
                 "command": command_name,
                 "db_path": str(resolved_db_path),
-                "scope": normalized_scope,
                 "granularity": granularity,
                 "site_manifest_path": cli._path_or_none(result.site_manifest_path),
                 "totals": {
-                    "scopes": len(result.scopes),
-                    "items": item_notes_total,
-                    "trends": trend_notes_total,
-                    "trend_docs": trend_docs_total,
-                    "trend_failures": trend_failures_total,
-                    "ideas": ideas_notes_total,
-                    "idea_outputs": ideas_outputs_total,
-                    "idea_failures": ideas_failures_total,
-                    "obsidian": obsidian_notes_total,
-                    "obsidian_failures": obsidian_failures_total,
-                    "canonical_link_rewrites": canonical_link_rewrites_total,
-                    "pdfs": trend_pdf_total,
-                    "pdf_failures": trend_pdf_failures_total,
+                    "items": output.item_notes_total,
+                    "trends": output.trend_notes_total,
+                    "trend_docs": output.trend_docs_total,
+                    "trend_failures": output.trend_failures_total,
+                    "ideas": output.ideas_notes_total,
+                    "idea_outputs": output.ideas_outputs_total,
+                    "idea_failures": output.ideas_failures_total,
+                    "obsidian": output.obsidian_notes_total,
+                    "obsidian_failures": output.obsidian_failures_total,
+                    "canonical_link_rewrites": output.canonical_link_rewrites_total,
+                    "pdfs": output.trend_pdf_total,
+                    "pdf_failures": output.trend_pdf_failures_total,
                 },
-                "scopes": [
-                    {
-                        "scope": scope_result.scope,
-                        "output_dir": str(scope_result.output_dir),
-                        "item_notes_total": scope_result.item_notes_total,
-                        "trend_notes_total": scope_result.trend_notes_total,
-                        "trend_docs_total": scope_result.trend_docs_total,
-                        "trend_failures_total": scope_result.trend_failures_total,
-                        "ideas_notes_total": scope_result.ideas_notes_total,
-                        "ideas_outputs_total": scope_result.ideas_outputs_total,
-                        "ideas_failures_total": scope_result.ideas_failures_total,
-                        "obsidian_notes_total": scope_result.obsidian_notes_total,
-                        "obsidian_failures_total": scope_result.obsidian_failures_total,
-                        "trend_pdf_total": scope_result.trend_pdf_total,
-                        "trend_pdf_failures_total": scope_result.trend_pdf_failures_total,
-                        "doc_ref_rewrites_total": scope_result.doc_ref_rewrites_total,
-                        "doc_ref_resolved_total": scope_result.doc_ref_resolved_total,
-                        "doc_ref_unresolved_total": scope_result.doc_ref_unresolved_total,
-                        "canonical_link_rewrites_total": scope_result.canonical_link_rewrites_total,
-                    }
-                    for scope_result in result.scopes
-                ],
+                "output": {
+                    "output_dir": str(output.output_dir),
+                    "item_notes_total": output.item_notes_total,
+                    "trend_notes_total": output.trend_notes_total,
+                    "trend_docs_total": output.trend_docs_total,
+                    "trend_failures_total": output.trend_failures_total,
+                    "ideas_notes_total": output.ideas_notes_total,
+                    "ideas_outputs_total": output.ideas_outputs_total,
+                    "ideas_failures_total": output.ideas_failures_total,
+                    "obsidian_notes_total": output.obsidian_notes_total,
+                    "obsidian_failures_total": output.obsidian_failures_total,
+                    "trend_pdf_total": output.trend_pdf_total,
+                    "trend_pdf_failures_total": output.trend_pdf_failures_total,
+                    "doc_ref_rewrites_total": output.doc_ref_rewrites_total,
+                    "doc_ref_resolved_total": output.doc_ref_resolved_total,
+                    "doc_ref_unresolved_total": output.doc_ref_unresolved_total,
+                    "canonical_link_rewrites_total": output.canonical_link_rewrites_total,
+                },
             }
         )
         return
     console.print(
         f"[green]{command_name} completed[/green] "
-        f"scopes={len(result.scopes)} "
-        f"items={item_notes_total} "
-        f"trends={trend_notes_total}/{trend_docs_total} "
-        f"trend_failures={trend_failures_total} "
-        f"ideas={ideas_notes_total}/{ideas_outputs_total} "
-        f"idea_failures={ideas_failures_total} "
-        f"obsidian={obsidian_notes_total} "
-        f"obsidian_failures={obsidian_failures_total} "
-        f"canonical_link_rewrites={canonical_link_rewrites_total} "
-        f"pdfs={trend_pdf_total} "
-        f"pdf_failures={trend_pdf_failures_total}"
+        f"output={output.output_dir} "
+        f"items={output.item_notes_total} "
+        f"trends={output.trend_notes_total}/{output.trend_docs_total} "
+        f"trend_failures={output.trend_failures_total} "
+        f"ideas={output.ideas_notes_total}/{output.ideas_outputs_total} "
+        f"idea_failures={output.ideas_failures_total} "
+        f"obsidian={output.obsidian_notes_total} "
+        f"obsidian_failures={output.obsidian_failures_total} "
+        f"canonical_link_rewrites={output.canonical_link_rewrites_total} "
+        f"pdfs={output.trend_pdf_total} "
+        f"pdf_failures={output.trend_pdf_failures_total}"
     )
-    for scope_result in result.scopes:
-        console.print(
-            f"[cyan]{scope_result.scope}[/cyan] "
-            f"output={scope_result.output_dir} "
-            f"items={scope_result.item_notes_total} "
-            f"trends={scope_result.trend_notes_total}/{scope_result.trend_docs_total} "
-            f"ideas={scope_result.ideas_notes_total}/{scope_result.ideas_outputs_total} "
-            f"obsidian={scope_result.obsidian_notes_total}"
-        )
     if result.site_manifest_path is not None:
         console.print(f"[cyan]site manifest[/cyan] {result.site_manifest_path}")

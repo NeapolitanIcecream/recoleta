@@ -104,7 +104,6 @@ def test_generate_trend_payload_emits_heartbeat_and_duration_metrics(
             period_end=datetime(2026, 3, 23, tzinfo=UTC),
             corpus_doc_type="trend",
             corpus_granularity="day",
-            scope="default",
             metric_namespace="pipeline.trends",
         )
     finally:
@@ -157,7 +156,6 @@ def test_generate_trend_payload_records_failure_metric_when_agent_raises(
                 period_end=datetime(2026, 3, 23, tzinfo=UTC),
                 corpus_doc_type="trend",
                 corpus_granularity="day",
-                scope="default",
                 metric_namespace="pipeline.trends",
             )
     finally:

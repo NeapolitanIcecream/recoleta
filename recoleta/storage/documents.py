@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from recoleta.models import ChunkEmbedding, Document, DocumentChunk, Item
 from recoleta.storage_common import _to_fts5_query, _to_json
-from recoleta.types import DEFAULT_TOPIC_STREAM, sha256_hex, utc_now
+from recoleta.types import sha256_hex, utc_now
 
 
 class DocumentStoreMixin:
@@ -16,10 +16,7 @@ class DocumentStoreMixin:
 
     def _commit(self, session: Session) -> None: ...
 
-    def upsert_document_for_item(
-        self, *, item: Item, scope: str = DEFAULT_TOPIC_STREAM
-    ) -> Document:
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
+    def upsert_document_for_item(self, *, item: Item) -> Document:
         raw_item_id = getattr(item, "id", None)
         if raw_item_id is None:
             raise ValueError("item must have an id")
@@ -68,7 +65,6 @@ class DocumentStoreMixin:
         period_start: datetime,
         period_end: datetime,
         title: str,
-        scope: str = DEFAULT_TOPIC_STREAM,
     ) -> Document:
         return self._upsert_period_document(
             doc_type="trend",
@@ -76,7 +72,6 @@ class DocumentStoreMixin:
             period_start=period_start,
             period_end=period_end,
             title=title,
-            scope=scope,
         )
 
     def upsert_document_for_idea(
@@ -86,7 +81,6 @@ class DocumentStoreMixin:
         period_start: datetime,
         period_end: datetime,
         title: str,
-        scope: str = DEFAULT_TOPIC_STREAM,
     ) -> Document:
         return self._upsert_period_document(
             doc_type="idea",
@@ -94,7 +88,6 @@ class DocumentStoreMixin:
             period_start=period_start,
             period_end=period_end,
             title=title,
-            scope=scope,
         )
 
     def _upsert_period_document(
@@ -105,7 +98,6 @@ class DocumentStoreMixin:
         period_start: datetime,
         period_end: datetime,
         title: str,
-        scope: str = DEFAULT_TOPIC_STREAM,
     ) -> Document:
         normalized_granularity = str(granularity or "").strip().lower()
         if normalized_granularity not in {"day", "week", "month"}:
@@ -115,7 +107,6 @@ class DocumentStoreMixin:
             raise ValueError("unsupported doc_type")
         fallback_title = "Idea" if normalized_doc_type == "idea" else "Trend"
         normalized_title = str(title or "").strip() or fallback_title
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         with Session(self.engine) as session:
             existing = session.exec(
                 select(Document).where(
@@ -340,7 +331,6 @@ class DocumentStoreMixin:
         period_start: datetime,
         period_end: datetime,
         granularity: str | None = None,
-        scope: str = DEFAULT_TOPIC_STREAM,
         order_by: str = "event_desc",
         offset: int = 0,
         limit: int = 50,
@@ -348,7 +338,6 @@ class DocumentStoreMixin:
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         if normalized_limit <= 0:
             return []
         with Session(self.engine) as session:
@@ -434,7 +423,6 @@ class DocumentStoreMixin:
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
-        scope: str = DEFAULT_TOPIC_STREAM,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         normalized_query = str(query or "").strip()
@@ -445,7 +433,6 @@ class DocumentStoreMixin:
             return []
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(1, min(int(limit), 50))
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
 
         if normalized_type == "item":
             period_pred = "d.published_at >= :period_start AND d.published_at < :period_end"
@@ -525,14 +512,12 @@ class DocumentStoreMixin:
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
-        scope: str = DEFAULT_TOPIC_STREAM,
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]:
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         if normalized_limit <= 0:
             return []
 
@@ -575,14 +560,12 @@ class DocumentStoreMixin:
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
-        scope: str = DEFAULT_TOPIC_STREAM,
         limit: int = 500,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         normalized_type = str(doc_type or "").strip().lower()
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
-        _ = str(scope or DEFAULT_TOPIC_STREAM).strip() or DEFAULT_TOPIC_STREAM
         if normalized_limit <= 0:
             return []
 

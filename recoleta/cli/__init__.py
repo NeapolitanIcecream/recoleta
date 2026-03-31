@@ -71,22 +71,6 @@ def _raise_typer_exit_for_invalid_settings(exc: ValueError) -> NoReturn:
     raise typer.Exit(code=2) from None
 
 
-def _require_default_scope(
-    scope: str | None,
-    *,
-    option_name: str = "--scope",
-) -> str:
-    normalized_scope = str(scope or "").strip() or "default"
-    if normalized_scope != "default":
-        typer.echo(
-            "Instance-first runtime only supports "
-            f"{option_name} default. Select a child instance with --config-path "
-            "or use a fleet command for multi-instance runs."
-        )
-        raise typer.Exit(code=2) from None
-    return "default"
-
-
 def _build_settings(
     *,
     config_path: Any | None = None,

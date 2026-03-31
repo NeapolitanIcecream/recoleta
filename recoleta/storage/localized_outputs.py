@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from recoleta.models import LocalizedOutput
 from recoleta.storage_common import _to_json
-from recoleta.types import DEFAULT_TOPIC_STREAM, utc_now
+from recoleta.types import utc_now
 
 
 class LocalizedOutputStoreMixin:
@@ -20,7 +20,6 @@ class LocalizedOutputStoreMixin:
         *,
         source_kind: str,
         source_record_id: int,
-        scope: str = DEFAULT_TOPIC_STREAM,
         language_code: str,
         status: str,
         source_hash: str,
@@ -35,7 +34,6 @@ class LocalizedOutputStoreMixin:
         normalized_source_record_id = int(source_record_id)
         if normalized_source_record_id <= 0:
             raise ValueError("source_record_id must be > 0")
-        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_language_code = str(language_code or "").strip()
         if not normalized_language_code:
             raise ValueError("language_code must not be empty")
@@ -94,14 +92,12 @@ class LocalizedOutputStoreMixin:
         *,
         source_kind: str,
         source_record_id: int,
-        scope: str = DEFAULT_TOPIC_STREAM,
         language_code: str,
     ) -> LocalizedOutput | None:
         normalized_source_kind = str(source_kind or "").strip().lower()
         normalized_source_record_id = int(source_record_id)
         if not normalized_source_kind or normalized_source_record_id <= 0:
             return None
-        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_language_code = str(language_code or "").strip()
         if not normalized_language_code:
             return None
@@ -117,11 +113,9 @@ class LocalizedOutputStoreMixin:
     def list_localized_outputs(
         self,
         *,
-        scope: str = DEFAULT_TOPIC_STREAM,
         language_code: str | None = None,
         source_kind: str | None = None,
     ) -> list[LocalizedOutput]:
-        _ = str(scope or "").strip() or DEFAULT_TOPIC_STREAM
         normalized_language_code = str(language_code or "").strip()
         normalized_source_kind = str(source_kind or "").strip().lower()
         with Session(self.engine) as session:
