@@ -177,6 +177,9 @@ class ItemSiteSelection:
     unreferenced_total: int
 
 
+type SiteSourceKey = tuple[Path, str | None]
+
+
 def _parse_site_datetime(value: Any) -> datetime | None:
     raw = str(value or "").strip()
     if not raw:
@@ -2997,6 +3000,10 @@ def _site_namespaced_asset_name(*, name: str, instance: str | None) -> str:
     return f"{_instance_slug(cleaned_instance)}--{name}"
 
 
+def _site_source_key(*, markdown_path: Path, instance: str | None) -> SiteSourceKey:
+    return (markdown_path.resolve(), _normalize_site_instance(instance))
+
+
 def _extract_markdown_h1(markdown_body: str, *, fallback: str) -> str:
     for line in str(markdown_body or "").splitlines():
         stripped = line.strip()
@@ -3029,15 +3036,41 @@ def _resolve_site_local_markdown_target(
     return (source_markdown_path.parent / candidate).resolve()
 
 
+def _resolve_site_source_key(
+    *,
+    target_path: Path,
+    source_instance: str | None,
+    available_source_keys: set[SiteSourceKey],
+) -> SiteSourceKey | None:
+    if source_instance is not None:
+        same_instance_key = _site_source_key(
+            markdown_path=target_path,
+            instance=source_instance,
+        )
+        if same_instance_key in available_source_keys:
+            return same_instance_key
+    default_instance_key = _site_source_key(markdown_path=target_path, instance=None)
+    if default_instance_key in available_source_keys:
+        return default_instance_key
+    matching_keys = [
+        source_key for source_key in available_source_keys if source_key[0] == target_path
+    ]
+    if len(matching_keys) == 1:
+        return matching_keys[0]
+    return None
+
+
 def _rewrite_site_markdown_links(
     *,
     html_text: str,
     source_markdown_path: Path,
+    source_instance: str | None,
     from_page: Path,
-    page_by_markdown_path: dict[Path, Path],
+    page_by_source_key: dict[SiteSourceKey, Path],
 ) -> str:
     soup = BeautifulSoup(html_text, "html.parser")
     rewritten = False
+    available_source_keys = set(page_by_source_key)
     for anchor in soup.find_all("a", href=True):
         target_path = _resolve_site_local_markdown_target(
             source_markdown_path=source_markdown_path,
@@ -3045,7 +3078,14 @@ def _rewrite_site_markdown_links(
         )
         if target_path is None:
             continue
-        target_page_path = page_by_markdown_path.get(target_path)
+        target_source_key = _resolve_site_source_key(
+            target_path=target_path,
+            source_instance=source_instance,
+            available_source_keys=available_source_keys,
+        )
+        if target_source_key is None:
+            continue
+        target_page_path = page_by_source_key.get(target_source_key)
         if target_page_path is None:
             continue
         anchor["href"] = _site_href(from_page=from_page, to_page=target_page_path)
@@ -3056,23 +3096,15 @@ def _rewrite_site_markdown_links(
 def _load_item_source_documents(
     *,
     input_dirs: Sequence[TrendSiteInputDirectory],
-    allowed_markdown_paths: set[Path] | None = None,
+    allowed_source_keys: set[SiteSourceKey] | None = None,
 ) -> list[ItemSiteSourceDocument]:
     source_documents: list[ItemSiteSourceDocument] = []
-    seen_paths: set[Path] = set()
+    seen_source_keys: set[SiteSourceKey] = set()
     for input_info in input_dirs:
         if input_info.inbox_path is None:
             continue
         for markdown_path in sorted(input_info.inbox_path.glob("*.md")):
             resolved_markdown_path = markdown_path.resolve()
-            if resolved_markdown_path in seen_paths:
-                continue
-            seen_paths.add(resolved_markdown_path)
-            if (
-                allowed_markdown_paths is not None
-                and resolved_markdown_path not in allowed_markdown_paths
-            ):
-                continue
             raw_markdown = resolved_markdown_path.read_text(encoding="utf-8")
             frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
             title = _extract_markdown_h1(
@@ -3086,6 +3118,19 @@ def _load_item_source_documents(
                     relevance_score = float(raw_relevance)
                 except Exception:
                     relevance_score = None
+            instance = _resolve_site_instance(
+                input_instance=input_info.instance,
+                frontmatter=frontmatter,
+            )
+            source_key = _site_source_key(
+                markdown_path=resolved_markdown_path,
+                instance=instance,
+            )
+            if source_key in seen_source_keys:
+                continue
+            seen_source_keys.add(source_key)
+            if allowed_source_keys is not None and source_key not in allowed_source_keys:
+                continue
             source_documents.append(
                 ItemSiteSourceDocument(
                     markdown_path=resolved_markdown_path,
@@ -3099,10 +3144,7 @@ def _load_item_source_documents(
                     authors=_parse_site_string_list(frontmatter.get("authors")),
                     topics=_parse_site_string_list(frontmatter.get("topics")),
                     relevance_score=relevance_score,
-                    instance=_resolve_site_instance(
-                        input_instance=input_info.instance,
-                        frontmatter=frontmatter,
-                    ),
+                    instance=instance,
                 )
             )
 
@@ -3114,24 +3156,6 @@ def _load_item_source_documents(
         reverse=True,
     )
     return source_documents
-
-
-def _discover_item_source_markdown_paths(
-    *,
-    input_dirs: Sequence[TrendSiteInputDirectory],
-) -> list[Path]:
-    discovered_paths: list[Path] = []
-    seen_paths: set[Path] = set()
-    for input_info in input_dirs:
-        if input_info.inbox_path is None:
-            continue
-        for markdown_path in sorted(input_info.inbox_path.glob("*.md")):
-            resolved_markdown_path = markdown_path.resolve()
-            if resolved_markdown_path in seen_paths:
-                continue
-            seen_paths.add(resolved_markdown_path)
-            discovered_paths.append(resolved_markdown_path)
-    return discovered_paths
 
 
 def _load_idea_source_documents(
@@ -3179,15 +3203,15 @@ def _load_idea_source_documents(
     return source_documents[:limit] if limit is not None else source_documents
 
 
-def _collect_referenced_item_markdown_paths(
+def _collect_referenced_item_source_keys(
     *,
     source_documents: Sequence[TrendSiteSourceDocument | IdeaSiteSourceDocument],
-    available_item_paths: set[Path],
-) -> set[Path]:
-    if not source_documents or not available_item_paths:
+    available_source_keys: set[SiteSourceKey],
+) -> set[SiteSourceKey]:
+    if not source_documents or not available_source_keys:
         return set()
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
-    referenced_paths: set[Path] = set()
+    referenced_source_keys: set[SiteSourceKey] = set()
     for source_document in source_documents:
         normalized_markdown = str(source_document.markdown_body or "").strip()
         if not normalized_markdown:
@@ -3199,10 +3223,17 @@ def _collect_referenced_item_markdown_paths(
                 source_markdown_path=source_document.markdown_path,
                 href=str(anchor.get("href") or ""),
             )
-            if target_path is None or target_path not in available_item_paths:
+            if target_path is None:
                 continue
-            referenced_paths.add(target_path)
-    return referenced_paths
+            target_source_key = _resolve_site_source_key(
+                target_path=target_path,
+                source_instance=source_document.instance,
+                available_source_keys=available_source_keys,
+            )
+            if target_source_key is None:
+                continue
+            referenced_source_keys.add(target_source_key)
+    return referenced_source_keys
 
 
 def _select_item_source_documents(
@@ -3212,28 +3243,39 @@ def _select_item_source_documents(
     idea_source_documents: Sequence[IdeaSiteSourceDocument],
     item_export_scope: str,
 ) -> ItemSiteSelection:
-    available_item_paths = _discover_item_source_markdown_paths(input_dirs=input_dirs)
-    available_item_path_set = set(available_item_paths)
+    all_source_documents = _load_item_source_documents(input_dirs=input_dirs)
+    available_source_keys = {
+        _site_source_key(
+            markdown_path=source_document.markdown_path,
+            instance=source_document.instance,
+        )
+        for source_document in all_source_documents
+    }
     normalized_scope = _normalize_item_export_scope(item_export_scope)
-    selected_item_paths = (
-        available_item_path_set
+    selected_source_keys = (
+        available_source_keys
         if normalized_scope == "all"
-        else _collect_referenced_item_markdown_paths(
+        else _collect_referenced_item_source_keys(
             source_documents=[*trend_source_documents, *idea_source_documents],
-            available_item_paths=available_item_path_set,
+            available_source_keys=available_source_keys,
         )
     )
-    source_documents = _load_item_source_documents(
-        input_dirs=input_dirs,
-        allowed_markdown_paths=selected_item_paths,
-    )
+    source_documents = [
+        source_document
+        for source_document in all_source_documents
+        if _site_source_key(
+            markdown_path=source_document.markdown_path,
+            instance=source_document.instance,
+        )
+        in selected_source_keys
+    ]
     return ItemSiteSelection(
         source_documents=source_documents,
-        available_total=len(available_item_paths),
+        available_total=len(all_source_documents),
         unreferenced_total=(
             0
             if normalized_scope == "all"
-            else max(len(available_item_paths) - len(selected_item_paths), 0)
+            else max(len(all_source_documents) - len(selected_source_keys), 0)
         ),
     )
 
@@ -3592,7 +3634,7 @@ def _load_item_site_documents(
     *,
     source_documents: Sequence[ItemSiteSourceDocument],
     output_dir: Path,
-) -> tuple[list[ItemSiteDocument], dict[Path, Path]]:
+) -> tuple[list[ItemSiteDocument], dict[SiteSourceKey, Path]]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
     items_dir = output_dir / "items"
     item_artifacts_dir = output_dir / "artifacts" / "items"
@@ -3600,7 +3642,7 @@ def _load_item_site_documents(
     item_artifacts_dir.mkdir(parents=True, exist_ok=True)
 
     documents: list[ItemSiteDocument] = []
-    page_by_markdown_path: dict[Path, Path] = {}
+    page_by_source_key: dict[SiteSourceKey, Path] = {}
     for source_document in source_documents:
         normalized_markdown = source_document.markdown_body.strip() or "# Item\n"
         rendered_html = markdown.render(normalized_markdown)
@@ -3635,44 +3677,57 @@ def _load_item_site_documents(
                 frontmatter=source_document.frontmatter,
             )
         )
-        page_by_markdown_path[source_document.markdown_path.resolve()] = page_path
-    return documents, page_by_markdown_path
+        page_by_source_key[
+            _site_source_key(
+                markdown_path=source_document.markdown_path,
+                instance=source_document.instance,
+            )
+        ] = page_path
+    return documents, page_by_source_key
 
 
 def _load_idea_site_documents(
     *,
     source_documents: Sequence[IdeaSiteSourceDocument],
     output_dir: Path,
-    linked_page_by_markdown_path: dict[Path, Path],
-) -> tuple[list[IdeaSiteDocument], dict[Path, Path]]:
+    linked_page_by_source_key: dict[SiteSourceKey, Path],
+) -> tuple[list[IdeaSiteDocument], dict[SiteSourceKey, Path]]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
     ideas_dir = output_dir / "ideas"
     idea_artifacts_dir = output_dir / "artifacts" / "ideas"
     ideas_dir.mkdir(parents=True, exist_ok=True)
     idea_artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-    page_by_markdown_path = {
-        source_document.markdown_path.resolve(): (
+    page_by_source_key = {
+        _site_source_key(
+            markdown_path=source_document.markdown_path,
+            instance=source_document.instance,
+        ): (
             ideas_dir
             / f"{_site_namespaced_page_stem(stem=source_document.stem, instance=source_document.instance)}.html"
         )
         for source_document in source_documents
     }
-    all_linked_pages = dict(linked_page_by_markdown_path)
-    all_linked_pages.update(page_by_markdown_path)
+    all_linked_pages = dict(linked_page_by_source_key)
+    all_linked_pages.update(page_by_source_key)
 
     documents: list[IdeaSiteDocument] = []
     for source_document in source_documents:
         normalized_markdown = source_document.markdown_body.strip() or "# Ideas\n"
         rendered_html = markdown.render(normalized_markdown)
         title, raw_body_html, excerpt = _extract_item_body_html(body_html=rendered_html)
-        page_path = page_by_markdown_path[source_document.markdown_path.resolve()]
+        source_key = _site_source_key(
+            markdown_path=source_document.markdown_path,
+            instance=source_document.instance,
+        )
+        page_path = page_by_source_key[source_key]
         idea_body = _build_idea_browser_body_html(body_html=raw_body_html)
         body_html = _rewrite_site_markdown_links(
             html_text=idea_body.body_html,
             source_markdown_path=source_document.markdown_path,
+            source_instance=source_document.instance,
             from_page=page_path,
-            page_by_markdown_path=all_linked_pages,
+            page_by_source_key=all_linked_pages,
         )
         period_token = (
             _trend_date_token(
@@ -3708,14 +3763,14 @@ def _load_idea_site_documents(
                 frontmatter=source_document.frontmatter,
             )
         )
-    return documents, page_by_markdown_path
+    return documents, page_by_source_key
 
 
 def _load_trend_site_documents(
     *,
     source_documents: Sequence[TrendSiteSourceDocument],
     output_dir: Path,
-    item_pages_by_markdown_path: dict[Path, Path],
+    item_pages_by_source_key: dict[SiteSourceKey, Path],
 ) -> list[TrendSiteDocument]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
     documents: list[TrendSiteDocument] = []
@@ -3725,15 +3780,18 @@ def _load_trend_site_documents(
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     trends_dir.mkdir(parents=True, exist_ok=True)
 
-    trend_pages_by_markdown_path = {
-        source_document.markdown_path.resolve(): (
+    trend_pages_by_source_key = {
+        _site_source_key(
+            markdown_path=source_document.markdown_path,
+            instance=source_document.instance,
+        ): (
             trends_dir
             / f"{_site_namespaced_page_stem(stem=source_document.stem, instance=source_document.instance)}.html"
         )
         for source_document in source_documents
     }
-    linked_page_by_markdown_path = dict(item_pages_by_markdown_path)
-    linked_page_by_markdown_path.update(trend_pages_by_markdown_path)
+    linked_page_by_source_key = dict(item_pages_by_source_key)
+    linked_page_by_source_key.update(trend_pages_by_source_key)
 
     for source_document in source_documents:
         normalized_markdown = _normalize_obsidian_callouts_for_pdf(
@@ -3746,17 +3804,20 @@ def _load_trend_site_documents(
         title = sanitize_trend_title(title, fallback="Trend")
         excerpt = _section_excerpt(sections)
         evolution_insight = _extract_trend_evolution_insight(sections)
-        page_path = trend_pages_by_markdown_path[
-            source_document.markdown_path.resolve()
-        ]
+        source_key = _site_source_key(
+            markdown_path=source_document.markdown_path,
+            instance=source_document.instance,
+        )
+        page_path = trend_pages_by_source_key[source_key]
         browser_body_html = _rewrite_site_markdown_links(
             html_text=_build_trend_browser_body_html(
                 sections=sections,
                 allow_evolution_disclosure=True,
             ),
             source_markdown_path=source_document.markdown_path,
+            source_instance=source_document.instance,
             from_page=page_path,
-            page_by_markdown_path=linked_page_by_markdown_path,
+            page_by_source_key=linked_page_by_source_key,
         )
 
         period_token = (
@@ -4157,28 +4218,31 @@ def _export_trend_static_site_single_language(
         idea_source_documents=idea_source_documents,
         item_export_scope=normalized_item_export_scope,
     )
-    item_documents, item_pages_by_markdown_path = _load_item_site_documents(
+    item_documents, item_pages_by_source_key = _load_item_site_documents(
         source_documents=item_selection.source_documents,
         output_dir=resolved_output_dir,
     )
     documents = _load_trend_site_documents(
         source_documents=trend_source_documents,
         output_dir=resolved_output_dir,
-        item_pages_by_markdown_path=item_pages_by_markdown_path,
+        item_pages_by_source_key=item_pages_by_source_key,
     )
-    linked_page_by_markdown_path = dict(item_pages_by_markdown_path)
-    linked_page_by_markdown_path.update(
+    linked_page_by_source_key = dict(item_pages_by_source_key)
+    linked_page_by_source_key.update(
         {
-            document.markdown_path.resolve(): document.page_path
+            _site_source_key(
+                markdown_path=document.markdown_path,
+                instance=document.instance,
+            ): document.page_path
             for document in documents
         }
     )
-    idea_documents, idea_pages_by_markdown_path = _load_idea_site_documents(
+    idea_documents, idea_pages_by_source_key = _load_idea_site_documents(
         source_documents=idea_source_documents,
         output_dir=resolved_output_dir,
-        linked_page_by_markdown_path=linked_page_by_markdown_path,
+        linked_page_by_source_key=linked_page_by_source_key,
     )
-    linked_page_by_markdown_path.update(idea_pages_by_markdown_path)
+    linked_page_by_source_key.update(idea_pages_by_source_key)
 
     label_by_topic_slug: dict[str, str] = {}
     topic_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)

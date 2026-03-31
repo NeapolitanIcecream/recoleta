@@ -2635,6 +2635,98 @@ def test_export_trend_static_site_namespaces_duplicate_pages_and_artifacts_by_in
     assert all("stream" not in entry for entry in manifest["input_dirs"])
 
 
+def test_export_trend_static_site_keeps_duplicate_root_instances_separate(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    item_note = write_markdown_note(
+        output_dir=notes_root,
+        item_id=91,
+        title="Shared Root Item",
+        source="rss",
+        canonical_url="https://example.com/shared-root-item",
+        published_at=datetime(2026, 3, 18, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.88,
+        run_id="run-shared-root-item",
+        summary="## Summary\n\nShared-root item note.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=811,
+        title="Shared Root Trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 18, tzinfo=UTC),
+        period_end=datetime(2026, 3, 19, tzinfo=UTC),
+        run_id="run-shared-root-trend",
+        overview_md=(
+            "## Overview\n\n"
+            f"See [Shared Root Item](../Inbox/{item_note.name}).\n"
+        ),
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = notes_root / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-18--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-18T00:00:00+00:00\n"
+        "period_end: 2026-03-19T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "stream: default\n"
+        "---\n\n"
+        "# Shared root ideas\n\n"
+        "## Summary\n\n"
+        f"See [the shared trend](../Trends/{trend_note.name}) and "
+        f"[the shared item](../Inbox/{item_note.name}).\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=[
+            TrendSiteInputSpec(path=notes_root, instance="alpha"),
+            TrendSiteInputSpec(path=notes_root, instance="beta"),
+        ],
+        output_dir=site_dir,
+    )
+
+    alpha_trend_page = site_dir / "trends" / f"alpha--{trend_note.stem}.html"
+    beta_trend_page = site_dir / "trends" / f"beta--{trend_note.stem}.html"
+    alpha_idea_page = site_dir / "ideas" / f"alpha--{idea_note.stem}.html"
+    beta_idea_page = site_dir / "ideas" / f"beta--{idea_note.stem}.html"
+    alpha_item_page = site_dir / "items" / f"alpha--{item_note.stem}.html"
+    beta_item_page = site_dir / "items" / f"beta--{item_note.stem}.html"
+
+    assert alpha_trend_page.exists()
+    assert beta_trend_page.exists()
+    assert alpha_idea_page.exists()
+    assert beta_idea_page.exists()
+    assert alpha_item_page.exists()
+    assert beta_item_page.exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["trends_total"] == 2
+    assert manifest["ideas_total"] == 2
+    assert manifest["items_total"] == 2
+    assert len(set(manifest["files"]["trend_pages"])) == 2
+    assert len(set(manifest["files"]["idea_pages"])) == 2
+    assert len(set(manifest["files"]["item_pages"])) == 2
+
+    beta_trend_html = beta_trend_page.read_text(encoding="utf-8")
+    beta_idea_html = beta_idea_page.read_text(encoding="utf-8")
+    assert f"../items/beta--{item_note.stem}.html" in beta_trend_html
+    assert f"../items/alpha--{item_note.stem}.html" not in beta_trend_html
+    assert f"../items/beta--{item_note.stem}.html" in beta_idea_html
+    assert f"../trends/beta--{trend_note.stem}.html" in beta_idea_html
+    assert f"../items/alpha--{item_note.stem}.html" not in beta_idea_html
+
+
 def test_export_trend_static_site_preserves_explicit_default_instance_name(
     tmp_path: Path,
 ) -> None:
