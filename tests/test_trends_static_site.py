@@ -3092,6 +3092,80 @@ def test_stage_trend_site_source_places_non_stream_notes_under_trends_when_strea
     assert (site_dir / "trends" / f"agents-lab--{stream_note.stem}.html").exists()
 
 
+def test_stage_trend_site_source_round_trips_explicit_default_instance_without_overwriting_root_pages(
+    tmp_path: Path,
+) -> None:
+    legacy_root = tmp_path / "legacy-notes"
+    default_root = tmp_path / "default-notes"
+
+    legacy_note = write_markdown_trend_note(
+        output_dir=legacy_root,
+        trend_doc_id=1,
+        title="Legacy Daily",
+        granularity="day",
+        period_start=datetime(2026, 3, 20, tzinfo=UTC),
+        period_end=datetime(2026, 3, 21, tzinfo=UTC),
+        run_id="run-legacy-default-roundtrip",
+        overview_md="## Overview\n\nLegacy root daily note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Legacy page must stay at the root namespace."],
+    )
+    default_note = write_markdown_trend_note(
+        output_dir=default_root,
+        trend_doc_id=1,
+        title="Default Daily",
+        granularity="day",
+        period_start=datetime(2026, 3, 20, tzinfo=UTC),
+        period_end=datetime(2026, 3, 21, tzinfo=UTC),
+        run_id="run-explicit-default-roundtrip",
+        overview_md="## Overview\n\nExplicit default instance note.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=["Default instance must keep its own namespace."],
+    )
+
+    staged_root = tmp_path / "site-content"
+    manifest_path = stage_trend_site_source(
+        input_dir=[
+            legacy_root,
+            TrendSiteInputSpec(path=default_root, instance="default"),
+        ],
+        output_dir=staged_root,
+    )
+
+    assert manifest_path == staged_root / "manifest.json"
+    assert (staged_root / "Trends" / legacy_note.name).exists()
+    assert (staged_root / "Streams" / "default" / "Trends" / default_note.name).exists()
+
+    site_dir = tmp_path / "site"
+    built_manifest_path = export_trend_static_site(
+        input_dir=staged_root,
+        output_dir=site_dir,
+    )
+
+    legacy_page = site_dir / "trends" / f"{legacy_note.stem}.html"
+    default_page = site_dir / "trends" / f"default--{default_note.stem}.html"
+    assert legacy_page.exists()
+    assert default_page.exists()
+
+    built_manifest = json.loads(built_manifest_path.read_text(encoding="utf-8"))
+    assert built_manifest["trends_total"] == 2
+    assert len(set(built_manifest["files"]["trend_pages"])) == 2
+    assert f"trends/{legacy_note.stem}.html" in built_manifest["files"]["trend_pages"]
+    assert (
+        f"trends/default--{default_note.stem}.html"
+        in built_manifest["files"]["trend_pages"]
+    )
+
+    legacy_html = legacy_page.read_text(encoding="utf-8")
+    default_html = default_page.read_text(encoding="utf-8")
+    assert "<title>Legacy Daily" in legacy_html
+    assert "<title>Default Daily" not in legacy_html
+    assert "<title>Default Daily" in default_html
+    assert "<title>Legacy Daily" not in default_html
+
+
 def test_stage_trend_site_source_stages_item_notes_next_to_trends(
     tmp_path: Path,
 ) -> None:

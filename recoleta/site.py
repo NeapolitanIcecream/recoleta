@@ -686,7 +686,7 @@ def _discover_trend_site_input_dirs(
         resolved_instance = (
             _normalize_site_instance(instance)
             if instance is not None
-            else _normalize_legacy_site_stream(
+            else _normalize_site_instance(
                 _infer_instance_name_from_site_path(resolved_candidate)
             )
         )
@@ -3991,7 +3991,7 @@ def _discover_site_language_inputs(
         resolved_instance = (
             _normalize_site_instance(instance)
             if instance is not None
-            else _normalize_legacy_site_stream(
+            else _normalize_site_instance(
                 _infer_instance_name_from_site_root(resolved_root)
             )
         )
