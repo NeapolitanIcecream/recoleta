@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 import re
 from typing import Any, Mapping
@@ -146,7 +147,7 @@ def build_trend_presentation_v1(
     overview_md: str,
     evolution: Mapping[str, Any] | None,
     history_window_refs: Mapping[str, Mapping[str, Any]] | None,
-    clusters: list[Mapping[str, Any]] | None,
+    clusters: Sequence[Mapping[str, Any]] | None,
     language_code: str | None = None,
 ) -> dict[str, Any]:
     normalized_overview = _render_history_refs_in_text(
