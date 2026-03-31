@@ -600,6 +600,47 @@ def _infer_instance_name_from_trends_dir(path: Path) -> str | None:
     return path.parent.parent.parent.name
 
 
+def _infer_instance_name_from_site_root(path: Path) -> str | None:
+    if len(path.parts) < 2:
+        return None
+    if path.parent.name == "Streams":
+        return path.name
+    if len(path.parts) < 4:
+        return None
+    if path.parent.name != "Localized":
+        return None
+    if path.parent.parent.parent.name != "Streams":
+        return None
+    return path.parent.parent.name
+
+
+def _infer_instance_name_from_site_path(path: Path) -> str | None:
+    return _infer_instance_name_from_trends_dir(path) or _infer_instance_name_from_site_root(
+        path.parent if path.name == "Trends" else path
+    )
+
+
+def _infer_grouped_child_instance_within_parent(
+    *,
+    path: Path,
+    parent_root: Path,
+) -> str | None:
+    resolved_path = path.expanduser().resolve()
+    resolved_parent_root = parent_root.expanduser().resolve()
+    try:
+        relative = resolved_path.relative_to(resolved_parent_root)
+    except ValueError:
+        return None
+    if not relative.parts:
+        return None
+    if resolved_parent_root.name == "Streams":
+        return relative.parts[0]
+    for index, part in enumerate(relative.parts[:-1]):
+        if part == "Streams":
+            return relative.parts[index + 1]
+    return None
+
+
 def _discover_trend_site_input_dirs(
     raw_inputs: Sequence[TrendSiteInputSpec],
     *,
@@ -614,7 +655,7 @@ def _discover_trend_site_input_dirs(
             _normalize_site_instance(instance)
             if instance is not None
             else _normalize_legacy_site_stream(
-                _infer_instance_name_from_trends_dir(resolved_candidate)
+                _infer_instance_name_from_site_path(resolved_candidate)
             )
         )
         if not resolved_candidate.exists() or not resolved_candidate.is_dir():
@@ -700,7 +741,16 @@ def _discover_trend_site_input_dirs(
             candidates.append(raw_path)
 
         for candidate in candidates:
-            add_candidate(candidate, instance=raw_input.instance)
+            candidate_instance = (
+                None
+                if _infer_grouped_child_instance_within_parent(
+                    path=candidate,
+                    parent_root=raw_path,
+                )
+                is not None
+                else raw_input.instance
+            )
+            add_candidate(candidate, instance=candidate_instance)
 
     return discovered
 
@@ -3902,7 +3952,13 @@ def _discover_site_language_inputs(
 
     def add_root(root_path: Path, *, instance: str | None) -> None:
         resolved_root = root_path.expanduser().resolve()
-        resolved_instance = _normalize_site_instance(instance)
+        resolved_instance = (
+            _normalize_site_instance(instance)
+            if instance is not None
+            else _normalize_legacy_site_stream(
+                _infer_instance_name_from_site_root(resolved_root)
+            )
+        )
         if (
             (resolved_root, resolved_instance) in seen_roots
             or not resolved_root.exists()
@@ -3934,19 +3990,28 @@ def _discover_site_language_inputs(
         localized_root = base_root / "Localized"
         if localized_root.exists() and localized_root.is_dir():
             for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
-                add_root(child, instance=raw_input.instance)
+                child_instance = (
+                    None
+                    if _infer_grouped_child_instance_within_parent(
+                        path=child,
+                        parent_root=base_root,
+                    )
+                    is not None
+                    else raw_input.instance
+                )
+                add_root(child, instance=child_instance)
         streams_root = (
             base_root if base_root.name == "Streams" else base_root / "Streams"
         )
         if streams_root.exists() and streams_root.is_dir():
             for stream_root in sorted(path for path in streams_root.iterdir() if path.is_dir()):
-                add_root(stream_root, instance=raw_input.instance)
+                add_root(stream_root, instance=None)
                 stream_localized_root = stream_root / "Localized"
                 if stream_localized_root.exists() and stream_localized_root.is_dir():
                     for child in sorted(
                         path for path in stream_localized_root.iterdir() if path.is_dir()
                     ):
-                        add_root(child, instance=raw_input.instance)
+                        add_root(child, instance=None)
     for language_slug in sorted(grouped_roots):
         discovered.append(
             (

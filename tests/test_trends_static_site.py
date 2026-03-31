@@ -2727,6 +2727,148 @@ def test_export_trend_static_site_keeps_duplicate_root_instances_separate(
     assert f"../items/alpha--{item_note.stem}.html" not in beta_idea_html
 
 
+def test_export_trend_static_site_preserves_grouped_child_identities_under_explicit_parent_instance(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    agents_root = notes_root / "Streams" / "agents_lab"
+    research_root = notes_root / "Streams" / "research_ops"
+    period_start = datetime(2026, 3, 21, tzinfo=UTC)
+    period_end = datetime(2026, 3, 22, tzinfo=UTC)
+
+    def write_grouped_child_notes(
+        *,
+        output_dir: Path,
+        label: str,
+    ) -> tuple[Path, Path, Path]:
+        item_note = write_markdown_note(
+            output_dir=output_dir,
+            item_id=101,
+            title="Grouped Root Item",
+            source="rss",
+            canonical_url="https://example.com/grouped-root-item",
+            published_at=period_start,
+            authors=["Alice"],
+            topics=["agents"],
+            relevance_score=0.9,
+            run_id=f"run-{label.lower()}-item",
+            summary=f"## Summary\n\n{label} grouped-root item summary.\n",
+        )
+        trend_note = write_markdown_trend_note(
+            output_dir=output_dir,
+            trend_doc_id=601,
+            title=f"{label} grouped-root trend",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            run_id=f"run-{label.lower()}-trend",
+            overview_md=(
+                "## Overview\n\n"
+                f"See [the grouped item](../Inbox/{item_note.name}).\n"
+            ),
+            topics=["agents"],
+            clusters=[],
+            highlights=[f"{label} grouped highlight."],
+        )
+        trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
+
+        ideas_dir = output_dir / "Ideas"
+        ideas_dir.mkdir(parents=True, exist_ok=True)
+        idea_note = ideas_dir / "day--2026-03-21--ideas.md"
+        idea_note.write_text(
+            "---\n"
+            "kind: ideas\n"
+            "granularity: day\n"
+            "period_start: 2026-03-21T00:00:00+00:00\n"
+            "period_end: 2026-03-22T00:00:00+00:00\n"
+            "status: succeeded\n"
+            "stream: default\n"
+            "---\n\n"
+            f"# {label} grouped-root ideas\n\n"
+            "## Summary\n\n"
+            f"See [the grouped trend](../Trends/{trend_note.name}) and "
+            f"[the grouped item](../Inbox/{item_note.name}).\n",
+            encoding="utf-8",
+        )
+        return trend_note, idea_note, item_note
+
+    agents_trend, agents_idea, agents_item = write_grouped_child_notes(
+        output_dir=agents_root,
+        label="Agents",
+    )
+    research_trend, research_idea, research_item = write_grouped_child_notes(
+        output_dir=research_root,
+        label="Research",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=TrendSiteInputSpec(path=notes_root, instance="alpha"),
+        output_dir=site_dir,
+    )
+
+    expected_pages = [
+        site_dir / "trends" / f"agents-lab--{agents_trend.stem}.html",
+        site_dir / "trends" / f"research-ops--{research_trend.stem}.html",
+        site_dir / "ideas" / f"agents-lab--{agents_idea.stem}.html",
+        site_dir / "ideas" / f"research-ops--{research_idea.stem}.html",
+        site_dir / "items" / f"agents-lab--{agents_item.stem}.html",
+        site_dir / "items" / f"research-ops--{research_item.stem}.html",
+        site_dir / "artifacts" / f"agents-lab--{agents_trend.name}",
+        site_dir / "artifacts" / f"research-ops--{research_trend.name}",
+        site_dir / "artifacts" / f"agents-lab--{agents_trend.with_suffix('.pdf').name}",
+        site_dir / "artifacts" / f"research-ops--{research_trend.with_suffix('.pdf').name}",
+        site_dir / "artifacts" / "ideas" / f"agents-lab--{agents_idea.name}",
+        site_dir / "artifacts" / "ideas" / f"research-ops--{research_idea.name}",
+    ]
+    for page in expected_pages:
+        assert page.exists()
+
+    unexpected_parent_pages = [
+        site_dir / "trends" / f"alpha--{agents_trend.stem}.html",
+        site_dir / "ideas" / f"alpha--{agents_idea.stem}.html",
+        site_dir / "items" / f"alpha--{agents_item.stem}.html",
+        site_dir / "artifacts" / f"alpha--{agents_trend.name}",
+        site_dir / "artifacts" / "ideas" / f"alpha--{agents_idea.name}",
+    ]
+    for page in unexpected_parent_pages:
+        assert not page.exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["trends_total"] == 2
+    assert manifest["ideas_total"] == 2
+    assert manifest["items_total"] == 2
+    assert manifest["files"]["trend_pages"] == [
+        f"trends/agents-lab--{agents_trend.stem}.html",
+        f"trends/research-ops--{research_trend.stem}.html",
+    ]
+    assert manifest["files"]["idea_pages"] == [
+        f"ideas/agents-lab--{agents_idea.stem}.html",
+        f"ideas/research-ops--{research_idea.stem}.html",
+    ]
+    assert manifest["files"]["item_pages"] == [
+        f"items/agents-lab--{agents_item.stem}.html",
+        f"items/research-ops--{research_item.stem}.html",
+    ]
+    assert [entry["instance"] for entry in manifest["input_dirs"]] == [
+        "agents_lab",
+        "research_ops",
+    ]
+
+    research_trend_html = (
+        site_dir / "trends" / f"research-ops--{research_trend.stem}.html"
+    ).read_text(encoding="utf-8")
+    research_idea_html = (
+        site_dir / "ideas" / f"research-ops--{research_idea.stem}.html"
+    ).read_text(encoding="utf-8")
+    assert f"../items/research-ops--{research_item.stem}.html" in research_trend_html
+    assert f"../items/agents-lab--{agents_item.stem}.html" not in research_trend_html
+    assert f"../trends/research-ops--{research_trend.stem}.html" in research_idea_html
+    assert f"../items/research-ops--{research_item.stem}.html" in research_idea_html
+    assert f"../trends/agents-lab--{agents_trend.stem}.html" not in research_idea_html
+    assert f"../items/agents-lab--{agents_item.stem}.html" not in research_idea_html
+
+
 def test_export_trend_static_site_preserves_explicit_default_instance_name(
     tmp_path: Path,
 ) -> None:
