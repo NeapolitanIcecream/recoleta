@@ -522,6 +522,85 @@ def test_fleet_deploy_stops_when_child_translation_aborts_pr_23(
     assert captured_translate_calls[0]["raise_on_abort"] is True
 
 
+def test_fleet_deploy_forwards_child_instance_input_specs_pr_23(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    child_one_output = tmp_path / "alpha-outputs"
+    child_two_output = tmp_path / "beta-outputs"
+    child_one_output.mkdir(parents=True)
+    child_two_output.mkdir(parents=True)
+    child_one_config = _write_config(
+        tmp_path / "alpha.yaml",
+        _instance_config(
+            db_path=tmp_path / "alpha.db",
+            output_dir=child_one_output,
+        ),
+    )
+    child_two_config = _write_config(
+        tmp_path / "beta.yaml",
+        _instance_config(
+            db_path=tmp_path / "beta.db",
+            output_dir=child_two_output,
+        ),
+    )
+    manifest_path = _write_config(
+        tmp_path / "fleet.yaml",
+        {
+            "schema_version": 1,
+            "instances": [
+                {"name": "alpha", "config_path": str(child_one_config)},
+                {"name": "beta", "config_path": str(child_two_config)},
+            ],
+        },
+    )
+    execute_fleet_deploy_workflow = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="execute_fleet_deploy_workflow",
+    )
+    fleet_cli_module = recoleta.cli._import_symbol("recoleta.cli.fleet")
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(fleet_cli_module, "run_translate_run_command", lambda **_: None)
+    monkeypatch.setattr(fleet_cli_module, "run_materialize_outputs_command", lambda **_: None)
+
+    def _fake_deploy(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            remote="origin",
+            branch="gh-pages",
+            remote_url="https://example.com/repo.git",
+            repo_root=tmp_path,
+            commit_sha="deadbeef",
+            skipped=False,
+            pages_source=SimpleNamespace(
+                site_url="https://example.com/site",
+                status="published",
+            ),
+        )
+
+    monkeypatch.setattr(
+        recoleta.cli._import_symbol("recoleta.site_deploy"),
+        "deploy_trend_static_site_to_github_pages",
+        _fake_deploy,
+    )
+
+    execute_fleet_deploy_workflow(
+        manifest_path=manifest_path,
+        command="fleet run deploy",
+        include=None,
+        skip=None,
+        repo_dir=tmp_path / "site-repo",
+        json_output=False,
+    )
+
+    assert captured["input_dir"] == [
+        TrendSiteInputSpec(path=child_one_output, instance="alpha"),
+        TrendSiteInputSpec(path=child_two_output, instance="beta"),
+    ]
+
+
 def test_fleet_deploy_forwards_explicit_item_export_scope_pr_23(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

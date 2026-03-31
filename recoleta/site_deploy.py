@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import json
 import os
@@ -13,7 +14,7 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
-from recoleta.site import export_trend_static_site
+from recoleta.site import TrendSiteInputSpec, export_trend_static_site
 
 _DEFAULT_DEPLOY_BRANCH = "gh-pages"
 _DEFAULT_DEPLOY_MESSAGE = "Deploy Recoleta static site"
@@ -539,7 +540,7 @@ def _configure_pages_source(
 
 def deploy_trend_static_site_to_github_pages(
     *,
-    input_dir: Path | list[Path],
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
     repo_dir: Path,
     remote: str = "origin",
     branch: str = _DEFAULT_DEPLOY_BRANCH,

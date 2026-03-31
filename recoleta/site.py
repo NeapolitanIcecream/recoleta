@@ -304,7 +304,14 @@ def _instance_slug(instance: str) -> str:
 
 def _normalize_site_instance(instance: str | None) -> str | None:
     cleaned = str(instance or "").strip()
-    if not cleaned or cleaned == DEFAULT_TOPIC_STREAM:
+    if not cleaned:
+        return None
+    return cleaned
+
+
+def _normalize_legacy_site_stream(stream: str | None) -> str | None:
+    cleaned = _normalize_site_instance(stream)
+    if cleaned == DEFAULT_TOPIC_STREAM:
         return None
     return cleaned
 
@@ -382,7 +389,9 @@ def _resolve_site_instance(
         frontmatter.get("instance")
     ):
         return resolved_frontmatter_instance
-    if resolved_legacy_stream := _normalize_site_instance(frontmatter.get("stream")):
+    if resolved_legacy_stream := _normalize_legacy_site_stream(
+        frontmatter.get("stream")
+    ):
         return resolved_legacy_stream
     return None
 
@@ -598,8 +607,12 @@ def _discover_trend_site_input_dirs(
 
     def add_candidate(candidate: Path, *, instance: str | None) -> None:
         resolved_candidate = candidate.expanduser().resolve()
-        resolved_instance = _normalize_site_instance(
-            instance or _infer_instance_name_from_trends_dir(resolved_candidate)
+        resolved_instance = (
+            _normalize_site_instance(instance)
+            if instance is not None
+            else _normalize_legacy_site_stream(
+                _infer_instance_name_from_trends_dir(resolved_candidate)
+            )
         )
         if not resolved_candidate.exists() or not resolved_candidate.is_dir():
             return

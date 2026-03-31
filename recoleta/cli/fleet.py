@@ -306,7 +306,17 @@ def execute_fleet_deploy_workflow(
             }
         )
 
-    input_dirs = [Path(child["site_input_dir"]) for child in child_results]
+    TrendSiteInputSpec = cli._import_symbol(
+        "recoleta.site",
+        attr_name="TrendSiteInputSpec",
+    )
+    input_dirs = [
+        TrendSiteInputSpec(
+            path=Path(str(child["site_input_dir"])),
+            instance=str(child["instance"]),
+        )
+        for child in child_results
+    ]
     normalized_item_export_scope = (
         str(item_export_scope or "").strip().lower() or "linked"
     )

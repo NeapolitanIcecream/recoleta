@@ -2635,6 +2635,63 @@ def test_export_trend_static_site_namespaces_duplicate_pages_and_artifacts_by_in
     assert all("stream" not in entry for entry in manifest["input_dirs"])
 
 
+def test_export_trend_static_site_preserves_explicit_default_instance_name(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=711,
+        title="Default Instance Weekly",
+        granularity="day",
+        period_start=datetime(2026, 3, 20, tzinfo=UTC),
+        period_end=datetime(2026, 3, 21, tzinfo=UTC),
+        run_id="run-default-instance-trend",
+        overview_md="## Overview\n\nDefault-named fleet child.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = notes_root / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-20--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-20T00:00:00+00:00\n"
+        "period_end: 2026-03-21T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "stream: default\n"
+        "---\n\n"
+        "# Default instance ideas\n\n"
+        "## Summary\n\n"
+        "Default-named child should still namespace pages.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=TrendSiteInputSpec(path=notes_root, instance="default"),
+        output_dir=site_dir,
+    )
+
+    trend_page = site_dir / "trends" / f"default--{trend_note.stem}.html"
+    idea_page = site_dir / "ideas" / f"default--{idea_note.stem}.html"
+    assert trend_page.exists()
+    assert idea_page.exists()
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["input_dirs"][0]["instance"] == "default"
+    assert f"trends/default--{trend_note.stem}.html" in manifest["files"]["trend_pages"]
+    assert f"ideas/default--{idea_note.stem}.html" in manifest["files"]["idea_pages"]
+
+    trend_html = trend_page.read_text(encoding="utf-8")
+    idea_html = idea_page.read_text(encoding="utf-8")
+    assert "<div class='meta-panel-value'>Default</div>" in trend_html
+    assert "<div class='meta-panel-value'>Default</div>" in idea_html
+
+
 def test_stage_trend_site_source_preserves_topic_stream_directory_layout(
     tmp_path: Path,
 ) -> None:
