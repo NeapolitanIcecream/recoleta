@@ -24,6 +24,7 @@ from recoleta.config import LocalizationConfig, Settings
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.models import Analysis, Document, DocumentChunk, Item, PassOutput
 from recoleta.passes.trend_ideas import TrendIdeasPayload
+from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.provenance import build_projection_provenance, inject_projection_provenance
 from recoleta.rag.corpus_tools import CorpusSpec, SearchService
 from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
@@ -279,13 +280,7 @@ def _translate_structured_payload_with_debug(
     target_label = str(target_language_label or target_language_code).strip()
     context_payload = context if isinstance(context, dict) else {}
 
-    system_message = (
-        "You translate structured Recoleta research outputs between languages. "
-        "Return strict JSON only. Preserve the input JSON shape exactly. "
-        "Do not add or remove keys, do not reorder arrays unnecessarily, and do not invent facts. "
-        "Translate only natural-language prose. Preserve URLs, markdown link targets, ids, timestamps, "
-        "topic slugs, enum-like tokens, doc references, and evidence refs exactly."
-    )
+    system_message = _build_translation_system_message()
     user_message = (
         f"Translate this {source_kind} payload from {source_label} to {target_label}.\n\n"
         "Rules:\n"
@@ -351,6 +346,28 @@ def _translate_structured_payload_with_debug(
         "usage": debug_usage,
         "estimated_cost_usd": cost_usd,
     }
+
+
+def _build_translation_system_message() -> str:
+    base = (
+        "You translate structured Recoleta research outputs between languages. "
+        "Return strict JSON only. Preserve the input JSON shape exactly. "
+        "Do not add or remove keys, do not reorder arrays unnecessarily, and do not invent facts. "
+        "Translate only natural-language prose. Preserve URLs, markdown link targets, ids, timestamps, "
+        "topic slugs, enum-like tokens, doc references, and evidence refs exactly."
+    )
+    guardrail = (
+        "When multiple target-language phrasings are equally faithful, choose the most direct, "
+        "least rhetorical, least templated phrasing. Do not use this freedom to change claims, "
+        "add or remove facts, reorder arrays, or alter JSON structure."
+    )
+    return "\n\n".join(
+        [
+            base,
+            reader_facing_ai_tropes_prompt(),
+            guardrail,
+        ]
+    )
 
 
 def _latest_meta_chunk_for_doc(

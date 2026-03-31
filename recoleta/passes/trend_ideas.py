@@ -140,7 +140,7 @@ def build_empty_trend_ideas_payload(
 def normalize_trend_ideas_payload(
     payload: TrendIdeasPayload,
     *,
-    max_ideas: int = 5,
+    max_ideas: int = 3,
 ) -> TrendIdeasPayload:
     seen_titles: set[str] = set()
     normalized_ideas: list[TrendIdea] = []
