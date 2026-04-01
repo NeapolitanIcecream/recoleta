@@ -127,7 +127,7 @@ def _render_history_refs_in_text(
             window=token,
             history_window_refs=history_window_refs,
         )
-        return display or ""
+        return display or token
 
     replaced = _HISTORY_WINDOW_MENTION_RE.sub(_replace, raw)
     normalized_lines = [

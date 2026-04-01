@@ -191,6 +191,10 @@ def _render_evidence_ref_lines(
     return lines
 
 
+def _normalized_payload_ideas(payload: TrendIdeasPayload, *, max_count: int = 3) -> list[Any]:
+    return list(payload.ideas or [])[:max_count]
+
+
 def _render_ideas_note_lines(
     *,
     repository: Any,
@@ -254,9 +258,10 @@ def _render_ideas_note_lines(
         str(payload.summary_md or "").strip() or "(empty)",
     ]
 
-    if payload.ideas:
+    normalized_ideas = _normalized_payload_ideas(payload)
+    if normalized_ideas:
         lines.extend(["", "## Opportunities"])
-        for index, idea in enumerate(payload.ideas, start=1):
+        for index, idea in enumerate(normalized_ideas, start=1):
             tier_label = display_idea_tier(index)
             lines.extend(
                 [
@@ -334,11 +339,12 @@ def _write_ideas_note(
     )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     if emit_presentation_sidecar:
+        normalized_ideas = _normalized_payload_ideas(payload)
         presentation = build_idea_presentation_v1(
             source_markdown_path=f"{note_dir.name}/{note_path.name}",
             title=str(payload.title or "").strip(),
             summary_md=str(payload.summary_md or "").strip(),
-            ideas=list(payload.ideas or []),
+            ideas=normalized_ideas,
             language_code=language_code,
         )
         write_presentation_sidecar(note_path=note_path, presentation=presentation)

@@ -216,3 +216,97 @@ def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
     assert sidecar["content"]["opportunities"][0]["display_kind"] == "Tooling wedge"
     assert sidecar["content"]["opportunities"][1]["display_time_horizon"] == "Near-term"
     assert validate_presentation_v1(sidecar) == []
+
+
+def test_write_markdown_ideas_note_keeps_markdown_and_sidecar_opportunities_in_sync(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Why now ideas",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "Several ideas are available.",
+            "ideas": [
+                {
+                    "title": "Idea one",
+                    "kind": "tooling_wedge",
+                    "thesis": "First idea.",
+                    "why_now": "Now.",
+                    "what_changed": "Change one.",
+                    "user_or_job": "Role one",
+                    "evidence_refs": [],
+                    "validation_next_step": "Test one.",
+                    "time_horizon": "now",
+                },
+                {
+                    "title": "Idea two",
+                    "kind": "workflow_shift",
+                    "thesis": "Second idea.",
+                    "why_now": "Now.",
+                    "what_changed": "Change two.",
+                    "user_or_job": "Role two",
+                    "evidence_refs": [],
+                    "validation_next_step": "Test two.",
+                    "time_horizon": "near",
+                },
+                {
+                    "title": "Idea three",
+                    "kind": "research_gap",
+                    "thesis": "Third idea.",
+                    "why_now": "Now.",
+                    "what_changed": "Change three.",
+                    "user_or_job": "Role three",
+                    "evidence_refs": [],
+                    "validation_next_step": "Test three.",
+                    "time_horizon": "frontier",
+                },
+                {
+                    "title": "Idea four",
+                    "kind": "new_build",
+                    "thesis": "Fourth idea.",
+                    "why_now": "Now.",
+                    "what_changed": "Change four.",
+                    "user_or_job": "Role four",
+                    "evidence_refs": [],
+                    "validation_next_step": "Test four.",
+                    "time_horizon": "near",
+                },
+            ],
+        }
+    )
+
+    note_path = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=tmp_path / "notes",
+        pass_output_id=7,
+        upstream_pass_output_id=3,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-ideas-sync",
+        status="succeeded",
+        payload=payload,
+        topics=["agents"],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "### Best bet: Idea one" in note_text
+    assert "### Alternate: Idea two" in note_text
+    assert "### Alternate: Idea three" in note_text
+    assert "Idea four" not in note_text
+    assert [entry["title"] for entry in sidecar["content"]["opportunities"]] == [
+        "Idea one",
+        "Idea two",
+        "Idea three",
+    ]

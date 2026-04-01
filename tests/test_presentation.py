@@ -121,6 +121,25 @@ def test_validate_presentation_v1_rejects_case_variants_of_placeholder_tokens() 
     assert "user-visible fields must not contain raw history placeholder tokens" in errors
 
 
+def test_build_trend_presentation_v1_preserves_unresolved_history_placeholders() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/week--2026-W10--trend--81.md",
+        title="Week 10 roundup",
+        overview_md="Compared with prev_2, teams now gate prompt releases.",
+        evolution=None,
+        history_window_refs={"prev_1": {"title": "Earlier verification push", "label": "2026-W09"}},
+        clusters=[],
+    )
+
+    assert (
+        presentation["content"]["overview"]
+        == "Compared with prev_2, teams now gate prompt releases."
+    )
+    assert "user-visible fields must not contain raw history placeholder tokens" in (
+        validate_presentation_v1(presentation)
+    )
+
+
 def test_build_trend_presentation_v1_renders_history_refs_case_insensitively() -> None:
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
