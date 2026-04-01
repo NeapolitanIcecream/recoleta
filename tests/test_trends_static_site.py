@@ -2395,6 +2395,46 @@ def test_export_trend_static_site_keeps_overview_summary_when_evolution_has_no_s
     assert "detail-insight-row" not in detail_html
 
 
+def test_export_trend_static_site_falls_back_when_sidecar_schema_version_is_invalid_string(
+    tmp_path: Path,
+) -> None:
+    """Regression: malformed sidecar schema versions must not abort markdown fallback."""
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=189,
+        title="Markdown title wins",
+        granularity="day",
+        period_start=datetime(2026, 3, 11, tzinfo=UTC),
+        period_end=datetime(2026, 3, 12, tzinfo=UTC),
+        run_id="run-site-invalid-sidecar-schema-version",
+        overview_md="## Overview\n\nMarkdown overview should remain readable.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    sidecar_path = presentation_sidecar_path(note_path=note)
+    sidecar_payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar_payload["presentation_schema_version"] = "v1"
+    sidecar_payload["content"]["title"] = "Broken sidecar title should lose"
+    sidecar_payload["content"]["overview"] = "Broken sidecar overview should lose."
+    sidecar_path.write_text(
+        json.dumps(sidecar_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Markdown title wins" in detail_html
+    assert "Markdown overview should remain readable." in detail_html
+    assert "Broken sidecar title should lose" not in detail_html
+    assert "Broken sidecar overview should lose." not in detail_html
+
+
 def test_export_trend_static_site_uses_sidecar_even_when_markdown_contains_evolution(
     tmp_path: Path,
 ) -> None:

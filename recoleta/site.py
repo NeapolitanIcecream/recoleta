@@ -226,7 +226,11 @@ def _load_presentation_for_site(
         return None
     if not isinstance(payload, dict):
         return None
-    if int(payload.get("presentation_schema_version") or 0) != 1:
+    try:
+        schema_version = int(payload.get("presentation_schema_version") or 0)
+    except Exception:
+        return None
+    if schema_version != 1:
         return None
     if str(payload.get("surface_kind") or "").strip().lower() != surface_kind:
         return None
