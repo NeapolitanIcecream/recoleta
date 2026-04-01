@@ -2,7 +2,21 @@
 
 Date: 2026-03-31
 
-Status: Proposed
+Status: Partially implemented
+
+Implementation status as of 2026-04-01:
+
+- Phase 1 has landed in PR #25 (`feat(output-quality): land phase 1 presentation groundwork`).
+- Canonical English trend and idea markdown now emit adjacent
+  `*.presentation.json` sidecars with internal v1 validation at write time.
+- Shared reader-facing prompt style guardrails are wired into trend, idea, and
+  translation prompts.
+- Canonical idea markdown and the markdown-first site parser now use
+  reader-facing labels (`Best bet` / `Alternate`, `Type`, `Horizon`, `Role`).
+- Translation sidecar-first, localized sidecars, and site sidecar-first
+  rendering remain future phases and are not implemented yet.
+- `anti_thesis` remains deferred because `TrendIdeasPayload` stays frozen in
+  Phase 1.
 
 ## Goal
 
@@ -166,6 +180,10 @@ machine-readable presentation layer beside it.
 
 ## Core Architecture Decision
 
+The sections below describe the target end state of the redesign. Unless a
+section explicitly says otherwise, read them as design intent across all
+phases, not as a claim that every step is already implemented.
+
 Add a machine-readable presentation contract between canonical pass outputs and
 reader-facing markdown/site projections.
 
@@ -201,7 +219,7 @@ with the same stem:
 - `Ideas/<stem>.md`
 - `Ideas/<stem>.presentation.json`
 
-Localized projections follow the same rule:
+Localized projections follow the same rule in the target end state:
 
 - `Localized/<language>/Trends/<stem>.md`
 - `Localized/<language>/Trends/<stem>.presentation.json`
@@ -216,6 +234,9 @@ All sidecars use:
 
 The site and translation code must branch on this version. Unknown versions must
 fail closed for structured rendering and fall back to legacy markdown parsing.
+In the current Phase 1 implementation, sidecar versioning is enforced for
+canonical trend and idea sidecars; translation and site adoption remain later
+phases.
 
 ### Common envelope
 
@@ -611,7 +632,7 @@ Repair behavior:
 
 ### 3. Translation layer
 
-Implementation target:
+Implementation target for a later phase:
 
 - `recoleta/translation.py`
 
@@ -671,7 +692,7 @@ the exact failures seen in `26w12`.
 
 ### 4. Site layer
 
-Implementation target:
+Implementation target for a later phase:
 
 - `recoleta/site.py`
 
@@ -914,7 +935,7 @@ Exit criteria:
 
 ## Implementation Defaults
 
-The following defaults are fixed by this design.
+The following defaults are fixed by this design once all phases land.
 
 - `TrendPayload` and `TrendIdeasPayload` remain unchanged.
 - `presentation_schema_version=1` is the initial sidecar version.
@@ -926,6 +947,14 @@ The following defaults are fixed by this design.
 - English and Chinese are equal quality targets from the start.
 - runtime prose-style prompt text mirrors `docs/assets/ai-tropes.md` via a code
   helper rather than reading the docs file at runtime.
+
+Current implementation note:
+
+- only the Phase 1 subset above is live today
+- canonical English trend and idea projections write adjacent sidecars
+- localized projections remain markdown-only
+- site rendering remains markdown-first with compatibility for the new idea
+  labels
 
 ## Why This Is The Right Cut
 
