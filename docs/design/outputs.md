@@ -41,8 +41,10 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `latest.md`: entry point for the most recent item publish run
 - `Runs/<run_id>.md`: per-run item index (same content as `latest.md`)
 - `Inbox/`: one note per published item
-- `Trends/`: canonical trend markdown notes
-- `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs
+- `Trends/`: canonical trend markdown notes plus adjacent
+  `<stem>.presentation.json` sidecars
+- `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs plus
+  adjacent `<stem>.presentation.json` sidecars
 - `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading surfaces derived from canonical outputs
 - `site/`: optional derived static site output from `recoleta run site build`
 
@@ -63,10 +65,14 @@ Trend notes are the canonical source for all downstream trend surfaces:
 - `recoleta repair outputs` rerenders trend markdown from stored trend
   documents and can optionally refresh PDFs/site output in the same pass
 - when available, trend note frontmatter also carries `pass_output_id` / `pass_kind` so projections can be traced back to canonical `trend_synthesis` output
+- canonical trend markdown notes also emit adjacent `*.presentation.json`
+  sidecars as a structured presentation contract for downstream adoption
 
 Idea notes follow the same projection contract:
 
 - `markdown` and `obsidian` idea notes are derived from canonical `trend_ideas` pass outputs
+- canonical idea markdown notes also emit adjacent `*.presentation.json`
+  sidecars in the same directory
 - searchable `doc_type=idea` documents are also derived projections, not canonical pass state
 - idea note frontmatter and idea document meta chunks carry `pass_output_id` plus the upstream `trend_synthesis` pointer
 - those provenance-bearing document `meta` chunks are system-only metadata: they are preserved for repair/audit, but excluded from agent-visible FTS/hybrid retrieval
@@ -78,6 +84,8 @@ Localized notes are projections, not canonical state:
 - `recoleta stage translate backfill` writes translated source-language
   overrides plus optional mirror variants for historical corpora
 - localized notes are materialized under `MARKDOWN_OUTPUT_DIR/Localized/<language>/...`
+- localized trees remain markdown-only for now; localized `.presentation.json`
+  sidecars are a later follow-up
 - canonical `analyses`, `pass_outputs`, and `documents` remain unchanged
 
 ## Trend PDF surface

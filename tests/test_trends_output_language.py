@@ -16,6 +16,14 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "under 200 Chinese characters or 200 words" in instructions
     assert "do not add a Topics/主题 section inside overview_md" in instructions
     assert "Tools only access the active target period" in instructions
+    assert "direct editorial judgment, not a topic inventory" in instructions
+    assert "2 or 3 ranked shifts ordered by importance" in instructions
+    assert "at most three named systems, papers, or benchmarks" in instructions
+    assert "Keep raw prev_n tokens only in evolution.signals[].history_windows" in instructions
+    assert "The goal is not to ban every phrase once." in instructions
+    assert "Avoid negative parallelism" in instructions
+    assert "Avoid false suspense" in instructions
+    assert "Avoid fractal summaries" in instructions
 
 
 def test_trends_empty_payload_localizes_for_chinese() -> None:

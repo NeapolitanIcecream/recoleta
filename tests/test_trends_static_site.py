@@ -1558,10 +1558,10 @@ def test_export_trend_static_site_renders_idea_opportunities_as_cards(
         f"[CodeScout](../Inbox/{item_note.name}) and "
         f"[the daily trend](../Trends/{trend_note.name}).\n\n"
         "## Opportunities\n\n"
-        "### Prompt CI gate\n"
-        "- Kind: Workflow\n"
-        "- Time horizon: Now\n"
-        "- User/job: Internal agent platform owners responsible for prompt rollout safety\n\n"
+        "### Best bet: Prompt CI gate\n"
+        "- Type: Workflow shift\n"
+        "- Horizon: Now\n"
+        "- Role: Internal agent platform owners responsible for prompt rollout safety\n\n"
         "**Thesis.** Add a prompt release gate before rollout.\n\n"
         "**Why now.** Teams now have enough agent activity to justify structured release controls.\n\n"
         "**What changed.** More agent traffic means regressions show up faster and cost more.\n\n"
@@ -1569,10 +1569,10 @@ def test_export_trend_static_site_renders_idea_opportunities_as_cards(
         "#### Evidence\n"
         f"- [CodeScout](../Inbox/{item_note.name})\n"
         f"- [Daily trend](../Trends/{trend_note.name})\n\n"
-        "### Operator review lane\n"
-        "- Kind: Product\n"
-        "- Time horizon: Near-term\n"
-        "- User/job: Applied AI ops\n\n"
+        "### Alternate: Operator review lane\n"
+        "- Type: Workflow shift\n"
+        "- Horizon: Near-term\n"
+        "- Role: Applied AI ops\n\n"
         "**Thesis.** Give operators a queue that isolates low-confidence agent runs.\n\n"
         "**Why now.** Teams are crossing the threshold where manual review no longer fits ad hoc chat.\n\n"
         "**What changed.** Higher usage produces repeated edge cases and repeatable review heuristics.\n\n"
@@ -1597,6 +1597,8 @@ def test_export_trend_static_site_renders_idea_opportunities_as_cards(
     assert "idea-opportunity-block-role" in detail_html
     assert "idea-evidence-list" in detail_html
     assert "2 opportunities" in detail_html
+    assert "Best bet: Prompt CI gate" in detail_html
+    assert "Alternate: Operator review lane" in detail_html
     assert "User/job" not in detail_html
     assert ">Role<" in detail_html
     assert f"../items/{item_note.stem}.html" in detail_html

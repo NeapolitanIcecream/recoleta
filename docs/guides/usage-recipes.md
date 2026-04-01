@@ -34,9 +34,11 @@ After a successful run, check:
 
 - `MARKDOWN_OUTPUT_DIR/latest.md`
 - `MARKDOWN_OUTPUT_DIR/Inbox/`
-- `MARKDOWN_OUTPUT_DIR/Trends/`
+- `MARKDOWN_OUTPUT_DIR/Trends/` for canonical trend `.md` notes plus adjacent
+  `.presentation.json` sidecars
 - `MARKDOWN_OUTPUT_DIR/site/`
-- `MARKDOWN_OUTPUT_DIR/Ideas/` when the current window has enough evidence
+- `MARKDOWN_OUTPUT_DIR/Ideas/` when the current window has enough evidence, for
+  canonical idea `.md` notes plus adjacent `.presentation.json` sidecars
 - for a migrated fleet, check each child instance's `MARKDOWN_OUTPUT_DIR`
 
 ## Run a fleet by hand

@@ -895,6 +895,7 @@ def _materialize_outputs_for_target(
                 status=str(row.status),
                 payload=payload,
                 topics=topics,
+                output_language=output_language,
                 language_code=language_code,
             )
             result.ideas_notes_total += 1
@@ -921,6 +922,7 @@ def _materialize_outputs_for_target(
                     status=str(row.status),
                     payload=payload,
                     topics=topics,
+                    output_language=output_language,
                     language_code=language_code,
                 )
                 result.obsidian_notes_total += 1

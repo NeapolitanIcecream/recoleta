@@ -310,8 +310,10 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `latest.md` (entry point for the most recent publish run)
 - `Runs/<run_id>.md` (per-run index)
 - `Inbox/` (one note per item, Markdown + YAML frontmatter)
-- `Trends/` (canonical trend markdown notes and derived trend PDFs)
-- `Ideas/` (idea briefs derived from canonical `trend_ideas` pass outputs)
+- `Trends/` (canonical trend markdown notes, adjacent
+  `<stem>.presentation.json` sidecars, and derived trend PDFs)
+- `Ideas/` (idea briefs derived from canonical `trend_ideas` pass outputs plus
+  adjacent `<stem>.presentation.json` sidecars)
 - `Localized/<language>/Inbox|Trends|Ideas/` (translated or mirrored projections derived from canonical outputs)
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
 - `site/` (optional static site export derived from `Trends/`)
@@ -320,6 +322,8 @@ Trend markdown notes are the canonical source for the richer trend surfaces:
 
 - Telegram trend PDFs render from `Trends/*.md`
 - the static site exporter renders from a trend markdown directory
+- canonical trend notes also emit adjacent `*.presentation.json` sidecars for
+  structured presentation metadata
 - when localized markdown trees exist, the site exporter also aggregates `Localized/<language>/...` and emits one site subtree per language
 
 Historical note:

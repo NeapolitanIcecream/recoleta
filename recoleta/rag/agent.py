@@ -15,6 +15,7 @@ from recoleta.item_summary import extract_item_summary_sections
 from recoleta.llm_costs import estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
+from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.rag.corpus_tools import (
     CorpusSpec,
     SearchService,
@@ -116,6 +117,13 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Do not simply restate the overview; focus on what persisted, appeared, faded, or changed across windows."
     )
     base += (
+        " Write the title as a direct editorial judgment, not a topic inventory. "
+        "Treat evolution.signals as 2 or 3 ranked shifts ordered by importance when evidence is sufficient; emit fewer rather than padding weak shifts. "
+        "Keep the opening overview short, lead with the week-level judgment, and avoid opening with a flat list of systems or papers. "
+        "Limit the opening overview to at most three named systems, papers, or benchmarks. "
+        "Keep raw prev_n tokens only in evolution.signals[].history_windows; do not leave them unresolved in title, overview_md, clusters, or highlights."
+    )
+    base += (
         " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
         "The opening overview prose must stay under 200 Chinese characters or 200 words before any later sub-sections. "
         "Keep topics only in the topics field; do not add a Topics/主题 section inside overview_md. "
@@ -133,10 +141,11 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "with required integer fields doc_id and chunk_index, and optional float score. "
         "Never output null for doc_id/chunk_index."
     )
+    base = f"{base}\n\n{reader_facing_ai_tropes_prompt()}"
     if not output_language:
         return base
     return (
-        f"{base} Use {output_language} for all natural language fields "
+        f"{base}\n\nUse {output_language} for all natural language fields "
         "(title, overview_md, clusters[].name, clusters[].description, highlights). "
         "Keep all JSON keys in English and keep topics as concise English tags."
     )

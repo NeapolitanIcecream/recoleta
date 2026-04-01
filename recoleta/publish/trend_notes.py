@@ -8,6 +8,13 @@ from typing import Any
 
 import yaml
 
+from recoleta.presentation import (
+    build_trend_presentation_v1,
+    is_localized_output_path,
+    presentation_sidecar_path,
+    resolve_presentation_language_code,
+    write_presentation_sidecar,
+)
 from recoleta.provenance import ProjectionProvenance, build_projection_provenance
 from recoleta.publish.trend_render_shared import (
     _trend_date_token,
@@ -459,8 +466,15 @@ def _write_trend_note(
     pass_kind: str | None = None,
     site_exclude: bool = False,
     language_code: str | None = None,
+    emit_presentation_sidecar: bool = False,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
+    resolved_language_code = resolve_presentation_language_code(
+        language_code=language_code,
+        output_language=output_language,
+    )
+    sanitized_title = sanitize_trend_title(title)
+    sanitized_overview_md = sanitize_trend_overview_markdown(overview_md)
     note_path = resolve_trend_note_path(
         note_dir=note_dir,
         trend_doc_id=trend_doc_id,
@@ -491,9 +505,25 @@ def _write_trend_note(
             else None
         ),
         site_exclude=bool(site_exclude),
-        language_code=language_code,
+        language_code=resolved_language_code,
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    if emit_presentation_sidecar:
+        presentation = build_trend_presentation_v1(
+            source_markdown_path=f"{note_dir.name}/{note_path.name}",
+            title=sanitized_title,
+            overview_md=sanitized_overview_md,
+            evolution=evolution,
+            history_window_refs=history_window_refs,
+            clusters=clusters,
+            language_code=resolved_language_code,
+        )
+        try:
+            write_presentation_sidecar(note_path=note_path, presentation=presentation)
+        except Exception:
+            note_path.unlink(missing_ok=True)
+            presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
+            raise
     return note_path
 
 
@@ -539,6 +569,7 @@ def write_obsidian_trend_note(
         pass_kind=pass_kind,
         site_exclude=site_exclude,
         language_code=language_code,
+        emit_presentation_sidecar=False,
     )
 
 
@@ -586,6 +617,7 @@ def write_markdown_trend_note(
         pass_kind=pass_kind,
         site_exclude=site_exclude,
         language_code=language_code,
+        emit_presentation_sidecar=not is_localized_output_path(output_dir),
     )
 
 

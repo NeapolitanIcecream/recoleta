@@ -7,6 +7,16 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from recoleta.presentation import (
+    build_idea_presentation_v1,
+    display_idea_kind,
+    display_idea_tier,
+    display_idea_time_horizon,
+    is_localized_output_path,
+    presentation_sidecar_path,
+    resolve_presentation_language_code,
+    write_presentation_sidecar,
+)
 from recoleta.publish.item_notes import resolve_item_note_href
 from recoleta.publish.trend_notes import resolve_trend_note_href
 from recoleta.publish.trend_render_shared import _trend_date_token
@@ -183,6 +193,10 @@ def _render_evidence_ref_lines(
     return lines
 
 
+def _normalized_payload_ideas(payload: TrendIdeasPayload, *, max_count: int = 3) -> list[Any]:
+    return list(payload.ideas or [])[:max_count]
+
+
 def _render_ideas_note_lines(
     *,
     repository: Any,
@@ -246,16 +260,18 @@ def _render_ideas_note_lines(
         str(payload.summary_md or "").strip() or "(empty)",
     ]
 
-    if payload.ideas:
+    normalized_ideas = _normalized_payload_ideas(payload)
+    if normalized_ideas:
         lines.extend(["", "## Opportunities"])
-        for idea in payload.ideas:
+        for index, idea in enumerate(normalized_ideas, start=1):
+            tier_label = display_idea_tier(index)
             lines.extend(
                 [
                     "",
-                    f"### {idea.title}",
-                    f"- Kind: {idea.kind}",
-                    f"- Time horizon: {idea.time_horizon}",
-                    f"- User/job: {idea.user_or_job}",
+                    f"### {tier_label}: {idea.title}",
+                    f"- Type: {display_idea_kind(idea.kind)}",
+                    f"- Horizon: {display_idea_time_horizon(idea.time_horizon)}",
+                    f"- Role: {idea.user_or_job}",
                     "",
                     f"**Thesis.** {idea.thesis}",
                     "",
@@ -297,9 +313,15 @@ def _write_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    output_language: str | None = None,
     language_code: str | None = None,
+    emit_presentation_sidecar: bool = False,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
+    resolved_language_code = resolve_presentation_language_code(
+        language_code=language_code,
+        output_language=output_language,
+    )
     note_path = resolve_ideas_note_path(
         note_dir=note_dir,
         granularity=granularity,
@@ -320,9 +342,24 @@ def _write_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
-        language_code=language_code,
+        language_code=resolved_language_code,
     )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    if emit_presentation_sidecar:
+        normalized_ideas = _normalized_payload_ideas(payload)
+        presentation = build_idea_presentation_v1(
+            source_markdown_path=f"{note_dir.name}/{note_path.name}",
+            title=str(payload.title or "").strip(),
+            summary_md=str(payload.summary_md or "").strip(),
+            ideas=normalized_ideas,
+            language_code=resolved_language_code,
+        )
+        try:
+            write_presentation_sidecar(note_path=note_path, presentation=presentation)
+        except Exception:
+            note_path.unlink(missing_ok=True)
+            presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
+            raise
     return note_path
 
 
@@ -341,6 +378,7 @@ def write_markdown_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    output_language: str | None = None,
     language_code: str | None = None,
 ) -> Path:
     root_dir = output_dir.expanduser().resolve()
@@ -360,7 +398,9 @@ def write_markdown_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
+        output_language=output_language,
         language_code=language_code,
+        emit_presentation_sidecar=not is_localized_output_path(root_dir),
     )
 
 
@@ -380,6 +420,7 @@ def write_obsidian_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    output_language: str | None = None,
     language_code: str | None = None,
 ) -> Path:
     root_dir = vault_path / base_folder
@@ -399,5 +440,7 @@ def write_obsidian_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
+        output_language=output_language,
         language_code=language_code,
+        emit_presentation_sidecar=False,
     )

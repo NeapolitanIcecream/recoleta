@@ -12,7 +12,7 @@ This document records the current design for trend-facing reading surfaces beyon
 
 ## Canonical source: trend markdown
 
-Trend markdown under `MARKDOWN_OUTPUT_DIR/Trends/` is the source of truth for downstream publishing surfaces.
+Trend markdown under `MARKDOWN_OUTPUT_DIR/Trends/` is the source of truth for downstream publishing surfaces. Canonical trend notes also emit adjacent `*.presentation.json` sidecars as a structured companion artifact, but current PDF and site flows still derive from the markdown note itself.
 
 Why:
 

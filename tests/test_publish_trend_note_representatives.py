@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 
+import pytest
+
+import recoleta.publish.trend_notes as trend_notes_module
+from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
 from recoleta.publish import write_markdown_trend_note
 
 
@@ -337,3 +342,277 @@ def test_publish_trend_note_deduplicates_history_window_title_after_link(
         in text
     )
     assert "](day--2026-03-08--trend--69.md)《机器人具身智能转向轻量适配、长时序增强与部署一致性》" not in text
+
+
+def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_refs(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=9,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="This week shifted from prev_1 toward evaluation discipline.",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Teams are using tighter release controls.",
+                "representative_chunks": [
+                    {
+                        "doc_id": 1,
+                        "chunk_index": 0,
+                        "title": "CodeScout",
+                        "url": "https://example.com/codescout",
+                    }
+                ],
+            }
+        ],
+        highlights=[],
+        evolution={
+            "summary_md": "Compared with prev_1, the conversation is more operational.",
+            "signals": [
+                {
+                    "theme": "Verification loops",
+                    "change_type": "continuing",
+                    "summary": "Compared with prev_1, teams now quantify release risk.",
+                    "history_windows": ["prev_1"],
+                },
+                {
+                    "theme": "Operator lanes",
+                    "change_type": "emerging",
+                    "summary": "Review queues are moving into the main workflow.",
+                    "history_windows": [],
+                },
+            ],
+        },
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-W10",
+                "title": "Verification Gets Tighter",
+                "granularity": "week",
+                "period_start": "2026-03-02T00:00:00+00:00",
+                "trend_doc_id": 7,
+            }
+        },
+    )
+
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+    assert sidecar_path.exists()
+    assert sidecar["presentation_schema_version"] == 1
+    assert sidecar["surface_kind"] == "trend"
+    assert sidecar["source_markdown_path"] == f"Trends/{note_path.name}"
+    assert sidecar["content"]["hero"]["kicker"] == "Trend brief"
+    assert sidecar["content"]["ranked_shifts"][0]["history_refs"] == ["prev_1"]
+    assert "prev_1" not in sidecar["content"]["overview"]
+    assert "Verification Gets Tighter" in sidecar["content"]["overview"]
+    assert sidecar["content"]["representative_sources"][0]["title"] == "CodeScout"
+    assert validate_presentation_v1(sidecar) == []
+
+
+def test_publish_trend_note_sidecar_matches_sanitized_markdown_surface(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=10,
+        title="2026-03-12 Daily Trend: Verification gets operational",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="## Overview\n\nTeams are tightening release discipline.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "# Verification gets operational" in note_text
+    assert note_text.count("## Overview") == 1
+    assert sidecar["content"]["title"] == "Verification gets operational"
+    assert sidecar["content"]["overview"] == "Teams are tightening release discipline."
+
+
+def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=11,
+        title="周趋势",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="团队开始把验证闭环前置到发布流程里。",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        output_language="Chinese (Simplified)",
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "language_code: zh-CN" in note_text
+    assert sidecar["language_code"] == "zh-CN"
+
+
+def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=12,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="This week shifted toward operational rigor.",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Compared with prev_1, teams now keep review lanes inside the main workflow.",
+                "representative_chunks": [],
+            }
+        ],
+        highlights=[],
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-W10",
+                "title": "Verification Gets Tighter",
+                "granularity": "week",
+                "period_start": "2026-03-02T00:00:00+00:00",
+                "trend_doc_id": 7,
+            }
+        },
+    )
+
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "prev_1" not in sidecar["content"]["clusters"][0]["summary"]
+    assert "Verification Gets Tighter" in sidecar["content"]["clusters"][0]["summary"]
+    assert validate_presentation_v1(sidecar) == []
+
+
+def test_publish_trend_note_sidecar_matches_markdown_representative_source_limits(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=13,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="Teams are tightening release discipline.",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Representative sources should match markdown output.",
+                "representative_chunks": [
+                    {"title": "Alpha", "url": "https://example.com/a"},
+                    {"title": "Beta", "url": "https://example.com/b"},
+                    {"title": "Alpha duplicate", "url": "https://example.com/a"},
+                    {"title": "Gamma", "url": "https://example.com/c"},
+                    {"title": "Delta", "url": "https://example.com/d"},
+                    {"title": "Epsilon", "url": "https://example.com/e"},
+                    {"title": "Zeta", "url": "https://example.com/f"},
+                ],
+            }
+        ],
+        highlights=[],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "[Alpha](https://example.com/a)" in note_text
+    assert "[Beta](https://example.com/b)" in note_text
+    assert "[Gamma](https://example.com/c)" in note_text
+    assert "[Delta](https://example.com/d)" in note_text
+    assert "[Epsilon](https://example.com/e)" in note_text
+    assert "Alpha duplicate" not in note_text
+    assert "Zeta" not in note_text
+    assert [
+        rep["title"]
+        for rep in sidecar["content"]["clusters"][0]["representative_sources"]
+    ] == ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]
+    assert [rep["title"] for rep in sidecar["content"]["representative_sources"]] == [
+        "Alpha",
+        "Beta",
+        "Gamma",
+        "Delta",
+        "Epsilon",
+    ]
+
+
+def test_write_markdown_trend_note_rolls_back_markdown_when_sidecar_write_fails(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+    note_path = trend_notes_module.resolve_trend_note_path(
+        note_dir=tmp_path / "Trends",
+        trend_doc_id=14,
+        granularity="week",
+        period_start=period_start,
+    )
+
+    def _explode_sidecar(*, note_path, presentation):  # type: ignore[no-untyped-def]
+        _ = (note_path, presentation)
+        raise ValueError("invalid presentation sidecar")
+
+    monkeypatch.setattr(
+        trend_notes_module,
+        "write_presentation_sidecar",
+        _explode_sidecar,
+    )
+
+    with pytest.raises(ValueError, match="invalid presentation sidecar"):
+        write_markdown_trend_note(
+            output_dir=tmp_path,
+            trend_doc_id=14,
+            title="Weekly Trend",
+            granularity="week",
+            period_start=period_start,
+            period_end=period_end,
+            run_id="run-test",
+            overview_md="Teams are tightening release discipline.",
+            topics=["agents"],
+            clusters=[],
+            highlights=[],
+        )
+
+    assert not note_path.exists()
+    assert not presentation_sidecar_path(note_path=note_path).exists()

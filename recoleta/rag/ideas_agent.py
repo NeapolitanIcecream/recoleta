@@ -12,6 +12,7 @@ from recoleta.llm_costs import estimate_cost_usd_from_tokens as estimate_llm_cos
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.ports import TrendRepositoryPort
+from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.rag.corpus_tools import CorpusSpec, SearchService
 from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
 from recoleta.rag.vector_store import LanceVectorStore
@@ -70,6 +71,10 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Each idea must identify a concrete user/job, what changed, and the next validation step."
     )
     base += (
+        " Emit 0 to 3 ideas total, ordered by confidence and practical upside."
+        " The first idea must be the clear best bet; any remaining ideas must read as alternates rather than equal-weight peers."
+    )
+    base += (
         " Every emitted idea must include at least one evidence_refs entry with"
         " concrete doc_id and chunk_index values grounded in the local corpus."
     )
@@ -98,13 +103,18 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " coined categories, or rhetorical questions."
     )
     base += (
+        " Name the concrete buyer trigger or operational pain directly."
+        " Do not hide the user/job behind generic platform language."
+    )
+    base += (
         " Start with search_hybrid for broad discovery, then use get_doc_bundle"
         " or read_chunk to confirm specific evidence before finalizing ideas."
     )
+    base = f"{base}\n\n{reader_facing_ai_tropes_prompt()}"
     if not output_language:
         return base
     return (
-        f"{base} Use {output_language} for all natural-language fields"
+        f"{base}\n\nUse {output_language} for all natural-language fields"
         " (title, summary_md, idea fields, evidence reason text). Keep JSON keys"
         " and enum values in English."
     )
@@ -129,8 +139,10 @@ def build_trend_ideas_prompt_payload(
         "trend_snapshot_pack_md": trend_snapshot_pack_md,
         "notes": [
             "Use tools to verify and sharpen candidate ideas against the active local corpus.",
-            "Prefer 0-5 ideas; omit weak ideas instead of filling the list.",
+            "Prefer 0-3 ideas; omit weak ideas instead of filling the list.",
+            "If any idea is emitted, the first one must be the clear best bet and any later ones must be explicit alternates.",
             "Each idea must answer what to build or investigate, why now, what changed, and who it helps.",
+            "Name the buyer trigger or operational pain directly instead of using generic platform language.",
             "Use evidence_refs to point to the strongest supporting documents.",
             "Do not restate the trend summary as the final output.",
             "Do not coin new umbrella terms or marketing-style labels.",

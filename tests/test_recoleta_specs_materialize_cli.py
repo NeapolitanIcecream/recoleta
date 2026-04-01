@@ -16,6 +16,7 @@ from recoleta.materialize import MaterializeTargetSpec, materialize_outputs
 from recoleta.models import Document, DocumentChunk, Item
 from recoleta.passes.base import PassInputRef
 from recoleta.passes.trend_ideas import TrendIdeasPayload
+from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
 from recoleta.publish.item_notes import resolve_item_note_path
 from recoleta.storage import Repository
 from recoleta.trends import TrendPayload, build_empty_trend_payload, persist_trend_payload
@@ -137,11 +138,14 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
 
     item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
     trend_note_path = output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    trend_sidecar_path = presentation_sidecar_path(note_path=trend_note_path)
     assert result.site_manifest_path == output_dir / "site" / "manifest.json"
     assert item_note_path.exists()
     assert trend_note_path.exists()
+    assert trend_sidecar_path.exists()
 
     trend_markdown = trend_note_path.read_text(encoding="utf-8")
+    trend_sidecar = json.loads(trend_sidecar_path.read_text(encoding="utf-8"))
     assert (
         "## Overview\nStart with "
         f"[Robometer](../Inbox/{item_note_path.name})."
@@ -151,6 +155,8 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     assert "#### Representative sources" in trend_markdown
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in trend_markdown
     assert f"(../Inbox/{item_note_path.name})" in trend_markdown
+    assert trend_sidecar["source_markdown_path"] == f"Trends/{trend_note_path.name}"
+    assert validate_presentation_v1(trend_sidecar) == []
 
     trend_html = (
         output_dir
@@ -627,12 +633,24 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
 
     item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
     idea_note_path = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
+    idea_sidecar_path = presentation_sidecar_path(note_path=idea_note_path)
     assert idea_note_path.exists()
+    assert idea_sidecar_path.exists()
     assert result.site_manifest_path == output_dir / "site" / "manifest.json"
 
     idea_markdown = idea_note_path.read_text(encoding="utf-8")
+    idea_sidecar = json.loads(idea_sidecar_path.read_text(encoding="utf-8"))
     assert f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)" in idea_markdown
     assert f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})" in idea_markdown
+    assert "Kind:" not in idea_markdown
+    assert "Time horizon:" not in idea_markdown
+    assert "User/job:" not in idea_markdown
+    assert "- Type: Tooling wedge" in idea_markdown
+    assert "- Horizon: Now" in idea_markdown
+    assert "- Role: Platform engineers shipping agent changes." in idea_markdown
+    assert idea_sidecar["source_markdown_path"] == f"Ideas/{idea_note_path.name}"
+    assert idea_sidecar["content"]["opportunities"][0]["tier"] == "best_bet"
+    assert validate_presentation_v1(idea_sidecar) == []
 
     idea_html = (
         output_dir / "site" / "ideas" / "day--2026-03-02--ideas.html"
@@ -1114,6 +1132,89 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
     assert manifest["files"]["idea_pages"] == []
     assert not (output_dir / "site" / "trends" / f"{trend_note_path.stem}.html").exists()
     assert not (output_dir / "site" / "ideas" / "day--2026-03-13--ideas.html").exists()
+
+
+def test_materialize_outputs_removes_stale_idea_sidecar_when_empty_corpus_suppresses_ideas(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    output_dir = tmp_path / "outputs"
+    period_start = datetime(2026, 3, 13, tzinfo=UTC)
+    period_end = datetime(2026, 3, 14, tzinfo=UTC)
+
+    empty_trend_payload = build_empty_trend_payload(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        output_language="Chinese (Simplified)",
+    )
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-empty-trend-pass",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_trend_payload.model_dump(mode="json"),
+        diagnostics={"empty_corpus": True},
+    )
+    assert trend_pass_output.id is not None
+    persist_trend_payload(
+        repository=repository,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_trend_payload,
+        pass_output_id=int(trend_pass_output.id),
+    )
+
+    empty_ideas_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "本期暂无可发布研究趋势",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "该周期没有可用文档，因此不输出机会想法。",
+            "ideas": [],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-empty-ideas-pass",
+        pass_kind="trend_ideas",
+        status="suppressed",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_ideas_payload.model_dump(mode="json"),
+        diagnostics={"empty_corpus": True},
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    idea_note_path = output_dir / "Ideas" / "day--2026-03-13--ideas.md"
+    idea_sidecar_path = presentation_sidecar_path(note_path=idea_note_path)
+    idea_note_path.parent.mkdir(parents=True, exist_ok=True)
+    idea_note_path.write_text("# stale ideas\n", encoding="utf-8")
+    idea_sidecar_path.write_text('{"stale": true}\n', encoding="utf-8")
+
+    materialize_outputs(
+        repository=repository,
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
+        site_input_dir=output_dir,
+        site_output_dir=output_dir / "site",
+    )
+
+    assert not idea_note_path.exists()
+    assert not idea_sidecar_path.exists()
 
 
 def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_available(
