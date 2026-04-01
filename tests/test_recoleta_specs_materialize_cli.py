@@ -1134,6 +1134,89 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
     assert not (output_dir / "site" / "ideas" / "day--2026-03-13--ideas.html").exists()
 
 
+def test_materialize_outputs_removes_stale_idea_sidecar_when_empty_corpus_suppresses_ideas(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    output_dir = tmp_path / "outputs"
+    period_start = datetime(2026, 3, 13, tzinfo=UTC)
+    period_end = datetime(2026, 3, 14, tzinfo=UTC)
+
+    empty_trend_payload = build_empty_trend_payload(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        output_language="Chinese (Simplified)",
+    )
+    trend_pass_output = repository.create_pass_output(
+        run_id="run-materialize-empty-trend-pass",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_trend_payload.model_dump(mode="json"),
+        diagnostics={"empty_corpus": True},
+    )
+    assert trend_pass_output.id is not None
+    persist_trend_payload(
+        repository=repository,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_trend_payload,
+        pass_output_id=int(trend_pass_output.id),
+    )
+
+    empty_ideas_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "本期暂无可发布研究趋势",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "该周期没有可用文档，因此不输出机会想法。",
+            "ideas": [],
+        }
+    )
+    repository.create_pass_output(
+        run_id="run-materialize-empty-ideas-pass",
+        pass_kind="trend_ideas",
+        status="suppressed",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=empty_ideas_payload.model_dump(mode="json"),
+        diagnostics={"empty_corpus": True},
+        input_refs=[
+            PassInputRef(
+                ref_kind="pass_output",
+                pass_kind="trend_synthesis",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                pass_output_id=trend_pass_output.id,
+            ).model_dump(mode="json")
+        ],
+    )
+
+    idea_note_path = output_dir / "Ideas" / "day--2026-03-13--ideas.md"
+    idea_sidecar_path = presentation_sidecar_path(note_path=idea_note_path)
+    idea_note_path.parent.mkdir(parents=True, exist_ok=True)
+    idea_note_path.write_text("# stale ideas\n", encoding="utf-8")
+    idea_sidecar_path.write_text('{"stale": true}\n', encoding="utf-8")
+
+    materialize_outputs(
+        repository=repository,
+        target_spec=MaterializeTargetSpec(output_dir=output_dir),
+        site_input_dir=output_dir,
+        site_output_dir=output_dir / "site",
+    )
+
+    assert not idea_note_path.exists()
+    assert not idea_sidecar_path.exists()
+
+
 def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
