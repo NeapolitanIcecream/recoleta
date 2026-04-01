@@ -13,6 +13,7 @@ from recoleta.presentation import (
     display_idea_tier,
     display_idea_time_horizon,
     is_localized_output_path,
+    presentation_sidecar_path,
     resolve_presentation_language_code,
     write_presentation_sidecar,
 )
@@ -353,7 +354,12 @@ def _write_ideas_note(
             ideas=normalized_ideas,
             language_code=resolved_language_code,
         )
-        write_presentation_sidecar(note_path=note_path, presentation=presentation)
+        try:
+            write_presentation_sidecar(note_path=note_path, presentation=presentation)
+        except Exception:
+            note_path.unlink(missing_ok=True)
+            presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
+            raise
     return note_path
 
 

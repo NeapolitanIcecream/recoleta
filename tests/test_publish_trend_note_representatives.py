@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 import json
 
+import pytest
+
+import recoleta.publish.trend_notes as trend_notes_module
 from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
 from recoleta.publish import write_markdown_trend_note
 
@@ -571,3 +574,45 @@ def test_publish_trend_note_sidecar_matches_markdown_representative_source_limit
         "Delta",
         "Epsilon",
     ]
+
+
+def test_write_markdown_trend_note_rolls_back_markdown_when_sidecar_write_fails(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+    note_path = trend_notes_module.resolve_trend_note_path(
+        note_dir=tmp_path / "Trends",
+        trend_doc_id=14,
+        granularity="week",
+        period_start=period_start,
+    )
+
+    def _explode_sidecar(*, note_path, presentation):  # type: ignore[no-untyped-def]
+        _ = (note_path, presentation)
+        raise ValueError("invalid presentation sidecar")
+
+    monkeypatch.setattr(
+        trend_notes_module,
+        "write_presentation_sidecar",
+        _explode_sidecar,
+    )
+
+    with pytest.raises(ValueError, match="invalid presentation sidecar"):
+        write_markdown_trend_note(
+            output_dir=tmp_path,
+            trend_doc_id=14,
+            title="Weekly Trend",
+            granularity="week",
+            period_start=period_start,
+            period_end=period_end,
+            run_id="run-test",
+            overview_md="Teams are tightening release discipline.",
+            topics=["agents"],
+            clusters=[],
+            highlights=[],
+        )
+
+    assert not note_path.exists()
+    assert not presentation_sidecar_path(note_path=note_path).exists()

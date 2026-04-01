@@ -4,6 +4,9 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
+import pytest
+
+import recoleta.publish.idea_notes as idea_notes_module
 from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish import write_markdown_ideas_note
@@ -363,3 +366,67 @@ def test_write_markdown_ideas_note_infers_sidecar_language_code_from_output_lang
 
     assert "language_code: zh-CN" in note_text
     assert sidecar["language_code"] == "zh-CN"
+
+
+def test_write_markdown_ideas_note_rolls_back_markdown_when_sidecar_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    note_path = idea_notes_module.resolve_ideas_note_path(
+        note_dir=tmp_path / "notes" / "Ideas",
+        granularity="day",
+        period_start=period_start,
+    )
+
+    def _explode_sidecar(*, note_path, presentation):  # type: ignore[no-untyped-def]
+        _ = (note_path, presentation)
+        raise ValueError("invalid presentation sidecar")
+
+    monkeypatch.setattr(
+        idea_notes_module,
+        "write_presentation_sidecar",
+        _explode_sidecar,
+    )
+
+    with pytest.raises(ValueError, match="invalid presentation sidecar"):
+        write_markdown_ideas_note(
+            repository=repository,
+            output_dir=tmp_path / "notes",
+            pass_output_id=7,
+            upstream_pass_output_id=3,
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            run_id="run-ideas-rollback",
+            status="succeeded",
+            payload=TrendIdeasPayload.model_validate(
+                {
+                    "title": "Why now ideas",
+                    "granularity": "day",
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "summary_md": "One idea is clearly grounded.",
+                    "ideas": [
+                        {
+                            "title": "Auditable long-horizon eval workbench",
+                            "kind": "tooling_wedge",
+                            "thesis": "Build an evaluation workbench around grounded traces.",
+                            "why_now": "Grounded runtime traces are now practical.",
+                            "what_changed": "Teams can inspect long multi-step traces.",
+                            "user_or_job": "Evaluation teams need auditable agent runs.",
+                            "evidence_refs": [],
+                            "validation_next_step": "Prototype a trace viewer for one benchmark workflow.",
+                            "time_horizon": "now",
+                        }
+                    ],
+                }
+            ),
+            topics=["agents"],
+        )
+
+    assert not note_path.exists()
+    assert not presentation_sidecar_path(note_path=note_path).exists()
