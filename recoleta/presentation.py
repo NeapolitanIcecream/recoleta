@@ -747,6 +747,17 @@ def _validate_string_field(
         errors.append(f"{field_path} must be a string")
 
 
+def _validate_int_like_field(
+    *,
+    mapping: Mapping[str, Any],
+    key: str,
+    field_path: str,
+    errors: list[str],
+) -> None:
+    if _int_or_none(mapping.get(key)) is None:
+        errors.append(f"{field_path} must be an integer")
+
+
 def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
     if (
@@ -827,6 +838,12 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                     field_path=f"trend ranked_shifts.{key}",
                     errors=errors,
                 )
+            _validate_int_like_field(
+                mapping=shift,
+                key="rank",
+                field_path="trend ranked_shifts.rank",
+                errors=errors,
+            )
             history_refs = shift.get("history_refs")
             if not isinstance(history_refs, list) or any(
                 not isinstance(item, str) for item in history_refs

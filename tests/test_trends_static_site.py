@@ -1695,6 +1695,58 @@ def test_export_trend_static_site_prefers_presentation_sidecar_for_trend_detail_
     assert "This markdown overview should be ignored." not in detail_html
 
 
+def test_export_trend_static_site_falls_back_when_trend_sidecar_shift_rank_is_invalid(
+    tmp_path: Path,
+) -> None:
+    """Regression: malformed trend shift ranks must not abort markdown fallback."""
+    output_dir = tmp_path / "notes"
+    note_path = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=198,
+        title="Markdown trend title wins",
+        granularity="day",
+        period_start=datetime(2026, 3, 13, tzinfo=UTC),
+        period_end=datetime(2026, 3, 14, tzinfo=UTC),
+        run_id="run-site-invalid-trend-shift-rank",
+        overview_md="## Overview\n\nMarkdown trend overview should remain readable.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "Markdown evolution summary should remain readable.",
+            "signals": [
+                {
+                    "theme": "Verification moves earlier",
+                    "change_type": "continuing",
+                    "summary": "Markdown shift summary should remain readable.",
+                    "history_windows": [],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    trend_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    trend_sidecar["content"]["title"] = "Broken sidecar title should lose"
+    trend_sidecar["content"]["overview"] = "Broken sidecar overview should lose."
+    trend_sidecar["content"]["ranked_shifts"][0]["rank"] = "first"
+    sidecar_path.write_text(
+        json.dumps(trend_sidecar, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "trends" / f"{note_path.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Markdown trend title wins" in detail_html
+    assert "Markdown trend overview should remain readable." in detail_html
+    assert "Markdown evolution summary should remain readable." in detail_html
+    assert "Broken sidecar title should lose" not in detail_html
+    assert "Broken sidecar overview should lose." not in detail_html
+
+
 def test_export_trend_static_site_prefers_presentation_sidecar_for_idea_detail_pages(
     tmp_path: Path,
 ) -> None:
