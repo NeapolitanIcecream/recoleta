@@ -966,6 +966,74 @@ def test_candidate_context_falls_back_to_markdown_when_sidecar_missing(
     ]
 
 
+def test_candidate_context_falls_back_to_markdown_when_sidecar_schema_version_is_invalid_string(
+    tmp_path: Path,
+) -> None:
+    """Regression: malformed canonical sidecars must not abort markdown fallback."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    output_dir = tmp_path / "notes"
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    note_path = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=trend_doc_id,
+        title="Agent Systems",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-canonical-trend-invalid-sidecar-schema",
+        overview_md="English canonical trend overview.",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    sidecar_payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar_payload["presentation_schema_version"] = "v1"
+    sidecar_path.write_text(
+        json.dumps(sidecar_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    candidate = translation_module.TranslationCandidate(
+        source_kind="trend_synthesis",
+        source_record_id=trend_doc_id,
+        payload={
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "English canonical trend overview.",
+            "topics": ["agents"],
+            "clusters": [],
+            "highlights": [],
+            "evolution": None,
+        },
+        payload_model=TrendPayload,
+        canonical_language_code="en",
+        document_id=trend_doc_id,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    context = translation_module._candidate_context(
+        repository=repository,
+        settings=cast(Settings, SimpleNamespace(markdown_output_dir=output_dir)),
+        candidate=candidate,
+        context_assist="direct",
+        run_id=None,
+    )
+
+    assert "presentation" not in context
+    assert context["canonical_note"]["title"] == "Agent Systems"
+    assert "English canonical trend overview." in context["canonical_note"][
+        "markdown_excerpt"
+    ]
+
+
 def test_export_trend_static_site_builds_language_trees_and_redirect_shell(
     tmp_path: Path,
 ) -> None:

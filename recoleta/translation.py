@@ -1376,7 +1376,15 @@ def _canonical_note_context(
             payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
         except Exception:
             payload = None
-        if isinstance(payload, dict) and int(payload.get("presentation_schema_version") or 0) == 1:
+        try:
+            schema_version = (
+                int(payload.get("presentation_schema_version") or 0)
+                if isinstance(payload, dict)
+                else 0
+            )
+        except Exception:
+            schema_version = 0
+        if isinstance(payload, dict) and schema_version == 1:
             return {
                 "canonical_note": {
                     "path": str(note_path),
