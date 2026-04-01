@@ -467,6 +467,8 @@ def _write_trend_note(
     emit_presentation_sidecar: bool = False,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
+    sanitized_title = sanitize_trend_title(title)
+    sanitized_overview_md = sanitize_trend_overview_markdown(overview_md)
     note_path = resolve_trend_note_path(
         note_dir=note_dir,
         trend_doc_id=trend_doc_id,
@@ -503,8 +505,8 @@ def _write_trend_note(
     if emit_presentation_sidecar:
         presentation = build_trend_presentation_v1(
             source_markdown_path=f"{note_dir.name}/{note_path.name}",
-            title=title,
-            overview_md=overview_md,
+            title=sanitized_title,
+            overview_md=sanitized_overview_md,
             evolution=evolution,
             history_window_refs=history_window_refs,
             clusters=clusters,

@@ -8,6 +8,7 @@ import pytest
 from recoleta.presentation import (
     build_idea_presentation_v1,
     build_trend_presentation_v1,
+    is_localized_output_path,
     validate_presentation_v1,
     write_presentation_sidecar,
 )
@@ -194,3 +195,13 @@ def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> No
     errors = validate_presentation_v1(presentation)
 
     assert "idea opportunities entries must be mappings" in errors
+
+
+def test_is_localized_output_path_requires_localized_language_layout(tmp_path: Path) -> None:
+    canonical_under_localized_name = tmp_path / "Localized" / "project" / "outputs"
+    localized_root = tmp_path / "outputs" / "Localized" / "zh-cn"
+    localized_surface = localized_root / "Trends"
+
+    assert not is_localized_output_path(canonical_under_localized_name)
+    assert is_localized_output_path(localized_root)
+    assert is_localized_output_path(localized_surface)

@@ -10,6 +10,8 @@ PRESENTATION_SCHEMA_VERSION = 1
 
 _HISTORY_WINDOW_MENTION_RE = re.compile(r"(?<![\w\[])(prev_\d+)(?![\w\]])", re.IGNORECASE)
 _PLACEHOLDER_TOKEN_RE = re.compile(r"\bprev_?\d+\b", re.IGNORECASE)
+_LOCALIZED_LANGUAGE_SEGMENT_RE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$")
+_LOCALIZED_SURFACE_DIRS = {"Inbox", "Trends", "Ideas", "site"}
 _RAW_IDEA_ENUMS = {
     "new_build",
     "revival",
@@ -170,7 +172,18 @@ def presentation_sidecar_path(*, note_path: Path) -> Path:
 
 
 def is_localized_output_path(path: Path) -> bool:
-    return "Localized" in path.expanduser().resolve().parts
+    parts = path.expanduser().resolve().parts
+    for index, part in enumerate(parts):
+        if part != "Localized" or index + 1 >= len(parts):
+            continue
+        language_segment = parts[index + 1]
+        if _LOCALIZED_LANGUAGE_SEGMENT_RE.fullmatch(language_segment) is None:
+            continue
+        if index + 2 >= len(parts):
+            return True
+        if parts[index + 2] in _LOCALIZED_SURFACE_DIRS:
+            return True
+    return False
 
 
 def write_presentation_sidecar(*, note_path: Path, presentation: Mapping[str, Any]) -> Path:

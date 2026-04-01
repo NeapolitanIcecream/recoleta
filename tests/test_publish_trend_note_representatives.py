@@ -414,3 +414,32 @@ def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_ref
     assert "Verification Gets Tighter" in sidecar["content"]["overview"]
     assert sidecar["content"]["representative_sources"][0]["title"] == "CodeScout"
     assert validate_presentation_v1(sidecar) == []
+
+
+def test_publish_trend_note_sidecar_matches_sanitized_markdown_surface(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=10,
+        title="2026-03-12 Daily Trend: Verification gets operational",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="## Overview\n\nTeams are tightening release discipline.\n",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "# Verification gets operational" in note_text
+    assert note_text.count("## Overview") == 1
+    assert sidecar["content"]["title"] == "Verification gets operational"
+    assert sidecar["content"]["overview"] == "Teams are tightening release discipline."
