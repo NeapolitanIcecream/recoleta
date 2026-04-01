@@ -13,6 +13,7 @@ from recoleta.presentation import (
     display_idea_tier,
     display_idea_time_horizon,
     is_localized_output_path,
+    resolve_presentation_language_code,
     write_presentation_sidecar,
 )
 from recoleta.publish.item_notes import resolve_item_note_href
@@ -311,10 +312,15 @@ def _write_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    output_language: str | None = None,
     language_code: str | None = None,
     emit_presentation_sidecar: bool = False,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
+    resolved_language_code = resolve_presentation_language_code(
+        language_code=language_code,
+        output_language=output_language,
+    )
     note_path = resolve_ideas_note_path(
         note_dir=note_dir,
         granularity=granularity,
@@ -335,7 +341,7 @@ def _write_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
-        language_code=language_code,
+        language_code=resolved_language_code,
     )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     if emit_presentation_sidecar:
@@ -345,7 +351,7 @@ def _write_ideas_note(
             title=str(payload.title or "").strip(),
             summary_md=str(payload.summary_md or "").strip(),
             ideas=normalized_ideas,
-            language_code=language_code,
+            language_code=resolved_language_code,
         )
         write_presentation_sidecar(note_path=note_path, presentation=presentation)
     return note_path
@@ -366,6 +372,7 @@ def write_markdown_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    output_language: str | None = None,
     language_code: str | None = None,
 ) -> Path:
     root_dir = output_dir.expanduser().resolve()
@@ -385,6 +392,7 @@ def write_markdown_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
+        output_language=output_language,
         language_code=language_code,
         emit_presentation_sidecar=not is_localized_output_path(root_dir),
     )
@@ -406,6 +414,7 @@ def write_obsidian_ideas_note(
     topics: list[str] | None = None,
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
+    output_language: str | None = None,
     language_code: str | None = None,
 ) -> Path:
     root_dir = vault_path / base_folder
@@ -425,6 +434,7 @@ def write_obsidian_ideas_note(
         topics=topics,
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
+        output_language=output_language,
         language_code=language_code,
         emit_presentation_sidecar=False,
     )

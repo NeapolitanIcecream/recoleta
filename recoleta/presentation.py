@@ -28,6 +28,25 @@ _RAW_LABEL_PATTERNS = (
     re.compile(r"(?im)(?:^|\n)\s*(?:[-*]\s*)?user/job:\s+\S"),
     re.compile(r"(?im)(?:^|\n)\s*(?:\*\*)?thesis(?:\.\*\*|\.)\s+\S"),
 )
+_LANGUAGE_LABEL_TO_CODE = {
+    "arabic": "ar",
+    "brazilian portuguese": "pt-BR",
+    "chinese": "zh",
+    "chinese (simplified)": "zh-CN",
+    "chinese (traditional)": "zh-TW",
+    "english": "en",
+    "french": "fr",
+    "german": "de",
+    "italian": "it",
+    "japanese": "ja",
+    "korean": "ko",
+    "portuguese": "pt",
+    "portuguese (brazil)": "pt-BR",
+    "russian": "ru",
+    "simplified chinese": "zh-CN",
+    "spanish": "es",
+    "traditional chinese": "zh-TW",
+}
 
 TREND_DISPLAY_LABELS_V1 = {
     "overview": "Overview",
@@ -173,6 +192,40 @@ def display_idea_tier(rank: int) -> str:
     return "Best bet" if int(rank) == 1 else "Alternate"
 
 
+def _canonicalize_language_code(value: Any) -> str | None:
+    normalized = _single_line(value).replace("_", "-")
+    if not normalized or _LOCALIZED_LANGUAGE_SEGMENT_RE.fullmatch(normalized) is None:
+        return None
+    parts = normalized.split("-")
+    canonical = [parts[0].lower()]
+    for part in parts[1:]:
+        if len(part) == 2 and part.isalpha():
+            canonical.append(part.upper())
+        elif len(part) == 4 and part.isalpha():
+            canonical.append(part.title())
+        else:
+            canonical.append(part)
+    return "-".join(canonical)
+
+
+def resolve_presentation_language_code(
+    *,
+    language_code: Any = None,
+    output_language: Any = None,
+) -> str | None:
+    explicit = _canonicalize_language_code(language_code)
+    if explicit is not None:
+        return explicit
+    direct_output_code = _canonicalize_language_code(output_language)
+    if direct_output_code is not None:
+        return direct_output_code
+    normalized_label = _single_line(output_language).lower()
+    mapped_code = _LANGUAGE_LABEL_TO_CODE.get(normalized_label)
+    if mapped_code is None:
+        return None
+    return _canonicalize_language_code(mapped_code)
+
+
 def presentation_sidecar_path(*, note_path: Path) -> Path:
     return note_path.with_name(f"{note_path.stem}.presentation.json")
 
@@ -280,7 +333,7 @@ def build_trend_presentation_v1(
     return {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
         "surface_kind": "trend",
-        "language_code": _single_line(language_code or "en") or "en",
+        "language_code": resolve_presentation_language_code(language_code=language_code),
         "source_markdown_path": source_markdown_path,
         "display_labels": dict(TREND_DISPLAY_LABELS_V1),
         "content": {
@@ -343,7 +396,7 @@ def build_idea_presentation_v1(
     return {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
         "surface_kind": "idea",
-        "language_code": _single_line(language_code or "en") or "en",
+        "language_code": resolve_presentation_language_code(language_code=language_code),
         "source_markdown_path": source_markdown_path,
         "display_labels": dict(IDEA_DISPLAY_LABELS_V1),
         "content": {
@@ -529,6 +582,7 @@ __all__ = [
     "display_idea_time_horizon",
     "is_localized_output_path",
     "presentation_sidecar_path",
+    "resolve_presentation_language_code",
     "validate_presentation_v1",
     "write_presentation_sidecar",
 ]

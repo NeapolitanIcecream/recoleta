@@ -9,6 +9,7 @@ from recoleta.presentation import (
     build_idea_presentation_v1,
     build_trend_presentation_v1,
     is_localized_output_path,
+    resolve_presentation_language_code,
     validate_presentation_v1,
     write_presentation_sidecar,
 )
@@ -219,6 +220,35 @@ def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> No
     errors = validate_presentation_v1(presentation)
 
     assert "idea opportunities entries must be mappings" in errors
+
+
+def test_build_presentation_v1_does_not_guess_english_language_code() -> None:
+    trend_presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/week--2026-W10--trend--81.md",
+        title="Week 10 roundup",
+        overview_md="Weekly synthesis.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[],
+    )
+    idea_presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+
+    assert trend_presentation["language_code"] is None
+    assert idea_presentation["language_code"] is None
+
+
+def test_resolve_presentation_language_code_maps_common_output_language_labels() -> None:
+    assert (
+        resolve_presentation_language_code(output_language="Chinese (Simplified)")
+        == "zh-CN"
+    )
+    assert resolve_presentation_language_code(output_language="English") == "en"
+    assert resolve_presentation_language_code(output_language="zh_cn") == "zh-CN"
 
 
 def test_is_localized_output_path_requires_localized_language_layout(tmp_path: Path) -> None:

@@ -443,3 +443,31 @@ def test_publish_trend_note_sidecar_matches_sanitized_markdown_surface(tmp_path)
     assert note_text.count("## Overview") == 1
     assert sidecar["content"]["title"] == "Verification gets operational"
     assert sidecar["content"]["overview"] == "Teams are tightening release discipline."
+
+
+def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=11,
+        title="周趋势",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="团队开始把验证闭环前置到发布流程里。",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+        output_language="Chinese (Simplified)",
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "language_code: zh-CN" in note_text
+    assert sidecar["language_code"] == "zh-CN"

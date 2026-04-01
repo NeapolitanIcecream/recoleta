@@ -310,3 +310,56 @@ def test_write_markdown_ideas_note_keeps_markdown_and_sidecar_opportunities_in_s
         "Idea two",
         "Idea three",
     ]
+
+
+def test_write_markdown_ideas_note_infers_sidecar_language_code_from_output_language(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    note_path = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=tmp_path / "notes",
+        pass_output_id=7,
+        upstream_pass_output_id=3,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-ideas-language",
+        status="succeeded",
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "机会判断",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "summary_md": "一个机会已经足够清晰。",
+                "ideas": [
+                    {
+                        "title": "可审计评测工作台",
+                        "kind": "tooling_wedge",
+                        "thesis": "先把长链路轨迹做成可审计工作台。",
+                        "why_now": "长时序 trace 终于足够稳定。",
+                        "what_changed": "团队现在会反复回看同一条代理轨迹。",
+                        "user_or_job": "评测团队需要可追责的 agent 运行记录。",
+                        "evidence_refs": [],
+                        "validation_next_step": "先在一个 benchmark 工作流上试跑。",
+                        "time_horizon": "now",
+                    }
+                ],
+            }
+        ),
+        topics=["agents"],
+        output_language="Chinese (Simplified)",
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "language_code: zh-CN" in note_text
+    assert sidecar["language_code"] == "zh-CN"

@@ -11,6 +11,7 @@ import yaml
 from recoleta.presentation import (
     build_trend_presentation_v1,
     is_localized_output_path,
+    resolve_presentation_language_code,
     write_presentation_sidecar,
 )
 from recoleta.provenance import ProjectionProvenance, build_projection_provenance
@@ -467,6 +468,10 @@ def _write_trend_note(
     emit_presentation_sidecar: bool = False,
 ) -> Path:
     note_dir.mkdir(parents=True, exist_ok=True)
+    resolved_language_code = resolve_presentation_language_code(
+        language_code=language_code,
+        output_language=output_language,
+    )
     sanitized_title = sanitize_trend_title(title)
     sanitized_overview_md = sanitize_trend_overview_markdown(overview_md)
     note_path = resolve_trend_note_path(
@@ -499,7 +504,7 @@ def _write_trend_note(
             else None
         ),
         site_exclude=bool(site_exclude),
-        language_code=language_code,
+        language_code=resolved_language_code,
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     if emit_presentation_sidecar:
@@ -510,7 +515,7 @@ def _write_trend_note(
             evolution=evolution,
             history_window_refs=history_window_refs,
             clusters=clusters,
-            language_code=language_code,
+            language_code=resolved_language_code,
         )
         write_presentation_sidecar(note_path=note_path, presentation=presentation)
     return note_path
