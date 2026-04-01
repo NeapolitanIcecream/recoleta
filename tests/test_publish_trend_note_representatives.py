@@ -514,3 +514,60 @@ def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_pa
     assert "prev_1" not in sidecar["content"]["clusters"][0]["summary"]
     assert "Verification Gets Tighter" in sidecar["content"]["clusters"][0]["summary"]
     assert validate_presentation_v1(sidecar) == []
+
+
+def test_publish_trend_note_sidecar_matches_markdown_representative_source_limits(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=13,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="Teams are tightening release discipline.",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Representative sources should match markdown output.",
+                "representative_chunks": [
+                    {"title": "Alpha", "url": "https://example.com/a"},
+                    {"title": "Beta", "url": "https://example.com/b"},
+                    {"title": "Alpha duplicate", "url": "https://example.com/a"},
+                    {"title": "Gamma", "url": "https://example.com/c"},
+                    {"title": "Delta", "url": "https://example.com/d"},
+                    {"title": "Epsilon", "url": "https://example.com/e"},
+                    {"title": "Zeta", "url": "https://example.com/f"},
+                ],
+            }
+        ],
+        highlights=[],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "[Alpha](https://example.com/a)" in note_text
+    assert "[Beta](https://example.com/b)" in note_text
+    assert "[Gamma](https://example.com/c)" in note_text
+    assert "[Delta](https://example.com/d)" in note_text
+    assert "[Epsilon](https://example.com/e)" in note_text
+    assert "Alpha duplicate" not in note_text
+    assert "Zeta" not in note_text
+    assert [
+        rep["title"]
+        for rep in sidecar["content"]["clusters"][0]["representative_sources"]
+    ] == ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]
+    assert [rep["title"] for rep in sidecar["content"]["representative_sources"]] == [
+        "Alpha",
+        "Beta",
+        "Gamma",
+        "Delta",
+        "Epsilon",
+    ]

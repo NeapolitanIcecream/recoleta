@@ -255,6 +255,40 @@ def write_presentation_sidecar(*, note_path: Path, presentation: Mapping[str, An
     return sidecar_path
 
 
+def _project_cluster_representative_sources(
+    raw_representative_chunks: Any,
+) -> list[dict[str, Any]]:
+    if not isinstance(raw_representative_chunks, Sequence):
+        return []
+    projected: list[dict[str, Any]] = []
+    seen_targets: set[str] = set()
+    for raw_rep in list(raw_representative_chunks)[:6]:
+        if not isinstance(raw_rep, Mapping):
+            continue
+        title_value = _single_line(raw_rep.get("title") or "")
+        href_value = _single_line(raw_rep.get("note_href") or "")
+        url_value = _single_line(raw_rep.get("url") or "")
+        if not title_value:
+            continue
+        target = href_value or url_value or title_value
+        if target in seen_targets:
+            continue
+        seen_targets.add(target)
+        projected.append(
+            {
+                "title": title_value,
+                "href": href_value or None,
+                "url": url_value or None,
+                "authors": [
+                    _single_line(author)
+                    for author in list(raw_rep.get("authors") or [])
+                    if _single_line(author)
+                ],
+            }
+        )
+    return projected
+
+
 def build_trend_presentation_v1(
     *,
     source_markdown_path: str,
@@ -298,27 +332,15 @@ def build_trend_presentation_v1(
     for raw_cluster in list(clusters or []):
         if not isinstance(raw_cluster, Mapping):
             continue
-        reps: list[dict[str, Any]] = []
-        for raw_rep in list(raw_cluster.get("representative_chunks") or []):
-            if not isinstance(raw_rep, Mapping):
-                continue
-            title_value = _single_line(raw_rep.get("title") or "")
-            href_value = _single_line(raw_rep.get("note_href") or "")
-            url_value = _single_line(raw_rep.get("url") or "")
-            if not title_value:
-                continue
-            rep = {
-                "title": title_value,
-                "href": href_value or None,
-                "url": url_value or None,
-                "authors": [
-                    _single_line(author)
-                    for author in list(raw_rep.get("authors") or [])
-                    if _single_line(author)
-                ],
-            }
-            reps.append(rep)
-            target = href_value or url_value or title_value
+        reps = _project_cluster_representative_sources(
+            raw_cluster.get("representative_chunks") or []
+        )
+        for rep in reps:
+            target = (
+                _single_line(rep.get("href") or "")
+                or _single_line(rep.get("url") or "")
+                or _single_line(rep.get("title") or "")
+            )
             if target and target not in seen_rep_targets:
                 representative_sources.append(rep)
                 seen_rep_targets.add(target)
