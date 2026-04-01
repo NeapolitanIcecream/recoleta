@@ -8,8 +8,12 @@ import pytest
 from recoleta.presentation import (
     build_idea_presentation_v1,
     build_trend_presentation_v1,
+    display_idea_kind,
+    display_idea_time_horizon,
+    idea_display_labels,
     is_localized_output_path,
     resolve_presentation_language_code,
+    trend_display_labels,
     validate_presentation_v1,
     write_presentation_sidecar,
 )
@@ -233,6 +237,13 @@ def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> No
     assert "idea opportunities entries must be mappings" in errors
 
 
+def test_presentation_labels_preserve_traditional_chinese_family() -> None:
+    assert trend_display_labels(language_code="zh-TW")["overview"] == "概覽"
+    assert idea_display_labels(language_code="zh-TW")["best_bet"] == "首要機會"
+    assert display_idea_kind("workflow_shift", language_code="zh-TW") == "工作流轉變"
+    assert display_idea_time_horizon("near", language_code="zh-TW") == "近期"
+
+
 def test_build_presentation_v1_does_not_guess_english_language_code() -> None:
     trend_presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
@@ -287,6 +298,23 @@ def test_build_idea_presentation_v1_localizes_labels_and_reader_facing_enums() -
     assert presentation["display_labels"]["validation_next_step"] == "下一步验证"
     assert opportunity["display_kind"] == "工具切入点"
     assert opportunity["display_time_horizon"] == "现在"
+
+
+def test_build_idea_presentation_v1_uses_traditional_chinese_display_labels() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Localized/zh-tw/Ideas/day--2026-03-02--ideas.md",
+        title="驗證優先的智能體發佈",
+        summary_md="先把提示詞變更納入可審計發佈流程。",
+        ideas=[_idea(title="提示詞發佈閘門", language_code="zh-TW")],
+        language_code="zh-TW",
+    )
+
+    opportunity = presentation["content"]["opportunities"][0]
+
+    assert presentation["display_labels"]["best_bet"] == "首要機會"
+    assert presentation["display_labels"]["validation_next_step"] == "下一步驗證"
+    assert opportunity["display_kind"] == "工具切入點"
+    assert opportunity["display_time_horizon"] == "現在"
 
 
 def test_build_idea_presentation_v1_projects_evidence_source_metadata() -> None:

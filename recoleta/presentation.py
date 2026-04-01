@@ -67,6 +67,15 @@ _TREND_DISPLAY_LABELS_BY_LANGUAGE = {
         "source_type": "来源类型",
         "confidence": "置信度",
     },
+    "zh-TW": {
+        "overview": "概覽",
+        "top_shifts": "重點變化",
+        "counter_signal": "反向訊號",
+        "clusters": "聚類",
+        "representative_sources": "代表來源",
+        "source_type": "來源類型",
+        "confidence": "置信度",
+    },
 }
 
 _IDEA_DISPLAY_LABELS_BY_LANGUAGE = {
@@ -100,6 +109,22 @@ _IDEA_DISPLAY_LABELS_BY_LANGUAGE = {
         "validation_next_step": "下一步验证",
         "evidence": "证据",
         "source_type": "来源类型",
+        "confidence": "置信度",
+    },
+    "zh-TW": {
+        "summary": "摘要",
+        "opportunities": "機會",
+        "best_bet": "首要機會",
+        "alternate": "備選機會",
+        "type": "類型",
+        "horizon": "時間範圍",
+        "role": "適用角色",
+        "thesis": "核心判斷",
+        "why_now": "為什麼是現在",
+        "what_changed": "發生了什麼變化",
+        "validation_next_step": "下一步驗證",
+        "evidence": "證據",
+        "source_type": "來源類型",
         "confidence": "置信度",
     },
 }
@@ -258,6 +283,12 @@ def _render_history_refs_in_text(
 
 def _display_language_family(language_code: str | None) -> str:
     normalized = resolve_presentation_language_code(language_code=language_code)
+    if normalized:
+        lowered = normalized.lower()
+        if lowered.startswith("zh-tw") or "-hant" in lowered or lowered.startswith(
+            ("zh-hk", "zh-mo")
+        ):
+            return "zh-TW"
     if normalized and normalized.lower().startswith("zh"):
         return "zh-CN"
     return "en"
@@ -289,6 +320,13 @@ def display_idea_kind(value: str, *, language_code: str | None = None) -> str:
             "tooling_wedge": "工具切入点",
             "workflow_shift": "工作流转变",
         },
+        "zh-TW": {
+            "new_build": "新建設想",
+            "revival": "重新激活",
+            "research_gap": "研究空白",
+            "tooling_wedge": "工具切入點",
+            "workflow_shift": "工作流轉變",
+        },
     }
     labels = labels_by_language.get(
         _display_language_family(language_code),
@@ -307,6 +345,11 @@ def display_idea_time_horizon(value: str, *, language_code: str | None = None) -
         },
         "zh-CN": {
             "now": "现在",
+            "near": "近期",
+            "frontier": "前沿",
+        },
+        "zh-TW": {
+            "now": "現在",
             "near": "近期",
             "frontier": "前沿",
         },
