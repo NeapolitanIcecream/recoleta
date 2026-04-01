@@ -471,3 +471,46 @@ def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tm
 
     assert "language_code: zh-CN" in note_text
     assert sidecar["language_code"] == "zh-CN"
+
+
+def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_path) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=12,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="This week shifted toward operational rigor.",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Compared with prev_1, teams now keep review lanes inside the main workflow.",
+                "representative_chunks": [],
+            }
+        ],
+        highlights=[],
+        history_window_refs={
+            "prev_1": {
+                "window_id": "prev_1",
+                "label": "2026-W10",
+                "title": "Verification Gets Tighter",
+                "granularity": "week",
+                "period_start": "2026-03-02T00:00:00+00:00",
+                "trend_doc_id": 7,
+            }
+        },
+    )
+
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "prev_1" not in sidecar["content"]["clusters"][0]["summary"]
+    assert "Verification Gets Tighter" in sidecar["content"]["clusters"][0]["summary"]
+    assert validate_presentation_v1(sidecar) == []

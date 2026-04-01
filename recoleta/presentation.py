@@ -325,7 +325,10 @@ def build_trend_presentation_v1(
         presentation_clusters.append(
             {
                 "title": _single_line(raw_cluster.get("name") or "") or "Cluster",
-                "summary": _normalize_markdown(raw_cluster.get("description") or ""),
+                "summary": _render_history_refs_in_text(
+                    raw_cluster.get("description") or "",
+                    history_window_refs=history_window_refs,
+                ),
                 "representative_sources": reps,
             }
         )
