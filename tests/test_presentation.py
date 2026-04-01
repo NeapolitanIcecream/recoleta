@@ -105,6 +105,22 @@ def test_validate_presentation_v1_does_not_treat_synthesis_as_schema_label_leaka
     assert validate_presentation_v1(presentation) == []
 
 
+def test_validate_presentation_v1_rejects_case_variants_of_placeholder_tokens() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/week--2026-W10--trend--81.md",
+        title="Week 10 roundup",
+        overview_md="Weekly synthesis.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[],
+    )
+    presentation["content"]["overview"] = "Compared with PREV_1 and Prev1, teams now gate prompt releases."
+
+    errors = validate_presentation_v1(presentation)
+
+    assert "user-visible fields must not contain raw history placeholder tokens" in errors
+
+
 def test_build_trend_presentation_v1_renders_history_refs_case_insensitively() -> None:
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
@@ -145,3 +161,17 @@ def test_build_trend_presentation_v1_preserves_markdown_paragraph_breaks() -> No
         "### Why it matters\n\n"
         "- More teams now gate releases."
     )
+
+
+def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+    presentation["content"]["opportunities"].append("oops")
+
+    errors = validate_presentation_v1(presentation)
+
+    assert "idea opportunities entries must be mappings" in errors

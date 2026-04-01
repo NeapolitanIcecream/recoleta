@@ -9,7 +9,7 @@ from typing import Any, Mapping
 PRESENTATION_SCHEMA_VERSION = 1
 
 _HISTORY_WINDOW_MENTION_RE = re.compile(r"(?<![\w\[])(prev_\d+)(?![\w\]])", re.IGNORECASE)
-_PLACEHOLDER_TOKEN_RE = re.compile(r"\b(?:Prev_\d+|prev\d+|prev_\d+)\b")
+_PLACEHOLDER_TOKEN_RE = re.compile(r"\bprev_?\d+\b", re.IGNORECASE)
 _RAW_IDEA_ENUMS = {
     "new_build",
     "revival",
@@ -467,7 +467,8 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
             errors.append("idea opportunities must contain exactly one best_bet")
         for opportunity in opportunities:
             if not isinstance(opportunity, Mapping):
-                continue
+                errors.append("idea opportunities entries must be mappings")
+                break
             missing_opportunity = sorted(_IDEA_REQUIRED_OPPORTUNITY_KEYS - set(opportunity))
             if missing_opportunity:
                 errors.append(
