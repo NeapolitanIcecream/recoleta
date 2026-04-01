@@ -71,7 +71,7 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Each idea must identify a concrete user/job, what changed, and the next validation step."
     )
     base += (
-        " Emit 1 to 3 ideas total, ordered by confidence and practical upside."
+        " Emit 0 to 3 ideas total, ordered by confidence and practical upside."
         " The first idea must be the clear best bet; any remaining ideas must read as alternates rather than equal-weight peers."
     )
     base += (

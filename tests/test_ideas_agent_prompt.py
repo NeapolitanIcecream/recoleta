@@ -21,13 +21,14 @@ def test_ideas_instructions_require_consensus_terminology_and_plain_language() -
     assert "Prefer plain, literal wording" in instructions
     assert "Do not translate paper titles, framework names, product names, or acronyms" in instructions
     assert "Idea titles should be factual descriptive noun phrases" in instructions
-    assert "Emit 1 to 3 ideas total" in instructions
+    assert "Emit 0 to 3 ideas total" in instructions
     assert "The first idea must be the clear best bet" in instructions
     assert "buyer trigger or operational pain" in instructions
     assert "The goal is not to ban every phrase once." in instructions
     assert "Avoid negative parallelism" in instructions
     assert "Avoid false suspense" in instructions
     assert "Avoid fractal summaries" in instructions
+    assert "return an empty ideas list" in instructions
 
 
 def test_ideas_prompt_payload_reinforces_readability_constraints() -> None:
