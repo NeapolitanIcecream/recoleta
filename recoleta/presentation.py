@@ -97,6 +97,13 @@ def _history_window_display_text(
 ) -> str:
     ref = (history_window_refs or {}).get(window)
     if not isinstance(ref, Mapping):
+        normalized_window = _single_line(window).lower()
+        for candidate_key, candidate_ref in (history_window_refs or {}).items():
+            if _single_line(candidate_key).lower() != normalized_window:
+                continue
+            ref = candidate_ref
+            break
+    if not isinstance(ref, Mapping):
         return ""
     title = _single_line(ref.get("title") or "")
     label = _single_line(ref.get("label") or "")
@@ -123,7 +130,13 @@ def _render_history_refs_in_text(
         return display or ""
 
     replaced = _HISTORY_WINDOW_MENTION_RE.sub(_replace, raw)
-    return re.sub(r"\s{2,}", " ", replaced).strip()
+    normalized_lines = [
+        re.sub(r"[ \t]+([,.;:!?])", r"\1", re.sub(r"[ \t]{2,}", " ", line)).strip()
+        for line in replaced.splitlines()
+    ]
+    normalized = "\n".join(normalized_lines)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
 
 
 def display_idea_kind(value: str) -> str:

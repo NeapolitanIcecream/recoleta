@@ -103,3 +103,45 @@ def test_validate_presentation_v1_does_not_treat_synthesis_as_schema_label_leaka
     )
 
     assert validate_presentation_v1(presentation) == []
+
+
+def test_build_trend_presentation_v1_renders_history_refs_case_insensitively() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/week--2026-W10--trend--81.md",
+        title="Week 10 roundup",
+        overview_md="Compared with Prev_1, teams now gate prompt releases.",
+        evolution=None,
+        history_window_refs={
+            "prev_1": {
+                "title": "Earlier verification push",
+                "label": "2026-W09",
+            }
+        },
+        clusters=[],
+    )
+
+    assert (
+        presentation["content"]["overview"]
+        == "Compared with Earlier verification push (2026-W09), teams now gate prompt releases."
+    )
+
+
+def test_build_trend_presentation_v1_preserves_markdown_paragraph_breaks() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/week--2026-W10--trend--81.md",
+        title="Week 10 roundup",
+        overview_md=(
+            "Teams are tightening prompt rollout discipline.\n\n"
+            "### Why it matters\n\n"
+            "- More teams now gate releases."
+        ),
+        evolution=None,
+        history_window_refs=None,
+        clusters=[],
+    )
+
+    assert presentation["content"]["overview"] == (
+        "Teams are tightening prompt rollout discipline.\n\n"
+        "### Why it matters\n\n"
+        "- More teams now gate releases."
+    )
