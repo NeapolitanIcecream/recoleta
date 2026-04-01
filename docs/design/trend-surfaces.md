@@ -12,7 +12,12 @@ This document records the current design for trend-facing reading surfaces beyon
 
 ## Canonical source: trend markdown
 
-Trend markdown under `MARKDOWN_OUTPUT_DIR/Trends/` is the source of truth for downstream publishing surfaces. Canonical trend notes also emit adjacent `*.presentation.json` sidecars as a structured companion artifact, but current PDF and site flows still derive from the markdown note itself.
+Trend markdown under `MARKDOWN_OUTPUT_DIR/Trends/` is the source of truth for
+downstream publishing surfaces. Canonical trend notes also emit adjacent
+`*.presentation.json` sidecars as a structured companion artifact. Browser PDF
+rendering still derives from the markdown note itself, while static trend and
+idea detail pages now prefer sibling sidecars and fall back to markdown
+parsing when sidecars are missing or invalid.
 
 Why:
 
@@ -20,7 +25,8 @@ Why:
 - It can be versioned, diffed, copied, and debugged directly.
 - It avoids maintaining parallel content serializers for PDF, Telegram captions, and the website.
 
-Downstream surfaces are derived from that markdown note:
+Downstream surfaces are derived from that markdown note and its sibling
+sidecar:
 
 - Telegram PDF
 - PDF debug bundle

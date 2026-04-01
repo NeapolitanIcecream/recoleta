@@ -10,9 +10,9 @@ import yaml
 
 from recoleta.presentation import (
     build_trend_presentation_v1,
-    is_localized_output_path,
     presentation_sidecar_path,
     resolve_presentation_language_code,
+    trend_display_labels,
     write_presentation_sidecar,
 )
 from recoleta.provenance import ProjectionProvenance, build_projection_provenance
@@ -331,9 +331,10 @@ def _render_trend_note_lines(
         f"# {title}",
         "",
     ]
+    display_labels = trend_display_labels(language_code=language_code)
     lines.extend(
         [
-            "## Overview",
+            f"## {display_labels['overview']}",
             (overview_md or "").strip(),
         ]
     )
@@ -400,7 +401,7 @@ def _render_trend_note_lines(
                 if summary:
                     lines.extend(["", summary])
 
-    lines.extend(["", "## Clusters"])
+    lines.extend(["", f"## {display_labels['clusters']}"])
     clusters = clusters or []
     if clusters:
         for cluster in clusters:
@@ -412,7 +413,7 @@ def _render_trend_note_lines(
                 lines.append("")
             reps = cluster.get("representative_chunks") or []
             if isinstance(reps, list) and reps:
-                lines.append("#### Representative sources")
+                lines.append(f"#### {display_labels['representative_sources']}")
                 seen_rep_targets: set[str] = set()
                 for rep in reps[:6]:
                     if not isinstance(rep, dict):
@@ -617,7 +618,7 @@ def write_markdown_trend_note(
         pass_kind=pass_kind,
         site_exclude=site_exclude,
         language_code=language_code,
-        emit_presentation_sidecar=not is_localized_output_path(output_dir),
+        emit_presentation_sidecar=True,
     )
 
 

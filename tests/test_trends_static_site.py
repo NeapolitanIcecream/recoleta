@@ -4,8 +4,14 @@ from bs4 import BeautifulSoup
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 
+from recoleta.presentation import (
+    build_idea_presentation_v1,
+    presentation_sidecar_path,
+    write_presentation_sidecar,
+)
 from recoleta.site import (
     RECOLETA_QUICKSTART_URL,
     RECOLETA_REPO_URL,
@@ -1605,6 +1611,216 @@ def test_export_trend_static_site_renders_idea_opportunities_as_cards(
     assert f"../trends/{trend_note.stem}.html" in detail_html
     assert ".detail-content .idea-opportunity-role-value {" in stylesheet
     assert "-webkit-line-clamp: 2;" not in stylesheet
+
+
+def test_export_trend_static_site_prefers_presentation_sidecar_for_trend_detail_pages(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note_path = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=94,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-trend-sidecar-first",
+        overview_md="Sidecar overview should win.",
+        topics=["agents"],
+        clusters=[
+            {
+                "name": "Reward models",
+                "description": "Cluster summary from sidecar.",
+                "representative_chunks": [
+                    {
+                        "title": "CodeScout",
+                        "note_href": "../Inbox/2026-03-09--codescout.md",
+                        "url": "https://example.com/codescout",
+                        "authors": ["Alice"],
+                    }
+                ],
+            }
+        ],
+        highlights=[],
+    )
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    trend_sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    representative = trend_sidecar["content"]["representative_sources"][0]
+    representative["doc_id"] = 52
+    representative["chunk_index"] = 0
+    representative["source_type"] = "paper"
+    representative["confidence"] = "high"
+    trend_sidecar["content"]["clusters"][0]["representative_sources"][0].update(
+        {
+            "doc_id": 52,
+            "chunk_index": 0,
+            "source_type": "paper",
+            "confidence": "high",
+        }
+    )
+    sidecar_path.write_text(
+        json.dumps(trend_sidecar, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    note_path.write_text(
+        "---\n"
+        "kind: trend\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# Markdown title should lose\n\n"
+        "## Overview\n\n"
+        "This markdown overview should be ignored.\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "trends" / f"{note_path.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Agent systems" in detail_html
+    assert "Sidecar overview should win." in detail_html
+    assert "Reward models" in detail_html
+    assert "CodeScout" in detail_html
+    assert "Source type" in detail_html
+    assert "paper" in detail_html.lower()
+    assert "Confidence" in detail_html
+    assert "high" in detail_html.lower()
+    assert "Markdown title should lose" not in detail_html
+    assert "This markdown overview should be ignored." not in detail_html
+
+
+def test_export_trend_static_site_prefers_presentation_sidecar_for_idea_detail_pages(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    item_note = write_markdown_note(
+        output_dir=output_dir,
+        item_id=52,
+        title="CodeScout",
+        source="rss",
+        canonical_url="https://example.com/codescout",
+        published_at=datetime(2026, 3, 9, tzinfo=UTC),
+        authors=["Alice"],
+        topics=["agents"],
+        relevance_score=0.88,
+        run_id="run-site-ideas-sidecar-item",
+        summary="## Summary\n\nPrompt release notes.\n",
+    )
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=95,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-ideas-sidecar-trend",
+        overview_md="Trend note.",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-09--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "topics:\n"
+        "  - agents\n"
+        "---\n\n"
+        "# Markdown idea title should lose\n\n"
+        "## Summary\n\n"
+        "This markdown summary should be ignored.\n",
+        encoding="utf-8",
+    )
+    idea_presentation = build_idea_presentation_v1(
+        source_markdown_path=f"Ideas/{idea_note.name}",
+        title="Verification-first agent rollout",
+        summary_md="Start with structured release controls.",
+        ideas=[
+            SimpleNamespace(
+                title="Prompt CI gate",
+                kind="workflow_shift",
+                time_horizon="now",
+                user_or_job="Internal agent platform owners responsible for prompt rollout safety",
+                thesis="Add a prompt release gate before rollout.",
+                why_now="Teams now have enough agent activity to justify structured release controls.",
+                what_changed="More agent traffic means regressions show up faster and cost more.",
+                validation_next_step="Pilot the gate on one high-volume internal workflow.",
+                evidence_refs=[
+                    SimpleNamespace(
+                        doc_id=52,
+                        chunk_index=0,
+                        title="CodeScout",
+                        href=f"../Inbox/{item_note.name}",
+                        authors=["Alice"],
+                        source="arxiv",
+                        score=0.91,
+                        reason="Prompt release notes.",
+                    ),
+                    SimpleNamespace(
+                        doc_id=95,
+                        chunk_index=0,
+                        title="Daily trend",
+                        href=f"../Trends/{trend_note.name}",
+                        authors=[],
+                        source="rss",
+                        score=0.62,
+                        reason="Daily trend summary.",
+                    ),
+                ],
+            )
+        ],
+    )
+    opportunity = idea_presentation["content"]["opportunities"][0]
+    opportunity["evidence"][0].update(
+        {
+            "title": "CodeScout",
+            "href": f"../Inbox/{item_note.name}",
+            "authors": ["Alice"],
+            "source_type": "paper",
+            "confidence": "high",
+        }
+    )
+    opportunity["evidence"][1].update(
+        {
+            "title": "Daily trend",
+            "href": f"../Trends/{trend_note.name}",
+            "authors": [],
+            "source_type": "unknown",
+            "confidence": "medium",
+        }
+    )
+    write_presentation_sidecar(note_path=idea_note, presentation=idea_presentation)
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Verification-first agent rollout" in detail_html
+    assert "Start with structured release controls." in detail_html
+    assert "Prompt CI gate" in detail_html
+    assert "Prompt release notes." in detail_html
+    assert "Source type" in detail_html
+    assert "paper" in detail_html.lower()
+    assert "Confidence" in detail_html
+    assert "high" in detail_html.lower()
+    assert f"../items/{item_note.stem}.html" in detail_html
+    assert f"../trends/{trend_note.stem}.html" in detail_html
+    assert "Markdown idea title should lose" not in detail_html
+    assert "This markdown summary should be ignored." not in detail_html
 
 
 def test_export_trend_static_site_hides_empty_topics_for_ideas(

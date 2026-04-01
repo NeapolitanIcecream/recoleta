@@ -7,16 +7,18 @@ Status: Partially implemented
 Implementation status as of 2026-04-01:
 
 - Phase 1 has landed in PR #25 (`feat(output-quality): land phase 1 presentation groundwork`).
-- Canonical English trend and idea markdown now emit adjacent
+- Phase 2 is implemented in the current tree.
+- Canonical English and localized trend/idea markdown now emit adjacent
   `*.presentation.json` sidecars with internal v1 validation at write time.
 - Shared reader-facing prompt style guardrails are wired into trend, idea, and
   translation prompts.
-- Canonical idea markdown and the markdown-first site parser now use
-  reader-facing labels (`Best bet` / `Alternate`, `Type`, `Horizon`, `Role`).
-- Translation sidecar-first, localized sidecars, and site sidecar-first
-  rendering remain future phases and are not implemented yet.
+- Translation now prefers canonical sibling sidecars as structured context and
+  falls back to canonical payloads or markdown excerpts when sidecars are
+  missing.
+- Static site trend and idea detail pages now prefer sibling sidecars and fall
+  back to markdown parsing when sidecars are missing or invalid.
 - `anti_thesis` remains deferred because `TrendIdeasPayload` stays frozen in
-  Phase 1.
+  Phases 1-2.
 
 ## Goal
 
@@ -234,9 +236,9 @@ All sidecars use:
 
 The site and translation code must branch on this version. Unknown versions must
 fail closed for structured rendering and fall back to legacy markdown parsing.
-In the current Phase 1 implementation, sidecar versioning is enforced for
-canonical trend and idea sidecars; translation and site adoption remain later
-phases.
+In the current implementation, sidecar versioning is enforced for canonical and
+localized trend/idea sidecars, and both translation and site rendering branch
+on this version before falling back to markdown compatibility paths.
 
 ### Common envelope
 
@@ -906,6 +908,10 @@ Exit criteria:
 - localized weekly artifacts no longer leak placeholders or raw labels
 - site pages render correctly from sidecars with fallback preserved
 
+Current status as of 2026-04-01:
+
+- implemented in the current tree
+
 ### Phase 3: Quality lint and CI regression
 
 Scope:
@@ -950,11 +956,10 @@ The following defaults are fixed by this design once all phases land.
 
 Current implementation note:
 
-- only the Phase 1 subset above is live today
-- canonical English trend and idea projections write adjacent sidecars
-- localized projections remain markdown-only
-- site rendering remains markdown-first with compatibility for the new idea
-  labels
+- Phases 1-2 are live in the current tree
+- canonical English and localized trend/idea projections write adjacent sidecars
+- translation is sidecar-first with payload/markdown fallback
+- site rendering is sidecar-first with markdown fallback
 
 ## Why This Is The Right Cut
 

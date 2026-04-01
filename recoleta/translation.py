@@ -24,8 +24,11 @@ from recoleta.config import LocalizationConfig, Settings
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.models import Analysis, Document, DocumentChunk, Item, PassOutput
 from recoleta.passes.trend_ideas import TrendIdeasPayload
+from recoleta.presentation import presentation_sidecar_path
 from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.provenance import build_projection_provenance, inject_projection_provenance
+from recoleta.publish.idea_notes import resolve_ideas_note_path
+from recoleta.publish.trend_notes import resolve_trend_note_path
 from recoleta.rag.corpus_tools import CorpusSpec, SearchService
 from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 from recoleta.storage.common import _to_json
@@ -1286,41 +1289,120 @@ def _candidate_context(
 ) -> dict[str, Any]:
     if context_assist == "none":
         return {}
+    note_context = _canonical_note_context(settings=settings, candidate=candidate)
     if candidate.source_kind == "analysis" and candidate.item_id is not None:
         item = repository.get_item(item_id=candidate.item_id)
         if item is None:
-            return {}
-        return _item_translation_context(
-            repository=repository,
-            settings=settings,
-            run_id=run_id,
-            item=item,
-            summary_text=str(candidate.payload.get("summary") or "").strip() or None,
-            context_assist=context_assist,
-        )
+            return note_context
+        return {
+            **note_context,
+            **_item_translation_context(
+                repository=repository,
+                settings=settings,
+                run_id=run_id,
+                item=item,
+                summary_text=str(candidate.payload.get("summary") or "").strip() or None,
+                context_assist=context_assist,
+            ),
+        }
     if candidate.source_kind == "trend_synthesis":
-        return _trend_translation_context(
-            repository=repository,
-            settings=settings,
-            run_id=run_id,
-            payload=candidate.payload,
+        return {
+            **note_context,
+            **_trend_translation_context(
+                repository=repository,
+                settings=settings,
+                run_id=run_id,
+                payload=candidate.payload,
+                granularity=candidate.granularity,
+                period_start=candidate.period_start,
+                period_end=candidate.period_end,
+                context_assist=context_assist,
+            ),
+        }
+    if candidate.source_kind == "trend_ideas":
+        return {
+            **note_context,
+            **_idea_translation_context(
+                repository=repository,
+                settings=settings,
+                run_id=run_id,
+                payload=candidate.payload,
+                granularity=candidate.granularity,
+                period_start=candidate.period_start,
+                period_end=candidate.period_end,
+                context_assist=context_assist,
+            ),
+        }
+    return note_context
+
+
+def _canonical_note_path(
+    *,
+    settings: Settings,
+    candidate: TranslationCandidate,
+) -> Path | None:
+    root = Path(settings.markdown_output_dir).expanduser().resolve()
+    if candidate.source_kind == "trend_synthesis":
+        if candidate.granularity is None or candidate.period_start is None:
+            return None
+        return resolve_trend_note_path(
+            note_dir=root / "Trends",
+            trend_doc_id=candidate.source_record_id,
             granularity=candidate.granularity,
             period_start=candidate.period_start,
-            period_end=candidate.period_end,
-            context_assist=context_assist,
         )
     if candidate.source_kind == "trend_ideas":
-        return _idea_translation_context(
-            repository=repository,
-            settings=settings,
-            run_id=run_id,
-            payload=candidate.payload,
+        if candidate.granularity is None or candidate.period_start is None:
+            return None
+        return resolve_ideas_note_path(
+            note_dir=root / "Ideas",
             granularity=candidate.granularity,
             period_start=candidate.period_start,
-            period_end=candidate.period_end,
-            context_assist=context_assist,
         )
-    return {}
+    return None
+
+
+def _canonical_note_context(
+    *,
+    settings: Settings,
+    candidate: TranslationCandidate,
+) -> dict[str, Any]:
+    note_path = _canonical_note_path(settings=settings, candidate=candidate)
+    if note_path is None or not note_path.exists() or not note_path.is_file():
+        return {}
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    if sidecar_path.exists() and sidecar_path.is_file():
+        try:
+            payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and int(payload.get("presentation_schema_version") or 0) == 1:
+            return {
+                "canonical_note": {
+                    "path": str(note_path),
+                    "sidecar_path": str(sidecar_path),
+                },
+                "presentation": payload,
+            }
+    try:
+        markdown_text = note_path.read_text(encoding="utf-8")
+    except Exception:
+        return {}
+    lines = [line.rstrip() for line in markdown_text.splitlines()]
+    title = ""
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            title = stripped[2:].strip()
+            break
+    body_excerpt = "\n".join(lines[:80]).strip()
+    return {
+        "canonical_note": {
+            "path": str(note_path),
+            "title": title or note_path.stem,
+            "markdown_excerpt": body_excerpt[:4000],
+        }
+    }
 
 
 def _target_language_label(

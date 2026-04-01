@@ -20,7 +20,8 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.materialize import MaterializeTargetSpec, materialize_outputs
 from recoleta.models import Analysis, DocumentChunk, LocalizedOutput
 from recoleta.passes.trend_ideas import TrendIdeasPayload
-from recoleta.publish import write_markdown_trend_note
+from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
+from recoleta.publish import write_markdown_ideas_note, write_markdown_trend_note
 from recoleta.rag.corpus_tools import SearchService
 from recoleta.site import export_trend_static_site
 from recoleta.storage import Repository
@@ -402,6 +403,13 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
     analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    with Session(repository.engine) as session:
+        item_doc_chunk = session.exec(
+            select(DocumentChunk).where(
+                DocumentChunk.source_content_type == "analysis_summary",
+            )
+        ).one()
+    item_doc_id = int(item_doc_chunk.doc_id)
     output_dir = tmp_path / "outputs"
 
     repository.upsert_localized_output(
@@ -425,9 +433,24 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
             "granularity": "day",
             "period_start": datetime(2026, 3, 2, tzinfo=UTC).isoformat(),
             "period_end": datetime(2026, 3, 3, tzinfo=UTC).isoformat(),
-            "overview_md": "## Overview\n\n中文趋势概览。\n",
+            "overview_md": "中文趋势概览。",
             "topics": ["agents", "robotics"],
-            "clusters": [],
+            "clusters": [
+                {
+                    "name": "奖励模型",
+                    "description": "中文聚类说明。",
+                    "representative_chunks": [
+                        {
+                            "doc_id": item_doc_id,
+                            "chunk_index": 0,
+                            "title": "Robotics reward model",
+                            "url": "https://example.com/robotics",
+                            "source": "arxiv",
+                            "score": 0.91,
+                        }
+                    ],
+                }
+            ],
             "highlights": ["中文亮点。"],
             "evolution": None,
         },
@@ -446,7 +469,29 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
             "period_start": datetime(2026, 3, 2, tzinfo=UTC).isoformat(),
             "period_end": datetime(2026, 3, 3, tzinfo=UTC).isoformat(),
             "summary_md": "中文 ideas 摘要。",
-            "ideas": [],
+            "ideas": [
+                {
+                    "title": "提示词发布闸门",
+                    "kind": "tooling_wedge",
+                    "thesis": "引入发布闸门。",
+                    "why_now": "模型变化很快。",
+                    "what_changed": "团队需要更稳定的验证流程。",
+                    "user_or_job": "研究运营",
+                    "evidence_refs": [
+                        {
+                            "doc_id": item_doc_id,
+                            "chunk_index": 0,
+                            "title": "Robotics reward model",
+                            "href": "../Inbox/2026-03-02--robotics-reward-model.md",
+                            "authors": ["Alice"],
+                            "source": "arxiv",
+                            "score": 0.91,
+                        }
+                    ],
+                    "validation_next_step": "先做一个原型。",
+                    "time_horizon": "now",
+                }
+            ],
         },
         diagnostics={},
         variant_role="translation",
@@ -474,12 +519,49 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     item_note = next((localized_root / "Inbox").glob("*.md"))
     trend_note = localized_root / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
     idea_note = localized_root / "Ideas" / "day--2026-03-02--ideas.md"
+    trend_sidecar_path = presentation_sidecar_path(note_path=trend_note)
+    idea_sidecar_path = presentation_sidecar_path(note_path=idea_note)
     assert item_note.exists()
     assert trend_note.exists()
     assert idea_note.exists()
+    assert trend_sidecar_path.exists()
+    assert idea_sidecar_path.exists()
     assert "中文条目摘要" in item_note.read_text(encoding="utf-8")
-    assert "智能体系统" in trend_note.read_text(encoding="utf-8")
-    assert "运营切入点" in idea_note.read_text(encoding="utf-8")
+    trend_markdown = trend_note.read_text(encoding="utf-8")
+    idea_markdown = idea_note.read_text(encoding="utf-8")
+    trend_sidecar = json.loads(trend_sidecar_path.read_text(encoding="utf-8"))
+    idea_sidecar = json.loads(idea_sidecar_path.read_text(encoding="utf-8"))
+
+    assert "智能体系统" in trend_markdown
+    assert "## 概览" in trend_markdown
+    assert "## 聚类" in trend_markdown
+    assert "#### 代表来源" in trend_markdown
+    assert "## Overview" not in trend_markdown
+    assert "## Clusters" not in trend_markdown
+    assert "Representative sources" not in trend_markdown
+
+    assert "运营切入点" in idea_markdown
+    assert "## 摘要" in idea_markdown
+    assert "## 机会" in idea_markdown
+    assert "### 首要机会: 提示词发布闸门" in idea_markdown
+    assert "- 类型: 工具切入点" in idea_markdown
+    assert "- 时间范围: 现在" in idea_markdown
+    assert "- 适用角色: 研究运营" in idea_markdown
+    assert "**核心判断.** 引入发布闸门。" in idea_markdown
+    assert "**下一步验证.** 先做一个原型。" in idea_markdown
+    assert "Prev_1" not in idea_markdown
+    assert "Kind:" not in idea_markdown
+    assert "Time horizon:" not in idea_markdown
+    assert "User/job:" not in idea_markdown
+
+    assert trend_sidecar["language_code"] == "zh-CN"
+    assert trend_sidecar["display_labels"]["overview"] == "概览"
+    assert trend_sidecar["display_labels"]["clusters"] == "聚类"
+    assert idea_sidecar["language_code"] == "zh-CN"
+    assert idea_sidecar["display_labels"]["best_bet"] == "首要机会"
+    assert idea_sidecar["display_labels"]["validation_next_step"] == "下一步验证"
+    assert validate_presentation_v1(trend_sidecar) == []
+    assert validate_presentation_v1(idea_sidecar) == []
 
 
 def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root(
@@ -659,6 +741,229 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
     assert "中文历史趋势" in (
         zh_root / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
     ).read_text(encoding="utf-8")
+
+
+def test_candidate_context_prefers_trend_presentation_sidecar(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    output_dir = tmp_path / "notes"
+    with Session(repository.engine) as session:
+        item_doc_chunk = session.exec(
+            select(DocumentChunk).where(
+                DocumentChunk.source_content_type == "analysis_summary",
+            )
+        ).one()
+    item_doc_id = int(item_doc_chunk.doc_id)
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    note_path = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=trend_doc_id,
+        title="Agent Systems",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-canonical-trend-sidecar",
+        overview_md="English canonical trend overview.",
+        topics=["agents", "robotics"],
+        clusters=[
+            {
+                "name": "Reward models",
+                "description": "English canonical cluster description.",
+                "representative_chunks": [
+                    {
+                        "doc_id": item_doc_id,
+                        "chunk_index": 0,
+                        "title": "Robotics reward model",
+                        "url": "https://example.com/robotics",
+                        "source": "arxiv",
+                        "score": 0.91,
+                    }
+                ],
+            }
+        ],
+        highlights=["English highlight."],
+    )
+
+    candidate = translation_module.TranslationCandidate(
+        source_kind="trend_synthesis",
+        source_record_id=trend_doc_id,
+        payload={
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "English canonical trend overview.",
+            "topics": ["agents", "robotics"],
+            "clusters": [],
+            "highlights": ["English highlight."],
+            "evolution": None,
+        },
+        payload_model=TrendPayload,
+        canonical_language_code="en",
+        document_id=trend_doc_id,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    context = translation_module._candidate_context(
+        repository=repository,
+        settings=cast(Settings, SimpleNamespace(markdown_output_dir=output_dir)),
+        candidate=candidate,
+        context_assist="direct",
+        run_id=None,
+    )
+
+    assert context["canonical_note"]["path"].endswith(str(note_path.relative_to(output_dir)))
+    assert context["presentation"]["surface_kind"] == "trend"
+    assert context["presentation"]["content"]["representative_sources"][0]["title"] == (
+        "Robotics reward model"
+    )
+
+
+def test_candidate_context_prefers_idea_presentation_sidecar(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, _trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    output_dir = tmp_path / "notes"
+    with Session(repository.engine) as session:
+        item_doc_chunk = session.exec(
+            select(DocumentChunk).where(
+                DocumentChunk.source_content_type == "analysis_summary",
+            )
+        ).one()
+    item_doc_id = int(item_doc_chunk.doc_id)
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    ideas_payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Operator wedges",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": "English canonical ideas summary.",
+            "ideas": [
+                {
+                    "title": "Prompt release gate",
+                    "kind": "tooling_wedge",
+                    "thesis": "Introduce a release gate.",
+                    "why_now": "Models are changing quickly.",
+                    "what_changed": "Teams need more validation.",
+                    "user_or_job": "Research ops",
+                    "evidence_refs": [{"doc_id": item_doc_id, "chunk_index": 0}],
+                    "validation_next_step": "Ship a prototype.",
+                    "time_horizon": "now",
+                }
+            ],
+        }
+    )
+    note_path = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=output_dir,
+        pass_output_id=7,
+        upstream_pass_output_id=3,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-canonical-idea-sidecar",
+        status="succeeded",
+        payload=ideas_payload,
+        topics=["agents", "robotics"],
+    )
+
+    candidate = translation_module.TranslationCandidate(
+        source_kind="trend_ideas",
+        source_record_id=idea_doc_id,
+        payload=ideas_payload.model_dump(mode="json"),
+        payload_model=TrendIdeasPayload,
+        canonical_language_code="en",
+        document_id=idea_doc_id,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    context = translation_module._candidate_context(
+        repository=repository,
+        settings=cast(Settings, SimpleNamespace(markdown_output_dir=output_dir)),
+        candidate=candidate,
+        context_assist="direct",
+        run_id=None,
+    )
+
+    assert context["canonical_note"]["path"].endswith(str(note_path.relative_to(output_dir)))
+    assert context["presentation"]["surface_kind"] == "idea"
+    assert context["presentation"]["content"]["opportunities"][0]["title"] == (
+        "Prompt release gate"
+    )
+    assert "evidence_docs" in context
+
+
+def test_candidate_context_falls_back_to_markdown_when_sidecar_missing(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    output_dir = tmp_path / "notes"
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    note_path = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=trend_doc_id,
+        title="Agent Systems",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-canonical-trend-markdown-fallback",
+        overview_md="English canonical trend overview.",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    presentation_sidecar_path(note_path=note_path).unlink()
+
+    candidate = translation_module.TranslationCandidate(
+        source_kind="trend_synthesis",
+        source_record_id=trend_doc_id,
+        payload={
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "English canonical trend overview.",
+            "topics": ["agents"],
+            "clusters": [],
+            "highlights": [],
+            "evolution": None,
+        },
+        payload_model=TrendPayload,
+        canonical_language_code="en",
+        document_id=trend_doc_id,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    context = translation_module._candidate_context(
+        repository=repository,
+        settings=cast(Settings, SimpleNamespace(markdown_output_dir=output_dir)),
+        candidate=candidate,
+        context_assist="direct",
+        run_id=None,
+    )
+
+    assert "presentation" not in context
+    assert context["canonical_note"]["title"] == "Agent Systems"
+    assert "English canonical trend overview." in context["canonical_note"][
+        "markdown_excerpt"
+    ]
 
 
 def test_export_trend_static_site_builds_language_trees_and_redirect_shell(

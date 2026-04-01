@@ -364,11 +364,13 @@ Where outputs go:
 - Idea briefs: `MARKDOWN_OUTPUT_DIR/Ideas/` with canonical `.md` notes plus
   adjacent `.presentation.json` sidecars
 - Localized Markdown: `MARKDOWN_OUTPUT_DIR/Localized/<language>/Inbox/`,
-  `Trends/`, and `Ideas/` when `localization` is configured. Localized trees
-  remain markdown-only today.
+  `Trends/`, and `Ideas/` when `localization` is configured. Localized trend
+  and idea notes also emit adjacent `.presentation.json` sidecars; localized
+  item notes remain markdown-only.
 - Static site: `MARKDOWN_OUTPUT_DIR/site/`; multilingual builds emit
   `/<language>/...` roots and a root redirect page that remembers the browser's
-  last language choice
+  last language choice. Trend and idea detail pages prefer sibling
+  `.presentation.json` sidecars and fall back to markdown parsing when needed.
 - Obsidian notes: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
 - Telegram: sent to `TELEGRAM_CHAT_ID`
 

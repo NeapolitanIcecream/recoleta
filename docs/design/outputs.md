@@ -45,7 +45,9 @@ Under `MARKDOWN_OUTPUT_DIR`:
   `<stem>.presentation.json` sidecars
 - `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs plus
   adjacent `<stem>.presentation.json` sidecars
-- `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading surfaces derived from canonical outputs
+- `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading
+  surfaces derived from canonical outputs; localized trend and idea notes also
+  emit adjacent `<stem>.presentation.json` sidecars
 - `site/`: optional derived static site output from `recoleta run site build`
 
 Historical note:
@@ -59,9 +61,11 @@ Item notes contain YAML frontmatter and sections such as `Summary` and `Links`.
 Trend notes are the canonical source for all downstream trend surfaces:
 
 - Telegram trend PDFs render from `MARKDOWN_OUTPUT_DIR/Trends/*.md`
-- `recoleta run site build` renders from a trend markdown directory
-- `recoleta stage site stage` mirrors trend markdown/PDF artifacts into a
-  repo-local deployment directory
+- `recoleta run site build` discovers sibling trend and idea sidecars first for
+  detail-page rendering and falls back to markdown parsing when sidecars are
+  missing or invalid
+- `recoleta stage site stage` mirrors trend markdown/PDF artifacts plus sibling
+  trend and idea sidecars into a repo-local deployment directory
 - `recoleta repair outputs` rerenders trend markdown from stored trend
   documents and can optionally refresh PDFs/site output in the same pass
 - when available, trend note frontmatter also carries `pass_output_id` / `pass_kind` so projections can be traced back to canonical `trend_synthesis` output
@@ -84,8 +88,8 @@ Localized notes are projections, not canonical state:
 - `recoleta stage translate backfill` writes translated source-language
   overrides plus optional mirror variants for historical corpora
 - localized notes are materialized under `MARKDOWN_OUTPUT_DIR/Localized/<language>/...`
-- localized trees remain markdown-only for now; localized `.presentation.json`
-  sidecars are a later follow-up
+- localized trend and idea notes emit adjacent `.presentation.json` sidecars at
+  materialize time; localized item notes remain markdown-only
 - canonical `analyses`, `pass_outputs`, and `documents` remain unchanged
 
 ## Trend PDF surface
@@ -159,6 +163,8 @@ Important behavior:
   Pages-specific workflow files by publishing a derived branch instead.
 - `recoleta stage site stage` remains useful for custom CI pipelines and
   non-GitHub static hosts when you want an explicit repo-local snapshot.
+- trend and idea detail pages prefer sibling `*.presentation.json` sidecars and
+  fall back to markdown parsing so older Phase 1 artifacts remain buildable.
 - Historical note: the older shared-stream runtime aggregated stream-local
   `Trends/` trees and exposed a `Streams` navigation surface. The current
   instance-first runtime keeps one canonical output tree per child instance and

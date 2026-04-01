@@ -29,7 +29,8 @@ open these paths first:
 - `MARKDOWN_OUTPUT_DIR/Ideas/` when the day has enough evidence, plus adjacent
   `.presentation.json` sidecars for canonical idea notes
 - `MARKDOWN_OUTPUT_DIR/Localized/<language>/` when `localization.targets` is
-  configured. Localized trees are still markdown-only.
+  configured. Localized trend and idea notes also emit adjacent
+  `.presentation.json` sidecars; localized item notes remain markdown-only.
 
 If you started from a preset, use the output paths in that preset YAML file.
 
@@ -52,7 +53,9 @@ That updates:
 - `MARKDOWN_OUTPUT_DIR/site/index.html` and the related trend or idea pages
 
 For canonical trend and idea notes, the same rerender also refreshes the
-adjacent `.presentation.json` sidecars in those directories.
+adjacent `.presentation.json` sidecars in those directories. If localization is
+configured, `recoleta run translate` materializes localized trend and idea
+sidecars beside the localized markdown notes.
 
 `stage ideas` needs an existing trend synthesis output for the same window.
 Low-evidence windows can still be suppressed.
