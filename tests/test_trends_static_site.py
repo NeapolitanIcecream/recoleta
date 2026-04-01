@@ -1830,6 +1830,84 @@ def test_export_trend_static_site_prefers_presentation_sidecar_for_idea_detail_p
     assert all(not item.find_all("li", recursive=False) for item in top_level_items)
 
 
+def test_export_trend_static_site_keeps_phase1_idea_sidecar_evidence_without_titles(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=196,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-ideas-phase1-sidecar-trend",
+        overview_md="Trend note.",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-09--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-09T00:00:00+00:00\n"
+        "period_end: 2026-03-10T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "---\n\n"
+        "# Legacy phase 1 idea note\n\n"
+        "## Summary\n\n"
+        "Legacy markdown should only be fallback.\n",
+        encoding="utf-8",
+    )
+    idea_presentation = build_idea_presentation_v1(
+        source_markdown_path=f"Ideas/{idea_note.name}",
+        title="Verification-first agent rollout",
+        summary_md="Start with structured release controls.",
+        ideas=[
+            SimpleNamespace(
+                title="Prompt CI gate",
+                kind="workflow_shift",
+                time_horizon="now",
+                user_or_job="Internal agent platform owners",
+                thesis="Add a prompt release gate before rollout.",
+                why_now="Teams now have enough agent activity to justify structured release controls.",
+                what_changed="More agent traffic means regressions show up faster and cost more.",
+                validation_next_step="Pilot the gate on one high-volume internal workflow.",
+                evidence_refs=[
+                    SimpleNamespace(
+                        doc_id=196,
+                        chunk_index=0,
+                        reason="Historical sidecars only preserved doc ids and reasons.",
+                    )
+                ],
+            )
+        ],
+    )
+    opportunity = idea_presentation["content"]["opportunities"][0]
+    opportunity["evidence"][0].pop("title", None)
+    opportunity["evidence"][0].pop("href", None)
+    opportunity["evidence"][0].pop("url", None)
+    opportunity["evidence"][0].pop("authors", None)
+    opportunity["evidence"][0].pop("source_type", None)
+    opportunity["evidence"][0].pop("confidence", None)
+    write_presentation_sidecar(note_path=idea_note, presentation=idea_presentation)
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Verification-first agent rollout" in detail_html
+    assert "Document 196" in detail_html
+    assert "Historical sidecars only preserved doc ids and reasons." in detail_html
+    assert "Legacy markdown should only be fallback." not in detail_html
+
+
 def test_export_trend_static_site_hides_empty_topics_for_ideas(
     tmp_path: Path,
 ) -> None:
@@ -2315,6 +2393,78 @@ def test_export_trend_static_site_keeps_overview_summary_when_evolution_has_no_s
         in detail_html
     )
     assert "detail-insight-row" not in detail_html
+
+
+def test_export_trend_static_site_uses_sidecar_even_when_markdown_contains_evolution(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=188,
+        title="Verification-first trend",
+        granularity="day",
+        period_start=datetime(2026, 3, 10, tzinfo=UTC),
+        period_end=datetime(2026, 3, 11, tzinfo=UTC),
+        run_id="run-site-sidecar-with-evolution",
+        overview_md="## Overview\n\nCanonical overview from the sidecar should win.\n",
+        topics=["agents"],
+        evolution={
+            "summary_md": "Evolution summary should remain visible even when sidecar rendering wins.",
+            "signals": [
+                {
+                    "theme": "Runtime verification gets explicit",
+                    "change_type": "continuing",
+                    "summary": "The validation loop now exposes runtime checks earlier in the workflow.",
+                    "history_windows": [],
+                }
+            ],
+        },
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Sidecar cluster summary should win.",
+                "representative_chunks": [
+                    {
+                        "doc_id": 42,
+                        "chunk_index": 0,
+                        "title": "CodeScout",
+                        "href": "../Inbox/2026-03-10--codescout.md",
+                        "authors": ["Alice"],
+                        "source": "arxiv",
+                        "score": 0.91,
+                    }
+                ],
+            }
+        ],
+        highlights=[],
+    )
+    note.write_text(
+        note.read_text(encoding="utf-8")
+        .replace("# Verification-first trend", "# Markdown title should lose")
+        .replace(
+            "Canonical overview from the sidecar should win.",
+            "Markdown overview should be ignored in favor of the sidecar.",
+        ),
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "trends" / f"{note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Verification-first trend" in detail_html
+    assert "Markdown title should lose" not in detail_html
+    assert "Canonical overview from the sidecar should win." in detail_html
+    assert "Markdown overview should be ignored in favor of the sidecar." not in detail_html
+    assert "Evolution summary should remain visible even when sidecar rendering wins." in detail_html
+    assert "Runtime verification gets explicit" in detail_html
+    assert "Verification loops" in detail_html
+    assert "CodeScout" in detail_html
+    assert "Source type" in detail_html
+    assert "paper" in detail_html.lower()
 
 
 def test_export_trend_static_site_wraps_long_evolution_signal_copy_in_disclosure(

@@ -3917,6 +3917,14 @@ def _render_presentation_source_list(
             continue
         title = str(entry.get("title") or "").strip()
         href = str(entry.get("href") or entry.get("url") or "").strip()
+        if not title:
+            doc_id = entry.get("doc_id")
+            try:
+                doc_id_int = int(doc_id) if doc_id is not None else 0
+            except Exception:
+                doc_id_int = 0
+            if doc_id_int > 0:
+                title = f"Document {doc_id_int}"
         target = href or title
         if not title or target in seen_targets:
             continue
@@ -3956,6 +3964,58 @@ def _render_presentation_source_list(
     if not items:
         return "<p>(none)</p>"
     return "<ul class='source-list'>" + "".join(items) + "</ul>"
+
+
+def _render_markdown_evolution_compat_html(*, sections: Sequence[Any]) -> str:
+    evolution_sections = [
+        section
+        for section in sections
+        if _section_matches(str(getattr(section, "heading", "") or ""), "evolution")
+    ]
+    if not evolution_sections:
+        return ""
+    rendered = _build_trend_browser_body_html(
+        sections=list(evolution_sections),
+        allow_evolution_disclosure=True,
+    )
+    soup = BeautifulSoup(rendered, "html.parser")
+    flow = soup.select_one(".document-flow")
+    if flow is None:
+        return rendered
+    return "".join(str(child) for child in flow.contents)
+
+
+def _merge_markdown_evolution_compat_html(
+    *, rendered_body_html: str, evolution_compat_html: str
+) -> str:
+    if not evolution_compat_html.strip():
+        return rendered_body_html
+    rendered_soup = BeautifulSoup(rendered_body_html, "html.parser")
+    flow = rendered_soup.select_one(".document-flow")
+    compat_soup = BeautifulSoup(evolution_compat_html, "html.parser")
+    compat_nodes = [
+        node.extract() for node in list(compat_soup.contents) if str(node).strip()
+    ]
+    if not compat_nodes:
+        return rendered_body_html
+    if flow is None:
+        return rendered_body_html + evolution_compat_html
+
+    cluster_section = next(
+        (
+            section
+            for section in flow.find_all("section", recursive=False)
+            if section.select_one(".cluster-card") is not None
+        ),
+        None,
+    )
+    if cluster_section is None:
+        for node in compat_nodes:
+            flow.append(node)
+    else:
+        for node in compat_nodes:
+            cluster_section.insert_before(node)
+    return str(rendered_soup)
 
 
 def _render_presentation_source_entry(
@@ -4358,15 +4418,12 @@ def _load_trend_site_documents(
         markdown_title = sanitize_trend_title(markdown_title, fallback="Trend")
         markdown_excerpt = _section_excerpt(sections)
         markdown_evolution_insight = _extract_trend_evolution_insight(sections)
-        has_markdown_evolution = any(
-            _section_matches(section.heading, "evolution") for section in sections
-        )
         source_key = _site_source_key(
             markdown_path=source_document.markdown_path,
             instance=source_document.instance,
         )
         page_path = trend_pages_by_source_key[source_key]
-        if source_document.presentation is not None and not has_markdown_evolution:
+        if source_document.presentation is not None:
             content = source_document.presentation.get("content")
             title = sanitize_trend_title(
                 str(content.get("title") or "").strip()
@@ -4377,6 +4434,15 @@ def _load_trend_site_documents(
             rendered_body_html, excerpt, evolution_insight = _build_trend_body_from_presentation(
                 presentation=source_document.presentation,
             )
+            evolution_compat_html = _render_markdown_evolution_compat_html(
+                sections=sections
+            )
+            if evolution_compat_html:
+                rendered_body_html = _merge_markdown_evolution_compat_html(
+                    rendered_body_html=rendered_body_html,
+                    evolution_compat_html=evolution_compat_html,
+                )
+                evolution_insight = markdown_evolution_insight or evolution_insight
             browser_body_html = _rewrite_site_markdown_links(
                 html_text=rendered_body_html,
                 source_markdown_path=source_document.markdown_path,
