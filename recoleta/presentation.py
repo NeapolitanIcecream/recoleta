@@ -48,29 +48,122 @@ _LANGUAGE_LABEL_TO_CODE = {
     "traditional chinese": "zh-TW",
 }
 
-TREND_DISPLAY_LABELS_V1 = {
-    "overview": "Overview",
-    "top_shifts": "Top shifts",
-    "counter_signal": "Counter-signal",
-    "clusters": "Clusters",
-    "representative_sources": "Representative sources",
-    "source_type": "Source type",
-    "confidence": "Confidence",
+_TREND_DISPLAY_LABELS_BY_LANGUAGE = {
+    "en": {
+        "overview": "Overview",
+        "top_shifts": "Top shifts",
+        "counter_signal": "Counter-signal",
+        "clusters": "Clusters",
+        "representative_sources": "Representative sources",
+        "source_type": "Source type",
+        "confidence": "Confidence",
+    },
+    "zh-CN": {
+        "overview": "概览",
+        "top_shifts": "重点变化",
+        "counter_signal": "反向信号",
+        "clusters": "聚类",
+        "representative_sources": "代表来源",
+        "source_type": "来源类型",
+        "confidence": "置信度",
+    },
+    "zh-TW": {
+        "overview": "概覽",
+        "top_shifts": "重點變化",
+        "counter_signal": "反向訊號",
+        "clusters": "聚類",
+        "representative_sources": "代表來源",
+        "source_type": "來源類型",
+        "confidence": "置信度",
+    },
 }
 
-IDEA_DISPLAY_LABELS_V1 = {
-    "summary": "Summary",
-    "opportunities": "Opportunities",
-    "best_bet": "Best bet",
-    "alternate": "Alternate",
-    "type": "Type",
-    "horizon": "Horizon",
-    "role": "Role",
-    "thesis": "Thesis",
-    "why_now": "Why now",
-    "what_changed": "What changed",
-    "validation_next_step": "Validation next step",
-    "evidence": "Evidence",
+_IDEA_DISPLAY_LABELS_BY_LANGUAGE = {
+    "en": {
+        "summary": "Summary",
+        "opportunities": "Opportunities",
+        "best_bet": "Best bet",
+        "alternate": "Alternate",
+        "type": "Type",
+        "horizon": "Horizon",
+        "role": "Role",
+        "thesis": "Thesis",
+        "why_now": "Why now",
+        "what_changed": "What changed",
+        "validation_next_step": "Validation next step",
+        "evidence": "Evidence",
+        "source_type": "Source type",
+        "confidence": "Confidence",
+    },
+    "zh-CN": {
+        "summary": "摘要",
+        "opportunities": "机会",
+        "best_bet": "首要机会",
+        "alternate": "备选机会",
+        "type": "类型",
+        "horizon": "时间范围",
+        "role": "适用角色",
+        "thesis": "核心判断",
+        "why_now": "为什么是现在",
+        "what_changed": "发生了什么变化",
+        "validation_next_step": "下一步验证",
+        "evidence": "证据",
+        "source_type": "来源类型",
+        "confidence": "置信度",
+    },
+    "zh-TW": {
+        "summary": "摘要",
+        "opportunities": "機會",
+        "best_bet": "首要機會",
+        "alternate": "備選機會",
+        "type": "類型",
+        "horizon": "時間範圍",
+        "role": "適用角色",
+        "thesis": "核心判斷",
+        "why_now": "為什麼是現在",
+        "what_changed": "發生了什麼變化",
+        "validation_next_step": "下一步驗證",
+        "evidence": "證據",
+        "source_type": "來源類型",
+        "confidence": "置信度",
+    },
+}
+
+TREND_DISPLAY_LABELS_V1 = dict(_TREND_DISPLAY_LABELS_BY_LANGUAGE["en"])
+IDEA_DISPLAY_LABELS_V1 = dict(_IDEA_DISPLAY_LABELS_BY_LANGUAGE["en"])
+
+_IDEA_REQUIRED_DISPLAY_LABEL_KEYS = {
+    "summary",
+    "opportunities",
+    "best_bet",
+    "alternate",
+    "type",
+    "horizon",
+    "role",
+    "thesis",
+    "why_now",
+    "what_changed",
+    "validation_next_step",
+    "evidence",
+}
+
+_SOURCE_TYPE_BY_SOURCE = {
+    "arxiv": "paper",
+    "openreview": "paper",
+    "hf_daily": "paper",
+    "hn": "forum_post",
+    "rss": "unknown",
+}
+
+_DEFAULT_CONFIDENCE_BY_SOURCE_TYPE = {
+    "benchmark": "high",
+    "field_report": "high",
+    "paper": "high",
+    "forum_post": "medium",
+    "news": "medium",
+    "product_post": "medium",
+    "survey": "low",
+    "unknown": "low",
 }
 
 _TREND_REQUIRED_CONTENT_KEYS = {
@@ -109,6 +202,28 @@ def _normalize_markdown(value: Any) -> str:
     text = str(value or "").replace("\r\n", "\n").strip()
     lines = [line.rstrip() for line in text.splitlines()]
     return "\n".join(lines).strip()
+
+
+def _value_from(raw: Any, key: str, default: Any = None) -> Any:
+    if isinstance(raw, Mapping):
+        return raw.get(key, default)
+    return getattr(raw, key, default)
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        normalized = int(value)
+    except Exception:
+        return None
+    return normalized
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        normalized = float(value)
+    except Exception:
+        return None
+    return normalized
 
 
 def _history_window_display_text(
@@ -166,30 +281,166 @@ def _render_history_refs_in_text(
     return normalized.strip()
 
 
-def display_idea_kind(value: str) -> str:
-    labels = {
-        "new_build": "New build",
-        "revival": "Revival",
-        "research_gap": "Research gap",
-        "tooling_wedge": "Tooling wedge",
-        "workflow_shift": "Workflow shift",
+def _display_language_family(language_code: str | None) -> str:
+    normalized = resolve_presentation_language_code(language_code=language_code)
+    if normalized:
+        lowered = normalized.lower()
+        if lowered.startswith("zh-tw") or "-hant" in lowered or lowered.startswith(
+            ("zh-hk", "zh-mo")
+        ):
+            return "zh-TW"
+    if normalized and normalized.lower().startswith("zh"):
+        return "zh-CN"
+    return "en"
+
+
+def trend_display_labels(*, language_code: str | None = None) -> dict[str, str]:
+    family = _display_language_family(language_code)
+    return dict(_TREND_DISPLAY_LABELS_BY_LANGUAGE.get(family, TREND_DISPLAY_LABELS_V1))
+
+
+def idea_display_labels(*, language_code: str | None = None) -> dict[str, str]:
+    family = _display_language_family(language_code)
+    return dict(_IDEA_DISPLAY_LABELS_BY_LANGUAGE.get(family, IDEA_DISPLAY_LABELS_V1))
+
+
+def display_idea_kind(value: str, *, language_code: str | None = None) -> str:
+    labels_by_language = {
+        "en": {
+            "new_build": "New build",
+            "revival": "Revival",
+            "research_gap": "Research gap",
+            "tooling_wedge": "Tooling wedge",
+            "workflow_shift": "Workflow shift",
+        },
+        "zh-CN": {
+            "new_build": "新建设想",
+            "revival": "重新激活",
+            "research_gap": "研究空白",
+            "tooling_wedge": "工具切入点",
+            "workflow_shift": "工作流转变",
+        },
+        "zh-TW": {
+            "new_build": "新建設想",
+            "revival": "重新激活",
+            "research_gap": "研究空白",
+            "tooling_wedge": "工具切入點",
+            "workflow_shift": "工作流轉變",
+        },
     }
+    labels = labels_by_language.get(
+        _display_language_family(language_code),
+        labels_by_language["en"],
+    )
     normalized = _single_line(value).lower()
     return labels.get(normalized, _single_line(value))
 
 
-def display_idea_time_horizon(value: str) -> str:
-    labels = {
-        "now": "Now",
-        "near": "Near-term",
-        "frontier": "Frontier",
+def display_idea_time_horizon(value: str, *, language_code: str | None = None) -> str:
+    labels_by_language = {
+        "en": {
+            "now": "Now",
+            "near": "Near-term",
+            "frontier": "Frontier",
+        },
+        "zh-CN": {
+            "now": "现在",
+            "near": "近期",
+            "frontier": "前沿",
+        },
+        "zh-TW": {
+            "now": "現在",
+            "near": "近期",
+            "frontier": "前沿",
+        },
     }
+    labels = labels_by_language.get(
+        _display_language_family(language_code),
+        labels_by_language["en"],
+    )
     normalized = _single_line(value).lower()
     return labels.get(normalized, _single_line(value))
 
 
-def display_idea_tier(rank: int) -> str:
-    return "Best bet" if int(rank) == 1 else "Alternate"
+def display_idea_tier(rank: int, *, language_code: str | None = None) -> str:
+    labels = idea_display_labels(language_code=language_code)
+    return labels["best_bet"] if int(rank) == 1 else labels["alternate"]
+
+
+def _normalize_source_type(value: Any) -> str:
+    normalized = _single_line(value).lower().replace("-", "_").replace(" ", "_")
+    if normalized:
+        if normalized in _DEFAULT_CONFIDENCE_BY_SOURCE_TYPE:
+            return normalized
+        return _SOURCE_TYPE_BY_SOURCE.get(normalized, normalized)
+    return "unknown"
+
+
+def _project_source_type(raw_source: Any) -> str:
+    explicit = _normalize_source_type(_value_from(raw_source, "source_type", ""))
+    if explicit and explicit != "unknown":
+        return explicit
+    return _normalize_source_type(_value_from(raw_source, "source", ""))
+
+
+def _project_confidence(raw_source: Any, *, source_type: str) -> str:
+    explicit = _single_line(_value_from(raw_source, "confidence", "")).lower()
+    if explicit in {"high", "medium", "low"}:
+        return explicit
+    score = _float_or_none(_value_from(raw_source, "score", None))
+    if score is not None:
+        if score >= 0.8:
+            return "high"
+        if score >= 0.5:
+            return "medium"
+        return "low"
+    return _DEFAULT_CONFIDENCE_BY_SOURCE_TYPE.get(source_type, "low")
+
+
+def _project_source_metadata(
+    raw_source: Any,
+    *,
+    fallback_title: str | None = None,
+    include_reason: bool = False,
+) -> dict[str, Any]:
+    doc_id = _int_or_none(_value_from(raw_source, "doc_id", None))
+    chunk_index = _int_or_none(_value_from(raw_source, "chunk_index", 0))
+    title = _single_line(_value_from(raw_source, "title", "") or fallback_title or "")
+    if not title and doc_id is not None and doc_id > 0:
+        title = f"Document {doc_id}"
+    source_type = _project_source_type(raw_source)
+    href = _single_line(
+        _value_from(raw_source, "href", "") or _value_from(raw_source, "note_href", "")
+    )
+    url = _single_line(_value_from(raw_source, "url", ""))
+    projected = {
+        "title": title,
+        "href": href or url or None,
+        "url": url or None,
+        "authors": [
+            _single_line(author)
+            for author in list(_value_from(raw_source, "authors", []) or [])
+            if _single_line(author)
+        ],
+        "doc_id": doc_id,
+        "chunk_index": 0 if chunk_index is None else chunk_index,
+        "source_type": source_type,
+        "confidence": _project_confidence(raw_source, source_type=source_type),
+    }
+    if include_reason:
+        reasons = [
+            _normalize_markdown(reason)
+            for reason in list(_value_from(raw_source, "reasons", []) or [])
+            if _normalize_markdown(reason)
+        ]
+        reason = _normalize_markdown(_value_from(raw_source, "reason", "") or "")
+        if reasons:
+            projected["reasons"] = reasons
+        if reason:
+            projected["reason"] = reason
+        elif reasons:
+            projected["reason"] = reasons[0]
+    return projected
 
 
 def _canonicalize_language_code(value: Any) -> str | None:
@@ -263,29 +514,57 @@ def _project_cluster_representative_sources(
     projected: list[dict[str, Any]] = []
     seen_targets: set[str] = set()
     for raw_rep in list(raw_representative_chunks)[:6]:
-        if not isinstance(raw_rep, Mapping):
-            continue
-        title_value = _single_line(raw_rep.get("title") or "")
-        href_value = _single_line(raw_rep.get("note_href") or "")
-        url_value = _single_line(raw_rep.get("url") or "")
+        title_value = _single_line(_value_from(raw_rep, "title", "") or "")
+        href_value = _single_line(
+            _value_from(raw_rep, "href", "") or _value_from(raw_rep, "note_href", "")
+        )
+        url_value = _single_line(_value_from(raw_rep, "url", "") or "")
         if not title_value:
             continue
         target = href_value or url_value or title_value
         if target in seen_targets:
             continue
         seen_targets.add(target)
-        projected.append(
-            {
-                "title": title_value,
-                "href": href_value or None,
-                "url": url_value or None,
-                "authors": [
-                    _single_line(author)
-                    for author in list(raw_rep.get("authors") or [])
-                    if _single_line(author)
-                ],
-            }
+        projected.append(_project_source_metadata(raw_rep, fallback_title=title_value))
+    return projected
+
+
+def _project_idea_evidence(raw_evidence_refs: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_evidence_refs, Sequence):
+        return []
+    ordered: list[tuple[str, Any]] = []
+    grouped: dict[int, list[Any]] = {}
+    for raw_ref in list(raw_evidence_refs):
+        doc_id = _int_or_none(_value_from(raw_ref, "doc_id", None))
+        if doc_id is None or doc_id <= 0:
+            ordered.append(("raw", raw_ref))
+            continue
+        if doc_id not in grouped:
+            grouped[doc_id] = []
+            ordered.append(("doc", doc_id))
+        grouped[doc_id].append(raw_ref)
+
+    projected: list[dict[str, Any]] = []
+    for kind, value in ordered:
+        refs = [value] if kind == "raw" else grouped.get(int(value), [])
+        if not refs:
+            continue
+        reasons: list[str] = []
+        seen_reasons: set[str] = set()
+        for ref in refs:
+            normalized_reason = _normalize_markdown(_value_from(ref, "reason", "") or "")
+            if normalized_reason and normalized_reason not in seen_reasons:
+                seen_reasons.add(normalized_reason)
+                reasons.append(normalized_reason)
+        projected_ref = _project_source_metadata(
+            refs[0],
+            include_reason=True,
         )
+        if reasons:
+            projected_ref["reasons"] = reasons
+            if not _normalize_markdown(projected_ref.get("reason") or ""):
+                projected_ref["reason"] = reasons[0]
+        projected.append(projected_ref)
     return projected
 
 
@@ -298,7 +577,12 @@ def build_trend_presentation_v1(
     history_window_refs: Mapping[str, Mapping[str, Any]] | None,
     clusters: Sequence[Mapping[str, Any]] | None,
     language_code: str | None = None,
+    display_language_code: str | None = None,
 ) -> dict[str, Any]:
+    resolved_language_code = resolve_presentation_language_code(language_code=language_code)
+    resolved_display_language_code = resolve_presentation_language_code(
+        language_code=display_language_code
+    ) or resolved_language_code
     normalized_overview = _render_history_refs_in_text(
         overview_md,
         history_window_refs=history_window_refs,
@@ -358,9 +642,11 @@ def build_trend_presentation_v1(
     return {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
         "surface_kind": "trend",
-        "language_code": resolve_presentation_language_code(language_code=language_code),
+        "language_code": resolved_language_code,
         "source_markdown_path": source_markdown_path,
-        "display_labels": dict(TREND_DISPLAY_LABELS_V1),
+        "display_labels": trend_display_labels(
+            language_code=resolved_display_language_code
+        ),
         "content": {
             "title": _single_line(title),
             "hero": {
@@ -383,47 +669,52 @@ def build_idea_presentation_v1(
     summary_md: str,
     ideas: list[Any],
     language_code: str | None = None,
+    display_language_code: str | None = None,
 ) -> dict[str, Any]:
+    resolved_language_code = resolve_presentation_language_code(language_code=language_code)
+    resolved_display_language_code = resolve_presentation_language_code(
+        language_code=display_language_code
+    ) or resolved_language_code
     opportunities: list[dict[str, Any]] = []
     for index, idea in enumerate(list(ideas or [])[:3], start=1):
         opportunities.append(
             {
                 "rank": index,
                 "tier": "best_bet" if index == 1 else "alternate",
-                "title": _single_line(getattr(idea, "title", "") or ""),
-                "kind": _single_line(getattr(idea, "kind", "") or ""),
-                "time_horizon": _single_line(getattr(idea, "time_horizon", "") or ""),
-                "display_kind": display_idea_kind(str(getattr(idea, "kind", "") or "")),
-                "display_time_horizon": display_idea_time_horizon(
-                    str(getattr(idea, "time_horizon", "") or "")
+                "title": _single_line(_value_from(idea, "title", "") or ""),
+                "kind": _single_line(_value_from(idea, "kind", "") or ""),
+                "time_horizon": _single_line(_value_from(idea, "time_horizon", "") or ""),
+                "display_kind": display_idea_kind(
+                    str(_value_from(idea, "kind", "") or ""),
+                    language_code=resolved_display_language_code,
                 ),
-                "role": _normalize_markdown(getattr(idea, "user_or_job", "") or ""),
-                "thesis": _normalize_markdown(getattr(idea, "thesis", "") or ""),
-                "why_now": _normalize_markdown(getattr(idea, "why_now", "") or ""),
+                "display_time_horizon": display_idea_time_horizon(
+                    str(_value_from(idea, "time_horizon", "") or ""),
+                    language_code=resolved_display_language_code,
+                ),
+                "role": _normalize_markdown(_value_from(idea, "user_or_job", "") or ""),
+                "thesis": _normalize_markdown(_value_from(idea, "thesis", "") or ""),
+                "why_now": _normalize_markdown(_value_from(idea, "why_now", "") or ""),
                 "what_changed": _normalize_markdown(
-                    getattr(idea, "what_changed", "") or ""
+                    _value_from(idea, "what_changed", "") or ""
                 ),
                 "validation_next_step": _normalize_markdown(
-                    getattr(idea, "validation_next_step", "") or ""
+                    _value_from(idea, "validation_next_step", "") or ""
                 ),
-                "evidence": [
-                    {
-                        "doc_id": int(getattr(ref, "doc_id")),
-                        "chunk_index": int(getattr(ref, "chunk_index", 0)),
-                        "reason": _normalize_markdown(getattr(ref, "reason", "") or ""),
-                    }
-                    for ref in list(getattr(idea, "evidence_refs", []) or [])
-                    if getattr(ref, "doc_id", None) is not None
-                ],
+                "evidence": _project_idea_evidence(
+                    list(_value_from(idea, "evidence_refs", []) or [])
+                ),
             }
         )
 
     return {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
         "surface_kind": "idea",
-        "language_code": resolve_presentation_language_code(language_code=language_code),
+        "language_code": resolved_language_code,
         "source_markdown_path": source_markdown_path,
-        "display_labels": dict(IDEA_DISPLAY_LABELS_V1),
+        "display_labels": idea_display_labels(
+            language_code=resolved_display_language_code
+        ),
         "content": {
             "title": _single_line(title),
             "summary": _normalize_markdown(summary_md),
@@ -481,9 +772,41 @@ def _idea_user_visible_strings(presentation: Mapping[str, Any]) -> list[str]:
     return [value for value in strings if value]
 
 
+def _presentation_schema_version(value: Any) -> int | None:
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _validate_string_field(
+    *,
+    mapping: Mapping[str, Any],
+    key: str,
+    field_path: str,
+    errors: list[str],
+) -> None:
+    if not isinstance(mapping.get(key), str):
+        errors.append(f"{field_path} must be a string")
+
+
+def _validate_int_like_field(
+    *,
+    mapping: Mapping[str, Any],
+    key: str,
+    field_path: str,
+    errors: list[str],
+) -> None:
+    if _int_or_none(mapping.get(key)) is None:
+        errors.append(f"{field_path} must be an integer")
+
+
 def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
-    if int(presentation.get("presentation_schema_version") or 0) != PRESENTATION_SCHEMA_VERSION:
+    if (
+        _presentation_schema_version(presentation.get("presentation_schema_version"))
+        != PRESENTATION_SCHEMA_VERSION
+    ):
         errors.append("presentation_schema_version must be 1")
     source_markdown_path = _single_line(presentation.get("source_markdown_path") or "")
     if not source_markdown_path.endswith(".md"):
@@ -491,6 +814,8 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     display_labels = presentation.get("display_labels")
     if not isinstance(display_labels, Mapping):
         errors.append("display_labels must be a mapping")
+    elif any(not isinstance(value, str) for value in display_labels.values()):
+        errors.append("display_labels values must be strings")
     content = presentation.get("content")
     if not isinstance(content, Mapping):
         errors.append("content must be a mapping")
@@ -510,6 +835,13 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                 errors.append(
                     "trend content must include: " + ", ".join(missing_content)
                 )
+            for key in ("title", "overview"):
+                _validate_string_field(
+                    mapping=content,
+                    key=key,
+                    field_path=f"trend content.{key}",
+                    errors=errors,
+                )
             hero = content.get("hero")
             if not isinstance(hero, Mapping):
                 errors.append("trend hero must be a mapping")
@@ -518,6 +850,13 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                 if missing_hero:
                     errors.append(
                         "trend hero must include: " + ", ".join(missing_hero)
+                    )
+                for key in ("kicker", "dek"):
+                    _validate_string_field(
+                        mapping=hero,
+                        key=key,
+                        field_path=f"trend hero.{key}",
+                        errors=errors,
                     )
             ranked_shifts = list(content.get("ranked_shifts") or [])
         else:
@@ -535,9 +874,28 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                     + ", ".join(missing_shift)
                 )
                 break
+            for key in ("title", "summary"):
+                _validate_string_field(
+                    mapping=shift,
+                    key=key,
+                    field_path=f"trend ranked_shifts.{key}",
+                    errors=errors,
+                )
+            _validate_int_like_field(
+                mapping=shift,
+                key="rank",
+                field_path="trend ranked_shifts.rank",
+                errors=errors,
+            )
+            history_refs = shift.get("history_refs")
+            if not isinstance(history_refs, list) or any(
+                not isinstance(item, str) for item in history_refs
+            ):
+                errors.append("trend ranked_shifts.history_refs must be a list of strings")
+                break
         user_visible_strings = _trend_user_visible_strings(presentation)
     elif surface_kind == "idea":
-        expected_labels = set(IDEA_DISPLAY_LABELS_V1)
+        expected_labels = set(_IDEA_REQUIRED_DISPLAY_LABEL_KEYS)
         if isinstance(display_labels, Mapping):
             missing_labels = sorted(expected_labels - set(display_labels))
             if missing_labels:
@@ -549,6 +907,13 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
             if missing_content:
                 errors.append(
                     "idea content must include: " + ", ".join(missing_content)
+                )
+            for key in ("title", "summary"):
+                _validate_string_field(
+                    mapping=content,
+                    key=key,
+                    field_path=f"idea content.{key}",
+                    errors=errors,
                 )
             opportunities = list(content.get("opportunities") or [])
         else:
@@ -573,6 +938,25 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                     + ", ".join(missing_opportunity)
                 )
                 break
+            for key in (
+                "title",
+                "tier",
+                "kind",
+                "time_horizon",
+                "display_kind",
+                "display_time_horizon",
+                "role",
+                "thesis",
+                "why_now",
+                "what_changed",
+                "validation_next_step",
+            ):
+                _validate_string_field(
+                    mapping=opportunity,
+                    key=key,
+                    field_path=f"idea opportunities.{key}",
+                    errors=errors,
+                )
             if _single_line(opportunity.get("display_kind") or "") in _RAW_IDEA_ENUMS:
                 errors.append("display_kind must not leak raw idea enums")
                 break
@@ -605,9 +989,11 @@ __all__ = [
     "display_idea_kind",
     "display_idea_tier",
     "display_idea_time_horizon",
+    "idea_display_labels",
     "is_localized_output_path",
     "presentation_sidecar_path",
     "resolve_presentation_language_code",
+    "trend_display_labels",
     "validate_presentation_v1",
     "write_presentation_sidecar",
 ]

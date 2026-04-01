@@ -20,6 +20,12 @@ from loguru import logger
 from markdown_it import MarkdownIt
 from slugify import slugify
 
+from recoleta.presentation import (
+    idea_display_labels,
+    presentation_sidecar_path,
+    trend_display_labels,
+    validate_presentation_v1,
+)
 from recoleta.publish.trend_render_shared import (
     _build_trend_browser_body_html,
     _evolution_change_label,
@@ -27,6 +33,7 @@ from recoleta.publish.trend_render_shared import (
     _extract_trend_pdf_sections,
     _render_browser_content_card_html,
     _render_browser_section_label_html,
+    _section_matches,
     _strip_labeled_value,
     _normalize_obsidian_callouts_for_pdf,
     _split_yaml_frontmatter_text,
@@ -84,6 +91,7 @@ class TrendSiteSourceDocument:
     stem: str
     frontmatter: dict[str, Any]
     markdown_body: str
+    presentation: dict[str, Any] | None
     granularity: str
     period_start: datetime | None
     period_end: datetime | None
@@ -132,6 +140,7 @@ class IdeaSiteSourceDocument:
     stem: str
     frontmatter: dict[str, Any]
     markdown_body: str
+    presentation: dict[str, Any] | None
     granularity: str
     period_start: datetime | None
     period_end: datetime | None
@@ -202,6 +211,68 @@ def _parse_site_bool(value: Any) -> bool:
         return value
     normalized = str(value or "").strip().lower()
     return normalized in {"1", "true", "yes", "on"}
+
+
+def _load_presentation_for_site(
+    *,
+    markdown_path: Path,
+    surface_kind: str,
+) -> dict[str, Any] | None:
+    sidecar_path = presentation_sidecar_path(note_path=markdown_path)
+    if not sidecar_path.exists() or not sidecar_path.is_file():
+        return None
+    try:
+        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    try:
+        schema_version = int(payload.get("presentation_schema_version") or 0)
+    except Exception:
+        return None
+    if schema_version != 1:
+        return None
+    if str(payload.get("surface_kind") or "").strip().lower() != surface_kind:
+        return None
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        return None
+    if validate_presentation_v1(payload):
+        return None
+    return payload
+
+
+def _presentation_labels(
+    *,
+    surface_kind: str,
+    presentation: dict[str, Any],
+) -> dict[str, str]:
+    raw_display_labels = presentation.get("display_labels")
+    merged = (
+        trend_display_labels(language_code=str(presentation.get("language_code") or "").strip())
+        if surface_kind == "trend"
+        else idea_display_labels(language_code=str(presentation.get("language_code") or "").strip())
+    )
+    if isinstance(raw_display_labels, dict):
+        for key, value in raw_display_labels.items():
+            if str(value or "").strip():
+                merged[str(key)] = str(value).strip()
+    return merged
+
+
+def _humanize_source_type(value: str) -> str:
+    normalized = str(value or "").strip().replace("_", " ")
+    if not normalized:
+        return "Unknown"
+    return normalized[:1].upper() + normalized[1:]
+
+
+def _humanize_confidence(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return "Unknown"
+    return normalized[:1].upper() + normalized[1:]
 
 
 def _normalize_item_export_scope(item_export_scope: str | None) -> str:
@@ -3032,6 +3103,10 @@ def _load_trend_source_documents(
                     stem=markdown_path.stem,
                     frontmatter=frontmatter,
                     markdown_body=markdown_body,
+                    presentation=_load_presentation_for_site(
+                        markdown_path=markdown_path,
+                        surface_kind="trend",
+                    ),
                     granularity=granularity,
                     period_start=period_start,
                     period_end=period_end,
@@ -3245,6 +3320,10 @@ def _load_idea_source_documents(
                     stem=markdown_path.stem,
                     frontmatter=frontmatter,
                     markdown_body=markdown_body,
+                    presentation=_load_presentation_for_site(
+                        markdown_path=markdown_path,
+                        surface_kind="idea",
+                    ),
                     granularity=granularity,
                     period_start=period_start,
                     period_end=period_end,
@@ -3261,6 +3340,70 @@ def _load_idea_source_documents(
     return source_documents[:limit] if limit is not None else source_documents
 
 
+def _presentation_local_markdown_targets(
+    *,
+    presentation: dict[str, Any],
+    source_markdown_path: Path,
+) -> set[Path]:
+    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
+    candidate_paths: set[Path] = set()
+
+    def add_markdown(value: Any) -> None:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return
+        rendered_html = markdown.render(normalized)
+        soup = BeautifulSoup(rendered_html, "html.parser")
+        for anchor in soup.find_all("a", href=True):
+            target_path = _resolve_site_local_markdown_target(
+                source_markdown_path=source_markdown_path,
+                href=str(anchor.get("href") or ""),
+            )
+            if target_path is not None:
+                candidate_paths.add(target_path)
+
+    def add_href(value: Any) -> None:
+        target_path = _resolve_site_local_markdown_target(
+            source_markdown_path=source_markdown_path,
+            href=str(value or ""),
+        )
+        if target_path is not None:
+            candidate_paths.add(target_path)
+
+    content = presentation.get("content")
+    if not isinstance(content, dict):
+        return candidate_paths
+
+    add_markdown(content.get("overview"))
+    add_markdown(content.get("summary"))
+    for shift in list(content.get("ranked_shifts") or []):
+        if not isinstance(shift, dict):
+            continue
+        add_markdown(shift.get("summary"))
+    for cluster in list(content.get("clusters") or []):
+        if not isinstance(cluster, dict):
+            continue
+        add_markdown(cluster.get("summary"))
+        for entry in list(cluster.get("representative_sources") or []):
+            if not isinstance(entry, dict):
+                continue
+            add_href(entry.get("href"))
+    for entry in list(content.get("representative_sources") or []):
+        if not isinstance(entry, dict):
+            continue
+        add_href(entry.get("href"))
+    for opportunity in list(content.get("opportunities") or []):
+        if not isinstance(opportunity, dict):
+            continue
+        for key in ("role", "thesis", "why_now", "what_changed", "validation_next_step"):
+            add_markdown(opportunity.get(key))
+        for entry in list(opportunity.get("evidence") or []):
+            if not isinstance(entry, dict):
+                continue
+            add_href(entry.get("href"))
+    return candidate_paths
+
+
 def _collect_referenced_item_source_keys(
     *,
     source_documents: Sequence[TrendSiteSourceDocument | IdeaSiteSourceDocument],
@@ -3271,6 +3414,22 @@ def _collect_referenced_item_source_keys(
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
     referenced_source_keys: set[SiteSourceKey] = set()
     for source_document in source_documents:
+        presentation_targets = (
+            _presentation_local_markdown_targets(
+                presentation=source_document.presentation,
+                source_markdown_path=source_document.markdown_path,
+            )
+            if source_document.presentation is not None
+            else set()
+        )
+        for target_path in presentation_targets:
+            target_source_key = _resolve_site_source_key(
+                target_path=target_path,
+                source_instance=source_document.instance,
+                available_source_keys=available_source_keys,
+            )
+            if target_source_key is not None:
+                referenced_source_keys.add(target_source_key)
         normalized_markdown = str(source_document.markdown_body or "").strip()
         if not normalized_markdown:
             continue
@@ -3744,6 +3903,390 @@ def _load_item_site_documents(
     return documents, page_by_source_key
 
 
+def _render_presentation_markdown_html(markdown_text: Any) -> str:
+    normalized = str(markdown_text or "").strip()
+    if not normalized:
+        return "<p>(none)</p>"
+    return MarkdownIt("commonmark", {"html": True, "typographer": True}).render(
+        normalized
+    )
+
+
+def _render_presentation_source_list(
+    *,
+    entries: Sequence[dict[str, Any]],
+    labels: dict[str, str],
+) -> str:
+    items: list[str] = []
+    seen_targets: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        title = str(entry.get("title") or "").strip()
+        href = str(entry.get("href") or entry.get("url") or "").strip()
+        if not title:
+            doc_id = entry.get("doc_id")
+            try:
+                doc_id_int = int(doc_id) if doc_id is not None else 0
+            except Exception:
+                doc_id_int = 0
+            if doc_id_int > 0:
+                title = f"Document {doc_id_int}"
+        target = href or title
+        if not title or target in seen_targets:
+            continue
+        seen_targets.add(target)
+        title_html = (
+            f"<a href='{html.escape(href, quote=True)}'>{html.escape(title)}</a>"
+            if href
+            else html.escape(title)
+        )
+        meta_parts: list[str] = []
+        authors = [str(author).strip() for author in list(entry.get("authors") or []) if str(author).strip()]
+        if authors:
+            meta_parts.append(html.escape(", ".join(authors)))
+        source_type = str(entry.get("source_type") or "").strip()
+        if source_type:
+            meta_parts.append(
+                f"{html.escape(labels.get('source_type', 'Source type'))}: "
+                f"{html.escape(_humanize_source_type(source_type))}"
+            )
+        confidence = str(entry.get("confidence") or "").strip()
+        if confidence:
+            meta_parts.append(
+                f"{html.escape(labels.get('confidence', 'Confidence'))}: "
+                f"{html.escape(_humanize_confidence(confidence))}"
+            )
+        meta_html = (
+            f"<div class='source-list-meta'>{' · '.join(meta_parts)}</div>"
+            if meta_parts
+            else ""
+        )
+        items.append(
+            "<li class='source-list-item'>"
+            f"<div class='source-list-title'>{title_html}</div>"
+            f"{meta_html}"
+            "</li>"
+        )
+    if not items:
+        return "<p>(none)</p>"
+    return "<ul class='source-list'>" + "".join(items) + "</ul>"
+
+
+def _render_markdown_evolution_compat_html(*, sections: Sequence[Any]) -> str:
+    evolution_sections = [
+        section
+        for section in sections
+        if _section_matches(str(getattr(section, "heading", "") or ""), "evolution")
+    ]
+    if not evolution_sections:
+        return ""
+    rendered = _build_trend_browser_body_html(
+        sections=list(evolution_sections),
+        allow_evolution_disclosure=True,
+    )
+    soup = BeautifulSoup(rendered, "html.parser")
+    flow = soup.select_one(".document-flow")
+    if flow is None:
+        return rendered
+    return "".join(str(child) for child in flow.contents)
+
+
+def _merge_markdown_evolution_compat_html(
+    *, rendered_body_html: str, evolution_compat_html: str
+) -> str:
+    if not evolution_compat_html.strip():
+        return rendered_body_html
+    rendered_soup = BeautifulSoup(rendered_body_html, "html.parser")
+    flow = rendered_soup.select_one(".document-flow")
+    compat_soup = BeautifulSoup(evolution_compat_html, "html.parser")
+    compat_nodes = [
+        node.extract() for node in list(compat_soup.contents) if str(node).strip()
+    ]
+    if not compat_nodes:
+        return rendered_body_html
+    if flow is None:
+        return rendered_body_html + evolution_compat_html
+
+    cluster_section = next(
+        (
+            section
+            for section in flow.find_all("section", recursive=False)
+            if section.select_one(".cluster-card") is not None
+        ),
+        None,
+    )
+    if cluster_section is None:
+        for node in compat_nodes:
+            flow.append(node)
+    else:
+        for node in compat_nodes:
+            cluster_section.insert_before(node)
+    return str(rendered_soup)
+
+
+def _render_presentation_source_entry(
+    *,
+    entry: dict[str, Any],
+    labels: dict[str, str],
+) -> str:
+    rendered_list = _render_presentation_source_list(entries=[entry], labels=labels)
+    if rendered_list.startswith("<ul"):
+        soup = BeautifulSoup(rendered_list, "html.parser")
+        first_item = soup.find("li")
+        return first_item.decode_contents() if first_item is not None else rendered_list
+    return rendered_list
+
+
+def _build_trend_body_from_presentation(
+    *,
+    presentation: dict[str, Any],
+) -> tuple[str, str, str | None]:
+    labels = _presentation_labels(surface_kind="trend", presentation=presentation)
+    content = presentation.get("content") if isinstance(presentation.get("content"), dict) else {}
+    assert isinstance(content, dict)
+    rendered_sections: list[str] = []
+
+    overview_html = _render_presentation_markdown_html(content.get("overview"))
+    rendered_sections.append(
+        _render_browser_content_card_html(
+            heading=labels["overview"],
+            inner_html=overview_html,
+        )
+    )
+
+    ranked_shifts = [
+        shift for shift in list(content.get("ranked_shifts") or []) if isinstance(shift, dict)
+    ]
+    if ranked_shifts:
+        shift_cards: list[str] = []
+        for shift in ranked_shifts:
+            evidence_html = _render_presentation_source_list(
+                entries=[
+                    entry
+                    for entry in list(shift.get("evidence") or [])
+                    if isinstance(entry, dict)
+                ],
+                labels=labels,
+            )
+            history_refs = [
+                html.escape(str(ref).strip())
+                for ref in list(shift.get("history_refs") or [])
+                if str(ref).strip()
+            ]
+            history_html = (
+                "<div class='detail-shift-meta'>"
+                f"History: {', '.join(history_refs)}"
+                "</div>"
+                if history_refs
+                else ""
+            )
+            shift_cards.append(
+                "<article class='surface-card section-card detail-shift-card'>"
+                f"<div class='section-kicker'>#{int(shift.get('rank') or 0)}</div>"
+                f"<h3 class='section-title'>{html.escape(str(shift.get('title') or 'Shift').strip())}</h3>"
+                f"{history_html}"
+                f"<div class='prose'>{_render_presentation_markdown_html(shift.get('summary'))}</div>"
+                f"<div class='prose detail-source-list'>{evidence_html}</div>"
+                "</article>"
+            )
+        rendered_sections.append(
+            "<section class='surface-card section-card'>"
+            f"{_render_browser_section_label_html(labels['top_shifts'])}"
+            f"<div class='cluster-columns'>{''.join(shift_cards)}</div>"
+            "</section>"
+        )
+
+    clusters = [
+        cluster for cluster in list(content.get("clusters") or []) if isinstance(cluster, dict)
+    ]
+    if clusters:
+        cluster_cards: list[str] = []
+        for cluster in clusters:
+            representative_html = _render_presentation_source_list(
+                entries=[
+                    entry
+                    for entry in list(cluster.get("representative_sources") or [])
+                    if isinstance(entry, dict)
+                ],
+                labels=labels,
+            )
+            cluster_cards.append(
+                "<article class='surface-card section-card cluster-card'>"
+                f"<h3 class='section-title'>{html.escape(str(cluster.get('title') or 'Cluster').strip())}</h3>"
+                f"<div class='prose'>{_render_presentation_markdown_html(cluster.get('summary'))}</div>"
+                f"{_render_browser_section_label_html(labels['representative_sources'])}"
+                f"<div class='prose detail-source-list'>{representative_html}</div>"
+                "</article>"
+            )
+        rendered_sections.append(
+            "<section class='surface-card section-card'>"
+            f"{_render_browser_section_label_html(labels['clusters'])}"
+            f"<div class='cluster-columns'>{''.join(cluster_cards)}</div>"
+            "</section>"
+        )
+
+    top_sources = _render_presentation_source_list(
+        entries=[
+            entry
+            for entry in list(content.get("representative_sources") or [])
+            if isinstance(entry, dict)
+        ],
+        labels=labels,
+    )
+    if top_sources != "<p>(none)</p>":
+        rendered_sections.append(
+            _render_browser_content_card_html(
+                heading=labels["representative_sources"],
+                inner_html=top_sources,
+            )
+        )
+
+    excerpt = _safe_excerpt(
+        BeautifulSoup(overview_html, "html.parser").get_text(" ", strip=True),
+        limit=220,
+    )
+    evolution_insight = (
+        f"{len(ranked_shifts)} shift{'s' if len(ranked_shifts) != 1 else ''}"
+        if ranked_shifts
+        else None
+    )
+    return (
+        "<div class='document-flow'>" + "".join(rendered_sections) + "</div>",
+        excerpt,
+        evolution_insight,
+    )
+
+
+def _render_idea_opportunity_card_from_presentation(
+    *,
+    opportunity: dict[str, Any],
+    labels: dict[str, str],
+) -> tuple[str, int]:
+    tier_label = (
+        labels["best_bet"]
+        if str(opportunity.get("tier") or "").strip() == "best_bet"
+        else labels["alternate"]
+    )
+    meta_row_html = (
+        "<div class='idea-opportunity-meta-row'>"
+        f"<span class='meta-pill'>{html.escape(opportunity.get('display_kind') or '')}</span>"
+        f"<span class='meta-pill subdued'>{html.escape(opportunity.get('display_time_horizon') or '')}</span>"
+        "</div>"
+    )
+    blocks: list[str] = [
+        "<section class='idea-opportunity-block idea-opportunity-block-role'>"
+        f"<div class='idea-opportunity-label'>{html.escape(labels['role'])}</div>"
+        "<div class='idea-opportunity-copy prose idea-opportunity-role-value'>"
+        f"{_render_presentation_markdown_html(opportunity.get('role'))}"
+        "</div>"
+        "</section>"
+    ]
+    for key in ("thesis", "why_now", "what_changed", "validation_next_step"):
+        value = str(opportunity.get(key) or "").strip()
+        if not value:
+            continue
+        blocks.append(
+            "<section class='idea-opportunity-block'>"
+            f"<div class='idea-opportunity-label'>{html.escape(labels[key])}</div>"
+            f"<div class='idea-opportunity-copy prose'>{_render_presentation_markdown_html(value)}</div>"
+            "</section>"
+        )
+    evidence_entries = [
+        entry for entry in list(opportunity.get("evidence") or []) if isinstance(entry, dict)
+    ]
+    if evidence_entries:
+        evidence_items: list[str] = []
+        for entry in evidence_entries:
+            evidence_line = _render_presentation_source_entry(entry=entry, labels=labels)
+            reason = str(entry.get("reason") or "").strip()
+            reasons = [
+                str(item).strip()
+                for item in list(entry.get("reasons") or [])
+                if str(item).strip()
+            ]
+            reason_list = reasons or ([reason] if reason else [])
+            if reason_list:
+                reason_html = "<ul>" + "".join(
+                    f"<li>{html.escape(item)}</li>" for item in reason_list
+                ) + "</ul>"
+            else:
+                reason_html = ""
+            evidence_items.append(
+                f"<li class='source-list-item'>{evidence_line}{reason_html}</li>"
+            )
+        blocks.append(
+            "<section class='idea-opportunity-block idea-opportunity-block-evidence'>"
+            f"<div class='idea-opportunity-label'>{html.escape(labels['evidence'])}</div>"
+            "<div class='idea-opportunity-copy prose idea-evidence-list'>"
+            f"<ul>{''.join(evidence_items)}</ul>"
+            "</div>"
+            "</section>"
+        )
+    opportunity_title = f"{tier_label}: {str(opportunity.get('title') or 'Opportunity').strip()}"
+    return (
+        "<article class='idea-opportunity-card'>"
+        "<div class='idea-opportunity-head'>"
+        f"<h3 class='idea-opportunity-title'>{html.escape(opportunity_title)}</h3>"
+        f"{meta_row_html}"
+        "</div>"
+        f"<div class='idea-opportunity-body'>{''.join(blocks)}</div>"
+        "</article>",
+        len(evidence_entries),
+    )
+
+
+def _build_idea_body_from_presentation(
+    *,
+    presentation: dict[str, Any],
+) -> IdeaBodyRenderResult:
+    labels = _presentation_labels(surface_kind="idea", presentation=presentation)
+    content = presentation.get("content") if isinstance(presentation.get("content"), dict) else {}
+    assert isinstance(content, dict)
+    summary_html = _render_presentation_markdown_html(content.get("summary"))
+    opportunities = [
+        opportunity
+        for opportunity in list(content.get("opportunities") or [])
+        if isinstance(opportunity, dict)
+    ]
+    cards: list[str] = []
+    evidence_count = 0
+    for opportunity in opportunities:
+        card_html, opportunity_evidence_count = _render_idea_opportunity_card_from_presentation(
+            opportunity=opportunity,
+            labels=labels,
+        )
+        cards.append(card_html)
+        evidence_count += opportunity_evidence_count
+    rendered: list[str] = [
+        "<section class='summary-grid summary-grid-single'>"
+        + _render_browser_content_card_html(
+            heading=labels["summary"],
+            inner_html=summary_html,
+            card_classes="surface-card section-card summary-card summary-card-primary",
+        )
+        + "</section>"
+    ]
+    if cards:
+        count_label = (
+            f"{len(cards)} opportunity" if len(cards) == 1 else f"{len(cards)} opportunities"
+        )
+        rendered.append(
+            "<section class='surface-card section-card idea-opportunities-section'>"
+            "<div class='idea-section-head'>"
+            f"{_render_browser_section_label_html(labels['opportunities'])}"
+            f"<span class='meta-date'>{html.escape(count_label)}</span>"
+            "</div>"
+            f"<div class='idea-opportunity-grid'>{''.join(cards)}</div>"
+            "</section>"
+        )
+    return IdeaBodyRenderResult(
+        body_html="<div class='document-flow'>" + "".join(rendered) + "</div>",
+        opportunity_count=len(cards),
+        evidence_count=evidence_count,
+    )
+
+
 def _load_idea_site_documents(
     *,
     source_documents: Sequence[IdeaSiteSourceDocument],
@@ -3771,15 +4314,35 @@ def _load_idea_site_documents(
 
     documents: list[IdeaSiteDocument] = []
     for source_document in source_documents:
-        normalized_markdown = source_document.markdown_body.strip() or "# Ideas\n"
-        rendered_html = markdown.render(normalized_markdown)
-        title, raw_body_html, excerpt = _extract_item_body_html(body_html=rendered_html)
         source_key = _site_source_key(
             markdown_path=source_document.markdown_path,
             instance=source_document.instance,
         )
         page_path = page_by_source_key[source_key]
-        idea_body = _build_idea_browser_body_html(body_html=raw_body_html)
+        if source_document.presentation is not None:
+            content = source_document.presentation.get("content")
+            title = (
+                str(content.get("title") or "").strip()
+                if isinstance(content, dict)
+                else ""
+            ) or source_document.markdown_path.stem
+            excerpt = _safe_excerpt(
+                BeautifulSoup(
+                    _render_presentation_markdown_html(
+                        content.get("summary") if isinstance(content, dict) else ""
+                    ),
+                    "html.parser",
+                ).get_text(" ", strip=True),
+                limit=220,
+            )
+            idea_body = _build_idea_body_from_presentation(
+                presentation=source_document.presentation,
+            )
+        else:
+            normalized_markdown = source_document.markdown_body.strip() or "# Ideas\n"
+            rendered_html = markdown.render(normalized_markdown)
+            title, raw_body_html, excerpt = _extract_item_body_html(body_html=rendered_html)
+            idea_body = _build_idea_browser_body_html(body_html=raw_body_html)
         body_html = _rewrite_site_markdown_links(
             html_text=idea_body.body_html,
             source_markdown_path=source_document.markdown_path,
@@ -3858,25 +4421,56 @@ def _load_trend_site_documents(
         if not normalized_markdown:
             normalized_markdown = "# Trend\n"
         body_html = markdown.render(normalized_markdown)
-        title, sections = _extract_trend_pdf_sections(body_html=body_html)
-        title = sanitize_trend_title(title, fallback="Trend")
-        excerpt = _section_excerpt(sections)
-        evolution_insight = _extract_trend_evolution_insight(sections)
+        markdown_title, sections = _extract_trend_pdf_sections(body_html=body_html)
+        markdown_title = sanitize_trend_title(markdown_title, fallback="Trend")
+        markdown_excerpt = _section_excerpt(sections)
+        markdown_evolution_insight = _extract_trend_evolution_insight(sections)
         source_key = _site_source_key(
             markdown_path=source_document.markdown_path,
             instance=source_document.instance,
         )
         page_path = trend_pages_by_source_key[source_key]
-        browser_body_html = _rewrite_site_markdown_links(
-            html_text=_build_trend_browser_body_html(
-                sections=sections,
-                allow_evolution_disclosure=True,
-            ),
-            source_markdown_path=source_document.markdown_path,
-            source_instance=source_document.instance,
-            from_page=page_path,
-            page_by_source_key=linked_page_by_source_key,
-        )
+        if source_document.presentation is not None:
+            content = source_document.presentation.get("content")
+            title = sanitize_trend_title(
+                str(content.get("title") or "").strip()
+                if isinstance(content, dict)
+                else "",
+                fallback="Trend",
+            )
+            rendered_body_html, excerpt, evolution_insight = _build_trend_body_from_presentation(
+                presentation=source_document.presentation,
+            )
+            evolution_compat_html = _render_markdown_evolution_compat_html(
+                sections=sections
+            )
+            if evolution_compat_html:
+                rendered_body_html = _merge_markdown_evolution_compat_html(
+                    rendered_body_html=rendered_body_html,
+                    evolution_compat_html=evolution_compat_html,
+                )
+                evolution_insight = markdown_evolution_insight or evolution_insight
+            browser_body_html = _rewrite_site_markdown_links(
+                html_text=rendered_body_html,
+                source_markdown_path=source_document.markdown_path,
+                source_instance=source_document.instance,
+                from_page=page_path,
+                page_by_source_key=linked_page_by_source_key,
+            )
+        else:
+            title = markdown_title
+            excerpt = markdown_excerpt
+            evolution_insight = markdown_evolution_insight
+            browser_body_html = _rewrite_site_markdown_links(
+                html_text=_build_trend_browser_body_html(
+                    sections=sections,
+                    allow_evolution_disclosure=True,
+                ),
+                source_markdown_path=source_document.markdown_path,
+                source_instance=source_document.instance,
+                from_page=page_path,
+                page_by_source_key=linked_page_by_source_key,
+            )
 
         period_token = (
             _trend_date_token(
@@ -4714,6 +5308,10 @@ def stage_trend_site_source(
         staged_markdown_path = target_dir / source_document.markdown_path.name
         shutil.copy2(source_document.markdown_path, staged_markdown_path)
         staged_markdown_files.append(relative_to_stage_root(staged_markdown_path))
+        source_sidecar_path = presentation_sidecar_path(note_path=source_document.markdown_path)
+        if source_sidecar_path.exists() and source_sidecar_path.is_file():
+            staged_sidecar_path = target_dir / source_sidecar_path.name
+            shutil.copy2(source_sidecar_path, staged_sidecar_path)
 
         if source_document.pdf_path is None:
             continue
@@ -4758,6 +5356,10 @@ def stage_trend_site_source(
         staged_idea_path = target_dir / source_document.markdown_path.name
         shutil.copy2(source_document.markdown_path, staged_idea_path)
         staged_idea_files.append(relative_to_stage_root(staged_idea_path))
+        source_sidecar_path = presentation_sidecar_path(note_path=source_document.markdown_path)
+        if source_sidecar_path.exists() and source_sidecar_path.is_file():
+            staged_sidecar_path = target_dir / source_sidecar_path.name
+            shutil.copy2(source_sidecar_path, staged_sidecar_path)
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

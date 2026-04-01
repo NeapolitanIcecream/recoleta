@@ -8,8 +8,12 @@ import pytest
 from recoleta.presentation import (
     build_idea_presentation_v1,
     build_trend_presentation_v1,
+    display_idea_kind,
+    display_idea_time_horizon,
+    idea_display_labels,
     is_localized_output_path,
     resolve_presentation_language_code,
+    trend_display_labels,
     validate_presentation_v1,
     write_presentation_sidecar,
 )
@@ -20,6 +24,7 @@ def _idea(
     title: str,
     kind: str = "tooling_wedge",
     time_horizon: str = "now",
+    language_code: str | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         title=title,
@@ -31,8 +36,18 @@ def _idea(
         what_changed="Agent teams now manage prompt and tool changes continuously.",
         validation_next_step="Replay 20 prompt changes through the gate.",
         evidence_refs=[
-            SimpleNamespace(doc_id=11, chunk_index=0, reason="Trend note captures the shift.")
+            SimpleNamespace(
+                doc_id=11,
+                chunk_index=0,
+                reason="Trend note captures the shift.",
+                title="CodeScout",
+                href="../Inbox/2026-03-02--codescout.md",
+                authors=["Alice"],
+                source="arxiv",
+                score=0.91,
+            )
         ],
+        language_code=language_code,
     )
 
 
@@ -222,6 +237,13 @@ def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> No
     assert "idea opportunities entries must be mappings" in errors
 
 
+def test_presentation_labels_preserve_traditional_chinese_family() -> None:
+    assert trend_display_labels(language_code="zh-TW")["overview"] == "概覽"
+    assert idea_display_labels(language_code="zh-TW")["best_bet"] == "首要機會"
+    assert display_idea_kind("workflow_shift", language_code="zh-TW") == "工作流轉變"
+    assert display_idea_time_horizon("near", language_code="zh-TW") == "近期"
+
+
 def test_build_presentation_v1_does_not_guess_english_language_code() -> None:
     trend_presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
@@ -259,3 +281,90 @@ def test_is_localized_output_path_requires_localized_language_layout(tmp_path: P
     assert not is_localized_output_path(canonical_under_localized_name)
     assert is_localized_output_path(localized_root)
     assert is_localized_output_path(localized_surface)
+
+
+def test_build_idea_presentation_v1_localizes_labels_and_reader_facing_enums() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Localized/zh-cn/Ideas/day--2026-03-02--ideas.md",
+        title="验证优先的智能体发布",
+        summary_md="先把提示词变更纳入可审计发布流程。",
+        ideas=[_idea(title="提示词发布闸门", language_code="zh-CN")],
+        language_code="zh-CN",
+    )
+
+    opportunity = presentation["content"]["opportunities"][0]
+
+    assert presentation["display_labels"]["best_bet"] == "首要机会"
+    assert presentation["display_labels"]["validation_next_step"] == "下一步验证"
+    assert opportunity["display_kind"] == "工具切入点"
+    assert opportunity["display_time_horizon"] == "现在"
+
+
+def test_build_idea_presentation_v1_uses_traditional_chinese_display_labels() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Localized/zh-tw/Ideas/day--2026-03-02--ideas.md",
+        title="驗證優先的智能體發佈",
+        summary_md="先把提示詞變更納入可審計發佈流程。",
+        ideas=[_idea(title="提示詞發佈閘門", language_code="zh-TW")],
+        language_code="zh-TW",
+    )
+
+    opportunity = presentation["content"]["opportunities"][0]
+
+    assert presentation["display_labels"]["best_bet"] == "首要機會"
+    assert presentation["display_labels"]["validation_next_step"] == "下一步驗證"
+    assert opportunity["display_kind"] == "工具切入點"
+    assert opportunity["display_time_horizon"] == "現在"
+
+
+def test_build_idea_presentation_v1_projects_evidence_source_metadata() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+
+    evidence = presentation["content"]["opportunities"][0]["evidence"][0]
+
+    assert evidence["title"] == "CodeScout"
+    assert evidence["href"] == "../Inbox/2026-03-02--codescout.md"
+    assert evidence["authors"] == ["Alice"]
+    assert evidence["source_type"] == "paper"
+    assert evidence["confidence"] == "high"
+
+
+def test_build_trend_presentation_v1_projects_representative_source_metadata() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+        title="Verification gets operational",
+        overview_md="Teams are tightening release discipline.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Teams now quantify release risk.",
+                "representative_chunks": [
+                    {
+                        "doc_id": 11,
+                        "chunk_index": 0,
+                        "score": 0.91,
+                        "title": "CodeScout",
+                        "note_href": "../Inbox/2026-03-02--codescout.md",
+                        "url": "https://example.com/codescout",
+                        "authors": ["Alice"],
+                        "source": "arxiv",
+                    }
+                ],
+            }
+        ],
+    )
+
+    representative = presentation["content"]["representative_sources"][0]
+
+    assert representative["doc_id"] == 11
+    assert representative["chunk_index"] == 0
+    assert representative["href"] == "../Inbox/2026-03-02--codescout.md"
+    assert representative["source_type"] == "paper"
+    assert representative["confidence"] == "high"

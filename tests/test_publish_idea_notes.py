@@ -218,6 +218,10 @@ def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
     assert sidecar["content"]["opportunities"][1]["tier"] == "alternate"
     assert sidecar["content"]["opportunities"][0]["display_kind"] == "Tooling wedge"
     assert sidecar["content"]["opportunities"][1]["display_time_horizon"] == "Near-term"
+    assert sidecar["content"]["opportunities"][0]["evidence"][0]["doc_id"] == 11
+    assert sidecar["content"]["opportunities"][0]["evidence"][0]["chunk_index"] == 0
+    assert sidecar["content"]["opportunities"][0]["evidence"][0]["source_type"] == "unknown"
+    assert sidecar["content"]["opportunities"][0]["evidence"][0]["confidence"] == "low"
     assert validate_presentation_v1(sidecar) == []
 
 
@@ -365,7 +369,78 @@ def test_write_markdown_ideas_note_infers_sidecar_language_code_from_output_lang
     )
 
     assert "language_code: zh-CN" in note_text
+    assert "## Summary" in note_text
+    assert "## 摘要" not in note_text
+    assert "### Best bet:" in note_text
     assert sidecar["language_code"] == "zh-CN"
+    assert sidecar["display_labels"]["summary"] == "Summary"
+    assert sidecar["display_labels"]["best_bet"] == "Best bet"
+
+
+def test_write_markdown_ideas_note_emits_localized_labels_and_sidecar_in_localized_tree(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    note_path = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=tmp_path / "Localized" / "zh-cn",
+        pass_output_id=7,
+        upstream_pass_output_id=3,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-ideas-zh-localized",
+        status="succeeded",
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "验证优先的智能体发布",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "summary_md": "先把提示词变更纳入可审计发布流程。",
+                "ideas": [
+                    {
+                        "title": "提示词发布闸门",
+                        "kind": "tooling_wedge",
+                        "thesis": "先在生产前加一层提示词发布闸门。",
+                        "why_now": "提示词和工具配置已经变成连续发布对象。",
+                        "what_changed": "团队现在会持续回滚和复盘代理改动。",
+                        "user_or_job": "负责代理发布的平台工程团队。",
+                        "evidence_refs": [],
+                        "validation_next_step": "先拿一个高频工作流回放 20 次改动。",
+                        "time_horizon": "now",
+                    }
+                ],
+            }
+        ),
+        topics=["agents"],
+        output_language="Chinese (Simplified)",
+        language_code="zh-CN",
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+    assert "### 首要机会: 提示词发布闸门" in note_text
+    assert "- 类型: 工具切入点" in note_text
+    assert "- 时间范围: 现在" in note_text
+    assert "- 适用角色: 负责代理发布的平台工程团队。" in note_text
+    assert "**核心判断" in note_text
+    assert "**下一步验证" in note_text
+    assert "Type:" not in note_text
+    assert "Horizon:" not in note_text
+    assert "Role:" not in note_text
+
+    assert sidecar_path.exists()
+    assert sidecar["language_code"] == "zh-CN"
+    assert sidecar["display_labels"]["best_bet"] == "首要机会"
+    assert sidecar["content"]["opportunities"][0]["display_kind"] == "工具切入点"
+    assert sidecar["content"]["opportunities"][0]["display_time_horizon"] == "现在"
 
 
 def test_write_markdown_ideas_note_rolls_back_markdown_when_sidecar_write_fails(

@@ -368,8 +368,10 @@ def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_ref
                     {
                         "doc_id": 1,
                         "chunk_index": 0,
+                        "score": 0.91,
                         "title": "CodeScout",
                         "url": "https://example.com/codescout",
+                        "source": "arxiv",
                     }
                 ],
             }
@@ -416,6 +418,11 @@ def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_ref
     assert "prev_1" not in sidecar["content"]["overview"]
     assert "Verification Gets Tighter" in sidecar["content"]["overview"]
     assert sidecar["content"]["representative_sources"][0]["title"] == "CodeScout"
+    assert sidecar["content"]["representative_sources"][0]["doc_id"] == 1
+    assert sidecar["content"]["representative_sources"][0]["chunk_index"] == 0
+    assert sidecar["content"]["representative_sources"][0]["href"] == "https://example.com/codescout"
+    assert sidecar["content"]["representative_sources"][0]["source_type"] == "paper"
+    assert sidecar["content"]["representative_sources"][0]["confidence"] == "high"
     assert validate_presentation_v1(sidecar) == []
 
 
@@ -473,7 +480,11 @@ def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tm
     )
 
     assert "language_code: zh-CN" in note_text
+    assert "## Overview" in note_text
+    assert "## 概览" not in note_text
     assert sidecar["language_code"] == "zh-CN"
+    assert sidecar["display_labels"]["overview"] == "Overview"
+    assert sidecar["display_labels"]["representative_sources"] == "Representative sources"
 
 
 def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_path) -> None:

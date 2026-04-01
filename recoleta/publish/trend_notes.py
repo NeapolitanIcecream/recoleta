@@ -10,9 +10,9 @@ import yaml
 
 from recoleta.presentation import (
     build_trend_presentation_v1,
-    is_localized_output_path,
     presentation_sidecar_path,
     resolve_presentation_language_code,
+    trend_display_labels,
     write_presentation_sidecar,
 )
 from recoleta.provenance import ProjectionProvenance, build_projection_provenance
@@ -290,6 +290,7 @@ def _render_trend_note_lines(
     projection_provenance: ProjectionProvenance | None,
     site_exclude: bool,
     language_code: str | None,
+    display_language_code: str | None = None,
 ) -> list[str]:
     _ = highlights
     title = sanitize_trend_title(title)
@@ -331,9 +332,10 @@ def _render_trend_note_lines(
         f"# {title}",
         "",
     ]
+    display_labels = trend_display_labels(language_code=display_language_code)
     lines.extend(
         [
-            "## Overview",
+            f"## {display_labels['overview']}",
             (overview_md or "").strip(),
         ]
     )
@@ -400,7 +402,7 @@ def _render_trend_note_lines(
                 if summary:
                     lines.extend(["", summary])
 
-    lines.extend(["", "## Clusters"])
+    lines.extend(["", f"## {display_labels['clusters']}"])
     clusters = clusters or []
     if clusters:
         for cluster in clusters:
@@ -412,7 +414,7 @@ def _render_trend_note_lines(
                 lines.append("")
             reps = cluster.get("representative_chunks") or []
             if isinstance(reps, list) and reps:
-                lines.append("#### Representative sources")
+                lines.append(f"#### {display_labels['representative_sources']}")
                 seen_rep_targets: set[str] = set()
                 for rep in reps[:6]:
                     if not isinstance(rep, dict):
@@ -473,6 +475,9 @@ def _write_trend_note(
         language_code=language_code,
         output_language=output_language,
     )
+    resolved_display_language_code = (
+        resolve_presentation_language_code(language_code=language_code) or "en"
+    )
     sanitized_title = sanitize_trend_title(title)
     sanitized_overview_md = sanitize_trend_overview_markdown(overview_md)
     note_path = resolve_trend_note_path(
@@ -506,6 +511,7 @@ def _write_trend_note(
         ),
         site_exclude=bool(site_exclude),
         language_code=resolved_language_code,
+        display_language_code=resolved_display_language_code,
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     if emit_presentation_sidecar:
@@ -517,6 +523,7 @@ def _write_trend_note(
             history_window_refs=history_window_refs,
             clusters=clusters,
             language_code=resolved_language_code,
+            display_language_code=resolved_display_language_code,
         )
         try:
             write_presentation_sidecar(note_path=note_path, presentation=presentation)
@@ -617,7 +624,7 @@ def write_markdown_trend_note(
         pass_kind=pass_kind,
         site_exclude=site_exclude,
         language_code=language_code,
-        emit_presentation_sidecar=not is_localized_output_path(output_dir),
+        emit_presentation_sidecar=True,
     )
 
 
