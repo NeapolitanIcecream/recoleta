@@ -183,6 +183,30 @@ def test_build_trend_presentation_v1_preserves_markdown_paragraph_breaks() -> No
     )
 
 
+def test_build_trend_presentation_v1_preserves_indented_markdown_lines() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/week--2026-W10--trend--81.md",
+        title="Week 10 roundup",
+        overview_md=(
+            "- Parent item\n"
+            "  - Compared with prev_1, nested item now matters more.\n"
+        ),
+        evolution=None,
+        history_window_refs={
+            "prev_1": {
+                "title": "Earlier verification push",
+                "label": "2026-W09",
+            }
+        },
+        clusters=[],
+    )
+
+    assert presentation["content"]["overview"] == (
+        "- Parent item\n"
+        "  - Compared with Earlier verification push (2026-W09), nested item now matters more."
+    )
+
+
 def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> None:
     presentation = build_idea_presentation_v1(
         source_markdown_path="Ideas/day--2026-03-02--ideas.md",

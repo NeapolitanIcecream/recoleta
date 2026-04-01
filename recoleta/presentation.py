@@ -132,10 +132,16 @@ def _render_history_refs_in_text(
         return display or token
 
     replaced = _HISTORY_WINDOW_MENTION_RE.sub(_replace, raw)
-    normalized_lines = [
-        re.sub(r"[ \t]+([,.;:!?])", r"\1", re.sub(r"[ \t]{2,}", " ", line)).strip()
-        for line in replaced.splitlines()
-    ]
+    normalized_lines: list[str] = []
+    for line in replaced.splitlines():
+        if not line.strip():
+            normalized_lines.append("")
+            continue
+        indent_match = re.match(r"^[ \t]*", line)
+        indent = indent_match.group(0) if indent_match is not None else ""
+        body = line[len(indent) :]
+        normalized_body = re.sub(r"[ \t]+([,.;:!?])", r"\1", re.sub(r"[ \t]{2,}", " ", body))
+        normalized_lines.append(f"{indent}{normalized_body.rstrip()}")
     normalized = "\n".join(normalized_lines)
     normalized = re.sub(r"\n{3,}", "\n\n", normalized)
     return normalized.strip()
