@@ -3967,7 +3967,7 @@ def _render_presentation_source_entry(
     if rendered_list.startswith("<ul"):
         soup = BeautifulSoup(rendered_list, "html.parser")
         first_item = soup.find("li")
-        return str(first_item) if first_item is not None else rendered_list
+        return first_item.decode_contents() if first_item is not None else rendered_list
     return rendered_list
 
 
@@ -4145,7 +4145,9 @@ def _render_idea_opportunity_card_from_presentation(
                 ) + "</ul>"
             else:
                 reason_html = ""
-            evidence_items.append(f"<li>{evidence_line}{reason_html}</li>")
+            evidence_items.append(
+                f"<li class='source-list-item'>{evidence_line}{reason_html}</li>"
+            )
         blocks.append(
             "<section class='idea-opportunity-block idea-opportunity-block-evidence'>"
             f"<div class='idea-opportunity-label'>{html.escape(labels['evidence'])}</div>"

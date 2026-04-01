@@ -1822,6 +1822,13 @@ def test_export_trend_static_site_prefers_presentation_sidecar_for_idea_detail_p
     assert "Markdown idea title should lose" not in detail_html
     assert "This markdown summary should be ignored." not in detail_html
 
+    soup = BeautifulSoup(detail_html, "html.parser")
+    evidence_lists = soup.select(".idea-opportunity-block-evidence .idea-evidence-list > ul")
+    assert len(evidence_lists) == 1
+    top_level_items = evidence_lists[0].find_all("li", recursive=False)
+    assert len(top_level_items) == 2
+    assert all(not item.find_all("li", recursive=False) for item in top_level_items)
+
 
 def test_export_trend_static_site_hides_empty_topics_for_ideas(
     tmp_path: Path,
