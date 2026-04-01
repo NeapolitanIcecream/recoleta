@@ -24,6 +24,7 @@ from recoleta.presentation import (
     idea_display_labels,
     presentation_sidecar_path,
     trend_display_labels,
+    validate_presentation_v1,
 )
 from recoleta.publish.trend_render_shared import (
     _build_trend_browser_body_html,
@@ -236,6 +237,8 @@ def _load_presentation_for_site(
         return None
     content = payload.get("content")
     if not isinstance(content, dict):
+        return None
+    if validate_presentation_v1(payload):
         return None
     return payload
 

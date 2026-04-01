@@ -729,9 +729,30 @@ def _idea_user_visible_strings(presentation: Mapping[str, Any]) -> list[str]:
     return [value for value in strings if value]
 
 
+def _presentation_schema_version(value: Any) -> int | None:
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _validate_string_field(
+    *,
+    mapping: Mapping[str, Any],
+    key: str,
+    field_path: str,
+    errors: list[str],
+) -> None:
+    if not isinstance(mapping.get(key), str):
+        errors.append(f"{field_path} must be a string")
+
+
 def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
-    if int(presentation.get("presentation_schema_version") or 0) != PRESENTATION_SCHEMA_VERSION:
+    if (
+        _presentation_schema_version(presentation.get("presentation_schema_version"))
+        != PRESENTATION_SCHEMA_VERSION
+    ):
         errors.append("presentation_schema_version must be 1")
     source_markdown_path = _single_line(presentation.get("source_markdown_path") or "")
     if not source_markdown_path.endswith(".md"):
@@ -739,6 +760,8 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     display_labels = presentation.get("display_labels")
     if not isinstance(display_labels, Mapping):
         errors.append("display_labels must be a mapping")
+    elif any(not isinstance(value, str) for value in display_labels.values()):
+        errors.append("display_labels values must be strings")
     content = presentation.get("content")
     if not isinstance(content, Mapping):
         errors.append("content must be a mapping")
@@ -758,6 +781,13 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                 errors.append(
                     "trend content must include: " + ", ".join(missing_content)
                 )
+            for key in ("title", "overview"):
+                _validate_string_field(
+                    mapping=content,
+                    key=key,
+                    field_path=f"trend content.{key}",
+                    errors=errors,
+                )
             hero = content.get("hero")
             if not isinstance(hero, Mapping):
                 errors.append("trend hero must be a mapping")
@@ -766,6 +796,13 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                 if missing_hero:
                     errors.append(
                         "trend hero must include: " + ", ".join(missing_hero)
+                    )
+                for key in ("kicker", "dek"):
+                    _validate_string_field(
+                        mapping=hero,
+                        key=key,
+                        field_path=f"trend hero.{key}",
+                        errors=errors,
                     )
             ranked_shifts = list(content.get("ranked_shifts") or [])
         else:
@@ -783,6 +820,19 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                     + ", ".join(missing_shift)
                 )
                 break
+            for key in ("title", "summary"):
+                _validate_string_field(
+                    mapping=shift,
+                    key=key,
+                    field_path=f"trend ranked_shifts.{key}",
+                    errors=errors,
+                )
+            history_refs = shift.get("history_refs")
+            if not isinstance(history_refs, list) or any(
+                not isinstance(item, str) for item in history_refs
+            ):
+                errors.append("trend ranked_shifts.history_refs must be a list of strings")
+                break
         user_visible_strings = _trend_user_visible_strings(presentation)
     elif surface_kind == "idea":
         expected_labels = set(_IDEA_REQUIRED_DISPLAY_LABEL_KEYS)
@@ -797,6 +847,13 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
             if missing_content:
                 errors.append(
                     "idea content must include: " + ", ".join(missing_content)
+                )
+            for key in ("title", "summary"):
+                _validate_string_field(
+                    mapping=content,
+                    key=key,
+                    field_path=f"idea content.{key}",
+                    errors=errors,
                 )
             opportunities = list(content.get("opportunities") or [])
         else:
@@ -821,6 +878,25 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
                     + ", ".join(missing_opportunity)
                 )
                 break
+            for key in (
+                "title",
+                "tier",
+                "kind",
+                "time_horizon",
+                "display_kind",
+                "display_time_horizon",
+                "role",
+                "thesis",
+                "why_now",
+                "what_changed",
+                "validation_next_step",
+            ):
+                _validate_string_field(
+                    mapping=opportunity,
+                    key=key,
+                    field_path=f"idea opportunities.{key}",
+                    errors=errors,
+                )
             if _single_line(opportunity.get("display_kind") or "") in _RAW_IDEA_ENUMS:
                 errors.append("display_kind must not leak raw idea enums")
                 break

@@ -2435,6 +2435,81 @@ def test_export_trend_static_site_falls_back_when_sidecar_schema_version_is_inva
     assert "Broken sidecar overview should lose." not in detail_html
 
 
+def test_export_trend_static_site_falls_back_when_sidecar_payload_shape_is_invalid(
+    tmp_path: Path,
+) -> None:
+    """Regression: malformed sidecars must not abort site export."""
+    output_dir = tmp_path / "notes"
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=197,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 12, tzinfo=UTC),
+        period_end=datetime(2026, 3, 13, tzinfo=UTC),
+        run_id="run-site-invalid-sidecar-shape-trend",
+        overview_md="Trend note.",
+        topics=["agents"],
+        clusters=[],
+        highlights=[],
+    )
+    ideas_dir = output_dir / "Ideas"
+    ideas_dir.mkdir(parents=True, exist_ok=True)
+    idea_note = ideas_dir / "day--2026-03-12--ideas.md"
+    idea_note.write_text(
+        "---\n"
+        "kind: ideas\n"
+        "granularity: day\n"
+        "period_start: 2026-03-12T00:00:00+00:00\n"
+        "period_end: 2026-03-13T00:00:00+00:00\n"
+        "status: succeeded\n"
+        "---\n\n"
+        "# Markdown idea title wins\n\n"
+        "## Summary\n\n"
+        "Markdown summary should remain readable.\n",
+        encoding="utf-8",
+    )
+    idea_presentation = build_idea_presentation_v1(
+        source_markdown_path=f"Ideas/{idea_note.name}",
+        title="Broken sidecar title should lose",
+        summary_md="Broken sidecar summary should lose.",
+        ideas=[
+            SimpleNamespace(
+                title="Prompt CI gate",
+                kind="workflow_shift",
+                time_horizon="now",
+                user_or_job="Internal agent platform owners",
+                thesis="Add a prompt release gate before rollout.",
+                why_now="Teams now have enough agent activity to justify structured release controls.",
+                what_changed="More agent traffic means regressions show up faster and cost more.",
+                validation_next_step="Pilot the gate on one high-volume internal workflow.",
+                evidence_refs=[],
+            )
+        ],
+    )
+    sidecar_path = presentation_sidecar_path(note_path=idea_note)
+    write_presentation_sidecar(note_path=idea_note, presentation=idea_presentation)
+    sidecar_payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar_payload["content"]["title"] = "Broken sidecar title should lose"
+    sidecar_payload["content"]["summary"] = "Broken sidecar summary should lose."
+    sidecar_payload["content"]["opportunities"][0]["display_kind"] = 1
+    sidecar_path.write_text(
+        json.dumps(sidecar_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    detail_html = (site_dir / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Markdown idea title wins" in detail_html
+    assert "Markdown summary should remain readable." in detail_html
+    assert "Broken sidecar title should lose" not in detail_html
+    assert "Broken sidecar summary should lose." not in detail_html
+
+
 def test_export_trend_static_site_uses_sidecar_even_when_markdown_contains_evolution(
     tmp_path: Path,
 ) -> None:
