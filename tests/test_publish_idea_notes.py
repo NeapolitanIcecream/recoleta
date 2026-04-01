@@ -369,7 +369,12 @@ def test_write_markdown_ideas_note_infers_sidecar_language_code_from_output_lang
     )
 
     assert "language_code: zh-CN" in note_text
+    assert "## Summary" in note_text
+    assert "## 摘要" not in note_text
+    assert "### Best bet:" in note_text
     assert sidecar["language_code"] == "zh-CN"
+    assert sidecar["display_labels"]["summary"] == "Summary"
+    assert sidecar["display_labels"]["best_bet"] == "Best bet"
 
 
 def test_write_markdown_ideas_note_emits_localized_labels_and_sidecar_in_localized_tree(

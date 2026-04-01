@@ -534,8 +534,12 @@ def build_trend_presentation_v1(
     history_window_refs: Mapping[str, Mapping[str, Any]] | None,
     clusters: Sequence[Mapping[str, Any]] | None,
     language_code: str | None = None,
+    display_language_code: str | None = None,
 ) -> dict[str, Any]:
     resolved_language_code = resolve_presentation_language_code(language_code=language_code)
+    resolved_display_language_code = resolve_presentation_language_code(
+        language_code=display_language_code
+    ) or resolved_language_code
     normalized_overview = _render_history_refs_in_text(
         overview_md,
         history_window_refs=history_window_refs,
@@ -597,7 +601,9 @@ def build_trend_presentation_v1(
         "surface_kind": "trend",
         "language_code": resolved_language_code,
         "source_markdown_path": source_markdown_path,
-        "display_labels": trend_display_labels(language_code=resolved_language_code),
+        "display_labels": trend_display_labels(
+            language_code=resolved_display_language_code
+        ),
         "content": {
             "title": _single_line(title),
             "hero": {
@@ -620,8 +626,12 @@ def build_idea_presentation_v1(
     summary_md: str,
     ideas: list[Any],
     language_code: str | None = None,
+    display_language_code: str | None = None,
 ) -> dict[str, Any]:
     resolved_language_code = resolve_presentation_language_code(language_code=language_code)
+    resolved_display_language_code = resolve_presentation_language_code(
+        language_code=display_language_code
+    ) or resolved_language_code
     opportunities: list[dict[str, Any]] = []
     for index, idea in enumerate(list(ideas or [])[:3], start=1):
         opportunities.append(
@@ -633,11 +643,11 @@ def build_idea_presentation_v1(
                 "time_horizon": _single_line(_value_from(idea, "time_horizon", "") or ""),
                 "display_kind": display_idea_kind(
                     str(_value_from(idea, "kind", "") or ""),
-                    language_code=resolved_language_code,
+                    language_code=resolved_display_language_code,
                 ),
                 "display_time_horizon": display_idea_time_horizon(
                     str(_value_from(idea, "time_horizon", "") or ""),
-                    language_code=resolved_language_code,
+                    language_code=resolved_display_language_code,
                 ),
                 "role": _normalize_markdown(_value_from(idea, "user_or_job", "") or ""),
                 "thesis": _normalize_markdown(_value_from(idea, "thesis", "") or ""),
@@ -659,7 +669,9 @@ def build_idea_presentation_v1(
         "surface_kind": "idea",
         "language_code": resolved_language_code,
         "source_markdown_path": source_markdown_path,
-        "display_labels": idea_display_labels(language_code=resolved_language_code),
+        "display_labels": idea_display_labels(
+            language_code=resolved_display_language_code
+        ),
         "content": {
             "title": _single_line(title),
             "summary": _normalize_markdown(summary_md),

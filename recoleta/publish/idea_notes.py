@@ -9,6 +9,7 @@ import yaml
 
 from recoleta.presentation import (
     build_idea_presentation_v1,
+    idea_display_labels,
     presentation_sidecar_path,
     resolve_presentation_language_code,
     write_presentation_sidecar,
@@ -350,6 +351,7 @@ def _render_ideas_note_lines(
     pass_kind: str = "trend_ideas",
     upstream_pass_kind: str | None = "trend_synthesis",
     language_code: str | None = None,
+    display_language_code: str | None = None,
     presentation: dict[str, Any],
 ) -> list[str]:
     base_tags = ["recoleta/ideas"]
@@ -399,6 +401,8 @@ def _render_ideas_note_lines(
 
     opportunities = list(presentation["content"].get("opportunities") or [])
     labels = presentation["display_labels"]
+    if display_language_code is not None:
+        labels = idea_display_labels(language_code=display_language_code)
     if opportunities:
         lines.extend(["", f"## {labels['opportunities']}"])
         for opportunity in opportunities:
@@ -459,6 +463,9 @@ def _write_ideas_note(
         language_code=language_code,
         output_language=output_language,
     )
+    resolved_display_language_code = (
+        resolve_presentation_language_code(language_code=language_code) or "en"
+    )
     note_path = resolve_ideas_note_path(
         note_dir=note_dir,
         granularity=granularity,
@@ -475,6 +482,7 @@ def _write_ideas_note(
             payload=payload,
         ),
         language_code=resolved_language_code,
+        display_language_code=resolved_display_language_code,
     )
     lines = _render_ideas_note_lines(
         pass_output_id=pass_output_id,
@@ -489,6 +497,7 @@ def _write_ideas_note(
         pass_kind=pass_kind,
         upstream_pass_kind=upstream_pass_kind,
         language_code=resolved_language_code,
+        display_language_code=resolved_display_language_code,
         presentation=presentation,
     )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")

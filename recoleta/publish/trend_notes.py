@@ -290,6 +290,7 @@ def _render_trend_note_lines(
     projection_provenance: ProjectionProvenance | None,
     site_exclude: bool,
     language_code: str | None,
+    display_language_code: str | None = None,
 ) -> list[str]:
     _ = highlights
     title = sanitize_trend_title(title)
@@ -331,7 +332,7 @@ def _render_trend_note_lines(
         f"# {title}",
         "",
     ]
-    display_labels = trend_display_labels(language_code=language_code)
+    display_labels = trend_display_labels(language_code=display_language_code)
     lines.extend(
         [
             f"## {display_labels['overview']}",
@@ -474,6 +475,9 @@ def _write_trend_note(
         language_code=language_code,
         output_language=output_language,
     )
+    resolved_display_language_code = (
+        resolve_presentation_language_code(language_code=language_code) or "en"
+    )
     sanitized_title = sanitize_trend_title(title)
     sanitized_overview_md = sanitize_trend_overview_markdown(overview_md)
     note_path = resolve_trend_note_path(
@@ -507,6 +511,7 @@ def _write_trend_note(
         ),
         site_exclude=bool(site_exclude),
         language_code=resolved_language_code,
+        display_language_code=resolved_display_language_code,
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     if emit_presentation_sidecar:
@@ -518,6 +523,7 @@ def _write_trend_note(
             history_window_refs=history_window_refs,
             clusters=clusters,
             language_code=resolved_language_code,
+            display_language_code=resolved_display_language_code,
         )
         try:
             write_presentation_sidecar(note_path=note_path, presentation=presentation)

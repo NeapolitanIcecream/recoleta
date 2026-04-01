@@ -480,7 +480,11 @@ def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tm
     )
 
     assert "language_code: zh-CN" in note_text
+    assert "## Overview" in note_text
+    assert "## 概览" not in note_text
     assert sidecar["language_code"] == "zh-CN"
+    assert sidecar["display_labels"]["overview"] == "Overview"
+    assert sidecar["display_labels"]["representative_sources"] == "Representative sources"
 
 
 def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_path) -> None:
