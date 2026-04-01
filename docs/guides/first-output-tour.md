@@ -22,12 +22,14 @@ open these paths first:
 - `MARKDOWN_OUTPUT_DIR/latest.md` or `./data/outputs/latest.md`: summary page
   for the latest run
 - `MARKDOWN_OUTPUT_DIR/Inbox/`: one Markdown note per published item
-- `MARKDOWN_OUTPUT_DIR/Trends/`: day-level trend briefs from the same workflow
+- `MARKDOWN_OUTPUT_DIR/Trends/`: day-level trend briefs from the same workflow,
+  plus adjacent `.presentation.json` sidecars for canonical trend notes
 - `MARKDOWN_OUTPUT_DIR/site/index.html`: the rebuilt static site
 - `RECOLETA_DB_PATH`: the SQLite database that later workflows build from
-- `MARKDOWN_OUTPUT_DIR/Ideas/` when the day has enough evidence
+- `MARKDOWN_OUTPUT_DIR/Ideas/` when the day has enough evidence, plus adjacent
+  `.presentation.json` sidecars for canonical idea notes
 - `MARKDOWN_OUTPUT_DIR/Localized/<language>/` when `localization.targets` is
-  configured
+  configured. Localized trees are still markdown-only.
 
 If you started from a preset, use the output paths in that preset YAML file.
 
@@ -48,6 +50,9 @@ That updates:
 - `MARKDOWN_OUTPUT_DIR/Trends/`
 - `MARKDOWN_OUTPUT_DIR/Ideas/` when the selected day has enough evidence
 - `MARKDOWN_OUTPUT_DIR/site/index.html` and the related trend or idea pages
+
+For canonical trend and idea notes, the same rerender also refreshes the
+adjacent `.presentation.json` sidecars in those directories.
 
 `stage ideas` needs an existing trend synthesis output for the same window.
 Low-evidence windows can still be suppressed.
@@ -77,6 +82,7 @@ uv run recoleta stage trends --granularity day --date 2026-03-14
 Local paths:
 
 - `MARKDOWN_OUTPUT_DIR/Trends/*.md`
+- `MARKDOWN_OUTPUT_DIR/Trends/*.presentation.json`
 - `MARKDOWN_OUTPUT_DIR/site/trends/*.html`
 
 Public examples:
@@ -98,6 +104,7 @@ uv run recoleta stage ideas --granularity day --date 2026-03-14
 Local paths:
 
 - `MARKDOWN_OUTPUT_DIR/Ideas/*.md`
+- `MARKDOWN_OUTPUT_DIR/Ideas/*.presentation.json`
 - `MARKDOWN_OUTPUT_DIR/site/ideas/*.html`
 
 Public examples:

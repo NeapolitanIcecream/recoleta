@@ -199,10 +199,12 @@ Check these paths after the run:
 
 - `./data/outputs/latest.md`
 - `./data/outputs/Inbox/`
-- `./data/outputs/Trends/`
+- `./data/outputs/Trends/` with canonical trend `.md` notes and adjacent
+  `.presentation.json` sidecars
 - `./data/outputs/site/index.html`
 - `./data/recoleta.db`
-- When the day has enough evidence: `./data/outputs/Ideas/`
+- When the day has enough evidence: `./data/outputs/Ideas/` with canonical idea
+  `.md` notes and adjacent `.presentation.json` sidecars
 
 Then open the [first output tour](./docs/guides/first-output-tour.md) to compare
 your local files with sample output.
@@ -357,10 +359,13 @@ Where outputs go:
 
 - Local Markdown: `MARKDOWN_OUTPUT_DIR/latest.md` and
   `MARKDOWN_OUTPUT_DIR/Inbox/`
-- Trend briefs: `MARKDOWN_OUTPUT_DIR/Trends/`
-- Idea briefs: `MARKDOWN_OUTPUT_DIR/Ideas/`
+- Trend briefs: `MARKDOWN_OUTPUT_DIR/Trends/` with canonical `.md` notes plus
+  adjacent `.presentation.json` sidecars
+- Idea briefs: `MARKDOWN_OUTPUT_DIR/Ideas/` with canonical `.md` notes plus
+  adjacent `.presentation.json` sidecars
 - Localized Markdown: `MARKDOWN_OUTPUT_DIR/Localized/<language>/Inbox/`,
-  `Trends/`, and `Ideas/` when `localization` is configured
+  `Trends/`, and `Ideas/` when `localization` is configured. Localized trees
+  remain markdown-only today.
 - Static site: `MARKDOWN_OUTPUT_DIR/site/`; multilingual builds emit
   `/<language>/...` roots and a root redirect page that remembers the browser's
   last language choice

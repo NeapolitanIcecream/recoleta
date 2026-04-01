@@ -20,12 +20,12 @@ _RAW_IDEA_ENUMS = {
     "near",
     "frontier",
 }
-_RAW_LABELS = {
-    "Kind:",
-    "Time horizon:",
-    "User/job:",
-    "Thesis.",
-}
+_RAW_LABEL_PATTERNS = (
+    re.compile(r"(?im)(?:^|\n)\s*(?:[-*]\s*)?kind:\s+\S"),
+    re.compile(r"(?im)(?:^|\n)\s*(?:[-*]\s*)?time horizon:\s+\S"),
+    re.compile(r"(?im)(?:^|\n)\s*(?:[-*]\s*)?user/job:\s+\S"),
+    re.compile(r"(?im)(?:^|\n)\s*(?:\*\*)?thesis(?:\.\*\*|\.)\s+\S"),
+)
 
 TREND_DISPLAY_LABELS_V1 = {
     "overview": "Overview",
@@ -50,6 +50,33 @@ IDEA_DISPLAY_LABELS_V1 = {
     "what_changed": "What changed",
     "validation_next_step": "Validation next step",
     "evidence": "Evidence",
+}
+
+_TREND_REQUIRED_CONTENT_KEYS = {
+    "title",
+    "hero",
+    "overview",
+    "ranked_shifts",
+    "clusters",
+    "representative_sources",
+}
+_TREND_REQUIRED_HERO_KEYS = {"kicker", "dek"}
+_TREND_REQUIRED_SHIFT_KEYS = {"rank", "title", "summary", "history_refs", "evidence"}
+_IDEA_REQUIRED_CONTENT_KEYS = {"title", "summary", "opportunities"}
+_IDEA_REQUIRED_OPPORTUNITY_KEYS = {
+    "rank",
+    "tier",
+    "title",
+    "kind",
+    "time_horizon",
+    "display_kind",
+    "display_time_horizon",
+    "role",
+    "thesis",
+    "why_now",
+    "what_changed",
+    "validation_next_step",
+    "evidence",
 }
 
 
@@ -134,6 +161,9 @@ def is_localized_output_path(path: Path) -> bool:
 
 
 def write_presentation_sidecar(*, note_path: Path, presentation: Mapping[str, Any]) -> Path:
+    errors = validate_presentation_v1(presentation)
+    if errors:
+        raise ValueError("invalid presentation sidecar: " + "; ".join(errors))
     sidecar_path = presentation_sidecar_path(note_path=note_path)
     payload = json.dumps(presentation, indent=2, ensure_ascii=False) + "\n"
     sidecar_path.write_text(payload, encoding="utf-8")
@@ -348,17 +378,71 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     source_markdown_path = _single_line(presentation.get("source_markdown_path") or "")
     if not source_markdown_path.endswith(".md"):
         errors.append("source_markdown_path must point to a markdown note")
+    display_labels = presentation.get("display_labels")
+    if not isinstance(display_labels, Mapping):
+        errors.append("display_labels must be a mapping")
+    content = presentation.get("content")
+    if not isinstance(content, Mapping):
+        errors.append("content must be a mapping")
 
     surface_kind = _single_line(presentation.get("surface_kind") or "")
     if surface_kind == "trend":
-        content = presentation.get("content")
-        ranked_shifts = list(content.get("ranked_shifts") or []) if isinstance(content, Mapping) else []
-        if ranked_shifts and len(ranked_shifts) not in {2, 3}:
-            errors.append("trend ranked_shifts must contain 2 or 3 entries when populated")
+        expected_labels = set(TREND_DISPLAY_LABELS_V1)
+        if isinstance(display_labels, Mapping):
+            missing_labels = sorted(expected_labels - set(display_labels))
+            if missing_labels:
+                errors.append(
+                    "trend display_labels must include: " + ", ".join(missing_labels)
+                )
+        if isinstance(content, Mapping):
+            missing_content = sorted(_TREND_REQUIRED_CONTENT_KEYS - set(content))
+            if missing_content:
+                errors.append(
+                    "trend content must include: " + ", ".join(missing_content)
+                )
+            hero = content.get("hero")
+            if not isinstance(hero, Mapping):
+                errors.append("trend hero must be a mapping")
+            else:
+                missing_hero = sorted(_TREND_REQUIRED_HERO_KEYS - set(hero))
+                if missing_hero:
+                    errors.append(
+                        "trend hero must include: " + ", ".join(missing_hero)
+                    )
+            ranked_shifts = list(content.get("ranked_shifts") or [])
+        else:
+            ranked_shifts = []
+        if len(ranked_shifts) > 3:
+            errors.append("trend ranked_shifts must not exceed 3 entries")
+        for shift in ranked_shifts:
+            if not isinstance(shift, Mapping):
+                errors.append("trend ranked_shifts entries must be mappings")
+                break
+            missing_shift = sorted(_TREND_REQUIRED_SHIFT_KEYS - set(shift))
+            if missing_shift:
+                errors.append(
+                    "trend ranked_shifts entries must include: "
+                    + ", ".join(missing_shift)
+                )
+                break
         user_visible_strings = _trend_user_visible_strings(presentation)
     elif surface_kind == "idea":
-        content = presentation.get("content")
-        opportunities = list(content.get("opportunities") or []) if isinstance(content, Mapping) else []
+        expected_labels = set(IDEA_DISPLAY_LABELS_V1)
+        if isinstance(display_labels, Mapping):
+            missing_labels = sorted(expected_labels - set(display_labels))
+            if missing_labels:
+                errors.append(
+                    "idea display_labels must include: " + ", ".join(missing_labels)
+                )
+        if isinstance(content, Mapping):
+            missing_content = sorted(_IDEA_REQUIRED_CONTENT_KEYS - set(content))
+            if missing_content:
+                errors.append(
+                    "idea content must include: " + ", ".join(missing_content)
+                )
+            opportunities = list(content.get("opportunities") or [])
+        else:
+            opportunities = []
         best_bet_total = sum(
             1
             for opportunity in opportunities
@@ -371,6 +455,13 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
         for opportunity in opportunities:
             if not isinstance(opportunity, Mapping):
                 continue
+            missing_opportunity = sorted(_IDEA_REQUIRED_OPPORTUNITY_KEYS - set(opportunity))
+            if missing_opportunity:
+                errors.append(
+                    "idea opportunities must include: "
+                    + ", ".join(missing_opportunity)
+                )
+                break
             if _single_line(opportunity.get("display_kind") or "") in _RAW_IDEA_ENUMS:
                 errors.append("display_kind must not leak raw idea enums")
                 break
@@ -387,8 +478,8 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
             errors.append("user-visible fields must not contain raw history placeholder tokens")
             break
     lowered_strings = "\n".join(user_visible_strings).lower()
-    for label in _RAW_LABELS:
-        if label.lower() in lowered_strings:
+    for pattern in _RAW_LABEL_PATTERNS:
+        if pattern.search(lowered_strings):
             errors.append("user-visible fields must not leak raw schema labels")
             break
     return errors
