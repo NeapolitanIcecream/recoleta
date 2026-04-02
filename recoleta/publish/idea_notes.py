@@ -86,6 +86,8 @@ class _IdeasNoteWriteKwargs(TypedDict, total=False):
 
 
 _IDEAS_NOTE_REQUIRED_KEYS = (
+    "pass_output_id",
+    "upstream_pass_output_id",
     "granularity",
     "period_start",
     "period_end",
@@ -94,8 +96,6 @@ _IDEAS_NOTE_REQUIRED_KEYS = (
     "payload",
 )
 _IDEAS_NOTE_DEFAULTS: dict[str, Any] = {
-    "pass_output_id": None,
-    "upstream_pass_output_id": None,
     "topics": None,
     "pass_kind": "trend_ideas",
     "upstream_pass_kind": "trend_synthesis",
