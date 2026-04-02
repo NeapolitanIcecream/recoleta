@@ -1,0 +1,254 @@
+{
+  "scope": "embodied_ai",
+  "surface_kind": "trend",
+  "legacy_excerpt": "A clearer contact-and-dynamics frontier appeared this week. Prev_1 highlighted dexterous manipulation infrastructure and shared representations, but the current window makes contact handling and moving-scene control more explicit.",
+  "canonical_payload": {
+    "title": "Robot VLAs Turn Practical with Contact-Rich Control, Simulation-First Training, and Faster Execution",
+    "granularity": "week",
+    "period_start": "2026-03-16T00:00:00+00:00",
+    "period_end": "2026-03-23T00:00:00+00:00",
+    "overview_md": "Robotics research this week was about making embodied systems more usable in real settings. The strongest papers improved contact handling, simulation scale, action latency, and world-model utility.\n\nA first theme was harder manipulation. VLAs moved from static pick-and-place toward contact-rich control and dynamic scenes. ForceVLA2 and HapticVLA both target contact-heavy tasks, but in different ways. DOMINO and PUMA push the field toward moving-environment benchmarks with real scale.\n\nA second theme was simulation as infrastructure. MolmoB0T, ManiTwin, and Kinema4D suggest that the bottleneck is no longer only model size. It is the quality, scale, and structure of synthetic data and simulators. Sim-to-real adaptation also looked more disciplined, with methods like SimDist updating only the parts of dynamics that need to change.\n\nA third theme was deployment-time optimization. Several papers improved what happens after pretraining. ADV, ProbeFlow, HeiSD, and FASTER all make robot policies faster to execute or easier to trust in the loop. The common message is simple: robot quality is now judged by response time, motion fidelity, and recovery, not just offline benchmark scores.\n\nWorld models also became more task-specific. Some papers used them to fine-tune planners for deformable tasks. Others used them to boost RL sample efficiency or to build controllable driving simulators. That made the category feel less vague and more operational.\n\nThe week also broadened the embodied map. Driving papers such as X-World and DynFlowDrive focused on controllable simulation and planning-oriented dynamics. IndoorR2X showed a related systems idea in robotics: shared state across robots and IoT sensors, coordinated by an LLM planner.",
+    "topics": [
+      "robotics",
+      "vision-language-action",
+      "simulation",
+      "world-models",
+      "control",
+      "embodied-ai"
+    ],
+    "clusters": [
+      {
+        "description": "Contact-heavy and dynamic manipulation became a core VLA testbed. ForceVLA2 adds force-aware hybrid force-position control and reports large gains over pi0 and pi0.5 on wiping, pressing, retrieval, and assembly. HapticVLA keeps tactile learning in training but removes tactile hardware at deployment. DOMINO expands dynamic manipulation into a benchmark with 35 tasks, 5 embodiments, and more than 110K trajectories, while PUMA uses observation history and optical flow for moving scenes.",
+        "name": "VLAs move deeper into contact-rich and dynamic manipulation",
+        "representative_chunks": [
+          {
+            "chunk_index": 0,
+            "doc_id": 574,
+            "score": 0.742056
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 571,
+            "score": 0.691119
+          }
+        ],
+        "representative_doc_ids": [
+          579
+        ]
+      },
+      {
+        "description": "Simulation is no longer just pretraining support. It is becoming the main data and adaptation engine. MolmoB0T trains only in simulation on 1.8M expert trajectories from about 232k environments and 48k objects, then reports 79.2% real-world tabletop pick-and-place success versus 39.2% for pi0.5. ManiTwin supplies 100K simulation-ready objects, Kinema4D pushes kinematic 4D fidelity, and SimDist keeps simulator structure while updating only real-world dynamics during adaptation.",
+        "name": "Simulation becomes scalable robot infrastructure",
+        "representative_chunks": [
+          {
+            "chunk_index": 0,
+            "doc_id": 568,
+            "score": 0.65839
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 559,
+            "score": 0.647207
+          }
+        ],
+        "representative_doc_ids": [
+          580,
+          579
+        ]
+      },
+      {
+        "description": "A large share of progress came from making policies execute faster and more reliably at run time. ADV lifts Qwen2.5-VL on LIBERO from 93.9% to 96.8% and raises real-task success from 49.5% to 71.4%. ProbeFlow cuts LIBERO flow-solver latency from 278.7 ms to 32.7 ms while still reaching 92.0% success with 14.1 average steps. HeiSD reports up to 2.45x speedup in simulation and above 2x in real-world settings. FASTER further targets time to first action by producing the first action after one sampling step.",
+        "name": "Inference-time VLA optimization turns into a deployment theme",
+        "representative_chunks": [
+          {
+            "chunk_index": 0,
+            "doc_id": 547,
+            "score": 0.621627
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 535,
+            "score": 0.589266
+          }
+        ],
+        "representative_doc_ids": [
+          581,
+          582
+        ]
+      }
+    ],
+    "highlights": [
+      "ForceVLA2 and HapticVLA show that contact-rich manipulation is becoming a serious VLA target, not a niche extension.",
+      "MolmoB0T makes one of the strongest simulation-first claims of the week: 79.2% real-world pick-and-place success after training only in simulation.",
+      "Inference-time control is now a major optimization layer, with ADV, ProbeFlow, HeiSD, and FASTER all targeting faster or more reliable robot action generation."
+    ],
+    "evolution": {
+      "signals": [
+        {
+          "change_type": "continuing",
+          "history_windows": [
+            "prev_1",
+            "prev_2"
+          ],
+          "summary": "Closed-loop practicality remained the dominant direction, but the implementation moved closer to execution mechanics. In prev_1, Seed2Scale, RADAR, and RoboClaw framed progress around closed-loop data generation and autonomous reset. In prev_2, Critic in the Loop pushed on-demand replanning and recovery. This week the same deployment logic shows up inside action generation itself: ADV raises Qwen2.5-VL on LIBERO from 93.9% to 96.8% and real-task success from 49.5% to 71.4%, ProbeFlow cuts solver latency from 278.7 ms to 32.7 ms, and FASTER targets first-action delay with one-step initial action generation.",
+          "theme": "Deployment-oriented VLA improvement keeps advancing, but shifts inward to decoding and response time"
+        },
+        {
+          "change_type": "shifting",
+          "history_windows": [
+            "prev_1",
+            "prev_2"
+          ],
+          "summary": "Simulation and world models stayed central, but their role changed. In prev_1, the main story was automated data engines such as Seed2Scale and systemized collection loops like RADAR. In prev_2, world models were discussed as structured and safer system components. This week, MolmoB0T turns simulation into a full training substrate with 1.8M expert trajectories from about 232k environments and 48k objects, reaching 79.2% real-world success versus 39.2% for pi0.5. AcceRL and the generated-3D-world RL pipeline also use world models as sample-efficiency and sim-to-real machinery rather than as broad general-purpose reasoning modules.",
+          "theme": "World models move from support modules to concrete training infrastructure"
+        },
+        {
+          "change_type": "emerging",
+          "history_windows": [
+            "prev_1"
+          ],
+          "summary": "A clearer contact-and-dynamics frontier appeared this week. Prev_1 highlighted dexterous manipulation infrastructure and shared representations, but the current window makes contact handling and moving-scene control more explicit. ForceVLA2 adds force-aware hybrid force-position control and reports strong gains over pi0 and pi0.5 on wiping, pressing, retrieval, and assembly. HapticVLA removes the need for tactile hardware at deployment, and DOMINO establishes dynamic manipulation at scale with 35 tasks, 5 embodiments, and over 110K trajectories.",
+          "theme": "Contact-rich control and dynamic-scene manipulation become first-class benchmarks"
+        }
+      ],
+      "summary_md": "This week extends the earlier push toward deployable robot systems, but with a tighter focus on execution details. Compared with prev_1 and prev_2, the center of gravity moved from data-loop design, memory, and recovery architecture toward faster action generation, simulation-native training, and explicit contact or motion constraints. The result is a more operational embodied stack: cheaper to train, quicker to respond, and tested in harder physical settings."
+    }
+  },
+  "history_documents": [
+    {
+      "window_id": "prev_1",
+      "title": "机器人VLA走向闭环造数、主动感知与部署级系统优化",
+      "period_start": "2026-03-09T00:00:00+00:00",
+      "period_end": "2026-03-16T00:00:00+00:00"
+    },
+    {
+      "window_id": "prev_2",
+      "title": "机器人VLA迈向可部署系统",
+      "period_start": "2026-03-02T00:00:00+00:00",
+      "period_end": "2026-03-09T00:00:00+00:00"
+    }
+  ],
+  "source_documents": [
+    {
+      "legacy_doc_id": 535,
+      "title": "FASTER: Rethinking Real-Time Flow VLAs",
+      "canonical_url": "http://arxiv.org/abs/2603.19199v1",
+      "source": "arxiv",
+      "authors": [
+        "Yuxiang Lu",
+        "Zhe Liu",
+        "Xianzhe Fan",
+        "Zhenya Yang",
+        "Jinghua Hou",
+        "Junyi Li",
+        "Kaixin Ding",
+        "Hengshuang Zhao"
+      ],
+      "published_at": "2026-03-19T17:51:37.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 547,
+      "title": "ProbeFlow: Training-Free Adaptive Flow Matching for Vision-Language-Action Models",
+      "canonical_url": "http://arxiv.org/abs/2603.17850v1",
+      "source": "arxiv",
+      "authors": [
+        "Zhou Fang",
+        "Jiaqi Wang",
+        "Yi Zhou",
+        "Qiongfeng Shi"
+      ],
+      "published_at": "2026-03-18T15:38:29.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 559,
+      "title": "MolmoB0T: Large-Scale Simulation Enables Zero-Shot Manipulation",
+      "canonical_url": "http://arxiv.org/abs/2603.16861v1",
+      "source": "arxiv",
+      "authors": [
+        "Abhay Deshpande",
+        "Maya Guru",
+        "Rose Hendrix",
+        "Snehal Jauhri",
+        "Ainaz Eftekhar",
+        "Rohun Tripathi",
+        "Max Argus",
+        "Jordi Salvador",
+        "Haoquan Fang",
+        "Matthew Wallingford",
+        "Wilbert Pumacay",
+        "Yejin Kim",
+        "Quinn Pfeifer",
+        "Ying-Chun Lee",
+        "Piper Wolters",
+        "Omar Rayyan",
+        "Mingtong Zhang",
+        "Jiafei Duan",
+        "Karen Farley",
+        "Winson Han",
+        "Eli Vanderbilt",
+        "Dieter Fox",
+        "Ali Farhadi",
+        "Georgia Chalvatzaki",
+        "Dhruv Shah",
+        "Ranjay Krishna"
+      ],
+      "published_at": "2026-03-17T13:59:03.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 568,
+      "title": "Simulation Distillation: Pretraining World Models in Simulation for Rapid Real-World Adaptation",
+      "canonical_url": "http://arxiv.org/abs/2603.15759v1",
+      "source": "arxiv",
+      "authors": [
+        "Jacob Levy",
+        "Tyler Westenbroek",
+        "Kevin Huang",
+        "Fernando Palafox",
+        "Patrick Yin",
+        "Shayegan Omidshafiei",
+        "Dong-Ki Kim",
+        "Abhishek Gupta",
+        "David Fridovich-Keil"
+      ],
+      "published_at": "2026-03-16T18:00:23.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 571,
+      "title": "Towards Generalizable Robotic Manipulation in Dynamic Environments",
+      "canonical_url": "http://arxiv.org/abs/2603.15620v1",
+      "source": "arxiv",
+      "authors": [
+        "Heng Fang",
+        "Shangru Li",
+        "Shuhan Wang",
+        "Xuanyang Xi",
+        "Dingkang Liang",
+        "Xiang Bai"
+      ],
+      "published_at": "2026-03-16T13:59:57.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 574,
+      "title": "ForceVLA2: Unleashing Hybrid Force-Position Control with Force Awareness for Contact-Rich Manipulation",
+      "canonical_url": "http://arxiv.org/abs/2603.15169v1",
+      "source": "arxiv",
+      "authors": [
+        "Yang Li",
+        "Zhaxizhuoma",
+        "Hongru Jiang",
+        "Junjie Xia",
+        "Hongquan Zhang",
+        "Jinda Du",
+        "Yunsong Zhou",
+        "Jia Zeng",
+        "Ce Hao",
+        "Jieji Ren",
+        "Qiaojun Yu",
+        "Cewu Lu",
+        "Yu Qiao",
+        "Jiangmiao Pang"
+      ],
+      "published_at": "2026-03-16T12:03:58.000000+00:00"
+    }
+  ]
+}

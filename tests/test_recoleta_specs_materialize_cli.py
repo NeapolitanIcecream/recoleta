@@ -16,7 +16,7 @@ from recoleta.materialize import MaterializeTargetSpec, materialize_outputs
 from recoleta.models import Document, DocumentChunk, Item
 from recoleta.passes.base import PassInputRef
 from recoleta.passes.trend_ideas import TrendIdeasPayload
-from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
+from recoleta.presentation import presentation_sidecar_path, validate_presentation
 from recoleta.publish.item_notes import resolve_item_note_path
 from recoleta.storage import Repository
 from recoleta.trends import TrendPayload, build_empty_trend_payload, persist_trend_payload
@@ -156,7 +156,7 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in trend_markdown
     assert f"(../Inbox/{item_note_path.name})" in trend_markdown
     assert trend_sidecar["source_markdown_path"] == f"Trends/{trend_note_path.name}"
-    assert validate_presentation_v1(trend_sidecar) == []
+    assert validate_presentation(trend_sidecar) == []
 
     trend_html = (
         output_dir
@@ -650,7 +650,7 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
     assert "- Role: Platform engineers shipping agent changes." in idea_markdown
     assert idea_sidecar["source_markdown_path"] == f"Ideas/{idea_note_path.name}"
     assert idea_sidecar["content"]["opportunities"][0]["tier"] == "best_bet"
-    assert validate_presentation_v1(idea_sidecar) == []
+    assert validate_presentation(idea_sidecar) == []
 
     idea_html = (
         output_dir / "site" / "ideas" / "day--2026-03-02--ideas.html"

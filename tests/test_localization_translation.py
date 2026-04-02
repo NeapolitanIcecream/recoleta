@@ -20,7 +20,7 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.materialize import MaterializeTargetSpec, materialize_outputs
 from recoleta.models import Analysis, DocumentChunk, LocalizedOutput
 from recoleta.passes.trend_ideas import TrendIdeasPayload
-from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
+from recoleta.presentation import presentation_sidecar_path, validate_presentation
 from recoleta.publish import write_markdown_ideas_note, write_markdown_trend_note
 from recoleta.rag.corpus_tools import SearchService
 from recoleta.site import export_trend_static_site
@@ -137,6 +137,7 @@ def _seed_item_trend_and_idea(
                     "title": "Prompt release gate",
                     "kind": "tooling_wedge",
                     "thesis": "Introduce a release gate.",
+                    "anti_thesis": "This thesis weakens if teams keep shipping without a formal release lane.",
                     "why_now": "Models are changing quickly.",
                     "what_changed": "Teams need more validation.",
                     "user_or_job": "Research ops",
@@ -474,6 +475,7 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
                     "title": "提示词发布闸门",
                     "kind": "tooling_wedge",
                     "thesis": "引入发布闸门。",
+                    "anti_thesis": "如果团队继续在没有正式发布闸道的情况下上线，这个判断会减弱。",
                     "why_now": "模型变化很快。",
                     "what_changed": "团队需要更稳定的验证流程。",
                     "user_or_job": "研究运营",
@@ -548,6 +550,7 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     assert "- 时间范围: 现在" in idea_markdown
     assert "- 适用角色: 研究运营" in idea_markdown
     assert "**核心判断.** 引入发布闸门。" in idea_markdown
+    assert "**不成立条件.** 如果团队继续在没有正式发布闸道的情况下上线，这个判断会减弱。" in idea_markdown
     assert "**下一步验证.** 先做一个原型。" in idea_markdown
     assert "Prev_1" not in idea_markdown
     assert "Kind:" not in idea_markdown
@@ -559,9 +562,10 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     assert trend_sidecar["display_labels"]["clusters"] == "聚类"
     assert idea_sidecar["language_code"] == "zh-CN"
     assert idea_sidecar["display_labels"]["best_bet"] == "首要机会"
+    assert idea_sidecar["display_labels"]["anti_thesis"] == "不成立条件"
     assert idea_sidecar["display_labels"]["validation_next_step"] == "下一步验证"
-    assert validate_presentation_v1(trend_sidecar) == []
-    assert validate_presentation_v1(idea_sidecar) == []
+    assert validate_presentation(trend_sidecar) == []
+    assert validate_presentation(idea_sidecar) == []
 
 
 def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root(
@@ -853,6 +857,7 @@ def test_candidate_context_prefers_idea_presentation_sidecar(
                     "title": "Prompt release gate",
                     "kind": "tooling_wedge",
                     "thesis": "Introduce a release gate.",
+                    "anti_thesis": "This thesis weakens if teams keep shipping without a formal release lane.",
                     "why_now": "Models are changing quickly.",
                     "what_changed": "Teams need more validation.",
                     "user_or_job": "Research ops",
@@ -901,6 +906,9 @@ def test_candidate_context_prefers_idea_presentation_sidecar(
     assert context["presentation"]["surface_kind"] == "idea"
     assert context["presentation"]["content"]["opportunities"][0]["title"] == (
         "Prompt release gate"
+    )
+    assert context["presentation"]["content"]["opportunities"][0]["anti_thesis"].startswith(
+        "This thesis weakens if teams keep shipping"
     )
     assert "evidence_docs" in context
 

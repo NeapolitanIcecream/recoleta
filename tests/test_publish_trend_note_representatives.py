@@ -6,7 +6,7 @@ import json
 import pytest
 
 import recoleta.publish.trend_notes as trend_notes_module
-from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
+from recoleta.presentation import presentation_sidecar_path, validate_presentation
 from recoleta.publish import write_markdown_trend_note
 
 
@@ -410,7 +410,7 @@ def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_ref
     sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
 
     assert sidecar_path.exists()
-    assert sidecar["presentation_schema_version"] == 1
+    assert sidecar["presentation_schema_version"] == 2
     assert sidecar["surface_kind"] == "trend"
     assert sidecar["source_markdown_path"] == f"Trends/{note_path.name}"
     assert sidecar["content"]["hero"]["kicker"] == "Trend brief"
@@ -423,7 +423,7 @@ def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_ref
     assert sidecar["content"]["representative_sources"][0]["href"] == "https://example.com/codescout"
     assert sidecar["content"]["representative_sources"][0]["source_type"] == "paper"
     assert sidecar["content"]["representative_sources"][0]["confidence"] == "high"
-    assert validate_presentation_v1(sidecar) == []
+    assert validate_presentation(sidecar) == []
 
 
 def test_publish_trend_note_sidecar_matches_sanitized_markdown_surface(tmp_path) -> None:
@@ -453,6 +453,55 @@ def test_publish_trend_note_sidecar_matches_sanitized_markdown_surface(tmp_path)
     assert note_text.count("## Overview") == 1
     assert sidecar["content"]["title"] == "Verification gets operational"
     assert sidecar["content"]["overview"] == "Teams are tightening release discipline."
+
+
+def test_publish_trend_note_renders_counter_signal_in_markdown_and_sidecar(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=101,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="Teams are tightening release discipline.",
+        topics=["agents"],
+        counter_signal={
+            "title": "Benchmark optimism outruns deployment",
+            "summary": "Offline wins still do not guarantee that teams will ship the loop into production.",
+            "evidence": [
+                {
+                    "title": "Field note",
+                    "href": "https://example.com/field-note",
+                    "authors": ["Alice"],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+    sidecar = json.loads(
+        presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
+    )
+
+    assert "## Counter-signal" in note_text
+    assert "### Benchmark optimism outruns deployment" in note_text
+    assert "Offline wins still do not guarantee" in note_text
+    assert "[Field note](https://example.com/field-note)" in note_text
+    assert sidecar["content"]["counter_signal"]["title"] == (
+        "Benchmark optimism outruns deployment"
+    )
+    assert sidecar["content"]["counter_signal"]["evidence"][0]["href"] == (
+        "https://example.com/field-note"
+    )
+    assert validate_presentation(sidecar) == []
 
 
 def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tmp_path) -> None:
@@ -527,7 +576,7 @@ def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_pa
 
     assert "prev_1" not in sidecar["content"]["clusters"][0]["summary"]
     assert "Verification Gets Tighter" in sidecar["content"]["clusters"][0]["summary"]
-    assert validate_presentation_v1(sidecar) == []
+    assert validate_presentation(sidecar) == []
 
 
 def test_publish_trend_note_sidecar_matches_markdown_representative_source_limits(tmp_path) -> None:

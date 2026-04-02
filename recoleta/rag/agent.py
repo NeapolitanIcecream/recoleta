@@ -117,8 +117,13 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Do not simply restate the overview; focus on what persisted, appeared, faded, or changed across windows."
     )
     base += (
+        " If the corpus contains a meaningful contradictory signal, emit counter_signal"
+        " as a reader-facing counter-signal with a short title, summary, and evidence_refs grounded in the local corpus."
+        " Leave counter_signal as null when no concrete countervailing evidence is present."
+    )
+    base += (
         " Write the title as a direct editorial judgment, not a topic inventory. "
-        "Treat evolution.signals as 2 or 3 ranked shifts ordered by importance when evidence is sufficient; emit fewer rather than padding weak shifts. "
+        "Treat evolution.signals as 1 to 3 ranked shifts ordered by importance when evidence is sufficient; emit fewer rather than padding weak shifts. "
         "Keep the opening overview short, lead with the week-level judgment, and avoid opening with a flat list of systems or papers. "
         "Limit the opening overview to at most three named systems, papers, or benchmarks. "
         "Keep raw prev_n tokens only in evolution.signals[].history_windows; do not leave them unresolved in title, overview_md, clusters, or highlights."

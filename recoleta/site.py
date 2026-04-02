@@ -21,10 +21,12 @@ from markdown_it import MarkdownIt
 from slugify import slugify
 
 from recoleta.presentation import (
+    PRESENTATION_SCHEMA_VERSION,
+    PRESENTATION_SCHEMA_VERSION_V1,
     idea_display_labels,
     presentation_sidecar_path,
     trend_display_labels,
-    validate_presentation_v1,
+    validate_presentation,
 )
 from recoleta.publish.trend_render_shared import (
     _build_trend_browser_body_html,
@@ -231,14 +233,14 @@ def _load_presentation_for_site(
         schema_version = int(payload.get("presentation_schema_version") or 0)
     except Exception:
         return None
-    if schema_version != 1:
+    if schema_version not in {PRESENTATION_SCHEMA_VERSION_V1, PRESENTATION_SCHEMA_VERSION}:
         return None
     if str(payload.get("surface_kind") or "").strip().lower() != surface_kind:
         return None
     content = payload.get("content")
     if not isinstance(content, dict):
         return None
-    if validate_presentation_v1(payload):
+    if validate_presentation(payload):
         return None
     return payload
 
@@ -248,16 +250,14 @@ def _presentation_labels(
     surface_kind: str,
     presentation: dict[str, Any],
 ) -> dict[str, str]:
-    raw_display_labels = presentation.get("display_labels")
-    merged = (
-        trend_display_labels(language_code=str(presentation.get("language_code") or "").strip())
-        if surface_kind == "trend"
-        else idea_display_labels(language_code=str(presentation.get("language_code") or "").strip())
+    schema_version = int(
+        presentation.get("presentation_schema_version") or PRESENTATION_SCHEMA_VERSION
     )
-    if isinstance(raw_display_labels, dict):
-        for key, value in raw_display_labels.items():
-            if str(value or "").strip():
-                merged[str(key)] = str(value).strip()
+    merged = (
+        trend_display_labels(language_code="en")
+        if surface_kind == "trend"
+        else idea_display_labels(language_code="en", schema_version=schema_version)
+    )
     return merged
 
 
@@ -3380,6 +3380,13 @@ def _presentation_local_markdown_targets(
         if not isinstance(shift, dict):
             continue
         add_markdown(shift.get("summary"))
+    counter_signal = content.get("counter_signal")
+    if isinstance(counter_signal, dict):
+        add_markdown(counter_signal.get("summary"))
+        for entry in list(counter_signal.get("evidence") or []):
+            if not isinstance(entry, dict):
+                continue
+            add_href(entry.get("href"))
     for cluster in list(content.get("clusters") or []):
         if not isinstance(cluster, dict):
             continue
@@ -3395,7 +3402,14 @@ def _presentation_local_markdown_targets(
     for opportunity in list(content.get("opportunities") or []):
         if not isinstance(opportunity, dict):
             continue
-        for key in ("role", "thesis", "why_now", "what_changed", "validation_next_step"):
+        for key in (
+            "role",
+            "thesis",
+            "anti_thesis",
+            "why_now",
+            "what_changed",
+            "validation_next_step",
+        ):
             add_markdown(opportunity.get(key))
         for entry in list(opportunity.get("evidence") or []):
             if not isinstance(entry, dict):
@@ -4097,6 +4111,42 @@ def _build_trend_body_from_presentation(
             "</section>"
         )
 
+    counter_signal = content.get("counter_signal")
+    if isinstance(counter_signal, dict):
+        title = str(counter_signal.get("title") or "").strip()
+        summary_html = _render_presentation_markdown_html(counter_signal.get("summary"))
+        evidence_html = _render_presentation_source_list(
+            entries=[
+                entry
+                for entry in list(counter_signal.get("evidence") or [])
+                if isinstance(entry, dict)
+            ],
+            labels=labels,
+        )
+        if title or summary_html != "<p>(none)</p>" or evidence_html != "<p>(none)</p>":
+            counter_signal_parts: list[str] = []
+            if title:
+                counter_signal_parts.append(
+                    f"<h3 class='section-title'>{html.escape(title)}</h3>"
+                )
+            if summary_html != "<p>(none)</p>":
+                counter_signal_parts.append(
+                    f"<div class='prose'>{summary_html}</div>"
+                )
+            if evidence_html != "<p>(none)</p>":
+                counter_signal_parts.append(
+                    _render_browser_section_label_html(labels["representative_sources"])
+                )
+                counter_signal_parts.append(
+                    f"<div class='prose detail-source-list'>{evidence_html}</div>"
+                )
+            rendered_sections.append(
+                _render_browser_content_card_html(
+                    heading=labels["counter_signal"],
+                    inner_html="".join(counter_signal_parts),
+                )
+            )
+
     clusters = [
         cluster for cluster in list(content.get("clusters") or []) if isinstance(cluster, dict)
     ]
@@ -4146,9 +4196,12 @@ def _build_trend_body_from_presentation(
         BeautifulSoup(overview_html, "html.parser").get_text(" ", strip=True),
         limit=220,
     )
+    has_explicit_comparison_signal = any(
+        list(shift.get("history_refs") or []) for shift in ranked_shifts
+    )
     evolution_insight = (
         f"{len(ranked_shifts)} shift{'s' if len(ranked_shifts) != 1 else ''}"
-        if ranked_shifts
+        if ranked_shifts and has_explicit_comparison_signal
         else None
     )
     return (
@@ -4182,7 +4235,13 @@ def _render_idea_opportunity_card_from_presentation(
         "</div>"
         "</section>"
     ]
-    for key in ("thesis", "why_now", "what_changed", "validation_next_step"):
+    for key in (
+        "thesis",
+        "anti_thesis",
+        "why_now",
+        "what_changed",
+        "validation_next_step",
+    ):
         value = str(opportunity.get(key) or "").strip()
         if not value:
             continue

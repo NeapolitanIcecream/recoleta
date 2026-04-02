@@ -32,6 +32,7 @@ class MaterializedTrendNotePayload:
     overview_md: str
     topics: list[str]
     evolution: dict[str, Any] | None
+    counter_signal: dict[str, Any] | None
     history_window_refs: dict[str, dict[str, Any]]
     clusters: list[dict[str, Any]]
     highlights: list[str]
@@ -505,6 +506,40 @@ class _TrendNoteMaterializer:
             for cluster in self.payload.clusters or []
         ]
 
+    def materialize_counter_signal(self) -> dict[str, Any] | None:
+        raw_counter_signal = getattr(self.payload, "counter_signal", None)
+        if raw_counter_signal is None:
+            return None
+        counter_signal = (
+            raw_counter_signal.model_dump(mode="json")
+            if hasattr(raw_counter_signal, "model_dump")
+            else dict(raw_counter_signal)
+        )
+        title = self.rewrite_text(str(counter_signal.get("title") or "").strip())
+        summary = self.rewrite_text(str(counter_signal.get("summary") or "").strip())
+        evidence_entries: list[dict[str, Any]] = []
+        seen_rep_doc_ids: set[int] = set()
+        for ref in list(counter_signal.get("evidence_refs") or []):
+            if not isinstance(ref, dict):
+                continue
+            enriched = self._materialize_representative_chunk(
+                ref,
+                seen_rep_doc_ids=seen_rep_doc_ids,
+            )
+            if enriched is None:
+                continue
+            reason = str(ref.get("reason") or "").strip()
+            if reason:
+                enriched["reason"] = reason
+            evidence_entries.append(enriched)
+        if not title and not summary and not evidence_entries:
+            return None
+        return {
+            "title": title,
+            "summary": summary,
+            "evidence": evidence_entries,
+        }
+
 
 def materialize_trend_note_payload(
     *,
@@ -549,6 +584,7 @@ def materialize_trend_note_payload(
         overview_md=overview_md_for_notes,
         topics=list(payload.topics),
         evolution=evolution_for_notes,
+        counter_signal=materializer.materialize_counter_signal(),
         history_window_refs=materializer.history_window_refs,
         clusters=clusters_for_notes,
         highlights=highlights_for_notes,

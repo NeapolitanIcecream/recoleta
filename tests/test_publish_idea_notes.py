@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import recoleta.publish.idea_notes as idea_notes_module
-from recoleta.presentation import presentation_sidecar_path, validate_presentation_v1
+from recoleta.presentation import presentation_sidecar_path, validate_presentation
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish import write_markdown_ideas_note
 from recoleta.publish.item_notes import resolve_item_note_href
@@ -79,6 +79,7 @@ def test_write_markdown_ideas_note_deduplicates_evidence_refs_by_document(
                         "title": "Auditable long-horizon eval workbench",
                         "kind": "tooling_wedge",
                         "thesis": "Build an evaluation workbench around grounded traces.",
+                        "anti_thesis": "This thesis weakens if teams refuse to add release gates to the workflow.",
                         "why_now": "Grounded runtime traces are now practical.",
                         "what_changed": "Teams can inspect long multi-step traces.",
                         "user_or_job": "Evaluation teams need auditable agent runs.",
@@ -160,6 +161,7 @@ def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
                         "title": "Auditable long-horizon eval workbench",
                         "kind": "tooling_wedge",
                         "thesis": "Build an evaluation workbench around grounded traces.",
+                        "anti_thesis": "This thesis weakens if teams refuse to add release gates to the workflow.",
                         "why_now": "Grounded runtime traces are now practical.",
                         "what_changed": "Teams can inspect long multi-step traces.",
                         "user_or_job": "Evaluation teams need auditable agent runs.",
@@ -177,6 +179,7 @@ def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
                         "title": "Review queue for flaky eval regressions",
                         "kind": "workflow_shift",
                         "thesis": "Route unstable eval runs into a structured triage lane.",
+                        "anti_thesis": "This thesis weakens if flaky failures stay too rare to justify a dedicated queue.",
                         "why_now": "Teams are seeing repeated long-horizon failures.",
                         "what_changed": "Higher usage creates recurring review patterns.",
                         "user_or_job": "Applied AI ops",
@@ -205,24 +208,67 @@ def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
     assert "- Type: Tooling wedge" in note_text
     assert "- Horizon: Near-term" in note_text
     assert "- Role: Evaluation teams need auditable agent runs." in note_text
+    assert (
+        "**Anti-thesis.** This thesis weakens if teams refuse to add release gates to the workflow."
+        in note_text
+    )
     assert "Kind:" not in note_text
     assert "Time horizon:" not in note_text
     assert "User/job:" not in note_text
 
     assert sidecar_path.exists()
-    assert sidecar["presentation_schema_version"] == 1
+    assert sidecar["presentation_schema_version"] == 2
     assert sidecar["surface_kind"] == "idea"
     assert sidecar["source_markdown_path"] == f"Ideas/{note_path.name}"
     assert sidecar["display_labels"]["best_bet"] == "Best bet"
+    assert sidecar["display_labels"]["anti_thesis"] == "Anti-thesis"
     assert sidecar["content"]["opportunities"][0]["tier"] == "best_bet"
     assert sidecar["content"]["opportunities"][1]["tier"] == "alternate"
     assert sidecar["content"]["opportunities"][0]["display_kind"] == "Tooling wedge"
     assert sidecar["content"]["opportunities"][1]["display_time_horizon"] == "Near-term"
+    assert sidecar["content"]["opportunities"][0]["anti_thesis"].startswith(
+        "This thesis weakens if teams refuse"
+    )
     assert sidecar["content"]["opportunities"][0]["evidence"][0]["doc_id"] == 11
     assert sidecar["content"]["opportunities"][0]["evidence"][0]["chunk_index"] == 0
     assert sidecar["content"]["opportunities"][0]["evidence"][0]["source_type"] == "unknown"
     assert sidecar["content"]["opportunities"][0]["evidence"][0]["confidence"] == "low"
-    assert validate_presentation_v1(sidecar) == []
+    assert validate_presentation(sidecar) == []
+
+
+def test_write_markdown_ideas_note_skips_sidecar_for_suppressed_empty_payload(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    note_path = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=tmp_path / "notes",
+        pass_output_id=7,
+        upstream_pass_output_id=3,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-ideas-suppressed-sidecar",
+        status="suppressed",
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "No publishable ideas for this period",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "summary_md": "Evidence is too thin for a durable opportunity brief.",
+                "ideas": [],
+            }
+        ),
+        topics=["agents"],
+    )
+
+    assert note_path.exists()
+    assert not presentation_sidecar_path(note_path=note_path).exists()
 
 
 def test_write_markdown_ideas_note_keeps_markdown_and_sidecar_opportunities_in_sync(

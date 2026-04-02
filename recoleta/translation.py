@@ -24,7 +24,12 @@ from recoleta.config import LocalizationConfig, Settings
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.models import Analysis, Document, DocumentChunk, Item, PassOutput
 from recoleta.passes.trend_ideas import TrendIdeasPayload
-from recoleta.presentation import presentation_sidecar_path
+from recoleta.presentation import (
+    PRESENTATION_SCHEMA_VERSION,
+    PRESENTATION_SCHEMA_VERSION_V1,
+    presentation_sidecar_path,
+    validate_presentation,
+)
 from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.provenance import build_projection_provenance, inject_projection_provenance
 from recoleta.publish.idea_notes import resolve_ideas_note_path
@@ -925,6 +930,10 @@ def _load_idea_candidates(
             f"Time horizon: {str(getattr(idea, 'time_horizon', '') or '').strip()}",
             f"User/job: {str(getattr(idea, 'user_or_job', '') or '').strip()}",
             f"Thesis: {str(getattr(idea, 'thesis', '') or '').strip()}",
+            (
+                "Anti-thesis: "
+                + str(getattr(idea, "anti_thesis", "") or "").strip()
+            ),
             f"Why now: {str(getattr(idea, 'why_now', '') or '').strip()}",
             f"What changed: {str(getattr(idea, 'what_changed', '') or '').strip()}",
             (
@@ -1384,14 +1393,20 @@ def _canonical_note_context(
             )
         except Exception:
             schema_version = 0
-        if isinstance(payload, dict) and schema_version == 1:
-            return {
-                "canonical_note": {
-                    "path": str(note_path),
-                    "sidecar_path": str(sidecar_path),
-                },
-                "presentation": payload,
-            }
+        if isinstance(payload, dict) and schema_version in {
+            PRESENTATION_SCHEMA_VERSION_V1,
+            PRESENTATION_SCHEMA_VERSION,
+        }:
+            if validate_presentation(payload):
+                payload = None
+            else:
+                return {
+                    "canonical_note": {
+                        "path": str(note_path),
+                        "sidecar_path": str(sidecar_path),
+                    },
+                    "presentation": payload,
+                }
     try:
         markdown_text = note_path.read_text(encoding="utf-8")
     except Exception:

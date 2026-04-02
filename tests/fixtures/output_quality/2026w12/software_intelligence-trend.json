@@ -1,0 +1,227 @@
+{
+  "scope": "software_intelligence",
+  "surface_kind": "trend",
+  "legacy_excerpt": "The move from raw code generation to repository-level engineering systems clearly continues from [代码代理进入真实工程闭环 (2026-W10)](week--2026-W10--trend--285.md) and [代码代理闭环深化，MCP与可验证治理同步升温 (2026-W11)](week--2026-W11--trend--489.md), but this week adds more concrete reliability evidence.",
+  "canonical_payload": {
+    "title": "Coding Agents Move Up the Stack into Evaluation, Orchestration, and Guardrails",
+    "granularity": "week",
+    "period_start": "2026-03-16T00:00:00+00:00",
+    "period_end": "2026-03-23T00:00:00+00:00",
+    "overview_md": "Coding-agent research this week focused less on raw code generation and more on building reliable, governable systems around agents. The biggest gains came from harder evaluation, better workflow design, and executable guardrails.\n\nEvaluation kept getting tougher. VibePass, SWE-QA-Pro, TDAD, and FailureMem all test whether agents can explore real repositories, expose bugs, avoid regressions, and verify behavior under realistic constraints. This makes the week feel more mature. The field is asking where agents fail, not just where they can demo well.\n\nThe second shift is architectural. ProRL Agent, Chiron, Rawq, and AskAlf all treat orchestration, memory, retrieval scope, and runtime persistence as core levers. The message is consistent: strong results depend on how the system is staged and controlled, not only on the base model.\n\nSecurity also moved closer to execution. Several systems place permissions, audits, or approval steps directly in the tool path. That reflects a broader change in mindset. Once coding agents can act across repositories, shells, and services, governance has to be part of the runtime.\n\nFinally, the task frontier widened. Process-aware models such as IQuest-Coder-V1 improved across code benchmarks, while compiler and embedded settings showed that harder environments still break many current assumptions. Research is broadening from repo patching toward full software delivery conditions.",
+    "topics": [
+      "coding-agents",
+      "evaluation",
+      "orchestration",
+      "guardrails",
+      "repository-engineering",
+      "runtime-infrastructure"
+    ],
+    "clusters": [
+      {
+        "description": "The week’s clearest research thread is harder, more realistic evaluation for coding agents. Work moved from simple code generation toward repository exploration, fault-trigger debugging, regression control, and multimodal repair. VibePass highlights the gap between writing plausible tests and exposing real bugs. SWE-QA-Pro filters out questions solvable without true repository exploration, then shows Claude Sonnet 4.5 gaining nearly 13 points with agentic runs; its Qwen3-8B recipe reaches 35.39 and beats GPT-4o + Agent. TDAD cuts test-level regression on 100 SWE-Bench Verified Phase 1 instances from 6.08% to 1.82%, while a TDD-only prompt rises to 9.94%. FailureMem reaches 33.1% resolved on 617 SWE-bench Multimodal issues, ahead of GUIRepair at 29.4%.",
+        "name": "Evaluation gets harder, more repository-grounded, and more failure-aware",
+        "representative_chunks": [
+          {
+            "chunk_index": 0,
+            "doc_id": 720,
+            "score": 0.744603
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 670,
+            "score": 0.659766
+          }
+        ],
+        "representative_doc_ids": [
+          760,
+          761,
+          762
+        ]
+      },
+      {
+        "description": "A second major theme is the shift from one-shot prompting to engineered workflows. ProRL Agent treats rollout generation and reinforcement learning training as separate services for long, environment-heavy runs. Chiron’s field-study framing suggests that acceptance-criteria validation, repository-native review, and hybrid human-agent execution improve delivery outcomes when agents are embedded in controlled processes. Rawq and the survey of 30+ frameworks both argue that compact retrieval, memory assembly, tool loading, and sub-agent boundaries often matter more than the outer loop. AskAlf extends this into durable operations with persistent memory; its reported overnight run used 6 workers across 18 executions for 8 hours at $0.43 total cost.",
+        "name": "The engineering center of gravity shifts to orchestration, memory, and runtime infrastructure",
+        "representative_chunks": [
+          {
+            "chunk_index": 0,
+            "doc_id": 643,
+            "score": 0.670191
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 589,
+            "score": 0.655966
+          }
+        ],
+        "representative_doc_ids": [
+          763,
+          764,
+          766
+        ]
+      },
+      {
+        "description": "Security and governance moved into the action path rather than sitting outside the agent. The confirmation-bias study shows that pull-request framing alone can sharply reduce vulnerability detection and that autonomous review agents are exploitable unless metadata is suppressed or counter-instructions are added. Oculi, Signet-eval, and WAGMIOS all place controls directly on tool use or infrastructure access. CapKit applies signed, time-bounded least-privilege capabilities. Plexus adds quotas, failover, secret handling, and MCP session isolation. The shared message is that once agents can act, guardrails must be enforceable, inspectable, and difficult to bypass.",
+        "name": "Guardrails move from policy talk to executable control planes",
+        "representative_chunks": [
+          {
+            "chunk_index": 0,
+            "doc_id": 610,
+            "score": 0.63016
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 684,
+            "score": 0.603413
+          }
+        ],
+        "representative_doc_ids": [
+          763,
+          765,
+          766
+        ]
+      }
+    ],
+    "highlights": [
+      "SWE-QA-Pro makes repository evaluation harder by filtering out questions solvable without real exploration; Claude Sonnet 4.5 gains nearly 13 points and the paper’s Qwen3-8B recipe reaches 35.39.",
+      "TDAD reframes coding-agent quality around not breaking things, cutting test-level regression from 6.08% to 1.82% on 100 SWE-Bench Verified Phase 1 instances.",
+      "AskAlf captures the runtime turn with a concrete overnight run: 6 workers, 18 executions, 8 hours, $0.43 total cost, and reported fixes to 2 CVEs across 847 dependencies."
+    ],
+    "evolution": {
+      "signals": [
+        {
+          "change_type": "continuing",
+          "history_windows": [
+            "prev_1",
+            "prev_2"
+          ],
+          "summary": "The move from raw code generation to repository-level engineering systems clearly continues from prev_2 and prev_1, but this week adds more concrete reliability evidence. Where prev_2 highlighted repository execution loops and prev_1 emphasized process learning, the current window grounds that direction with systems such as SWE-QA-Pro, which builds on 26 long-tail repositories and shows Claude Sonnet 4.5 gaining nearly 13 points under agentic exploration, and TDAD, which reduces regression from 6.08% to 1.82% on 100 SWE-Bench Verified Phase 1 instances. CodeScout adds another concrete step with 68.57 file-level F1 and 40.32 function-level F1 on SWE-Bench Verified.",
+          "theme": "Repository-grounded coding agents keep deepening into measurable engineering workflows"
+        },
+        {
+          "change_type": "shifting",
+          "history_windows": [
+            "prev_1"
+          ],
+          "summary": "Relative to prev_1, the center of gravity shifts upward from process learning inside the model to the control plane around the agent. prev_1 featured systems such as SWE-Fuse, ExecVerify, and Understanding by Reconstruction, which focused on trajectories, stepwise rewards, and pretraining around software processes. This week, ProRL Agent, Chiron, Hook Hero, AskAlf, and serverless runtime examples push attention toward orchestration services, telemetry, persistent state, and lightweight human checkpoints. AskAlf is especially concrete: 6 workers, 18 executions, 8 hours, and $0.43 total cost, plus reported fixes to 2 CVEs across 847 dependencies.",
+          "theme": "The main innovation surface shifts from training recipes to runtime and orchestration infrastructure"
+        },
+        {
+          "change_type": "emerging",
+          "history_windows": [
+            "prev_1",
+            "prev_2"
+          ],
+          "summary": "Executable governance becomes more visible than in prev_2 and prev_1. Earlier windows already discussed trust, memory, and control, but the current period makes those controls more operational. The confirmation-bias study shows that pull-request framing alone can reduce vulnerability detection and that review agents are exploitable without metadata suppression or counter-instructions. Oculi and Signet-eval put controls in the action path. WAGMIOS replaces broad Docker access with scoped API permissions. CapKit adds signed, time-bounded capabilities, while Plexus adds quotas, failover, secret handling, and MCP session isolation.",
+          "theme": "Governance moves from abstract trust layers to enforceable runtime permissions and audit surfaces"
+        }
+      ],
+      "summary_md": "This week mostly extends the prior repository-grounded trajectory, but the emphasis moves higher in the stack. Compared with prev_2 and prev_1, the strongest delta is not just better task solving. It is tighter runtime control, more explicit guardrails, and stronger evidence around regression, exploration, and oversight. The result is a more operational view of coding agents: less like smart autocomplete, more like governed software systems."
+    }
+  },
+  "history_documents": [
+    {
+      "window_id": "prev_1",
+      "title": "代码代理闭环深化，MCP与可验证治理同步升温",
+      "period_start": "2026-03-09T00:00:00+00:00",
+      "period_end": "2026-03-16T00:00:00+00:00"
+    },
+    {
+      "window_id": "prev_2",
+      "title": "代码代理进入真实工程闭环",
+      "period_start": "2026-03-02T00:00:00+00:00",
+      "period_end": "2026-03-09T00:00:00+00:00"
+    }
+  ],
+  "source_documents": [
+    {
+      "legacy_doc_id": 589,
+      "title": "AskAlf – Self-hosted AI workforce that runs 24/7",
+      "canonical_url": "https://github.com/askalf/askalf",
+      "source": "hn",
+      "authors": [
+        "jsprayberry87"
+      ],
+      "published_at": "2026-03-22T23:47:05.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 610,
+      "title": "Show HN: Signet-eval offers deterministic policy enforcement for Claude Code",
+      "canonical_url": "https://jmcentire.github.io/signet-eval/",
+      "source": "hn",
+      "authors": [
+        "jmcentire2025"
+      ],
+      "published_at": "2026-03-21T22:41:20.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 643,
+      "title": "ProRL Agent: Rollout-as-a-Service for RL Training of Multi-Turn LLM Agents",
+      "canonical_url": "http://arxiv.org/abs/2603.18815v1",
+      "source": "arxiv",
+      "authors": [
+        "Hao Zhang",
+        "Mingjie Liu",
+        "Shaokun Zhang",
+        "Songyang Han",
+        "Jian Hu",
+        "Zhenghui Jin",
+        "Yuchi Zhang",
+        "Shizhe Diao",
+        "Ximing Lu",
+        "Binfeng Xu",
+        "Zhiding Yu",
+        "Jan Kautz",
+        "Yi Dong"
+      ],
+      "published_at": "2026-03-19T12:08:51.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 670,
+      "title": "TDAD: Test-Driven Agentic Development - Reducing Code Regressions in AI Coding Agents via Graph-Based Impact Analysis",
+      "canonical_url": "http://arxiv.org/abs/2603.17973v2",
+      "source": "arxiv",
+      "authors": [
+        "Pepe Alonso",
+        "Sergio Yovine",
+        "Victor A. Braberman"
+      ],
+      "published_at": "2026-03-18T17:38:22.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 684,
+      "title": "Guardrails as Infrastructure: Policy-First Control for Tool-Orchestrated Workflows",
+      "canonical_url": "http://arxiv.org/abs/2603.18059v1",
+      "source": "arxiv",
+      "authors": [
+        "Akshey Sigdel",
+        "Rista Baral"
+      ],
+      "published_at": "2026-03-18T01:19:33.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 720,
+      "title": "SWE-QA-Pro: A Representative Benchmark and Scalable Training Recipe for Repository-Level Code Understanding",
+      "canonical_url": "http://arxiv.org/abs/2603.16124v1",
+      "source": "arxiv",
+      "authors": [
+        "Songcheng Cai",
+        "Zhiheng Lyu",
+        "Yuansheng Ni",
+        "Xiangchao Chen",
+        "Baichuan Zhou",
+        "Shenzhe Zhu",
+        "Yi Lu",
+        "Haozhe Wang",
+        "Chi Ruan",
+        "Benjamin Schneider",
+        "Weixu Zhang",
+        "Xiang Li",
+        "Andy Zheng",
+        "Yuyu Zhang",
+        "Ping Nie",
+        "Wenhu Chen"
+      ],
+      "published_at": "2026-03-17T05:12:48.000000+00:00"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from recoleta.presentation import (
-    build_idea_presentation_v1,
+    build_idea_presentation_v2,
     idea_display_labels,
     presentation_sidecar_path,
     resolve_presentation_language_code,
@@ -283,6 +283,7 @@ def _presentation_ready_ideas(
                 title=idea.title,
                 kind=idea.kind,
                 thesis=idea.thesis,
+                anti_thesis=idea.anti_thesis,
                 why_now=idea.why_now,
                 what_changed=idea.what_changed,
                 user_or_job=idea.user_or_job,
@@ -420,6 +421,13 @@ def _render_ideas_note_lines(
                     f"- {labels['role']}: {opportunity['role']}",
                     "",
                     f"**{labels['thesis']}.** {opportunity['thesis']}",
+                ]
+            )
+            anti_thesis = str(opportunity.get("anti_thesis") or "").strip()
+            if anti_thesis:
+                lines.extend(["", f"**{labels['anti_thesis']}.** {anti_thesis}"])
+            lines.extend(
+                [
                     "",
                     f"**{labels['why_now']}.** {opportunity['why_now']}",
                     "",
@@ -471,7 +479,7 @@ def _write_ideas_note(
         granularity=granularity,
         period_start=period_start,
     )
-    presentation = build_idea_presentation_v1(
+    presentation = build_idea_presentation_v2(
         source_markdown_path=f"{note_dir.name}/{note_path.name}",
         title=str(payload.title or "").strip(),
         summary_md=str(payload.summary_md or "").strip(),
@@ -501,13 +509,20 @@ def _write_ideas_note(
         presentation=presentation,
     )
     note_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    if emit_presentation_sidecar:
+    should_emit_sidecar = (
+        emit_presentation_sidecar
+        and str(status or "").strip().lower() == "succeeded"
+        and bool(list(payload.ideas or []))
+    )
+    if should_emit_sidecar:
         try:
             write_presentation_sidecar(note_path=note_path, presentation=presentation)
         except Exception:
             note_path.unlink(missing_ok=True)
             presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
             raise
+    elif emit_presentation_sidecar:
+        presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
     return note_path
 
 

@@ -130,6 +130,8 @@ What to know:
   pass to the latest available window per granularity.
 - Backfill writes `localized_outputs`. It does not rewrite canonical
   `analyses`, `pass_outputs`, or `documents`.
+- For trends and ideas, backfill also regenerates localized sidecars beside the
+  localized markdown notes it rewrites.
 
 ## Build, preview, or deploy the site
 
@@ -172,6 +174,8 @@ What to know:
   aggregate site for the fleet manifest.
 - `repair outputs` repairs Markdown, PDFs, and site files from stored DB state
   without rerunning ingest or analyze.
+- The same repair flow also refreshes sibling trend/idea sidecars for
+  regenerated notes when the stored DB state is present.
 - When localized markdown trees exist, site export writes one subtree per
   language, for example `/en/...` and `/zh-cn/...`.
 - The root `index.html` redirects to the remembered browser language first and
