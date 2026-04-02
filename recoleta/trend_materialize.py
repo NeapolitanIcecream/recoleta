@@ -303,9 +303,12 @@ class _TrendNoteMaterializer:
         return max(1, int(match.group(1)))
 
     def _history_window_doc(self, *, index: int) -> tuple[Any | None, Any | None]:
+        period_start = self.current_period_start
+        if period_start is None:
+            return None, None
         windows = peer_history_windows_for_period(
             granularity=self.payload.granularity,
-            period_start=self.current_period_start,
+            period_start=period_start,
             window_count=index,
         )
         if len(windows) < index:
