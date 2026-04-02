@@ -1109,10 +1109,12 @@ def _validate_trend_hero(
 def _validate_trend_ranked_shifts(
     ranked_shifts: list[Any],
     *,
+    allow_empty: bool,
     errors: list[str],
 ) -> None:
     if not ranked_shifts:
-        errors.append("trend ranked_shifts must contain at least 1 entry")
+        if not allow_empty:
+            errors.append("trend ranked_shifts must contain at least 1 entry")
         return
     if len(ranked_shifts) > 3:
         errors.append("trend ranked_shifts must not exceed 3 entries")
@@ -1294,7 +1296,11 @@ def _validate_trend_presentation(
             )
     _validate_trend_hero(content=content, errors=errors)
     ranked_shifts = list(content.get("ranked_shifts") or []) if content is not None else []
-    _validate_trend_ranked_shifts(ranked_shifts, errors=errors)
+    _validate_trend_ranked_shifts(
+        ranked_shifts,
+        allow_empty=schema_version < PRESENTATION_SCHEMA_VERSION,
+        errors=errors,
+    )
     if content is not None:
         _validate_source_metadata_list(
             content.get("representative_sources"),
@@ -1332,7 +1338,8 @@ def _validate_idea_opportunities(
     errors: list[str],
 ) -> None:
     if not opportunities:
-        errors.append("idea opportunities must contain at least 1 entry")
+        if schema_version >= PRESENTATION_SCHEMA_VERSION:
+            errors.append("idea opportunities must contain at least 1 entry")
         return
     best_bet_total = sum(
         1 for opportunity in opportunities if _is_best_bet_opportunity(opportunity)

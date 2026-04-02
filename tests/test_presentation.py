@@ -80,7 +80,7 @@ def test_validate_presentation_v1_allows_single_ranked_shift_when_evidence_is_th
     assert validate_presentation_v1(presentation) == []
 
 
-def test_validate_presentation_v1_rejects_empty_ranked_shifts() -> None:
+def test_validate_presentation_v1_allows_legacy_empty_ranked_shifts() -> None:
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/day--2026-03-02--trend--7.md",
         title="Verification gets operational",
@@ -91,7 +91,21 @@ def test_validate_presentation_v1_rejects_empty_ranked_shifts() -> None:
     )
     presentation["content"]["ranked_shifts"] = []
 
-    errors = validate_presentation_v1(presentation)
+    assert validate_presentation_v1(presentation) == []
+
+
+def test_validate_presentation_v2_rejects_empty_ranked_shifts() -> None:
+    presentation = build_trend_presentation_v2(
+        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+        title="Verification gets operational",
+        overview_md="Teams are tightening release discipline.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[],
+    )
+    presentation["content"]["ranked_shifts"] = []
+
+    errors = validate_presentation(presentation)
 
     assert "trend ranked_shifts must contain at least 1 entry" in errors
 
@@ -308,6 +322,32 @@ def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> No
     errors = validate_presentation_v1(presentation)
 
     assert "idea opportunities entries must be mappings" in errors
+
+
+def test_validate_presentation_v1_allows_legacy_empty_idea_opportunities() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+    presentation["content"]["opportunities"] = []
+
+    assert validate_presentation_v1(presentation) == []
+
+
+def test_validate_presentation_v2_rejects_empty_idea_opportunities() -> None:
+    presentation = build_idea_presentation_v2(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+    presentation["content"]["opportunities"] = []
+
+    errors = validate_presentation(presentation)
+
+    assert "idea opportunities must contain at least 1 entry" in errors
 
 
 def test_presentation_labels_preserve_traditional_chinese_family() -> None:
