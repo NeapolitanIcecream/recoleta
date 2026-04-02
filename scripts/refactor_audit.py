@@ -595,7 +595,7 @@ def aggregate_hotspots(signals: list[HotspotSignal]) -> list[dict[str, Any]]:
         )
         if has_critical_complexity or len(distinct_high_plus) >= 2:
             classification = "refactor_now"
-        elif any(signal.severity == "high" for signal in values) or len(
+        elif any(signal.severity in {"high", "critical"} for signal in values) or len(
             distinct_warning_plus
         ) >= 2:
             classification = "refactor_soon"

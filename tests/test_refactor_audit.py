@@ -232,6 +232,20 @@ def test_aggregate_hotspots_marks_critical_complexity_as_refactor_now() -> None:
     assert hotspots[0]["classification"] == "refactor_now"
 
 
+def test_aggregate_hotspots_marks_critical_ruff_as_refactor_soon() -> None:
+    hotspots = audit.aggregate_hotspots(
+        [
+            _signal(
+                tool="ruff",
+                severity="critical",
+                metrics={"complexity": 26},
+            )
+        ]
+    )
+
+    assert hotspots[0]["classification"] == "refactor_soon"
+
+
 def test_build_baseline_diff_marks_new_hotspots() -> None:
     current_hotspots = [
         {

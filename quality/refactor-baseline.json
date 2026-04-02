@@ -2099,7 +2099,7 @@
       "symbol": "HOTSPOT_CLASSIFICATIONS"
     }
   ],
-  "generated_at": "2026-04-02T03:37:13.009418+00:00",
+  "generated_at": "2026-04-02T03:53:12.290752+00:00",
   "hotspots": [
     {
       "classification": "refactor_now",
@@ -10077,7 +10077,7 @@
           "length": 67,
           "nloc": 64,
           "parameter_count": 1,
-          "token_count": 454
+          "token_count": 458
         }
       },
       "signals": [
@@ -10089,7 +10089,7 @@
             "length": 67,
             "nloc": 64,
             "parameter_count": 1,
-            "token_count": 454
+            "token_count": 458
           },
           "severity": "high",
           "symbol": "aggregate_hotspots",
