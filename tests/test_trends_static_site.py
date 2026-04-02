@@ -20,7 +20,13 @@ from recoleta.site import (
     export_trend_static_site,
     stage_trend_site_source,
 )
-from recoleta.publish import write_markdown_note, write_markdown_trend_note
+from recoleta.passes.trend_ideas import TrendIdeasPayload
+from recoleta.publish import (
+    write_markdown_ideas_note,
+    write_markdown_note,
+    write_markdown_trend_note,
+)
+from recoleta.storage import Repository
 
 
 def test_item_action_label_uses_known_source_hosts() -> None:
@@ -153,6 +159,92 @@ def test_export_trend_static_site_writes_home_topic_archive_and_detail_pages(
     assert "Telegram-ready PDF brief" not in detail_html
     assert "section-label'>Topics<" not in detail_html
     assert "<section class='page-hero'>" not in detail_html
+
+
+def test_export_trend_static_site_renders_v2_counter_signal_and_anti_thesis(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    trend_note = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=801,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-v2-trend",
+        overview_md="Teams are tightening release discipline.",
+        topics=["agents"],
+        counter_signal={
+            "title": "Benchmark wins still stall before deployment",
+            "summary": "Offline gains do not yet guarantee that teams will operationalize the loop.",
+            "evidence": [
+                {
+                    "title": "Field note",
+                    "href": "https://example.com/field-note",
+                    "authors": ["Alice"],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _ = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=output_dir,
+        pass_output_id=9,
+        upstream_pass_output_id=7,
+        granularity="day",
+        period_start=datetime(2026, 3, 9, tzinfo=UTC),
+        period_end=datetime(2026, 3, 10, tzinfo=UTC),
+        run_id="run-site-v2-ideas",
+        status="succeeded",
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "Operator wedges",
+                "granularity": "day",
+                "period_start": datetime(2026, 3, 9, tzinfo=UTC).isoformat(),
+                "period_end": datetime(2026, 3, 10, tzinfo=UTC).isoformat(),
+                "summary_md": "Structured release controls now feel overdue.",
+                "ideas": [
+                    {
+                        "title": "Prompt release gate",
+                        "kind": "workflow_shift",
+                        "thesis": "Add a prompt release gate before rollout.",
+                        "anti_thesis": "This breaks down if failures stay too rare to justify a dedicated lane.",
+                        "why_now": "Teams now have enough agent traffic to justify structured release controls.",
+                        "what_changed": "More agent traffic means regressions show up faster and cost more.",
+                        "user_or_job": "Internal agent platform owners",
+                        "evidence_refs": [],
+                        "validation_next_step": "Pilot the gate on one high-volume workflow.",
+                        "time_horizon": "now",
+                    }
+                ],
+            }
+        ),
+        topics=["agents"],
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir / "Trends", output_dir=site_dir)
+
+    trend_html = (site_dir / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    ideas_html = (site_dir / "ideas" / "day--2026-03-09--ideas.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Counter-signal" in trend_html
+    assert "Benchmark wins still stall before deployment" in trend_html
+    assert "Field note" in trend_html
+    assert "Anti-thesis" in ideas_html
+    assert "This breaks down if failures stay too rare" in ideas_html
+    assert "Summary" in ideas_html
+    assert "Opportunities" in ideas_html
 
 
 def test_export_trend_static_site_home_shell_links_back_to_repo_and_quickstart(

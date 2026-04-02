@@ -62,6 +62,9 @@ Multi-instance deployments now use one child config per instance plus a
   delivery.
 - Build trend briefs, idea briefs, PDFs, and a static site from stored local
   state.
+- Write adjacent structured sidecars for trend and idea notes so repair,
+  localization, and site export can rebuild from stored state instead of
+  parsing reader-facing prose.
 - Inspect runs through structured logs, SQLite metrics, and optional debug
   artifacts.
 
@@ -205,6 +208,11 @@ Check these paths after the run:
 - `./data/recoleta.db`
 - When the day has enough evidence: `./data/outputs/Ideas/` with canonical idea
   `.md` notes and adjacent `.presentation.json` sidecars
+
+Those sidecars are the structured projection contract for downstream output.
+Trend sidecars carry ranked shifts plus an optional counter-signal. Idea
+sidecars carry best-bet ordering, alternates, anti-thesis, and evidence
+metadata.
 
 Then open the [first output tour](./docs/guides/first-output-tour.md) to compare
 your local files with sample output.
@@ -374,6 +382,15 @@ Where outputs go:
 - Obsidian notes: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
 - Telegram: sent to `TELEGRAM_CHAT_ID`
 
+Current projection notes:
+
+- New trend and idea notes write the current presentation sidecar schema.
+- Trend sidecars include ranked shifts and an optional counter-signal block.
+- Idea sidecars include one best bet, up to two alternates, anti-thesis, and
+  evidence metadata.
+- Site export and translation prefer sidecars first and fall back to markdown
+  when older artifacts do not have a usable sidecar.
+
 For a migrated fleet, each child instance gets its own `MARKDOWN_OUTPUT_DIR`.
 The fleet manifest sits above those child output trees.
 - SQLite state: `RECOLETA_DB_PATH`
@@ -442,6 +459,14 @@ uv run recoleta inspect runs list --limit 5 --json
 ```
 
 When you are scripting a subcommand, check `--help` for its `--json` support.
+
+Repair and backfill notes:
+
+- `recoleta repair outputs` rebuilds markdown, sibling trend/idea sidecars,
+  optional site output, and optional PDFs from stored DB state.
+- `recoleta stage translate backfill` regenerates localized trend/idea
+  projections from stored canonical state and rewrites localized sidecars for
+  those notes.
 
 For fleet operator recipes, daemon schedules, translation backfills, repair
 workflows, and admin commands, see

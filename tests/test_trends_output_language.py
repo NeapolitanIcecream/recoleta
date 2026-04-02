@@ -17,7 +17,8 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "do not add a Topics/主题 section inside overview_md" in instructions
     assert "Tools only access the active target period" in instructions
     assert "direct editorial judgment, not a topic inventory" in instructions
-    assert "2 or 3 ranked shifts ordered by importance" in instructions
+    assert "1 to 3 ranked shifts ordered by importance" in instructions
+    assert "counter-signal" in instructions.lower()
     assert "at most three named systems, papers, or benchmarks" in instructions
     assert "Keep raw prev_n tokens only in evolution.signals[].history_windows" in instructions
     assert "The goal is not to ban every phrase once." in instructions

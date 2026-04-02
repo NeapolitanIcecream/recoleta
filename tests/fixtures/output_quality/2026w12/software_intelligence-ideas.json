@@ -1,0 +1,200 @@
+{
+  "scope": "software_intelligence",
+  "surface_kind": "ideas",
+  "legacy_excerpt": "- Kind: tooling_wedge\n- Time horizon: now\n- User/job: Platform engineering and developer productivity teams selecting or governing coding agents",
+  "canonical_payload": {
+    "granularity": "week",
+    "ideas": [
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 720,
+            "reason": "Shows new demand for repository-grounded evaluation that requires active exploration rather than direct-answer QA, with a ~13-point gain from agentic runs and a benchmark built from long-tail executable repositories."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 736,
+            "reason": "Shows a major remaining failure mode: agents generate valid-looking tests far more often than truly fault-triggering tests, so debugging quality is overstated by weaker metrics."
+          }
+        ],
+        "kind": "tooling_wedge",
+        "thesis": "Build an evaluation service for engineering teams adopting coding agents that runs repository-grounded tasks, hidden-bug witness generation, and regression checks together, so teams can measure whether an agent can actually explore a codebase, expose latent bugs, and avoid damaging fixes before rollout.",
+        "time_horizon": "now",
+        "title": "Repository-grounded evaluation harness for coding agents",
+        "user_or_job": "Platform engineering and developer productivity teams selecting or governing coding agents",
+        "validation_next_step": "Run 20-30 internal repositories through a prototype harness that combines repository QA, bug-witness generation, and regression scoring; measure whether rankings differ materially from current pass-rate or demo-task evaluations.",
+        "what_changed": "This week produced harder benchmarks that specifically remove questions solvable without real repository exploration and isolate fault-target reasoning as a separate bottleneck in debugging.",
+        "why_now": "Teams now have concrete evidence that common evaluation setups miss the capabilities that matter in production. SWE-QA-Pro shows large gains only when agents can actively inspect repositories, while VibePass shows that valid-looking tests do not imply real bug exposure or better repair."
+      },
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 684,
+            "reason": "Provides direct evidence that policy-first enforcement can measurably reduce unsafe tool use, with violation prevention improving to 0.597-0.681 in controlled runs, but with explicit utility trade-offs."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 610,
+            "reason": "Shows practical deterministic enforcement in the tool path, including 25 ms decisions, locked self-protection rules, and credential gating without another LLM in the approval loop."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 599,
+            "reason": "Shows enterprise demand for centralized interception, policy enforcement, and audit logging across Claude Code, Cursor, Windsurf, and MCP-based tools."
+          }
+        ],
+        "kind": "new_build",
+        "thesis": "Build a policy enforcement and audit layer for coding agents that sits in front of shell, file, network, and MCP tools, with deterministic decisions, approval gates, and replayable logs tuned for software delivery workflows.",
+        "time_horizon": "now",
+        "title": "Deterministic tool-path policy enforcement for coding agents",
+        "user_or_job": "Security engineering and platform governance teams responsible for allowing coding agents in production environments",
+        "validation_next_step": "Pilot a proxy or hook-based enforcement layer on one engineering team using Claude Code or Cursor; track blocked destructive actions, approval volume, false blocks, and time-to-resolution for two weeks.",
+        "what_changed": "Guardrails moved from prompt-level guidance to executable controls in the runtime path, and new work now measures the safety versus utility trade-off instead of treating guardrails as a soft policy layer.",
+        "why_now": "Coding agents are no longer confined to chat. They run shell commands, access credentials, and operate across repositories and services. This week brought both practical implementations and benchmark-style evidence that policy layers can intercept actions and materially reduce unsafe behavior."
+      },
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 589,
+            "reason": "Shows concrete low-cost long-horizon orchestration with 6 workers, 18 executions, 8 hours, memory reuse, dependency scanning, and regression handling in a single overnight cycle."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 620,
+            "reason": "Shows why orchestration quality now depends on context assembly, tool loading, sub-agent boundaries, and memory, with evidence of context degradation at ~25% fill and tool overload harming selection accuracy."
+          }
+        ],
+        "kind": "tooling_wedge",
+        "thesis": "Build a runtime operations layer for coding-agent teams that manages durable task queues, memory compaction, context budgeting, worker isolation, and overnight replay so agents can run long jobs without silent degradation.",
+        "time_horizon": "near",
+        "title": "Runtime operations layer for long-running coding-agent workflows",
+        "user_or_job": "Developer infrastructure teams operating multi-step agent workflows for maintenance, dependency updates, and repository tasks",
+        "validation_next_step": "Instrument one recurring overnight workflow such as dependency maintenance or flaky-test triage, then compare success rate, token use, and human intervention rate with and without context budgeting, worker isolation, and persistent state.",
+        "what_changed": "The strongest improvements are increasingly coming from workflow design and runtime control rather than the base model alone, and practical systems now show multi-hour, multi-worker runs at low cost.",
+        "why_now": "Teams can now attempt continuous agent operations, but long-running jobs expose context rot, tool sprawl, and state-management failures. This week adds both a concrete overnight operating example and implementation-level evidence that memory and context engineering are now first-order bottlenecks."
+      },
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 736,
+            "reason": "Shows that self-generated tests only help repair when they truly witness the bug; otherwise they can reduce repair quality below unguided baselines."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 720,
+            "reason": "Shows that repository exploration and read-only command-line interaction materially improve understanding on harder repository tasks, suggesting investigation should precede patch generation."
+          }
+        ],
+        "kind": "workflow_shift",
+        "thesis": "Build a debugging copilot focused on witness generation before repair: it should search the repository, propose edge-case hypotheses, synthesize discriminative tests, and only then hand off to repair generation when the witness is strong enough.",
+        "time_horizon": "near",
+        "title": "Bug-witness generation workflow for autonomous debugging",
+        "user_or_job": "Application engineers and QA teams using agents to investigate regressions that pass visible tests",
+        "validation_next_step": "Test a prototype on a set of recent internal regressions that escaped existing tests; compare repair success and false-fix rate between direct patch generation and a witness-first workflow.",
+        "what_changed": "Research now isolates fault-target reasoning as a distinct bottleneck and shows that repair pipelines fail mainly because they cannot generate the right bug-exposing case, not because they cannot write plausible code or tests.",
+        "why_now": "Current coding agents look stronger than they are when evaluated on visible-test pass rates. This week’s evidence suggests the main unmet need is not another patch generator, but a workflow that can produce trustworthy bug witnesses before editing code."
+      }
+    ],
+    "period_end": "2026-03-23T00:00:00+00:00",
+    "period_start": "2026-03-16T00:00:00+00:00",
+    "summary_md": "The strongest why-now opportunities this week are not new code generators. They are infrastructure around coding agents: harder evaluation, executable guardrails, and runtime control for long-running workflows.\n\nThe evidence is strongest for four concrete wedges:\n1. repository-grounded evaluation for real codebase exploration and latent-bug exposure,\n2. deterministic policy enforcement in the tool path,\n3. runtime operations for durable multi-worker agent jobs, and\n4. witness-first debugging workflows that generate bug-exposing tests before patching.\n\nI excluded weaker ideas around broad multi-agent orchestration unless they tied to a specific job and new evidence. The selected ideas are grounded in documents that show either a measurable delta this week or a concrete operational pattern that appears newly practical.",
+    "title": "Why-now ideas for coding agents moving into evaluation, orchestration, and guardrails"
+  },
+  "source_documents": [
+    {
+      "legacy_doc_id": 589,
+      "title": "AskAlf – Self-hosted AI workforce that runs 24/7",
+      "canonical_url": "https://github.com/askalf/askalf",
+      "source": "hn",
+      "authors": [
+        "jsprayberry87"
+      ],
+      "published_at": "2026-03-22T23:47:05.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 599,
+      "title": "AI coding agents run shell commands with no audit trail. I built a fix",
+      "canonical_url": "https://www.oculisecurity.com/",
+      "source": "hn",
+      "authors": [
+        "rellaElla"
+      ],
+      "published_at": "2026-03-21T23:55:49.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 610,
+      "title": "Show HN: Signet-eval offers deterministic policy enforcement for Claude Code",
+      "canonical_url": "https://jmcentire.github.io/signet-eval/",
+      "source": "hn",
+      "authors": [
+        "jmcentire2025"
+      ],
+      "published_at": "2026-03-21T22:41:20.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 620,
+      "title": "How 30+ AI agent frameworks handle context rot, memory and tools",
+      "canonical_url": "https://github.com/vasilyevdm/ai-agent-handbook",
+      "source": "hn",
+      "authors": [
+        "rocketrider"
+      ],
+      "published_at": "2026-03-20T22:54:01.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 684,
+      "title": "Guardrails as Infrastructure: Policy-First Control for Tool-Orchestrated Workflows",
+      "canonical_url": "http://arxiv.org/abs/2603.18059v1",
+      "source": "arxiv",
+      "authors": [
+        "Akshey Sigdel",
+        "Rista Baral"
+      ],
+      "published_at": "2026-03-18T01:19:33.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 720,
+      "title": "SWE-QA-Pro: A Representative Benchmark and Scalable Training Recipe for Repository-Level Code Understanding",
+      "canonical_url": "http://arxiv.org/abs/2603.16124v1",
+      "source": "arxiv",
+      "authors": [
+        "Songcheng Cai",
+        "Zhiheng Lyu",
+        "Yuansheng Ni",
+        "Xiangchao Chen",
+        "Baichuan Zhou",
+        "Shenzhe Zhu",
+        "Yi Lu",
+        "Haozhe Wang",
+        "Chi Ruan",
+        "Benjamin Schneider",
+        "Weixu Zhang",
+        "Xiang Li",
+        "Andy Zheng",
+        "Yuyu Zhang",
+        "Ping Nie",
+        "Wenhu Chen"
+      ],
+      "published_at": "2026-03-17T05:12:48.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 736,
+      "title": "VIBEPASS: Can Vibe Coders Really Pass the Vibe Check?",
+      "canonical_url": "http://arxiv.org/abs/2603.15921v1",
+      "source": "arxiv",
+      "authors": [
+        "Srijan Bansal",
+        "Jiao Fangkai",
+        "Yilun Zhou",
+        "Austin Xu",
+        "Shafiq Joty",
+        "Semih Yavuz"
+      ],
+      "published_at": "2026-03-16T21:14:28.000000+00:00"
+    }
+  ]
+}

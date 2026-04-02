@@ -249,6 +249,48 @@ class TrendEvolutionSection(BaseModel):
     signals: list[TrendEvolutionSignal] = Field(default_factory=list)
 
 
+class TrendCounterSignalEvidenceRef(BaseModel):
+    doc_id: int
+    chunk_index: int = 0
+    reason: str | None = None
+
+    @field_validator("doc_id")
+    @classmethod
+    def _validate_doc_id(cls, value: int) -> int:
+        normalized = int(value)
+        if normalized <= 0:
+            raise ValueError("doc_id must be > 0")
+        return normalized
+
+    @field_validator("chunk_index")
+    @classmethod
+    def _validate_chunk_index(cls, value: int) -> int:
+        normalized = int(value)
+        if normalized < 0:
+            raise ValueError("chunk_index must be >= 0")
+        return normalized
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_optional_reason(cls, value: str | None) -> str | None:
+        normalized = " ".join(str(value or "").split()).strip()
+        return normalized or None
+
+
+class TrendCounterSignal(BaseModel):
+    title: str
+    summary: str
+    evidence_refs: list[TrendCounterSignalEvidenceRef] = Field(default_factory=list)
+
+    @field_validator("title", "summary")
+    @classmethod
+    def _validate_required_text(cls, value: str) -> str:
+        normalized = " ".join(str(value or "").split()).strip()
+        if not normalized:
+            raise ValueError("counter signal text fields must not be empty")
+        return normalized
+
+
 class TrendPayload(BaseModel):
     title: str
     granularity: str  # day|week|month
@@ -259,6 +301,7 @@ class TrendPayload(BaseModel):
     clusters: list[TrendCluster] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
     evolution: TrendEvolutionSection | None = None
+    counter_signal: TrendCounterSignal | None = None
 
 
 def prev_level_for_granularity(granularity: str) -> str:

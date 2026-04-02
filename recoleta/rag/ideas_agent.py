@@ -71,6 +71,10 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Each idea must identify a concrete user/job, what changed, and the next validation step."
     )
     base += (
+        " Each emitted idea should also include a short anti-thesis:"
+        " the clearest condition under which the thesis would stop being compelling."
+    )
+    base += (
         " Emit 0 to 3 ideas total, ordered by confidence and practical upside."
         " The first idea must be the clear best bet; any remaining ideas must read as alternates rather than equal-weight peers."
     )
@@ -142,6 +146,7 @@ def build_trend_ideas_prompt_payload(
             "Prefer 0-3 ideas; omit weak ideas instead of filling the list.",
             "If any idea is emitted, the first one must be the clear best bet and any later ones must be explicit alternates.",
             "Each idea must answer what to build or investigate, why now, what changed, and who it helps.",
+            "Each emitted idea should also name the clearest condition under which the thesis breaks.",
             "Name the buyer trigger or operational pain directly instead of using generic platform language.",
             "Use evidence_refs to point to the strongest supporting documents.",
             "Do not restate the trend summary as the final output.",

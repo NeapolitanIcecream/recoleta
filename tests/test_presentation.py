@@ -6,7 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from recoleta.presentation import (
+    build_idea_presentation_v2,
     build_idea_presentation_v1,
+    build_trend_presentation_v2,
     build_trend_presentation_v1,
     display_idea_kind,
     display_idea_time_horizon,
@@ -14,6 +16,7 @@ from recoleta.presentation import (
     is_localized_output_path,
     resolve_presentation_language_code,
     trend_display_labels,
+    validate_presentation,
     validate_presentation_v1,
     write_presentation_sidecar,
 )
@@ -77,6 +80,74 @@ def test_validate_presentation_v1_allows_single_ranked_shift_when_evidence_is_th
     assert validate_presentation_v1(presentation) == []
 
 
+def test_validate_presentation_v1_allows_legacy_empty_ranked_shifts() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+        title="Verification gets operational",
+        overview_md="Teams are tightening release discipline.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[],
+    )
+    presentation["content"]["ranked_shifts"] = []
+
+    assert validate_presentation_v1(presentation) == []
+
+
+def test_validate_presentation_v2_rejects_empty_ranked_shifts() -> None:
+    presentation = build_trend_presentation_v2(
+        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+        title="Verification gets operational",
+        overview_md="Teams are tightening release discipline.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[],
+    )
+    presentation["content"]["ranked_shifts"] = []
+
+    errors = validate_presentation(presentation)
+
+    assert "trend ranked_shifts must contain at least 1 entry" in errors
+
+
+def test_validate_presentation_v1_rejects_duplicate_or_out_of_order_shift_ranks() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/week--2026-W10--trend--81.md",
+        title="Week 10 roundup",
+        overview_md="Weekly synthesis.",
+        evolution={
+            "signals": [
+                {
+                    "theme": "Verification loops",
+                    "summary": "Teams now quantify release risk.",
+                    "history_windows": ["prev_1"],
+                },
+                {
+                    "theme": "Operator lanes",
+                    "summary": "Review queues are moving into the main workflow.",
+                    "history_windows": [],
+                },
+            ]
+        },
+        history_window_refs={
+            "prev_1": {
+                "title": "Earlier verification push",
+                "label": "2026-W10",
+            }
+        },
+        clusters=[],
+    )
+    presentation["content"]["ranked_shifts"][0]["rank"] = 2
+    presentation["content"]["ranked_shifts"][1]["rank"] = 2
+
+    errors = validate_presentation_v1(presentation)
+
+    assert (
+        "trend ranked_shifts ranks must be consecutive integers starting at 1"
+        in errors
+    )
+
+
 def test_validate_presentation_v1_requires_complete_label_sets_and_required_fields() -> None:
     presentation = build_idea_presentation_v1(
         source_markdown_path="Ideas/day--2026-03-02--ideas.md",
@@ -107,6 +178,22 @@ def test_write_presentation_sidecar_rejects_invalid_contracts(tmp_path: Path) ->
             note_path=tmp_path / "Ideas" / "day--2026-03-02--ideas.md",
             presentation=presentation,
         )
+
+
+def test_validate_presentation_v1_rejects_idea_tiers_that_break_best_bet_ordering() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate"), _idea(title="Operator review lane")],
+    )
+    presentation["content"]["opportunities"][0]["tier"] = "alternate"
+    presentation["content"]["opportunities"][1]["tier"] = "best_bet"
+
+    errors = validate_presentation_v1(presentation)
+
+    assert "idea opportunities[0] must be best_bet" in errors
+    assert "idea opportunities after the first must be alternate" in errors
 
 
 def test_validate_presentation_v1_does_not_treat_synthesis_as_schema_label_leakage() -> None:
@@ -235,6 +322,32 @@ def test_validate_presentation_v1_rejects_non_mapping_idea_opportunities() -> No
     errors = validate_presentation_v1(presentation)
 
     assert "idea opportunities entries must be mappings" in errors
+
+
+def test_validate_presentation_v1_allows_legacy_empty_idea_opportunities() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+    presentation["content"]["opportunities"] = []
+
+    assert validate_presentation_v1(presentation) == []
+
+
+def test_validate_presentation_v2_rejects_empty_idea_opportunities() -> None:
+    presentation = build_idea_presentation_v2(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+    presentation["content"]["opportunities"] = []
+
+    errors = validate_presentation(presentation)
+
+    assert "idea opportunities must contain at least 1 entry" in errors
 
 
 def test_presentation_labels_preserve_traditional_chinese_family() -> None:
@@ -368,3 +481,104 @@ def test_build_trend_presentation_v1_projects_representative_source_metadata() -
     assert representative["href"] == "../Inbox/2026-03-02--codescout.md"
     assert representative["source_type"] == "paper"
     assert representative["confidence"] == "high"
+
+
+def test_build_trend_presentation_v1_falls_back_to_a_single_ranked_shift() -> None:
+    presentation = build_trend_presentation_v1(
+        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+        title="Verification gets operational",
+        overview_md="Teams are tightening release discipline.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[],
+    )
+
+    ranked_shifts = presentation["content"]["ranked_shifts"]
+
+    assert len(ranked_shifts) == 1
+    assert ranked_shifts[0]["rank"] == 1
+    assert ranked_shifts[0]["title"] == "Verification gets operational"
+    assert ranked_shifts[0]["summary"] == "Teams are tightening release discipline."
+
+
+def test_validate_presentation_v1_rejects_invalid_source_metadata_values() -> None:
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[_idea(title="Prompt CI gate")],
+    )
+    presentation["content"]["opportunities"][0]["evidence"][0]["confidence"] = "certain"
+
+    errors = validate_presentation_v1(presentation)
+
+    assert (
+        "idea opportunities.evidence.confidence must be one of: high, low, medium"
+        in errors
+    )
+
+
+def test_validate_presentation_v2_requires_anti_thesis_on_idea_opportunities() -> None:
+    presentation = build_idea_presentation_v2(
+        source_markdown_path="Ideas/week--2026-W12--ideas.md",
+        title="Why-now ideas for coding agents",
+        summary_md="Harder evaluation and policy enforcement now look commercially viable.",
+        ideas=[_idea(title="Repository-grounded evaluation harness")],
+    )
+
+    assert validate_presentation(presentation) == []
+
+    del presentation["content"]["opportunities"][0]["anti_thesis"]
+    errors = validate_presentation(presentation)
+
+    assert "idea opportunities must include: anti_thesis" in errors
+
+
+def test_validate_presentation_v2_accepts_structured_counter_signal() -> None:
+    presentation = build_trend_presentation_v2(
+        source_markdown_path="Trends/week--2026-W12--trend--74.md",
+        title="Coding Agents Move Up the Stack",
+        overview_md="Governance and runtime control are moving into the core product surface.",
+        evolution={
+            "signals": [
+                {
+                    "theme": "Runtime control moves earlier",
+                    "summary": "Teams are moving policy checks into the action path.",
+                    "history_windows": ["prev_1"],
+                }
+            ]
+        },
+        history_window_refs={
+            "prev_1": {
+                "title": "Earlier runtime control push",
+                "label": "2026-W11",
+            }
+        },
+        clusters=[],
+        counter_signal={
+            "title": "Utility still degrades under tighter enforcement",
+            "summary": "Guardrail-heavy runtimes still pay a workflow-friction cost when policies are too blunt.",
+            "evidence_refs": [
+                {
+                    "doc_id": 684,
+                    "chunk_index": 0,
+                    "reason": "Guardrails as Infrastructure reports explicit utility trade-offs.",
+                    "title": "Guardrails as Infrastructure",
+                    "href": "../Inbox/2026-03-18--guardrails-as-infrastructure.md",
+                    "authors": ["Akshey Sigdel", "Rista Baral"],
+                    "source": "arxiv",
+                    "score": 0.82,
+                }
+            ],
+        },
+    )
+
+    assert validate_presentation(presentation) == []
+
+    presentation["content"]["counter_signal"]["evidence"][0]["confidence"] = "certain"
+    errors = validate_presentation(presentation)
+
+    assert (
+        "trend content.counter_signal.evidence.confidence must be one of: high, low, medium"
+        in errors
+    )

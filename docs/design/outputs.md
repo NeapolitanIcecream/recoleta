@@ -71,12 +71,18 @@ Trend notes are the canonical source for all downstream trend surfaces:
 - when available, trend note frontmatter also carries `pass_output_id` / `pass_kind` so projections can be traced back to canonical `trend_synthesis` output
 - canonical trend markdown notes also emit adjacent `*.presentation.json`
   sidecars as a structured presentation contract for downstream adoption
+- newly generated trend and idea sidecars write the current presentation schema
+  and keep reader compatibility with older sidecars
+- current trend sidecars can carry ranked shifts plus an optional
+  `counter_signal`
 
 Idea notes follow the same projection contract:
 
 - `markdown` and `obsidian` idea notes are derived from canonical `trend_ideas` pass outputs
 - canonical idea markdown notes also emit adjacent `*.presentation.json`
   sidecars in the same directory
+- current idea sidecars carry best-bet ordering, alternates, optional
+  `anti_thesis`, and evidence metadata
 - searchable `doc_type=idea` documents are also derived projections, not canonical pass state
 - idea note frontmatter and idea document meta chunks carry `pass_output_id` plus the upstream `trend_synthesis` pointer
 - those provenance-bearing document `meta` chunks are system-only metadata: they are preserved for repair/audit, but excluded from agent-visible FTS/hybrid retrieval
@@ -90,6 +96,8 @@ Localized notes are projections, not canonical state:
 - localized notes are materialized under `MARKDOWN_OUTPUT_DIR/Localized/<language>/...`
 - localized trend and idea notes emit adjacent `.presentation.json` sidecars at
   materialize time; localized item notes remain markdown-only
+- translation and site rendering prefer sibling sidecars first and fall back to
+  markdown parsing when those sidecars are missing or invalid
 - canonical `analyses`, `pass_outputs`, and `documents` remain unchanged
 
 ## Trend PDF surface
@@ -144,6 +152,9 @@ Important behavior:
   vault path, rerenders trend markdown from stored DB documents without
   mutating upstream ingest/analyze state, and can optionally refresh
   site/PDF artifacts.
+- when stored trend/idea state exists, the same repair flow also refreshes
+  sibling trend/idea sidecars instead of leaving regenerated markdown on an
+  older projection contract.
 - when stored trend/idea metadata includes projection provenance,
   `recoleta repair outputs` preserves that provenance in the regenerated
   markdown/obsidian notes instead of dropping it.

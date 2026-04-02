@@ -53,6 +53,7 @@ class TrendIdea(BaseModel):
     title: str
     kind: str
     thesis: str
+    anti_thesis: str | None = None
     why_now: str
     what_changed: str
     user_or_job: str
@@ -76,6 +77,12 @@ class TrendIdea(BaseModel):
         if not normalized:
             raise ValueError("idea text fields must not be empty")
         return normalized
+
+    @field_validator("anti_thesis")
+    @classmethod
+    def _validate_optional_text(cls, value: str | None) -> str | None:
+        normalized = " ".join(str(value or "").split()).strip()
+        return normalized or None
 
     @field_validator("kind")
     @classmethod
@@ -242,6 +249,24 @@ def build_trend_snapshot_pack_md(
                         )
                         if part
                     )
+                )
+            )
+
+    counter_signal = trend_payload.counter_signal
+    if counter_signal is not None:
+        lines.extend(
+            [
+                "",
+                "### Counter-signal",
+                f"- title={str(counter_signal.title or '').strip()}",
+                str(counter_signal.summary or "").strip(),
+            ]
+        )
+        for ref in counter_signal.evidence_refs or []:
+            lines.append(
+                (
+                    "- evidence_ref "
+                    f"doc_id={int(ref.doc_id)} chunk_index={int(ref.chunk_index)}"
                 )
             )
 

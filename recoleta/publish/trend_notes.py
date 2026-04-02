@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from recoleta.presentation import (
-    build_trend_presentation_v1,
+    build_trend_presentation_v2,
     presentation_sidecar_path,
     resolve_presentation_language_code,
     trend_display_labels,
@@ -31,7 +31,10 @@ __all__ = [
     "write_obsidian_trend_note",
 ]
 
-_HISTORY_WINDOW_MENTION_RE = re.compile(r"(?<![\w\[])(prev_\d+)(?![\w\]])")
+_HISTORY_WINDOW_MENTION_RE = re.compile(
+    r"(?<![\w\[])(prev_\d+)(?![\w\]])",
+    re.IGNORECASE,
+)
 _HISTORY_WINDOW_REPEAT_WRAPPERS: tuple[tuple[str, str], ...] = (
     ("《", "》"),
     ("“", "”"),
@@ -187,6 +190,13 @@ def _format_history_window_display(
         return raw
     ref = (history_window_refs or {}).get(raw)
     if not isinstance(ref, dict):
+        normalized_raw = raw.lower()
+        for candidate_key, candidate_ref in (history_window_refs or {}).items():
+            if str(candidate_key or "").strip().lower() != normalized_raw:
+                continue
+            ref = candidate_ref
+            break
+    if not isinstance(ref, dict):
         return raw
     window_id = _single_line(str(ref.get("window_id") or raw), fallback=raw)
     label = _single_line(str(ref.get("label") or ""), fallback="")
@@ -231,12 +241,16 @@ def _linkify_history_window_mentions(
 ) -> str:
     raw = str(text or "").strip()
     refs = history_window_refs or {}
-    if not raw or not refs or "prev_" not in raw:
+    if not raw or not refs or _HISTORY_WINDOW_MENTION_RE.search(raw) is None:
         return raw
 
     def _replace(match: re.Match[str]) -> str:
         window = str(match.group(1) or "").strip()
-        if window not in refs:
+        ref_exists = window in refs or any(
+            str(candidate_key or "").strip().lower() == window.lower()
+            for candidate_key in refs
+        )
+        if not ref_exists:
             return window
         return _format_history_window_display(
             window=window,
@@ -534,6 +548,8 @@ def _append_cluster_sections(
     lines: list[str],
     clusters: list[dict[str, Any]] | None,
     display_labels: dict[str, str],
+    note_dir: Path,
+    history_window_refs: dict[str, dict[str, Any]] | None,
 ) -> None:
     lines.extend(["", f"## {display_labels['clusters']}"])
     normalized_clusters = clusters or []
@@ -542,7 +558,11 @@ def _append_cluster_sections(
         return
     for cluster in normalized_clusters:
         name = _single_line(str(cluster.get("name") or ""), fallback="Cluster")
-        desc = str(cluster.get("description") or "").strip()
+        desc = _render_evolution_text(
+            str(cluster.get("description") or "").strip(),
+            note_dir=note_dir,
+            history_window_refs=history_window_refs,
+        )
         lines.extend(["", f"### {name}", ""])
         if desc:
             lines.append(desc)
@@ -558,6 +578,45 @@ def _append_cluster_sections(
         lines.append("")
 
 
+def _append_counter_signal_section(
+    *,
+    lines: list[str],
+    counter_signal: dict[str, Any] | None,
+    display_labels: dict[str, str],
+    note_dir: Path,
+    history_window_refs: dict[str, dict[str, Any]] | None,
+) -> None:
+    if not isinstance(counter_signal, dict):
+        return
+    title = _single_line(str(counter_signal.get("title") or ""), fallback="")
+    summary = _render_evolution_text(
+        str(counter_signal.get("summary") or "").strip(),
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
+    )
+    evidence = counter_signal.get("evidence") or []
+    if not title and not summary and not evidence:
+        return
+    lines.extend(["", f"## {display_labels['counter_signal']}"])
+    if title:
+        lines.extend(["", f"### {title}"])
+    if summary:
+        lines.extend(["", summary])
+    if isinstance(evidence, list) and evidence:
+        lines.extend(["", f"#### {display_labels['representative_sources']}"])
+        for entry in evidence:
+            rendered_line, _ = _cluster_representative_line(
+                {
+                    "title": entry.get("title"),
+                    "note_href": entry.get("note_href") or entry.get("href"),
+                    "url": entry.get("url"),
+                    "authors": entry.get("authors"),
+                }
+            )
+            if rendered_line is not None:
+                lines.append(rendered_line)
+
+
 def _render_trend_note_lines(
     *,
     title: str,
@@ -570,6 +629,7 @@ def _render_trend_note_lines(
     topics: list[str],
     evolution: dict[str, Any] | None,
     history_window_refs: dict[str, dict[str, Any]] | None,
+    counter_signal: dict[str, Any] | None,
     clusters: list[dict[str, Any]] | None,
     highlights: list[str] | None,
     output_language: str | None,
@@ -604,10 +664,15 @@ def _render_trend_note_lines(
         "",
     ]
     display_labels = trend_display_labels(language_code=display_language_code)
+    rendered_overview_md = _render_evolution_text(
+        overview_md,
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
+    )
     lines.extend(
         [
             f"## {display_labels['overview']}",
-            (overview_md or "").strip(),
+            rendered_overview_md,
         ]
     )
     _append_evolution_section(
@@ -617,10 +682,19 @@ def _render_trend_note_lines(
         history_window_refs=history_window_refs,
         output_language=output_language,
     )
+    _append_counter_signal_section(
+        lines=lines,
+        counter_signal=counter_signal,
+        display_labels=display_labels,
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
+    )
     _append_cluster_sections(
         lines=lines,
         clusters=clusters,
         display_labels=display_labels,
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
     )
 
     return lines
@@ -639,6 +713,7 @@ def _write_trend_note(
     topics: list[str],
     evolution: dict[str, Any] | None,
     history_window_refs: dict[str, dict[str, Any]] | None,
+    counter_signal: dict[str, Any] | None,
     clusters: list[dict[str, Any]] | None,
     highlights: list[str] | None,
     output_language: str | None,
@@ -675,6 +750,7 @@ def _write_trend_note(
         topics=topics,
         evolution=evolution,
         history_window_refs=history_window_refs,
+        counter_signal=counter_signal,
         clusters=clusters,
         highlights=highlights,
         output_language=output_language,
@@ -693,13 +769,14 @@ def _write_trend_note(
     )
     note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     if emit_presentation_sidecar:
-        presentation = build_trend_presentation_v1(
+        presentation = build_trend_presentation_v2(
             source_markdown_path=f"{note_dir.name}/{note_path.name}",
             title=sanitized_title,
             overview_md=sanitized_overview_md,
             evolution=evolution,
             history_window_refs=history_window_refs,
             clusters=clusters,
+            counter_signal=counter_signal,
             language_code=resolved_language_code,
             display_language_code=resolved_display_language_code,
         )
@@ -726,6 +803,7 @@ def write_obsidian_trend_note(
     topics: list[str],
     evolution: dict[str, Any] | None = None,
     history_window_refs: dict[str, dict[str, Any]] | None = None,
+    counter_signal: dict[str, Any] | None = None,
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
     output_language: str | None = None,
@@ -747,6 +825,7 @@ def write_obsidian_trend_note(
         topics=topics,
         evolution=evolution,
         history_window_refs=history_window_refs,
+        counter_signal=counter_signal,
         clusters=clusters,
         highlights=highlights,
         output_language=output_language,
@@ -771,6 +850,7 @@ def write_markdown_trend_note(
     topics: list[str],
     evolution: dict[str, Any] | None = None,
     history_window_refs: dict[str, dict[str, Any]] | None = None,
+    counter_signal: dict[str, Any] | None = None,
     clusters: list[dict[str, Any]] | None = None,
     highlights: list[str] | None = None,
     output_language: str | None = None,
@@ -795,6 +875,7 @@ def write_markdown_trend_note(
         topics=topics,
         evolution=evolution,
         history_window_refs=history_window_refs,
+        counter_signal=counter_signal,
         clusters=clusters,
         highlights=highlights,
         output_language=output_language,

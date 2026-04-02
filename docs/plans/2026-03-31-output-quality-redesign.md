@@ -2,14 +2,14 @@
 
 Date: 2026-03-31
 
-Status: Partially implemented
+Status: Implemented in the current tree
 
-Implementation status as of 2026-04-01:
+Implementation status as of 2026-04-02:
 
-- Phase 1 has landed in PR #25 (`feat(output-quality): land phase 1 presentation groundwork`).
-- Phase 2 is implemented in the current tree.
+- Phases 1-4 are implemented in the current tree.
 - Canonical English and localized trend/idea markdown now emit adjacent
-  `*.presentation.json` sidecars with internal v1 validation at write time.
+  `*.presentation.json` sidecars with v1/v2 reader compatibility and v2 write
+  validation.
 - Shared reader-facing prompt style guardrails are wired into trend, idea, and
   translation prompts.
 - Translation now prefers canonical sibling sidecars as structured context and
@@ -17,8 +17,10 @@ Implementation status as of 2026-04-01:
   missing.
 - Static site trend and idea detail pages now prefer sibling sidecars and fall
   back to markdown parsing when sidecars are missing or invalid.
-- `anti_thesis` remains deferred because `TrendIdeasPayload` stays frozen in
-  Phases 1-2.
+- `TrendIdea` now carries optional `anti_thesis`, and `TrendPayload` now
+  carries optional structured `counter_signal`.
+- Golden `26w12` regression fixtures and repair/backfill regression coverage now
+  run in the normal `uv run pytest` suite.
 
 ## Goal
 
@@ -171,7 +173,7 @@ English and Chinese outputs are both first-class quality targets.
 
 This redesign does not:
 
-- change canonical pass schemas for `TrendPayload` or `TrendIdeasPayload`
+- replace canonical pass outputs with a new storage/runtime model
 - move publishing to a DB-first or web-first runtime
 - redesign the entire site visual system
 - introduce a new end-user CLI in the first implementation phase
@@ -189,7 +191,7 @@ phases, not as a claim that every step is already implemented.
 Add a machine-readable presentation contract between canonical pass outputs and
 reader-facing markdown/site projections.
 
-Current state:
+Historical starting point:
 
 - canonical pass outputs exist
 - markdown notes are human-readable but not stable enough for machine parsing
@@ -230,15 +232,12 @@ Localized projections follow the same rule in the target end state:
 
 ### Versioning
 
-All sidecars use:
+Newly generated trend and idea sidecars use:
 
-- `presentation_schema_version=1`
+- `presentation_schema_version=2`
 
-The site and translation code must branch on this version. Unknown versions must
-fail closed for structured rendering and fall back to legacy markdown parsing.
-In the current implementation, sidecar versioning is enforced for canonical and
-localized trend/idea sidecars, and both translation and site rendering branch
-on this version before falling back to markdown compatibility paths.
+Site and translation readers accept both `v1` and `v2`. Unknown versions fail
+closed for structured rendering and fall back to legacy markdown parsing.
 
 ### Common envelope
 
@@ -246,7 +245,7 @@ Both trend and idea sidecars share a small envelope:
 
 ```json
 {
-  "presentation_schema_version": 1,
+  "presentation_schema_version": 2,
   "surface_kind": "trend",
   "language_code": "en",
   "source_markdown_path": "Trends/week--2026-W12--trend--586.md",
@@ -267,13 +266,13 @@ Required fields:
 `display_labels` exists so projection code never needs to infer reader-facing
 labels from raw enums or English markdown text.
 
-### TrendPresentationV1
+### TrendPresentationV2
 
 `surface_kind="trend"` sidecars must include the following content shape:
 
 ```json
 {
-  "presentation_schema_version": 1,
+  "presentation_schema_version": 2,
   "surface_kind": "trend",
   "language_code": "en",
   "source_markdown_path": "Trends/week--2026-W12--trend--586.md",
@@ -329,20 +328,20 @@ Optional fields:
 
 Trend constraints:
 
-- `ranked_shifts` length must be `2..3`
+- `ranked_shifts` length must be `1..3`
 - `counter_signal` may be `null`, but must never be filled with placeholder
   prose
 - no user-visible field may contain unresolved `prev_n` tokens; sidecar may
   keep structured history refs for linking, but final text must be fully
   rendered
 
-### IdeaPresentationV1
+### IdeaPresentationV2
 
 `surface_kind="idea"` sidecars must include the following content shape:
 
 ```json
 {
-  "presentation_schema_version": 1,
+  "presentation_schema_version": 2,
   "surface_kind": "idea",
   "language_code": "en",
   "source_markdown_path": "Ideas/week--2026-W12--ideas.md",
@@ -354,7 +353,7 @@ Trend constraints:
     "thesis": "Thesis",
     "why_now": "Why now",
     "what_changed": "What changed",
-    "anti_thesis": "What could break this thesis",
+    "anti_thesis": "Anti-thesis",
     "validation_next_step": "Validation next step",
     "evidence": "Evidence"
   },
@@ -498,7 +497,7 @@ Required prompt-level behavior:
 
 - trend title must read as a direct editorial judgment, not a topic inventory
 - overview must stay within `160` English words or `180` Chinese characters
-- output must identify `2..3` ranked shifts
+- output must identify `1..3` ranked shifts
 - output may emit one counter-signal if evidence is real; otherwise omit it
 - overview must not carry more than three named systems or papers
 - evolution must reference historical windows through structured refs only, and
@@ -508,7 +507,7 @@ Required trend brief target shape:
 
 - one headline judgment
 - one hero/dek
-- two to three ranked shifts
+- one to three ranked shifts
 - one optional counter-signal
 - supporting clusters
 
@@ -593,7 +592,7 @@ English defaults:
 - `thesis` -> `Thesis`
 - `why_now` -> `Why now`
 - `what_changed` -> `What changed`
-- `anti_thesis` -> `What could break this thesis`
+- `anti_thesis` -> `Anti-thesis`
 - `validation_next_step` -> `Validation next step`
 - `representative_sources` -> `Representative sources`
 - `counter_signal` -> `Counter-signal`
@@ -606,9 +605,9 @@ Chinese defaults:
 - `thesis` -> `核心判断`
 - `why_now` -> `为什么是现在`
 - `what_changed` -> `发生了什么变化`
-- `anti_thesis` -> `什么情况会削弱这个判断`
+- `anti_thesis` -> `不成立条件`
 - `validation_next_step` -> `下一步验证`
-- `representative_sources` -> `代表性来源`
+- `representative_sources` -> `代表来源`
 - `counter_signal` -> `反向信号`
 
 #### Sidecar generation
@@ -634,7 +633,7 @@ Repair behavior:
 
 ### 3. Translation layer
 
-Implementation target for a later phase:
+Implementation target:
 
 - `recoleta/translation.py`
 
@@ -694,7 +693,7 @@ the exact failures seen in `26w12`.
 
 ### 4. Site layer
 
-Implementation target for a later phase:
+Implementation target:
 
 - `recoleta/site.py`
 
@@ -882,9 +881,9 @@ Scope:
 - stop rendering raw enums and schema labels in markdown
 - add sidecar schemas and sidecar generation in publish/materialize
 - add internal validators
-- keep canonical pass schemas frozen in Phase 1; `anti_thesis` is deferred until
-  a later schema change instead of being inferred heuristically from existing
-  prose fields
+- keep Phase 1 additive and reader-facing first; schema expansion for
+  `anti_thesis` / `counter_signal` follows after the projection and validation
+  guardrails are in place
 
 Exit criteria:
 
@@ -893,6 +892,10 @@ Exit criteria:
 - newly generated English markdown artifacts do not leak placeholders or raw
   taxonomy
 - markdown has a stable adjacent sidecar for trend and ideas
+
+Current status as of 2026-04-02:
+
+- implemented in the current tree
 
 ### Phase 2: Translation and site adoption
 
@@ -908,7 +911,7 @@ Exit criteria:
 - localized weekly artifacts no longer leak placeholders or raw labels
 - site pages render correctly from sidecars with fallback preserved
 
-Current status as of 2026-04-01:
+Current status as of 2026-04-02:
 
 - implemented in the current tree
 
@@ -925,6 +928,10 @@ Exit criteria:
 - fixture-based regression catches the `26w12` classes of failure
 - CI blocks new placeholder or taxonomy leakage
 
+Current status as of 2026-04-02:
+
+- implemented in the current tree
+
 ### Phase 4: Historical backfill and repair follow-up
 
 Scope:
@@ -939,12 +946,20 @@ Exit criteria:
 - historical windows can be selectively repaired without changing canonical pass
   data contracts
 
+Current status as of 2026-04-02:
+
+- implemented in the current tree via `repair outputs` and
+  `stage translate backfill`
+
 ## Implementation Defaults
 
-The following defaults are fixed by this design once all phases land.
+The following defaults are fixed by this design in the current implementation.
 
-- `TrendPayload` and `TrendIdeasPayload` remain unchanged.
-- `presentation_schema_version=1` is the initial sidecar version.
+- `TrendPayload` now carries optional `counter_signal`.
+- `TrendIdea` entries inside `TrendIdeasPayload` now carry optional
+  `anti_thesis`.
+- newly generated sidecars write `presentation_schema_version=2`.
+- site and translation readers accept `presentation_schema_version=1` and `2`.
 - sidecar filenames are adjacent and use the `.presentation.json` suffix.
 - site build is sidecar-first and markdown-fallback.
 - no new end-user CLI is introduced in Phase 1.
@@ -956,10 +971,14 @@ The following defaults are fixed by this design once all phases land.
 
 Current implementation note:
 
-- Phases 1-2 are live in the current tree
+- Phases 1-4 are live in the current tree
 - canonical English and localized trend/idea projections write adjacent sidecars
 - translation is sidecar-first with payload/markdown fallback
 - site rendering is sidecar-first with markdown fallback
+- `repair outputs` regenerates markdown, sidecars, site output, and optional
+  PDFs from stored DB state when canonical rows exist
+- `stage translate backfill` regenerates localized trend/idea projections from
+  stored canonical state
 
 ## Why This Is The Right Cut
 

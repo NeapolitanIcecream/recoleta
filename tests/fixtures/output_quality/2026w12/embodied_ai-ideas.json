@@ -1,0 +1,261 @@
+{
+  "scope": "embodied_ai",
+  "surface_kind": "ideas",
+  "legacy_excerpt": "- Kind: tooling_wedge\n- Time horizon: now\n- User/job: Automation engineers and robot integrators deploying manipulation cells where success depends on controlled contact rather than only point-to-point motion.",
+  "canonical_payload": {
+    "granularity": "week",
+    "ideas": [
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 574,
+            "reason": "ForceVLA2 shows that contact-rich VLA control now benefits from explicit force-aware hybrid force-position actions, with gains over pi_0 and pi_0.5 on wiping, pressing, retrieval, and assembly."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 553,
+            "reason": "ADV shows that a verification layer can materially improve real-world robustness and reduce collisions under distribution shift, which is relevant for safety-critical contact workflows."
+          }
+        ],
+        "kind": "tooling_wedge",
+        "thesis": "Build a deployment layer for industrial robot cells that upgrades existing VLA policies with force-aware task templates and runtime action verification for contact-heavy jobs such as wiping, press-fit insertion, surface finishing, and fixture retrieval.",
+        "time_horizon": "now",
+        "title": "Force-aware runtime stack for contact-heavy industrial manipulation",
+        "user_or_job": "Automation engineers and robot integrators deploying manipulation cells where success depends on controlled contact rather than only point-to-point motion.",
+        "validation_next_step": "Pilot on two existing contact-heavy tasks in one factory cell, measuring cycle success, overload events, and recovery rate versus the current position-only policy.",
+        "what_changed": "VLAs now have concrete force-aware action formulations for contact tasks, and inference-time verification can filter unsafe or implausible action chunks before execution.",
+        "why_now": "This week produced evidence that contact-rich manipulation is no longer a niche benchmark. ForceVLA2 adds explicit force awareness and hybrid force-position control with large aggregate gains over strong VLA baselines, while ADV shows real-world robustness gains from reranking drafted actions under distribution shift. Together, they make a practical retrofit path more credible than building a new policy stack from scratch."
+      },
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 568,
+            "reason": "SimDist shows that planning-oriented world models can be pretrained in simulation and adapted in 15-30 minutes of real-world data by updating only dynamics, turning adaptation into short-horizon system identification."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 560,
+            "reason": "Kinema4D provides higher-fidelity 4D embodied simulation with exact robot kinematics and strong geometry metrics, supporting better synthetic data and simulator realism."
+          }
+        ],
+        "kind": "tooling_wedge",
+        "thesis": "Build a sim-to-real adaptation service that keeps task semantics fixed while only re-identifying local dynamics for each customer robot, tool, and material setup.",
+        "time_horizon": "now",
+        "title": "Dynamics-only sim-to-real adaptation service for robot deployments",
+        "user_or_job": "Robotics platform teams that need to move policies across robot cells, end effectors, and environment variants without weeks of on-robot finetuning.",
+        "validation_next_step": "Choose one manipulation workflow with recurring setup drift, then compare a dynamics-only adaptation loop against full policy finetuning on time-to-recovery, data required, and final task success.",
+        "what_changed": "Simulation-first training is stronger, and adaptation methods are getting narrower and more operational: preserve representation, reward, and value structure, then update only the parts that model real dynamics.",
+        "why_now": "The technical boundary is becoming clear. SimDist reports rapid real-world gains from limited data by freezing most of the world model and adapting only dynamics, while Kinema4D improves 4D simulator fidelity with explicit kinematics and a large interaction dataset. That combination lowers the cost of packaging sim-to-real adaptation as deployment infrastructure instead of a bespoke research effort."
+      },
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 535,
+            "reason": "FASTER identifies Time to First Action as a key deployment bottleneck and shows single-step first-action generation plus a streaming pipeline for much faster reaction."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 551,
+            "reason": "HeiSD reports 2.06x-2.41x real-world speedups for VLA inference while maintaining high task success, showing that decoding optimization is now a practical deployment lever."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 553,
+            "reason": "ADV shows a different inference-time path: modest overhead can buy materially better real-world success and fewer collisions, making runtime policy serving a tunable trade-off rather than a fixed model property."
+          }
+        ],
+        "kind": "tooling_wedge",
+        "thesis": "Build a robot policy serving layer that manages Time to First Action, speculative decoding, retrieval-assisted drafting, and verification as configurable runtime controls across VLA backends.",
+        "time_horizon": "now",
+        "title": "Low-latency policy serving middleware for VLA execution",
+        "user_or_job": "Embodied AI teams and robot software engineers who already have policies but need better responsiveness, safer recovery, and clearer latency-success trade-offs in deployment.",
+        "validation_next_step": "Integrate the middleware with one existing VLA policy and benchmark TTFA, control-loop frequency, task success, and safety interventions on a dynamic manipulation task.",
+        "what_changed": "A cluster of papers moved performance gains from pretraining into inference-time execution, with concrete methods for earlier first action, faster decoding, and post-generation verification.",
+        "why_now": "Deployment bottlenecks are now measurable and attackable. FASTER shows that chunked flow policies can produce the first action after one sampling step, HeiSD shows multi-fold speedups from hybrid speculative decoding, and ADV shows that reranking can improve real-world success under shift. This creates an opening for a runtime layer that sits between pretrained policies and robots."
+      },
+      {
+        "evidence_refs": [
+          {
+            "chunk_index": 0,
+            "doc_id": 526,
+            "reason": "IndoorR2X shows that combining robot observations with fixed IoT sensors into a global semantic state improves efficiency and reliability for indoor multi-robot coordination under partial observability."
+          },
+          {
+            "chunk_index": 0,
+            "doc_id": 527,
+            "reason": "X-World frames controllable world models as reproducible evaluation and training infrastructure, supporting the case for stateful testbeds and counterfactual scenario replay."
+          }
+        ],
+        "kind": "workflow_shift",
+        "thesis": "Build an indoor operations coordination system that fuses mobile robot telemetry with existing building sensors into a shared semantic state for dispatch, search reduction, and failure-aware replanning.",
+        "time_horizon": "now",
+        "title": "Shared semantic state layer for indoor robot and IoT coordination",
+        "user_or_job": "Operators of hospitals, offices, warehouses, and large facilities coordinating multiple robots across partially observable indoor spaces.",
+        "validation_next_step": "Run a limited pilot in one instrumented facility using existing cameras or door sensors, then measure search steps, path length, and operator interventions against robot-only coordination.",
+        "what_changed": "Robot planning is starting to use fixed ambient sensors as first-class state inputs rather than treating them as separate building systems, and controllable world models make reproducible replay more feasible.",
+        "why_now": "IndoorR2X provides concrete evidence that building-wide IoT context reduces wasted motion and planning cost compared with robot-only coordination, while X-World strengthens the broader case that controllable world models can support reproducible evaluation and counterfactual testing. Facilities already have sensors; the missing layer is semantic fusion and orchestration."
+      }
+    ],
+    "period_end": "2026-03-23T00:00:00+00:00",
+    "period_start": "2026-03-16T00:00:00+00:00",
+    "summary_md": "I found four evidence-grounded why-now opportunities from the snapshot and verified them against the local corpus. The strongest openings are deployment layers and workflow changes that have become newly credible because this week's papers made specific bottlenecks more tractable: force-aware contact control, dynamics-only sim-to-real adaptation, inference-time latency optimization, and shared semantic state across robots plus IoT. I excluded weaker directions where the evidence was still too benchmark-oriented or lacked a clear product wedge.",
+    "title": "Why-now ideas from Robot VLAs Turn Practical with Contact-Rich Control, Simulation-First Training, and Faster Execution"
+  },
+  "source_documents": [
+    {
+      "legacy_doc_id": 526,
+      "title": "IndoorR2X: Indoor Robot-to-Everything Coordination with LLM-Driven Planning",
+      "canonical_url": "http://arxiv.org/abs/2603.20182v1",
+      "source": "arxiv",
+      "authors": [
+        "Fan Yang",
+        "Soumya Teotia",
+        "Shaunak A. Mehta",
+        "Prajit KrisshnaKumar",
+        "Quanting Xie",
+        "Jun Liu",
+        "Yueqi Song",
+        "Li Wenkai",
+        "Atsunori Moteki",
+        "Kanji Uchino",
+        "Yonatan Bisk"
+      ],
+      "published_at": "2026-03-20T17:57:26.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 527,
+      "title": "X-World: Controllable Ego-Centric Multi-Camera World Models for Scalable End-to-End Driving",
+      "canonical_url": "http://arxiv.org/abs/2603.19979v1",
+      "source": "arxiv",
+      "authors": [
+        "Chaoda Zheng",
+        "Sean Li",
+        "Jinhao Deng",
+        "Zhennan Wang",
+        "Shijia Chen",
+        "Liqiang Xiao",
+        "Ziheng Chi",
+        "Hongbin Lin",
+        "Kangjie Chen",
+        "Boyang Wang",
+        "Yu Zhang",
+        "Xianming Liu"
+      ],
+      "published_at": "2026-03-20T14:23:32.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 535,
+      "title": "FASTER: Rethinking Real-Time Flow VLAs",
+      "canonical_url": "http://arxiv.org/abs/2603.19199v1",
+      "source": "arxiv",
+      "authors": [
+        "Yuxiang Lu",
+        "Zhe Liu",
+        "Xianzhe Fan",
+        "Zhenya Yang",
+        "Jinghua Hou",
+        "Junyi Li",
+        "Kaixin Ding",
+        "Hengshuang Zhao"
+      ],
+      "published_at": "2026-03-19T17:51:37.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 551,
+      "title": "HeiSD: Hybrid Speculative Decoding for Embodied Vision-Language-Action Models with Kinematic Awareness",
+      "canonical_url": "http://arxiv.org/abs/2603.17573v1",
+      "source": "arxiv",
+      "authors": [
+        "Zihao Zheng",
+        "Zhihao Mao",
+        "Sicheng Tian",
+        "Maoliang Li",
+        "Jiayu Chen",
+        "Xinhao Sun",
+        "Zhaobo Zhang",
+        "Xuanzhe Liu",
+        "Donggang Cao",
+        "Hong Mei",
+        "Xiang Chen"
+      ],
+      "published_at": "2026-03-18T10:25:08.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 553,
+      "title": "Action Draft and Verify: A Self-Verifying Framework for Vision-Language-Action Model",
+      "canonical_url": "http://arxiv.org/abs/2603.18091v1",
+      "source": "arxiv",
+      "authors": [
+        "Chen Zhao",
+        "Zhuoran Wang",
+        "Haoyang Li",
+        "Shifeng Bao",
+        "Guanlin Li",
+        "Youhe Feng",
+        "Yang Li",
+        "Jie Tang",
+        "Jing Zhang"
+      ],
+      "published_at": "2026-03-18T09:16:20.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 560,
+      "title": "Kinema4D: Kinematic 4D World Modeling for Spatiotemporal Embodied Simulation",
+      "canonical_url": "http://arxiv.org/abs/2603.16669v1",
+      "source": "arxiv",
+      "authors": [
+        "Mutian Xu",
+        "Tianbao Zhang",
+        "Tianqi Liu",
+        "Zhaoxi Chen",
+        "Xiaoguang Han",
+        "Ziwei Liu"
+      ],
+      "published_at": "2026-03-17T11:36:38.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 568,
+      "title": "Simulation Distillation: Pretraining World Models in Simulation for Rapid Real-World Adaptation",
+      "canonical_url": "http://arxiv.org/abs/2603.15759v1",
+      "source": "arxiv",
+      "authors": [
+        "Jacob Levy",
+        "Tyler Westenbroek",
+        "Kevin Huang",
+        "Fernando Palafox",
+        "Patrick Yin",
+        "Shayegan Omidshafiei",
+        "Dong-Ki Kim",
+        "Abhishek Gupta",
+        "David Fridovich-Keil"
+      ],
+      "published_at": "2026-03-16T18:00:23.000000+00:00"
+    },
+    {
+      "legacy_doc_id": 574,
+      "title": "ForceVLA2: Unleashing Hybrid Force-Position Control with Force Awareness for Contact-Rich Manipulation",
+      "canonical_url": "http://arxiv.org/abs/2603.15169v1",
+      "source": "arxiv",
+      "authors": [
+        "Yang Li",
+        "Zhaxizhuoma",
+        "Hongru Jiang",
+        "Junjie Xia",
+        "Hongquan Zhang",
+        "Jinda Du",
+        "Yunsong Zhou",
+        "Jia Zeng",
+        "Ce Hao",
+        "Jieji Ren",
+        "Qiaojun Yu",
+        "Cewu Lu",
+        "Yu Qiao",
+        "Jiangmiao Pang"
+      ],
+      "published_at": "2026-03-16T12:03:58.000000+00:00"
+    }
+  ]
+}
