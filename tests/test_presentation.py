@@ -529,6 +529,39 @@ def test_build_trend_presentation_v1_projects_representative_source_metadata() -
     assert representative["confidence"] == "high"
 
 
+def test_validate_presentation_rejects_null_source_titles() -> None:
+    presentation = build_trend_presentation_v2(
+        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+        title="Verification gets operational",
+        overview_md="Teams are tightening release discipline.",
+        evolution=None,
+        history_window_refs=None,
+        clusters=[
+            {
+                "name": "Verification loops",
+                "description": "Teams now quantify release risk.",
+                "representative_chunks": [
+                    {
+                        "doc_id": 11,
+                        "chunk_index": 0,
+                        "score": 0.91,
+                        "title": "CodeScout",
+                        "note_href": "../Inbox/2026-03-02--codescout.md",
+                        "url": "https://example.com/codescout",
+                        "authors": ["Alice"],
+                        "source": "arxiv",
+                    }
+                ],
+            }
+        ],
+    )
+    presentation["content"]["representative_sources"][0]["title"] = None
+
+    errors = validate_presentation(presentation)
+
+    assert "trend content.representative_sources.title must be a string" in errors
+
+
 def test_build_trend_presentation_v1_falls_back_to_a_single_ranked_shift() -> None:
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/day--2026-03-02--trend--7.md",

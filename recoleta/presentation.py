@@ -1444,7 +1444,9 @@ def _validate_source_metadata_text_fields(
     field_path: str,
     errors: list[str],
 ) -> None:
-    for key in ("title", "href", "url"):
+    if "title" in entry and not isinstance(entry.get("title"), str):
+        errors.append(f"{field_path}.title must be a string")
+    for key in ("href", "url"):
         value = entry.get(key)
         if key in entry and value is not None and not isinstance(value, str):
             errors.append(f"{field_path}.{key} must be a string")
