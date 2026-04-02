@@ -80,6 +80,33 @@ def test_validate_presentation_v1_allows_single_ranked_shift_when_evidence_is_th
     assert validate_presentation_v1(presentation) == []
 
 
+def test_build_trend_presentation_v1_rejects_unexpected_keyword_arguments() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument 'langauge_code'"):
+        build_trend_presentation_v1(
+            source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+            title="Verification gets operational",
+            overview_md="Teams are tightening release discipline.",
+            evolution=None,
+            history_window_refs=None,
+            clusters=[],
+            langauge_code="en",
+        )
+
+
+def test_build_trend_presentation_v2_rejects_missing_required_keywords() -> None:
+    with pytest.raises(
+        TypeError,
+        match="missing required keyword-only argument: 'overview_md'",
+    ):
+        build_trend_presentation_v2(
+            source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+            title="Verification gets operational",
+            evolution=None,
+            history_window_refs=None,
+            clusters=[],
+        )
+
+
 def test_validate_presentation_v1_allows_legacy_empty_ranked_shifts() -> None:
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/day--2026-03-02--trend--7.md",
@@ -162,6 +189,25 @@ def test_validate_presentation_v1_requires_complete_label_sets_and_required_fiel
 
     assert "idea display_labels must include: role" in errors
     assert "idea opportunities must include: validation_next_step" in errors
+
+
+def test_build_idea_presentation_v1_rejects_unexpected_keyword_arguments() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument 'summmary_md'"):
+        build_idea_presentation_v1(
+            source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+            title="Verification-first agent rollout",
+            summmary_md="Use a prompt release gate before shipping changes.",
+            ideas=[_idea(title="Prompt CI gate")],
+        )
+
+
+def test_build_idea_presentation_v2_rejects_missing_required_keywords() -> None:
+    with pytest.raises(TypeError, match="missing required keyword-only argument: 'ideas'"):
+        build_idea_presentation_v2(
+            source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+            title="Verification-first agent rollout",
+            summary_md="Use a prompt release gate before shipping changes.",
+        )
 
 
 def test_write_presentation_sidecar_rejects_invalid_contracts(tmp_path: Path) -> None:

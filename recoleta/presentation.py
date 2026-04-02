@@ -244,6 +244,34 @@ class _IdeaPresentationKwargs(TypedDict):
     display_language_code: str | None
 
 
+_TREND_PRESENTATION_REQUIRED_KEYS = (
+    "source_markdown_path",
+    "title",
+    "overview_md",
+    "evolution",
+    "history_window_refs",
+    "clusters",
+)
+_TREND_PRESENTATION_V1_DEFAULTS: dict[str, Any] = {
+    "language_code": None,
+    "display_language_code": None,
+}
+_TREND_PRESENTATION_V2_DEFAULTS: dict[str, Any] = {
+    **_TREND_PRESENTATION_V1_DEFAULTS,
+    "counter_signal": None,
+}
+_IDEA_PRESENTATION_REQUIRED_KEYS = (
+    "source_markdown_path",
+    "title",
+    "summary_md",
+    "ideas",
+)
+_IDEA_PRESENTATION_DEFAULTS: dict[str, Any] = {
+    "language_code": None,
+    "display_language_code": None,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class _TrendPresentationBuildInput:
     source_markdown_path: str
@@ -893,20 +921,49 @@ def _build_trend_presentation(
     }
 
 
+def _validated_presentation_kwargs(
+    *,
+    function_name: str,
+    kwargs: Mapping[str, Any],
+    required_keys: tuple[str, ...],
+    defaults: Mapping[str, Any],
+) -> dict[str, Any]:
+    allowed_keys = set(required_keys) | set(defaults)
+    unexpected = [key for key in kwargs if key not in allowed_keys]
+    if unexpected:
+        raise TypeError(
+            f"{function_name}() got an unexpected keyword argument {unexpected[0]!r}"
+        )
+    missing = [key for key in required_keys if key not in kwargs]
+    if missing:
+        missing_repr = ", ".join(repr(key) for key in missing)
+        plural = "s" if len(missing) != 1 else ""
+        raise TypeError(
+            f"{function_name}() missing required keyword-only argument{plural}: {missing_repr}"
+        )
+    return {**defaults, **kwargs}
+
+
 def build_trend_presentation_v1(
     **kwargs: Unpack[_TrendPresentationKwargs],
 ) -> dict[str, Any]:
+    normalized_kwargs = _validated_presentation_kwargs(
+        function_name="build_trend_presentation_v1",
+        kwargs=kwargs,
+        required_keys=_TREND_PRESENTATION_REQUIRED_KEYS,
+        defaults=_TREND_PRESENTATION_V1_DEFAULTS,
+    )
     build_input = _TrendPresentationBuildInput(
-        source_markdown_path=kwargs["source_markdown_path"],
-        title=kwargs["title"],
-        overview_md=kwargs["overview_md"],
-        evolution=kwargs["evolution"],
-        history_window_refs=kwargs["history_window_refs"],
-        clusters=kwargs["clusters"],
+        source_markdown_path=normalized_kwargs["source_markdown_path"],
+        title=normalized_kwargs["title"],
+        overview_md=normalized_kwargs["overview_md"],
+        evolution=normalized_kwargs["evolution"],
+        history_window_refs=normalized_kwargs["history_window_refs"],
+        clusters=normalized_kwargs["clusters"],
         counter_signal=None,
         schema_version=PRESENTATION_SCHEMA_VERSION_V1,
-        language_code=kwargs.get("language_code"),
-        display_language_code=kwargs.get("display_language_code"),
+        language_code=normalized_kwargs["language_code"],
+        display_language_code=normalized_kwargs["display_language_code"],
     )
     presentation = _build_trend_presentation(
         build_input
@@ -918,17 +975,23 @@ def build_trend_presentation_v1(
 def build_trend_presentation_v2(
     **kwargs: Unpack[_TrendPresentationV2Kwargs],
 ) -> dict[str, Any]:
+    normalized_kwargs = _validated_presentation_kwargs(
+        function_name="build_trend_presentation_v2",
+        kwargs=kwargs,
+        required_keys=_TREND_PRESENTATION_REQUIRED_KEYS,
+        defaults=_TREND_PRESENTATION_V2_DEFAULTS,
+    )
     build_input = _TrendPresentationBuildInput(
-        source_markdown_path=kwargs["source_markdown_path"],
-        title=kwargs["title"],
-        overview_md=kwargs["overview_md"],
-        evolution=kwargs["evolution"],
-        history_window_refs=kwargs["history_window_refs"],
-        clusters=kwargs["clusters"],
-        counter_signal=kwargs.get("counter_signal"),
+        source_markdown_path=normalized_kwargs["source_markdown_path"],
+        title=normalized_kwargs["title"],
+        overview_md=normalized_kwargs["overview_md"],
+        evolution=normalized_kwargs["evolution"],
+        history_window_refs=normalized_kwargs["history_window_refs"],
+        clusters=normalized_kwargs["clusters"],
+        counter_signal=normalized_kwargs["counter_signal"],
         schema_version=PRESENTATION_SCHEMA_VERSION,
-        language_code=kwargs.get("language_code"),
-        display_language_code=kwargs.get("display_language_code"),
+        language_code=normalized_kwargs["language_code"],
+        display_language_code=normalized_kwargs["display_language_code"],
     )
     presentation = _build_trend_presentation(
         build_input
@@ -1019,14 +1082,20 @@ def _build_idea_presentation(
 def build_idea_presentation_v1(
     **kwargs: Unpack[_IdeaPresentationKwargs],
 ) -> dict[str, Any]:
+    normalized_kwargs = _validated_presentation_kwargs(
+        function_name="build_idea_presentation_v1",
+        kwargs=kwargs,
+        required_keys=_IDEA_PRESENTATION_REQUIRED_KEYS,
+        defaults=_IDEA_PRESENTATION_DEFAULTS,
+    )
     build_input = _IdeaPresentationBuildInput(
-        source_markdown_path=kwargs["source_markdown_path"],
-        title=kwargs["title"],
-        summary_md=kwargs["summary_md"],
-        ideas=kwargs["ideas"],
+        source_markdown_path=normalized_kwargs["source_markdown_path"],
+        title=normalized_kwargs["title"],
+        summary_md=normalized_kwargs["summary_md"],
+        ideas=normalized_kwargs["ideas"],
         schema_version=PRESENTATION_SCHEMA_VERSION_V1,
-        language_code=kwargs.get("language_code"),
-        display_language_code=kwargs.get("display_language_code"),
+        language_code=normalized_kwargs["language_code"],
+        display_language_code=normalized_kwargs["display_language_code"],
     )
     presentation = _build_idea_presentation(
         build_input
@@ -1040,15 +1109,21 @@ def build_idea_presentation_v1(
 def build_idea_presentation_v2(
     **kwargs: Unpack[_IdeaPresentationKwargs],
 ) -> dict[str, Any]:
+    normalized_kwargs = _validated_presentation_kwargs(
+        function_name="build_idea_presentation_v2",
+        kwargs=kwargs,
+        required_keys=_IDEA_PRESENTATION_REQUIRED_KEYS,
+        defaults=_IDEA_PRESENTATION_DEFAULTS,
+    )
     return _build_idea_presentation(
         _IdeaPresentationBuildInput(
-            source_markdown_path=kwargs["source_markdown_path"],
-            title=kwargs["title"],
-            summary_md=kwargs["summary_md"],
-            ideas=kwargs["ideas"],
+            source_markdown_path=normalized_kwargs["source_markdown_path"],
+            title=normalized_kwargs["title"],
+            summary_md=normalized_kwargs["summary_md"],
+            ideas=normalized_kwargs["ideas"],
             schema_version=PRESENTATION_SCHEMA_VERSION,
-            language_code=kwargs.get("language_code"),
-            display_language_code=kwargs.get("display_language_code"),
+            language_code=normalized_kwargs["language_code"],
+            display_language_code=normalized_kwargs["display_language_code"],
         )
     )
 
