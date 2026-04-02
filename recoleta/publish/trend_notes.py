@@ -608,7 +608,7 @@ def _append_counter_signal_section(
             rendered_line, _ = _cluster_representative_line(
                 {
                     "title": entry.get("title"),
-                    "note_href": entry.get("href"),
+                    "note_href": entry.get("note_href") or entry.get("href"),
                     "url": entry.get("url"),
                     "authors": entry.get("authors"),
                 }

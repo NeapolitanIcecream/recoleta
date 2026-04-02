@@ -504,6 +504,42 @@ def test_publish_trend_note_renders_counter_signal_in_markdown_and_sidecar(
     assert validate_presentation(sidecar) == []
 
 
+def test_publish_trend_note_uses_note_href_for_counter_signal_evidence(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 12, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+
+    note_path = write_markdown_trend_note(
+        output_dir=tmp_path,
+        trend_doc_id=102,
+        title="Weekly Trend",
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-test",
+        overview_md="Teams are tightening release discipline.",
+        topics=["agents"],
+        counter_signal={
+            "title": "Evaluation friction stays local",
+            "summary": "Some of the strongest contradictory evidence still lives in internal research notes.",
+            "evidence": [
+                {
+                    "title": "Internal field note",
+                    "note_href": "../Inbox/2026-03-12--field-note.md",
+                    "authors": ["Alice"],
+                }
+            ],
+        },
+        clusters=[],
+        highlights=[],
+    )
+
+    note_text = note_path.read_text(encoding="utf-8")
+
+    assert "[Internal field note](../Inbox/2026-03-12--field-note.md)" in note_text
+
+
 def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tmp_path) -> None:
     period_start = datetime(2026, 3, 12, tzinfo=UTC)
     period_end = period_start + timedelta(days=7)
