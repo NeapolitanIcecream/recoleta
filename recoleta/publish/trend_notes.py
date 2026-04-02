@@ -120,6 +120,30 @@ class _TrendNoteWriteKwargs(TypedDict, total=False):
     language_code: str | None
 
 
+_TREND_NOTE_REQUIRED_KEYS = (
+    "trend_doc_id",
+    "title",
+    "granularity",
+    "period_start",
+    "period_end",
+    "run_id",
+    "overview_md",
+    "topics",
+)
+_TREND_NOTE_DEFAULTS: dict[str, Any] = {
+    "evolution": None,
+    "history_window_refs": None,
+    "counter_signal": None,
+    "clusters": None,
+    "highlights": None,
+    "output_language": None,
+    "pass_output_id": None,
+    "pass_kind": None,
+    "site_exclude": False,
+    "language_code": None,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class _TrendNoteWriteInput:
     note_dir: Path
@@ -788,6 +812,27 @@ def _render_trend_note_content(**kwargs: Unpack[_TrendNoteWriteKwargs]) -> _Tren
     }
 
 
+def _validated_trend_note_write_kwargs(
+    *,
+    function_name: str,
+    kwargs: _TrendNoteWriteKwargs,
+) -> dict[str, Any]:
+    allowed_keys = set(_TREND_NOTE_REQUIRED_KEYS) | set(_TREND_NOTE_DEFAULTS)
+    unexpected = [key for key in kwargs if key not in allowed_keys]
+    if unexpected:
+        raise TypeError(
+            f"{function_name}() got an unexpected keyword argument {unexpected[0]!r}"
+        )
+    missing = [key for key in _TREND_NOTE_REQUIRED_KEYS if key not in kwargs]
+    if missing:
+        missing_repr = ", ".join(repr(key) for key in missing)
+        plural = "s" if len(missing) != 1 else ""
+        raise TypeError(
+            f"{function_name}() missing required keyword-only argument{plural}: {missing_repr}"
+        )
+    return {**_TREND_NOTE_DEFAULTS, **kwargs}
+
+
 def _write_trend_note(
     *,
     write_input: _TrendNoteWriteInput,
@@ -864,22 +909,26 @@ def write_obsidian_trend_note(
     base_folder: str,
     **kwargs: Unpack[_TrendNoteWriteKwargs],
 ) -> Path:
+    normalized_kwargs = _validated_trend_note_write_kwargs(
+        function_name="write_obsidian_trend_note",
+        kwargs=kwargs,
+    )
     note_dir = vault_path / base_folder / "Trends"
     return _write_trend_note(
         write_input=_TrendNoteWriteInput(
             note_dir=note_dir,
-            trend_doc_id=kwargs["trend_doc_id"],
-            granularity=kwargs["granularity"],
-            period_start=kwargs["period_start"],
-            period_end=kwargs["period_end"],
-            run_id=kwargs["run_id"],
-            output_language=kwargs.get("output_language"),
-            pass_output_id=kwargs.get("pass_output_id"),
-            pass_kind=kwargs.get("pass_kind"),
-            site_exclude=bool(kwargs.get("site_exclude", False)),
-            language_code=kwargs.get("language_code"),
+            trend_doc_id=normalized_kwargs["trend_doc_id"],
+            granularity=normalized_kwargs["granularity"],
+            period_start=normalized_kwargs["period_start"],
+            period_end=normalized_kwargs["period_end"],
+            run_id=normalized_kwargs["run_id"],
+            output_language=normalized_kwargs["output_language"],
+            pass_output_id=normalized_kwargs["pass_output_id"],
+            pass_kind=normalized_kwargs["pass_kind"],
+            site_exclude=bool(normalized_kwargs["site_exclude"]),
+            language_code=normalized_kwargs["language_code"],
             emit_presentation_sidecar=False,
-            content=_render_trend_note_content(**kwargs),
+            content=_render_trend_note_content(**normalized_kwargs),
         )
     )
 
@@ -889,6 +938,10 @@ def write_markdown_trend_note(
     output_dir: Path,
     **kwargs: Unpack[_TrendNoteWriteKwargs],
 ) -> Path:
+    normalized_kwargs = _validated_trend_note_write_kwargs(
+        function_name="write_markdown_trend_note",
+        kwargs=kwargs,
+    )
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
         raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
@@ -896,18 +949,18 @@ def write_markdown_trend_note(
     return _write_trend_note(
         write_input=_TrendNoteWriteInput(
             note_dir=trends_dir,
-            trend_doc_id=kwargs["trend_doc_id"],
-            granularity=kwargs["granularity"],
-            period_start=kwargs["period_start"],
-            period_end=kwargs["period_end"],
-            run_id=kwargs["run_id"],
-            output_language=kwargs.get("output_language"),
-            pass_output_id=kwargs.get("pass_output_id"),
-            pass_kind=kwargs.get("pass_kind"),
-            site_exclude=bool(kwargs.get("site_exclude", False)),
-            language_code=kwargs.get("language_code"),
+            trend_doc_id=normalized_kwargs["trend_doc_id"],
+            granularity=normalized_kwargs["granularity"],
+            period_start=normalized_kwargs["period_start"],
+            period_end=normalized_kwargs["period_end"],
+            run_id=normalized_kwargs["run_id"],
+            output_language=normalized_kwargs["output_language"],
+            pass_output_id=normalized_kwargs["pass_output_id"],
+            pass_kind=normalized_kwargs["pass_kind"],
+            site_exclude=bool(normalized_kwargs["site_exclude"]),
+            language_code=normalized_kwargs["language_code"],
             emit_presentation_sidecar=True,
-            content=_render_trend_note_content(**kwargs),
+            content=_render_trend_note_content(**normalized_kwargs),
         )
     )
 

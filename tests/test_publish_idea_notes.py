@@ -131,6 +131,65 @@ def test_write_markdown_ideas_note_deduplicates_evidence_refs_by_document(
     assert "(chunk 1)" not in note_text
 
 
+def test_write_markdown_ideas_note_rejects_unexpected_keyword_arguments(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'statsu'"):
+        write_markdown_ideas_note(
+            repository=repository,
+            output_dir=tmp_path / "notes",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            run_id="run-ideas-typo",
+            statsu="succeeded",
+            payload=TrendIdeasPayload.model_validate(
+                {
+                    "title": "Why now ideas",
+                    "granularity": "day",
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "summary_md": "One idea is clearly grounded.",
+                    "ideas": [],
+                }
+            ),
+        )
+
+
+def test_write_markdown_ideas_note_rejects_missing_required_keywords(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    with pytest.raises(TypeError, match="missing required keyword-only argument: 'status'"):
+        write_markdown_ideas_note(
+            repository=repository,
+            output_dir=tmp_path / "notes",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            run_id="run-ideas-missing-status",
+            payload=TrendIdeasPayload.model_validate(
+                {
+                    "title": "Why now ideas",
+                    "granularity": "day",
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "summary_md": "One idea is clearly grounded.",
+                    "ideas": [],
+                }
+            ),
+        )
+
+
 def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
     tmp_path: Path,
 ) -> None:

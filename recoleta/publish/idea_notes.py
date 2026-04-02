@@ -85,6 +85,25 @@ class _IdeasNoteWriteKwargs(TypedDict, total=False):
     language_code: str | None
 
 
+_IDEAS_NOTE_REQUIRED_KEYS = (
+    "granularity",
+    "period_start",
+    "period_end",
+    "run_id",
+    "status",
+    "payload",
+)
+_IDEAS_NOTE_DEFAULTS: dict[str, Any] = {
+    "pass_output_id": None,
+    "upstream_pass_output_id": None,
+    "topics": None,
+    "pass_kind": "trend_ideas",
+    "upstream_pass_kind": "trend_synthesis",
+    "output_language": None,
+    "language_code": None,
+}
+
+
 def resolve_ideas_note_path(
     *,
     note_dir: Path,
@@ -581,12 +600,37 @@ def _write_ideas_note(*, write_input: _IdeasNoteWriteInput) -> Path:
     return note_path
 
 
+def _validated_ideas_note_write_kwargs(
+    *,
+    function_name: str,
+    kwargs: _IdeasNoteWriteKwargs,
+) -> dict[str, Any]:
+    allowed_keys = set(_IDEAS_NOTE_REQUIRED_KEYS) | set(_IDEAS_NOTE_DEFAULTS)
+    unexpected = [key for key in kwargs if key not in allowed_keys]
+    if unexpected:
+        raise TypeError(
+            f"{function_name}() got an unexpected keyword argument {unexpected[0]!r}"
+        )
+    missing = [key for key in _IDEAS_NOTE_REQUIRED_KEYS if key not in kwargs]
+    if missing:
+        missing_repr = ", ".join(repr(key) for key in missing)
+        plural = "s" if len(missing) != 1 else ""
+        raise TypeError(
+            f"{function_name}() missing required keyword-only argument{plural}: {missing_repr}"
+        )
+    return {**_IDEAS_NOTE_DEFAULTS, **kwargs}
+
+
 def write_markdown_ideas_note(
     *,
     repository: Any,
     output_dir: Path,
     **kwargs: Unpack[_IdeasNoteWriteKwargs],
 ) -> Path:
+    normalized_kwargs = _validated_ideas_note_write_kwargs(
+        function_name="write_markdown_ideas_note",
+        kwargs=kwargs,
+    )
     root_dir = output_dir.expanduser().resolve()
     note_dir = root_dir / "Ideas"
     return _write_ideas_note(
@@ -594,19 +638,19 @@ def write_markdown_ideas_note(
             repository=repository,
             root_dir=root_dir,
             note_dir=note_dir,
-            pass_output_id=kwargs.get("pass_output_id"),
-            upstream_pass_output_id=kwargs.get("upstream_pass_output_id"),
-            granularity=kwargs["granularity"],
-            period_start=kwargs["period_start"],
-            period_end=kwargs["period_end"],
-            run_id=kwargs["run_id"],
-            status=kwargs["status"],
-            payload=kwargs["payload"],
-            topics=kwargs.get("topics"),
-            pass_kind=kwargs.get("pass_kind", "trend_ideas"),
-            upstream_pass_kind=kwargs.get("upstream_pass_kind", "trend_synthesis"),
-            output_language=kwargs.get("output_language"),
-            language_code=kwargs.get("language_code"),
+            pass_output_id=normalized_kwargs["pass_output_id"],
+            upstream_pass_output_id=normalized_kwargs["upstream_pass_output_id"],
+            granularity=normalized_kwargs["granularity"],
+            period_start=normalized_kwargs["period_start"],
+            period_end=normalized_kwargs["period_end"],
+            run_id=normalized_kwargs["run_id"],
+            status=normalized_kwargs["status"],
+            payload=normalized_kwargs["payload"],
+            topics=normalized_kwargs["topics"],
+            pass_kind=normalized_kwargs["pass_kind"],
+            upstream_pass_kind=normalized_kwargs["upstream_pass_kind"],
+            output_language=normalized_kwargs["output_language"],
+            language_code=normalized_kwargs["language_code"],
             emit_presentation_sidecar=True,
         ),
     )
@@ -619,6 +663,10 @@ def write_obsidian_ideas_note(
     base_folder: str,
     **kwargs: Unpack[_IdeasNoteWriteKwargs],
 ) -> Path:
+    normalized_kwargs = _validated_ideas_note_write_kwargs(
+        function_name="write_obsidian_ideas_note",
+        kwargs=kwargs,
+    )
     root_dir = vault_path / base_folder
     note_dir = root_dir / "Ideas"
     return _write_ideas_note(
@@ -626,19 +674,19 @@ def write_obsidian_ideas_note(
             repository=repository,
             root_dir=root_dir,
             note_dir=note_dir,
-            pass_output_id=kwargs.get("pass_output_id"),
-            upstream_pass_output_id=kwargs.get("upstream_pass_output_id"),
-            granularity=kwargs["granularity"],
-            period_start=kwargs["period_start"],
-            period_end=kwargs["period_end"],
-            run_id=kwargs["run_id"],
-            status=kwargs["status"],
-            payload=kwargs["payload"],
-            topics=kwargs.get("topics"),
-            pass_kind=kwargs.get("pass_kind", "trend_ideas"),
-            upstream_pass_kind=kwargs.get("upstream_pass_kind", "trend_synthesis"),
-            output_language=kwargs.get("output_language"),
-            language_code=kwargs.get("language_code"),
+            pass_output_id=normalized_kwargs["pass_output_id"],
+            upstream_pass_output_id=normalized_kwargs["upstream_pass_output_id"],
+            granularity=normalized_kwargs["granularity"],
+            period_start=normalized_kwargs["period_start"],
+            period_end=normalized_kwargs["period_end"],
+            run_id=normalized_kwargs["run_id"],
+            status=normalized_kwargs["status"],
+            payload=normalized_kwargs["payload"],
+            topics=normalized_kwargs["topics"],
+            pass_kind=normalized_kwargs["pass_kind"],
+            upstream_pass_kind=normalized_kwargs["upstream_pass_kind"],
+            output_language=normalized_kwargs["output_language"],
+            language_code=normalized_kwargs["language_code"],
             emit_presentation_sidecar=False,
         ),
     )
