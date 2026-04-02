@@ -1,0 +1,550 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import ModuleType
+
+
+def _load_refactor_audit_module() -> ModuleType:
+    script_path = (
+        Path(__file__).resolve().parents[1] / "scripts" / "refactor_audit.py"
+    )
+    spec = importlib.util.spec_from_file_location("refactor_audit_script", script_path)
+    if spec is None or spec.loader is None:
+        raise AssertionError("Failed to load refactor_audit.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+audit = _load_refactor_audit_module()
+CONFIG = audit.load_audit_config()
+
+
+def _lookup_for(tmp_path: Path, *relative_paths: str) -> object:
+    files: list[Path] = []
+    for relative_path in relative_paths:
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("pass\n", encoding="utf-8")
+        files.append(path)
+    return audit.ScopeLookup.from_files(repo_root=tmp_path, files=files)
+
+
+def _signal(
+    *,
+    tool: str,
+    file: str = "recoleta/example.py",
+    symbol: str = "example",
+    severity: str = "warning",
+    metrics: dict[str, int] | None = None,
+) -> object:
+    return audit.HotspotSignal(
+        tool=tool,
+        file=file,
+        symbol=symbol,
+        line=10,
+        severity=severity,
+        metrics=metrics or {"complexity": 12},
+        message="sample",
+    )
+
+
+def test_parse_ruff_findings_reads_c901_json(tmp_path: Path) -> None:
+    lookup = _lookup_for(tmp_path, "pkg/mod.py")
+    raw_text = json.dumps(
+        [
+            {
+                "code": "C901",
+                "filename": str(tmp_path / "pkg" / "mod.py"),
+                "location": {"row": 42, "column": 5},
+                "message": "`branchy` is too complex (12 > 10)",
+            }
+        ]
+    )
+
+    findings = audit.parse_ruff_findings(
+        raw_text=raw_text,
+        lookup=lookup,
+        config=CONFIG,
+    )
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.file == "pkg/mod.py"
+    assert finding.symbol == "branchy"
+    assert finding.severity == "warning"
+    assert finding.metrics["complexity"] == 12
+
+
+def test_parse_lizard_findings_reads_csv_thresholds(tmp_path: Path) -> None:
+    lookup = _lookup_for(tmp_path, "pkg/mod.py")
+    raw_text = (
+        '151,31,1241,7,154,"branchy@42-196@pkg/mod.py","pkg/mod.py",'
+        '"branchy","branchy( a, b, c, d, e, f, g )",42,196\n'
+    )
+
+    findings = audit.parse_lizard_findings(
+        raw_text=raw_text,
+        lookup=lookup,
+        config=CONFIG,
+    )
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.severity == "critical"
+    assert finding.metrics["ccn"] == 31
+    assert finding.metrics["nloc"] == 151
+    assert finding.metrics["parameter_count"] == 7
+
+
+def test_parse_complexipy_findings_reads_json_thresholds(tmp_path: Path) -> None:
+    lookup = _lookup_for(tmp_path, "pkg/mod.py")
+    raw_text = json.dumps(
+        [
+            {
+                "complexity": 55,
+                "file_name": "mod.py",
+                "function_name": "Example::branchy",
+                "path": "pkg/mod.py",
+            }
+        ]
+    )
+
+    findings = audit.parse_complexipy_findings(
+        raw_text=raw_text,
+        lookup=lookup,
+        config=CONFIG,
+    )
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.file == "pkg/mod.py"
+    assert finding.symbol == "Example::branchy"
+    assert finding.severity == "critical"
+    assert finding.metrics["complexity"] == 55
+
+
+def test_parse_vulture_candidates_reads_text_output(tmp_path: Path) -> None:
+    lookup = _lookup_for(tmp_path, "pkg/mod.py")
+    raw_text = (
+        "pkg/mod.py:18: unused function 'unused_helper' (82% confidence, 12 lines)\n"
+    )
+
+    candidates = audit.parse_vulture_candidates(
+        raw_text=raw_text,
+        lookup=lookup,
+        config=CONFIG,
+    )
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["classification"] == "high_confidence_candidate"
+    assert candidate["confidence"] == 82
+    assert candidate["symbol"] == "unused_helper"
+
+
+def test_parse_lizard_findings_keeps_same_leaf_methods_separate(tmp_path: Path) -> None:
+    path = tmp_path / "pkg" / "mod.py"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """
+class Foo:
+    def __init__(self) -> None:
+        self.value = 1
+
+
+class Bar:
+    def __init__(self) -> None:
+        self.value = 2
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    lookup = audit.ScopeLookup.from_files(repo_root=tmp_path, files=[path])
+    raw_text = (
+        '80,15,16,6,80,"__init__@2-3@pkg/mod.py","pkg/mod.py","__init__",'
+        '"__init__( self )",2,3\n'
+        '80,15,16,6,80,"__init__@7-8@pkg/mod.py","pkg/mod.py","__init__",'
+        '"__init__( self )",7,8\n'
+    )
+
+    findings = audit.parse_lizard_findings(
+        raw_text=raw_text,
+        lookup=lookup,
+        config=CONFIG,
+    )
+
+    assert [finding.symbol for finding in findings] == ["Foo::__init__", "Bar::__init__"]
+    hotspots = audit.aggregate_hotspots(findings)
+    assert len(hotspots) == 2
+
+
+def test_aggregate_hotspots_marks_single_warning_as_monitor() -> None:
+    hotspots = audit.aggregate_hotspots(
+        [
+            _signal(
+                tool="ruff",
+                severity="warning",
+                metrics={"complexity": 12},
+            )
+        ]
+    )
+
+    assert len(hotspots) == 1
+    assert hotspots[0]["classification"] == "monitor"
+
+
+def test_aggregate_hotspots_marks_two_warning_tools_as_refactor_soon() -> None:
+    hotspots = audit.aggregate_hotspots(
+        [
+            _signal(
+                tool="ruff",
+                severity="warning",
+                metrics={"complexity": 12},
+            ),
+            _signal(
+                tool="lizard",
+                severity="warning",
+                metrics={"ccn": 16, "nloc": 90, "parameter_count": 4},
+            ),
+        ]
+    )
+
+    assert hotspots[0]["classification"] == "refactor_soon"
+
+
+def test_aggregate_hotspots_marks_critical_complexity_as_refactor_now() -> None:
+    hotspots = audit.aggregate_hotspots(
+        [
+            _signal(
+                tool="complexipy",
+                severity="critical",
+                metrics={"complexity": 55},
+            )
+        ]
+    )
+
+    assert hotspots[0]["classification"] == "refactor_now"
+
+
+def test_build_baseline_diff_marks_new_hotspots() -> None:
+    current_hotspots = [
+        {
+            "id": "recoleta/example.py::branchy",
+            "file": "recoleta/example.py",
+            "symbol": "branchy",
+            "classification": "refactor_soon",
+            "tools": ["ruff"],
+            "metrics": {"ruff": {"complexity": 16}},
+        }
+    ]
+
+    diff = audit.build_baseline_diff(
+        current_hotspots=current_hotspots,
+        current_dead_code_candidates=[],
+        baseline_report={"hotspots": [], "dead_code_candidates": []},
+        scope_files=["recoleta/example.py"],
+    )
+
+    assert diff["new"][0]["kind"] == "hotspot"
+    assert diff["new"][0]["symbol"] == "branchy"
+
+
+def test_build_baseline_diff_marks_worsened_hotspots() -> None:
+    baseline_report = {
+        "hotspots": [
+            {
+                "id": "recoleta/example.py::branchy",
+                "file": "recoleta/example.py",
+                "symbol": "branchy",
+                "classification": "monitor",
+                "tools": ["ruff"],
+                "metrics": {"ruff": {"complexity": 12}},
+            }
+        ],
+        "dead_code_candidates": [],
+    }
+    current_hotspots = [
+        {
+            "id": "recoleta/example.py::branchy",
+            "file": "recoleta/example.py",
+            "symbol": "branchy",
+            "classification": "refactor_soon",
+            "tools": ["ruff", "lizard"],
+            "metrics": {
+                "ruff": {"complexity": 16},
+                "lizard": {"ccn": 18, "nloc": 90, "parameter_count": 4},
+            },
+        }
+    ]
+
+    diff = audit.build_baseline_diff(
+        current_hotspots=current_hotspots,
+        current_dead_code_candidates=[],
+        baseline_report=baseline_report,
+        scope_files=["recoleta/example.py"],
+    )
+
+    assert diff["worsened"][0]["kind"] == "hotspot"
+    assert "classification" in diff["worsened"][0]["reasons"]
+
+
+def test_build_baseline_diff_marks_resolved_hotspots() -> None:
+    baseline_report = {
+        "hotspots": [
+            {
+                "id": "recoleta/example.py::branchy",
+                "file": "recoleta/example.py",
+                "symbol": "branchy",
+                "classification": "refactor_soon",
+                "tools": ["ruff"],
+                "metrics": {"ruff": {"complexity": 16}},
+            }
+        ],
+        "dead_code_candidates": [],
+    }
+
+    diff = audit.build_baseline_diff(
+        current_hotspots=[],
+        current_dead_code_candidates=[],
+        baseline_report=baseline_report,
+        scope_files=["recoleta/example.py"],
+    )
+
+    assert diff["resolved"][0]["kind"] == "hotspot"
+    assert diff["resolved"][0]["symbol"] == "branchy"
+
+
+def test_render_markdown_report_contains_required_sections() -> None:
+    report = {
+        "summary": {
+            "files_scanned": 1,
+            "hotspots_total": 1,
+            "monitor_total": 0,
+            "refactor_soon_total": 1,
+            "refactor_now_total": 0,
+            "dead_code_candidates_total": 1,
+            "dead_code_high_confidence_total": 1,
+        },
+        "repo_verdict": {
+            "status": "strained",
+            "summary": "Existing hotspots remain, but the current scope did not regress.",
+        },
+        "tool_summaries": {
+            "ruff": {"findings_total": 1, "warning": 1, "high": 0, "critical": 0},
+            "lizard": {"findings_total": 1, "warning": 1, "high": 0, "critical": 0},
+            "complexipy": {
+                "findings_total": 0,
+                "warning": 0,
+                "high": 0,
+                "critical": 0,
+            },
+            "vulture": {
+                "findings_total": 1,
+                "review_candidate": 0,
+                "high_confidence_candidate": 1,
+            },
+        },
+        "hotspots": [
+            {
+                "classification": "refactor_soon",
+                "tool_count": 2,
+                "file": "recoleta/example.py",
+                "symbol": "branchy",
+                "tools": ["lizard", "ruff"],
+                "metrics": {
+                    "lizard": {"ccn": 18, "nloc": 90, "parameter_count": 4},
+                    "ruff": {"complexity": 16},
+                },
+            }
+        ],
+        "dead_code_candidates": [
+            {
+                "classification": "high_confidence_candidate",
+                "confidence": 90,
+                "file": "recoleta/example.py",
+                "symbol": "unused_helper",
+                "kind": "function",
+            }
+        ],
+        "baseline_diff": {
+            "baseline_available": True,
+            "has_regressions": False,
+            "new": [],
+            "worsened": [],
+            "resolved": [],
+        },
+        "recommended_refactor_queue": [
+            {
+                "subsystem": "pipeline",
+                "hotspot_count": 0,
+                "refactor_now": 0,
+                "refactor_soon": 0,
+            },
+            {
+                "subsystem": "other",
+                "hotspot_count": 1,
+                "refactor_now": 0,
+                "refactor_soon": 1,
+            },
+        ],
+    }
+
+    markdown = audit.render_markdown_report(report)
+
+    assert "Repo verdict" in markdown
+    assert "Top hotspots" in markdown
+    assert "Dead code candidates" in markdown
+    assert "Recommended refactor queue" in markdown
+
+
+def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
+    report = {
+        "summary": {
+            "files_scanned": 1,
+            "hotspots_total": 1,
+            "monitor_total": 0,
+            "refactor_soon_total": 1,
+            "refactor_now_total": 0,
+            "dead_code_candidates_total": 0,
+            "dead_code_high_confidence_total": 0,
+        },
+        "repo_verdict": {
+            "status": "corroding",
+            "summary": "Structural debt is regressing in the current scope.",
+            "has_regressions": True,
+            "refactor_now_total": 0,
+        },
+        "hotspots": [
+            {
+                "id": "recoleta/example.py::branchy",
+                "file": "recoleta/example.py",
+                "symbol": "branchy",
+                "classification": "refactor_soon",
+                "tools": ["ruff"],
+                "metrics": {"ruff": {"complexity": 16}},
+            }
+        ],
+        "dead_code_candidates": [],
+        "tool_summaries": {},
+        "baseline_diff": {
+            "baseline_available": True,
+            "baseline_path": "quality/refactor-baseline.json",
+            "has_regressions": True,
+            "new": [{"kind": "hotspot"}],
+            "worsened": [],
+            "resolved": [],
+        },
+        "recommended_refactor_queue": [],
+        "scope": {"files": ["recoleta/example.py"]},
+        "schema_version": 1,
+        "generated_at": "2026-04-02T00:00:00+00:00",
+    }
+
+    snapshot = audit.build_baseline_snapshot(report)
+
+    assert snapshot["baseline_diff"]["baseline_available"] is False
+    assert snapshot["baseline_diff"]["has_regressions"] is False
+    assert snapshot["baseline_diff"]["new"] == []
+    assert snapshot["repo_verdict"]["status"] == "strained"
+
+
+def test_refactor_audit_cli_generates_schema_stable_outputs(tmp_path: Path) -> None:
+    fixture_root = tmp_path / "fixture_project"
+    fixture_root.mkdir()
+    package_dir = fixture_root / "fixture_pkg"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "hotspot.py").write_text(
+        """
+from __future__ import annotations
+
+
+def branchy(a: bool, b: bool, c: bool, d: bool, e: bool, f: bool) -> int:
+    total = 0
+    if a:
+        total += 1
+    if b:
+        total += 1
+    if c:
+        total += 1
+    if d:
+        total += 1
+    if e:
+        total += 1
+    if f:
+        total += 1
+    if a and b:
+        total += 1
+    if c and d:
+        total += 1
+    if e and f:
+        total += 1
+    if a or c:
+        total += 1
+    if b or d:
+        total += 1
+    if e or a:
+        total += 1
+    return total
+
+
+def unused_helper() -> str:
+    return "unused"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "audit-out"
+    baseline_path = tmp_path / "baseline.json"
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "refactor_audit.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            str(fixture_root),
+            "--out-dir",
+            str(out_dir),
+            "--baseline",
+            str(baseline_path),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+    report_json = out_dir / "report.json"
+    report_md = out_dir / "report.md"
+    assert report_json.exists()
+    assert report_md.exists()
+    assert (out_dir / "raw" / "ruff.json").exists()
+    assert (out_dir / "raw" / "lizard.csv").exists()
+    assert (out_dir / "raw" / "complexipy.json").exists()
+    assert (out_dir / "raw" / "vulture.txt").exists()
+
+    payload = json.loads(report_json.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert payload["scope"]["file_count"] == 2
+    assert set(payload) >= {
+        "schema_version",
+        "generated_at",
+        "scope",
+        "summary",
+        "repo_verdict",
+        "tool_summaries",
+        "hotspots",
+        "dead_code_candidates",
+        "baseline_diff",
+        "recommended_refactor_queue",
+    }
+    assert payload["hotspots"]
+    assert payload["dead_code_candidates"]

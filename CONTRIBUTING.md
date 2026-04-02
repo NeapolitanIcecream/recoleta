@@ -17,6 +17,23 @@ When you are iterating on one area, run a focused test too:
 uv run pytest tests/test_trends_static_site.py -q
 ```
 
+## Refactor Audit
+
+Use the audit workflow when you want to check whether the current scope is
+drifting into structural debt before you start or while you are iterating on a
+refactor.
+
+```bash
+uv sync --group dev
+uv run python scripts/refactor_audit.py
+uv run python scripts/refactor_audit.py recoleta/pipeline recoleta/site.py
+```
+
+`output/refactor-audit/` is temporary local output and remains ignored.
+`quality/refactor-baseline.json` is the checked-in baseline used to spot
+regressions without pretending that the existing hotspot backlog is already
+gone.
+
 ## How to make changes easier to review
 
 - Keep one pull request focused on one behavior change or one user-facing
