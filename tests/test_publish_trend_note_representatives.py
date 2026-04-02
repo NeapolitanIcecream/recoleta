@@ -45,6 +45,46 @@ def test_publish_trend_note_skips_missing_representative_fields(
     assert "chunk_index=None" not in text
 
 
+def test_write_markdown_trend_note_rejects_unexpected_keyword_arguments(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = period_start + timedelta(days=1)
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'site_exlcude'"):
+        write_markdown_trend_note(
+            output_dir=tmp_path,
+            trend_doc_id=1,
+            title="Daily Trend",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            run_id="run-test",
+            overview_md="- overview",
+            topics=["agents"],
+            site_exlcude=True,
+        )
+
+
+def test_write_markdown_trend_note_rejects_missing_required_keywords(
+    tmp_path,
+) -> None:
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = period_start + timedelta(days=1)
+
+    with pytest.raises(TypeError, match="missing required keyword-only argument: 'run_id'"):
+        write_markdown_trend_note(
+            output_dir=tmp_path,
+            trend_doc_id=1,
+            title="Daily Trend",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            overview_md="- overview",
+            topics=["agents"],
+        )
+
+
 def test_publish_trend_note_normalizes_overview_headings_and_top_n(
     tmp_path,
 ) -> None:

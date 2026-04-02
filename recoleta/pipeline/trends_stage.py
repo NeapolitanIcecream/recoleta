@@ -1361,6 +1361,12 @@ def run_trends_stage(
         ) -> list[ProjectionSpec]:
             if state is None:
                 raise RuntimeError("trend projection state is required")
+            warning_context = {
+                "doc_id": state.doc_id,
+                "granularity": normalized_granularity,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+            }
             return [
                 ProjectionSpec(
                     name="markdown",
@@ -1393,12 +1399,7 @@ def run_trends_stage(
                         pass_kind=TREND_SYNTHESIS_PASS_KIND,
                         site_exclude=empty_corpus,
                     ),
-                    warning_context={
-                        "doc_id": state.doc_id,
-                        "granularity": normalized_granularity,
-                        "period_start": period_start.isoformat(),
-                        "period_end": period_end.isoformat(),
-                    },
+                    warning_context=warning_context,
                     sanitize_error=service._sanitize_error_message,
                     reraise=False,
                 ),
@@ -1434,12 +1435,7 @@ def run_trends_stage(
                         pass_kind=TREND_SYNTHESIS_PASS_KIND,
                         site_exclude=empty_corpus,
                     ),
-                    warning_context={
-                        "doc_id": state.doc_id,
-                        "granularity": normalized_granularity,
-                        "period_start": period_start.isoformat(),
-                        "period_end": period_end.isoformat(),
-                    },
+                    warning_context=warning_context,
                     sanitize_error=service._sanitize_error_message,
                     reraise=False,
                 ),

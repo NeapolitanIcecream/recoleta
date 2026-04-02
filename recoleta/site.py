@@ -3347,59 +3347,174 @@ def _presentation_local_markdown_targets(
 ) -> set[Path]:
     markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
     candidate_paths: set[Path] = set()
-
-    def add_markdown(value: Any) -> None:
-        normalized = str(value or "").strip()
-        if not normalized:
-            return
-        rendered_html = markdown.render(normalized)
-        soup = BeautifulSoup(rendered_html, "html.parser")
-        for anchor in soup.find_all("a", href=True):
-            target_path = _resolve_site_local_markdown_target(
-                source_markdown_path=source_markdown_path,
-                href=str(anchor.get("href") or ""),
-            )
-            if target_path is not None:
-                candidate_paths.add(target_path)
-
-    def add_href(value: Any) -> None:
-        target_path = _resolve_site_local_markdown_target(
-            source_markdown_path=source_markdown_path,
-            href=str(value or ""),
-        )
-        if target_path is not None:
-            candidate_paths.add(target_path)
-
     content = presentation.get("content")
     if not isinstance(content, dict):
         return candidate_paths
+    _append_presentation_markdown_targets(
+        candidate_paths=candidate_paths,
+        markdown=markdown,
+        source_markdown_path=source_markdown_path,
+        value=content.get("overview"),
+    )
+    _append_presentation_markdown_targets(
+        candidate_paths=candidate_paths,
+        markdown=markdown,
+        source_markdown_path=source_markdown_path,
+        value=content.get("summary"),
+    )
+    _append_ranked_shift_targets(
+        candidate_paths=candidate_paths,
+        markdown=markdown,
+        source_markdown_path=source_markdown_path,
+        ranked_shifts=list(content.get("ranked_shifts") or []),
+    )
+    _append_counter_signal_targets(
+        candidate_paths=candidate_paths,
+        markdown=markdown,
+        source_markdown_path=source_markdown_path,
+        counter_signal=content.get("counter_signal"),
+    )
+    _append_cluster_targets(
+        candidate_paths=candidate_paths,
+        markdown=markdown,
+        source_markdown_path=source_markdown_path,
+        clusters=list(content.get("clusters") or []),
+    )
+    _append_source_entry_targets(
+        candidate_paths=candidate_paths,
+        source_markdown_path=source_markdown_path,
+        entries=list(content.get("representative_sources") or []),
+    )
+    _append_opportunity_targets(
+        candidate_paths=candidate_paths,
+        markdown=markdown,
+        source_markdown_path=source_markdown_path,
+        opportunities=list(content.get("opportunities") or []),
+    )
+    return candidate_paths
 
-    add_markdown(content.get("overview"))
-    add_markdown(content.get("summary"))
-    for shift in list(content.get("ranked_shifts") or []):
-        if not isinstance(shift, dict):
-            continue
-        add_markdown(shift.get("summary"))
-    counter_signal = content.get("counter_signal")
-    if isinstance(counter_signal, dict):
-        add_markdown(counter_signal.get("summary"))
-        for entry in list(counter_signal.get("evidence") or []):
-            if not isinstance(entry, dict):
-                continue
-            add_href(entry.get("href"))
-    for cluster in list(content.get("clusters") or []):
-        if not isinstance(cluster, dict):
-            continue
-        add_markdown(cluster.get("summary"))
-        for entry in list(cluster.get("representative_sources") or []):
-            if not isinstance(entry, dict):
-                continue
-            add_href(entry.get("href"))
-    for entry in list(content.get("representative_sources") or []):
+
+def _append_presentation_markdown_targets(
+    *,
+    candidate_paths: set[Path],
+    markdown: MarkdownIt,
+    source_markdown_path: Path,
+    value: Any,
+) -> None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return
+    rendered_html = markdown.render(normalized)
+    soup = BeautifulSoup(rendered_html, "html.parser")
+    for anchor in soup.find_all("a", href=True):
+        _append_presentation_href_target(
+            candidate_paths=candidate_paths,
+            source_markdown_path=source_markdown_path,
+            href=str(anchor.get("href") or ""),
+        )
+
+
+def _append_presentation_href_target(
+    *,
+    candidate_paths: set[Path],
+    source_markdown_path: Path,
+    href: Any,
+) -> None:
+    target_path = _resolve_site_local_markdown_target(
+        source_markdown_path=source_markdown_path,
+        href=str(href or ""),
+    )
+    if target_path is not None:
+        candidate_paths.add(target_path)
+
+
+def _append_source_entry_targets(
+    *,
+    candidate_paths: set[Path],
+    source_markdown_path: Path,
+    entries: Sequence[Any],
+) -> None:
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
-        add_href(entry.get("href"))
-    for opportunity in list(content.get("opportunities") or []):
+        _append_presentation_href_target(
+            candidate_paths=candidate_paths,
+            source_markdown_path=source_markdown_path,
+            href=entry.get("href"),
+        )
+
+
+def _append_ranked_shift_targets(
+    *,
+    candidate_paths: set[Path],
+    markdown: MarkdownIt,
+    source_markdown_path: Path,
+    ranked_shifts: Sequence[Any],
+) -> None:
+    for shift in ranked_shifts:
+        if not isinstance(shift, dict):
+            continue
+        _append_presentation_markdown_targets(
+            candidate_paths=candidate_paths,
+            markdown=markdown,
+            source_markdown_path=source_markdown_path,
+            value=shift.get("summary"),
+        )
+
+
+def _append_counter_signal_targets(
+    *,
+    candidate_paths: set[Path],
+    markdown: MarkdownIt,
+    source_markdown_path: Path,
+    counter_signal: Any,
+) -> None:
+    if not isinstance(counter_signal, dict):
+        return
+    _append_presentation_markdown_targets(
+        candidate_paths=candidate_paths,
+        markdown=markdown,
+        source_markdown_path=source_markdown_path,
+        value=counter_signal.get("summary"),
+    )
+    _append_source_entry_targets(
+        candidate_paths=candidate_paths,
+        source_markdown_path=source_markdown_path,
+        entries=list(counter_signal.get("evidence") or []),
+    )
+
+
+def _append_cluster_targets(
+    *,
+    candidate_paths: set[Path],
+    markdown: MarkdownIt,
+    source_markdown_path: Path,
+    clusters: Sequence[Any],
+) -> None:
+    for cluster in clusters:
+        if not isinstance(cluster, dict):
+            continue
+        _append_presentation_markdown_targets(
+            candidate_paths=candidate_paths,
+            markdown=markdown,
+            source_markdown_path=source_markdown_path,
+            value=cluster.get("summary"),
+        )
+        _append_source_entry_targets(
+            candidate_paths=candidate_paths,
+            source_markdown_path=source_markdown_path,
+            entries=list(cluster.get("representative_sources") or []),
+        )
+
+
+def _append_opportunity_targets(
+    *,
+    candidate_paths: set[Path],
+    markdown: MarkdownIt,
+    source_markdown_path: Path,
+    opportunities: Sequence[Any],
+) -> None:
+    for opportunity in opportunities:
         if not isinstance(opportunity, dict):
             continue
         for key in (
@@ -3410,12 +3525,17 @@ def _presentation_local_markdown_targets(
             "what_changed",
             "validation_next_step",
         ):
-            add_markdown(opportunity.get(key))
-        for entry in list(opportunity.get("evidence") or []):
-            if not isinstance(entry, dict):
-                continue
-            add_href(entry.get("href"))
-    return candidate_paths
+            _append_presentation_markdown_targets(
+                candidate_paths=candidate_paths,
+                markdown=markdown,
+                source_markdown_path=source_markdown_path,
+                value=opportunity.get(key),
+            )
+        _append_source_entry_targets(
+            candidate_paths=candidate_paths,
+            source_markdown_path=source_markdown_path,
+            entries=list(opportunity.get("evidence") or []),
+        )
 
 
 def _collect_referenced_item_source_keys(
@@ -4052,13 +4172,165 @@ def _render_presentation_source_entry(
     return rendered_list
 
 
+def _presentation_content(presentation: dict[str, Any]) -> dict[str, Any]:
+    content = (
+        presentation.get("content")
+        if isinstance(presentation.get("content"), dict)
+        else {}
+    )
+    assert isinstance(content, dict)
+    return content
+
+
+def _trend_shift_cards(
+    *,
+    ranked_shifts: Sequence[dict[str, Any]],
+    labels: dict[str, str],
+) -> list[str]:
+    cards: list[str] = []
+    for shift in ranked_shifts:
+        evidence_html = _render_presentation_source_list(
+            entries=[
+                entry
+                for entry in list(shift.get("evidence") or [])
+                if isinstance(entry, dict)
+            ],
+            labels=labels,
+        )
+        history_refs = [
+            html.escape(str(ref).strip())
+            for ref in list(shift.get("history_refs") or [])
+            if str(ref).strip()
+        ]
+        history_html = (
+            "<div class='detail-shift-meta'>"
+            f"History: {', '.join(history_refs)}"
+            "</div>"
+            if history_refs
+            else ""
+        )
+        cards.append(
+            "<article class='surface-card section-card detail-shift-card'>"
+            f"<div class='section-kicker'>#{int(shift.get('rank') or 0)}</div>"
+            f"<h3 class='section-title'>{html.escape(str(shift.get('title') or 'Shift').strip())}</h3>"
+            f"{history_html}"
+            f"<div class='prose'>{_render_presentation_markdown_html(shift.get('summary'))}</div>"
+            f"<div class='prose detail-source-list'>{evidence_html}</div>"
+            "</article>"
+        )
+    return cards
+
+
+def _trend_shift_section(
+    *,
+    ranked_shifts: Sequence[dict[str, Any]],
+    labels: dict[str, str],
+) -> str | None:
+    if not ranked_shifts:
+        return None
+    shift_cards = _trend_shift_cards(ranked_shifts=ranked_shifts, labels=labels)
+    return (
+        "<section class='surface-card section-card'>"
+        f"{_render_browser_section_label_html(labels['top_shifts'])}"
+        f"<div class='cluster-columns'>{''.join(shift_cards)}</div>"
+        "</section>"
+    )
+
+
+def _trend_counter_signal_section(
+    *,
+    counter_signal: Any,
+    labels: dict[str, str],
+) -> str | None:
+    if not isinstance(counter_signal, dict):
+        return None
+    title = str(counter_signal.get("title") or "").strip()
+    summary_html = _render_presentation_markdown_html(counter_signal.get("summary"))
+    evidence_html = _render_presentation_source_list(
+        entries=[
+            entry
+            for entry in list(counter_signal.get("evidence") or [])
+            if isinstance(entry, dict)
+        ],
+        labels=labels,
+    )
+    if not title and summary_html == "<p>(none)</p>" and evidence_html == "<p>(none)</p>":
+        return None
+    parts: list[str] = []
+    if title:
+        parts.append(f"<h3 class='section-title'>{html.escape(title)}</h3>")
+    if summary_html != "<p>(none)</p>":
+        parts.append(f"<div class='prose'>{summary_html}</div>")
+    if evidence_html != "<p>(none)</p>":
+        parts.append(_render_browser_section_label_html(labels["representative_sources"]))
+        parts.append(f"<div class='prose detail-source-list'>{evidence_html}</div>")
+    return _render_browser_content_card_html(
+        heading=labels["counter_signal"],
+        inner_html="".join(parts),
+    )
+
+
+def _trend_cluster_cards(
+    *,
+    clusters: Sequence[dict[str, Any]],
+    labels: dict[str, str],
+) -> list[str]:
+    cards: list[str] = []
+    for cluster in clusters:
+        representative_html = _render_presentation_source_list(
+            entries=[
+                entry
+                for entry in list(cluster.get("representative_sources") or [])
+                if isinstance(entry, dict)
+            ],
+            labels=labels,
+        )
+        cards.append(
+            "<article class='surface-card section-card cluster-card'>"
+            f"<h3 class='section-title'>{html.escape(str(cluster.get('title') or 'Cluster').strip())}</h3>"
+            f"<div class='prose'>{_render_presentation_markdown_html(cluster.get('summary'))}</div>"
+            f"{_render_browser_section_label_html(labels['representative_sources'])}"
+            f"<div class='prose detail-source-list'>{representative_html}</div>"
+            "</article>"
+        )
+    return cards
+
+
+def _trend_cluster_section(
+    *,
+    clusters: Sequence[dict[str, Any]],
+    labels: dict[str, str],
+) -> str | None:
+    if not clusters:
+        return None
+    cluster_cards = _trend_cluster_cards(clusters=clusters, labels=labels)
+    return (
+        "<section class='surface-card section-card'>"
+        f"{_render_browser_section_label_html(labels['clusters'])}"
+        f"<div class='cluster-columns'>{''.join(cluster_cards)}</div>"
+        "</section>"
+    )
+
+
+def _presentation_evolution_insight(
+    *, ranked_shifts: Sequence[dict[str, Any]]
+) -> str | None:
+    if not ranked_shifts:
+        return None
+    has_explicit_comparison_signal = any(
+        list(shift.get("history_refs") or []) for shift in ranked_shifts
+    )
+    if not has_explicit_comparison_signal:
+        return None
+    return f"{len(ranked_shifts)} shift{'s' if len(ranked_shifts) != 1 else ''}"
+
+
 def _build_trend_body_from_presentation(
     *,
     presentation: dict[str, Any],
 ) -> tuple[str, str, str | None]:
     labels = _presentation_labels(surface_kind="trend", presentation=presentation)
-    content = presentation.get("content") if isinstance(presentation.get("content"), dict) else {}
-    assert isinstance(content, dict)
+    content = _presentation_content(presentation)
     rendered_sections: list[str] = []
 
     overview_html = _render_presentation_markdown_html(content.get("overview"))
@@ -4070,111 +4342,29 @@ def _build_trend_body_from_presentation(
     )
 
     ranked_shifts = [
-        shift for shift in list(content.get("ranked_shifts") or []) if isinstance(shift, dict)
+        shift
+        for shift in list(content.get("ranked_shifts") or [])
+        if isinstance(shift, dict)
     ]
-    if ranked_shifts:
-        shift_cards: list[str] = []
-        for shift in ranked_shifts:
-            evidence_html = _render_presentation_source_list(
-                entries=[
-                    entry
-                    for entry in list(shift.get("evidence") or [])
-                    if isinstance(entry, dict)
-                ],
-                labels=labels,
-            )
-            history_refs = [
-                html.escape(str(ref).strip())
-                for ref in list(shift.get("history_refs") or [])
-                if str(ref).strip()
-            ]
-            history_html = (
-                "<div class='detail-shift-meta'>"
-                f"History: {', '.join(history_refs)}"
-                "</div>"
-                if history_refs
-                else ""
-            )
-            shift_cards.append(
-                "<article class='surface-card section-card detail-shift-card'>"
-                f"<div class='section-kicker'>#{int(shift.get('rank') or 0)}</div>"
-                f"<h3 class='section-title'>{html.escape(str(shift.get('title') or 'Shift').strip())}</h3>"
-                f"{history_html}"
-                f"<div class='prose'>{_render_presentation_markdown_html(shift.get('summary'))}</div>"
-                f"<div class='prose detail-source-list'>{evidence_html}</div>"
-                "</article>"
-            )
-        rendered_sections.append(
-            "<section class='surface-card section-card'>"
-            f"{_render_browser_section_label_html(labels['top_shifts'])}"
-            f"<div class='cluster-columns'>{''.join(shift_cards)}</div>"
-            "</section>"
-        )
+    if shift_section := _trend_shift_section(
+        ranked_shifts=ranked_shifts,
+        labels=labels,
+    ):
+        rendered_sections.append(shift_section)
 
-    counter_signal = content.get("counter_signal")
-    if isinstance(counter_signal, dict):
-        title = str(counter_signal.get("title") or "").strip()
-        summary_html = _render_presentation_markdown_html(counter_signal.get("summary"))
-        evidence_html = _render_presentation_source_list(
-            entries=[
-                entry
-                for entry in list(counter_signal.get("evidence") or [])
-                if isinstance(entry, dict)
-            ],
-            labels=labels,
-        )
-        if title or summary_html != "<p>(none)</p>" or evidence_html != "<p>(none)</p>":
-            counter_signal_parts: list[str] = []
-            if title:
-                counter_signal_parts.append(
-                    f"<h3 class='section-title'>{html.escape(title)}</h3>"
-                )
-            if summary_html != "<p>(none)</p>":
-                counter_signal_parts.append(
-                    f"<div class='prose'>{summary_html}</div>"
-                )
-            if evidence_html != "<p>(none)</p>":
-                counter_signal_parts.append(
-                    _render_browser_section_label_html(labels["representative_sources"])
-                )
-                counter_signal_parts.append(
-                    f"<div class='prose detail-source-list'>{evidence_html}</div>"
-                )
-            rendered_sections.append(
-                _render_browser_content_card_html(
-                    heading=labels["counter_signal"],
-                    inner_html="".join(counter_signal_parts),
-                )
-            )
+    if counter_signal_section := _trend_counter_signal_section(
+        counter_signal=content.get("counter_signal"),
+        labels=labels,
+    ):
+        rendered_sections.append(counter_signal_section)
 
     clusters = [
-        cluster for cluster in list(content.get("clusters") or []) if isinstance(cluster, dict)
+        cluster
+        for cluster in list(content.get("clusters") or [])
+        if isinstance(cluster, dict)
     ]
-    if clusters:
-        cluster_cards: list[str] = []
-        for cluster in clusters:
-            representative_html = _render_presentation_source_list(
-                entries=[
-                    entry
-                    for entry in list(cluster.get("representative_sources") or [])
-                    if isinstance(entry, dict)
-                ],
-                labels=labels,
-            )
-            cluster_cards.append(
-                "<article class='surface-card section-card cluster-card'>"
-                f"<h3 class='section-title'>{html.escape(str(cluster.get('title') or 'Cluster').strip())}</h3>"
-                f"<div class='prose'>{_render_presentation_markdown_html(cluster.get('summary'))}</div>"
-                f"{_render_browser_section_label_html(labels['representative_sources'])}"
-                f"<div class='prose detail-source-list'>{representative_html}</div>"
-                "</article>"
-            )
-        rendered_sections.append(
-            "<section class='surface-card section-card'>"
-            f"{_render_browser_section_label_html(labels['clusters'])}"
-            f"<div class='cluster-columns'>{''.join(cluster_cards)}</div>"
-            "</section>"
-        )
+    if cluster_section := _trend_cluster_section(clusters=clusters, labels=labels):
+        rendered_sections.append(cluster_section)
 
     top_sources = _render_presentation_source_list(
         entries=[
@@ -4196,37 +4386,30 @@ def _build_trend_body_from_presentation(
         BeautifulSoup(overview_html, "html.parser").get_text(" ", strip=True),
         limit=220,
     )
-    has_explicit_comparison_signal = any(
-        list(shift.get("history_refs") or []) for shift in ranked_shifts
-    )
-    evolution_insight = (
-        f"{len(ranked_shifts)} shift{'s' if len(ranked_shifts) != 1 else ''}"
-        if ranked_shifts and has_explicit_comparison_signal
-        else None
-    )
     return (
         "<div class='document-flow'>" + "".join(rendered_sections) + "</div>",
         excerpt,
-        evolution_insight,
+        _presentation_evolution_insight(ranked_shifts=ranked_shifts),
     )
 
 
-def _render_idea_opportunity_card_from_presentation(
+def _idea_opportunity_meta_row(
     *,
     opportunity: dict[str, Any],
-    labels: dict[str, str],
-) -> tuple[str, int]:
-    tier_label = (
-        labels["best_bet"]
-        if str(opportunity.get("tier") or "").strip() == "best_bet"
-        else labels["alternate"]
-    )
-    meta_row_html = (
+) -> str:
+    return (
         "<div class='idea-opportunity-meta-row'>"
         f"<span class='meta-pill'>{html.escape(opportunity.get('display_kind') or '')}</span>"
         f"<span class='meta-pill subdued'>{html.escape(opportunity.get('display_time_horizon') or '')}</span>"
         "</div>"
     )
+
+
+def _idea_opportunity_detail_blocks(
+    *,
+    opportunity: dict[str, Any],
+    labels: dict[str, str],
+) -> list[str]:
     blocks: list[str] = [
         "<section class='idea-opportunity-block idea-opportunity-block-role'>"
         f"<div class='idea-opportunity-label'>{html.escape(labels['role'])}</div>"
@@ -4251,47 +4434,78 @@ def _render_idea_opportunity_card_from_presentation(
             f"<div class='idea-opportunity-copy prose'>{_render_presentation_markdown_html(value)}</div>"
             "</section>"
         )
+    return blocks
+
+
+def _idea_opportunity_evidence_block(
+    *,
+    opportunity: dict[str, Any],
+    labels: dict[str, str],
+) -> tuple[str | None, int]:
     evidence_entries = [
         entry for entry in list(opportunity.get("evidence") or []) if isinstance(entry, dict)
     ]
-    if evidence_entries:
-        evidence_items: list[str] = []
-        for entry in evidence_entries:
-            evidence_line = _render_presentation_source_entry(entry=entry, labels=labels)
-            reason = str(entry.get("reason") or "").strip()
-            reasons = [
-                str(item).strip()
-                for item in list(entry.get("reasons") or [])
-                if str(item).strip()
-            ]
-            reason_list = reasons or ([reason] if reason else [])
-            if reason_list:
-                reason_html = "<ul>" + "".join(
-                    f"<li>{html.escape(item)}</li>" for item in reason_list
-                ) + "</ul>"
-            else:
-                reason_html = ""
-            evidence_items.append(
-                f"<li class='source-list-item'>{evidence_line}{reason_html}</li>"
-            )
-        blocks.append(
-            "<section class='idea-opportunity-block idea-opportunity-block-evidence'>"
-            f"<div class='idea-opportunity-label'>{html.escape(labels['evidence'])}</div>"
-            "<div class='idea-opportunity-copy prose idea-evidence-list'>"
-            f"<ul>{''.join(evidence_items)}</ul>"
-            "</div>"
-            "</section>"
+    if not evidence_entries:
+        return None, 0
+    evidence_items: list[str] = []
+    for entry in evidence_entries:
+        evidence_line = _render_presentation_source_entry(entry=entry, labels=labels)
+        reason = str(entry.get("reason") or "").strip()
+        reasons = [
+            str(item).strip()
+            for item in list(entry.get("reasons") or [])
+            if str(item).strip()
+        ]
+        reason_list = reasons or ([reason] if reason else [])
+        reason_html = (
+            "<ul>" + "".join(f"<li>{html.escape(item)}</li>" for item in reason_list) + "</ul>"
+            if reason_list
+            else ""
         )
+        evidence_items.append(
+            f"<li class='source-list-item'>{evidence_line}{reason_html}</li>"
+        )
+    return (
+        "<section class='idea-opportunity-block idea-opportunity-block-evidence'>"
+        f"<div class='idea-opportunity-label'>{html.escape(labels['evidence'])}</div>"
+        "<div class='idea-opportunity-copy prose idea-evidence-list'>"
+        f"<ul>{''.join(evidence_items)}</ul>"
+        "</div>"
+        "</section>",
+        len(evidence_entries),
+    )
+
+
+def _render_idea_opportunity_card_from_presentation(
+    *,
+    opportunity: dict[str, Any],
+    labels: dict[str, str],
+) -> tuple[str, int]:
+    tier_label = (
+        labels["best_bet"]
+        if str(opportunity.get("tier") or "").strip() == "best_bet"
+        else labels["alternate"]
+    )
+    blocks = _idea_opportunity_detail_blocks(
+        opportunity=opportunity,
+        labels=labels,
+    )
+    evidence_block, evidence_count = _idea_opportunity_evidence_block(
+        opportunity=opportunity,
+        labels=labels,
+    )
+    if evidence_block is not None:
+        blocks.append(evidence_block)
     opportunity_title = f"{tier_label}: {str(opportunity.get('title') or 'Opportunity').strip()}"
     return (
         "<article class='idea-opportunity-card'>"
         "<div class='idea-opportunity-head'>"
         f"<h3 class='idea-opportunity-title'>{html.escape(opportunity_title)}</h3>"
-        f"{meta_row_html}"
+        f"{_idea_opportunity_meta_row(opportunity=opportunity)}"
         "</div>"
         f"<div class='idea-opportunity-body'>{''.join(blocks)}</div>"
         "</article>",
-        len(evidence_entries),
+        evidence_count,
     )
 
 

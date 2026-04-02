@@ -1380,44 +1380,64 @@ def _canonical_note_context(
     if note_path is None or not note_path.exists() or not note_path.is_file():
         return {}
     sidecar_path = presentation_sidecar_path(note_path=note_path)
-    if sidecar_path.exists() and sidecar_path.is_file():
-        try:
-            payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
-        except Exception:
-            payload = None
-        try:
-            schema_version = (
-                int(payload.get("presentation_schema_version") or 0)
-                if isinstance(payload, dict)
-                else 0
-            )
-        except Exception:
-            schema_version = 0
-        if isinstance(payload, dict) and schema_version in {
-            PRESENTATION_SCHEMA_VERSION_V1,
-            PRESENTATION_SCHEMA_VERSION,
-        }:
-            if validate_presentation(payload):
-                payload = None
-            else:
-                return {
-                    "canonical_note": {
-                        "path": str(note_path),
-                        "sidecar_path": str(sidecar_path),
-                    },
-                    "presentation": payload,
-                }
+    presentation_context = _canonical_note_presentation_context(
+        note_path=note_path,
+        sidecar_path=sidecar_path,
+    )
+    if presentation_context is not None:
+        return presentation_context
+    return _canonical_markdown_note_context(note_path=note_path)
+
+
+def _canonical_note_presentation_context(
+    *,
+    note_path: Path,
+    sidecar_path: Path,
+) -> dict[str, Any] | None:
+    if not sidecar_path.exists() or not sidecar_path.is_file():
+        return None
+    try:
+        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    try:
+        schema_version = (
+            int(payload.get("presentation_schema_version") or 0)
+            if isinstance(payload, dict)
+            else 0
+        )
+    except Exception:
+        schema_version = 0
+    if not isinstance(payload, dict) or schema_version not in {
+        PRESENTATION_SCHEMA_VERSION_V1,
+        PRESENTATION_SCHEMA_VERSION,
+    }:
+        return None
+    if validate_presentation(payload):
+        return None
+    return {
+        "canonical_note": {
+            "path": str(note_path),
+            "sidecar_path": str(sidecar_path),
+        },
+        "presentation": payload,
+    }
+
+
+def _canonical_markdown_note_context(*, note_path: Path) -> dict[str, Any]:
     try:
         markdown_text = note_path.read_text(encoding="utf-8")
     except Exception:
         return {}
     lines = [line.rstrip() for line in markdown_text.splitlines()]
-    title = ""
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            title = stripped[2:].strip()
-            break
+    title = next(
+        (
+            stripped[2:].strip()
+            for line in lines
+            if (stripped := line.strip()).startswith("# ")
+        ),
+        "",
+    )
     body_excerpt = "\n".join(lines[:80]).strip()
     return {
         "canonical_note": {
