@@ -556,11 +556,7 @@ def materialize_trend_note_payload(
         markdown_output_dir=markdown_output_dir,
         output_language=output_language,
         language_code=language_code,
-        note_href_by_url={
-            str(url).strip(): str(href).strip()
-            for url, href in (item_note_href_by_url or {}).items()
-            if str(url).strip() and str(href).strip()
-        },
+        note_href_by_url=_normalized_note_href_by_url(item_note_href_by_url),
         stats=TrendNoteRewriteStats(),
         doc_cache={},
         item_cache={},
@@ -590,3 +586,13 @@ def materialize_trend_note_payload(
         highlights=highlights_for_notes,
         rewrite_stats=materializer.stats,
     )
+
+
+def _normalized_note_href_by_url(
+    item_note_href_by_url: dict[str, str] | None,
+) -> dict[str, str]:
+    return {
+        str(url).strip(): str(href).strip()
+        for url, href in (item_note_href_by_url or {}).items()
+        if str(url).strip() and str(href).strip()
+    }

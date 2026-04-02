@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
 import yaml
 
@@ -71,6 +71,70 @@ class _EvolutionRenderContext:
     history_window_refs: dict[str, dict[str, Any]] | None
     output_language: str | None
     labels: _EvolutionLabels
+
+
+class _TrendNoteContent(TypedDict):
+    title: str
+    overview_md: str
+    topics: list[str]
+    evolution: dict[str, Any] | None
+    history_window_refs: dict[str, dict[str, Any]] | None
+    counter_signal: dict[str, Any] | None
+    clusters: list[dict[str, Any]] | None
+    highlights: list[str] | None
+
+
+class _TrendNoteRenderKwargs(TypedDict):
+    trend_doc_id: int
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    run_id: str
+    output_language: str | None
+    note_dir: Path
+    projection_provenance: ProjectionProvenance | None
+    site_exclude: bool
+    language_code: str | None
+    display_language_code: str | None
+    content: _TrendNoteContent
+
+
+class _TrendNoteWriteKwargs(TypedDict, total=False):
+    trend_doc_id: int
+    title: str
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    run_id: str
+    overview_md: str
+    topics: list[str]
+    evolution: dict[str, Any] | None
+    history_window_refs: dict[str, dict[str, Any]] | None
+    counter_signal: dict[str, Any] | None
+    clusters: list[dict[str, Any]] | None
+    highlights: list[str] | None
+    output_language: str | None
+    pass_output_id: int | None
+    pass_kind: str | None
+    site_exclude: bool
+    language_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _TrendNoteWriteInput:
+    note_dir: Path
+    trend_doc_id: int
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    run_id: str
+    output_language: str | None
+    pass_output_id: int | None
+    pass_kind: str | None
+    site_exclude: bool
+    language_code: str | None
+    emit_presentation_sidecar: bool
+    content: _TrendNoteContent
 
 
 def _single_line(value: str, *, fallback: str) -> str:
@@ -148,6 +212,60 @@ def _history_window_title_display(raw_title: str) -> str:
     return normalized
 
 
+def _resolve_history_window_ref(
+    *,
+    window: str,
+    history_window_refs: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    refs = history_window_refs or {}
+    ref = refs.get(window)
+    if isinstance(ref, dict):
+        return ref
+    normalized_window = window.lower()
+    for candidate_key, candidate_ref in refs.items():
+        if str(candidate_key or "").strip().lower() == normalized_window and isinstance(
+            candidate_ref, dict
+        ):
+            return candidate_ref
+    return None
+
+
+def _history_window_display_label(*, raw: str, ref: dict[str, Any]) -> str:
+    window_id = _single_line(str(ref.get("window_id") or raw), fallback=raw)
+    label = _single_line(str(ref.get("label") or ""), fallback="")
+    title = _history_window_title_display(str(ref.get("title") or ""))
+    display_base = title or window_id
+    if label and label not in {window_id, display_base}:
+        return f"{display_base} ({label})"
+    return display_base
+
+
+def _history_window_note_href(*, note_dir: Path, ref: dict[str, Any]) -> str | None:
+    try:
+        trend_doc_id = int(ref.get("trend_doc_id") or 0)
+    except Exception:
+        trend_doc_id = 0
+    granularity = str(ref.get("granularity") or "").strip().lower()
+    raw_period_start = ref.get("period_start")
+    try:
+        period_start = (
+            raw_period_start
+            if isinstance(raw_period_start, datetime)
+            else datetime.fromisoformat(str(raw_period_start))
+        )
+    except Exception:
+        period_start = None
+    if trend_doc_id <= 0 or not granularity or period_start is None:
+        return None
+    return resolve_trend_note_href(
+        note_dir=note_dir,
+        from_dir=note_dir,
+        trend_doc_id=trend_doc_id,
+        granularity=granularity,
+        period_start=period_start,
+    )
+
+
 def resolve_trend_note_path(
     *,
     note_dir: Path,
@@ -188,48 +306,16 @@ def _format_history_window_display(
         return ""
     if raw.startswith("[") and "](" in raw:
         return raw
-    ref = (history_window_refs or {}).get(raw)
-    if not isinstance(ref, dict):
-        normalized_raw = raw.lower()
-        for candidate_key, candidate_ref in (history_window_refs or {}).items():
-            if str(candidate_key or "").strip().lower() != normalized_raw:
-                continue
-            ref = candidate_ref
-            break
-    if not isinstance(ref, dict):
+    ref = _resolve_history_window_ref(
+        window=raw,
+        history_window_refs=history_window_refs,
+    )
+    if ref is None:
         return raw
-    window_id = _single_line(str(ref.get("window_id") or raw), fallback=raw)
-    label = _single_line(str(ref.get("label") or ""), fallback="")
-    title = _history_window_title_display(str(ref.get("title") or ""))
-    display_base = title or window_id
-    display = (
-        f"{display_base} ({label})"
-        if label and label not in {window_id, display_base}
-        else display_base
-    )
-    try:
-        trend_doc_id = int(ref.get("trend_doc_id") or 0)
-    except Exception:
-        trend_doc_id = 0
-    granularity = str(ref.get("granularity") or "").strip().lower()
-    raw_period_start = ref.get("period_start")
-    try:
-        period_start = (
-            raw_period_start
-            if isinstance(raw_period_start, datetime)
-            else datetime.fromisoformat(str(raw_period_start))
-        )
-    except Exception:
-        period_start = None
-    if trend_doc_id <= 0 or not granularity or period_start is None:
+    display = _history_window_display_label(raw=raw, ref=ref)
+    href = _history_window_note_href(note_dir=note_dir, ref=ref)
+    if href is None:
         return display
-    href = resolve_trend_note_href(
-        note_dir=note_dir,
-        from_dir=note_dir,
-        trend_doc_id=trend_doc_id,
-        granularity=granularity,
-        period_start=period_start,
-    )
     return f"[{display}]({href})"
 
 
@@ -602,56 +688,45 @@ def _append_counter_signal_section(
         lines.extend(["", f"### {title}"])
     if summary:
         lines.extend(["", summary])
-    if isinstance(evidence, list) and evidence:
+    evidence_lines = _counter_signal_evidence_lines(evidence=evidence)
+    if evidence_lines:
         lines.extend(["", f"#### {display_labels['representative_sources']}"])
-        for entry in evidence:
-            rendered_line, _ = _cluster_representative_line(
-                {
-                    "title": entry.get("title"),
-                    "note_href": entry.get("note_href") or entry.get("href"),
-                    "url": entry.get("url"),
-                    "authors": entry.get("authors"),
-                }
-            )
-            if rendered_line is not None:
-                lines.append(rendered_line)
+        lines.extend(evidence_lines)
 
 
-def _render_trend_note_lines(
-    *,
-    title: str,
-    trend_doc_id: int,
-    granularity: str,
-    period_start: datetime,
-    period_end: datetime,
-    run_id: str,
-    overview_md: str,
-    topics: list[str],
-    evolution: dict[str, Any] | None,
-    history_window_refs: dict[str, dict[str, Any]] | None,
-    counter_signal: dict[str, Any] | None,
-    clusters: list[dict[str, Any]] | None,
-    highlights: list[str] | None,
-    output_language: str | None,
-    note_dir: Path,
-    projection_provenance: ProjectionProvenance | None,
-    site_exclude: bool,
-    language_code: str | None,
-    display_language_code: str | None = None,
-) -> list[str]:
-    _ = highlights
-    title = sanitize_trend_title(title)
-    overview_md = sanitize_trend_overview_markdown(overview_md)
+def _counter_signal_evidence_lines(*, evidence: Any) -> list[str]:
+    if not isinstance(evidence, list):
+        return []
+    lines: list[str] = []
+    for entry in evidence:
+        rendered_line, _ = _cluster_representative_line(
+            {
+                "title": entry.get("title"),
+                "note_href": entry.get("note_href") or entry.get("href"),
+                "url": entry.get("url"),
+                "authors": entry.get("authors"),
+            }
+        )
+        if rendered_line is not None:
+            lines.append(rendered_line)
+    return lines
+
+
+def _render_trend_note_lines(*, kwargs: _TrendNoteRenderKwargs) -> list[str]:
+    content = kwargs["content"]
+    _ = content.get("highlights")
+    title = sanitize_trend_title(content["title"])
+    overview_md = sanitize_trend_overview_markdown(content["overview_md"])
     render_context = _TrendNoteRenderContext(
-        trend_doc_id=trend_doc_id,
-        granularity=granularity,
-        period_start=period_start,
-        period_end=period_end,
-        run_id=run_id,
-        topics=topics,
-        projection_provenance=projection_provenance,
-        site_exclude=site_exclude,
-        language_code=language_code,
+        trend_doc_id=kwargs["trend_doc_id"],
+        granularity=kwargs["granularity"],
+        period_start=kwargs["period_start"],
+        period_end=kwargs["period_end"],
+        run_id=kwargs["run_id"],
+        topics=content["topics"],
+        projection_provenance=kwargs["projection_provenance"],
+        site_exclude=kwargs["site_exclude"],
+        language_code=kwargs["language_code"],
     )
     frontmatter = _build_trend_frontmatter(render_context)
 
@@ -663,11 +738,11 @@ def _render_trend_note_lines(
         f"# {title}",
         "",
     ]
-    display_labels = trend_display_labels(language_code=display_language_code)
+    display_labels = trend_display_labels(language_code=kwargs["display_language_code"])
     rendered_overview_md = _render_evolution_text(
         overview_md,
-        note_dir=note_dir,
-        history_window_refs=history_window_refs,
+        note_dir=kwargs["note_dir"],
+        history_window_refs=content["history_window_refs"],
     )
     lines.extend(
         [
@@ -677,115 +752,109 @@ def _render_trend_note_lines(
     )
     _append_evolution_section(
         lines=lines,
-        evolution=evolution,
-        note_dir=note_dir,
-        history_window_refs=history_window_refs,
-        output_language=output_language,
+        evolution=content["evolution"],
+        note_dir=kwargs["note_dir"],
+        history_window_refs=content["history_window_refs"],
+        output_language=kwargs["output_language"],
     )
     _append_counter_signal_section(
         lines=lines,
-        counter_signal=counter_signal,
+        counter_signal=content["counter_signal"],
         display_labels=display_labels,
-        note_dir=note_dir,
-        history_window_refs=history_window_refs,
+        note_dir=kwargs["note_dir"],
+        history_window_refs=content["history_window_refs"],
     )
     _append_cluster_sections(
         lines=lines,
-        clusters=clusters,
+        clusters=content["clusters"],
         display_labels=display_labels,
-        note_dir=note_dir,
-        history_window_refs=history_window_refs,
+        note_dir=kwargs["note_dir"],
+        history_window_refs=content["history_window_refs"],
     )
 
     return lines
 
 
+def _render_trend_note_content(**kwargs: Unpack[_TrendNoteWriteKwargs]) -> _TrendNoteContent:
+    return {
+        "title": kwargs["title"],
+        "overview_md": kwargs["overview_md"],
+        "topics": kwargs["topics"],
+        "evolution": kwargs.get("evolution"),
+        "history_window_refs": kwargs.get("history_window_refs"),
+        "counter_signal": kwargs.get("counter_signal"),
+        "clusters": kwargs.get("clusters"),
+        "highlights": kwargs.get("highlights"),
+    }
+
+
 def _write_trend_note(
     *,
-    note_dir: Path,
-    trend_doc_id: int,
-    title: str,
-    granularity: str,
-    period_start: datetime,
-    period_end: datetime,
-    run_id: str,
-    overview_md: str,
-    topics: list[str],
-    evolution: dict[str, Any] | None,
-    history_window_refs: dict[str, dict[str, Any]] | None,
-    counter_signal: dict[str, Any] | None,
-    clusters: list[dict[str, Any]] | None,
-    highlights: list[str] | None,
-    output_language: str | None,
-    pass_output_id: int | None = None,
-    pass_kind: str | None = None,
-    site_exclude: bool = False,
-    language_code: str | None = None,
-    emit_presentation_sidecar: bool = False,
+    write_input: _TrendNoteWriteInput,
 ) -> Path:
+    note_dir = write_input.note_dir
     note_dir.mkdir(parents=True, exist_ok=True)
     resolved_language_code = resolve_presentation_language_code(
-        language_code=language_code,
-        output_language=output_language,
+        language_code=write_input.language_code,
+        output_language=write_input.output_language,
     )
     resolved_display_language_code = (
-        resolve_presentation_language_code(language_code=language_code) or "en"
+        resolve_presentation_language_code(language_code=write_input.language_code) or "en"
     )
-    sanitized_title = sanitize_trend_title(title)
-    sanitized_overview_md = sanitize_trend_overview_markdown(overview_md)
+    sanitized_title = sanitize_trend_title(write_input.content["title"])
+    sanitized_overview_md = sanitize_trend_overview_markdown(
+        write_input.content["overview_md"]
+    )
     note_path = resolve_trend_note_path(
         note_dir=note_dir,
-        trend_doc_id=trend_doc_id,
-        granularity=granularity,
-        period_start=period_start,
+        trend_doc_id=write_input.trend_doc_id,
+        granularity=write_input.granularity,
+        period_start=write_input.period_start,
     )
     lines = _render_trend_note_lines(
-        title=title,
-        trend_doc_id=trend_doc_id,
-        granularity=granularity,
-        period_start=period_start,
-        period_end=period_end,
-        run_id=run_id,
-        overview_md=overview_md,
-        topics=topics,
-        evolution=evolution,
-        history_window_refs=history_window_refs,
-        counter_signal=counter_signal,
-        clusters=clusters,
-        highlights=highlights,
-        output_language=output_language,
-        note_dir=note_dir,
-        projection_provenance=(
-            build_projection_provenance(
-                pass_output_id=pass_output_id,
-                pass_kind=str(pass_kind or "").strip() or "trend_synthesis",
-            )
-            if pass_output_id is not None
-            else None
-        ),
-        site_exclude=bool(site_exclude),
+        kwargs={
+            "trend_doc_id": write_input.trend_doc_id,
+            "granularity": write_input.granularity,
+            "period_start": write_input.period_start,
+            "period_end": write_input.period_end,
+            "run_id": write_input.run_id,
+            "output_language": write_input.output_language,
+            "note_dir": note_dir,
+            "projection_provenance": (
+                build_projection_provenance(
+                    pass_output_id=write_input.pass_output_id,
+                    pass_kind=str(write_input.pass_kind or "").strip() or "trend_synthesis",
+                )
+                if write_input.pass_output_id is not None
+                else None
+            ),
+            "site_exclude": bool(write_input.site_exclude),
+            "language_code": resolved_language_code,
+            "display_language_code": resolved_display_language_code,
+            "content": write_input.content,
+        }
+    )
+    note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    if not write_input.emit_presentation_sidecar:
+        return note_path
+
+    presentation = build_trend_presentation_v2(
+        source_markdown_path=f"{note_dir.name}/{note_path.name}",
+        title=sanitized_title,
+        overview_md=sanitized_overview_md,
+        evolution=write_input.content["evolution"],
+        history_window_refs=write_input.content["history_window_refs"],
+        clusters=write_input.content["clusters"],
+        counter_signal=write_input.content["counter_signal"],
         language_code=resolved_language_code,
         display_language_code=resolved_display_language_code,
     )
-    note_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
-    if emit_presentation_sidecar:
-        presentation = build_trend_presentation_v2(
-            source_markdown_path=f"{note_dir.name}/{note_path.name}",
-            title=sanitized_title,
-            overview_md=sanitized_overview_md,
-            evolution=evolution,
-            history_window_refs=history_window_refs,
-            clusters=clusters,
-            counter_signal=counter_signal,
-            language_code=resolved_language_code,
-            display_language_code=resolved_display_language_code,
-        )
-        try:
-            write_presentation_sidecar(note_path=note_path, presentation=presentation)
-        except Exception:
-            note_path.unlink(missing_ok=True)
-            presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
-            raise
+    try:
+        write_presentation_sidecar(note_path=note_path, presentation=presentation)
+    except Exception:
+        note_path.unlink(missing_ok=True)
+        presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
+        raise
     return note_path
 
 
@@ -793,97 +862,53 @@ def write_obsidian_trend_note(
     *,
     vault_path: Path,
     base_folder: str,
-    trend_doc_id: int,
-    title: str,
-    granularity: str,
-    period_start: datetime,
-    period_end: datetime,
-    run_id: str,
-    overview_md: str,
-    topics: list[str],
-    evolution: dict[str, Any] | None = None,
-    history_window_refs: dict[str, dict[str, Any]] | None = None,
-    counter_signal: dict[str, Any] | None = None,
-    clusters: list[dict[str, Any]] | None = None,
-    highlights: list[str] | None = None,
-    output_language: str | None = None,
-    pass_output_id: int | None = None,
-    pass_kind: str | None = None,
-    site_exclude: bool = False,
-    language_code: str | None = None,
+    **kwargs: Unpack[_TrendNoteWriteKwargs],
 ) -> Path:
     note_dir = vault_path / base_folder / "Trends"
     return _write_trend_note(
-        note_dir=note_dir,
-        trend_doc_id=trend_doc_id,
-        title=title,
-        granularity=granularity,
-        period_start=period_start,
-        period_end=period_end,
-        run_id=run_id,
-        overview_md=overview_md,
-        topics=topics,
-        evolution=evolution,
-        history_window_refs=history_window_refs,
-        counter_signal=counter_signal,
-        clusters=clusters,
-        highlights=highlights,
-        output_language=output_language,
-        pass_output_id=pass_output_id,
-        pass_kind=pass_kind,
-        site_exclude=site_exclude,
-        language_code=language_code,
-        emit_presentation_sidecar=False,
+        write_input=_TrendNoteWriteInput(
+            note_dir=note_dir,
+            trend_doc_id=kwargs["trend_doc_id"],
+            granularity=kwargs["granularity"],
+            period_start=kwargs["period_start"],
+            period_end=kwargs["period_end"],
+            run_id=kwargs["run_id"],
+            output_language=kwargs.get("output_language"),
+            pass_output_id=kwargs.get("pass_output_id"),
+            pass_kind=kwargs.get("pass_kind"),
+            site_exclude=bool(kwargs.get("site_exclude", False)),
+            language_code=kwargs.get("language_code"),
+            emit_presentation_sidecar=False,
+            content=_render_trend_note_content(**kwargs),
+        )
     )
 
 
 def write_markdown_trend_note(
     *,
     output_dir: Path,
-    trend_doc_id: int,
-    title: str,
-    granularity: str,
-    period_start: datetime,
-    period_end: datetime,
-    run_id: str,
-    overview_md: str,
-    topics: list[str],
-    evolution: dict[str, Any] | None = None,
-    history_window_refs: dict[str, dict[str, Any]] | None = None,
-    counter_signal: dict[str, Any] | None = None,
-    clusters: list[dict[str, Any]] | None = None,
-    highlights: list[str] | None = None,
-    output_language: str | None = None,
-    pass_output_id: int | None = None,
-    pass_kind: str | None = None,
-    site_exclude: bool = False,
-    language_code: str | None = None,
+    **kwargs: Unpack[_TrendNoteWriteKwargs],
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
         raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
     trends_dir = output_dir / "Trends"
     return _write_trend_note(
-        note_dir=trends_dir,
-        trend_doc_id=trend_doc_id,
-        title=title,
-        granularity=granularity,
-        period_start=period_start,
-        period_end=period_end,
-        run_id=run_id,
-        overview_md=overview_md,
-        topics=topics,
-        evolution=evolution,
-        history_window_refs=history_window_refs,
-        counter_signal=counter_signal,
-        clusters=clusters,
-        highlights=highlights,
-        output_language=output_language,
-        pass_output_id=pass_output_id,
-        pass_kind=pass_kind,
-        site_exclude=site_exclude,
-        language_code=language_code,
-        emit_presentation_sidecar=True,
+        write_input=_TrendNoteWriteInput(
+            note_dir=trends_dir,
+            trend_doc_id=kwargs["trend_doc_id"],
+            granularity=kwargs["granularity"],
+            period_start=kwargs["period_start"],
+            period_end=kwargs["period_end"],
+            run_id=kwargs["run_id"],
+            output_language=kwargs.get("output_language"),
+            pass_output_id=kwargs.get("pass_output_id"),
+            pass_kind=kwargs.get("pass_kind"),
+            site_exclude=bool(kwargs.get("site_exclude", False)),
+            language_code=kwargs.get("language_code"),
+            emit_presentation_sidecar=True,
+            content=_render_trend_note_content(**kwargs),
+        )
     )
 
 

@@ -148,6 +148,39 @@ def test_parse_vulture_candidates_reads_text_output(tmp_path: Path) -> None:
     assert candidate["symbol"] == "unused_helper"
 
 
+def test_parse_vulture_candidates_ignores_pydantic_validator_methods(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "pkg" / "model.py"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """
+from pydantic import BaseModel, field_validator
+
+
+class Example(BaseModel):
+    value: int
+
+    @field_validator("value")
+    @classmethod
+    def _validate_value(cls, value: int) -> int:
+        return value
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    lookup = audit.ScopeLookup.from_files(repo_root=tmp_path, files=[path])
+    raw_text = "pkg/model.py:8: unused method '_validate_value' (60% confidence)\n"
+
+    candidates = audit.parse_vulture_candidates(
+        raw_text=raw_text,
+        lookup=lookup,
+        config=CONFIG,
+    )
+
+    assert candidates == []
+
+
 def test_parse_lizard_findings_keeps_same_leaf_methods_separate(tmp_path: Path) -> None:
     path = tmp_path / "pkg" / "mod.py"
     path.parent.mkdir(parents=True, exist_ok=True)

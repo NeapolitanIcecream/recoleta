@@ -39,6 +39,14 @@ QUEUE_ORDER = (
     "rag",
     "other",
 )
+_VULTURE_IGNORED_DECORATORS = frozenset(
+    {
+        "field_validator",
+        "model_validator",
+        "field_serializer",
+        "model_serializer",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -102,6 +110,7 @@ class ScopeLookup:
     qualified_names_by_path: dict[str, frozenset[str]]
     qualified_names_by_path_and_leaf: dict[str, dict[str, tuple[str, ...]]]
     qualified_names_by_path_and_line: dict[str, dict[int, str]]
+    vulture_ignored_lines_by_path: dict[str, frozenset[int]]
 
     @classmethod
     def from_files(cls, *, repo_root: Path, files: list[Path]) -> ScopeLookup:
@@ -110,6 +119,7 @@ class ScopeLookup:
         qualified_names_by_path: dict[str, frozenset[str]] = {}
         qualified_names_by_path_and_leaf: dict[str, dict[str, tuple[str, ...]]] = {}
         qualified_names_by_path_and_line: dict[str, dict[int, str]] = {}
+        vulture_ignored_lines_by_path: dict[str, frozenset[int]] = {}
         for rel_path in rel_paths:
             grouped[Path(rel_path).name].append(rel_path)
             path = repo_root / rel_path
@@ -117,6 +127,9 @@ class ScopeLookup:
             qualified_names_by_path[rel_path] = frozenset(symbol_index["qualified_names"])
             qualified_names_by_path_and_leaf[rel_path] = symbol_index["by_leaf"]
             qualified_names_by_path_and_line[rel_path] = symbol_index["by_line"]
+            vulture_ignored_lines_by_path[rel_path] = frozenset(
+                symbol_index["vulture_ignored_lines"]
+            )
         rel_paths_by_basename = {
             name: tuple(sorted(values)) for name, values in grouped.items()
         }
@@ -127,6 +140,7 @@ class ScopeLookup:
             qualified_names_by_path=qualified_names_by_path,
             qualified_names_by_path_and_leaf=qualified_names_by_path_and_leaf,
             qualified_names_by_path_and_line=qualified_names_by_path_and_line,
+            vulture_ignored_lines_by_path=vulture_ignored_lines_by_path,
         )
 
 
@@ -271,11 +285,22 @@ def resolve_reported_path(reported: str, lookup: ScopeLookup) -> str | None:
     return None
 
 
+@dataclass
+class _SymbolIndexBuffers:
+    qualified_names: list[str]
+    by_leaf: dict[str, list[str]]
+    by_line: dict[int, str]
+    vulture_ignored_lines: set[int]
+
+
 def build_symbol_index(path: Path) -> dict[str, Any]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    qualified_names: list[str] = []
-    by_leaf: dict[str, list[str]] = defaultdict(list)
-    by_line: dict[int, str] = {}
+    buffers = _SymbolIndexBuffers(
+        qualified_names=[],
+        by_leaf=defaultdict(list),
+        by_line={},
+        vulture_ignored_lines=set(),
+    )
 
     def walk(node: ast.AST, prefix: str = "", parent_kind: str | None = None) -> None:
         body = getattr(node, "body", None)
@@ -283,30 +308,92 @@ def build_symbol_index(path: Path) -> dict[str, Any]:
             return
         for child in body:
             if isinstance(child, ast.ClassDef):
-                qualified = child.name if not prefix else f"{prefix}::{child.name}"
+                qualified = _qualified_symbol_name(
+                    prefix=prefix,
+                    parent_kind=parent_kind,
+                    child_name=child.name,
+                    child_kind="class",
+                )
                 walk(child, qualified, "class")
                 continue
             if isinstance(child, ast.AsyncFunctionDef | ast.FunctionDef):
-                if not prefix:
-                    qualified = child.name
-                elif parent_kind == "class":
-                    qualified = f"{prefix}::{child.name}"
-                else:
-                    qualified = f"{prefix}.{child.name}"
-                qualified_names.append(qualified)
-                by_line[int(child.lineno)] = qualified
-                by_leaf[child.name].append(qualified)
+                qualified = _qualified_symbol_name(
+                    prefix=prefix,
+                    parent_kind=parent_kind,
+                    child_name=child.name,
+                    child_kind="function",
+                )
+                _record_function_symbol(
+                    node=child,
+                    qualified=qualified,
+                    buffers=buffers,
+                )
                 walk(child, qualified, "function")
 
     walk(tree)
     return {
-        "qualified_names": tuple(sorted(qualified_names)),
+        "qualified_names": tuple(sorted(buffers.qualified_names)),
         "by_leaf": {
             leaf: tuple(sorted(values))
-            for leaf, values in sorted(by_leaf.items())
+            for leaf, values in sorted(buffers.by_leaf.items())
         },
-        "by_line": dict(sorted(by_line.items())),
+        "by_line": dict(sorted(buffers.by_line.items())),
+        "vulture_ignored_lines": tuple(sorted(buffers.vulture_ignored_lines)),
     }
+
+
+def _qualified_symbol_name(
+    *,
+    prefix: str,
+    parent_kind: str | None,
+    child_name: str,
+    child_kind: Literal["class", "function"],
+) -> str:
+    if not prefix:
+        return child_name
+    if child_kind == "class" or parent_kind == "class":
+        return f"{prefix}::{child_name}"
+    return f"{prefix}.{child_name}"
+
+
+def _record_function_symbol(
+    *,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    qualified: str,
+    buffers: _SymbolIndexBuffers,
+) -> None:
+    buffers.qualified_names.append(qualified)
+    buffers.by_line[int(node.lineno)] = qualified
+    buffers.by_leaf[node.name].append(qualified)
+    if _has_vulture_ignored_decorator(node):
+        buffers.vulture_ignored_lines.update(_vulture_ignored_line_span(node))
+
+
+def _has_vulture_ignored_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any(
+        _decorator_base_name(decorator) in _VULTURE_IGNORED_DECORATORS
+        for decorator in node.decorator_list
+    )
+
+
+def _decorator_base_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Call):
+        return _decorator_base_name(node.func)
+    if isinstance(node, ast.Name):
+        return str(node.id)
+    if isinstance(node, ast.Attribute):
+        return str(node.attr)
+    return ""
+
+
+def _vulture_ignored_line_span(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> set[int]:
+    if not node.decorator_list:
+        return {int(node.lineno)}
+    start_line = min(int(getattr(decorator, "lineno", node.lineno)) for decorator in node.decorator_list)
+    end_line = int(node.lineno)
+    return set(range(start_line, end_line + 1))
 
 
 def normalize_symbol_key(symbol: str) -> str:
@@ -527,13 +614,16 @@ def parse_vulture_candidates(
         rel_path = resolve_reported_path(match.group("path"), lookup)
         if rel_path is None:
             continue
+        line_number = int(match.group("line"))
+        if line_number in lookup.vulture_ignored_lines_by_path.get(rel_path, frozenset()):
+            continue
         symbol = match.group("symbol")
         kind = match.group("kind")
         candidates.append(
             {
                 "id": f"{rel_path}::{kind}::{symbol}",
                 "file": rel_path,
-                "line": int(match.group("line")),
+                "line": line_number,
                 "symbol": symbol,
                 "kind": kind,
                 "confidence": confidence,

@@ -141,25 +141,29 @@ def build_trend_ideas_prompt_payload(
         "trend_title": str(trend_payload.title or "").strip(),
         "trend_topics": list(trend_payload.topics or []),
         "trend_snapshot_pack_md": trend_snapshot_pack_md,
-        "notes": [
-            "Use tools to verify and sharpen candidate ideas against the active local corpus.",
-            "Prefer 0-3 ideas; omit weak ideas instead of filling the list.",
-            "If any idea is emitted, the first one must be the clear best bet and any later ones must be explicit alternates.",
-            "Each idea must answer what to build or investigate, why now, what changed, and who it helps.",
-            "Each emitted idea should also name the clearest condition under which the thesis breaks.",
-            "Name the buyer trigger or operational pain directly instead of using generic platform language.",
-            "Use evidence_refs to point to the strongest supporting documents.",
-            "Do not restate the trend summary as the final output.",
-            "Do not coin new umbrella terms or marketing-style labels.",
-            "If a technical term lacks a stable translation in the requested output language, keep the original term.",
-            "Prefer direct, readable phrasing over compressed jargon.",
-            "Keep paper titles, framework names, product names, and acronyms in their original form unless a widely accepted translation exists.",
-            "Idea titles should read like factual descriptive labels, not slogans, coined categories, or rhetorical questions.",
-        ],
+        "notes": _trend_ideas_prompt_notes(),
     }
     if rag_sources is not None:
         payload["rag_sources"] = rag_sources
     return payload
+
+
+def _trend_ideas_prompt_notes() -> list[str]:
+    return [
+        "Use tools to verify and sharpen candidate ideas against the active local corpus.",
+        "Prefer 0-3 ideas; omit weak ideas instead of filling the list.",
+        "If any idea is emitted, the first one must be the clear best bet and any later ones must be explicit alternates.",
+        "Each idea must answer what to build or investigate, why now, what changed, and who it helps.",
+        "Each emitted idea should also name the clearest condition under which the thesis breaks.",
+        "Name the buyer trigger or operational pain directly instead of using generic platform language.",
+        "Use evidence_refs to point to the strongest supporting documents.",
+        "Do not restate the trend summary as the final output.",
+        "Do not coin new umbrella terms or marketing-style labels.",
+        "If a technical term lacks a stable translation in the requested output language, keep the original term.",
+        "Prefer direct, readable phrasing over compressed jargon.",
+        "Keep paper titles, framework names, product names, and acronyms in their original form unless a widely accepted translation exists.",
+        "Idea titles should read like factual descriptive labels, not slogans, coined categories, or rhetorical questions.",
+    ]
 
 
 def build_trend_ideas_agent(

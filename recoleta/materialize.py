@@ -78,6 +78,29 @@ class MaterializeOutputsResult:
     site_manifest_path: Path | None = None
 
 
+def _materialize_localized_sources(
+    *,
+    repository: Any,
+    granularity: str | None,
+) -> tuple[list[tuple[Any, Any]], list[Document], list[Document]]:
+    return (
+        _materialize_item_pairs(repository=repository),
+        _materialize_trend_documents(repository=repository, granularity=granularity),
+        _materialize_idea_documents(repository=repository, granularity=granularity),
+    )
+
+
+def _resolved_obsidian_target(
+    *, target_spec: MaterializeTargetSpec
+) -> tuple[Path | None, str | None]:
+    obsidian_vault_path = (
+        target_spec.obsidian_vault_path.expanduser().resolve()
+        if target_spec.obsidian_vault_path is not None
+        else None
+    )
+    return obsidian_vault_path, str(target_spec.obsidian_base_folder or "").strip() or None
+
+
 def _normalize_granularity(value: str | None) -> str | None:
     if value is None:
         return None
@@ -237,14 +260,7 @@ def _materialize_localized_outputs(
     if not languages:
         return
 
-    item_pairs = _materialize_item_pairs(
-        repository=repository,
-    )
-    trend_documents = _materialize_trend_documents(
-        repository=repository,
-        granularity=granularity,
-    )
-    idea_documents = _materialize_idea_documents(
+    item_pairs, trend_documents, idea_documents = _materialize_localized_sources(
         repository=repository,
         granularity=granularity,
     )
@@ -598,12 +614,9 @@ def _materialize_outputs_for_target(
     output_dir = target_spec.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     _reset_managed_output_dirs(output_dir)
-    obsidian_vault_path = (
-        target_spec.obsidian_vault_path.expanduser().resolve()
-        if target_spec.obsidian_vault_path is not None
-        else None
+    obsidian_vault_path, obsidian_base_folder = _resolved_obsidian_target(
+        target_spec=target_spec
     )
-    obsidian_base_folder = str(target_spec.obsidian_base_folder or "").strip() or None
     result = MaterializeOutputResult(output_dir=output_dir)
     log = logger.bind(
         module="materialize.outputs",

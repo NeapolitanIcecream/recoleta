@@ -179,98 +179,131 @@ def build_trend_snapshot_pack_md(
     trend_payload: TrendPayload,
     upstream_pass_output_id: int | None = None,
 ) -> str:
-    lines: list[str] = ["## Trend snapshot pack"]
+    lines = _snapshot_pack_header_lines(
+        trend_payload=trend_payload,
+        upstream_pass_output_id=upstream_pass_output_id,
+    )
+    lines.extend(_snapshot_pack_highlight_lines(highlights=trend_payload.highlights))
+    lines.extend(_snapshot_pack_cluster_lines(clusters=trend_payload.clusters))
+    lines.extend(_snapshot_pack_evolution_lines(evolution=trend_payload.evolution))
+    lines.extend(
+        _snapshot_pack_counter_signal_lines(counter_signal=trend_payload.counter_signal)
+    )
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _snapshot_pack_header_lines(
+    *,
+    trend_payload: TrendPayload,
+    upstream_pass_output_id: int | None,
+) -> list[str]:
+    lines = ["## Trend snapshot pack"]
     if upstream_pass_output_id is not None:
         lines.append(f"- upstream_pass_output_id={int(upstream_pass_output_id)}")
+    topics = (
+        "- topics="
+        + ", ".join(str(topic).strip() for topic in trend_payload.topics or [])
+        if trend_payload.topics
+        else "- topics=-"
+    )
     lines.extend(
         [
             f"- title={str(trend_payload.title or '').strip()}",
             f"- granularity={str(trend_payload.granularity or '').strip().lower()}",
             f"- period_start={str(trend_payload.period_start or '').strip()}",
             f"- period_end={str(trend_payload.period_end or '').strip()}",
-            (
-                "- topics="
-                + ", ".join(str(topic).strip() for topic in trend_payload.topics or [])
-                if trend_payload.topics
-                else "- topics=-"
-            ),
+            topics,
             "",
             "### Overview",
             str(trend_payload.overview_md or "").strip() or "(empty)",
         ]
     )
+    return lines
 
-    if trend_payload.highlights:
-        lines.extend(["", "### Highlights"])
-        for highlight in trend_payload.highlights:
-            normalized = str(highlight or "").strip()
-            if normalized:
-                lines.append(f"- {normalized}")
 
-    if trend_payload.clusters:
-        lines.extend(["", "### Clusters"])
-        for index, cluster in enumerate(trend_payload.clusters, start=1):
-            lines.append(
-                f"#### cluster {index}: {str(getattr(cluster, 'name', '') or '').strip() or '(unnamed)'}"
-            )
-            description = str(getattr(cluster, "description", "") or "").strip()
-            if description:
-                lines.append(description)
-            reps = list(getattr(cluster, "representative_chunks", []) or [])
-            if reps:
-                lines.append("- representative_chunks")
-                for rep in reps:
-                    try:
-                        doc_id = int(getattr(rep, "doc_id"))
-                        chunk_index = int(getattr(rep, "chunk_index"))
-                    except Exception:
-                        continue
-                    lines.append(f"  - doc_id={doc_id} chunk_index={chunk_index}")
+def _snapshot_pack_highlight_lines(*, highlights: list[str] | None) -> list[str]:
+    rendered = [f"- {normalized}" for highlight in highlights or [] if (normalized := str(highlight or "").strip())]
+    return ["", "### Highlights", *rendered] if rendered else []
 
-    evolution = trend_payload.evolution
-    if evolution is not None:
-        lines.extend(["", "### Evolution", str(evolution.summary_md or "").strip()])
-        for signal in evolution.signals or []:
-            lines.append(
-                (
-                    "- "
-                    + " | ".join(
-                        part
-                        for part in (
-                            str(signal.theme or "").strip(),
-                            str(signal.change_type.value).strip(),
-                            str(signal.summary or "").strip(),
-                            (
-                                "history_windows="
-                                + ",".join(str(window).strip() for window in signal.history_windows)
-                                if signal.history_windows
-                                else ""
-                            ),
-                        )
-                        if part
-                    )
-                )
-            )
 
-    counter_signal = trend_payload.counter_signal
-    if counter_signal is not None:
-        lines.extend(
-            [
-                "",
-                "### Counter-signal",
-                f"- title={str(counter_signal.title or '').strip()}",
-                str(counter_signal.summary or "").strip(),
-            ]
+def _snapshot_pack_cluster_lines(*, clusters: Any) -> list[str]:
+    if not clusters:
+        return []
+    lines = ["", "### Clusters"]
+    for index, cluster in enumerate(clusters, start=1):
+        lines.extend(_snapshot_pack_cluster_entry_lines(index=index, cluster=cluster))
+    return lines
+
+
+def _snapshot_pack_cluster_entry_lines(*, index: int, cluster: Any) -> list[str]:
+    lines = [
+        f"#### cluster {index}: {str(getattr(cluster, 'name', '') or '').strip() or '(unnamed)'}"
+    ]
+    description = str(getattr(cluster, "description", "") or "").strip()
+    if description:
+        lines.append(description)
+    reps = _snapshot_pack_representative_chunk_lines(
+        representative_chunks=list(getattr(cluster, "representative_chunks", []) or [])
+    )
+    if reps:
+        lines.append("- representative_chunks")
+        lines.extend(reps)
+    return lines
+
+
+def _snapshot_pack_representative_chunk_lines(
+    *, representative_chunks: list[Any]
+) -> list[str]:
+    lines: list[str] = []
+    for rep in representative_chunks:
+        try:
+            doc_id = int(getattr(rep, "doc_id"))
+            chunk_index = int(getattr(rep, "chunk_index"))
+        except Exception:
+            continue
+        lines.append(f"  - doc_id={doc_id} chunk_index={chunk_index}")
+    return lines
+
+
+def _snapshot_pack_evolution_lines(*, evolution: Any) -> list[str]:
+    if evolution is None:
+        return []
+    lines = ["", "### Evolution", str(evolution.summary_md or "").strip()]
+    for signal in evolution.signals or []:
+        lines.append("- " + " | ".join(_snapshot_pack_signal_parts(signal=signal)))
+    return lines
+
+
+def _snapshot_pack_signal_parts(*, signal: Any) -> list[str]:
+    parts = [
+        str(signal.theme or "").strip(),
+        str(signal.change_type.value).strip(),
+        str(signal.summary or "").strip(),
+    ]
+    if signal.history_windows:
+        parts.append(
+            "history_windows="
+            + ",".join(str(window).strip() for window in signal.history_windows)
         )
-        for ref in counter_signal.evidence_refs or []:
-            lines.append(
-                (
-                    "- evidence_ref "
-                    f"doc_id={int(ref.doc_id)} chunk_index={int(ref.chunk_index)}"
-                )
-            )
+    return [part for part in parts if part]
 
-    return "\n".join(lines).rstrip() + "\n"
+
+def _snapshot_pack_counter_signal_lines(*, counter_signal: Any) -> list[str]:
+    if counter_signal is None:
+        return []
+    lines = [
+        "",
+        "### Counter-signal",
+        f"- title={str(counter_signal.title or '').strip()}",
+        str(counter_signal.summary or "").strip(),
+    ]
+    for ref in counter_signal.evidence_refs or []:
+        lines.append(
+            "- evidence_ref "
+            f"doc_id={int(ref.doc_id)} chunk_index={int(ref.chunk_index)}"
+        )
+    return lines
 
 
 def build_trend_ideas_pass_output(
