@@ -801,8 +801,11 @@ def _validate_int_like_field(
         errors.append(f"{field_path} must be an integer")
 
 
-def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
-    errors: list[str] = []
+def _validate_presentation_common_fields(
+    presentation: Mapping[str, Any],
+    *,
+    errors: list[str],
+) -> tuple[str, Mapping[str, Any] | None, Mapping[str, Any] | None]:
     if (
         _presentation_schema_version(presentation.get("presentation_schema_version"))
         != PRESENTATION_SCHEMA_VERSION
@@ -819,164 +822,288 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     content = presentation.get("content")
     if not isinstance(content, Mapping):
         errors.append("content must be a mapping")
-
     surface_kind = _single_line(presentation.get("surface_kind") or "")
-    if surface_kind == "trend":
-        expected_labels = set(TREND_DISPLAY_LABELS_V1)
-        if isinstance(display_labels, Mapping):
-            missing_labels = sorted(expected_labels - set(display_labels))
-            if missing_labels:
-                errors.append(
-                    "trend display_labels must include: " + ", ".join(missing_labels)
-                )
-        if isinstance(content, Mapping):
-            missing_content = sorted(_TREND_REQUIRED_CONTENT_KEYS - set(content))
-            if missing_content:
-                errors.append(
-                    "trend content must include: " + ", ".join(missing_content)
-                )
-            for key in ("title", "overview"):
-                _validate_string_field(
-                    mapping=content,
-                    key=key,
-                    field_path=f"trend content.{key}",
-                    errors=errors,
-                )
-            hero = content.get("hero")
-            if not isinstance(hero, Mapping):
-                errors.append("trend hero must be a mapping")
-            else:
-                missing_hero = sorted(_TREND_REQUIRED_HERO_KEYS - set(hero))
-                if missing_hero:
-                    errors.append(
-                        "trend hero must include: " + ", ".join(missing_hero)
-                    )
-                for key in ("kicker", "dek"):
-                    _validate_string_field(
-                        mapping=hero,
-                        key=key,
-                        field_path=f"trend hero.{key}",
-                        errors=errors,
-                    )
-            ranked_shifts = list(content.get("ranked_shifts") or [])
-        else:
-            ranked_shifts = []
-        if len(ranked_shifts) > 3:
-            errors.append("trend ranked_shifts must not exceed 3 entries")
-        for shift in ranked_shifts:
-            if not isinstance(shift, Mapping):
-                errors.append("trend ranked_shifts entries must be mappings")
-                break
-            missing_shift = sorted(_TREND_REQUIRED_SHIFT_KEYS - set(shift))
-            if missing_shift:
-                errors.append(
-                    "trend ranked_shifts entries must include: "
-                    + ", ".join(missing_shift)
-                )
-                break
-            for key in ("title", "summary"):
-                _validate_string_field(
-                    mapping=shift,
-                    key=key,
-                    field_path=f"trend ranked_shifts.{key}",
-                    errors=errors,
-                )
-            _validate_int_like_field(
+    normalized_display_labels = (
+        display_labels if isinstance(display_labels, Mapping) else None
+    )
+    normalized_content = content if isinstance(content, Mapping) else None
+    return surface_kind, normalized_display_labels, normalized_content
+
+
+def _validate_required_labels(
+    *,
+    surface_kind: str,
+    display_labels: Mapping[str, Any] | None,
+    expected_labels: set[str],
+    errors: list[str],
+) -> None:
+    if display_labels is None:
+        return
+    missing_labels = sorted(expected_labels - set(display_labels))
+    if missing_labels:
+        errors.append(
+            f"{surface_kind} display_labels must include: " + ", ".join(missing_labels)
+        )
+
+
+def _validate_required_content_keys(
+    *,
+    surface_kind: str,
+    content: Mapping[str, Any] | None,
+    required_keys: set[str],
+    errors: list[str],
+) -> None:
+    if content is None:
+        return
+    missing_content = sorted(required_keys - set(content))
+    if missing_content:
+        errors.append(
+            f"{surface_kind} content must include: " + ", ".join(missing_content)
+        )
+
+
+def _validate_trend_hero(
+    *,
+    content: Mapping[str, Any] | None,
+    errors: list[str],
+) -> None:
+    if content is None:
+        return
+    hero = content.get("hero")
+    if not isinstance(hero, Mapping):
+        errors.append("trend hero must be a mapping")
+        return
+    missing_hero = sorted(_TREND_REQUIRED_HERO_KEYS - set(hero))
+    if missing_hero:
+        errors.append("trend hero must include: " + ", ".join(missing_hero))
+    for key in ("kicker", "dek"):
+        _validate_string_field(
+            mapping=hero,
+            key=key,
+            field_path=f"trend hero.{key}",
+            errors=errors,
+        )
+
+
+def _validate_trend_ranked_shifts(
+    ranked_shifts: list[Any],
+    *,
+    errors: list[str],
+) -> None:
+    if len(ranked_shifts) > 3:
+        errors.append("trend ranked_shifts must not exceed 3 entries")
+    for shift in ranked_shifts:
+        if not isinstance(shift, Mapping):
+            errors.append("trend ranked_shifts entries must be mappings")
+            break
+        missing_shift = sorted(_TREND_REQUIRED_SHIFT_KEYS - set(shift))
+        if missing_shift:
+            errors.append(
+                "trend ranked_shifts entries must include: "
+                + ", ".join(missing_shift)
+            )
+            break
+        for key in ("title", "summary"):
+            _validate_string_field(
                 mapping=shift,
-                key="rank",
-                field_path="trend ranked_shifts.rank",
+                key=key,
+                field_path=f"trend ranked_shifts.{key}",
                 errors=errors,
             )
-            history_refs = shift.get("history_refs")
-            if not isinstance(history_refs, list) or any(
-                not isinstance(item, str) for item in history_refs
-            ):
-                errors.append("trend ranked_shifts.history_refs must be a list of strings")
-                break
-        user_visible_strings = _trend_user_visible_strings(presentation)
-    elif surface_kind == "idea":
-        expected_labels = set(_IDEA_REQUIRED_DISPLAY_LABEL_KEYS)
-        if isinstance(display_labels, Mapping):
-            missing_labels = sorted(expected_labels - set(display_labels))
-            if missing_labels:
-                errors.append(
-                    "idea display_labels must include: " + ", ".join(missing_labels)
-                )
-        if isinstance(content, Mapping):
-            missing_content = sorted(_IDEA_REQUIRED_CONTENT_KEYS - set(content))
-            if missing_content:
-                errors.append(
-                    "idea content must include: " + ", ".join(missing_content)
-                )
-            for key in ("title", "summary"):
-                _validate_string_field(
-                    mapping=content,
-                    key=key,
-                    field_path=f"idea content.{key}",
-                    errors=errors,
-                )
-            opportunities = list(content.get("opportunities") or [])
-        else:
-            opportunities = []
-        best_bet_total = sum(
-            1
-            for opportunity in opportunities
-            if isinstance(opportunity, Mapping) and _single_line(opportunity.get("tier") or "") == "best_bet"
+        _validate_int_like_field(
+            mapping=shift,
+            key="rank",
+            field_path="trend ranked_shifts.rank",
+            errors=errors,
         )
-        if opportunities and len(opportunities) > 3:
-            errors.append("idea opportunities must not exceed 3 entries")
-        if opportunities and best_bet_total != 1:
-            errors.append("idea opportunities must contain exactly one best_bet")
-        for opportunity in opportunities:
-            if not isinstance(opportunity, Mapping):
-                errors.append("idea opportunities entries must be mappings")
-                break
-            missing_opportunity = sorted(_IDEA_REQUIRED_OPPORTUNITY_KEYS - set(opportunity))
-            if missing_opportunity:
-                errors.append(
-                    "idea opportunities must include: "
-                    + ", ".join(missing_opportunity)
-                )
-                break
-            for key in (
-                "title",
-                "tier",
-                "kind",
-                "time_horizon",
-                "display_kind",
-                "display_time_horizon",
-                "role",
-                "thesis",
-                "why_now",
-                "what_changed",
-                "validation_next_step",
-            ):
-                _validate_string_field(
-                    mapping=opportunity,
-                    key=key,
-                    field_path=f"idea opportunities.{key}",
-                    errors=errors,
-                )
-            if _single_line(opportunity.get("display_kind") or "") in _RAW_IDEA_ENUMS:
-                errors.append("display_kind must not leak raw idea enums")
-                break
-            if _single_line(opportunity.get("display_time_horizon") or "") in _RAW_IDEA_ENUMS:
-                errors.append("display_time_horizon must not leak raw idea enums")
-                break
-        user_visible_strings = _idea_user_visible_strings(presentation)
-    else:
-        errors.append("surface_kind must be trend or idea")
-        user_visible_strings = []
+        history_refs = shift.get("history_refs")
+        if not isinstance(history_refs, list) or any(
+            not isinstance(item, str) for item in history_refs
+        ):
+            errors.append("trend ranked_shifts.history_refs must be a list of strings")
+            break
 
+
+def _validate_trend_presentation(
+    presentation: Mapping[str, Any],
+    *,
+    display_labels: Mapping[str, Any] | None,
+    content: Mapping[str, Any] | None,
+    errors: list[str],
+) -> list[str]:
+    _validate_required_labels(
+        surface_kind="trend",
+        display_labels=display_labels,
+        expected_labels=set(TREND_DISPLAY_LABELS_V1),
+        errors=errors,
+    )
+    _validate_required_content_keys(
+        surface_kind="trend",
+        content=content,
+        required_keys=_TREND_REQUIRED_CONTENT_KEYS,
+        errors=errors,
+    )
+    if content is not None:
+        for key in ("title", "overview"):
+            _validate_string_field(
+                mapping=content,
+                key=key,
+                field_path=f"trend content.{key}",
+                errors=errors,
+            )
+    _validate_trend_hero(content=content, errors=errors)
+    ranked_shifts = list(content.get("ranked_shifts") or []) if content is not None else []
+    _validate_trend_ranked_shifts(ranked_shifts, errors=errors)
+    return _trend_user_visible_strings(presentation)
+
+
+def _validate_idea_opportunities(
+    opportunities: list[Any],
+    *,
+    errors: list[str],
+) -> None:
+    best_bet_total = sum(
+        1 for opportunity in opportunities if _is_best_bet_opportunity(opportunity)
+    )
+    if opportunities and len(opportunities) > 3:
+        errors.append("idea opportunities must not exceed 3 entries")
+    if opportunities and best_bet_total != 1:
+        errors.append("idea opportunities must contain exactly one best_bet")
+    for opportunity in opportunities:
+        if not _validate_idea_opportunity(opportunity, errors=errors):
+            break
+
+
+def _is_best_bet_opportunity(opportunity: Any) -> bool:
+    return isinstance(opportunity, Mapping) and _single_line(
+        opportunity.get("tier") or ""
+    ) == "best_bet"
+
+
+def _validate_idea_opportunity(
+    opportunity: Any,
+    *,
+    errors: list[str],
+) -> bool:
+    if not isinstance(opportunity, Mapping):
+        errors.append("idea opportunities entries must be mappings")
+        return False
+    missing_opportunity = sorted(_IDEA_REQUIRED_OPPORTUNITY_KEYS - set(opportunity))
+    if missing_opportunity:
+        errors.append("idea opportunities must include: " + ", ".join(missing_opportunity))
+        return False
+    _validate_idea_opportunity_string_fields(opportunity, errors=errors)
+    if _single_line(opportunity.get("display_kind") or "") in _RAW_IDEA_ENUMS:
+        errors.append("display_kind must not leak raw idea enums")
+        return False
+    if _single_line(opportunity.get("display_time_horizon") or "") in _RAW_IDEA_ENUMS:
+        errors.append("display_time_horizon must not leak raw idea enums")
+        return False
+    return True
+
+
+def _validate_idea_opportunity_string_fields(
+    opportunity: Mapping[str, Any],
+    *,
+    errors: list[str],
+) -> None:
+    for key in (
+        "title",
+        "tier",
+        "kind",
+        "time_horizon",
+        "display_kind",
+        "display_time_horizon",
+        "role",
+        "thesis",
+        "why_now",
+        "what_changed",
+        "validation_next_step",
+    ):
+        _validate_string_field(
+            mapping=opportunity,
+            key=key,
+            field_path=f"idea opportunities.{key}",
+            errors=errors,
+        )
+
+
+def _validate_idea_presentation(
+    presentation: Mapping[str, Any],
+    *,
+    display_labels: Mapping[str, Any] | None,
+    content: Mapping[str, Any] | None,
+    errors: list[str],
+) -> list[str]:
+    _validate_required_labels(
+        surface_kind="idea",
+        display_labels=display_labels,
+        expected_labels=set(_IDEA_REQUIRED_DISPLAY_LABEL_KEYS),
+        errors=errors,
+    )
+    _validate_required_content_keys(
+        surface_kind="idea",
+        content=content,
+        required_keys=_IDEA_REQUIRED_CONTENT_KEYS,
+        errors=errors,
+    )
+    if content is not None:
+        for key in ("title", "summary"):
+            _validate_string_field(
+                mapping=content,
+                key=key,
+                field_path=f"idea content.{key}",
+                errors=errors,
+            )
+    opportunities = list(content.get("opportunities") or []) if content is not None else []
+    _validate_idea_opportunities(opportunities, errors=errors)
+    return _idea_user_visible_strings(presentation)
+
+
+def _validate_user_visible_strings(
+    user_visible_strings: list[str],
+    *,
+    errors: list[str],
+) -> None:
     for value in user_visible_strings:
         if _PLACEHOLDER_TOKEN_RE.search(value):
-            errors.append("user-visible fields must not contain raw history placeholder tokens")
+            errors.append(
+                "user-visible fields must not contain raw history placeholder tokens"
+            )
             break
     lowered_strings = "\n".join(user_visible_strings).lower()
     for pattern in _RAW_LABEL_PATTERNS:
         if pattern.search(lowered_strings):
             errors.append("user-visible fields must not leak raw schema labels")
             break
+
+
+def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    surface_kind, display_labels, content = _validate_presentation_common_fields(
+        presentation,
+        errors=errors,
+    )
+
+    if surface_kind == "trend":
+        user_visible_strings = _validate_trend_presentation(
+            presentation,
+            display_labels=display_labels,
+            content=content,
+            errors=errors,
+        )
+    elif surface_kind == "idea":
+        user_visible_strings = _validate_idea_presentation(
+            presentation,
+            display_labels=display_labels,
+            content=content,
+            errors=errors,
+        )
+    else:
+        errors.append("surface_kind must be trend or idea")
+        user_visible_strings = []
+
+    _validate_user_visible_strings(user_visible_strings, errors=errors)
     return errors
 
 

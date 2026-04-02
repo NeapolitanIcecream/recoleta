@@ -2099,7 +2099,7 @@
       "symbol": "HOTSPOT_CLASSIFICATIONS"
     }
   ],
-  "generated_at": "2026-04-02T04:06:24.985290+00:00",
+  "generated_at": "2026-04-02T06:11:48.580733+00:00",
   "hotspots": [
     {
       "classification": "refactor_now",
@@ -2159,71 +2159,6 @@
       ],
       "subsystem": "pipeline",
       "symbol": "run_trends_stage",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/trend_materialize.py",
-      "id": "recoleta/trend_materialize.py::materialize_trend_note_payload",
-      "line": 117,
-      "metrics": {
-        "complexipy": {
-          "complexity": 192
-        },
-        "lizard": {
-          "ccn": 50,
-          "length": 349,
-          "nloc": 152,
-          "parameter_count": 6,
-          "token_count": 988
-        },
-        "ruff": {
-          "complexity": 69
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=192",
-          "metrics": {
-            "complexity": 192
-          },
-          "severity": "critical",
-          "symbol": "materialize_trend_note_payload",
-          "tool": "complexipy"
-        },
-        {
-          "line": 117,
-          "message": "CCN=50, NLOC=152, parameter_count=6, length=349",
-          "metrics": {
-            "ccn": 50,
-            "length": 349,
-            "nloc": 152,
-            "parameter_count": 6,
-            "token_count": 988
-          },
-          "severity": "critical",
-          "symbol": "materialize_trend_note_payload",
-          "tool": "lizard"
-        },
-        {
-          "line": 117,
-          "message": "`materialize_trend_note_payload` is too complex (69 > 10)",
-          "metrics": {
-            "complexity": 69
-          },
-          "severity": "critical",
-          "symbol": "materialize_trend_note_payload",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "site/render",
-      "symbol": "materialize_trend_note_payload",
       "tool_count": 3,
       "tools": [
         "complexipy",
@@ -2549,136 +2484,6 @@
       ],
       "subsystem": "sources",
       "symbol": "extract_html_document_cleaned_with_references",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/presentation.py",
-      "id": "recoleta/presentation.py::validate_presentation_v1",
-      "line": 804,
-      "metrics": {
-        "complexipy": {
-          "complexity": 100
-        },
-        "lizard": {
-          "ccn": 54,
-          "length": 177,
-          "nloc": 175,
-          "parameter_count": 1,
-          "token_count": 930
-        },
-        "ruff": {
-          "complexity": 39
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=100",
-          "metrics": {
-            "complexity": 100
-          },
-          "severity": "critical",
-          "symbol": "validate_presentation_v1",
-          "tool": "complexipy"
-        },
-        {
-          "line": 804,
-          "message": "CCN=54, NLOC=175, parameter_count=1, length=177",
-          "metrics": {
-            "ccn": 54,
-            "length": 177,
-            "nloc": 175,
-            "parameter_count": 1,
-            "token_count": 930
-          },
-          "severity": "critical",
-          "symbol": "validate_presentation_v1",
-          "tool": "lizard"
-        },
-        {
-          "line": 804,
-          "message": "`validate_presentation_v1` is too complex (39 > 10)",
-          "metrics": {
-            "complexity": 39
-          },
-          "severity": "critical",
-          "symbol": "validate_presentation_v1",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "site/render",
-      "symbol": "validate_presentation_v1",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/publish/trend_notes.py",
-      "id": "recoleta/publish/trend_notes.py::_render_trend_note_lines",
-      "line": 274,
-      "metrics": {
-        "complexipy": {
-          "complexity": 91
-        },
-        "lizard": {
-          "ccn": 57,
-          "length": 175,
-          "nloc": 170,
-          "parameter_count": 18,
-          "token_count": 1020
-        },
-        "ruff": {
-          "complexity": 25
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=91",
-          "metrics": {
-            "complexity": 91
-          },
-          "severity": "critical",
-          "symbol": "_render_trend_note_lines",
-          "tool": "complexipy"
-        },
-        {
-          "line": 274,
-          "message": "CCN=57, NLOC=170, parameter_count=18, length=175",
-          "metrics": {
-            "ccn": 57,
-            "length": 175,
-            "nloc": 170,
-            "parameter_count": 18,
-            "token_count": 1020
-          },
-          "severity": "critical",
-          "symbol": "_render_trend_note_lines",
-          "tool": "lizard"
-        },
-        {
-          "line": 274,
-          "message": "`_render_trend_note_lines` is too complex (25 > 10)",
-          "metrics": {
-            "complexity": 25
-          },
-          "severity": "critical",
-          "symbol": "_render_trend_note_lines",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "site/render",
-      "symbol": "_render_trend_note_lines",
       "tool_count": 3,
       "tools": [
         "complexipy",
@@ -6377,7 +6182,7 @@
       "classification": "refactor_now",
       "file": "recoleta/publish/trend_notes.py",
       "id": "recoleta/publish/trend_notes.py::_write_trend_note",
-      "line": 451,
+      "line": 629,
       "metrics": {
         "lizard": {
           "ccn": 7,
@@ -6389,7 +6194,7 @@
       },
       "signals": [
         {
-          "line": 451,
+          "line": 629,
           "message": "CCN=7, NLOC=84, parameter_count=19, length=84",
           "metrics": {
             "ccn": 7,
@@ -6673,7 +6478,7 @@
       "classification": "refactor_now",
       "file": "recoleta/publish/trend_notes.py",
       "id": "recoleta/publish/trend_notes.py::write_markdown_trend_note",
-      "line": 583,
+      "line": 761,
       "metrics": {
         "lizard": {
           "ccn": 3,
@@ -6685,7 +6490,7 @@
       },
       "signals": [
         {
-          "line": 583,
+          "line": 761,
           "message": "CCN=3, NLOC=46, parameter_count=18, length=46",
           "metrics": {
             "ccn": 3,
@@ -6775,6 +6580,43 @@
       ],
       "subsystem": "site/render",
       "symbol": "write_markdown_note",
+      "tool_count": 1,
+      "tools": [
+        "lizard"
+      ]
+    },
+    {
+      "classification": "refactor_now",
+      "file": "recoleta/publish/trend_notes.py",
+      "id": "recoleta/publish/trend_notes.py::_render_trend_note_lines",
+      "line": 561,
+      "metrics": {
+        "lizard": {
+          "ccn": 2,
+          "length": 66,
+          "nloc": 64,
+          "parameter_count": 18,
+          "token_count": 295
+        }
+      },
+      "signals": [
+        {
+          "line": 561,
+          "message": "CCN=2, NLOC=64, parameter_count=18, length=66",
+          "metrics": {
+            "ccn": 2,
+            "length": 66,
+            "nloc": 64,
+            "parameter_count": 18,
+            "token_count": 295
+          },
+          "severity": "critical",
+          "symbol": "_render_trend_note_lines",
+          "tool": "lizard"
+        }
+      ],
+      "subsystem": "site/render",
+      "symbol": "_render_trend_note_lines",
       "tool_count": 1,
       "tools": [
         "lizard"
@@ -6932,7 +6774,7 @@
       "classification": "refactor_now",
       "file": "recoleta/publish/trend_notes.py",
       "id": "recoleta/publish/trend_notes.py::write_obsidian_trend_note",
-      "line": 537,
+      "line": 715,
       "metrics": {
         "lizard": {
           "ccn": 1,
@@ -6944,7 +6786,7 @@
       },
       "signals": [
         {
-          "line": 537,
+          "line": 715,
           "message": "CCN=1, NLOC=44, parameter_count=19, length=44",
           "metrics": {
             "ccn": 1,
@@ -9082,7 +8924,7 @@
       "classification": "refactor_soon",
       "file": "recoleta/publish/trend_notes.py",
       "id": "recoleta/publish/trend_notes.py::_format_history_window_display",
-      "line": 147,
+      "line": 177,
       "metrics": {
         "complexipy": {
           "complexity": 17
@@ -9097,7 +8939,7 @@
       },
       "signals": [
         {
-          "line": 147,
+          "line": 177,
           "message": "CCN=21, NLOC=47, parameter_count=3, length=47",
           "metrics": {
             "ccn": 21,
@@ -11966,43 +11808,6 @@
     },
     {
       "classification": "monitor",
-      "file": "recoleta/trend_materialize.py",
-      "id": "recoleta/trend_materialize.py::materialize_trend_note_payload._history_window_ref",
-      "line": 292,
-      "metrics": {
-        "lizard": {
-          "ccn": 15,
-          "length": 48,
-          "nloc": 48,
-          "parameter_count": 1,
-          "token_count": 286
-        }
-      },
-      "signals": [
-        {
-          "line": 292,
-          "message": "CCN=15, NLOC=48, parameter_count=1, length=48",
-          "metrics": {
-            "ccn": 15,
-            "length": 48,
-            "nloc": 48,
-            "parameter_count": 1,
-            "token_count": 286
-          },
-          "severity": "warning",
-          "symbol": "materialize_trend_note_payload._history_window_ref",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "site/render",
-      "symbol": "materialize_trend_note_payload._history_window_ref",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "monitor",
       "file": "recoleta/materialize.py",
       "id": "recoleta/materialize.py::_load_trend_payload",
       "line": 432,
@@ -13069,6 +12874,43 @@
       ],
       "subsystem": "pipeline",
       "symbol": "run_ideas_stage._build_ideas_projection_specs",
+      "tool_count": 1,
+      "tools": [
+        "lizard"
+      ]
+    },
+    {
+      "classification": "monitor",
+      "file": "recoleta/trend_materialize.py",
+      "id": "recoleta/trend_materialize.py::materialize_trend_note_payload",
+      "line": 506,
+      "metrics": {
+        "lizard": {
+          "ccn": 5,
+          "length": 48,
+          "nloc": 47,
+          "parameter_count": 6,
+          "token_count": 265
+        }
+      },
+      "signals": [
+        {
+          "line": 506,
+          "message": "CCN=5, NLOC=47, parameter_count=6, length=48",
+          "metrics": {
+            "ccn": 5,
+            "length": 48,
+            "nloc": 47,
+            "parameter_count": 6,
+            "token_count": 265
+          },
+          "severity": "warning",
+          "symbol": "materialize_trend_note_payload",
+          "tool": "lizard"
+        }
+      ],
+      "subsystem": "site/render",
+      "symbol": "materialize_trend_note_payload",
       "tool_count": 1,
       "tools": [
         "lizard"
@@ -14799,35 +14641,6 @@
     },
     {
       "classification": "monitor",
-      "file": "recoleta/trend_materialize.py",
-      "id": "recoleta/trend_materialize.py::materialize_trend_note_payload._rewrite_doc_refs",
-      "line": 210,
-      "metrics": {
-        "ruff": {
-          "complexity": 12
-        }
-      },
-      "signals": [
-        {
-          "line": 210,
-          "message": "`_rewrite_doc_refs` is too complex (12 > 10)",
-          "metrics": {
-            "complexity": 12
-          },
-          "severity": "warning",
-          "symbol": "materialize_trend_note_payload._rewrite_doc_refs",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "site/render",
-      "symbol": "materialize_trend_note_payload._rewrite_doc_refs",
-      "tool_count": 1,
-      "tools": [
-        "ruff"
-      ]
-    },
-    {
-      "classification": "monitor",
       "file": "recoleta/cli/workflows.py",
       "id": "recoleta/cli/workflows.py::run_daemon_start_command",
       "line": 1210,
@@ -14925,29 +14738,11 @@
       ]
     },
     {
-      "hotspot_count": 39,
-      "refactor_now": 22,
+      "hotspot_count": 37,
+      "refactor_now": 20,
       "refactor_soon": 17,
       "subsystem": "site/render",
       "top_hotspots": [
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/trend_materialize.py",
-          "id": "recoleta/trend_materialize.py::materialize_trend_note_payload",
-          "symbol": "materialize_trend_note_payload"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/presentation.py",
-          "id": "recoleta/presentation.py::validate_presentation_v1",
-          "symbol": "validate_presentation_v1"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/publish/trend_notes.py",
-          "id": "recoleta/publish/trend_notes.py::_render_trend_note_lines",
-          "symbol": "_render_trend_note_lines"
-        },
         {
           "classification": "refactor_now",
           "file": "recoleta/publish/idea_notes.py",
@@ -14959,6 +14754,24 @@
           "file": "recoleta/publish/trend_render_shared.py",
           "id": "recoleta/publish/trend_render_shared.py::sanitize_trend_overview_markdown",
           "symbol": "sanitize_trend_overview_markdown"
+        },
+        {
+          "classification": "refactor_now",
+          "file": "recoleta/publish/idea_notes.py",
+          "id": "recoleta/publish/idea_notes.py::_render_ideas_note_lines",
+          "symbol": "_render_ideas_note_lines"
+        },
+        {
+          "classification": "refactor_now",
+          "file": "recoleta/site.py",
+          "id": "recoleta/site.py::_discover_trend_site_input_dirs",
+          "symbol": "_discover_trend_site_input_dirs"
+        },
+        {
+          "classification": "refactor_now",
+          "file": "recoleta/site.py",
+          "id": "recoleta/site.py::stage_trend_site_source",
+          "symbol": "stage_trend_site_source"
         }
       ]
     },
@@ -15193,7 +15006,7 @@
   ],
   "repo_verdict": {
     "has_regressions": false,
-    "refactor_now_total": 102,
+    "refactor_now_total": 100,
     "status": "strained",
     "summary": "Existing hotspots remain, but the current scope did not regress."
   },
@@ -15323,29 +15136,29 @@
     "dead_code_candidates_total": 190,
     "dead_code_high_confidence_total": 0,
     "files_scanned": 111,
-    "hotspots_total": 285,
-    "monitor_total": 107,
-    "refactor_now_total": 102,
+    "hotspots_total": 282,
+    "monitor_total": 106,
+    "refactor_now_total": 100,
     "refactor_soon_total": 76
   },
   "tool_summaries": {
     "complexipy": {
-      "critical": 21,
-      "findings_total": 102,
+      "critical": 18,
+      "findings_total": 99,
       "high": 15,
       "warning": 66
     },
     "lizard": {
-      "critical": 92,
-      "findings_total": 262,
+      "critical": 90,
+      "findings_total": 260,
       "high": 52,
       "warning": 118
     },
     "ruff": {
-      "critical": 18,
-      "findings_total": 94,
+      "critical": 15,
+      "findings_total": 90,
       "high": 26,
-      "warning": 50
+      "warning": 49
     },
     "vulture": {
       "findings_total": 190,

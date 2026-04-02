@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -38,6 +39,35 @@ _HISTORY_WINDOW_REPEAT_WRAPPERS: tuple[tuple[str, str], ...] = (
     ("『", "』"),
     ('"', '"'),
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _TrendNoteRenderContext:
+    trend_doc_id: int
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    run_id: str
+    topics: list[str]
+    projection_provenance: ProjectionProvenance | None
+    site_exclude: bool
+    language_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _EvolutionLabels:
+    change_label: str
+    history_label: str
+    separator: str
+    after_separator: str
+
+
+@dataclass(frozen=True, slots=True)
+class _EvolutionRenderContext:
+    note_dir: Path
+    history_window_refs: dict[str, dict[str, Any]] | None
+    output_language: str | None
+    labels: _EvolutionLabels
 
 
 def _single_line(value: str, *, fallback: str) -> str:
@@ -271,6 +301,263 @@ def _render_evolution_text(
     )
 
 
+def _trend_tags(topics: list[str]) -> list[str]:
+    tags = ["recoleta/trend"]
+    for topic in topics or []:
+        normalized = _sanitize_obsidian_tag(topic)
+        if normalized:
+            tags.append(f"topic/{normalized}")
+    seen_tags: set[str] = set()
+    return [tag for tag in tags if not (tag in seen_tags or seen_tags.add(tag))]
+
+
+def _build_trend_frontmatter(
+    context: _TrendNoteRenderContext,
+) -> dict[str, Any]:
+    frontmatter = {
+        "kind": "trend",
+        "trend_doc_id": int(context.trend_doc_id),
+        "granularity": str(context.granularity),
+        "period_start": context.period_start.isoformat(),
+        "period_end": context.period_end.isoformat(),
+        "topics": context.topics,
+        "run_id": context.run_id,
+        "aliases": [f"recoleta-trend-{int(context.trend_doc_id)}"],
+        "tags": _trend_tags(context.topics),
+    }
+    normalized_language_code = str(context.language_code or "").strip()
+    if normalized_language_code:
+        frontmatter["language_code"] = normalized_language_code
+    if context.projection_provenance is not None:
+        frontmatter.update(
+            context.projection_provenance.model_dump(mode="json", exclude_none=True)
+        )
+    if context.site_exclude:
+        frontmatter["site_exclude"] = True
+    return frontmatter
+
+
+def _evolution_section_labels(
+    *, output_language: str | None
+) -> _EvolutionLabels:
+    chinese_output = _is_chinese_output_language(output_language)
+    return _EvolutionLabels(
+        change_label="变化" if chinese_output else "Change",
+        history_label="历史窗口" if chinese_output else "History windows",
+        separator="：" if chinese_output else ":",
+        after_separator="" if chinese_output else " ",
+    )
+
+
+def _append_evolution_section(
+    *,
+    lines: list[str],
+    evolution: dict[str, Any] | None,
+    note_dir: Path,
+    history_window_refs: dict[str, dict[str, Any]] | None,
+    output_language: str | None,
+) -> None:
+    evolution = evolution or {}
+    summary_md = str(evolution.get("summary_md") or "").strip()
+    signals = evolution.get("signals") or []
+    if not summary_md and not signals:
+        return
+    labels = _evolution_section_labels(output_language=output_language)
+    render_context = _EvolutionRenderContext(
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
+        output_language=output_language,
+        labels=labels,
+    )
+    lines.extend(["", "## Evolution"])
+    if summary_md:
+        lines.extend(
+            [
+                "",
+                _render_evolution_text(
+                    summary_md,
+                    note_dir=render_context.note_dir,
+                    history_window_refs=render_context.history_window_refs,
+                ),
+            ]
+        )
+    if not isinstance(signals, list):
+        return
+    for signal in signals:
+        _append_evolution_signal_section(
+            lines=lines,
+            signal=signal,
+            render_context=render_context,
+        )
+
+
+def _evolution_signal_windows(
+    *,
+    signal: dict[str, Any],
+    render_context: _EvolutionRenderContext,
+) -> list[str]:
+    history_windows = signal.get("history_windows") or []
+    if not isinstance(history_windows, list):
+        return []
+    return [
+        _format_history_window_display(
+            window=str(window).strip(),
+            note_dir=render_context.note_dir,
+            history_window_refs=render_context.history_window_refs,
+        )
+        for window in history_windows
+        if str(window).strip()
+    ]
+
+
+def _append_evolution_signal_section(
+    *,
+    lines: list[str],
+    signal: Any,
+    render_context: _EvolutionRenderContext,
+) -> None:
+    if not isinstance(signal, dict):
+        return
+    theme = _single_line(str(signal.get("theme") or ""), fallback="Signal")
+    change_type = _single_line(
+        _format_change_type_display(
+            str(signal.get("change_type") or ""),
+            output_language=render_context.output_language,
+        ),
+        fallback="unspecified",
+    )
+    lines.extend(["", f"### {theme}", ""])
+    _append_evolution_change_line(
+        lines=lines,
+        change_type=change_type,
+        labels=render_context.labels,
+    )
+    windows = _evolution_signal_windows(
+        signal=signal,
+        render_context=render_context,
+    )
+    _append_evolution_history_line(
+        lines=lines,
+        windows=windows,
+        labels=render_context.labels,
+    )
+    _append_evolution_summary(
+        lines=lines,
+        signal=signal,
+        render_context=render_context,
+    )
+
+
+def _append_evolution_change_line(
+    *,
+    lines: list[str],
+    change_type: str,
+    labels: _EvolutionLabels,
+) -> None:
+    lines.append(
+        f"- {labels.change_label}{labels.separator}{labels.after_separator}{change_type}"
+    )
+
+
+def _append_evolution_history_line(
+    *,
+    lines: list[str],
+    windows: list[str],
+    labels: _EvolutionLabels,
+) -> None:
+    if not windows:
+        return
+    lines.append(
+        f"- {labels.history_label}{labels.separator}{labels.after_separator}{', '.join(windows)}"
+    )
+
+
+def _append_evolution_summary(
+    *,
+    lines: list[str],
+    signal: dict[str, Any],
+    render_context: _EvolutionRenderContext,
+) -> None:
+    summary = _render_evolution_text(
+        str(signal.get("summary") or "").strip(),
+        note_dir=render_context.note_dir,
+        history_window_refs=render_context.history_window_refs,
+    )
+    if summary:
+        lines.extend(["", summary])
+
+
+def _cluster_representative_lines(
+    *,
+    reps: list[dict[str, Any]],
+) -> list[str]:
+    lines: list[str] = []
+    seen_rep_targets: set[str] = set()
+    for rep in reps[:6]:
+        rendered_line, rep_target = _cluster_representative_line(rep)
+        if rendered_line is None or rep_target is None:
+            continue
+        if rep_target in seen_rep_targets:
+            continue
+        seen_rep_targets.add(rep_target)
+        lines.append(rendered_line)
+    return lines
+
+
+def _cluster_representative_line(rep: Any) -> tuple[str | None, str | None]:
+    if not isinstance(rep, dict):
+        return None, None
+    rep_title = str(rep.get("title") or "").strip()
+    if not rep_title:
+        return None, None
+    note_href = str(rep.get("note_href") or "").strip()
+    url = str(rep.get("url") or "").strip()
+    authors = _cluster_representative_authors(rep)
+    author_suffix = _format_author_suffix(authors, max_authors=6)
+    rep_target = note_href or url or rep_title
+    if note_href:
+        return f"- [{rep_title}]({note_href}){author_suffix}", rep_target
+    if url:
+        return f"- [{rep_title}]({url}){author_suffix}", rep_target
+    return f"- {rep_title}{author_suffix}", rep_target
+
+
+def _cluster_representative_authors(rep: dict[str, Any]) -> list[str]:
+    authors_raw = rep.get("authors")
+    if not isinstance(authors_raw, list):
+        return []
+    return [str(author).strip() for author in authors_raw if str(author).strip()]
+
+
+def _append_cluster_sections(
+    *,
+    lines: list[str],
+    clusters: list[dict[str, Any]] | None,
+    display_labels: dict[str, str],
+) -> None:
+    lines.extend(["", f"## {display_labels['clusters']}"])
+    normalized_clusters = clusters or []
+    if not normalized_clusters:
+        lines.append("- (none)")
+        return
+    for cluster in normalized_clusters:
+        name = _single_line(str(cluster.get("name") or ""), fallback="Cluster")
+        desc = str(cluster.get("description") or "").strip()
+        lines.extend(["", f"### {name}", ""])
+        if desc:
+            lines.append(desc)
+            lines.append("")
+        reps = cluster.get("representative_chunks") or []
+        if not isinstance(reps, list) or not reps:
+            continue
+        representative_lines = _cluster_representative_lines(reps=reps)
+        if not representative_lines:
+            continue
+        lines.append(f"#### {display_labels['representative_sources']}")
+        lines.extend(representative_lines)
+        lines.append("")
+
+
 def _render_trend_note_lines(
     *,
     title: str,
@@ -295,34 +582,18 @@ def _render_trend_note_lines(
     _ = highlights
     title = sanitize_trend_title(title)
     overview_md = sanitize_trend_overview_markdown(overview_md)
-    tags = ["recoleta/trend"]
-    for topic in topics or []:
-        normalized = _sanitize_obsidian_tag(topic)
-        if normalized:
-            tags.append(f"topic/{normalized}")
-    seen_tags: set[str] = set()
-    tags = [t for t in tags if not (t in seen_tags or seen_tags.add(t))]
-
-    frontmatter = {
-        "kind": "trend",
-        "trend_doc_id": int(trend_doc_id),
-        "granularity": str(granularity),
-        "period_start": period_start.isoformat(),
-        "period_end": period_end.isoformat(),
-        "topics": topics,
-        "run_id": run_id,
-        "aliases": [f"recoleta-trend-{int(trend_doc_id)}"],
-        "tags": tags,
-    }
-    normalized_language_code = str(language_code or "").strip()
-    if normalized_language_code:
-        frontmatter["language_code"] = normalized_language_code
-    if projection_provenance is not None:
-        frontmatter.update(
-            projection_provenance.model_dump(mode="json", exclude_none=True)
-        )
-    if site_exclude:
-        frontmatter["site_exclude"] = True
+    render_context = _TrendNoteRenderContext(
+        trend_doc_id=trend_doc_id,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+        run_id=run_id,
+        topics=topics,
+        projection_provenance=projection_provenance,
+        site_exclude=site_exclude,
+        language_code=language_code,
+    )
+    frontmatter = _build_trend_frontmatter(render_context)
 
     lines: list[str] = [
         "---",
@@ -339,111 +610,18 @@ def _render_trend_note_lines(
             (overview_md or "").strip(),
         ]
     )
-
-    evolution = evolution or {}
-    summary_md = str(evolution.get("summary_md") or "").strip()
-    signals = evolution.get("signals") or []
-    if summary_md or signals:
-        chinese_output = _is_chinese_output_language(output_language)
-        change_label = "变化" if chinese_output else "Change"
-        history_label = (
-            "历史窗口" if chinese_output else "History windows"
-        )
-        separator = "：" if chinese_output else ":"
-        after_separator = "" if chinese_output else " "
-        lines.extend(["", "## Evolution"])
-        if summary_md:
-            lines.extend(
-                [
-                    "",
-                    _render_evolution_text(
-                        summary_md,
-                        note_dir=note_dir,
-                        history_window_refs=history_window_refs,
-                    ),
-                ]
-            )
-        if isinstance(signals, list):
-            for signal in signals:
-                if not isinstance(signal, dict):
-                    continue
-                theme = _single_line(str(signal.get("theme") or ""), fallback="Signal")
-                change_type = _single_line(
-                    _format_change_type_display(
-                        str(signal.get("change_type") or ""),
-                        output_language=output_language,
-                    ),
-                    fallback="unspecified",
-                )
-                summary = _render_evolution_text(
-                    str(signal.get("summary") or "").strip(),
-                    note_dir=note_dir,
-                    history_window_refs=history_window_refs,
-                )
-                history_windows = signal.get("history_windows") or []
-                lines.extend(["", f"### {theme}", ""])
-                lines.append(
-                    f"- {change_label}{separator}{after_separator}{change_type}"
-                )
-                if isinstance(history_windows, list):
-                    windows = [
-                        _format_history_window_display(
-                            window=str(window).strip(),
-                            note_dir=note_dir,
-                            history_window_refs=history_window_refs,
-                        )
-                        for window in history_windows
-                        if str(window).strip()
-                    ]
-                    if windows:
-                        lines.append(
-                            f"- {history_label}{separator}{after_separator}{', '.join(windows)}"
-                        )
-                if summary:
-                    lines.extend(["", summary])
-
-    lines.extend(["", f"## {display_labels['clusters']}"])
-    clusters = clusters or []
-    if clusters:
-        for cluster in clusters:
-            name = _single_line(str(cluster.get("name") or ""), fallback="Cluster")
-            desc = str(cluster.get("description") or "").strip()
-            lines.extend(["", f"### {name}", ""])
-            if desc:
-                lines.append(desc)
-                lines.append("")
-            reps = cluster.get("representative_chunks") or []
-            if isinstance(reps, list) and reps:
-                lines.append(f"#### {display_labels['representative_sources']}")
-                seen_rep_targets: set[str] = set()
-                for rep in reps[:6]:
-                    if not isinstance(rep, dict):
-                        continue
-                    rep_title = str(rep.get("title") or "").strip()
-                    if not rep_title:
-                        continue
-                    note_href = str(rep.get("note_href") or "").strip()
-                    url = str(rep.get("url") or "").strip()
-                    authors_raw = rep.get("authors")
-                    authors: list[str] = []
-                    if isinstance(authors_raw, list):
-                        authors = [
-                            str(a).strip() for a in authors_raw if str(a).strip()
-                        ]
-                    author_suffix = _format_author_suffix(authors, max_authors=6)
-                    rep_target = note_href or url or rep_title
-                    if rep_target in seen_rep_targets:
-                        continue
-                    seen_rep_targets.add(rep_target)
-                    if note_href:
-                        lines.append(f"- [{rep_title}]({note_href}){author_suffix}")
-                    elif url:
-                        lines.append(f"- [{rep_title}]({url}){author_suffix}")
-                    else:
-                        lines.append(f"- {rep_title}{author_suffix}")
-                lines.append("")
-    else:
-        lines.append("- (none)")
+    _append_evolution_section(
+        lines=lines,
+        evolution=evolution,
+        note_dir=note_dir,
+        history_window_refs=history_window_refs,
+        output_language=output_language,
+    )
+    _append_cluster_sections(
+        lines=lines,
+        clusters=clusters,
+        display_labels=display_labels,
+    )
 
     return lines
 
