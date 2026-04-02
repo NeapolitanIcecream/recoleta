@@ -468,6 +468,151 @@ def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
     assert snapshot["repo_verdict"]["status"] == "strained"
 
 
+def test_build_baseline_snapshot_merges_partial_scope_updates() -> None:
+    baseline_report = {
+        "scope": {
+            "files": ["recoleta/in_scope.py", "recoleta/out_of_scope.py"],
+            "file_count": 2,
+        },
+        "hotspots": [
+            {
+                "id": "recoleta/in_scope.py::branchy",
+                "file": "recoleta/in_scope.py",
+                "symbol": "branchy",
+                "classification": "monitor",
+                "subsystem": "other",
+                "tools": ["ruff"],
+                "metrics": {"ruff": {"complexity": 12}},
+                "signals": [
+                    {
+                        "tool": "ruff",
+                        "severity": "warning",
+                        "symbol": "branchy",
+                        "line": 10,
+                        "metrics": {"complexity": 12},
+                        "message": "complexity=12",
+                    }
+                ],
+            },
+            {
+                "id": "recoleta/out_of_scope.py::other_hotspot",
+                "file": "recoleta/out_of_scope.py",
+                "symbol": "other_hotspot",
+                "classification": "refactor_now",
+                "subsystem": "other",
+                "tools": ["complexipy"],
+                "metrics": {"complexipy": {"complexity": 55}},
+                "signals": [
+                    {
+                        "tool": "complexipy",
+                        "severity": "critical",
+                        "symbol": "other_hotspot",
+                        "line": 20,
+                        "metrics": {"complexity": 55},
+                        "message": "complexity=55",
+                    }
+                ],
+            },
+        ],
+        "dead_code_candidates": [
+            {
+                "id": "recoleta/out_of_scope.py::function::unused_helper",
+                "file": "recoleta/out_of_scope.py",
+                "line": 30,
+                "symbol": "unused_helper",
+                "kind": "function",
+                "confidence": 90,
+                "classification": "high_confidence_candidate",
+                "subsystem": "other",
+                "size": None,
+            }
+        ],
+    }
+    report = {
+        "summary": {
+            "files_scanned": 1,
+            "hotspots_total": 1,
+            "monitor_total": 0,
+            "refactor_soon_total": 1,
+            "refactor_now_total": 0,
+            "dead_code_candidates_total": 0,
+            "dead_code_high_confidence_total": 0,
+        },
+        "repo_verdict": {
+            "status": "strained",
+            "summary": "Existing hotspots remain, but the current scope did not regress.",
+            "has_regressions": False,
+            "refactor_now_total": 0,
+        },
+        "hotspots": [
+            {
+                "id": "recoleta/in_scope.py::branchy",
+                "file": "recoleta/in_scope.py",
+                "symbol": "branchy",
+                "classification": "refactor_soon",
+                "subsystem": "other",
+                "tools": ["ruff"],
+                "metrics": {"ruff": {"complexity": 26}},
+                "signals": [
+                    {
+                        "tool": "ruff",
+                        "severity": "critical",
+                        "symbol": "branchy",
+                        "line": 10,
+                        "metrics": {"complexity": 26},
+                        "message": "complexity=26",
+                    }
+                ],
+            }
+        ],
+        "dead_code_candidates": [],
+        "tool_summaries": {
+            "ruff": {"findings_total": 1, "warning": 0, "high": 0, "critical": 1},
+            "lizard": {"findings_total": 0, "warning": 0, "high": 0, "critical": 0},
+            "complexipy": {
+                "findings_total": 0,
+                "warning": 0,
+                "high": 0,
+                "critical": 0,
+            },
+            "vulture": {
+                "findings_total": 0,
+                "review_candidate": 0,
+                "high_confidence_candidate": 0,
+            },
+        },
+        "baseline_diff": {
+            "baseline_available": True,
+            "baseline_path": "quality/refactor-baseline.json",
+            "has_regressions": True,
+            "new": [{"kind": "hotspot"}],
+            "worsened": [],
+            "resolved": [],
+        },
+        "recommended_refactor_queue": [],
+        "scope": {"files": ["recoleta/in_scope.py"], "file_count": 1},
+        "schema_version": 1,
+        "generated_at": "2026-04-02T00:00:00+00:00",
+    }
+
+    snapshot = audit.build_baseline_snapshot(
+        report,
+        baseline_report=baseline_report,
+        scope_files=["recoleta/in_scope.py"],
+    )
+
+    assert [item["id"] for item in snapshot["hotspots"]] == [
+        "recoleta/out_of_scope.py::other_hotspot",
+        "recoleta/in_scope.py::branchy",
+    ]
+    assert snapshot["summary"]["files_scanned"] == 2
+    assert snapshot["summary"]["hotspots_total"] == 2
+    assert snapshot["tool_summaries"]["ruff"]["critical"] == 1
+    assert snapshot["tool_summaries"]["complexipy"]["critical"] == 1
+    assert snapshot["dead_code_candidates"][0]["file"] == "recoleta/out_of_scope.py"
+    assert snapshot["baseline_diff"]["has_regressions"] is False
+
+
 def test_refactor_audit_cli_generates_schema_stable_outputs(tmp_path: Path) -> None:
     fixture_root = tmp_path / "fixture_project"
     fixture_root.mkdir()
@@ -562,3 +707,71 @@ def unused_helper() -> str:
     }
     assert payload["hotspots"]
     assert payload["dead_code_candidates"]
+
+
+def test_refactor_audit_cli_rejects_partial_baseline_init(tmp_path: Path) -> None:
+    fixture_root = tmp_path / "fixture_project"
+    fixture_root.mkdir()
+    package_dir = fixture_root / "fixture_pkg"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    hotspot_path = package_dir / "hotspot.py"
+    hotspot_path.write_text(
+        """
+from __future__ import annotations
+
+
+def branchy(a: bool, b: bool, c: bool, d: bool, e: bool, f: bool) -> int:
+    total = 0
+    if a:
+        total += 1
+    if b:
+        total += 1
+    if c:
+        total += 1
+    if d:
+        total += 1
+    if e:
+        total += 1
+    if f:
+        total += 1
+    if a and b:
+        total += 1
+    if c and d:
+        total += 1
+    if e and f:
+        total += 1
+    if a or c:
+        total += 1
+    if b or d:
+        total += 1
+    if e or a:
+        total += 1
+    return total
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "audit-out"
+    baseline_path = tmp_path / "baseline.json"
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "refactor_audit.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            str(hotspot_path),
+            "--out-dir",
+            str(out_dir),
+            "--baseline",
+            str(baseline_path),
+            "--update-baseline",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "existing baseline when auditing a partial scope" in result.stderr

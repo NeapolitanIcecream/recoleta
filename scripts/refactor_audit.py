@@ -14,7 +14,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Iterable, Literal, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
@@ -542,15 +542,17 @@ def parse_vulture_candidates(
                 "size": int(match.group("size")) if match.group("size") else None,
             }
         )
-    candidates.sort(
-        key=lambda item: (
-            0 if item["classification"] == "high_confidence_candidate" else 1,
-            -int(item["confidence"]),
-            item["file"],
-            item["symbol"],
-        )
-    )
+    candidates.sort(key=dead_code_sort_key)
     return candidates
+
+
+def dead_code_sort_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        0 if item["classification"] == "high_confidence_candidate" else 1,
+        -int(item["confidence"]),
+        item["file"],
+        item["symbol"],
+    )
 
 
 def infer_subsystem(rel_path: str) -> str:
@@ -692,6 +694,51 @@ def severity_summary(signals: list[HotspotSignal]) -> dict[str, int]:
         "warning": int(counter.get("warning", 0)),
         "high": int(counter.get("high", 0)),
         "critical": int(counter.get("critical", 0)),
+    }
+
+
+def severity_summary_from_levels(levels: Iterable[str]) -> dict[str, int]:
+    counter = Counter(level for level in levels if level in SEVERITY_RANK)
+    return {
+        "findings_total": sum(counter.values()),
+        "warning": int(counter.get("warning", 0)),
+        "high": int(counter.get("high", 0)),
+        "critical": int(counter.get("critical", 0)),
+    }
+
+
+def build_tool_summaries_from_snapshot(
+    *, hotspots: list[dict[str, Any]], dead_code_candidates: list[dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    severities_by_tool: dict[str, list[str]] = {
+        "ruff": [],
+        "lizard": [],
+        "complexipy": [],
+    }
+    for hotspot in hotspots:
+        for signal in hotspot.get("signals", []):
+            tool = signal.get("tool")
+            severity = signal.get("severity")
+            if tool in severities_by_tool and isinstance(severity, str):
+                severities_by_tool[tool].append(severity)
+
+    return {
+        "ruff": severity_summary_from_levels(severities_by_tool["ruff"]),
+        "lizard": severity_summary_from_levels(severities_by_tool["lizard"]),
+        "complexipy": severity_summary_from_levels(severities_by_tool["complexipy"]),
+        "vulture": {
+            "findings_total": len(dead_code_candidates),
+            "review_candidate": sum(
+                1
+                for candidate in dead_code_candidates
+                if candidate["classification"] == "review_candidate"
+            ),
+            "high_confidence_candidate": sum(
+                1
+                for candidate in dead_code_candidates
+                if candidate["classification"] == "high_confidence_candidate"
+            ),
+        },
     }
 
 
@@ -984,10 +1031,23 @@ def build_summary(
     hotspots: list[dict[str, Any]],
     dead_code_candidates: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    return build_summary_from_file_count(
+        file_count=len(files),
+        hotspots=hotspots,
+        dead_code_candidates=dead_code_candidates,
+    )
+
+
+def build_summary_from_file_count(
+    *,
+    file_count: int,
+    hotspots: list[dict[str, Any]],
+    dead_code_candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
     hotspot_counter = Counter(item["classification"] for item in hotspots)
     dead_counter = Counter(item["classification"] for item in dead_code_candidates)
     return {
-        "files_scanned": len(files),
+        "files_scanned": file_count,
         "hotspots_total": len(hotspots),
         "monitor_total": int(hotspot_counter.get("monitor", 0)),
         "refactor_soon_total": int(hotspot_counter.get("refactor_soon", 0)),
@@ -1138,8 +1198,49 @@ def write_json(path: Path, payload: Any) -> None:
     )
 
 
-def build_baseline_snapshot(report: dict[str, Any]) -> dict[str, Any]:
+def build_baseline_snapshot(
+    report: dict[str, Any],
+    *,
+    baseline_report: dict[str, Any] | None = None,
+    scope_files: Iterable[str] | None = None,
+) -> dict[str, Any]:
     snapshot = dict(report)
+    scoped_file_set = set(scope_files or [])
+    if baseline_report is not None and scoped_file_set:
+        snapshot["hotspots"] = sorted(
+            [
+                item
+                for item in baseline_report.get("hotspots", [])
+                if item.get("file") not in scoped_file_set
+            ]
+            + snapshot["hotspots"],
+            key=hotspot_sort_key,
+        )
+        snapshot["dead_code_candidates"] = sorted(
+            [
+                item
+                for item in baseline_report.get("dead_code_candidates", [])
+                if item.get("file") not in scoped_file_set
+            ]
+            + snapshot["dead_code_candidates"],
+            key=dead_code_sort_key,
+        )
+        preserved_scope = baseline_report.get("scope", snapshot["scope"])
+        scope_files_value = preserved_scope.get("files", [])
+        file_count = preserved_scope.get("file_count", len(scope_files_value))
+        snapshot["scope"] = preserved_scope
+        snapshot["summary"] = build_summary_from_file_count(
+            file_count=int(file_count),
+            hotspots=snapshot["hotspots"],
+            dead_code_candidates=snapshot["dead_code_candidates"],
+        )
+        snapshot["tool_summaries"] = build_tool_summaries_from_snapshot(
+            hotspots=snapshot["hotspots"],
+            dead_code_candidates=snapshot["dead_code_candidates"],
+        )
+        snapshot["recommended_refactor_queue"] = build_recommended_queue(
+            snapshot["hotspots"]
+        )
     snapshot["baseline_diff"] = {
         "baseline_available": False,
         "baseline_path": None,
@@ -1167,6 +1268,11 @@ def run_refactor_audit(
     files = collect_python_files(
         repo_root=config.repo_root,
         targets=scope_targets,
+        exclude_patterns=config.exclude,
+    )
+    default_scope_files = collect_python_files(
+        repo_root=config.repo_root,
+        targets=list(config.targets),
         exclude_patterns=config.exclude,
     )
     if not files:
@@ -1256,6 +1362,12 @@ def run_refactor_audit(
         raw_text=vulture_completed.stdout, lookup=lookup, config=config
     )
 
+    current_scope_files = [relative_path(path, config.repo_root) for path in files]
+    full_scope_file_set = {
+        relative_path(path, config.repo_root) for path in default_scope_files
+    }
+    is_partial_scope = set(current_scope_files) != full_scope_file_set
+
     hotspots = aggregate_hotspots(ruff_signals + lizard_signals + complexipy_signals)
     tool_summaries = build_tool_summaries(
         ruff_signals=ruff_signals,
@@ -1273,7 +1385,7 @@ def run_refactor_audit(
         current_hotspots=hotspots,
         current_dead_code_candidates=dead_code_candidates,
         baseline_report=baseline_report,
-        scope_files=[relative_path(path, config.repo_root) for path in files],
+        scope_files=current_scope_files,
     )
     repo_verdict = build_repo_verdict(hotspots=hotspots, baseline_diff=baseline_diff)
     summary = build_summary(
@@ -1284,7 +1396,7 @@ def run_refactor_audit(
         "generated_at": datetime.now(UTC).isoformat(),
         "scope": {
             "requested_targets": scope_targets,
-            "files": [relative_path(path, config.repo_root) for path in files],
+            "files": current_scope_files,
             "file_count": len(files),
             "repo_root": str(config.repo_root),
         },
@@ -1300,7 +1412,18 @@ def run_refactor_audit(
     write_json(out_dir / "report.json", report)
     (out_dir / "report.md").write_text(render_markdown_report(report), encoding="utf-8")
     if update_baseline:
-        write_json(baseline_path, build_baseline_snapshot(report))
+        if is_partial_scope and baseline_report is None:
+            raise RuntimeError(
+                "--update-baseline requires an existing baseline when auditing a partial scope."
+            )
+        write_json(
+            baseline_path,
+            build_baseline_snapshot(
+                report,
+                baseline_report=baseline_report if is_partial_scope else None,
+                scope_files=current_scope_files if is_partial_scope else None,
+            ),
+        )
 
     exit_code = 0
     if fail_on_regression and baseline_diff["has_regressions"]:

@@ -2099,7 +2099,7 @@
       "symbol": "HOTSPOT_CLASSIFICATIONS"
     }
   ],
-  "generated_at": "2026-04-02T03:53:12.290752+00:00",
+  "generated_at": "2026-04-02T04:06:24.985290+00:00",
   "hotspots": [
     {
       "classification": "refactor_now",
@@ -5894,6 +5894,43 @@
     },
     {
       "classification": "refactor_now",
+      "file": "scripts/refactor_audit.py",
+      "id": "scripts/refactor_audit.py::run_refactor_audit",
+      "line": 1259,
+      "metrics": {
+        "lizard": {
+          "ccn": 17,
+          "length": 173,
+          "nloc": 163,
+          "parameter_count": 6,
+          "token_count": 876
+        }
+      },
+      "signals": [
+        {
+          "line": 1259,
+          "message": "CCN=17, NLOC=163, parameter_count=6, length=173",
+          "metrics": {
+            "ccn": 17,
+            "length": 173,
+            "nloc": 163,
+            "parameter_count": 6,
+            "token_count": 876
+          },
+          "severity": "critical",
+          "symbol": "run_refactor_audit",
+          "tool": "lizard"
+        }
+      ],
+      "subsystem": "other",
+      "symbol": "run_refactor_audit",
+      "tool_count": 1,
+      "tools": [
+        "lizard"
+      ]
+    },
+    {
+      "classification": "refactor_now",
       "file": "recoleta/storage/localized_outputs.py",
       "id": "recoleta/storage/localized_outputs.py::LocalizedOutputStoreMixin::upsert_localized_output",
       "line": 18,
@@ -8464,7 +8501,7 @@
       "classification": "refactor_soon",
       "file": "scripts/refactor_audit.py",
       "id": "scripts/refactor_audit.py::build_baseline_diff",
-      "line": 769,
+      "line": 816,
       "metrics": {
         "complexipy": {
           "complexity": 19
@@ -8482,7 +8519,7 @@
       },
       "signals": [
         {
-          "line": 769,
+          "line": 816,
           "message": "CCN=20, NLOC=114, parameter_count=4, length=122",
           "metrics": {
             "ccn": 20,
@@ -8506,7 +8543,7 @@
           "tool": "complexipy"
         },
         {
-          "line": 769,
+          "line": 816,
           "message": "`build_baseline_diff` is too complex (13 > 10)",
           "metrics": {
             "complexity": 13
@@ -10070,7 +10107,7 @@
       "classification": "refactor_soon",
       "file": "scripts/refactor_audit.py",
       "id": "scripts/refactor_audit.py::aggregate_hotspots",
-      "line": 579,
+      "line": 581,
       "metrics": {
         "lizard": {
           "ccn": 23,
@@ -10082,7 +10119,7 @@
       },
       "signals": [
         {
-          "line": 579,
+          "line": 581,
           "message": "CCN=23, NLOC=64, parameter_count=1, length=67",
           "metrics": {
             "ccn": 23,
@@ -10615,43 +10652,6 @@
       "tools": [
         "lizard",
         "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "scripts/refactor_audit.py",
-      "id": "scripts/refactor_audit.py::run_refactor_audit",
-      "line": 1158,
-      "metrics": {
-        "lizard": {
-          "ccn": 13,
-          "length": 151,
-          "nloc": 142,
-          "parameter_count": 6,
-          "token_count": 806
-        }
-      },
-      "signals": [
-        {
-          "line": 1158,
-          "message": "CCN=13, NLOC=142, parameter_count=6, length=151",
-          "metrics": {
-            "ccn": 13,
-            "length": 151,
-            "nloc": 142,
-            "parameter_count": 6,
-            "token_count": 806
-          },
-          "severity": "high",
-          "symbol": "run_refactor_audit",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "run_refactor_audit",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
       ]
     },
     {
@@ -11413,7 +11413,7 @@
       "classification": "monitor",
       "file": "scripts/refactor_audit.py",
       "id": "scripts/refactor_audit.py::build_recommended_queue",
-      "line": 698,
+      "line": 745,
       "metrics": {
         "lizard": {
           "ccn": 19,
@@ -11425,7 +11425,7 @@
       },
       "signals": [
         {
-          "line": 698,
+          "line": 745,
           "message": "CCN=19, NLOC=68, parameter_count=1, length=69",
           "metrics": {
             "ccn": 19,
@@ -12375,7 +12375,7 @@
       "classification": "monitor",
       "file": "scripts/refactor_audit.py",
       "id": "scripts/refactor_audit.py::render_markdown_report",
-      "line": 1002,
+      "line": 1062,
       "metrics": {
         "lizard": {
           "ccn": 11,
@@ -12387,7 +12387,7 @@
       },
       "signals": [
         {
-          "line": 1002,
+          "line": 1062,
           "message": "CCN=11, NLOC=113, parameter_count=1, length=117",
           "metrics": {
             "ccn": 11,
@@ -15154,8 +15154,8 @@
     },
     {
       "hotspot_count": 36,
-      "refactor_now": 18,
-      "refactor_soon": 18,
+      "refactor_now": 19,
+      "refactor_soon": 17,
       "subsystem": "other",
       "top_hotspots": [
         {
@@ -15193,7 +15193,7 @@
   ],
   "repo_verdict": {
     "has_regressions": false,
-    "refactor_now_total": 101,
+    "refactor_now_total": 102,
     "status": "strained",
     "summary": "Existing hotspots remain, but the current scope did not regress."
   },
@@ -15325,8 +15325,8 @@
     "files_scanned": 111,
     "hotspots_total": 285,
     "monitor_total": 107,
-    "refactor_now_total": 101,
-    "refactor_soon_total": 77
+    "refactor_now_total": 102,
+    "refactor_soon_total": 76
   },
   "tool_summaries": {
     "complexipy": {
@@ -15336,9 +15336,9 @@
       "warning": 66
     },
     "lizard": {
-      "critical": 91,
+      "critical": 92,
       "findings_total": 262,
-      "high": 53,
+      "high": 52,
       "warning": 118
     },
     "ruff": {
