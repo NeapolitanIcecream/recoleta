@@ -9,6 +9,10 @@ from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.vector_store import LanceVectorStore
 
 
+def _int_with_default(value: Any, *, default: int) -> int:
+    return default if value is None else int(value)
+
+
 @dataclass(frozen=True, slots=True)
 class SemanticSearchHit:
     chunk_id: int
@@ -69,7 +73,7 @@ class SummaryVectorSyncRequest:
                 legacy_kwargs.get("embedding_failure_mode") or "continue"
             ),
             embedding_max_errors=int(legacy_kwargs.get("embedding_max_errors") or 0),
-            limit=int(legacy_kwargs.get("limit") or 500),
+            limit=_int_with_default(legacy_kwargs.get("limit"), default=500),
             offset=int(legacy_kwargs.get("offset") or 0),
             llm_connection=legacy_kwargs.get("llm_connection"),
         )
@@ -119,8 +123,11 @@ class SummarySearchRequest:
                 legacy_kwargs.get("embedding_failure_mode") or "continue"
             ),
             embedding_max_errors=int(legacy_kwargs.get("embedding_max_errors") or 0),
-            limit=int(legacy_kwargs.get("limit") or 10),
-            corpus_limit=int(legacy_kwargs.get("corpus_limit") or 500),
+            limit=_int_with_default(legacy_kwargs.get("limit"), default=10),
+            corpus_limit=_int_with_default(
+                legacy_kwargs.get("corpus_limit"),
+                default=500,
+            ),
             metric_namespace=legacy_kwargs.get("metric_namespace"),
             llm_connection=legacy_kwargs.get("llm_connection"),
             auto_sync_vectors=bool(legacy_kwargs.get("auto_sync_vectors", True)),

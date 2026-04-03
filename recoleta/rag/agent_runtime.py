@@ -166,12 +166,14 @@ def _clean_representatives(
 
 
 def _backfilled_chunks_from_search_rows(
-    rows: list[dict[str, Any]],
+    rows: list[Any],
     *,
     max_reps: int,
 ) -> list[TrendCluster.RepresentativeChunk]:
     backfilled: list[TrendCluster.RepresentativeChunk] = []
     for row in rows:
+        if not isinstance(row, dict):
+            continue
         normalized = _normalized_representative(type("Row", (), row)())
         if normalized is None:
             continue
