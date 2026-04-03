@@ -7,6 +7,11 @@ from pathlib import Path
 import re
 from typing import Any, Mapping, TypedDict, Unpack
 
+from recoleta.presentation_projectors import (
+    project_idea_evidence as _project_idea_evidence,
+    project_source_metadata as _project_source_metadata,
+)
+
 PRESENTATION_SCHEMA_VERSION_V1 = 1
 PRESENTATION_SCHEMA_VERSION = 2
 _VALID_SOURCE_TYPES = {
@@ -497,73 +502,6 @@ def _normalize_source_type(value: Any) -> str:
     return "unknown"
 
 
-def _project_source_type(raw_source: Any) -> str:
-    explicit = _normalize_source_type(_value_from(raw_source, "source_type", ""))
-    if explicit and explicit != "unknown":
-        return explicit
-    return _normalize_source_type(_value_from(raw_source, "source", ""))
-
-
-def _project_confidence(raw_source: Any, *, source_type: str) -> str:
-    explicit = _single_line(_value_from(raw_source, "confidence", "")).lower()
-    if explicit in {"high", "medium", "low"}:
-        return explicit
-    score = _float_or_none(_value_from(raw_source, "score", None))
-    if score is not None:
-        if score >= 0.8:
-            return "high"
-        if score >= 0.5:
-            return "medium"
-        return "low"
-    return _DEFAULT_CONFIDENCE_BY_SOURCE_TYPE.get(source_type, "low")
-
-
-def _project_source_metadata(
-    raw_source: Any,
-    *,
-    fallback_title: str | None = None,
-    include_reason: bool = False,
-) -> dict[str, Any]:
-    doc_id = _int_or_none(_value_from(raw_source, "doc_id", None))
-    chunk_index = _int_or_none(_value_from(raw_source, "chunk_index", 0))
-    title = _single_line(_value_from(raw_source, "title", "") or fallback_title or "")
-    if not title and doc_id is not None and doc_id > 0:
-        title = f"Document {doc_id}"
-    source_type = _project_source_type(raw_source)
-    href = _single_line(
-        _value_from(raw_source, "href", "") or _value_from(raw_source, "note_href", "")
-    )
-    url = _single_line(_value_from(raw_source, "url", ""))
-    projected = {
-        "title": title,
-        "href": href or url or None,
-        "url": url or None,
-        "authors": [
-            _single_line(author)
-            for author in list(_value_from(raw_source, "authors", []) or [])
-            if _single_line(author)
-        ],
-        "doc_id": doc_id,
-        "chunk_index": 0 if chunk_index is None else chunk_index,
-        "source_type": source_type,
-        "confidence": _project_confidence(raw_source, source_type=source_type),
-    }
-    if include_reason:
-        reasons = [
-            _normalize_markdown(reason)
-            for reason in list(_value_from(raw_source, "reasons", []) or [])
-            if _normalize_markdown(reason)
-        ]
-        reason = _normalize_markdown(_value_from(raw_source, "reason", "") or "")
-        if reasons:
-            projected["reasons"] = reasons
-        if reason:
-            projected["reason"] = reason
-        elif reasons:
-            projected["reason"] = reasons[0]
-    return projected
-
-
 def _canonicalize_language_code(value: Any) -> str | None:
     normalized = _single_line(value).replace("_", "-")
     if not normalized or _LOCALIZED_LANGUAGE_SEGMENT_RE.fullmatch(normalized) is None:
@@ -647,45 +585,6 @@ def _project_cluster_representative_sources(
             continue
         seen_targets.add(target)
         projected.append(_project_source_metadata(raw_rep, fallback_title=title_value))
-    return projected
-
-
-def _project_idea_evidence(raw_evidence_refs: Any) -> list[dict[str, Any]]:
-    if not isinstance(raw_evidence_refs, Sequence):
-        return []
-    ordered: list[tuple[str, Any]] = []
-    grouped: dict[int, list[Any]] = {}
-    for raw_ref in list(raw_evidence_refs):
-        doc_id = _int_or_none(_value_from(raw_ref, "doc_id", None))
-        if doc_id is None or doc_id <= 0:
-            ordered.append(("raw", raw_ref))
-            continue
-        if doc_id not in grouped:
-            grouped[doc_id] = []
-            ordered.append(("doc", doc_id))
-        grouped[doc_id].append(raw_ref)
-
-    projected: list[dict[str, Any]] = []
-    for kind, value in ordered:
-        refs = [value] if kind == "raw" else grouped.get(int(value), [])
-        if not refs:
-            continue
-        reasons: list[str] = []
-        seen_reasons: set[str] = set()
-        for ref in refs:
-            normalized_reason = _normalize_markdown(_value_from(ref, "reason", "") or "")
-            if normalized_reason and normalized_reason not in seen_reasons:
-                seen_reasons.add(normalized_reason)
-                reasons.append(normalized_reason)
-        projected_ref = _project_source_metadata(
-            refs[0],
-            include_reason=True,
-        )
-        if reasons:
-            projected_ref["reasons"] = reasons
-            if not _normalize_markdown(projected_ref.get("reason") or ""):
-                projected_ref["reason"] = reasons[0]
-        projected.append(projected_ref)
     return projected
 
 

@@ -15,8 +15,10 @@ from recoleta.presentation import (
     resolve_presentation_language_code,
     write_presentation_sidecar,
 )
-from recoleta.publish.item_notes import resolve_item_note_href
-from recoleta.publish.trend_notes import resolve_trend_note_href
+from recoleta.publish.idea_evidence import (
+    enrich_evidence_ref as _enrich_evidence_ref,
+    format_evidence_ref as _format_evidence_ref,
+)
 from recoleta.publish.trend_render_shared import _trend_date_token
 from recoleta.provenance import build_projection_provenance
 
@@ -127,70 +129,6 @@ def _sanitize_obsidian_tag(value: str) -> str:
     return normalized.lower()
 
 
-def _format_evidence_ref(
-    *,
-    repository: Any,
-    root_dir: Path,
-    note_dir: Path,
-    ref: Any,
-    show_chunk_index: bool = False,
-) -> str:
-    try:
-        doc_id = int(getattr(ref, "doc_id"))
-    except Exception:
-        return "Unknown evidence"
-    chunk_index = 0
-    if show_chunk_index:
-        try:
-            chunk_index = int(getattr(ref, "chunk_index"))
-        except Exception:
-            return "Unknown evidence"
-    doc = repository.get_document(doc_id=doc_id)
-    reason = str(getattr(ref, "reason", "") or "").strip()
-    suffix = f" (chunk {chunk_index})" if show_chunk_index and chunk_index > 0 else ""
-    if doc is None:
-        base = f"Document {doc_id}{suffix}"
-        return f"{base}: {reason}" if reason else base
-
-    title = str(getattr(doc, "title", "") or "").strip() or f"Document {doc_id}"
-    href: str | None = None
-    doc_type = str(getattr(doc, "doc_type", "") or "").strip().lower()
-    if doc_type == "item":
-        raw_item_id = getattr(doc, "item_id", None)
-        try:
-            item_id = int(raw_item_id) if raw_item_id is not None else 0
-        except Exception:
-            item_id = 0
-        item = repository.get_item(item_id=item_id) if item_id > 0 else None
-        if item is not None:
-            href = resolve_item_note_href(
-                note_dir=root_dir / "Inbox",
-                from_dir=note_dir,
-                item_id=item_id,
-                title=str(getattr(item, "title", "") or ""),
-                canonical_url=str(getattr(item, "canonical_url", "") or ""),
-                published_at=getattr(item, "published_at", None),
-            )
-    elif doc_type == "trend":
-        raw_granularity = str(getattr(doc, "granularity", "") or "").strip().lower()
-        period_start = getattr(doc, "period_start", None)
-        if raw_granularity and isinstance(period_start, datetime):
-            href = resolve_trend_note_href(
-                note_dir=root_dir / "Trends",
-                from_dir=note_dir,
-                trend_doc_id=doc_id,
-                granularity=raw_granularity,
-                period_start=period_start,
-            )
-    if href is None:
-        raw_url = str(getattr(doc, "canonical_url", "") or "").strip()
-        if raw_url:
-            href = raw_url
-
-    rendered = f"[{title}]({href}){suffix}" if href else f"{title}{suffix}"
-    return f"{rendered}: {reason}" if reason else rendered
-
-
 def _merge_evidence_reasons(refs: list[Any]) -> list[str]:
     seen_reasons: set[str] = set()
     merged_reasons: list[str] = []
@@ -263,85 +201,6 @@ def _render_evidence_ref_lines(
     lines = [f"- {rendered}"]
     lines.extend(f"  - {reason}" for reason in reasons)
     return lines
-
-
-def _enrich_evidence_ref(
-    *,
-    repository: Any,
-    root_dir: Path,
-    note_dir: Path,
-    ref: Any,
-) -> Any:
-    doc_id = getattr(ref, "doc_id", None)
-    chunk_index = getattr(ref, "chunk_index", 0)
-    reason = getattr(ref, "reason", None)
-    title = getattr(ref, "title", None)
-    href = getattr(ref, "href", None)
-    authors = list(getattr(ref, "authors", []) or [])
-    source = getattr(ref, "source", None)
-    score = getattr(ref, "score", None)
-
-    try:
-        doc_id_int = int(doc_id) if doc_id is not None else 0
-    except Exception:
-        doc_id_int = 0
-    try:
-        chunk_index_int = int(chunk_index or 0)
-    except Exception:
-        chunk_index_int = 0
-
-    doc = repository.get_document(doc_id=doc_id_int) if doc_id_int > 0 else None
-    if doc is not None:
-        resolved_title = str(getattr(doc, "title", "") or "").strip()
-        if resolved_title:
-            title = resolved_title
-        doc_type = str(getattr(doc, "doc_type", "") or "").strip().lower()
-        if doc_type == "item":
-            raw_item_id = getattr(doc, "item_id", None)
-            try:
-                item_id = int(raw_item_id) if raw_item_id is not None else 0
-            except Exception:
-                item_id = 0
-            item = repository.get_item(item_id=item_id) if item_id > 0 else None
-            if item is not None:
-                href = resolve_item_note_href(
-                    note_dir=root_dir / "Inbox",
-                    from_dir=note_dir,
-                    item_id=item_id,
-                    title=str(getattr(item, "title", "") or ""),
-                    canonical_url=str(getattr(item, "canonical_url", "") or ""),
-                    published_at=getattr(item, "published_at", None),
-                )
-                authors = [
-                    str(author).strip()
-                    for author in list(getattr(item, "authors", []) or [])
-                    if str(author).strip()
-                ]
-                source = str(getattr(item, "source", "") or "").strip() or source
-        elif doc_type == "trend":
-            raw_granularity = str(getattr(doc, "granularity", "") or "").strip().lower()
-            period_start = getattr(doc, "period_start", None)
-            if raw_granularity and isinstance(period_start, datetime):
-                href = resolve_trend_note_href(
-                    note_dir=root_dir / "Trends",
-                    from_dir=note_dir,
-                    trend_doc_id=doc_id_int,
-                    granularity=raw_granularity,
-                    period_start=period_start,
-                )
-        if href is None:
-            href = str(getattr(doc, "canonical_url", "") or "").strip() or href
-
-    return SimpleNamespace(
-        doc_id=doc_id_int,
-        chunk_index=chunk_index_int,
-        reason=reason,
-        title=title,
-        href=href,
-        authors=authors,
-        source=source,
-        score=score,
-    )
 
 
 def _presentation_ready_ideas(
