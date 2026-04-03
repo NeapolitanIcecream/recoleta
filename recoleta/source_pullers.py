@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
@@ -756,16 +757,16 @@ class _OpenReviewPuller:
 
 def _openreview_title(note: Any) -> str:
     content = getattr(note, "content", None) or {}
-    title_value = content.get("title") if isinstance(content, dict) else None
-    if isinstance(title_value, dict):
+    title_value = content.get("title") if isinstance(content, Mapping) else None
+    if isinstance(title_value, Mapping):
         return str(title_value.get("value") or "").strip()
     return str(title_value or "").strip()
 
 
 def _openreview_authors(note: Any) -> list[str]:
     content = getattr(note, "content", None) or {}
-    authors_value = content.get("authors") if isinstance(content, dict) else None
-    if isinstance(authors_value, dict):
+    authors_value = content.get("authors") if isinstance(content, Mapping) else None
+    if isinstance(authors_value, Mapping):
         authors_value = authors_value.get("value")
     if not isinstance(authors_value, list):
         return []

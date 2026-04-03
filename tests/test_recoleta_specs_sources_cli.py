@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 import subprocess
 import sys
@@ -539,6 +540,59 @@ def test_fetch_openreview_drafts_uses_window_filters_and_excludes_future_notes(
     )
     assert calls[0]["sort"] == "tcdate:desc"
     assert [draft.source_item_id for draft in drafts] == ["window-note"]
+
+
+def test_fetch_openreview_drafts_accepts_mapping_wrapped_note_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MappingWrapper(Mapping[str, object]):
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __getitem__(self, key: str) -> object:
+            return self.payload[key]
+
+        def __iter__(self) -> Iterator[str]:
+            return iter(self.payload)
+
+        def __len__(self) -> int:
+            return len(self.payload)
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002,ANN003
+            _ = args, kwargs
+
+        def get_notes(self, **kwargs):  # type: ignore[no-untyped-def]
+            _ = kwargs
+            return [
+                SimpleNamespace(
+                    id="mapping-note",
+                    content=MappingWrapper(
+                        {
+                            "title": MappingWrapper({"value": "Mapped Note"}),
+                            "authors": MappingWrapper({"value": ["Alice", "Bob"]}),
+                        }
+                    ),
+                    tcdate=int(
+                        datetime(2025, 1, 20, 12, tzinfo=UTC).timestamp() * 1000
+                    ),
+                )
+            ]
+
+    import recoleta.sources as source_module
+
+    monkeypatch.setattr(source_module.openreview, "Client", FakeClient)
+
+    drafts = fetch_openreview_drafts(
+        venues=["ICLR.cc/2026/Conference"],
+        max_results_per_venue=5,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert len(drafts) == 1
+    assert drafts[0].title == "Mapped Note"
+    assert drafts[0].authors == ["Alice", "Bob"]
 
 
 def test_fetch_hn_drafts_uses_algolia_search_for_requested_window(
