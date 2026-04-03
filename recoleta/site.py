@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import datetime, timezone
 import html
 import json
@@ -44,149 +44,60 @@ from recoleta.publish.trend_render_shared import (
     _trend_pdf_topics_summary,
     sanitize_trend_title,
 )
+from recoleta.site_inputs import (
+    SiteInputDiscoveryDeps,
+    SiteItemSourceLoadDeps,
+    SiteLanguageDiscoveryDeps,
+    SiteReferenceCollectionDeps,
+    TrendSiteDocumentLoadDeps,
+    TrendSiteSourceStageDeps,
+    TrendSiteSourceStageRequest,
+    collect_referenced_item_source_keys as _collect_referenced_item_source_keys_impl,
+    discover_site_language_inputs as _discover_site_language_inputs_impl,
+    discover_trend_site_input_dirs as _discover_trend_site_input_dirs_impl,
+    load_trend_site_documents as _load_trend_site_documents_impl,
+    load_item_source_documents as _load_item_source_documents_impl,
+    stage_trend_site_source as _stage_trend_site_source_impl,
+)
+from recoleta.site_models import (
+    IdeaBodyRenderResult,
+    IdeaSiteDocument,
+    IdeaSiteSourceDocument,
+    ItemSiteDocument,
+    ItemSiteSelection,
+    ItemSiteSourceDocument,
+    SiteSourceKey,
+    TrendSiteDocument,
+    TrendSiteInputDirectory,
+    TrendSiteInputSpec,
+    TrendSiteSourceDocument,
+)
+from recoleta.site_pages import (
+    SingleLanguageSiteExportDeps,
+    SingleLanguageSiteExportRequest,
+    SitePageShellInput,
+    export_trend_static_site_single_language as _export_trend_static_site_single_language_impl,
+    render_site_page_shell as _render_site_page_shell_impl,
+)
+from recoleta.site_presentation import (
+    IdeaBrowserBodyDeps,
+    build_idea_browser_body_html as _build_idea_browser_body_html_impl,
+    build_item_browser_body_html as _build_item_browser_body_html_impl,
+    render_idea_opportunities_section as _render_idea_opportunities_section_impl,
+    render_idea_opportunity_card as _render_idea_opportunity_card_impl,
+    render_presentation_source_list as _render_presentation_source_list_impl,
+)
 RECOLETA_REPO_URL = "https://github.com/NeapolitanIcecream/recoleta"
 RECOLETA_QUICKSTART_URL = f"{RECOLETA_REPO_URL}#recoleta-quickstart"
 
 
-@dataclass(slots=True, frozen=True)
-class TrendSiteInputSpec:
-    path: Path
-    instance: str | None = None
-
-
-@dataclass(slots=True)
-class TrendSiteDocument:
-    markdown_path: Path
-    markdown_asset_path: Path
-    pdf_asset_path: Path | None
-    page_path: Path
-    stem: str
-    title: str
-    granularity: str
-    period_token: str
-    period_start: datetime | None
-    period_end: datetime | None
-    topics: list[str]
-    instance: str | None
-    body_html: str
-    excerpt: str
-    evolution_insight: str | None
-    frontmatter: dict[str, Any]
-
-
-@dataclass(slots=True)
-class TrendSiteInputDirectory:
-    path: Path
-    root_path: Path
-    inbox_path: Path | None
-    ideas_path: Path | None
-    instance: str | None
-    language_code: str | None = None
-    language_slug: str | None = None
-    is_localized_root: bool = False
-
-
-@dataclass(slots=True)
-class TrendSiteSourceDocument:
-    markdown_path: Path
-    pdf_path: Path | None
-    stem: str
-    frontmatter: dict[str, Any]
-    markdown_body: str
-    presentation: dict[str, Any] | None
-    granularity: str
-    period_start: datetime | None
-    period_end: datetime | None
-    topics: list[str]
-    instance: str | None
-
-
-@dataclass(slots=True)
-class ItemSiteSourceDocument:
-    markdown_path: Path
-    stem: str
-    frontmatter: dict[str, Any]
-    markdown_body: str
-    title: str
-    canonical_url: str
-    source: str
-    published_at: datetime | None
-    authors: list[str]
-    topics: list[str]
-    relevance_score: float | None
-    instance: str | None
-
-
-@dataclass(slots=True)
-class ItemSiteDocument:
-    markdown_path: Path
-    markdown_asset_path: Path
-    page_path: Path
-    stem: str
-    title: str
-    canonical_url: str
-    source: str
-    published_at: datetime | None
-    authors: list[str]
-    topics: list[str]
-    instance: str | None
-    relevance_score: float | None
-    body_html: str
-    excerpt: str
-    frontmatter: dict[str, Any]
-
-
-@dataclass(slots=True)
-class IdeaSiteSourceDocument:
-    markdown_path: Path
-    stem: str
-    frontmatter: dict[str, Any]
-    markdown_body: str
-    presentation: dict[str, Any] | None
-    granularity: str
-    period_start: datetime | None
-    period_end: datetime | None
-    topics: list[str]
-    instance: str | None
-    status: str
-
-
-@dataclass(slots=True)
-class IdeaSiteDocument:
-    markdown_path: Path
-    markdown_asset_path: Path
-    page_path: Path
-    stem: str
-    title: str
-    granularity: str
-    period_token: str
-    period_start: datetime | None
-    period_end: datetime | None
-    topics: list[str]
-    instance: str | None
-    status: str
-    opportunity_count: int
-    evidence_count: int
-    body_html: str
-    excerpt: str
-    frontmatter: dict[str, Any]
-
-
-@dataclass(slots=True)
-class IdeaBodyRenderResult:
-    body_html: str
-    opportunity_count: int
-    evidence_count: int
-
-
-@dataclass(slots=True)
-class ItemSiteSelection:
-    source_documents: list[ItemSiteSourceDocument]
-    available_total: int
-    unreferenced_total: int
-
-
-type SiteSourceKey = tuple[Path, str | None]
+@dataclass(frozen=True, slots=True)
+class _SiteLanguageOverrideSpec:
+    output_dir: Path
+    language_code: str
+    language_slug: str
+    page_paths_by_language: dict[str, set[str]]
+    language_code_by_slug: dict[str, str]
 
 
 def _parse_site_datetime(value: Any) -> datetime | None:
@@ -728,113 +639,18 @@ def _discover_trend_site_input_dirs(
     *,
     include_localized_children: bool = True,
 ) -> list[TrendSiteInputDirectory]:
-    discovered: list[TrendSiteInputDirectory] = []
-    seen_paths: set[tuple[Path, str | None]] = set()
-
-    def add_candidate(candidate: Path, *, instance: str | None) -> None:
-        resolved_candidate = candidate.expanduser().resolve()
-        resolved_instance = (
-            _normalize_site_instance(instance)
-            if instance is not None
-            else _normalize_site_instance(
-                _infer_instance_name_from_site_path(resolved_candidate)
-            )
-        )
-        if not resolved_candidate.exists() or not resolved_candidate.is_dir():
-            return
-        if (resolved_candidate, resolved_instance) in seen_paths:
-            return
-        seen_paths.add((resolved_candidate, resolved_instance))
-        root_path = (
-            resolved_candidate.parent
-            if resolved_candidate.name == "Trends"
-            else resolved_candidate
-        )
-        language_code = _infer_site_language_code_from_root(root_path)
-        inbox_path = root_path / "Inbox"
-        discovered.append(
-            TrendSiteInputDirectory(
-                path=resolved_candidate,
-                root_path=root_path,
-                inbox_path=inbox_path
-                if inbox_path.exists() and inbox_path.is_dir()
-                else None,
-                ideas_path=(
-                    root_path / "Ideas"
-                    if (root_path / "Ideas").exists()
-                    and (root_path / "Ideas").is_dir()
-                    else None
-                ),
-                instance=resolved_instance,
-                language_code=language_code,
-                language_slug=language_slug_from_code(language_code) or None,
-                is_localized_root=root_path.parent.name == "Localized",
-            )
-        )
-
-    for raw_input in raw_inputs:
-        raw_path = raw_input.path
-        _reject_legacy_stream_layout(raw_path, context="Trend site input")
-        allow_staged_instance_roots = (raw_path / "manifest.json").exists()
-        candidates: list[Path] = []
-        if raw_path.name == "Trends":
-            candidates.append(raw_path)
-
-        direct_trends_dir = raw_path / "Trends"
-        if direct_trends_dir.exists() and direct_trends_dir.is_dir():
-            candidates.append(direct_trends_dir)
-
-        if include_localized_children:
-            localized_root = raw_path / "Localized"
-            if localized_root.exists() and localized_root.is_dir():
-                for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
-                    _reject_legacy_stream_layout(
-                        child,
-                        context="Localized trend site input",
-                    )
-                    child_trends_dir = child / "Trends"
-                    if child_trends_dir.exists() and child_trends_dir.is_dir():
-                        candidates.append(child_trends_dir)
-                    else:
-                        candidates.append(child)
-        if allow_staged_instance_roots:
-            streams_root = raw_path / "Streams"
-            if streams_root.exists() and streams_root.is_dir():
-                for stream_root in sorted(
-                    path for path in streams_root.iterdir() if path.is_dir()
-                ):
-                    stream_trends_dir = stream_root / "Trends"
-                    if stream_trends_dir.exists() and stream_trends_dir.is_dir():
-                        add_candidate(stream_trends_dir, instance=stream_root.name)
-                    if not include_localized_children:
-                        continue
-                    stream_localized_root = stream_root / "Localized"
-                    if (
-                        not stream_localized_root.exists()
-                        or not stream_localized_root.is_dir()
-                    ):
-                        continue
-                    for child in sorted(
-                        path
-                        for path in stream_localized_root.iterdir()
-                        if path.is_dir()
-                    ):
-                        child_trends_dir = child / "Trends"
-                        if child_trends_dir.exists() and child_trends_dir.is_dir():
-                            add_candidate(child_trends_dir, instance=stream_root.name)
-                        else:
-                            add_candidate(child, instance=stream_root.name)
-        if not candidates:
-            candidates.append(raw_path)
-
-        for candidate in candidates:
-            add_candidate(candidate, instance=raw_input.instance)
-
-    _validate_unique_site_instance_slugs(
-        [input_dir.instance for input_dir in discovered],
-        context="Trend site input instances",
+    return _discover_trend_site_input_dirs_impl(
+        list(raw_inputs),
+        include_localized_children=include_localized_children,
+        deps=SiteInputDiscoveryDeps(
+            normalize_site_instance=_normalize_site_instance,
+            infer_instance_name_from_site_path=_infer_instance_name_from_site_path,
+            infer_site_language_code_from_root=_infer_site_language_code_from_root,
+            language_slug_from_code=language_slug_from_code,
+            reject_legacy_stream_layout=_reject_legacy_stream_layout,
+            validate_unique_site_instance_slugs=_validate_unique_site_instance_slugs,
+        ),
     )
-    return discovered
 
 
 def _render_topic_link_pills(
@@ -869,85 +685,10 @@ def _render_topic_link_pills(
         else "<span class='meta-pill subdued'>No tracked topics</span>"
     )
 
-def _site_page_shell(
-    *,
-    title: str,
-    page_path: Path,
-    output_dir: Path,
-    page_heading: str,
-    page_subtitle: str,
-    body_class: str,
-    active_nav: str,
-    content_html: str,
-    show_page_hero: bool = False,
-) -> str:
-    stylesheet_path = output_dir / "assets" / "site.css"
-    stylesheet_href = _site_href(from_page=page_path, to_page=stylesheet_path)
-    index_href = _site_href(from_page=page_path, to_page=output_dir / "index.html")
-    trends_href = _site_href(
-        from_page=page_path, to_page=output_dir / "trends" / "index.html"
-    )
-    archive_href = _site_href(from_page=page_path, to_page=output_dir / "archive.html")
-    ideas_href = _site_href(from_page=page_path, to_page=output_dir / "ideas" / "index.html")
-    topics_href = _site_href(
-        from_page=page_path, to_page=output_dir / "topics" / "index.html"
-    )
-
-    def nav_link(label: str, href: str, key: str) -> str:
-        class_name = "nav-link is-active" if key == active_nav else "nav-link"
-        return f"<a class='{class_name}' href='{href}'>{label}</a>"
-
-    nav_caption_html = (
-        f"<div class='nav-caption'>{html.escape(page_subtitle)}</div>"
-        if page_subtitle
-        else ""
-    )
-    page_hero_html = (
-        "<section class='page-hero'>"
-        f"<div class='hero-kicker'>{html.escape(page_subtitle)}</div>"
-        f"<h1 class='page-title'>{html.escape(page_heading)}</h1>"
-        "</section>"
-        if show_page_hero
-        else ""
-    )
-
-    return (
-        "<!doctype html>"
-        "<html lang='zh-CN'>"
-        "<head>"
-        "<meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>{html.escape(title)}</title>"
-        "<meta name='theme-color' content='#10273f'>"
-        f"<link rel='stylesheet' href='{stylesheet_href}'>"
-        "</head>"
-        f"<body class='{body_class}'>"
-        "<div class='site-bg'></div>"
-        "<div class='site-shell'>"
-        "<header class='site-header'>"
-        "<div class='nav-brand-wrap'>"
-        f"<a class='nav-brand' href='{index_href}'>Recoleta Trends</a>"
-        f"{nav_caption_html}"
-        "</div>"
-        "<nav class='nav-links'>"
-        f"{nav_link('Home', index_href, 'home')}"
-        f"{nav_link('Trends', trends_href, 'trends')}"
-        f"{nav_link('Ideas', ideas_href, 'ideas')}"
-        f"{nav_link('Topics', topics_href, 'topics')}"
-        f"{nav_link('Archive', archive_href, 'archive')}"
-        "</nav>"
-        "<div class='nav-actions'>"
-        "<div class='nav-utility-cluster'></div>"
-        f"<a class='nav-link nav-link-external nav-link-repo' href='{html.escape(RECOLETA_REPO_URL, quote=True)}'>GitHub</a>"
-        "</div>"
-        "</header>"
-        "<main class='site-main'>"
-        f"{page_hero_html}"
-        f"{content_html}"
-        "</main>"
-        "</div>"
-        "</body>"
-        "</html>"
+def _render_site_page(spec: SitePageShellInput) -> str:
+    return _render_site_page_shell_impl(
+        spec=spec,
+        site_href=_site_href,
     )
 
 
@@ -1260,15 +1001,12 @@ def _render_detail_page(
         f"{pager_html}"
     )
 
-    return _site_page_shell(
-        title=f"{document.title} · Recoleta Trends",
-        page_path=document.page_path,
-        output_dir=output_dir,
-        page_heading=document.title,
-        page_subtitle="",
-        body_class="page-detail",
-        active_nav="trends",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title=f"{document.title} · Recoleta Trends", page_path=document.page_path, output_dir=output_dir,
+            page_heading=document.title, page_subtitle="", body_class="page-detail",
+            active_nav="trends", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 
@@ -1352,15 +1090,12 @@ def _render_item_page(
         f"<section class='detail-content'>{document.body_html}</section>"
         f"{_render_repo_cta_card()}"
     )
-    return _site_page_shell(
-        title=f"{document.title} · Recoleta",
-        page_path=document.page_path,
-        output_dir=output_dir,
-        page_heading=document.title,
-        page_subtitle="",
-        body_class="page-item",
-        active_nav="archive",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title=f"{document.title} · Recoleta", page_path=document.page_path, output_dir=output_dir,
+            page_heading=document.title, page_subtitle="", body_class="page-item",
+            active_nav="archive", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 
@@ -1499,15 +1234,12 @@ def _render_idea_page(
         f"<section class='detail-content'>{document.body_html}</section>"
         f"{_render_repo_cta_card()}"
     )
-    return _site_page_shell(
-        title=f"{document.title} · Recoleta Ideas",
-        page_path=document.page_path,
-        output_dir=output_dir,
-        page_heading=document.title,
-        page_subtitle="",
-        body_class="page-idea",
-        active_nav="ideas",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title=f"{document.title} · Recoleta Ideas", page_path=document.page_path, output_dir=output_dir,
+            page_heading=document.title, page_subtitle="", body_class="page-idea",
+            active_nav="ideas", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 
@@ -1535,15 +1267,12 @@ def _render_trends_index_page(
         f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No trend briefs available yet.</div>'}</div>"
         "</section>"
     )
-    return _site_page_shell(
-        title="Trends · Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading="Trends",
-        page_subtitle="",
-        body_class="page-trends",
-        active_nav="trends",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title="Trends · Recoleta Trends", page_path=page_path, output_dir=output_dir,
+            page_heading="Trends", page_subtitle="", body_class="page-trends",
+            active_nav="trends", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 
@@ -1571,15 +1300,12 @@ def _render_ideas_index_page(
         f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No idea briefs available yet.</div>'}</div>"
         "</section>"
     )
-    return _site_page_shell(
-        title="Ideas · Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading="Ideas",
-        page_subtitle="",
-        body_class="page-ideas",
-        active_nav="ideas",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title="Ideas · Recoleta Trends", page_path=page_path, output_dir=output_dir,
+            page_heading="Ideas", page_subtitle="", body_class="page-ideas",
+            active_nav="ideas", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 
@@ -1703,15 +1429,12 @@ def _render_home_page(
         "</section>"
     )
 
-    return _site_page_shell(
-        title="Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading="Recoleta Trends",
-        page_subtitle="",
-        body_class="page-home",
-        active_nav="home",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title="Recoleta Trends", page_path=page_path, output_dir=output_dir,
+            page_heading="Recoleta Trends", page_subtitle="", body_class="page-home",
+            active_nav="home", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 
@@ -1781,15 +1504,12 @@ def _render_topics_index_page(
         "</section>"
     )
 
-    return _site_page_shell(
-        title="Topics · Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading="Topics",
-        page_subtitle="",
-        body_class="page-topics",
-        active_nav="topics",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title="Topics · Recoleta Trends", page_path=page_path, output_dir=output_dir,
+            page_heading="Topics", page_subtitle="", body_class="page-topics",
+            active_nav="topics", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 def _render_topic_page(
@@ -1826,15 +1546,12 @@ def _render_topic_page(
         f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No idea briefs available yet.')}"
         "</section>"
     )
-    return _site_page_shell(
-        title=f"{topic} · Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading=topic,
-        page_subtitle="",
-        body_class="page-topic",
-        active_nav="topics",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title=f"{topic} · Recoleta Trends", page_path=page_path, output_dir=output_dir,
+            page_heading=topic, page_subtitle="", body_class="page-topic",
+            active_nav="topics", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 def _render_archive_page(
@@ -1847,15 +1564,12 @@ def _render_archive_page(
         f"{_render_archive_rows(documents=documents, from_page=page_path)}"
         "</section>"
     )
-    return _site_page_shell(
-        title="Archive · Recoleta Trends",
-        page_path=page_path,
-        output_dir=output_dir,
-        page_heading="Archive",
-        page_subtitle="",
-        body_class="page-archive",
-        active_nav="archive",
-        content_html=content_html,
+    return _render_site_page(
+        SitePageShellInput(
+            title="Archive · Recoleta Trends", page_path=page_path, output_dir=output_dir,
+            page_heading="Archive", page_subtitle="", body_class="page-archive",
+            active_nav="archive", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+        )
     )
 
 
@@ -3231,64 +2945,18 @@ def _load_item_source_documents(
     input_dirs: Sequence[TrendSiteInputDirectory],
     allowed_source_keys: set[SiteSourceKey] | None = None,
 ) -> list[ItemSiteSourceDocument]:
-    source_documents: list[ItemSiteSourceDocument] = []
-    seen_source_keys: set[SiteSourceKey] = set()
-    for input_info in input_dirs:
-        if input_info.inbox_path is None:
-            continue
-        for markdown_path in sorted(input_info.inbox_path.glob("*.md")):
-            resolved_markdown_path = markdown_path.resolve()
-            raw_markdown = resolved_markdown_path.read_text(encoding="utf-8")
-            frontmatter, markdown_body = _split_yaml_frontmatter_text(raw_markdown)
-            title = _extract_markdown_h1(
-                markdown_body,
-                fallback=resolved_markdown_path.stem,
-            )
-            raw_relevance = frontmatter.get("relevance_score")
-            relevance_score: float | None = None
-            if raw_relevance is not None:
-                try:
-                    relevance_score = float(raw_relevance)
-                except Exception:
-                    relevance_score = None
-            instance = _resolve_site_instance(
-                input_instance=input_info.instance,
-                frontmatter=frontmatter,
-            )
-            source_key = _site_source_key(
-                markdown_path=resolved_markdown_path,
-                instance=instance,
-            )
-            if source_key in seen_source_keys:
-                continue
-            seen_source_keys.add(source_key)
-            if allowed_source_keys is not None and source_key not in allowed_source_keys:
-                continue
-            source_documents.append(
-                ItemSiteSourceDocument(
-                    markdown_path=resolved_markdown_path,
-                    stem=resolved_markdown_path.stem,
-                    frontmatter=frontmatter,
-                    markdown_body=markdown_body,
-                    title=title,
-                    canonical_url=str(frontmatter.get("url") or "").strip(),
-                    source=str(frontmatter.get("source") or "").strip(),
-                    published_at=_parse_site_datetime(frontmatter.get("published_at")),
-                    authors=_parse_site_string_list(frontmatter.get("authors")),
-                    topics=_parse_site_string_list(frontmatter.get("topics")),
-                    relevance_score=relevance_score,
-                    instance=instance,
-                )
-            )
-
-    source_documents.sort(
-        key=lambda document: (
-            document.published_at or datetime.min.replace(tzinfo=timezone.utc),
-            document.stem,
+    return _load_item_source_documents_impl(
+        input_dirs=list(input_dirs),
+        allowed_source_keys=allowed_source_keys,
+        deps=SiteItemSourceLoadDeps(
+            split_yaml_frontmatter_text=_split_yaml_frontmatter_text,
+            extract_markdown_h1=_extract_markdown_h1,
+            parse_site_datetime=_parse_site_datetime,
+            parse_site_string_list=_parse_site_string_list,
+            resolve_site_instance=_resolve_site_instance,
+            site_source_key=_site_source_key,
         ),
-        reverse=True,
     )
-    return source_documents
 
 
 def _load_idea_source_documents(
@@ -3543,48 +3211,15 @@ def _collect_referenced_item_source_keys(
     source_documents: Sequence[TrendSiteSourceDocument | IdeaSiteSourceDocument],
     available_source_keys: set[SiteSourceKey],
 ) -> set[SiteSourceKey]:
-    if not source_documents or not available_source_keys:
-        return set()
-    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
-    referenced_source_keys: set[SiteSourceKey] = set()
-    for source_document in source_documents:
-        presentation_targets = (
-            _presentation_local_markdown_targets(
-                presentation=source_document.presentation,
-                source_markdown_path=source_document.markdown_path,
-            )
-            if source_document.presentation is not None
-            else set()
-        )
-        for target_path in presentation_targets:
-            target_source_key = _resolve_site_source_key(
-                target_path=target_path,
-                source_instance=source_document.instance,
-                available_source_keys=available_source_keys,
-            )
-            if target_source_key is not None:
-                referenced_source_keys.add(target_source_key)
-        normalized_markdown = str(source_document.markdown_body or "").strip()
-        if not normalized_markdown:
-            continue
-        rendered_html = markdown.render(normalized_markdown)
-        soup = BeautifulSoup(rendered_html, "html.parser")
-        for anchor in soup.find_all("a", href=True):
-            target_path = _resolve_site_local_markdown_target(
-                source_markdown_path=source_document.markdown_path,
-                href=str(anchor.get("href") or ""),
-            )
-            if target_path is None:
-                continue
-            target_source_key = _resolve_site_source_key(
-                target_path=target_path,
-                source_instance=source_document.instance,
-                available_source_keys=available_source_keys,
-            )
-            if target_source_key is None:
-                continue
-            referenced_source_keys.add(target_source_key)
-    return referenced_source_keys
+    return _collect_referenced_item_source_keys_impl(
+        source_documents=list(source_documents),
+        available_source_keys=available_source_keys,
+        deps=SiteReferenceCollectionDeps(
+            presentation_local_markdown_targets=_presentation_local_markdown_targets,
+            resolve_site_source_key=_resolve_site_source_key,
+            resolve_site_local_markdown_target=_resolve_site_local_markdown_target,
+        ),
+    )
 
 
 def _select_item_source_documents(
@@ -3649,31 +3284,10 @@ def _extract_item_body_html(*, body_html: str) -> tuple[str, str, str]:
 
 
 def _build_item_browser_body_html(*, body_html: str) -> str:
-    _title, sections = _extract_trend_pdf_sections(body_html=body_html)
-    if sections:
-        browser_body_html = _build_trend_browser_body_html(sections=sections)
-        soup = BeautifulSoup(browser_body_html, "html.parser")
-        summary_grid = soup.select_one("section.summary-grid")
-        if summary_grid is not None:
-            summary_cards = summary_grid.find_all("section", recursive=False)
-            if len(summary_cards) == 1:
-                raw_classes = summary_grid.get("class")
-                if isinstance(raw_classes, list):
-                    classes = [str(class_name) for class_name in raw_classes]
-                else:
-                    classes = str(raw_classes or "").split()
-                if "summary-grid-single" not in classes:
-                    classes.append("summary-grid-single")
-                summary_grid["class"] = " ".join(classes)
-        return str(soup)
-    fallback_html = body_html.strip() or "<p>(empty)</p>"
-    return (
-        "<div class='document-flow'>"
-        "<section class='surface-card section-card'>"
-        "<h2 class='section-label'>Note</h2>"
-        f"<div class='prose'>{fallback_html}</div>"
-        "</section>"
-        "</div>"
+    return _build_item_browser_body_html_impl(
+        body_html=body_html,
+        extract_trend_pdf_sections=_extract_trend_pdf_sections,
+        build_trend_browser_body_html=_build_trend_browser_body_html,
     )
 
 
@@ -3766,218 +3380,37 @@ def _extract_idea_labeled_paragraph(node: Tag) -> tuple[str, str] | None:
 
 
 def _render_idea_opportunity_card(*, title: str, inner_html: str) -> tuple[str, int]:
-    soup = BeautifulSoup(inner_html, "html.parser")
-    meta_row_html = ""
-    content_blocks: list[str] = []
-    evidence_count = 0
-    generic_nodes: list[str] = []
-    children = [node for node in soup.contents if str(node).strip()]
-    index = 0
-    while index < len(children):
-        child = children[index]
-        if not isinstance(child, Tag):
-            generic_nodes.append(str(child))
-            index += 1
-            continue
-        if not meta_row_html:
-            extracted_meta_sections = _extract_idea_opportunity_meta_sections(child)
-            if extracted_meta_sections is not None:
-                extracted_meta_html, role_html = extracted_meta_sections
-                if extracted_meta_html is not None:
-                    meta_row_html = extracted_meta_html
-                if role_html is not None:
-                    content_blocks.append(role_html)
-                index += 1
-                continue
-        if child.name in {"h4", "h5"} and _idea_heading_matches(
-            child.get_text(" ", strip=True), "evidence"
-        ):
-            evidence_nodes: list[str] = []
-            look_ahead = index + 1
-            while look_ahead < len(children):
-                candidate = children[look_ahead]
-                if isinstance(candidate, Tag) and candidate.name in {
-                    "h3",
-                    "h4",
-                    "h5",
-                }:
-                    break
-                if str(candidate).strip():
-                    evidence_nodes.append(str(candidate))
-                look_ahead += 1
-            evidence_soup = BeautifulSoup("".join(evidence_nodes), "html.parser")
-            evidence_count += sum(
-                1
-                for item in evidence_soup.find_all("li")
-                if item.find_parent("li") is None
-            )
-            evidence_html = "".join(evidence_nodes).strip() or "<p>(none)</p>"
-            content_blocks.append(
-                "<section class='idea-opportunity-block idea-opportunity-block-evidence'>"
-                "<div class='idea-opportunity-label'>Evidence</div>"
-                f"<div class='idea-opportunity-copy prose idea-evidence-list'>{evidence_html}</div>"
-                "</section>"
-            )
-            index = look_ahead
-            continue
-        labeled = _extract_idea_labeled_paragraph(child)
-        if labeled is not None:
-            label, value_html = labeled
-            content_blocks.append(
-                "<section class='idea-opportunity-block'>"
-                f"<div class='idea-opportunity-label'>{html.escape(label)}</div>"
-                f"<div class='idea-opportunity-copy prose'><p>{value_html}</p></div>"
-                "</section>"
-            )
-            index += 1
-            continue
-        generic_nodes.append(str(child))
-        index += 1
-
-    if generic_nodes:
-        content_blocks.insert(
-            0,
-            "<section class='idea-opportunity-block'>"
-            "<div class='idea-opportunity-copy prose'>"
-            f"{''.join(generic_nodes)}"
-            "</div>"
-            "</section>",
-        )
-
-    return (
-        "<article class='idea-opportunity-card'>"
-        "<div class='idea-opportunity-head'>"
-        f"<h3 class='idea-opportunity-title'>{html.escape(title)}</h3>"
-        f"{meta_row_html}"
-        "</div>"
-        f"<div class='idea-opportunity-body'>{''.join(content_blocks)}</div>"
-        "</article>",
-        evidence_count,
+    return _render_idea_opportunity_card_impl(
+        title=title,
+        inner_html=inner_html,
+        extract_meta_sections=_extract_idea_opportunity_meta_sections,
+        idea_heading_matches=_idea_heading_matches,
+        extract_labeled_paragraph=_extract_idea_labeled_paragraph,
     )
 
 
 def _render_idea_opportunities_section(
     *, heading: str, inner_html: str
 ) -> tuple[str, int, int]:
-    section_soup = BeautifulSoup(inner_html, "html.parser")
-    cards: list[str] = []
-    intro_nodes: list[str] = []
-    evidence_count = 0
-    current_title: str | None = None
-    current_nodes: list[str] = []
-    for node in section_soup.contents:
-        if not str(node).strip():
-            continue
-        if isinstance(node, Tag) and node.name == "h3":
-            if current_title is not None:
-                card_html, entry_evidence_count = _render_idea_opportunity_card(
-                    title=current_title,
-                    inner_html="".join(current_nodes),
-                )
-                cards.append(card_html)
-                evidence_count += entry_evidence_count
-            current_title = node.get_text(" ", strip=True) or "Opportunity"
-            current_nodes = []
-            continue
-        if current_title is None:
-            intro_nodes.append(str(node))
-            continue
-        current_nodes.append(str(node))
-
-    if current_title is not None:
-        card_html, entry_evidence_count = _render_idea_opportunity_card(
-            title=current_title,
-            inner_html="".join(current_nodes),
-        )
-        cards.append(card_html)
-        evidence_count += entry_evidence_count
-
-    if not cards:
-        return (
-            _render_browser_content_card_html(heading=heading, inner_html=inner_html),
-            0,
-            evidence_count,
-        )
-
-    intro_html = (
-        f"<div class='prose idea-section-intro'>{''.join(intro_nodes)}</div>"
-        if "".join(intro_nodes).strip()
-        else ""
-    )
-    count_label = (
-        f"{len(cards)} opportunity" if len(cards) == 1 else f"{len(cards)} opportunities"
-    )
-    return (
-        "<section class='surface-card section-card idea-opportunities-section'>"
-        "<div class='idea-section-head'>"
-        f"{_render_browser_section_label_html(heading)}"
-        f"<span class='meta-date'>{html.escape(count_label)}</span>"
-        "</div>"
-        f"{intro_html}"
-        f"<div class='idea-opportunity-grid'>{''.join(cards)}</div>"
-        "</section>",
-        len(cards),
-        evidence_count,
+    return _render_idea_opportunities_section_impl(
+        heading=heading,
+        inner_html=inner_html,
+        render_idea_opportunity_card=_render_idea_opportunity_card,
+        render_browser_content_card_html=_render_browser_content_card_html,
+        render_browser_section_label_html=_render_browser_section_label_html,
     )
 
 
 def _build_idea_browser_body_html(*, body_html: str) -> IdeaBodyRenderResult:
-    _title, sections = _extract_trend_pdf_sections(body_html=body_html)
-    if not sections:
-        return IdeaBodyRenderResult(
-            body_html=_build_item_browser_body_html(body_html=body_html),
-            opportunity_count=0,
-            evidence_count=0,
-        )
-
-    rendered: list[str] = []
-    summary_cards: list[str] = []
-    opportunity_count = 0
-    evidence_count = 0
-    for section in sections:
-        if _idea_heading_matches(section.heading, "summary", "overview"):
-            summary_cards.append(
-                _render_browser_content_card_html(
-                    heading=section.heading,
-                    inner_html=section.inner_html,
-                    card_classes=(
-                        "surface-card section-card summary-card summary-card-primary"
-                    ),
-                )
-            )
-            continue
-        if _idea_heading_matches(section.heading, "opportunit"):
-            (
-                opportunities_html,
-                section_opportunity_count,
-                section_evidence_count,
-            ) = _render_idea_opportunities_section(
-                heading=section.heading,
-                inner_html=section.inner_html,
-            )
-            rendered.append(opportunities_html)
-            opportunity_count += section_opportunity_count
-            evidence_count += section_evidence_count
-            continue
-        rendered.append(
-            _render_browser_content_card_html(
-                heading=section.heading,
-                inner_html=section.inner_html,
-            )
-        )
-
-    if summary_cards:
-        summary_classes = (
-            "summary-grid summary-grid-single" if len(summary_cards) == 1 else "summary-grid"
-        )
-        rendered.insert(
-            0,
-            f"<section class='{summary_classes}'>{''.join(summary_cards[:2])}</section>",
-        )
-    return IdeaBodyRenderResult(
-        body_html="<div class='document-flow'>" + "".join(rendered) + "</div>",
-        opportunity_count=opportunity_count,
-        evidence_count=evidence_count,
+    return _build_idea_browser_body_html_impl(
+        body_html=body_html,
+        deps=IdeaBrowserBodyDeps(
+            extract_trend_pdf_sections=_extract_trend_pdf_sections,
+            build_item_browser_body_html=_build_item_browser_body_html,
+            idea_heading_matches=_idea_heading_matches,
+            render_browser_content_card_html=_render_browser_content_card_html,
+            render_idea_opportunities_section=_render_idea_opportunities_section,
+        ),
     )
 
 
@@ -4051,60 +3484,12 @@ def _render_presentation_source_list(
     entries: Sequence[dict[str, Any]],
     labels: dict[str, str],
 ) -> str:
-    items: list[str] = []
-    seen_targets: set[str] = set()
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        title = str(entry.get("title") or "").strip()
-        href = str(entry.get("href") or entry.get("url") or "").strip()
-        if not title:
-            doc_id = entry.get("doc_id")
-            try:
-                doc_id_int = int(doc_id) if doc_id is not None else 0
-            except Exception:
-                doc_id_int = 0
-            if doc_id_int > 0:
-                title = f"Document {doc_id_int}"
-        target = href or title
-        if not title or target in seen_targets:
-            continue
-        seen_targets.add(target)
-        title_html = (
-            f"<a href='{html.escape(href, quote=True)}'>{html.escape(title)}</a>"
-            if href
-            else html.escape(title)
-        )
-        meta_parts: list[str] = []
-        authors = [str(author).strip() for author in list(entry.get("authors") or []) if str(author).strip()]
-        if authors:
-            meta_parts.append(html.escape(", ".join(authors)))
-        source_type = str(entry.get("source_type") or "").strip()
-        if source_type:
-            meta_parts.append(
-                f"{html.escape(labels.get('source_type', 'Source type'))}: "
-                f"{html.escape(_humanize_source_type(source_type))}"
-            )
-        confidence = str(entry.get("confidence") or "").strip()
-        if confidence:
-            meta_parts.append(
-                f"{html.escape(labels.get('confidence', 'Confidence'))}: "
-                f"{html.escape(_humanize_confidence(confidence))}"
-            )
-        meta_html = (
-            f"<div class='source-list-meta'>{' · '.join(meta_parts)}</div>"
-            if meta_parts
-            else ""
-        )
-        items.append(
-            "<li class='source-list-item'>"
-            f"<div class='source-list-title'>{title_html}</div>"
-            f"{meta_html}"
-            "</li>"
-        )
-    if not items:
-        return "<p>(none)</p>"
-    return "<ul class='source-list'>" + "".join(items) + "</ul>"
+    return _render_presentation_source_list_impl(
+        entries=[entry for entry in entries if isinstance(entry, dict)],
+        labels=labels,
+        humanize_source_type=_humanize_source_type,
+        humanize_confidence=_humanize_confidence,
+    )
 
 
 def _render_markdown_evolution_compat_html(*, sections: Sequence[Any]) -> str:
@@ -4666,130 +4051,27 @@ def _load_trend_site_documents(
     output_dir: Path,
     item_pages_by_source_key: dict[SiteSourceKey, Path],
 ) -> list[TrendSiteDocument]:
-    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
-    documents: list[TrendSiteDocument] = []
-
-    artifacts_dir = output_dir / "artifacts"
-    trends_dir = output_dir / "trends"
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    trends_dir.mkdir(parents=True, exist_ok=True)
-
-    trend_pages_by_source_key = {
-        _site_source_key(
-            markdown_path=source_document.markdown_path,
-            instance=source_document.instance,
-        ): (
-            trends_dir
-            / f"{_site_namespaced_page_stem(stem=source_document.stem, instance=source_document.instance)}.html"
-        )
-        for source_document in source_documents
-    }
-    linked_page_by_source_key = dict(item_pages_by_source_key)
-    linked_page_by_source_key.update(trend_pages_by_source_key)
-
-    for source_document in source_documents:
-        normalized_markdown = _normalize_obsidian_callouts_for_pdf(
-            source_document.markdown_body
-        ).strip()
-        if not normalized_markdown:
-            normalized_markdown = "# Trend\n"
-        body_html = markdown.render(normalized_markdown)
-        markdown_title, sections = _extract_trend_pdf_sections(body_html=body_html)
-        markdown_title = sanitize_trend_title(markdown_title, fallback="Trend")
-        markdown_excerpt = _section_excerpt(sections)
-        markdown_evolution_insight = _extract_trend_evolution_insight(sections)
-        source_key = _site_source_key(
-            markdown_path=source_document.markdown_path,
-            instance=source_document.instance,
-        )
-        page_path = trend_pages_by_source_key[source_key]
-        if source_document.presentation is not None:
-            content = source_document.presentation.get("content")
-            title = sanitize_trend_title(
-                str(content.get("title") or "").strip()
-                if isinstance(content, dict)
-                else "",
-                fallback="Trend",
-            )
-            rendered_body_html, excerpt, evolution_insight = _build_trend_body_from_presentation(
-                presentation=source_document.presentation,
-            )
-            evolution_compat_html = _render_markdown_evolution_compat_html(
-                sections=sections
-            )
-            if evolution_compat_html:
-                rendered_body_html = _merge_markdown_evolution_compat_html(
-                    rendered_body_html=rendered_body_html,
-                    evolution_compat_html=evolution_compat_html,
-                )
-                evolution_insight = markdown_evolution_insight or evolution_insight
-            browser_body_html = _rewrite_site_markdown_links(
-                html_text=rendered_body_html,
-                source_markdown_path=source_document.markdown_path,
-                source_instance=source_document.instance,
-                from_page=page_path,
-                page_by_source_key=linked_page_by_source_key,
-            )
-        else:
-            title = markdown_title
-            excerpt = markdown_excerpt
-            evolution_insight = markdown_evolution_insight
-            browser_body_html = _rewrite_site_markdown_links(
-                html_text=_build_trend_browser_body_html(
-                    sections=sections,
-                    allow_evolution_disclosure=True,
-                ),
-                source_markdown_path=source_document.markdown_path,
-                source_instance=source_document.instance,
-                from_page=page_path,
-                page_by_source_key=linked_page_by_source_key,
-            )
-
-        period_token = (
-            _trend_date_token(
-                granularity=source_document.granularity,
-                period_start=source_document.period_start,
-            )
-            if source_document.period_start is not None
-            else source_document.stem
-        )
-
-        markdown_asset_path = artifacts_dir / _site_namespaced_asset_name(
-            name=source_document.markdown_path.name,
-            instance=source_document.instance,
-        )
-        shutil.copy2(source_document.markdown_path, markdown_asset_path)
-
-        pdf_asset_path: Path | None = None
-        if source_document.pdf_path is not None:
-            pdf_asset_path = artifacts_dir / _site_namespaced_asset_name(
-                name=source_document.pdf_path.name,
-                instance=source_document.instance,
-            )
-            shutil.copy2(source_document.pdf_path, pdf_asset_path)
-
-        documents.append(
-            TrendSiteDocument(
-                markdown_path=source_document.markdown_path,
-                markdown_asset_path=markdown_asset_path,
-                pdf_asset_path=pdf_asset_path,
-                page_path=page_path,
-                stem=source_document.stem,
-                title=title,
-                granularity=source_document.granularity,
-                period_token=period_token,
-                period_start=source_document.period_start,
-                period_end=source_document.period_end,
-                topics=source_document.topics,
-                instance=source_document.instance,
-                body_html=browser_body_html,
-                excerpt=excerpt,
-                evolution_insight=evolution_insight,
-                frontmatter=source_document.frontmatter,
-            )
-        )
-
-    return documents
+    return _load_trend_site_documents_impl(
+        source_documents=list(source_documents),
+        output_dir=output_dir,
+        item_pages_by_source_key=item_pages_by_source_key,
+        deps=TrendSiteDocumentLoadDeps(
+            site_source_key=_site_source_key,
+            site_namespaced_page_stem=_site_namespaced_page_stem,
+            normalize_obsidian_callouts_for_pdf=_normalize_obsidian_callouts_for_pdf,
+            extract_trend_pdf_sections=_extract_trend_pdf_sections,
+            sanitize_trend_title=sanitize_trend_title,
+            section_excerpt=_section_excerpt,
+            extract_trend_evolution_insight=_extract_trend_evolution_insight,
+            build_trend_body_from_presentation=_build_trend_body_from_presentation,
+            render_markdown_evolution_compat_html=_render_markdown_evolution_compat_html,
+            merge_markdown_evolution_compat_html=_merge_markdown_evolution_compat_html,
+            rewrite_site_markdown_links=_rewrite_site_markdown_links,
+            build_trend_browser_body_html=_build_trend_browser_body_html,
+            trend_date_token=_trend_date_token,
+            site_namespaced_asset_name=_site_namespaced_asset_name,
+        ),
+    )
 
 
 def _markdown_language_code(path: Path) -> str | None:
@@ -4820,82 +4102,16 @@ def _infer_site_language_code_from_root(root_path: Path) -> str | None:
 def _discover_site_language_inputs(
     raw_inputs: Sequence[TrendSiteInputSpec],
 ) -> list[tuple[str | None, str, tuple[TrendSiteInputSpec, ...]]]:
-    discovered: list[tuple[str | None, str, tuple[TrendSiteInputSpec, ...]]] = []
-    grouped_roots: dict[str, list[TrendSiteInputSpec]] = {}
-    language_code_by_slug: dict[str, str] = {}
-    seen_roots: set[tuple[Path, str | None]] = set()
-
-    def add_root(root_path: Path, *, instance: str | None) -> None:
-        resolved_root = root_path.expanduser().resolve()
-        resolved_instance = (
-            _normalize_site_instance(instance)
-            if instance is not None
-            else _normalize_site_instance(
-                _infer_instance_name_from_site_root(resolved_root)
-            )
-        )
-        if (
-            (resolved_root, resolved_instance) in seen_roots
-            or not resolved_root.exists()
-            or not resolved_root.is_dir()
-        ):
-            return
-        seen_roots.add((resolved_root, resolved_instance))
-        language_code = _infer_site_language_code_from_root(resolved_root)
-        language_slug = (
-            language_slug_from_code(language_code)
-            if language_code is not None
-            else ""
-        )
-        input_spec = TrendSiteInputSpec(
-            path=resolved_root,
-            instance=resolved_instance,
-        )
-        if language_code is None or not language_slug:
-            discovered.append((language_code, language_slug, (input_spec,)))
-            return
-        grouped_roots.setdefault(language_slug, []).append(input_spec)
-        language_code_by_slug[language_slug] = str(language_code)
-
-    for raw_input in raw_inputs:
-        base_root = (
-            raw_input.path.parent if raw_input.path.name == "Trends" else raw_input.path
-        ).expanduser().resolve()
-        _reject_legacy_stream_layout(base_root, context="Trend site input")
-        allow_staged_instance_roots = (base_root / "manifest.json").exists()
-        add_root(base_root, instance=raw_input.instance)
-        localized_root = base_root / "Localized"
-        if localized_root.exists() and localized_root.is_dir():
-            for child in sorted(path for path in localized_root.iterdir() if path.is_dir()):
-                _reject_legacy_stream_layout(
-                    child,
-                    context="Localized trend site input",
-                )
-                add_root(child, instance=raw_input.instance)
-        if allow_staged_instance_roots:
-            streams_root = base_root / "Streams"
-            if streams_root.exists() and streams_root.is_dir():
-                for stream_root in sorted(
-                    path for path in streams_root.iterdir() if path.is_dir()
-                ):
-                    add_root(stream_root, instance=stream_root.name)
-                    stream_localized_root = stream_root / "Localized"
-                    if stream_localized_root.exists() and stream_localized_root.is_dir():
-                        for child in sorted(
-                            path
-                            for path in stream_localized_root.iterdir()
-                            if path.is_dir()
-                        ):
-                            add_root(child, instance=stream_root.name)
-    for language_slug in sorted(grouped_roots):
-        discovered.append(
-            (
-                language_code_by_slug[language_slug],
-                language_slug,
-                tuple(grouped_roots[language_slug]),
-            )
-        )
-    return discovered
+    return _discover_site_language_inputs_impl(
+        list(raw_inputs),
+        deps=SiteLanguageDiscoveryDeps(
+            normalize_site_instance=_normalize_site_instance,
+            infer_instance_name_from_site_root=_infer_instance_name_from_site_root,
+            infer_site_language_code_from_root=_infer_site_language_code_from_root,
+            language_slug_from_code=language_slug_from_code,
+            reject_legacy_stream_layout=_reject_legacy_stream_layout,
+        ),
+    )
 
 
 def language_slug_from_code(language_code: str | None) -> str:
@@ -5047,43 +4263,63 @@ def _apply_site_language_overrides(
     page_paths_by_language: dict[str, set[str]],
     language_code_by_slug: dict[str, str],
 ) -> None:
-    stylesheet_path = output_dir / "assets" / "site.css"
-    if stylesheet_path.exists():
-        stylesheet = stylesheet_path.read_text(encoding="utf-8")
-        if ".language-switcher {" not in stylesheet:
-            stylesheet_path.write_text(
-                stylesheet.rstrip() + "\n" + _LANGUAGE_SWITCHER_CSS.strip() + "\n",
-                encoding="utf-8",
-            )
-
-    inject_switcher = len(language_code_by_slug) > 1
+    spec = _SiteLanguageOverrideSpec(
+        output_dir=output_dir,
+        language_code=language_code,
+        language_slug=language_slug,
+        page_paths_by_language=page_paths_by_language,
+        language_code_by_slug=language_code_by_slug,
+    )
+    _append_language_switcher_styles(output_dir=output_dir)
     for html_path in output_dir.rglob("*.html"):
-        relative_path = str(html_path.relative_to(output_dir)).replace("\\", "/")
-        soup = BeautifulSoup(html_path.read_text(encoding="utf-8"), "html.parser")
-        html_tag = soup.find("html")
-        if html_tag is not None:
-            html_tag["lang"] = language_code
+        _apply_site_language_override_to_page(html_path=html_path, spec=spec)
 
-        if inject_switcher:
-            nav_actions = soup.select_one(".site-header .nav-actions")
-            if nav_actions is not None:
-                nav_actions["data-has-language-switcher"] = "true"
-                utility_cluster = nav_actions.select_one(".nav-utility-cluster")
-                insertion_target = utility_cluster if utility_cluster is not None else nav_actions
-                if nav_actions.select_one(".language-switcher") is None:
-                    insertion_target.insert(
-                        0,
-                        _render_language_switcher_fragment(
-                            current_language_slug=language_slug,
-                            current_page_relative_path=relative_path,
-                            page_paths_by_language=page_paths_by_language,
-                            language_code_by_slug=language_code_by_slug,
-                        ),
-                    )
-        rendered_html = str(soup).replace(
-            f'<html lang="{language_code}">', f"<html lang='{language_code}'>"
-        )
-        html_path.write_text(rendered_html, encoding="utf-8")
+
+def _append_language_switcher_styles(*, output_dir: Path) -> None:
+    stylesheet_path = output_dir / "assets" / "site.css"
+    if not stylesheet_path.exists():
+        return
+    stylesheet = stylesheet_path.read_text(encoding="utf-8")
+    if ".language-switcher {" in stylesheet:
+        return
+    stylesheet_path.write_text(
+        stylesheet.rstrip() + "\n" + _LANGUAGE_SWITCHER_CSS.strip() + "\n",
+        encoding="utf-8",
+    )
+
+
+def _apply_site_language_override_to_page(
+    *,
+    html_path: Path,
+    spec: _SiteLanguageOverrideSpec,
+) -> None:
+    relative_path = str(html_path.relative_to(spec.output_dir)).replace("\\", "/")
+    soup = BeautifulSoup(html_path.read_text(encoding="utf-8"), "html.parser")
+    html_tag = soup.find("html")
+    if html_tag is not None:
+        html_tag["lang"] = spec.language_code
+
+    if len(spec.language_code_by_slug) > 1:
+        nav_actions = soup.select_one(".site-header .nav-actions")
+        if nav_actions is not None:
+            nav_actions["data-has-language-switcher"] = "true"
+            utility_cluster = nav_actions.select_one(".nav-utility-cluster")
+            insertion_target = utility_cluster if utility_cluster is not None else nav_actions
+            if nav_actions.select_one(".language-switcher") is None:
+                insertion_target.insert(
+                    0,
+                    _render_language_switcher_fragment(
+                        current_language_slug=spec.language_slug,
+                        current_page_relative_path=relative_path,
+                        page_paths_by_language=spec.page_paths_by_language,
+                        language_code_by_slug=spec.language_code_by_slug,
+                    ),
+                )
+    rendered_html = str(soup).replace(
+        f'<html lang="{spec.language_code}">',
+        f"<html lang='{spec.language_code}'>",
+    )
+    html_path.write_text(rendered_html, encoding="utf-8")
 
 
 def _render_language_redirect_page(
@@ -5125,245 +4361,40 @@ def _export_trend_static_site_single_language(
     item_export_scope: str = "linked",
     include_localized_children: bool = True,
 ) -> Path:
-    normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
-    resolved_input_roots = _coerce_site_input_specs(input_dir)
-    resolved_input_dirs = _discover_trend_site_input_dirs(
-        resolved_input_roots,
-        include_localized_children=include_localized_children,
-    )
-    resolved_output_dir = output_dir.expanduser().resolve()
-    for input_info in resolved_input_dirs:
-        if _paths_overlap(input_info.path, resolved_output_dir):
-            raise ValueError(
-                "Trend site output directory must not overlap the input directory"
-            )
-    _reset_directory(resolved_output_dir)
-    (resolved_output_dir / "assets").mkdir(parents=True, exist_ok=True)
-    (resolved_output_dir / "ideas").mkdir(parents=True, exist_ok=True)
-    (resolved_output_dir / "items").mkdir(parents=True, exist_ok=True)
-    (resolved_output_dir / "topics").mkdir(parents=True, exist_ok=True)
-
-    trend_source_documents = _load_trend_source_documents(
-        input_dirs=resolved_input_dirs,
-        limit=limit,
-    )
-    idea_source_documents = _load_idea_source_documents(
-        input_dirs=resolved_input_dirs,
-        limit=limit,
-    )
-    item_selection = _select_item_source_documents(
-        input_dirs=resolved_input_dirs,
-        trend_source_documents=trend_source_documents,
-        idea_source_documents=idea_source_documents,
-        item_export_scope=normalized_item_export_scope,
-    )
-    item_documents, item_pages_by_source_key = _load_item_site_documents(
-        source_documents=item_selection.source_documents,
-        output_dir=resolved_output_dir,
-    )
-    documents = _load_trend_site_documents(
-        source_documents=trend_source_documents,
-        output_dir=resolved_output_dir,
-        item_pages_by_source_key=item_pages_by_source_key,
-    )
-    linked_page_by_source_key = dict(item_pages_by_source_key)
-    linked_page_by_source_key.update(
-        {
-            _site_source_key(
-                markdown_path=document.markdown_path,
-                instance=document.instance,
-            ): document.page_path
-            for document in documents
-        }
-    )
-    idea_documents, idea_pages_by_source_key = _load_idea_site_documents(
-        source_documents=idea_source_documents,
-        output_dir=resolved_output_dir,
-        linked_page_by_source_key=linked_page_by_source_key,
-    )
-    linked_page_by_source_key.update(idea_pages_by_source_key)
-
-    label_by_topic_slug: dict[str, str] = {}
-    topic_documents: dict[str, list[TrendSiteDocument]] = defaultdict(list)
-    idea_documents_by_topic: dict[str, list[IdeaSiteDocument]] = defaultdict(list)
-    for document in documents:
-        for topic in document.topics:
-            slug = _topic_slug(topic)
-            label_by_topic_slug.setdefault(slug, topic)
-            topic_documents[slug].append(document)
-    for document in idea_documents:
-        for topic in document.topics:
-            slug = _topic_slug(topic)
-            label_by_topic_slug.setdefault(slug, topic)
-            idea_documents_by_topic[slug].append(document)
-
-    topic_pages = {
-        slug: resolved_output_dir / "topics" / f"{slug}.html"
-        for slug in sorted(set(topic_documents.keys()) | set(idea_documents_by_topic.keys()))
-    }
-
-    (resolved_output_dir / "assets" / "site.css").write_text(
-        _SITE_CSS.strip() + "\n",
-        encoding="utf-8",
-    )
-    (resolved_output_dir / ".nojekyll").write_text("", encoding="utf-8")
-
-    (resolved_output_dir / "index.html").write_text(
-        _render_home_page(
-            documents=documents,
-            idea_documents=idea_documents,
-            output_dir=resolved_output_dir,
-            topic_pages=topic_pages,
+    return _export_trend_static_site_single_language_impl(
+        request=SingleLanguageSiteExportRequest(
+            input_dir=tuple(input_dir) if isinstance(input_dir, Sequence) and not isinstance(input_dir, (Path, TrendSiteInputSpec)) else input_dir,
+            output_dir=output_dir,
+            limit=limit,
+            item_export_scope=item_export_scope,
+            include_localized_children=include_localized_children,
         ),
-        encoding="utf-8",
-    )
-    (resolved_output_dir / "trends" / "index.html").write_text(
-        _render_trends_index_page(
-            documents=documents,
-            output_dir=resolved_output_dir,
-            topic_pages=topic_pages,
+        deps=SingleLanguageSiteExportDeps(
+            normalize_item_export_scope=_normalize_item_export_scope,
+            coerce_site_input_specs=_coerce_site_input_specs,
+            discover_trend_site_input_dirs=_discover_trend_site_input_dirs,
+            paths_overlap=_paths_overlap,
+            reset_directory=_reset_directory,
+            load_trend_source_documents=_load_trend_source_documents,
+            load_idea_source_documents=_load_idea_source_documents,
+            select_item_source_documents=_select_item_source_documents,
+            load_item_site_documents=_load_item_site_documents,
+            load_trend_site_documents=_load_trend_site_documents,
+            site_source_key=_site_source_key,
+            load_idea_site_documents=_load_idea_site_documents,
+            topic_slug=_topic_slug,
+            render_home_page=_render_home_page,
+            render_trends_index_page=_render_trends_index_page,
+            render_archive_page=_render_archive_page,
+            render_topics_index_page=_render_topics_index_page,
+            render_ideas_index_page=_render_ideas_index_page,
+            render_detail_page=_render_detail_page,
+            render_item_page=_render_item_page,
+            render_idea_page=_render_idea_page,
+            render_topic_page=_render_topic_page,
+            site_css=_SITE_CSS,
         ),
-        encoding="utf-8",
     )
-    (resolved_output_dir / "archive.html").write_text(
-        _render_archive_page(
-            documents=documents,
-            output_dir=resolved_output_dir,
-        ),
-        encoding="utf-8",
-    )
-    (resolved_output_dir / "topics" / "index.html").write_text(
-        _render_topics_index_page(
-            documents=documents,
-            idea_documents=idea_documents,
-            output_dir=resolved_output_dir,
-            topic_pages=topic_pages,
-        ),
-        encoding="utf-8",
-    )
-    (resolved_output_dir / "ideas" / "index.html").write_text(
-        _render_ideas_index_page(
-            documents=idea_documents,
-            output_dir=resolved_output_dir,
-            topic_pages=topic_pages,
-        ),
-        encoding="utf-8",
-    )
-
-    for idx, document in enumerate(documents):
-        previous_document = documents[idx - 1] if idx > 0 else None
-        next_document = documents[idx + 1] if idx + 1 < len(documents) else None
-        document.page_path.write_text(
-            _render_detail_page(
-                document=document,
-                output_dir=resolved_output_dir,
-                topic_pages=topic_pages,
-                previous_document=previous_document,
-                next_document=next_document,
-            ),
-            encoding="utf-8",
-        )
-
-    for document in item_documents:
-        document.page_path.write_text(
-            _render_item_page(
-                document=document,
-                output_dir=resolved_output_dir,
-                topic_pages=topic_pages,
-            ),
-            encoding="utf-8",
-        )
-
-    for document in idea_documents:
-        document.page_path.write_text(
-            _render_idea_page(
-                document=document,
-                output_dir=resolved_output_dir,
-                topic_pages=topic_pages,
-            ),
-            encoding="utf-8",
-        )
-
-    for slug, page_path in topic_pages.items():
-        page_path.write_text(
-            _render_topic_page(
-                topic=label_by_topic_slug[slug],
-                topic_slug=slug,
-                documents=topic_documents[slug],
-                idea_documents=idea_documents_by_topic.get(slug, []),
-                output_dir=resolved_output_dir,
-                topic_pages=topic_pages,
-            ),
-            encoding="utf-8",
-        )
-
-    manifest = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "input_dir": (
-            str(resolved_input_roots[0].path)
-            if len(resolved_input_roots) == 1
-            else [str(input_spec.path) for input_spec in resolved_input_roots]
-        ),
-        "input_dirs": [
-            {
-                "path": str(input_info.path),
-                "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
-                "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
-                "instance": input_info.instance,
-            }
-            for input_info in resolved_input_dirs
-        ],
-        "output_dir": str(resolved_output_dir),
-        "item_export_scope": normalized_item_export_scope,
-        "trends_total": len(documents),
-        "ideas_total": len(idea_documents),
-        "items_total": len(item_documents),
-        "items_available_total": item_selection.available_total,
-        "items_unreferenced_total": item_selection.unreferenced_total,
-        "topics_total": len(topic_pages),
-        "files": {
-            "index": "index.html",
-            "archive": "archive.html",
-            "nojekyll": ".nojekyll",
-            "trends_index": "trends/index.html",
-            "ideas_index": "ideas/index.html",
-            "topics_index": "topics/index.html",
-            "stylesheet": "assets/site.css",
-            "trend_pages": [
-                str(document.page_path.relative_to(resolved_output_dir))
-                for document in documents
-            ],
-            "idea_pages": [
-                str(document.page_path.relative_to(resolved_output_dir))
-                for document in idea_documents
-            ],
-            "item_pages": [
-                str(document.page_path.relative_to(resolved_output_dir))
-                for document in item_documents
-            ],
-            "topic_pages": [
-                str(path.relative_to(resolved_output_dir))
-                for path in topic_pages.values()
-            ],
-        },
-    }
-    manifest_path = resolved_output_dir / "manifest.json"
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    logger.bind(
-        module="site.build",
-        output_dir=str(resolved_output_dir),
-        item_export_scope=normalized_item_export_scope,
-        trends_total=len(documents),
-        ideas_total=len(idea_documents),
-        items_total=len(item_documents),
-        items_available_total=item_selection.available_total,
-        items_unreferenced_total=item_selection.unreferenced_total,
-        topics_total=len(topic_pages),
-    ).info("Trend static site export completed")
-    return manifest_path
 
 
 def export_trend_static_site(
@@ -5497,199 +4528,24 @@ def stage_trend_site_source(
     default_language_code: str | None = None,
     item_export_scope: str = "linked",
 ) -> Path:
-    normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
-    resolved_input_roots = _coerce_site_input_specs(input_dir)
-    resolved_input_dirs = _discover_trend_site_input_dirs(resolved_input_roots)
-    resolved_output_dir = output_dir.expanduser().resolve()
-    stage_root = (
-        resolved_output_dir.parent
-        if resolved_output_dir.name == "Trends"
-        else resolved_output_dir
-    )
-    for input_info in resolved_input_dirs:
-        if _paths_overlap(input_info.path, stage_root):
-            raise ValueError(
-                "Trend site stage output directory must not overlap the input directory"
-            )
-    _reset_stage_output_root(
-        stage_root=stage_root,
-        trends_output_dir=resolved_output_dir,
-    )
-
-    source_documents = _load_trend_source_documents(
-        input_dirs=resolved_input_dirs,
-        limit=limit,
-    )
-    idea_source_documents = _load_idea_source_documents(
-        input_dirs=resolved_input_dirs,
-        limit=limit,
-    )
-    item_selection = _select_item_source_documents(
-        input_dirs=resolved_input_dirs,
-        trend_source_documents=source_documents,
-        idea_source_documents=idea_source_documents,
-        item_export_scope=normalized_item_export_scope,
-    )
-    item_source_documents = item_selection.source_documents
-    has_instance_documents = any(
-        bool(source_document.instance) for source_document in source_documents
-    )
-    staged_markdown_files: list[str] = []
-    staged_idea_files: list[str] = []
-    staged_pdf_files: list[str] = []
-    staged_item_files: list[str] = []
-
-    def relative_to_stage_root(path: Path) -> str:
-        return str(path.relative_to(stage_root))
-
-    def stage_root_for_surface(
-        *,
-        instance: str | None,
-        source_input: TrendSiteInputDirectory | None,
-    ) -> Path:
-        language_slug = (
-            str(getattr(source_input, "language_slug", None) or "").strip()
-            if source_input is not None and getattr(source_input, "is_localized_root", False)
-            else ""
-        )
-        if instance:
-            base_root = stage_root / "Streams" / instance
-            return base_root / "Localized" / language_slug if language_slug else base_root
-        if language_slug:
-            return stage_root / "Localized" / language_slug
-        return stage_root
-
-    for source_document in source_documents:
-        source_input = next(
-            (
-                input_info
-                for input_info in resolved_input_dirs
-                if input_info.path == source_document.markdown_path.parent
-            ),
-            None,
-        )
-        surface_root = stage_root_for_surface(
-            instance=source_document.instance,
-            source_input=source_input,
-        )
-        target_dir = (
-            surface_root / "Trends"
-            if source_document.instance or has_instance_documents or surface_root != stage_root
-            else resolved_output_dir
-        )
-        target_dir.mkdir(parents=True, exist_ok=True)
-        staged_markdown_path = target_dir / source_document.markdown_path.name
-        shutil.copy2(source_document.markdown_path, staged_markdown_path)
-        staged_markdown_files.append(relative_to_stage_root(staged_markdown_path))
-        source_sidecar_path = presentation_sidecar_path(note_path=source_document.markdown_path)
-        if source_sidecar_path.exists() and source_sidecar_path.is_file():
-            staged_sidecar_path = target_dir / source_sidecar_path.name
-            shutil.copy2(source_sidecar_path, staged_sidecar_path)
-
-        if source_document.pdf_path is None:
-            continue
-        staged_pdf_path = target_dir / source_document.pdf_path.name
-        shutil.copy2(source_document.pdf_path, staged_pdf_path)
-        staged_pdf_files.append(relative_to_stage_root(staged_pdf_path))
-
-    for source_document in item_source_documents:
-        source_input = next(
-            (
-                input_info
-                for input_info in resolved_input_dirs
-                if input_info.inbox_path == source_document.markdown_path.parent
-            ),
-            None,
-        )
-        surface_root = stage_root_for_surface(
-            instance=source_document.instance,
-            source_input=source_input,
-        )
-        target_dir = surface_root / "Inbox"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        staged_item_path = target_dir / source_document.markdown_path.name
-        shutil.copy2(source_document.markdown_path, staged_item_path)
-        staged_item_files.append(relative_to_stage_root(staged_item_path))
-
-    for source_document in idea_source_documents:
-        source_input = next(
-            (
-                input_info
-                for input_info in resolved_input_dirs
-                if input_info.ideas_path == source_document.markdown_path.parent
-            ),
-            None,
-        )
-        surface_root = stage_root_for_surface(
-            instance=source_document.instance,
-            source_input=source_input,
-        )
-        target_dir = surface_root / "Ideas"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        staged_idea_path = target_dir / source_document.markdown_path.name
-        shutil.copy2(source_document.markdown_path, staged_idea_path)
-        staged_idea_files.append(relative_to_stage_root(staged_idea_path))
-        source_sidecar_path = presentation_sidecar_path(note_path=source_document.markdown_path)
-        if source_sidecar_path.exists() and source_sidecar_path.is_file():
-            staged_sidecar_path = target_dir / source_sidecar_path.name
-            shutil.copy2(source_sidecar_path, staged_sidecar_path)
-
-    manifest = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "input_dir": (
-            str(resolved_input_roots[0].path)
-            if len(resolved_input_roots) == 1
-            else [str(input_spec.path) for input_spec in resolved_input_roots]
+    return _stage_trend_site_source_impl(
+        request=TrendSiteSourceStageRequest(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            limit=limit,
+            default_language_code=default_language_code,
+            item_export_scope=item_export_scope,
         ),
-        "input_dirs": [
-            {
-                "path": str(input_info.path),
-                "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
-                "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
-                "instance": input_info.instance,
-                "language_code": input_info.language_code,
-                "language_slug": input_info.language_slug,
-                "is_localized_root": bool(input_info.is_localized_root),
-            }
-            for input_info in resolved_input_dirs
-        ],
-        "output_dir": str(resolved_output_dir),
-        "default_language_code": language_slug_from_code(default_language_code),
-        "languages": sorted(
-            {
-                str(input_info.language_slug or "").strip()
-                for input_info in resolved_input_dirs
-                if str(input_info.language_slug or "").strip()
-            }
+        deps=TrendSiteSourceStageDeps(
+            normalize_item_export_scope=_normalize_item_export_scope,
+            coerce_site_input_specs=_coerce_site_input_specs,
+            discover_trend_site_input_dirs=_discover_trend_site_input_dirs,
+            paths_overlap=_paths_overlap,
+            reset_stage_output_root=_reset_stage_output_root,
+            load_trend_source_documents=_load_trend_source_documents,
+            load_idea_source_documents=_load_idea_source_documents,
+            select_item_source_documents=_select_item_source_documents,
+            presentation_sidecar_path=presentation_sidecar_path,
+            language_slug_from_code=language_slug_from_code,
         ),
-        "item_export_scope": normalized_item_export_scope,
-        "trends_total": len(source_documents),
-        "ideas_total": len(idea_source_documents),
-        "items_total": len(item_source_documents),
-        "items_available_total": item_selection.available_total,
-        "items_unreferenced_total": item_selection.unreferenced_total,
-        "pdf_total": len(staged_pdf_files),
-        "files": {
-            "markdown": staged_markdown_files,
-            "ideas_markdown": staged_idea_files,
-            "items_markdown": staged_item_files,
-            "pdf": staged_pdf_files,
-        },
-    }
-    manifest_path = resolved_output_dir / "manifest.json"
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
-    logger.bind(
-        module="site.stage",
-        output_dir=str(resolved_output_dir),
-        item_export_scope=normalized_item_export_scope,
-        trends_total=len(source_documents),
-        ideas_total=len(idea_source_documents),
-        items_total=len(item_source_documents),
-        items_available_total=item_selection.available_total,
-        items_unreferenced_total=item_selection.unreferenced_total,
-        pdf_total=len(staged_pdf_files),
-    ).info("Trend site source staging completed")
-    return manifest_path

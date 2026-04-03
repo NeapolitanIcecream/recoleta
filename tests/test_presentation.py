@@ -493,6 +493,47 @@ def test_build_idea_presentation_v1_projects_evidence_source_metadata() -> None:
     assert evidence["confidence"] == "high"
 
 
+def test_build_idea_presentation_v1_preserves_multiple_manual_evidence_refs() -> None:
+    """Regression: refs without doc IDs must not collapse into one evidence entry."""
+    idea = _idea(title="Prompt CI gate")
+    idea.evidence_refs = [
+        SimpleNamespace(
+            doc_id=None,
+            chunk_index=0,
+            reason="Operator runbook captures the release gate.",
+            title="Runbook",
+            href="../Inbox/2026-03-02--runbook.md",
+            authors=["Alice"],
+            source="rss",
+            score=0.42,
+        ),
+        SimpleNamespace(
+            doc_id=None,
+            chunk_index=0,
+            reason="Checklist records the follow-up verification step.",
+            title="Checklist",
+            href="../Inbox/2026-03-02--checklist.md",
+            authors=["Bob"],
+            source="rss",
+            score=0.38,
+        ),
+    ]
+    presentation = build_idea_presentation_v1(
+        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+        title="Verification-first agent rollout",
+        summary_md="Use a prompt release gate before shipping changes.",
+        ideas=[idea],
+    )
+
+    evidence = presentation["content"]["opportunities"][0]["evidence"]
+
+    assert [entry["title"] for entry in evidence] == ["Runbook", "Checklist"]
+    assert [entry["href"] for entry in evidence] == [
+        "../Inbox/2026-03-02--runbook.md",
+        "../Inbox/2026-03-02--checklist.md",
+    ]
+
+
 def test_build_trend_presentation_v1_projects_representative_source_metadata() -> None:
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/day--2026-03-02--trend--7.md",
