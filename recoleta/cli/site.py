@@ -1,14 +1,59 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-import json
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 import recoleta.cli as cli
+from recoleta.cli.site_support import (
+    SitePathRequest,
+    load_manifest,
+    resolve_site_command_paths,
+    site_manifest_payload,
+    site_manifest_segments,
+    site_output_dir_from_settings,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SiteExportRequest:
+    input_dir: Path | None
+    output_dir: Path | None
+    limit: int | None
+    default_language_code: str | None
+    item_export_scope: str
+    command_name: str
+    log_module: str
+    exporter_attr: str
+    default_output_dir: Path | None
+
+
+@dataclass(frozen=True, slots=True)
+class SiteServeRequest:
+    input_dir: Path | None
+    output_dir: Path | None
+    limit: int | None
+    host: str
+    port: int
+    build: bool
+    default_language_code: str | None
+    item_export_scope: str
+    command_name: str
+    build_command_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class SiteExportResultContext:
+    command_name: str
+    paths: Any
+    manifest_path: Path
+    limit: int | None
+    json_output: bool
+    include_pdfs: bool
 
 
 class _SilentSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
@@ -27,309 +72,231 @@ def _create_site_server(
     return ThreadingHTTPServer((host, port), handler)
 
 
-def _site_item_count_segment(manifest: dict[str, Any]) -> str | None:
-    if "items_total" not in manifest:
-        return None
-    items_total = int(manifest.get("items_total") or 0)
-    items_available_total = manifest.get("items_available_total")
-    if items_available_total is not None:
-        available_total = int(items_available_total or 0)
-        if available_total > items_total:
-            return f"items={items_total}/{available_total}"
-    return f"items={items_total}"
-
-
-def run_site_build_command(
-    *,
-    input_dir: Path | None,
-    output_dir: Path | None,
-    limit: int | None,
-    default_language_code: str | None = None,
-    item_export_scope: str = "linked",
-    json_output: bool = False,
-    command_name: str = "site build",
-) -> None:
-    symbols = cli._runtime_symbols()
-    console_cls = symbols["Console"]
-    export_trend_static_site = cli._import_symbol(
-        "recoleta.site",
-        attr_name="export_trend_static_site",
-    )
-
-    resolved_input_dir = (
-        input_dir.expanduser().resolve() if input_dir is not None else None
-    )
-    resolved_output_dir = (
-        output_dir.expanduser().resolve() if output_dir is not None else None
-    )
-    settings = (
-        cli._build_settings()
-        if resolved_input_dir is None or resolved_output_dir is None
-        else None
-    )
-    if resolved_input_dir is None:
-        assert settings is not None
-        resolved_input_dir = settings.markdown_output_dir / "Trends"
-    if resolved_output_dir is None:
-        assert settings is not None
-        resolved_output_dir = settings.markdown_output_dir / "site"
-    resolved_default_language_code = str(default_language_code or "").strip() or None
-    if (
-        resolved_default_language_code is None
-        and settings is not None
-        and getattr(settings, "localization", None) is not None
-    ):
-        configured_default = getattr(
-            getattr(settings, "localization", None),
-            "site_default_language_code",
-            None,
-        )
-        resolved_default_language_code = str(configured_default or "").strip() or None
-    normalized_item_export_scope = str(item_export_scope or "").strip().lower() or "linked"
-    console = (
-        console_cls(stderr=settings.log_json) if settings is not None else console_cls()
-    )
-    lease_repository, lease_owner_token, lease_log, lease_heartbeat_monitor = (
-        cli._maybe_acquire_workspace_lease_for_settings(
-            settings=settings,
-            console=console,
-            command=command_name,
+def run_site_build_command(**kwargs: Any) -> None:
+    json_output = bool(kwargs.get("json_output", False))
+    command_name = str(kwargs.get("command_name", "site build"))
+    paths, manifest_path = _site_export_result(
+        request=SiteExportRequest(
+            input_dir=kwargs.get("input_dir"),
+            output_dir=kwargs.get("output_dir"),
+            limit=kwargs.get("limit"),
+            default_language_code=kwargs.get("default_language_code"),
+            item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+            command_name=command_name,
             log_module="cli.site.build",
+            exporter_attr="export_trend_static_site",
+            default_output_dir=(
+                kwargs["output_dir"].expanduser().resolve()
+                if kwargs.get("output_dir") is not None
+                else None
+            ),
         )
     )
-    try:
-        export_kwargs: dict[str, object] = {
-            "input_dir": resolved_input_dir,
-            "output_dir": resolved_output_dir,
-            "limit": limit,
-        }
-        if resolved_default_language_code is not None:
-            export_kwargs["default_language_code"] = resolved_default_language_code
-        if normalized_item_export_scope != "linked":
-            export_kwargs["item_export_scope"] = normalized_item_export_scope
-        manifest_path = export_trend_static_site(
-            **export_kwargs,
+    _emit_site_export_result(
+        context=SiteExportResultContext(
+            command_name=command_name,
+            paths=paths,
+            manifest_path=manifest_path,
+            limit=kwargs.get("limit"),
+            json_output=json_output,
+            include_pdfs=False,
         )
-        if lease_heartbeat_monitor is not None:
-            lease_heartbeat_monitor.raise_if_failed()
-    finally:
-        if (
-            lease_repository is not None
-            and lease_owner_token is not None
-            and lease_log is not None
-            and lease_heartbeat_monitor is not None
-        ):
-            cli._cleanup_workspace_lease(
-                repository=lease_repository,
-                owner_token=lease_owner_token,
-                heartbeat_monitor=lease_heartbeat_monitor,
-                log=lease_log,
-            )
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if json_output:
-        cli._emit_json(
-            {
-                "status": "ok",
-                "command": command_name,
-                "input_dir": str(resolved_input_dir),
-                "output_dir": str(resolved_output_dir),
-                "manifest_path": str(manifest_path),
-                "default_language_code": resolved_default_language_code,
-                "item_export_scope": manifest.get(
-                    "item_export_scope", normalized_item_export_scope
-                ),
-                "manifest": manifest,
-            }
-        )
-        return
-    segments = [f"trends={manifest['trends_total']}"]
-    if int(manifest.get("ideas_total") or 0) > 0:
-        segments.append(f"ideas={manifest['ideas_total']}")
-    if item_segment := _site_item_count_segment(manifest):
-        segments.append(item_segment)
-    segments.append(f"topics={manifest['topics_total']}")
-    segments.append(f"output={resolved_output_dir}")
-    console.print(
-        f"[green]{command_name} completed[/green] " + " ".join(segments)
     )
 
 
-def run_site_stage_command(
-    *,
-    input_dir: Path | None,
-    output_dir: Path | None,
-    limit: int | None,
-    default_language_code: str | None = None,
-    item_export_scope: str = "linked",
-    json_output: bool = False,
-    command_name: str = "site stage",
-) -> None:
-    symbols = cli._runtime_symbols()
-    console_cls = symbols["Console"]
-    stage_trend_site_source = cli._import_symbol(
-        "recoleta.site",
-        attr_name="stage_trend_site_source",
-    )
-
-    resolved_input_dir = (
-        input_dir.expanduser().resolve() if input_dir is not None else None
-    )
-    resolved_output_dir = (
-        output_dir.expanduser().resolve() if output_dir is not None else None
-    )
-    settings = (
-        cli._build_settings()
-        if resolved_input_dir is None or resolved_output_dir is None
-        else None
-    )
-    if resolved_input_dir is None:
-        assert settings is not None
-        resolved_input_dir = settings.markdown_output_dir / "Trends"
-    if resolved_output_dir is None:
-        resolved_output_dir = (Path.cwd() / "site-content" / "Trends").resolve()
-    resolved_default_language_code = str(default_language_code or "").strip() or None
-    if (
-        resolved_default_language_code is None
-        and settings is not None
-        and getattr(settings, "localization", None) is not None
-    ):
-        configured_default = getattr(
-            getattr(settings, "localization", None),
-            "site_default_language_code",
-            None,
-        )
-        resolved_default_language_code = str(configured_default or "").strip() or None
-    normalized_item_export_scope = str(item_export_scope or "").strip().lower() or "linked"
-    console = (
-        console_cls(stderr=settings.log_json) if settings is not None else console_cls()
-    )
-    lease_repository, lease_owner_token, lease_log, lease_heartbeat_monitor = (
-        cli._maybe_acquire_workspace_lease_for_settings(
-            settings=settings,
-            console=console,
-            command=command_name,
+def run_site_stage_command(**kwargs: Any) -> None:
+    json_output = bool(kwargs.get("json_output", False))
+    command_name = str(kwargs.get("command_name", "site stage"))
+    paths, manifest_path = _site_export_result(
+        request=SiteExportRequest(
+            input_dir=kwargs.get("input_dir"),
+            output_dir=kwargs.get("output_dir"),
+            limit=kwargs.get("limit"),
+            default_language_code=kwargs.get("default_language_code"),
+            item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+            command_name=command_name,
             log_module="cli.site.stage",
+            exporter_attr="stage_trend_site_source",
+            default_output_dir=(
+                kwargs["output_dir"].expanduser().resolve()
+                if kwargs.get("output_dir") is not None
+                else (Path.cwd() / "site-content" / "Trends").resolve()
+            ),
         )
+    )
+    _emit_site_export_result(
+        context=SiteExportResultContext(
+            command_name=command_name,
+            paths=paths,
+            manifest_path=manifest_path,
+            limit=kwargs.get("limit"),
+            json_output=json_output,
+            include_pdfs=True,
+        )
+    )
+
+
+def run_site_serve_command(**kwargs: Any) -> None:
+    request = SiteServeRequest(
+        input_dir=kwargs.get("input_dir"),
+        output_dir=kwargs.get("output_dir"),
+        limit=kwargs.get("limit"),
+        host=str(kwargs.get("host", "127.0.0.1")),
+        port=int(kwargs.get("port", 8000)),
+        build=bool(kwargs.get("build", False)),
+        default_language_code=kwargs.get("default_language_code"),
+        item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+        command_name=str(kwargs.get("command_name", "site serve")),
+        build_command_name=str(kwargs.get("build_command_name", "site build")),
+    )
+    resolved_output_dir, settings = _resolve_site_serve_output(request)
+    if request.build:
+        run_site_build_command(
+            input_dir=request.input_dir,
+            output_dir=resolved_output_dir,
+            limit=request.limit,
+            default_language_code=request.default_language_code,
+            item_export_scope=request.item_export_scope,
+            command_name=request.build_command_name,
+        )
+    _serve_site_directory(
+        output_dir=resolved_output_dir,
+        settings=settings,
+        request=request,
+    )
+
+
+def _site_export_result(*, request: SiteExportRequest) -> tuple[Any, Path]:
+    settings = (
+        cli._build_settings()
+        if request.input_dir is None or request.output_dir is None
+        else None
+    )
+    assert request.default_output_dir is not None or settings is not None
+    paths = resolve_site_command_paths(
+        request=SitePathRequest(
+            input_dir=request.input_dir,
+            output_dir=request.output_dir,
+            default_language_code=request.default_language_code,
+            item_export_scope=request.item_export_scope,
+            settings=settings,
+            default_output_dir=(
+                request.default_output_dir or site_output_dir_from_settings(settings)
+            ),
+        )
+    )
+    console = _site_console(settings=settings)
+    lease = cli._maybe_acquire_workspace_lease_for_settings(
+        settings=settings,
+        console=console,
+        command=request.command_name,
+        log_module=request.log_module,
     )
     try:
-        stage_kwargs: dict[str, object] = {
-            "input_dir": resolved_input_dir,
-            "output_dir": resolved_output_dir,
-            "limit": limit,
-        }
-        if resolved_default_language_code is not None:
-            stage_kwargs["default_language_code"] = resolved_default_language_code
-        if normalized_item_export_scope != "linked":
-            stage_kwargs["item_export_scope"] = normalized_item_export_scope
-        manifest_path = stage_trend_site_source(**stage_kwargs)
-        if lease_heartbeat_monitor is not None:
-            lease_heartbeat_monitor.raise_if_failed()
+        manifest_path = _run_site_exporter(
+            exporter_attr=request.exporter_attr,
+            paths=paths,
+            limit=request.limit,
+        )
+        heartbeat_monitor = lease[3]
+        if heartbeat_monitor is not None:
+            heartbeat_monitor.raise_if_failed()
+        return paths, manifest_path
     finally:
-        if (
-            lease_repository is not None
-            and lease_owner_token is not None
-            and lease_log is not None
-            and lease_heartbeat_monitor is not None
-        ):
-            cli._cleanup_workspace_lease(
-                repository=lease_repository,
-                owner_token=lease_owner_token,
-                heartbeat_monitor=lease_heartbeat_monitor,
-                log=lease_log,
-            )
+        _cleanup_site_lease(lease)
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if json_output:
+
+def _run_site_exporter(*, exporter_attr: str, paths: Any, limit: int | None) -> Path:
+    exporter = cli._import_symbol("recoleta.site", attr_name=exporter_attr)
+    export_kwargs: dict[str, object] = {
+        "input_dir": paths.input_dir,
+        "output_dir": paths.output_dir,
+        "limit": limit,
+    }
+    if paths.default_language_code is not None:
+        export_kwargs["default_language_code"] = paths.default_language_code
+    if paths.item_export_scope != "linked":
+        export_kwargs["item_export_scope"] = paths.item_export_scope
+    return exporter(**export_kwargs)
+
+
+def _emit_site_export_result(*, context: SiteExportResultContext) -> None:
+    manifest = load_manifest(context.manifest_path)
+    if context.json_output:
         cli._emit_json(
-            {
-                "status": "ok",
-                "command": command_name,
-                "input_dir": str(resolved_input_dir),
-                "output_dir": str(resolved_output_dir),
-                "manifest_path": str(manifest_path),
-                "default_language_code": resolved_default_language_code,
-                "item_export_scope": manifest.get(
-                    "item_export_scope", normalized_item_export_scope
-                ),
-                "manifest": manifest,
-            }
+            site_manifest_payload(
+                command_name=context.command_name,
+                paths=context.paths,
+                limit=context.limit,
+                manifest_path=context.manifest_path,
+                manifest=manifest,
+            )
         )
         return
-    segments = [f"trends={manifest['trends_total']}"]
-    if int(manifest.get("ideas_total") or 0) > 0:
-        segments.append(f"ideas={manifest['ideas_total']}")
-    if item_segment := _site_item_count_segment(manifest):
-        segments.append(item_segment)
-    segments.append(f"pdfs={manifest['pdf_total']}")
-    segments.append(f"output={resolved_output_dir}")
+    console = _site_console(settings=context.paths.settings)
     console.print(
-        f"[green]{command_name} completed[/green] " + " ".join(segments)
+        f"[green]{context.command_name} completed[/green] "
+        + _site_manifest_summary(
+            manifest=manifest,
+            output_dir=context.paths.output_dir,
+            include_pdfs=context.include_pdfs,
+        )
     )
 
 
-def run_site_serve_command(
+def _site_manifest_summary(
     *,
-    input_dir: Path | None,
-    output_dir: Path | None,
-    limit: int | None,
-    host: str,
-    port: int,
-    build: bool,
-    default_language_code: str | None = None,
-    item_export_scope: str = "linked",
-    command_name: str = "site serve",
-    build_command_name: str = "site build",
-) -> None:
+    manifest: dict[str, Any],
+    output_dir: Path,
+    include_pdfs: bool,
+) -> str:
+    return " ".join(
+        site_manifest_segments(
+            manifest=manifest,
+            output_dir=output_dir,
+            include_pdfs=include_pdfs,
+        )
+    )
+
+
+def _resolve_site_serve_output(request: SiteServeRequest) -> tuple[Path, Any | None]:
     resolved_output_dir = (
-        output_dir.expanduser().resolve() if output_dir is not None else None
+        request.output_dir.expanduser().resolve() if request.output_dir is not None else None
     )
     settings = (
         cli._build_settings()
-        if resolved_output_dir is None or (build and input_dir is None)
+        if resolved_output_dir is None or (request.build and request.input_dir is None)
         else None
     )
-    if resolved_output_dir is None:
-        assert settings is not None
-        resolved_output_dir = settings.markdown_output_dir / "site"
-
-    if build:
-        run_site_build_command(
-            input_dir=input_dir,
-            output_dir=resolved_output_dir,
-            limit=limit,
-            default_language_code=default_language_code,
-            item_export_scope=item_export_scope,
-            command_name=build_command_name,
-        )
-
-    if not resolved_output_dir.exists() or not resolved_output_dir.is_dir():
-        raise ValueError(
-            f"Static site output directory must exist before serving: {resolved_output_dir}"
-        )
-
-    console_cls = cli._runtime_symbols()["Console"]
-    console = (
-        console_cls(stderr=settings.log_json) if settings is not None else console_cls()
+    return (
+        resolved_output_dir if resolved_output_dir is not None else site_output_dir_from_settings(settings),
+        settings,
     )
-    log = logger.bind(
-        module="cli.site.serve",
-        host=host,
-        port=port,
-    )
+
+
+def _serve_site_directory(
+    *,
+    output_dir: Path,
+    settings: Any | None,
+    request: SiteServeRequest,
+) -> None:
+    if not output_dir.exists() or not output_dir.is_dir():
+        raise ValueError(f"Static site output directory must exist before serving: {output_dir}")
+    console = _site_console(settings=settings)
+    log = logger.bind(module="cli.site.serve", host=request.host, port=request.port)
     try:
         with _create_site_server(
-            directory=resolved_output_dir,
-            host=host,
-            port=port,
+            directory=output_dir,
+            host=request.host,
+            port=request.port,
         ) as server:
             served_host = str(server.server_address[0])
             served_port = int(server.server_address[1])
             log.info("Site preview server started")
             console.print(
-                f"[green]{command_name} ready[/green] "
+                f"[green]{request.command_name} ready[/green] "
                 f"url=http://{served_host}:{served_port} "
-                f"output={resolved_output_dir}"
+                f"output={output_dir}"
             )
             try:
                 server.serve_forever()
@@ -338,3 +305,25 @@ def run_site_serve_command(
     except OSError as exc:
         log.warning("site preview server failed error={}", str(exc))
         raise
+
+
+def _site_console(*, settings: Any | None) -> Any:
+    return cli._runtime_symbols()["Console"](
+        stderr=bool(getattr(settings, "log_json", False)) if settings is not None else False
+    )
+
+
+def _cleanup_site_lease(lease: tuple[Any | None, str | None, Any | None, Any | None]) -> None:
+    repository, owner_token, log, heartbeat_monitor = lease
+    if (
+        repository is not None
+        and owner_token is not None
+        and log is not None
+        and heartbeat_monitor is not None
+    ):
+        cli._cleanup_workspace_lease(
+            repository=repository,
+            owner_token=owner_token,
+            heartbeat_monitor=heartbeat_monitor,
+            log=log,
+        )

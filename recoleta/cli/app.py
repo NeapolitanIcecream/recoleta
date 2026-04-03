@@ -1830,3 +1830,22 @@ def legacy_rag_build_index(
 
 def main() -> None:
     app()
+
+
+_VULTURE_USED_COMMANDS = (
+    fleet_run_day,
+    fleet_run_week,
+    fleet_run_month,
+    fleet_run_deploy,
+    fleet_site_build,
+    fleet_site_serve,
+    daemon_start,
+    admin_gc,
+    admin_vacuum,
+    admin_backup,
+    admin_restore,
+    admin_db_clear,
+    admin_db_reset,
+    ingest,
+    analyze,
+)
