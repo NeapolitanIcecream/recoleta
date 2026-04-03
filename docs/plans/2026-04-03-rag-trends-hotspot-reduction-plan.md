@@ -2,7 +2,7 @@
 
 Date: 2026-04-03
 
-Status: In Progress
+Status: Completed
 
 ## Goal
 
@@ -154,3 +154,10 @@ Baseline update rule:
 - `tests/test_rag_corpus_tools.py` and
   `tests/test_trends_prompt_includes_overview_pack.py` already pass on the
   branch baseline before the refactor.
+
+## Outcome
+
+- closing audit delta reached `resolved=24`, `new=0`, `worsened=0`
+- Wave 3 reserve was not needed
+- follow-up PR review fixes preserved legacy representative-backfill and
+  request-coercion compatibility before merge
