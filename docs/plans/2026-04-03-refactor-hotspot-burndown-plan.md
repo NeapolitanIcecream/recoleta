@@ -2,7 +2,7 @@
 
 Date: 2026-04-03
 
-Status: Proposed tracking plan
+Status: Completed in PR #34 on 2026-04-03
 
 ## Goal
 
@@ -13,6 +13,43 @@ or rewriting the baseline to match the current debt.
 This plan is intentionally about signal reduction, not about shrinking files for
 its own sake. The target is a safer codebase with smaller change surfaces in the
 same subsystems already identified by the architecture roadmap.
+
+## Closing Result
+
+PR: `#34`
+
+Series outcome:
+
+- landed the planned `pipeline` decomposition into dedicated runtime/helper
+  modules for triage, analyze, publish, and ideas execution
+- landed the planned `translation` split into facade, context, candidates, llm,
+  and runtime modules
+- used the storage reserve to extract document query/delete helpers from
+  `recoleta/storage/documents.py`
+- updated `quality/refactor-baseline.json` only after the measured reduction
+  passed the no-regression gate
+
+Measured closing delta from `output/refactor-audit/report.json` before the
+baseline update:
+
+- `baseline_diff.has_regressions == false`
+- `len(baseline_diff.new) == 0`
+- `len(baseline_diff.worsened) == 0`
+- `len(baseline_diff.resolved) == 24`
+
+Closing validation run on 2026-04-03:
+
+- `uv run ruff check .`
+- `uv run pyright`
+- `uv run pytest`
+- `uv run python scripts/refactor_audit.py --fail-on-regression`
+
+Post-merge follow-up captured during review:
+
+- fixed a mixed-case `granularity` backfill bug in
+  `recoleta/translation_candidates.py`
+- added a regression test for the legacy mixed-case idea backfill path in
+  `tests/test_localization_translation.py`
 
 ## Audit Snapshot
 
@@ -205,16 +242,14 @@ This means the practical sequence is:
 
 ## Tracking Checklist
 
-- [ ] Land pipeline stage decomposition PR(s) for the five primary pipeline
-      targets.
-- [ ] Land translation decomposition PR(s) for the five primary translation
-      targets.
-- [ ] Rerun `uv run python scripts/refactor_audit.py` after each execution PR
-      and record the before/after delta in the PR body.
-- [ ] Use storage reserve work only if the cumulative resolved set is still
-      below `20`.
-- [ ] Update `quality/refactor-baseline.json` only in the final closing PR for
-      this series, after the audit shows the reduction.
+- [x] Land pipeline stage decomposition for the five primary pipeline targets.
+- [x] Land translation decomposition for the five primary translation targets.
+- [x] Rerun `uv run python scripts/refactor_audit.py` for the closing PR and
+      record the before/after delta in the PR body.
+- [x] Use storage reserve work because the execution PR included
+      `recoleta/storage/documents.py` cleanup as planned reserve scope.
+- [x] Update `quality/refactor-baseline.json` only in the final closing PR for
+      this series, after the audit showed the measured reduction.
 
 ## Exit Criteria
 
@@ -245,4 +280,3 @@ This series should not:
 - mix product changes into the refactor PRs
 - treat generated benchmark scripts as equal priority with runtime code when the
   `pipeline`, `translation`, and `storage` clusters still dominate the risk
-
