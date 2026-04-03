@@ -237,6 +237,59 @@ def test_fetch_rss_drafts_uses_conditional_headers_from_pull_state(
     }
 
 
+def test_fetch_rss_drafts_counts_watermark_filtered_entries(
+    respx_mock: respx.Router,
+) -> None:
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Incremental Feed</title>
+    <item>
+      <title>Fresh Entry</title>
+      <link>https://example.com/fresh</link>
+      <guid>fresh-entry</guid>
+      <pubDate>Mon, 20 Jan 2025 14:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Stale Entry</title>
+      <link>https://example.com/stale</link>
+      <guid>stale-entry</guid>
+      <pubDate>Mon, 20 Jan 2025 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+    watermark = datetime(2025, 1, 20, 12, tzinfo=UTC)
+    respx_mock.get("https://feeds.example/incremental.xml").respond(
+        200,
+        text=rss_xml,
+        headers={"Content-Type": "application/rss+xml; charset=utf-8"},
+    )
+
+    result = cast(
+        SourcePullResult,
+        fetch_rss_drafts(
+            feed_urls=["https://feeds.example/incremental.xml"],
+            source="rss",
+            max_items_per_feed=10,
+            include_stats=True,
+            pull_state_lookup=lambda scope_kind, scope_key: (
+                SourcePullStateSnapshot(
+                    scope_kind=scope_kind,
+                    scope_key=scope_key,
+                    watermark_published_at=watermark,
+                )
+                if scope_kind == "feed"
+                and scope_key == "https://feeds.example/incremental.xml"
+                else None
+            ),
+        ),
+    )
+
+    assert [draft.source_item_id for draft in result.drafts] == ["fresh-entry"]
+    assert result.filtered_out_total == 1
+
+
 def test_fetch_hf_daily_papers_drafts_uses_hf_api_and_preserves_daily_submission_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

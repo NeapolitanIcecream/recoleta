@@ -887,9 +887,13 @@ class _FeedPuller:
         self, draft: ItemDraft, *, watermark: datetime | None
     ) -> bool:
         if self.normalized_start is None or self.normalized_end is None:
-            return not self._older_than_feed_watermark(
-                draft.published_at, watermark=watermark
-            )
+            if self._older_than_feed_watermark(
+                draft.published_at,
+                watermark=watermark,
+            ):
+                self.stats.filtered_out_total += 1
+                return False
+            return True
         if draft.published_at is None:
             self.stats.missing_published_at_total += 1
             return False
