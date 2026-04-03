@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from recoleta.models import Document, DocumentChunk
+from recoleta.rag.embeddings import LiteLLMEmbedder
 from recoleta.rag import semantic_search as rag_semantic_search
 from recoleta.storage import Repository
 from recoleta.trends import (
@@ -103,9 +104,7 @@ def _copy_index_stats(stats: dict[str, Any]) -> dict[str, Any]:
 
 
 def _with_fake_embeddings(stack: ExitStack) -> None:
-    stack.enter_context(
-        patch.object(rag_semantic_search.LiteLLMEmbedder, "embed", _fake_embed)
-    )
+    stack.enter_context(patch.object(LiteLLMEmbedder, "embed", _fake_embed))
 
 
 def _wrap_ensure_summary_vectors(
