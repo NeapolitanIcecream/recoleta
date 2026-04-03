@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
-from typing import Any, TypedDict, Unpack
+from typing import Any, NotRequired, Required, TypedDict, Unpack
 
 import yaml
 
@@ -100,24 +100,24 @@ class _TrendNoteRenderKwargs(TypedDict):
 
 
 class _TrendNoteWriteKwargs(TypedDict, total=False):
-    trend_doc_id: int
-    title: str
-    granularity: str
-    period_start: datetime
-    period_end: datetime
-    run_id: str
-    overview_md: str
-    topics: list[str]
-    evolution: dict[str, Any] | None
-    history_window_refs: dict[str, dict[str, Any]] | None
-    counter_signal: dict[str, Any] | None
-    clusters: list[dict[str, Any]] | None
-    highlights: list[str] | None
-    output_language: str | None
-    pass_output_id: int | None
-    pass_kind: str | None
-    site_exclude: bool
-    language_code: str | None
+    trend_doc_id: Required[int]
+    title: Required[str]
+    granularity: Required[str]
+    period_start: Required[datetime]
+    period_end: Required[datetime]
+    run_id: Required[str]
+    overview_md: Required[str]
+    topics: Required[list[str]]
+    evolution: NotRequired[dict[str, Any] | None]
+    history_window_refs: NotRequired[dict[str, dict[str, Any]] | None]
+    counter_signal: NotRequired[dict[str, Any] | None]
+    clusters: NotRequired[list[dict[str, Any]] | None]
+    highlights: NotRequired[list[str] | None]
+    output_language: NotRequired[str | None]
+    pass_output_id: NotRequired[int | None]
+    pass_kind: NotRequired[str | None]
+    site_exclude: NotRequired[bool]
+    language_code: NotRequired[str | None]
 
 
 _TREND_NOTE_REQUIRED_KEYS = (

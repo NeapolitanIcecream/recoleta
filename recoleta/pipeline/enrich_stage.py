@@ -159,6 +159,13 @@ class EnrichStageService(Protocol):
         **legacy_kwargs: Any,
     ) -> tuple[str, bool]: ...
 
+    def _ensure_arxiv_content(
+        self,
+        *,
+        request: ArxivContentRequest | None = None,
+        **legacy_kwargs: Any,
+    ) -> tuple[str, bool]: ...
+
     def _ensure_pdf_content(
         self,
         *,

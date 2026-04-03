@@ -516,16 +516,20 @@ class _TrendStageRunner:
         else:
             stats = self._run_week_backfill(state)
             log_label = "month"
-        stats["duration_ms"] = int((time.perf_counter() - backfill_started) * 1000)
-        stats["mode"] = state.normalized_backfill_mode
-        self.log.info("Trends {} backfill done stats={}", log_label, stats)
+        duration_ms = int((time.perf_counter() - backfill_started) * 1000)
+        log_stats = {
+            **stats,
+            "duration_ms": duration_ms,
+            "mode": state.normalized_backfill_mode,
+        }
+        self.log.info("Trends {} backfill done stats={}", log_label, log_stats)
         for metric_name, value in (
             ("pipeline.trends.backfill.days_total", stats["days_total"]),
             ("pipeline.trends.backfill.missing_total", stats["missing_total"]),
             ("pipeline.trends.backfill.generated_total", stats["generated_total"]),
             ("pipeline.trends.backfill.skipped_total", stats["skipped_total"]),
             ("pipeline.trends.backfill.failed_total", stats["failed_total"]),
-            ("pipeline.trends.backfill.duration_ms", stats["duration_ms"]),
+            ("pipeline.trends.backfill.duration_ms", duration_ms),
         ):
             self.record_metric(
                 name=metric_name,

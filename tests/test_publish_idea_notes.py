@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -140,7 +141,7 @@ def test_write_markdown_ideas_note_rejects_unexpected_keyword_arguments(
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
 
     with pytest.raises(TypeError, match="unexpected keyword argument 'statsu'"):
-        write_markdown_ideas_note(
+        cast(Any, write_markdown_ideas_note)(
             repository=repository,
             output_dir=tmp_path / "notes",
             granularity="day",

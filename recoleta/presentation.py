@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Any, Mapping, TypedDict, Unpack
+from typing import Any, Mapping, NotRequired, Required, TypedDict, Unpack
 
 from recoleta.presentation_projectors import (
     project_idea_evidence as _project_idea_evidence,
@@ -226,14 +226,14 @@ _IDEA_REQUIRED_OPPORTUNITY_KEYS_V2 = _IDEA_REQUIRED_OPPORTUNITY_KEYS_V1 | {
 
 
 class _TrendPresentationKwargs(TypedDict):
-    source_markdown_path: str
-    title: str
-    overview_md: str
-    evolution: Mapping[str, Any] | None
-    history_window_refs: Mapping[str, Mapping[str, Any]] | None
-    clusters: Sequence[Mapping[str, Any]] | None
-    language_code: str | None
-    display_language_code: str | None
+    source_markdown_path: Required[str]
+    title: Required[str]
+    overview_md: Required[str]
+    evolution: Required[Mapping[str, Any] | None]
+    history_window_refs: Required[Mapping[str, Mapping[str, Any]] | None]
+    clusters: Required[Sequence[Mapping[str, Any]] | None]
+    language_code: NotRequired[str | None]
+    display_language_code: NotRequired[str | None]
 
 
 class _TrendPresentationV2Kwargs(_TrendPresentationKwargs, total=False):
@@ -241,12 +241,12 @@ class _TrendPresentationV2Kwargs(_TrendPresentationKwargs, total=False):
 
 
 class _IdeaPresentationKwargs(TypedDict):
-    source_markdown_path: str
-    title: str
-    summary_md: str
-    ideas: list[Any]
-    language_code: str | None
-    display_language_code: str | None
+    source_markdown_path: Required[str]
+    title: Required[str]
+    summary_md: Required[str]
+    ideas: Required[list[Any]]
+    language_code: NotRequired[str | None]
+    display_language_code: NotRequired[str | None]
 
 
 _TREND_PRESENTATION_REQUIRED_KEYS = (

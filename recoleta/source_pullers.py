@@ -266,7 +266,8 @@ class _HFDailyPuller:
             period_start=self.window.period_start,
             period_end=self.window.period_end,
         )
-        return dates or [None]
+        requested_dates: list[str | None] = list(dates)
+        return requested_dates or [None]
 
     def _pull_date(self, requested_date: str | None) -> None:
         remaining = self.request.max_items - len(self.drafts)
@@ -1138,6 +1139,8 @@ class _HNPuller:
     def _hits_for_page(
         self, *, client: httpx.Client, page: int, page_size: int
     ) -> tuple[list[dict[str, Any]], bool]:
+        assert self.normalized_start is not None
+        assert self.normalized_end is not None
         response = client.get(
             "https://hn.algolia.com/api/v1/search_by_date",
             params={

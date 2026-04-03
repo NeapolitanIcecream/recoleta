@@ -11,11 +11,14 @@ from recoleta.pipeline.service import (
     Progress,
     ThreadPoolExecutor,
     as_completed,
+    convert_html_document_to_markdown,
     extract_html_maintext,
+    extract_html_document_cleaned_with_references,
     extract_pdf_text,
     fetch_url_bytes,
     fetch_url_html,
     httpx,
+    wait,
 )
 
 

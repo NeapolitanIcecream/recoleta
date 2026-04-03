@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 import json
+from typing import Any, cast
 
 import pytest
 
@@ -52,7 +53,7 @@ def test_write_markdown_trend_note_rejects_unexpected_keyword_arguments(
     period_end = period_start + timedelta(days=1)
 
     with pytest.raises(TypeError, match="unexpected keyword argument 'site_exlcude'"):
-        write_markdown_trend_note(
+        cast(Any, write_markdown_trend_note)(
             output_dir=tmp_path,
             trend_doc_id=1,
             title="Daily Trend",
@@ -73,7 +74,7 @@ def test_write_markdown_trend_note_rejects_missing_required_keywords(
     period_end = period_start + timedelta(days=1)
 
     with pytest.raises(TypeError, match="missing required keyword-only argument: 'run_id'"):
-        write_markdown_trend_note(
+        cast(Any, write_markdown_trend_note)(
             output_dir=tmp_path,
             trend_doc_id=1,
             title="Daily Trend",

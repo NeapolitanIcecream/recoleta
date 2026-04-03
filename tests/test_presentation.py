@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -82,7 +83,7 @@ def test_validate_presentation_v1_allows_single_ranked_shift_when_evidence_is_th
 
 def test_build_trend_presentation_v1_rejects_unexpected_keyword_arguments() -> None:
     with pytest.raises(TypeError, match="unexpected keyword argument 'langauge_code'"):
-        build_trend_presentation_v1(
+        cast(Any, build_trend_presentation_v1)(
             source_markdown_path="Trends/day--2026-03-02--trend--7.md",
             title="Verification gets operational",
             overview_md="Teams are tightening release discipline.",
@@ -98,7 +99,7 @@ def test_build_trend_presentation_v2_rejects_missing_required_keywords() -> None
         TypeError,
         match="missing required keyword-only argument: 'overview_md'",
     ):
-        build_trend_presentation_v2(
+        cast(Any, build_trend_presentation_v2)(
             source_markdown_path="Trends/day--2026-03-02--trend--7.md",
             title="Verification gets operational",
             evolution=None,
@@ -193,7 +194,7 @@ def test_validate_presentation_v1_requires_complete_label_sets_and_required_fiel
 
 def test_build_idea_presentation_v1_rejects_unexpected_keyword_arguments() -> None:
     with pytest.raises(TypeError, match="unexpected keyword argument 'summmary_md'"):
-        build_idea_presentation_v1(
+        cast(Any, build_idea_presentation_v1)(
             source_markdown_path="Ideas/day--2026-03-02--ideas.md",
             title="Verification-first agent rollout",
             summmary_md="Use a prompt release gate before shipping changes.",
@@ -203,7 +204,7 @@ def test_build_idea_presentation_v1_rejects_unexpected_keyword_arguments() -> No
 
 def test_build_idea_presentation_v2_rejects_missing_required_keywords() -> None:
     with pytest.raises(TypeError, match="missing required keyword-only argument: 'ideas'"):
-        build_idea_presentation_v2(
+        cast(Any, build_idea_presentation_v2)(
             source_markdown_path="Ideas/day--2026-03-02--ideas.md",
             title="Verification-first agent rollout",
             summary_md="Use a prompt release gate before shipping changes.",
