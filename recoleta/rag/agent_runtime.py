@@ -189,8 +189,18 @@ def _backfilled_chunks(
 ) -> list[TrendCluster.RepresentativeChunk]:
     query = _cluster_search_query(cluster)
     if query:
+        try:
+            rows = search(query, max_reps) or []
+        except Exception as exc:
+            logger.warning(
+                "Representative search failed query={} error_type={} error={}",
+                query,
+                type(exc).__name__,
+                str(exc),
+            )
+            rows = []
         backfilled = _backfilled_chunks_from_search_rows(
-            search(query, max_reps) or [],
+            rows,
             max_reps=max_reps,
         )
         if backfilled:

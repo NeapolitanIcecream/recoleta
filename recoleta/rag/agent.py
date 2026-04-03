@@ -320,10 +320,11 @@ def ensure_trend_cluster_representatives(
 
     if request is not None:
         return _impl(request)
+    raw_max_reps = legacy_kwargs.get("max_reps")
     return _compat_impl(
         payload=legacy_kwargs["payload"],
         search=legacy_kwargs["search"],
-        max_reps=int(legacy_kwargs.get("max_reps") or 6),
+        max_reps=6 if raw_max_reps is None else int(raw_max_reps),
     )
 
 
