@@ -26,6 +26,8 @@ class TranslateCommandRequest:
     log_module: str
     runner_attr: str
     runner_kwargs: dict[str, Any]
+    json_fields: dict[str, Any]
+    show_mirrored_total: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +54,8 @@ class TranslateResultContext:
     include: str
     json_output: bool
     raise_on_abort: bool
+    json_fields: dict[str, Any]
+    show_mirrored_total: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +107,7 @@ def run_translate_run_command(**kwargs: Any) -> None:
                 "force": bool(kwargs.get("force", False)),
                 "context_assist": kwargs["context_assist"],
             },
+            json_fields={},
         )
     )
 
@@ -127,6 +132,12 @@ def run_translate_backfill_command(**kwargs: Any) -> None:
                 "emit_mirror_targets": bool(kwargs.get("emit_mirror_targets", False)),
                 "all_history": bool(kwargs.get("all_history", False)),
             },
+            json_fields={
+                "legacy_source_language": kwargs.get("legacy_source_language"),
+                "emit_mirror_targets": bool(kwargs.get("emit_mirror_targets", False)),
+                "all_history": bool(kwargs.get("all_history", False)),
+            },
+            show_mirrored_total=True,
         )
     )
 
@@ -173,6 +184,11 @@ def _run_translate_command(*, request: TranslateCommandRequest) -> None:
                 include=request.include,
                 json_output=request.json_output,
                 raise_on_abort=request.raise_on_abort,
+                json_fields=_resolved_translate_json_fields(
+                    request=request,
+                    settings=context.settings,
+                ),
+                show_mirrored_total=request.show_mirrored_total,
             )
         )
 
@@ -268,6 +284,28 @@ def _execute_translate_runner(*, request: TranslateRunnerRequest) -> Any:
         )
 
 
+def _resolved_translate_json_fields(
+    *,
+    request: TranslateCommandRequest,
+    settings: Any,
+) -> dict[str, Any]:
+    if "legacy_source_language" not in request.json_fields:
+        return dict(request.json_fields)
+    configured_language = str(
+        getattr(getattr(settings, "localization", None), "legacy_backfill_source_language_code", "")
+        or ""
+    ).strip()
+    if not configured_language:
+        return dict(request.json_fields)
+    requested_language = str(request.json_fields.get("legacy_source_language") or "").strip()
+    if requested_language:
+        return dict(request.json_fields)
+    return {
+        **request.json_fields,
+        "legacy_source_language": configured_language,
+    }
+
+
 def _emit_translate_result(*, context: TranslateResultContext) -> None:
     if context.json_output:
         cli._emit_json(
@@ -278,6 +316,7 @@ def _emit_translate_result(*, context: TranslateResultContext) -> None:
                 "db_path": str(context.resolved_db_path),
                 "granularity": context.granularity,
                 "include": context.include,
+                **context.json_fields,
                 "aborted": context.result.aborted,
                 "abort_reason": context.result.abort_reason,
                 "totals": {
@@ -294,9 +333,7 @@ def _emit_translate_result(*, context: TranslateResultContext) -> None:
     if context.result.aborted:
         context.console.print(
             f"[yellow]{context.command_name} aborted[/yellow] "
-            f"translated={context.result.translated_total} "
-            f"skipped={context.result.skipped_total} "
-            f"failed={context.result.failed_total} "
+            f"{_translate_result_totals_text(context=context)} "
             f"reason={context.result.abort_reason}"
         )
         cli._print_billing_report(
@@ -309,12 +346,23 @@ def _emit_translate_result(*, context: TranslateResultContext) -> None:
         return
     context.console.print(
         f"[green]{context.command_name} completed[/green] "
-        f"translated={context.result.translated_total} "
-        f"skipped={context.result.skipped_total} "
-        f"failed={context.result.failed_total}"
+        f"{_translate_result_totals_text(context=context)}"
     )
     cli._print_billing_report(
         console=context.console,
         repository=context.repository,
         run_id=context.run_id,
     )
+
+
+def _translate_result_totals_text(*, context: TranslateResultContext) -> str:
+    parts = [f"translated={context.result.translated_total}"]
+    if context.show_mirrored_total:
+        parts.append(f"mirrored={context.result.mirrored_total}")
+    parts.extend(
+        [
+            f"skipped={context.result.skipped_total}",
+            f"failed={context.result.failed_total}",
+        ]
+    )
+    return " ".join(parts)

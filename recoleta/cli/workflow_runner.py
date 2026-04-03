@@ -599,6 +599,10 @@ def _workflow_override(name: str, *, current: Any) -> Any | None:
     except Exception:
         return None
     override = getattr(workflows_module, name, None)
-    if callable(override) and override is not current:
-        return override
-    return None
+    if not callable(override) or override is current:
+        return None
+    default_hooks = getattr(workflows_module, "_MONKEYPATCHABLE_CLOCK_HOOKS", ())
+    for hook in default_hooks:
+        if callable(hook) and getattr(hook, "__name__", None) == name and override is hook:
+            return None
+    return override

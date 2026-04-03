@@ -2267,6 +2267,9 @@ def test_translate_backfill_cli_json_includes_run_id_and_billing(
     assert payload["status"] == "ok"
     assert payload["command"] == "translate backfill"
     assert payload["run_id"]
+    assert payload["legacy_source_language"] == "zh-CN"
+    assert payload["emit_mirror_targets"] is False
+    assert payload["all_history"] is True
     assert payload["billing"]["components"]["translation_llm"]["calls"] == 1
     assert payload["billing"]["components"]["translation_llm"]["input_tokens"] == 88
     assert payload["billing"]["components"]["translation_llm"]["output_tokens"] == 22
