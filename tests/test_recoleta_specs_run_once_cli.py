@@ -885,6 +885,10 @@ def test_run_now_aliases_run_day_for_today_utc(
     assert fake_service.calls[-1][1][2] == date(2026, 3, 16)
 
 
+def test_workflow_today_utc_uses_default_clock_without_recursion() -> None:
+    assert isinstance(workflow_cli.today_utc(), date)
+
+
 def test_run_day_defaults_to_latest_complete_utc_day(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,

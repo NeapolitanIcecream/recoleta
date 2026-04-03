@@ -59,7 +59,11 @@ def _sync_cli_runtime_state(*, clear_runtime_symbols: bool = False) -> None:
         "_RUN_HEARTBEAT_INTERVAL_SECONDS"
     ]
     if clear_runtime_symbols:
-        _app_runtime._RUNTIME_SYMBOLS = None
+        _clear_runtime_symbol_cache()
+
+
+def _clear_runtime_symbol_cache() -> None:
+    setattr(_app_runtime, "_RUNTIME_SYMBOLS", None)
 
 
 def _runtime_symbols() -> dict[str, Any]:
@@ -143,54 +147,11 @@ def _invoke_service_method(service: Any, method_name: str, /, **kwargs: Any) -> 
     return method(**supported_kwargs)
 
 
-def _update_run_context(
-    repository: Any,
-    *,
-    run_id: str,
-    command: str | None = None,
-    operation_kind: str | None = None,
-    scope: str | None = None,
-    granularity: str | None = None,
-    period_start: datetime | None = None,
-    period_end: datetime | None = None,
-    target_granularity: str | None = None,
-    target_period_start: datetime | None = None,
-    target_period_end: datetime | None = None,
-    requested_steps: list[str] | None = None,
-    executed_steps: list[str] | None = None,
-    skipped_steps: list[str] | None = None,
-    billing_by_step: dict[str, Any] | None = None,
-) -> None:
+def _update_run_context(repository: Any, *, run_id: str, **context: Any) -> None:
     method = getattr(repository, "update_run_context", None)
     if not callable(method):
         return
-    kwargs: dict[str, Any] = {"run_id": run_id}
-    if command is not None:
-        kwargs["command"] = command
-    if operation_kind is not None:
-        kwargs["operation_kind"] = operation_kind
-    if scope is not None:
-        kwargs["scope"] = scope
-    if granularity is not None:
-        kwargs["granularity"] = granularity
-    if period_start is not None:
-        kwargs["period_start"] = period_start
-    if period_end is not None:
-        kwargs["period_end"] = period_end
-    if target_granularity is not None:
-        kwargs["target_granularity"] = target_granularity
-    if target_period_start is not None:
-        kwargs["target_period_start"] = target_period_start
-    if target_period_end is not None:
-        kwargs["target_period_end"] = target_period_end
-    if requested_steps is not None:
-        kwargs["requested_steps"] = requested_steps
-    if executed_steps is not None:
-        kwargs["executed_steps"] = executed_steps
-    if skipped_steps is not None:
-        kwargs["skipped_steps"] = skipped_steps
-    if billing_by_step is not None:
-        kwargs["billing_by_step"] = billing_by_step
+    kwargs = {"run_id": run_id, **{key: value for key, value in context.items() if value is not None}}
     if len(kwargs) <= 1:
         return
     try:
@@ -251,24 +212,40 @@ def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:
         if str(normalized).strip():
             return normalized
 
-    env_path = str(importlib.import_module("os").getenv("RECOLETA_DB_PATH", "")).strip()
+    env_path = _env_path("RECOLETA_DB_PATH")
     if env_path:
         return Path(env_path).expanduser().resolve()
 
-    resolved_config_path: Path | None = None
-    if isinstance(config_path, Path):
-        resolved_config_path = config_path.expanduser().resolve()
-    else:
-        raw = str(
-            importlib.import_module("os").getenv("RECOLETA_CONFIG_PATH", "")
-        ).strip()
-        if raw:
-            resolved_config_path = Path(raw).expanduser().resolve()
-
+    resolved_config_path = _resolved_config_path(config_path=config_path)
     if resolved_config_path is None:
         raise ValueError(
             "Missing db path (pass --db-path or set RECOLETA_DB_PATH / RECOLETA_CONFIG_PATH)."
         )
+    loaded = _load_config_mapping(resolved_config_path)
+    candidate_str = str(
+        loaded.get("recoleta_db_path") or loaded.get("RECOLETA_DB_PATH") or ""
+    ).strip()
+    if not candidate_str:
+        raise ValueError(
+            "Config does not define recoleta_db_path (or RECOLETA_DB_PATH)."
+        )
+    return Path(candidate_str).expanduser().resolve()
+
+
+def _env_path(name: str) -> str:
+    return str(importlib.import_module("os").getenv(name, "")).strip()
+
+
+def _resolved_config_path(*, config_path: Path | None) -> Path | None:
+    if isinstance(config_path, Path):
+        return config_path.expanduser().resolve()
+    raw = _env_path("RECOLETA_CONFIG_PATH")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return None
+
+
+def _load_config_mapping(resolved_config_path: Path) -> dict[str, Any]:
     if not resolved_config_path.exists():
         raise ValueError(f"Config path does not exist: {resolved_config_path}")
     if not resolved_config_path.is_file():
@@ -288,14 +265,7 @@ def _resolve_db_path(*, db_path: Path | None, config_path: Path | None) -> Path:
 
     if not isinstance(loaded, dict):
         raise ValueError("Config file must contain a mapping/object at the top level")
-
-    candidate = loaded.get("recoleta_db_path") or loaded.get("RECOLETA_DB_PATH")
-    candidate_str = str(candidate or "").strip()
-    if not candidate_str:
-        raise ValueError(
-            "Config does not define recoleta_db_path (or RECOLETA_DB_PATH)."
-        )
-    return Path(candidate_str).expanduser().resolve()
+    return loaded
 
 
 def _build_repository_for_db_path(*, db_path: Path) -> Any:
@@ -623,6 +593,23 @@ def _collect_markdown_output_dirs(settings: Any) -> set[Path]:
     return {Path(settings.markdown_output_dir).expanduser().resolve()}
 
 
+def _pdf_debug_root(markdown_root: Path) -> Path | None:
+    debug_root = markdown_root / "Trends" / ".pdf-debug"
+    if not debug_root.exists() or not debug_root.is_dir():
+        return None
+    return debug_root
+
+
+def _is_expired_debug_child(*, child: Path, older_than: datetime | None) -> bool:
+    if older_than is None:
+        return True
+    try:
+        modified_at = datetime.fromtimestamp(child.stat().st_mtime, tz=UTC)
+    except Exception:
+        return False
+    return modified_at < older_than
+
+
 def _prune_expired_pdf_debug_dirs(
     *,
     settings: Any,
@@ -631,17 +618,12 @@ def _prune_expired_pdf_debug_dirs(
 ) -> int:
     deleted = 0
     for markdown_root in _collect_markdown_output_dirs(settings):
-        debug_root = markdown_root / "Trends" / ".pdf-debug"
-        if not debug_root.exists() or not debug_root.is_dir():
+        debug_root = _pdf_debug_root(markdown_root)
+        if debug_root is None:
             continue
         for child in list(debug_root.iterdir()):
-            if older_than is not None:
-                try:
-                    modified_at = datetime.fromtimestamp(child.stat().st_mtime, tz=UTC)
-                except Exception:
-                    continue
-                if modified_at >= older_than:
-                    continue
+            if not _is_expired_debug_child(child=child, older_than=older_than):
+                continue
             if _delete_path_if_present(path=child, dry_run=dry_run):
                 deleted += 1
     return deleted

@@ -68,53 +68,23 @@ def _serialize_artifact(row: Any) -> dict[str, Any]:
 
 
 def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
-    granularity_candidates = sorted(
-        {
-            str(getattr(row, "granularity", "") or "").strip()
-            for row in pass_outputs
-            if str(getattr(row, "granularity", "") or "").strip()
-        }
-    )
-    period_starts = sorted(
-        {
-            value
-            for value in (
-                cli._isoformat_or_none(getattr(row, "period_start", None))
-                for row in pass_outputs
-            )
-            if value is not None
-        }
-    )
-    period_ends = sorted(
-        {
-            value
-            for value in (
-                cli._isoformat_or_none(getattr(row, "period_end", None))
-                for row in pass_outputs
-            )
-            if value is not None
-        }
-    )
-    command = str(getattr(run, "command", "") or "").strip() or None
-    operation_kind = str(getattr(run, "operation_kind", "") or "").strip() or None
-    scope = str(getattr(run, "scope", "") or "").strip() or None
-    granularity = str(getattr(run, "granularity", "") or "").strip() or None
+    granularity_candidates = _pass_output_candidates(pass_outputs, "granularity")
+    period_starts = _pass_output_candidates(pass_outputs, "period_start", isoformat=True)
+    period_ends = _pass_output_candidates(pass_outputs, "period_end", isoformat=True)
+    command = _string_attr(run, "command")
+    operation_kind = _string_attr(run, "operation_kind")
+    scope = _string_attr(run, "scope")
+    granularity = _string_attr(run, "granularity")
     period_start = cli._isoformat_or_none(getattr(run, "period_start", None))
     period_end = cli._isoformat_or_none(getattr(run, "period_end", None))
-    target_granularity = (
-        str(getattr(run, "target_granularity", "") or "").strip() or None
-    )
-    target_period_start = cli._isoformat_or_none(
-        getattr(run, "target_period_start", None)
-    )
-    target_period_end = cli._isoformat_or_none(
-        getattr(run, "target_period_end", None)
-    )
+    target_granularity = _string_attr(run, "target_granularity")
+    target_period_start = cli._isoformat_or_none(getattr(run, "target_period_start", None))
+    target_period_end = cli._isoformat_or_none(getattr(run, "target_period_end", None))
     requested_steps = _parse_json_list(getattr(run, "requested_steps_json", None))
     executed_steps = _parse_json_list(getattr(run, "executed_steps_json", None))
     skipped_steps = _parse_json_list(getattr(run, "skipped_steps_json", None))
     billing_by_step = _parse_json_object(getattr(run, "billing_by_step_json", None))
-    terminal_state = str(getattr(run, "terminal_state", "") or "").strip() or None
+    terminal_state = _string_attr(run, "terminal_state")
     scope_candidates = [scope] if scope is not None else []
     return {
         "command": command,
@@ -143,6 +113,29 @@ def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
         "billing_by_step": billing_by_step,
         "terminal_state": terminal_state,
     }
+
+
+def _pass_output_candidates(
+    pass_outputs: list[Any],
+    attr_name: str,
+    *,
+    isoformat: bool = False,
+) -> list[str]:
+    values: set[str] = set()
+    for row in pass_outputs:
+        raw_value = getattr(row, attr_name, None)
+        value = (
+            cli._isoformat_or_none(raw_value)
+            if isoformat
+            else str(raw_value or "").strip() or None
+        )
+        if value is not None:
+            values.add(value)
+    return sorted(values)
+
+
+def _string_attr(row: Any, attr_name: str) -> str | None:
+    return str(getattr(row, attr_name, "") or "").strip() or None
 
 
 def _build_failure_summary(*, artifacts: list[dict[str, Any]]) -> dict[str, Any]:

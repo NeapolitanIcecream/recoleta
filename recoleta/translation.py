@@ -2068,3 +2068,6 @@ def materialize_localized_languages(
 
 def localized_language_root(*, output_dir: Path, language_code: str) -> Path:
     return output_dir / "Localized" / language_slug(language_code)
+
+
+_VULTURE_USED_TRANSLATION_APIS = (run_translation_backfill,)
