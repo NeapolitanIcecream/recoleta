@@ -235,6 +235,7 @@ def _ensure_idea_document_projection(
     period_start = getattr(row, "period_start", None)
     period_end = getattr(row, "period_end", None)
     granularity_value = str(getattr(row, "granularity", "") or "").strip() or "day"
+    normalized_granularity = _normalized_granularity(granularity_value) or "day"
     if not isinstance(period_start, datetime) or not isinstance(period_end, datetime):
         return None
     persist_idea_document_projection(
@@ -242,7 +243,7 @@ def _ensure_idea_document_projection(
             repository=repository,
             pass_output_id=int(getattr(row, "id") or 0),
             upstream_pass_output_id=_ideas_upstream_pass_output_id(row=row),
-            granularity=granularity_value,
+            granularity=normalized_granularity,
             period_start=period_start,
             period_end=period_end,
             payload=payload,
@@ -253,7 +254,7 @@ def _ensure_idea_document_projection(
             select(Document)
             .where(
                 Document.doc_type == "idea",
-                Document.granularity == granularity_value,
+                Document.granularity == normalized_granularity,
                 Document.period_start == period_start,
                 Document.period_end == period_end,
             )

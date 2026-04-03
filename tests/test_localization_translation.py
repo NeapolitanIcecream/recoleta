@@ -2730,3 +2730,90 @@ def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outpu
     assert meta_chunk is not None
     assert meta_chunk.source_content_type == "trend_ideas_payload_json"
     assert int(row.id or 0) > 0
+
+
+def test_run_translation_backfill_normalizes_mixed_case_idea_granularity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    row = repository.create_pass_output(
+        run_id="run-ideas-backfill-mixed-granularity",
+        pass_kind="trend_ideas",
+        status="succeeded",
+        granularity="Day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "Operator wedges",
+                "granularity": "day",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "summary_md": "English canonical ideas summary.",
+                "ideas": [
+                    {
+                        "title": "Prompt release gate",
+                        "kind": "tooling_wedge",
+                        "thesis": "Introduce a release gate.",
+                        "why_now": "Models are changing quickly.",
+                        "what_changed": "Teams need more validation.",
+                        "user_or_job": "Research ops",
+                        "evidence_refs": [],
+                        "validation_next_step": "Ship a prototype.",
+                        "time_horizon": "now",
+                    }
+                ],
+            }
+        ).model_dump(mode="json"),
+    )
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+                "legacy_backfill_source_language_code": "zh-CN",
+            },
+        }
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: kwargs["payload"],
+    )
+
+    result = translation_module.run_translation_backfill(
+        repository=repository,
+        settings=settings,
+        include="ideas",
+        all_history=True,
+        force=True,
+    )
+
+    assert result.failed_total == 0
+    with Session(repository.engine) as session:
+        idea_doc = session.exec(
+            select(translation_module.Document).where(
+                translation_module.Document.doc_type == "idea",
+                translation_module.Document.granularity == "day",
+                translation_module.Document.period_start == period_start,
+                translation_module.Document.period_end == period_end,
+            )
+        ).first()
+    assert idea_doc is not None
+    rows = repository.list_localized_outputs(language_code="en")
+    keys = {(localized.source_kind, localized.source_record_id) for localized in rows}
+    assert ("trend_ideas", int(idea_doc.id or 0)) in keys
+    assert int(row.id or 0) > 0
