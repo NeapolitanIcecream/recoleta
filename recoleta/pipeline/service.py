@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, field
-import hashlib
 import inspect
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait  # noqa: F401
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable, TypedDict, Unpack, cast
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -27,10 +25,10 @@ from recoleta.config import Settings
 from recoleta.delivery import TelegramSender
 from recoleta.extract import (
     extract_arxiv_latex_source,
-    convert_html_document_to_markdown,
-    extract_html_document_cleaned_with_references,
+    convert_html_document_to_markdown,  # noqa: F401
+    extract_html_document_cleaned_with_references,  # noqa: F401
     extract_html_maintext,
-    extract_pdf_text,
+    extract_pdf_text,  # noqa: F401
     fetch_url_bytes,
     fetch_url_html,
 )
@@ -48,9 +46,29 @@ from recoleta.observability import (
 from recoleta.pipeline import artifacts as pipeline_artifacts
 from recoleta.pipeline import delivery_budget as pipeline_delivery_budget
 from recoleta.pipeline import metrics as pipeline_metrics
+from recoleta.pipeline.ingest_stage import (
+    IngestStageRequest,
+    RebalanceItemsRequest,
+    SourcePullStageRequest,
+    pull_source_drafts as run_source_pull_stage,
+    rebalance_items_by_source as rebalance_stage_items_by_source,
+    run_ingest_stage,
+)
+from recoleta.pipeline.enrich_stage import (
+    ArxivContentRequest,
+    ArxivHtmlDocumentRequest,
+    EnrichStageRequest,
+    ItemContentRequest,
+    PdfContentRequest,
+    ensure_arxiv_content,
+    ensure_arxiv_html_document_content,
+    ensure_item_content,
+    ensure_pdf_content,
+    run_enrich_stage,
+)
 from recoleta.pipeline.publish_stage import run_publish_stage
 from recoleta.pipeline.ideas_stage import run_ideas_stage
-from recoleta.pipeline.trends_stage import run_trends_stage
+from recoleta.pipeline.trends_stage import TrendStageRequest, run_trends_stage
 from recoleta.ports import RepositoryPort
 from recoleta import sources
 from recoleta.triage import SemanticTriage, TriageCandidate
@@ -125,6 +143,55 @@ class _AnalyzePersistResult:
     failed: list[_AnalyzePersistFailure] = field(default_factory=list)
     analysis_batches_total: int = 0
     analysis_rows_total: int = 0
+
+
+class _EnsureItemContentKwargs(TypedDict, total=False):
+    client: httpx.Client
+    item: Any
+    log: Any
+    diag: dict[str, Any] | None
+    arxiv_html_throttle: Callable[[], None] | None
+
+
+class _EnsureArxivContentKwargs(TypedDict, total=False):
+    client: httpx.Client
+    item_id: int
+    canonical_url: str
+    source_item_id: str | None
+    log: Any
+    diag: dict[str, Any] | None
+    arxiv_html_throttle: Callable[[], None] | None
+
+
+class _EnsureArxivHtmlDocumentContentKwargs(TypedDict, total=False):
+    client: httpx.Client
+    item_id: int
+    canonical_url: str
+    source_item_id: str | None
+    log: Any
+    diag: dict[str, Any] | None
+    arxiv_html_throttle: Callable[[], None] | None
+
+
+class _EnsurePdfContentKwargs(TypedDict, total=False):
+    client: httpx.Client
+    source: str
+    item_id: int
+    canonical_url: str
+    source_item_id: str | None
+    log: Any
+    diag: dict[str, Any] | None
+
+
+class _TrendStageRequestKwargs(TypedDict, total=False):
+    run_id: str
+    granularity: str
+    anchor_date: date | None
+    llm_model: str | None
+    backfill: bool
+    backfill_mode: str
+    debug_pdf: bool
+    reuse_existing_corpus: bool
 
 
 class PipelineService:
@@ -315,46 +382,11 @@ class PipelineService:
     @staticmethod
     def _rebalance_items_by_source(
         *,
-        items: list[Any],
-        limit: int,
+        request: RebalanceItemsRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> tuple[list[Any], dict[str, int], dict[str, int]]:
-        normalized_limit = max(0, int(limit))
-        if normalized_limit <= 0 or not items:
-            return [], {}, {}
-
-        queues: dict[str, deque[Any]] = {}
-        source_order: list[str] = []
-        for item in items:
-            source_name = (
-                str(getattr(item, "source", "") or "").strip().lower() or "unknown"
-            )
-            queue = queues.get(source_name)
-            if queue is None:
-                queue = deque()
-                queues[source_name] = queue
-                source_order.append(source_name)
-            queue.append(item)
-
-        candidate_counts = {
-            source_name: len(queue) for source_name, queue in queues.items()
-        }
-        selected: list[Any] = []
-        while len(selected) < normalized_limit:
-            progressed = False
-            for source_name in source_order:
-                queue = queues[source_name]
-                if not queue:
-                    continue
-                selected.append(queue.popleft())
-                progressed = True
-                if len(selected) >= normalized_limit:
-                    break
-            if not progressed:
-                break
-        deferred_counts = {
-            source_name: len(queue) for source_name, queue in queues.items() if queue
-        }
-        return selected, candidate_counts, deferred_counts
+        normalized_request = request or RebalanceItemsRequest(**legacy_kwargs)
+        return rebalance_stage_items_by_source(normalized_request)
 
     def _record_stage_source_selection_metrics(
         self,
@@ -568,249 +600,15 @@ class PipelineService:
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> IngestResult:
-        log = logger.bind(module="pipeline.ingest", run_id=run_id)
-        started = time.perf_counter()
-        ingest_result = IngestResult()
-        source_failures_total = 0
-        source_drafts = drafts
-        source_stats = self._empty_source_pull_stats()
-        with Progress(
-            TextColumn("{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=self._progress_console,
-        ) as progress:
-            progress_task_id = progress.add_task("Ingesting items", total=None)
-
-            if source_drafts is None:
-                source_drafts, source_failures_total, source_stats = (
-                    self._pull_source_drafts(
-                        run_id=run_id,
-                        log=log,
-                        period_start=period_start,
-                        period_end=period_end,
-                    )
-                )
-            else:
-                for draft in source_drafts or []:
-                    source_name = str(draft.source or "").strip().lower()
-                    if not source_name:
-                        continue
-                    bucket = source_stats.setdefault(
-                        source_name,
-                        {
-                            "drafts_total": 0,
-                            "pull_failed_total": 0,
-                            "pull_duration_ms": 0,
-                            "filtered_out_total": 0,
-                            "in_window_total": 0,
-                            "missing_published_at_total": 0,
-                            "deduped_total": 0,
-                            "deferred_total": 0,
-                            "not_modified_total": 0,
-                            "oldest_published_at_unix": 0,
-                            "newest_published_at_unix": 0,
-                            "inserted_total": 0,
-                            "updated_total": 0,
-                        },
-                    )
-                    bucket["drafts_total"] += 1
-
-            source_drafts = source_drafts or []
-            progress.update(progress_task_id, total=len(source_drafts), completed=0)
-            for draft in source_drafts:
-                try:
-                    _, created = self.repository.upsert_item(draft)
-                    source_name = str(draft.source or "").strip().lower()
-                    bucket: dict[str, int] | None = None
-                    if source_name:
-                        bucket = source_stats.setdefault(
-                            source_name,
-                            self._empty_source_pull_stats().get(
-                                source_name,
-                                {
-                                    "drafts_total": 0,
-                                    "pull_failed_total": 0,
-                                    "pull_duration_ms": 0,
-                                    "filtered_out_total": 0,
-                                    "in_window_total": 0,
-                                    "missing_published_at_total": 0,
-                                    "deduped_total": 0,
-                                    "deferred_total": 0,
-                                    "not_modified_total": 0,
-                                    "oldest_published_at_unix": 0,
-                                    "newest_published_at_unix": 0,
-                                    "inserted_total": 0,
-                                    "updated_total": 0,
-                                },
-                            ),
-                        )
-                    if created:
-                        ingest_result.inserted += 1
-                        if bucket is not None:
-                            bucket["inserted_total"] += 1
-                    else:
-                        ingest_result.updated += 1
-                        if bucket is not None:
-                            bucket["updated_total"] += 1
-                except Exception as exc:
-                    ingest_result.failed += 1
-                    sanitized_error = self._sanitize_error_message(str(exc))
-                    self._record_debug_artifact(
-                        run_id=run_id,
-                        item_id=None,
-                        kind="error_context",
-                        payload={
-                            "stage": "ingest",
-                            "error_type": type(exc).__name__,
-                            "error_message": sanitized_error,
-                            **self._classify_exception(exc),
-                            "draft": {
-                                "source": draft.source,
-                                "source_item_id": draft.source_item_id,
-                                "canonical_url_hash": draft.canonical_url_hash,
-                            },
-                        },
-                        log=log,
-                        failure_message="Ingest debug artifact record failed: {}",
-                    )
-                    log.bind(item_hash=draft.canonical_url_hash).warning(
-                        "Ingest failed: {}", sanitized_error
-                    )
-                finally:
-                    progress.advance(progress_task_id, advance=1)
-
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.items_total",
-            value=ingest_result.inserted + ingest_result.updated + ingest_result.failed,
-            unit="count",
+        return run_ingest_stage(
+            self,
+            IngestStageRequest(
+                run_id=run_id,
+                drafts=drafts,
+                period_start=period_start,
+                period_end=period_end,
+            ),
         )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.inserted_total",
-            value=ingest_result.inserted,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.updated_total",
-            value=ingest_result.updated,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.failed_total",
-            value=ingest_result.failed,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.source_failures_total",
-            value=source_failures_total,
-            unit="count",
-        )
-        self.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.duration_ms",
-            value=int((time.perf_counter() - started) * 1000),
-            unit="ms",
-        )
-        for source_name in sorted(source_stats):
-            bucket = source_stats[source_name]
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.drafts_total",
-                value=int(bucket.get("drafts_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.pull_failed_total",
-                value=int(bucket.get("pull_failed_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.pull_duration_ms",
-                value=int(bucket.get("pull_duration_ms") or 0),
-                unit="ms",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.filtered_out_total",
-                value=int(bucket.get("filtered_out_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.in_window_total",
-                value=int(bucket.get("in_window_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=(
-                    f"pipeline.ingest.source.{source_name}.missing_published_at_total"
-                ),
-                value=int(bucket.get("missing_published_at_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.deduped_total",
-                value=int(bucket.get("deduped_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.deferred_total",
-                value=int(bucket.get("deferred_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.not_modified_total",
-                value=int(bucket.get("not_modified_total") or 0),
-                unit="count",
-            )
-            oldest_published_at_unix = int(bucket.get("oldest_published_at_unix") or 0)
-            if oldest_published_at_unix > 0:
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name=f"pipeline.ingest.source.{source_name}.oldest_published_at_unix",
-                    value=oldest_published_at_unix,
-                    unit="unix",
-                )
-            newest_published_at_unix = int(bucket.get("newest_published_at_unix") or 0)
-            if newest_published_at_unix > 0:
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name=f"pipeline.ingest.source.{source_name}.newest_published_at_unix",
-                    value=newest_published_at_unix,
-                    unit="unix",
-                )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.inserted_total",
-                value=int(bucket.get("inserted_total") or 0),
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.ingest.source.{source_name}.updated_total",
-                value=int(bucket.get("updated_total") or 0),
-                unit="count",
-            )
-        log.info(
-            "Ingest completed with inserted={} updated={} failed={} source_failures={}",
-            ingest_result.inserted,
-            ingest_result.updated,
-            ingest_result.failed,
-            source_failures_total,
-        )
-        return ingest_result
 
     def prepare(
         self,
@@ -852,670 +650,15 @@ class PipelineService:
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> None:
-        log = logger.bind(module="pipeline.enrich", run_id=run_id)
-        enrich_started = time.perf_counter()
-        include_debug = (
-            self.settings.write_debug_artifacts
-            and self.settings.artifacts_dir is not None
-        )
-        with self.repository.sql_diagnostics() as sql_diag:
-            candidate_limit = self._stage_candidate_limit(limit=limit)
-            items = self._invoke_repository_method(
-                "list_items_for_analysis",
-                limit=candidate_limit,
+        run_enrich_stage(
+            self,
+            EnrichStageRequest(
+                run_id=run_id,
+                limit=limit,
                 period_start=period_start,
                 period_end=period_end,
-            )
-            items, candidate_counts, deferred_counts = self._rebalance_items_by_source(
-                items=list(items),
-                limit=limit,
-            )
-            self._record_stage_source_selection_metrics(
-                run_id=run_id,
-                stage="enrich",
-                candidate_counts=candidate_counts,
-                deferred_counts=deferred_counts,
-            )
-            enrich_processed = 0
-            enrich_failed = 0
-            enrich_skipped = 0
-            enrich_duration_ms_total = 0
-            arxiv_items_by_method: dict[str, int] = {
-                "pdf_text": 0,
-                "latex_source": 0,
-                "html_document": 0,
-            }
-            arxiv_failed_by_method: dict[str, int] = {
-                "pdf_text": 0,
-                "latex_source": 0,
-                "html_document": 0,
-            }
-            html_document_items_total = 0
-            html_document_fetch_ms_sum = 0
-            html_document_cleanup_ms_sum = 0
-            html_document_pandoc_ms_sum = 0
-            html_document_pandoc_failed_total = 0
-            html_document_pandoc_warning_items_total = 0
-            html_document_pandoc_warning_count_sum = 0
-            html_document_pandoc_warning_tex_math_convert_failed_sum = 0
-            html_document_pandoc_math_replaced_sum = 0
-            html_document_fallback_to_pdf_total = 0
-            html_document_fallback_reason_totals: dict[str, int] = {
-                bucket: 0 for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS
-            }
-            html_document_db_read_ms_sum = 0
-            html_document_db_write_ms_sum = 0
-            source_enrich_stats: dict[str, dict[str, Any]] = {
-                source_name: self._new_source_enrich_bucket()
-                for source_name in _SOURCE_DIAGNOSTIC_NAMES
-            }
-
-            def _source_enrich_bucket(source_name: str) -> dict[str, Any]:
-                normalized = str(source_name or "").strip().lower() or "unknown"
-                return source_enrich_stats.setdefault(
-                    normalized,
-                    self._new_source_enrich_bucket(),
-                )
-
-            def write_and_record_artifact(
-                *, item_id: int | None, kind: str, payload: dict[str, Any]
-            ) -> None:
-                self._record_debug_artifact(
-                    run_id=run_id,
-                    item_id=item_id,
-                    kind=kind,
-                    payload=payload,
-                    log=log.bind(item_id=item_id),
-                    failure_message=f"Enrich {kind} artifact record failed: {{}}",
-                )
-
-            timeout = httpx.Timeout(10.0, connect=5.0)
-            headers = {"User-Agent": "recoleta/0.1"}
-            html_document_max_concurrency = int(
-                self.settings.sources.arxiv.html_document_max_concurrency or 1
-            )
-            enable_parallel = (
-                bool(self.settings.sources.arxiv.enrich_method == "html_document")
-                and bool(self.settings.sources.arxiv.html_document_enable_parallel)
-                and html_document_max_concurrency > 1
-            )
-            arxiv_rps = float(
-                self.settings.sources.arxiv.html_document_requests_per_second or 0.0
-            )
-
-            class _RateLimiter:
-                def __init__(self, *, requests_per_second: float) -> None:
-                    self._interval_s = 1.0 / max(0.0001, float(requests_per_second))
-                    self._lock = threading.Lock()
-                    self._next_at = time.monotonic()
-
-                def acquire(self) -> None:
-                    with self._lock:
-                        now = time.monotonic()
-                        scheduled = self._next_at if self._next_at > now else now
-                        self._next_at = scheduled + self._interval_s
-                        wait_s = scheduled - now
-                    if wait_s > 0:
-                        time.sleep(wait_s)
-
-            arxiv_html_throttle: Callable[[], None] | None = None
-            if arxiv_rps > 0:
-                limiter = _RateLimiter(requests_per_second=arxiv_rps)
-                arxiv_html_throttle = limiter.acquire
-
-            def _process_one(*, client: httpx.Client, item: Any) -> dict[str, Any]:
-                raw_item_id = getattr(item, "id", None)
-                source = str(getattr(item, "source", "") or "").strip().lower()
-                arxiv_method: str | None = None
-                if source == "arxiv":
-                    arxiv_method = self.settings.sources.arxiv.enrich_method
-                if raw_item_id is None:
-                    return {
-                        "status": "failed",
-                        "item_id": None,
-                        "source": source,
-                        "arxiv_method": arxiv_method,
-                        "error_type": "ValueError",
-                        "error_message": "missing item id",
-                        "classification": {"retryable": False},
-                        "diag": {},
-                    }
-                item_id = int(raw_item_id)
-                diag: dict[str, Any] = {}
-                try:
-                    _, stored_new_content = self._ensure_item_content(
-                        client=client,
-                        item=item,
-                        log=log,
-                        diag=diag,
-                        arxiv_html_throttle=arxiv_html_throttle,
-                    )
-                    db_mark_started = time.perf_counter()
-                    self.repository.mark_item_enriched(item_id=item_id)
-                    diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
-                        (time.perf_counter() - db_mark_started) * 1000
-                    )
-                    return {
-                        "status": "ok",
-                        "item_id": item_id,
-                        "source": source,
-                        "arxiv_method": arxiv_method,
-                        "stored_new": bool(stored_new_content),
-                        "diag": diag,
-                    }
-                except Exception as enrich_exc:  # noqa: BLE001
-                    sanitized_error = self._sanitize_error_message(str(enrich_exc))
-                    classification = self._classify_exception(enrich_exc)
-                    try:
-                        db_mark_started = time.perf_counter()
-                        if classification.get("retryable") is True:
-                            self.repository.mark_item_retryable_failed(item_id=item_id)
-                        else:
-                            self.repository.mark_item_failed(item_id=item_id)
-                        diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
-                            (time.perf_counter() - db_mark_started) * 1000
-                        )
-                    except Exception as mark_exc:  # noqa: BLE001
-                        log.bind(item_id=item_id).warning(
-                            "Enrich mark_item_state failed: {}",
-                            self._sanitize_error_message(str(mark_exc)),
-                        )
-                    return {
-                        "status": "failed",
-                        "item_id": item_id,
-                        "source": source,
-                        "arxiv_method": arxiv_method,
-                        "error_type": type(enrich_exc).__name__,
-                        "error_message": sanitized_error,
-                        "classification": classification,
-                        "diag": diag,
-                    }
-
-            with Progress(
-                TextColumn("{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                console=self._progress_console,
-            ) as progress:
-                task_id = progress.add_task("Enriching items", total=len(items))
-
-                def _consume_result(
-                    result: dict[str, Any], *, item_elapsed_ms: int
-                ) -> None:
-                    nonlocal \
-                        enrich_processed, \
-                        enrich_failed, \
-                        enrich_skipped, \
-                        enrich_duration_ms_total
-                    nonlocal html_document_items_total
-                    nonlocal \
-                        html_document_fetch_ms_sum, \
-                        html_document_cleanup_ms_sum, \
-                        html_document_pandoc_ms_sum
-                    nonlocal \
-                        html_document_pandoc_failed_total, \
-                        html_document_pandoc_warning_items_total, \
-                        html_document_pandoc_warning_count_sum, \
-                        html_document_pandoc_warning_tex_math_convert_failed_sum, \
-                        html_document_pandoc_math_replaced_sum
-                    nonlocal html_document_fallback_to_pdf_total
-                    nonlocal html_document_fallback_reason_totals
-                    nonlocal html_document_db_read_ms_sum, html_document_db_write_ms_sum
-
-                    status = result.get("status")
-                    source = str(result.get("source") or "").strip().lower()
-                    source_bucket = _source_enrich_bucket(source)
-                    if status == "ok":
-                        if result.get("stored_new"):
-                            enrich_processed += 1
-                            source_bucket["processed_total"] = (
-                                int(source_bucket.get("processed_total") or 0) + 1
-                            )
-                        else:
-                            enrich_skipped += 1
-                            source_bucket["skipped_total"] = (
-                                int(source_bucket.get("skipped_total") or 0) + 1
-                            )
-                    else:
-                        enrich_failed += 1
-                        source_bucket["failed_total"] = (
-                            int(source_bucket.get("failed_total") or 0) + 1
-                        )
-                        item_id = result.get("item_id")
-                        arxiv_method = result.get("arxiv_method")
-                        if isinstance(arxiv_method, str) and arxiv_method:
-                            arxiv_failed_by_method[arxiv_method] = (
-                                arxiv_failed_by_method.get(arxiv_method, 0) + 1
-                            )
-                        classification = result.get("classification") or {}
-                        if include_debug:
-                            write_and_record_artifact(
-                                item_id=int(item_id) if item_id is not None else None,
-                                kind="error_context",
-                                payload={
-                                    "stage": "enrich",
-                                    "error_type": result.get("error_type")
-                                    or "Exception",
-                                    "error_message": result.get("error_message")
-                                    or "unknown",
-                                    "item_id": item_id,
-                                    **(
-                                        classification
-                                        if isinstance(classification, dict)
-                                        else {}
-                                    ),
-                                },
-                            )
-                        log.bind(item_id=item_id).warning(
-                            "Enrich failed: {}",
-                            result.get("error_message") or "unknown",
-                        )
-
-                    diag = result.get("diag") or {}
-                    arxiv_method = result.get("arxiv_method")
-                    source_bucket["item_duration_ms_total"] = int(
-                        source_bucket.get("item_duration_ms_total") or 0
-                    ) + int(item_elapsed_ms)
-                    source_bucket["fetch_ms_sum"] = int(
-                        source_bucket.get("fetch_ms_sum") or 0
-                    ) + int(diag.get("fetch_ms") or 0)
-                    source_bucket["extract_ms_sum"] = int(
-                        source_bucket.get("extract_ms_sum") or 0
-                    ) + int(diag.get("extract_ms") or 0)
-                    source_bucket["db_read_ms_sum"] = int(
-                        source_bucket.get("db_read_ms_sum") or 0
-                    ) + int(diag.get("db_read_ms") or 0)
-                    source_bucket["db_write_ms_sum"] = int(
-                        source_bucket.get("db_write_ms_sum") or 0
-                    ) + int(diag.get("db_write_ms") or 0)
-                    source_bucket["input_bytes_sum"] = int(
-                        source_bucket.get("input_bytes_sum") or 0
-                    ) + int(diag.get("input_bytes") or 0)
-                    source_bucket["content_chars_sum"] = int(
-                        source_bucket.get("content_chars_sum") or 0
-                    ) + int(diag.get("content_chars") or 0)
-                    source_bucket["short_content_total"] = int(
-                        source_bucket.get("short_content_total") or 0
-                    ) + int(diag.get("short_content") or 0)
-                    content_type = str(diag.get("content_type") or "").strip().lower()
-                    if content_type:
-                        content_type_totals = cast(
-                            dict[str, int], source_bucket["content_types"]
-                        )
-                        content_type_totals[content_type] = (
-                            content_type_totals.get(content_type, 0) + 1
-                        )
-                    pdf_backend = str(diag.get("pdf_backend") or "").strip().lower()
-                    if pdf_backend:
-                        pdf_backend_totals = cast(
-                            dict[str, int], source_bucket["pdf_backends"]
-                        )
-                        pdf_backend_totals[pdf_backend] = (
-                            pdf_backend_totals.get(pdf_backend, 0) + 1
-                        )
-                    if (
-                        source == "arxiv"
-                        and isinstance(arxiv_method, str)
-                        and arxiv_method
-                    ):
-                        arxiv_items_by_method[arxiv_method] = (
-                            arxiv_items_by_method.get(arxiv_method, 0) + 1
-                        )
-                    if source == "arxiv" and arxiv_method == "html_document":
-                        html_document_items_total += 1
-                        html_document_fetch_ms_sum += int(diag.get("fetch_ms") or 0)
-                        html_document_cleanup_ms_sum += int(diag.get("cleanup_ms") or 0)
-                        html_document_pandoc_ms_sum += int(diag.get("pandoc_ms") or 0)
-                        html_document_pandoc_failed_total += int(
-                            diag.get("pandoc_failed") or 0
-                        )
-                        warning_count = int(diag.get("pandoc_warning_count") or 0)
-                        html_document_pandoc_warning_count_sum += warning_count
-                        if warning_count > 0:
-                            html_document_pandoc_warning_items_total += 1
-                        html_document_pandoc_warning_tex_math_convert_failed_sum += int(
-                            diag.get("pandoc_warning_tex_math_convert_failed") or 0
-                        )
-                        html_document_pandoc_math_replaced_sum += int(
-                            diag.get("pandoc_math_replaced_total") or 0
-                        )
-                        html_document_fallback_to_pdf_total += int(
-                            diag.get("html_document_fallback_to_pdf") or 0
-                        )
-                        for bucket in _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS:
-                            html_document_fallback_reason_totals[bucket] += int(
-                                diag.get(f"html_document_fallback_reason.{bucket}") or 0
-                            )
-                        html_document_db_read_ms_sum += int(diag.get("db_read_ms") or 0)
-                        html_document_db_write_ms_sum += int(
-                            diag.get("db_write_ms") or 0
-                        )
-
-                    enrich_duration_ms_total += int(item_elapsed_ms)
-                    progress.advance(task_id, 1)
-
-                if not enable_parallel:
-                    with httpx.Client(
-                        timeout=timeout, headers=headers, follow_redirects=True
-                    ) as client:
-                        for item in items:
-                            item_started = time.perf_counter()
-                            result = _process_one(client=client, item=item)
-                            _consume_result(
-                                result,
-                                item_elapsed_ms=int(
-                                    (time.perf_counter() - item_started) * 1000
-                                ),
-                            )
-                else:
-                    parallel_items: list[Any] = []
-                    serial_items: list[Any] = []
-                    for item in items:
-                        source = str(getattr(item, "source", "") or "").strip().lower()
-                        if (
-                            source == "arxiv"
-                            and self.settings.sources.arxiv.enrich_method
-                            == "html_document"
-                        ):
-                            parallel_items.append(item)
-                        else:
-                            serial_items.append(item)
-
-                    with httpx.Client(
-                        timeout=timeout, headers=headers, follow_redirects=True
-                    ) as serial_client:
-                        for item in serial_items:
-                            item_started = time.perf_counter()
-                            result = _process_one(client=serial_client, item=item)
-                            _consume_result(
-                                result,
-                                item_elapsed_ms=int(
-                                    (time.perf_counter() - item_started) * 1000
-                                ),
-                            )
-
-                    local = threading.local()
-                    created_clients: list[httpx.Client] = []
-                    created_lock = threading.Lock()
-
-                    def _get_thread_client() -> httpx.Client:
-                        existing = getattr(local, "client", None)
-                        if isinstance(existing, httpx.Client):
-                            return existing
-                        client = httpx.Client(
-                            timeout=timeout, headers=headers, follow_redirects=True
-                        )
-                        local.client = client
-                        with created_lock:
-                            created_clients.append(client)
-                        return client
-
-                    def _worker(item: Any) -> dict[str, Any]:
-                        started = time.perf_counter()
-                        client = _get_thread_client()
-                        result = _process_one(client=client, item=item)
-                        result["elapsed_ms"] = int(
-                            (time.perf_counter() - started) * 1000
-                        )
-                        return result
-
-                    executor = ThreadPoolExecutor(
-                        max_workers=html_document_max_concurrency
-                    )
-                    futures = {
-                        executor.submit(_worker, item): item for item in parallel_items
-                    }
-                    interrupted = False
-                    try:
-                        for fut in as_completed(futures):
-                            try:
-                                result = fut.result()
-                            except Exception as exc:  # noqa: BLE001
-                                result = {
-                                    "status": "failed",
-                                    "error_type": type(exc).__name__,
-                                    "error_message": self._sanitize_error_message(
-                                        str(exc)
-                                    ),
-                                    "classification": self._classify_exception(exc),
-                                    "elapsed_ms": 0,
-                                }
-                            _consume_result(
-                                result,
-                                item_elapsed_ms=int(result.get("elapsed_ms") or 0),
-                            )
-                    except KeyboardInterrupt:
-                        interrupted = True
-                        log.warning(
-                            "Interrupt received; cancelling pending enrich workers and draining in-flight tasks."
-                        )
-                        for fut in futures:
-                            fut.cancel()
-                        try:
-                            executor.shutdown(wait=False, cancel_futures=True)
-                        except TypeError:
-                            executor.shutdown(wait=False)
-
-                        # Drain in-flight work without letting Ctrl-C interrupt cleanup again.
-                        deadline = time.monotonic() + 10.0
-                        while True:
-                            remaining = deadline - time.monotonic()
-                            if remaining <= 0:
-                                break
-                            try:
-                                _, not_done = wait(
-                                    futures, timeout=min(0.25, remaining)
-                                )
-                            except KeyboardInterrupt:
-                                continue
-                            if not not_done:
-                                break
-                        raise
-                    finally:
-                        try:
-                            executor.shutdown(wait=True, cancel_futures=True)
-                        except TypeError:
-                            executor.shutdown(wait=True)
-                        except KeyboardInterrupt:
-                            # Best-effort: keep shutdown from spewing a traceback on repeated Ctrl-C.
-                            pass
-
-                        all_done = (
-                            all(fut.done() for fut in futures) if futures else True
-                        )
-                        if interrupted and not all_done:
-                            log.warning(
-                                "Interrupted before workers finished; skipping http client close to avoid mid-request failures."
-                            )
-                        else:
-                            with created_lock:
-                                to_close = list(created_clients)
-                            for c in to_close:
-                                try:
-                                    c.close()
-                                except Exception:
-                                    pass
-
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.processed_total",
-                value=enrich_processed,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.skipped_total",
-                value=enrich_skipped,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.failed_total",
-                value=enrich_failed,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.item_duration_ms_total",
-                value=enrich_duration_ms_total,
-                unit="ms",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.duration_ms",
-                value=int((time.perf_counter() - enrich_started) * 1000),
-                unit="ms",
-            )
-            for method in ("pdf_text", "latex_source", "html_document"):
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name=f"pipeline.enrich.arxiv.method_selected.{method}_total",
-                    value=arxiv_items_by_method.get(method, 0),
-                    unit="count",
-                )
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name=f"pipeline.enrich.arxiv.method_failed.{method}_total",
-                    value=arxiv_failed_by_method.get(method, 0),
-                    unit="count",
-                )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.db.sql_queries_total",
-                value=sql_diag.queries_total,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.db.sql_commits_total",
-                value=sql_diag.commits_total,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.items_total",
-                value=html_document_items_total,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.fetch_ms_sum",
-                value=html_document_fetch_ms_sum,
-                unit="ms",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.cleanup_ms_sum",
-                value=html_document_cleanup_ms_sum,
-                unit="ms",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.pandoc_ms_sum",
-                value=html_document_pandoc_ms_sum,
-                unit="ms",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.pandoc_failed_total",
-                value=html_document_pandoc_failed_total,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.pandoc_warning_items_total",
-                value=html_document_pandoc_warning_items_total,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum",
-                value=html_document_pandoc_warning_count_sum,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.pandoc_warning_tex_math_convert_failed_sum",
-                value=html_document_pandoc_warning_tex_math_convert_failed_sum,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum",
-                value=html_document_pandoc_math_replaced_sum,
-                unit="count",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.fallback_to_pdf_total",
-                value=html_document_fallback_to_pdf_total,
-                unit="count",
-            )
-            for bucket, count in html_document_fallback_reason_totals.items():
-                self.repository.record_metric(
-                    run_id=run_id,
-                    name=f"pipeline.enrich.arxiv.html_document.fallback_to_pdf_reason.{bucket}_total",
-                    value=count,
-                    unit="count",
-                )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.db_read_ms_sum",
-                value=html_document_db_read_ms_sum,
-                unit="ms",
-            )
-            self.repository.record_metric(
-                run_id=run_id,
-                name="pipeline.enrich.arxiv.html_document.db_write_ms_sum",
-                value=html_document_db_write_ms_sum,
-                unit="ms",
-            )
-            for source_name in sorted(source_enrich_stats):
-                source_bucket = source_enrich_stats[source_name]
-                for metric_name, unit in (
-                    ("processed_total", "count"),
-                    ("skipped_total", "count"),
-                    ("failed_total", "count"),
-                    ("item_duration_ms_total", "ms"),
-                    ("fetch_ms_sum", "ms"),
-                    ("extract_ms_sum", "ms"),
-                    ("db_read_ms_sum", "ms"),
-                    ("db_write_ms_sum", "ms"),
-                    ("input_bytes_sum", "bytes"),
-                    ("content_chars_sum", "chars"),
-                    ("short_content_total", "count"),
-                ):
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name=f"pipeline.enrich.source.{source_name}.{metric_name}",
-                        value=int(source_bucket.get(metric_name) or 0),
-                        unit=unit,
-                    )
-                for content_type, count in sorted(
-                    cast(dict[str, int], source_bucket["content_types"]).items()
-                ):
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name=f"pipeline.enrich.source.{source_name}.content_type.{content_type}_total",
-                        value=count,
-                        unit="count",
-                    )
-                for pdf_backend, count in sorted(
-                    cast(dict[str, int], source_bucket["pdf_backends"]).items()
-                ):
-                    self.repository.record_metric(
-                        run_id=run_id,
-                        name=f"pipeline.enrich.source.{source_name}.pdf_backend.{pdf_backend}_total",
-                        value=count,
-                        unit="count",
-                    )
-            log.info(
-                "Enrich completed with processed={} skipped={} failed={}",
-                enrich_processed,
-                enrich_skipped,
-                enrich_failed,
-            )
+            ),
+        )
 
     def triage(
         self,
@@ -2552,142 +1695,20 @@ class PipelineService:
     def _ensure_item_content(
         self,
         *,
-        client: httpx.Client,
-        item: Any,
-        log: Any,
-        diag: dict[str, Any] | None = None,
-        arxiv_html_throttle: Callable[[], None] | None = None,
+        request: ItemContentRequest | None = None,
+        **legacy_kwargs: Unpack[_EnsureItemContentKwargs],
     ) -> tuple[str, bool]:
-        raw_item_id = getattr(item, "id", None)
-        if raw_item_id is None:
-            raise ValueError("item id is required for enrichment")
-        item_id = int(raw_item_id)
-        source = str(getattr(item, "source", "") or "").strip().lower()
-        canonical_url = str(getattr(item, "canonical_url", "") or "")
-        source_item_id = getattr(item, "source_item_id", None)
-
-        if source == "arxiv":
-            content_text, stored_new_content = self._ensure_arxiv_content(
-                client=client,
-                item_id=item_id,
-                canonical_url=canonical_url,
-                source_item_id=source_item_id,
-                log=log,
-                diag=diag,
-                arxiv_html_throttle=arxiv_html_throttle,
-            )
-        elif source == "openreview":
-            content_text, stored_new_content = self._ensure_pdf_content(
-                client=client,
-                source=source,
-                item_id=item_id,
-                canonical_url=canonical_url,
-                source_item_id=source_item_id,
-                log=log,
-                diag=diag,
-            )
-        else:
-            content_text, stored_new_content = self._ensure_html_maintext_content(
-                client=client,
-                item_id=item_id,
-                canonical_url=canonical_url,
-                diag=diag,
-            )
-
-        if not content_text.strip():
-            raise RuntimeError("empty enriched content")
-        return content_text, stored_new_content
+        normalized_request = request or ItemContentRequest(**legacy_kwargs)
+        return ensure_item_content(self, normalized_request)
 
     def _ensure_arxiv_content(
         self,
         *,
-        client: httpx.Client,
-        item_id: int,
-        canonical_url: str,
-        source_item_id: str | None,
-        log: Any,
-        diag: dict[str, Any] | None = None,
-        arxiv_html_throttle: Callable[[], None] | None = None,
+        request: ArxivContentRequest | None = None,
+        **legacy_kwargs: Unpack[_EnsureArxivContentKwargs],
     ) -> tuple[str, bool]:
-        method = self.settings.sources.arxiv.enrich_method
-        failure_mode = self.settings.sources.arxiv.enrich_failure_mode
-        if method == "pdf_text":
-            return self._ensure_pdf_content(
-                client=client,
-                source="arxiv",
-                item_id=item_id,
-                canonical_url=canonical_url,
-                source_item_id=source_item_id,
-                log=log,
-                diag=diag,
-            )
-
-        if method == "latex_source":
-            try:
-                return self._ensure_arxiv_latex_source_content(
-                    client=client,
-                    item_id=item_id,
-                    canonical_url=canonical_url,
-                    source_item_id=source_item_id,
-                    diag=diag,
-                )
-            except Exception as method_exc:
-                if failure_mode == "strict":
-                    raise
-                log.bind(item_id=item_id).warning(
-                    "arXiv enrich_method={} failed, falling back to pdf path: {}",
-                    method,
-                    self._sanitize_error_message(str(method_exc)),
-                )
-                return self._ensure_pdf_content(
-                    client=client,
-                    source="arxiv",
-                    item_id=item_id,
-                    canonical_url=canonical_url,
-                    source_item_id=source_item_id,
-                    log=log,
-                    diag=diag,
-                )
-
-        if method == "html_document":
-            try:
-                return self._ensure_arxiv_html_document_content(
-                    client=client,
-                    item_id=item_id,
-                    canonical_url=canonical_url,
-                    source_item_id=source_item_id,
-                    log=log,
-                    diag=diag,
-                    arxiv_html_throttle=arxiv_html_throttle,
-                )
-            except Exception as method_exc:
-                if failure_mode == "strict":
-                    raise
-                reason_bucket = self._classify_arxiv_html_document_fallback_reason(
-                    method_exc
-                )
-                if diag is not None:
-                    diag["html_document_fallback_to_pdf"] = 1
-                    diag[f"html_document_fallback_reason.{reason_bucket}"] = 1
-                log.bind(
-                    item_id=item_id,
-                    html_document_fallback_reason=reason_bucket,
-                ).warning(
-                    "arXiv enrich_method={} failed, falling back to pdf path: {}",
-                    method,
-                    self._sanitize_error_message(str(method_exc)),
-                )
-                return self._ensure_pdf_content(
-                    client=client,
-                    source="arxiv",
-                    item_id=item_id,
-                    canonical_url=canonical_url,
-                    source_item_id=source_item_id,
-                    log=log,
-                    diag=diag,
-                )
-
-        raise ValueError(f"Unsupported arXiv enrich_method: {method}")
+        normalized_request = request or ArxivContentRequest(**legacy_kwargs)
+        return ensure_arxiv_content(self, normalized_request)
 
     def _ensure_arxiv_latex_source_content(
         self,
@@ -2754,300 +1775,20 @@ class PipelineService:
     def _ensure_arxiv_html_document_content(
         self,
         *,
-        client: httpx.Client,
-        item_id: int,
-        canonical_url: str,
-        source_item_id: str | None,
-        log: Any,
-        diag: dict[str, Any] | None = None,
-        arxiv_html_throttle: Callable[[], None] | None = None,
+        request: ArxivHtmlDocumentRequest | None = None,
+        **legacy_kwargs: Unpack[_EnsureArxivHtmlDocumentContentKwargs],
     ) -> tuple[str, bool]:
-        parallel_mode = (
-            bool(self.settings.sources.arxiv.enrich_method == "html_document")
-            and bool(self.settings.sources.arxiv.html_document_enable_parallel)
-            and int(self.settings.sources.arxiv.html_document_max_concurrency or 1) > 1
-        )
-        sample_rate = float(
-            self.settings.sources.arxiv.html_document_log_sample_rate or 0.0
-        )
-        bound_log = log.bind(item_id=item_id)
-
-        def _should_log_info() -> bool:
-            if not parallel_mode:
-                return True
-            if sample_rate >= 1.0:
-                return True
-            if sample_rate <= 0.0:
-                return False
-            digest = hashlib.sha256(str(item_id).encode("utf-8")).digest()
-            bucket = int.from_bytes(digest[:4], "big") / (2**32)
-            return bucket < sample_rate
-
-        def _log_info_or_debug(message: str, *args: Any) -> None:
-            if _should_log_info():
-                bound_log.info(message, *args)
-            else:
-                bound_log.debug(message, *args)
-
-        def _fetch_arxiv_html_polite(url: str) -> str:
-            if callable(arxiv_html_throttle):
-                arxiv_html_throttle()
-            return fetch_url_html(client, url)
-
-        db_read_started = time.perf_counter()
-        existing = self.repository.get_latest_content_texts(
-            item_id=item_id,
-            content_types=["html_document", "html_document_md", "html_references"],
-        )
-        existing_document = existing.get("html_document")
-        existing_md = existing.get("html_document_md")
-        existing_refs = existing.get("html_references")
-        if diag is not None:
-            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int(
-                (time.perf_counter() - db_read_started) * 1000
-            )
-        if (
-            bool(self.settings.sources.arxiv.html_document_skip_cleanup_when_complete)
-            and existing_document is not None
-            and existing_md is not None
-            and existing_refs is not None
-        ):
-            self._annotate_content_diag(
-                diag,
-                content_type="html_document",
-                content_text=existing_document,
-            )
-            return existing_document, False
-        stored_new = False
-        if existing_document is not None:
-            cleanup_started = time.perf_counter()
-            cleaned_document, references_html, stats = (
-                extract_html_document_cleaned_with_references(existing_document)
-            )
-            cleanup_elapsed_ms = int((time.perf_counter() - cleanup_started) * 1000)
-            if diag is not None:
-                diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + cleanup_elapsed_ms
-                diag["extract_ms"] = diag.get("extract_ms", 0) + cleanup_elapsed_ms
-            pending_upserts: dict[str, str] = {}
-            if cleaned_document is not None and cleaned_document != existing_document:
-                pending_upserts["html_document"] = cleaned_document
-                existing_document = cleaned_document
-            if existing_refs is None and references_html is not None:
-                pending_upserts["html_references"] = references_html
-            if existing_md is None and existing_document is not None:
-                markdown, elapsed_ms, error = convert_html_document_to_markdown(
-                    existing_document,
-                    diag=diag,
-                )
-                if diag is not None:
-                    diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
-                    diag["extract_ms"] = diag.get("extract_ms", 0) + int(
-                        elapsed_ms or 0
-                    )
-                if markdown is not None:
-                    pending_upserts["html_document_md"] = markdown
-                    _log_info_or_debug(
-                        "html_document_md created from existing html_document elapsed_ms={} chars_in={} chars_out={}",
-                        elapsed_ms,
-                        len(existing_document),
-                        len(markdown),
-                    )
-                else:
-                    self._log_html_document_md_conversion_skipped(
-                        log=log,
-                        item_id=item_id,
-                        elapsed_ms=elapsed_ms,
-                        error=error,
-                    )
-            _log_info_or_debug(
-                "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",
-                stats.get("removed_non_body_blocks"),
-                stats.get("removed_references_blocks"),
-                stats.get("references_chars"),
-            )
-            if pending_upserts:
-                db_write_started = time.perf_counter()
-                if bool(
-                    self.settings.sources.arxiv.html_document_use_batched_db_writes
-                ):
-                    inserted = self.repository.upsert_contents_texts(
-                        item_id=item_id, texts_by_type=pending_upserts
-                    )
-                else:
-                    inserted = 0
-                    for ctype, text in pending_upserts.items():
-                        _, did_insert = self.repository.upsert_content_with_inserted(
-                            item_id=item_id,
-                            content_type=ctype,
-                            text=text,
-                        )
-                        inserted += 1 if did_insert else 0
-                if diag is not None:
-                    diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
-                        (time.perf_counter() - db_write_started) * 1000
-                    )
-                stored_new = stored_new or (inserted > 0)
-            self._annotate_content_diag(
-                diag,
-                content_type="html_document",
-                content_text=existing_document,
-            )
-            return existing_document, stored_new
-        html_url = self._build_arxiv_html_url(
-            canonical_url=canonical_url,
-            source_item_id=source_item_id,
-        )
-        if not html_url:
-            raise ValueError("missing arXiv html url")
-        fetch_started = time.perf_counter()
-        html = _fetch_arxiv_html_polite(html_url)
-        if diag is not None:
-            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
-                (time.perf_counter() - fetch_started) * 1000
-            )
-            diag["input_bytes"] = diag.get("input_bytes", 0) + len(html.encode("utf-8"))
-        cleanup_started = time.perf_counter()
-        cleaned_document, references_html, stats = (
-            extract_html_document_cleaned_with_references(html)
-        )
-        cleanup_elapsed_ms = int((time.perf_counter() - cleanup_started) * 1000)
-        if diag is not None:
-            diag["cleanup_ms"] = diag.get("cleanup_ms", 0) + cleanup_elapsed_ms
-            diag["extract_ms"] = diag.get("extract_ms", 0) + cleanup_elapsed_ms
-        if cleaned_document is None:
-            raise RuntimeError("empty arXiv html document extraction")
-        pending_upserts_new: dict[str, str] = {"html_document": cleaned_document}
-        if references_html is not None:
-            pending_upserts_new["html_references"] = references_html
-        markdown, elapsed_ms, error = convert_html_document_to_markdown(
-            cleaned_document,
-            diag=diag,
-        )
-        if diag is not None:
-            diag["pandoc_ms"] = diag.get("pandoc_ms", 0) + int(elapsed_ms or 0)
-            diag["extract_ms"] = diag.get("extract_ms", 0) + int(elapsed_ms or 0)
-        if markdown is not None:
-            pending_upserts_new["html_document_md"] = markdown
-            _log_info_or_debug(
-                "html_document_md created elapsed_ms={} chars_in={} chars_out={}",
-                elapsed_ms,
-                len(cleaned_document),
-                len(markdown),
-            )
-        else:
-            self._log_html_document_md_conversion_skipped(
-                log=log,
-                item_id=item_id,
-                elapsed_ms=elapsed_ms,
-                error=error,
-            )
-        _log_info_or_debug(
-            "html_document cleanup stats removed_non_body={} removed_references_blocks={} references_chars={}",
-            stats.get("removed_non_body_blocks"),
-            stats.get("removed_references_blocks"),
-            stats.get("references_chars"),
-        )
-        extracted_maintext = extract_html_maintext(html)
-        if extracted_maintext is not None:
-            pending_upserts_new["html_maintext"] = extracted_maintext
-        if pending_upserts_new:
-            db_write_started = time.perf_counter()
-            if bool(self.settings.sources.arxiv.html_document_use_batched_db_writes):
-                inserted = self.repository.upsert_contents_texts(
-                    item_id=item_id, texts_by_type=pending_upserts_new
-                )
-            else:
-                inserted = 0
-                for ctype, text in pending_upserts_new.items():
-                    _, did_insert = self.repository.upsert_content_with_inserted(
-                        item_id=item_id,
-                        content_type=ctype,
-                        text=text,
-                    )
-                    inserted += 1 if did_insert else 0
-            if diag is not None:
-                diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
-                    (time.perf_counter() - db_write_started) * 1000
-                )
-            stored_new = stored_new or (inserted > 0)
-        self._annotate_content_diag(
-            diag,
-            content_type="html_document",
-            content_text=cleaned_document,
-        )
-        return cleaned_document, bool(stored_new)
+        normalized_request = request or ArxivHtmlDocumentRequest(**legacy_kwargs)
+        return ensure_arxiv_html_document_content(self, normalized_request)
 
     def _ensure_pdf_content(
         self,
         *,
-        client: httpx.Client,
-        source: str,
-        item_id: int,
-        canonical_url: str,
-        source_item_id: str | None,
-        log: Any,
-        diag: dict[str, Any] | None = None,
+        request: PdfContentRequest | None = None,
+        **legacy_kwargs: Unpack[_EnsurePdfContentKwargs],
     ) -> tuple[str, bool]:
-        db_read_started = time.perf_counter()
-        existing_pdf = self._get_latest_content_text(
-            item_id=item_id, content_type="pdf_text"
-        )
-        if diag is not None:
-            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int(
-                (time.perf_counter() - db_read_started) * 1000
-            )
-        if existing_pdf is not None:
-            self._annotate_content_diag(
-                diag,
-                content_type="pdf_text",
-                content_text=existing_pdf,
-            )
-            return existing_pdf, False
-        pdf_url = self._build_pdf_url(
-            source=source,
-            canonical_url=canonical_url,
-            source_item_id=source_item_id,
-        )
-        if not pdf_url:
-            raise ValueError("missing pdf url")
-
-        fetch_started = time.perf_counter()
-        pdf_bytes = fetch_url_bytes(client, pdf_url)
-        if diag is not None:
-            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
-                (time.perf_counter() - fetch_started) * 1000
-            )
-            diag["input_bytes"] = diag.get("input_bytes", 0) + len(pdf_bytes)
-        extract_started = time.perf_counter()
-        pdf_diag: dict[str, Any] = {}
-        extracted_pdf = extract_pdf_text(pdf_bytes, diag=pdf_diag)
-        if diag is not None:
-            diag["extract_ms"] = diag.get("extract_ms", 0) + int(
-                (time.perf_counter() - extract_started) * 1000
-            )
-            pdf_backend = str(pdf_diag.get("pdf_backend") or "").strip().lower()
-            if pdf_backend:
-                diag["pdf_backend"] = pdf_backend
-        if extracted_pdf is None:
-            raise RuntimeError("empty pdf text extraction")
-
-        db_write_started = time.perf_counter()
-        self.repository.upsert_content(
-            item_id=item_id,
-            content_type="pdf_text",
-            text=extracted_pdf,
-        )
-        if diag is not None:
-            diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
-                (time.perf_counter() - db_write_started) * 1000
-            )
-        self._annotate_content_diag(
-            diag,
-            content_type="pdf_text",
-            content_text=extracted_pdf,
-            pdf_backend=str(pdf_diag.get("pdf_backend") or "").strip().lower() or None,
-        )
-        return extracted_pdf, True
+        normalized_request = request or PdfContentRequest(**legacy_kwargs)
+        return ensure_pdf_content(self, normalized_request)
 
     def _ensure_html_maintext_content(
         self,
@@ -3123,25 +1864,13 @@ class PipelineService:
     def trends(
         self,
         *,
-        run_id: str,
-        granularity: str = "day",
-        anchor_date: date | None = None,
-        llm_model: str | None = None,
-        backfill: bool = False,
-        backfill_mode: str = "missing",
-        debug_pdf: bool = False,
-        reuse_existing_corpus: bool = False,
+        request: TrendStageRequest | None = None,
+        **legacy_kwargs: Unpack[_TrendStageRequestKwargs],
     ) -> TrendResult:
+        normalized_request = request or TrendStageRequest(**legacy_kwargs)
         return run_trends_stage(
             self,
-            run_id=run_id,
-            granularity=granularity,
-            anchor_date=anchor_date,
-            llm_model=llm_model,
-            backfill=backfill,
-            backfill_mode=backfill_mode,
-            debug_pdf=debug_pdf,
-            reuse_existing_corpus=reuse_existing_corpus,
+            request=normalized_request,
         )
 
     def ideas(
@@ -3163,162 +1892,11 @@ class PipelineService:
     def _pull_source_drafts(
         self,
         *,
-        run_id: str,
-        log: Any,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
+        request: SourcePullStageRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> tuple[list[ItemDraft], int, dict[str, dict[str, int]]]:
-        hn_urls = (
-            list(dict.fromkeys(self.settings.sources.hn.rss_urls))
-            if bool(self.settings.sources.hn.enabled)
-            else []
-        )
-        rss_urls = (
-            list(dict.fromkeys(self.settings.sources.rss.feeds))
-            if bool(self.settings.sources.rss.enabled)
-            else []
-        )
-        arxiv_queries = (
-            list(dict.fromkeys(self.settings.sources.arxiv.queries))
-            if bool(self.settings.sources.arxiv.enabled)
-            else []
-        )
-        openreview_venues = (
-            list(dict.fromkeys(self.settings.sources.openreview.venues))
-            if bool(self.settings.sources.openreview.enabled)
-            else []
-        )
-        drafts: list[ItemDraft] = []
-        source_failures_total = 0
-        source_stats = self._empty_source_pull_stats()
-
-        def pull(source_name: str, fn: Any, **call_kwargs: Any) -> None:
-            nonlocal source_failures_total
-            started = time.perf_counter()
-            bucket = source_stats.setdefault(
-                source_name,
-                {
-                    "drafts_total": 0,
-                    "pull_failed_total": 0,
-                    "pull_duration_ms": 0,
-                    "filtered_out_total": 0,
-                    "in_window_total": 0,
-                    "missing_published_at_total": 0,
-                    "deduped_total": 0,
-                    "deferred_total": 0,
-                    "not_modified_total": 0,
-                    "oldest_published_at_unix": 0,
-                    "newest_published_at_unix": 0,
-                    "inserted_total": 0,
-                    "updated_total": 0,
-                },
-            )
-            try:
-                raw_result = self._invoke_source_pull(
-                    fn,
-                    **call_kwargs,
-                    period_start=period_start,
-                    period_end=period_end,
-                    pull_state_lookup=lambda scope_kind, scope_key: (
-                        self._lookup_source_pull_state(
-                            source=source_name,
-                            scope_kind=scope_kind,
-                            scope_key=scope_key,
-                        )
-                    ),
-                    include_stats=True,
-                )
-                pull_result = self._normalize_source_pull_result(raw_result)
-                drafts.extend(pull_result.drafts)
-                bucket["drafts_total"] += len(pull_result.drafts)
-                bucket["filtered_out_total"] += int(pull_result.filtered_out_total or 0)
-                bucket["in_window_total"] += int(pull_result.in_window_total or 0)
-                bucket["missing_published_at_total"] += int(
-                    pull_result.missing_published_at_total or 0
-                )
-                bucket["deduped_total"] += int(pull_result.deduped_total or 0)
-                bucket["deferred_total"] += int(pull_result.deferred_total or 0)
-                bucket["not_modified_total"] += int(pull_result.not_modified_total or 0)
-                if pull_result.oldest_published_at is not None:
-                    candidate_oldest = int(pull_result.oldest_published_at.timestamp())
-                    current_oldest = int(bucket.get("oldest_published_at_unix") or 0)
-                    if current_oldest <= 0 or candidate_oldest < current_oldest:
-                        bucket["oldest_published_at_unix"] = candidate_oldest
-                if pull_result.newest_published_at is not None:
-                    candidate_newest = int(pull_result.newest_published_at.timestamp())
-                    current_newest = int(bucket.get("newest_published_at_unix") or 0)
-                    if candidate_newest > current_newest:
-                        bucket["newest_published_at_unix"] = candidate_newest
-                self._persist_source_pull_state_updates(
-                    source=source_name,
-                    updates=list(pull_result.state_updates),
-                )
-            except Exception as exc:
-                source_failures_total += 1
-                bucket["pull_failed_total"] += 1
-                sanitized_error = self._sanitize_error_message(str(exc))
-                self._record_debug_artifact(
-                    run_id=run_id,
-                    item_id=None,
-                    kind="error_context",
-                    payload={
-                        "stage": "ingest",
-                        "source": source_name,
-                        "error_type": type(exc).__name__,
-                        "error_message": sanitized_error,
-                        **self._classify_exception(exc),
-                    },
-                    log=log.bind(source=source_name),
-                    failure_message="Ingest source debug artifact record failed: {}",
-                )
-                log.bind(source=source_name).warning(
-                    "Source pull failed: {}", sanitized_error
-                )
-            finally:
-                bucket["pull_duration_ms"] += int(
-                    (time.perf_counter() - started) * 1000
-                )
-
-        if self.settings.sources.hf_daily.enabled:
-            pull(
-                "hf_daily",
-                sources.fetch_hf_daily_papers_drafts,
-                max_items=self.settings.sources.hf_daily.max_items_per_run,
-            )
-        if hn_urls:
-            pull(
-                "hn",
-                sources.fetch_hn_drafts,
-                feed_urls=hn_urls,
-                max_items_per_feed=self.settings.sources.hn.max_items_per_feed,
-                max_total_items=self.settings.sources.hn.max_total_per_run,
-            )
-        if rss_urls:
-            pull(
-                "rss",
-                sources.fetch_rss_drafts,
-                feed_urls=rss_urls,
-                source="rss",
-                max_items_per_feed=self.settings.sources.rss.max_items_per_feed,
-                max_total_items=self.settings.sources.rss.max_total_per_run,
-            )
-        if arxiv_queries:
-            pull(
-                "arxiv",
-                sources.fetch_arxiv_drafts,
-                queries=arxiv_queries,
-                max_results_per_run=self.settings.sources.arxiv.max_results_per_run,
-                max_total_items=self.settings.sources.arxiv.max_total_per_run,
-            )
-        if openreview_venues:
-            pull(
-                "openreview",
-                sources.fetch_openreview_drafts,
-                venues=openreview_venues,
-                max_results_per_venue=self.settings.sources.openreview.max_results_per_venue,
-                max_total_items=self.settings.sources.openreview.max_total_per_run,
-            )
-        return drafts, source_failures_total, source_stats
+        normalized_request = request or SourcePullStageRequest(**legacy_kwargs)
+        return run_source_pull_stage(self, normalized_request)
 
     def _write_debug_artifact(
         self,
