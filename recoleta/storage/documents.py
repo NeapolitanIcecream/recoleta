@@ -1,14 +1,66 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, cast
 
 from sqlalchemy import desc, text
 from sqlmodel import Session, select
 
 from recoleta.models import ChunkEmbedding, Document, DocumentChunk, Item
-from recoleta.storage_common import _to_fts5_query, _to_json
-from recoleta.types import sha256_hex, utc_now
+from recoleta.storage.document_query_helpers import (
+    ChunkSearchRequest,
+    ChunkUpsertRequest,
+    build_chunk_search,
+    build_document_list_statement,
+    build_summary_chunk_statement,
+    collect_chunk_ids,
+    decode_search_hit_row,
+    delete_chunk_side_tables,
+    load_chunks_for_delete,
+    normalize_chunk_delete,
+    normalize_chunk_upsert,
+    normalize_doc_type,
+    normalize_limit_offset,
+    summary_chunk_index_row,
+)
+from recoleta.storage_common import _to_json
+from recoleta.types import utc_now
+
+
+def _load_existing_document_chunk(
+    session: Session,
+    *,
+    doc_id: int,
+    chunk_index: int,
+) -> DocumentChunk | None:
+    statement = select(DocumentChunk).where(
+        DocumentChunk.doc_id == doc_id,
+        DocumentChunk.chunk_index == chunk_index,
+    )
+    return session.exec(statement).first()
+
+
+def _build_document_chunk(*, spec: Any) -> DocumentChunk:
+    return DocumentChunk(
+        doc_id=spec.doc_id,
+        chunk_index=spec.chunk_index,
+        kind=spec.kind,
+        text=spec.text,
+        start_char=spec.start_char,
+        end_char=spec.end_char,
+        text_hash=spec.text_hash,
+        source_content_type=spec.source_content_type,
+    )
+
+
+def _update_document_chunk(*, existing: DocumentChunk, spec: Any) -> DocumentChunk:
+    existing.kind = spec.kind
+    existing.text = spec.text
+    existing.start_char = spec.start_char
+    existing.end_char = spec.end_char
+    existing.text_hash = spec.text_hash
+    existing.source_content_type = spec.source_content_type
+    return existing
 
 
 class DocumentStoreMixin:
@@ -147,62 +199,35 @@ class DocumentStoreMixin:
         end_char: int | None = None,
         source_content_type: str | None = None,
     ) -> tuple[DocumentChunk, bool]:
-        normalized_doc_id = int(doc_id)
-        if normalized_doc_id <= 0:
-            raise ValueError("doc_id must be > 0")
-        normalized_index = int(chunk_index)
-        if normalized_index < 0:
-            raise ValueError("chunk_index must be >= 0")
-        normalized_kind = str(kind or "").strip().lower()
-        if normalized_kind not in {"summary", "content", "meta"}:
-            raise ValueError("unsupported chunk kind")
-        normalized_text = str(text_value or "").strip()
-        if not normalized_text:
-            raise ValueError("chunk text must not be empty")
-        text_hash = sha256_hex(normalized_text)
+        spec = normalize_chunk_upsert(
+            ChunkUpsertRequest(
+                doc_id=doc_id,
+                chunk_index=chunk_index,
+                kind=kind,
+                text_value=text_value,
+                start_char=start_char,
+                end_char=end_char,
+                source_content_type=source_content_type,
+            )
+        )
 
         inserted = False
         with Session(self.engine) as session:
-            existing = session.exec(
-                select(DocumentChunk).where(
-                    DocumentChunk.doc_id == normalized_doc_id,
-                    DocumentChunk.chunk_index == normalized_index,
-                )
-            ).first()
+            existing = _load_existing_document_chunk(
+                session,
+                doc_id=spec.doc_id,
+                chunk_index=spec.chunk_index,
+            )
             if existing is None:
-                chunk = DocumentChunk(
-                    doc_id=normalized_doc_id,
-                    chunk_index=normalized_index,
-                    kind=normalized_kind,
-                    text=normalized_text,
-                    start_char=start_char,
-                    end_char=end_char,
-                    text_hash=text_hash,
-                    source_content_type=(
-                        str(source_content_type).strip()
-                        if isinstance(source_content_type, str)
-                        and str(source_content_type).strip()
-                        else None
-                    ),
-                )
+                chunk = _build_document_chunk(spec=spec)
                 session.add(chunk)
                 self._commit(session)
                 session.refresh(chunk)
                 inserted = True
             else:
-                if str(getattr(existing, "text_hash", "") or "") == text_hash:
+                if str(getattr(existing, "text_hash", "") or "") == spec.text_hash:
                     return existing, False
-                existing.kind = normalized_kind
-                existing.text = normalized_text
-                existing.start_char = start_char
-                existing.end_char = end_char
-                existing.text_hash = text_hash
-                existing.source_content_type = (
-                    str(source_content_type).strip()
-                    if isinstance(source_content_type, str)
-                    and str(source_content_type).strip()
-                    else None
-                )
+                existing = _update_document_chunk(existing=existing, spec=spec)
                 session.add(existing)
                 self._commit(session)
                 session.refresh(existing)
@@ -212,10 +237,10 @@ class DocumentStoreMixin:
         if chunk_id is not None:
             self._sync_chunk_fts(
                 chunk_id=int(chunk_id),
-                doc_id=normalized_doc_id,
-                chunk_index=normalized_index,
-                kind=normalized_kind,
-                text_value=normalized_text,
+                doc_id=spec.doc_id,
+                chunk_index=spec.chunk_index,
+                kind=spec.kind,
+                text_value=spec.text,
             )
         return chunk, inserted
 
@@ -226,64 +251,19 @@ class DocumentStoreMixin:
         kind: str | None = None,
         chunk_index_gte: int | None = None,
     ) -> int:
-        normalized_doc_id = int(doc_id)
-        if normalized_doc_id <= 0:
-            raise ValueError("doc_id must be > 0")
-
-        normalized_kind: str | None = None
-        if kind is not None:
-            candidate = str(kind or "").strip().lower()
-            if not candidate:
-                normalized_kind = None
-            elif candidate not in {"summary", "content", "meta"}:
-                raise ValueError("unsupported chunk kind")
-            else:
-                normalized_kind = candidate
-
-        normalized_index_gte: int | None = None
-        if chunk_index_gte is not None:
-            normalized_index_gte = int(chunk_index_gte)
-            if normalized_index_gte < 0:
-                raise ValueError("chunk_index_gte must be >= 0")
-
+        spec = normalize_chunk_delete(
+            doc_id=doc_id,
+            kind=kind,
+            chunk_index_gte=chunk_index_gte,
+        )
         with Session(self.engine) as session:
-            statement = select(DocumentChunk).where(
-                DocumentChunk.doc_id == normalized_doc_id
-            )
-            if normalized_kind is not None:
-                statement = statement.where(DocumentChunk.kind == normalized_kind)
-            if normalized_index_gte is not None:
-                statement = statement.where(
-                    DocumentChunk.chunk_index >= normalized_index_gte
-                )
-            rows = list(session.exec(statement))
+            rows = load_chunks_for_delete(session=session, spec=spec)
             if not rows:
                 return 0
-
-            chunk_ids: list[int] = []
-            for row in rows:
-                raw_id = getattr(row, "id", None)
-                if raw_id is None:
-                    continue
-                try:
-                    cid = int(raw_id)
-                except Exception:
-                    continue
-                if cid > 0:
-                    chunk_ids.append(cid)
-
-            if chunk_ids:
-                with self.engine.begin() as conn:
-                    for cid in chunk_ids:
-                        conn.execute(
-                            text("DELETE FROM chunk_embeddings WHERE chunk_id = :chunk_id"),
-                            {"chunk_id": cid},
-                        )
-                        conn.execute(
-                            text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
-                            {"rowid": cid},
-                        )
-
+            delete_chunk_side_tables(
+                engine=self.engine,
+                chunk_ids=collect_chunk_ids(rows),
+            )
             for row in rows:
                 session.delete(row)
             self._commit(session)
@@ -335,55 +315,21 @@ class DocumentStoreMixin:
         offset: int = 0,
         limit: int = 50,
     ) -> list[Document]:
-        normalized_type = str(doc_type or "").strip().lower()
-        normalized_limit = max(0, int(limit))
-        normalized_offset = max(0, int(offset))
+        normalized_type = normalize_doc_type(doc_type)
+        normalized_limit, normalized_offset = normalize_limit_offset(
+            limit=limit,
+            offset=offset,
+        )
         if normalized_limit <= 0:
             return []
         with Session(self.engine) as session:
-            statement = select(Document).where(Document.doc_type == normalized_type)
-            if normalized_type == "item":
-                statement = statement.where(
-                    cast(Any, Document.published_at).is_not(None),
-                    cast(Any, Document.published_at) >= period_start,
-                    cast(Any, Document.published_at) < period_end,
-                )
-                if order_by == "event_asc":
-                    statement = statement.order_by(
-                        cast(Any, Document.published_at), cast(Any, Document.id)
-                    )
-                else:
-                    statement = statement.order_by(
-                        desc(cast(Any, Document.published_at)),
-                        desc(cast(Any, Document.id)),
-                    )
-            elif normalized_type in {"trend", "idea"}:
-                statement = statement.where(
-                    cast(Any, Document.period_start).is_not(None),
-                    cast(Any, Document.period_end).is_not(None),
-                    cast(Any, Document.period_start) < period_end,
-                    cast(Any, Document.period_end) > period_start,
-                )
-                normalized_granularity = (
-                    str(granularity or "").strip().lower()
-                    if granularity is not None
-                    else ""
-                )
-                if normalized_granularity:
-                    statement = statement.where(
-                        Document.granularity == normalized_granularity
-                    )
-                if order_by == "event_asc":
-                    statement = statement.order_by(
-                        cast(Any, Document.period_start), cast(Any, Document.id)
-                    )
-                else:
-                    statement = statement.order_by(
-                        desc(cast(Any, Document.period_start)),
-                        desc(cast(Any, Document.id)),
-                    )
-            else:
-                raise ValueError("unsupported doc_type")
+            statement = build_document_list_statement(
+                normalized_type=normalized_type,
+                period_start=period_start,
+                period_end=period_end,
+                granularity=granularity,
+                order_by=order_by,
+            )
             statement = statement.offset(normalized_offset).limit(normalized_limit)
             return list(session.exec(statement))
 
@@ -425,86 +371,24 @@ class DocumentStoreMixin:
         period_end: datetime,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        normalized_query = str(query or "").strip()
-        if not normalized_query:
-            return []
-        fts_query = _to_fts5_query(normalized_query)
-        if not fts_query:
-            return []
-        normalized_type = str(doc_type or "").strip().lower()
-        normalized_limit = max(1, min(int(limit), 50))
-
-        if normalized_type == "item":
-            period_pred = "d.published_at >= :period_start AND d.published_at < :period_end"
-        elif normalized_type in {"trend", "idea"}:
-            period_pred = "d.period_start < :period_end AND d.period_end > :period_start"
-        else:
-            raise ValueError("unsupported doc_type")
-
-        extra_predicates: list[str] = []
-        params = {
-            "query": fts_query,
-            "doc_type": normalized_type,
-            "period_start": period_start,
-            "period_end": period_end,
-            "limit": normalized_limit,
-        }
-        if normalized_type in {"trend", "idea"}:
-            normalized_granularity = (
-                str(granularity or "").strip().lower() if granularity is not None else ""
+        search_spec = build_chunk_search(
+            ChunkSearchRequest(
+                query=query,
+                doc_type=doc_type,
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+                limit=limit,
             )
-            if normalized_granularity:
-                extra_predicates.append("d.granularity = :granularity")
-                params["granularity"] = normalized_granularity
-
-        sql = f"""
-        SELECT
-            dc.id AS chunk_id,
-            dc.doc_id AS doc_id,
-            dc.chunk_index AS chunk_index,
-            dc.kind AS kind,
-            snippet(chunk_fts, 0, '[', ']', '…', 12) AS snippet,
-            bm25(chunk_fts) AS rank
-        FROM chunk_fts
-        JOIN document_chunks dc ON dc.id = chunk_fts.rowid
-        JOIN documents d ON d.id = dc.doc_id
-        WHERE
-            chunk_fts MATCH :query
-            AND d.doc_type = :doc_type
-            AND dc.kind IN ('summary', 'content')
-            AND {period_pred}
-            {"AND " + " AND ".join(extra_predicates) if extra_predicates else ""}
-        ORDER BY rank ASC
-        LIMIT :limit
-        """
+        )
+        if search_spec is None:
+            return []
+        sql, params = search_spec
         with self.engine.begin() as conn:
             rows = conn.execute(text(sql), params).mappings().all()
-        out: list[dict[str, Any]] = []
-        for row in rows:
-            raw_chunk_id = row.get("chunk_id")
-            raw_doc_id = row.get("doc_id")
-            raw_chunk_index = row.get("chunk_index")
-            if raw_chunk_id is None or raw_doc_id is None or raw_chunk_index is None:
-                continue
-            try:
-                chunk_id = int(raw_chunk_id)
-                doc_id = int(raw_doc_id)
-                chunk_index = int(raw_chunk_index)
-            except Exception:
-                continue
-            if chunk_id <= 0 or doc_id <= 0 or chunk_index < 0:
-                continue
-            out.append(
-                {
-                    "chunk_id": chunk_id,
-                    "doc_id": doc_id,
-                    "chunk_index": chunk_index,
-                    "kind": str(row.get("kind") or ""),
-                    "snippet": str(row.get("snippet") or ""),
-                    "rank": float(row.get("rank") or 0.0),
-                }
-            )
-        return out
+        return [
+            hit for row in rows if (hit := decode_search_hit_row(row)) is not None
+        ]
 
     def list_summary_chunks_in_period(
         self,
@@ -563,95 +447,36 @@ class DocumentStoreMixin:
         limit: int = 500,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        normalized_type = str(doc_type or "").strip().lower()
-        normalized_limit = max(0, int(limit))
-        normalized_offset = max(0, int(offset))
+        normalized_type = normalize_doc_type(doc_type)
+        normalized_limit, normalized_offset = normalize_limit_offset(
+            limit=limit,
+            offset=offset,
+        )
         if normalized_limit <= 0:
             return []
 
         with Session(self.engine) as session:
-            statement = (
-                select(DocumentChunk, Document)
-                .join(Document, cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id))
-                .where(
-                    Document.doc_type == normalized_type,
-                    DocumentChunk.kind == "summary",
-                )
+            statement = build_summary_chunk_statement(
+                normalized_type=normalized_type,
+                period_start=period_start,
+                period_end=period_end,
+                granularity=granularity,
+                include_document=True,
             )
-            if normalized_type == "item":
-                statement = statement.where(
-                    cast(Any, Document.published_at).is_not(None),
-                    cast(Any, Document.published_at) >= period_start,
-                    cast(Any, Document.published_at) < period_end,
-                )
-                statement = statement.order_by(desc(cast(Any, DocumentChunk.id)))
-            elif normalized_type in {"trend", "idea"}:
-                statement = statement.where(
-                    cast(Any, Document.period_start).is_not(None),
-                    cast(Any, Document.period_end).is_not(None),
-                    cast(Any, Document.period_start) < period_end,
-                    cast(Any, Document.period_end) > period_start,
-                )
-                normalized_granularity = (
-                    str(granularity or "").strip().lower()
-                    if granularity is not None
-                    else ""
-                )
-                if normalized_granularity:
-                    statement = statement.where(
-                        Document.granularity == normalized_granularity
-                    )
-                statement = statement.order_by(desc(cast(Any, DocumentChunk.id)))
-            else:
-                raise ValueError("unsupported doc_type")
-
-            statement = statement.offset(normalized_offset).limit(normalized_limit)
+            statement = statement.order_by(desc(cast(Any, DocumentChunk.id))).offset(
+                normalized_offset
+            ).limit(normalized_limit)
             rows = list(session.exec(statement))
-
-        out: list[dict[str, Any]] = []
-        for chunk, doc in rows:
-            chunk_id = getattr(chunk, "id", None)
-            doc_id = getattr(doc, "id", None)
-            if chunk_id is None or doc_id is None:
-                continue
-            if normalized_type == "item":
-                published_at = getattr(doc, "published_at", None)
-                if not isinstance(published_at, datetime):
-                    continue
-                if published_at.tzinfo is None:
-                    published_at = published_at.replace(tzinfo=UTC)
-                event_start_ts = float(published_at.timestamp())
-                event_end_ts = float(published_at.timestamp())
-            else:
-                dstart = getattr(doc, "period_start", None)
-                dend = getattr(doc, "period_end", None)
-                if not isinstance(dstart, datetime) or not isinstance(dend, datetime):
-                    continue
-                if dstart.tzinfo is None:
-                    dstart = dstart.replace(tzinfo=UTC)
-                if dend.tzinfo is None:
-                    dend = dend.replace(tzinfo=UTC)
-                event_start_ts = float(dstart.timestamp())
-                event_end_ts = float(dend.timestamp())
-
-            text_value = str(getattr(chunk, "text", "") or "")
-            preview = text_value[:240] + ("..." if len(text_value) > 240 else "")
-            out.append(
-                {
-                    "chunk_id": int(chunk_id),
-                    "doc_id": int(doc_id),
-                    "doc_type": normalized_type,
-                    "granularity": str(getattr(doc, "granularity", "") or "") or None,
-                    "chunk_index": int(getattr(chunk, "chunk_index")),
-                    "kind": str(getattr(chunk, "kind") or ""),
-                    "text": text_value,
-                    "text_hash": str(getattr(chunk, "text_hash") or ""),
-                    "text_preview": preview,
-                    "event_start_ts": event_start_ts,
-                    "event_end_ts": event_end_ts,
-                }
-            )
-        return out
+        return [
+            row
+            for chunk, doc in rows
+            if (row := summary_chunk_index_row(
+                doc_type=normalized_type,
+                chunk=chunk,
+                document=doc,
+            ))
+            is not None
+        ]
 
     def get_chunk_embedding(
         self, *, chunk_id: int, model: str
