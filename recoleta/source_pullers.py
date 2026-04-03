@@ -1102,11 +1102,15 @@ class _HNPuller:
             page = 0
             page_size = min(max(self.total_cap, self.request.max_items_per_feed), 100)
             while len(self.drafts) < self.total_cap:
-                hits = self._hits_for_page(client=client, page=page, page_size=page_size)
+                hits, has_next_page = self._hits_for_page(
+                    client=client,
+                    page=page,
+                    page_size=page_size,
+                )
                 if not hits:
                     break
-                kept = self._append_hits(hits)
-                if kept <= 0:
+                self._append_hits(hits)
+                if not has_next_page:
                     break
                 page += 1
 
@@ -1128,7 +1132,7 @@ class _HNPuller:
 
     def _hits_for_page(
         self, *, client: httpx.Client, page: int, page_size: int
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], bool]:
         response = client.get(
             "https://hn.algolia.com/api/v1/search_by_date",
             params={
@@ -1146,7 +1150,9 @@ class _HNPuller:
         response.raise_for_status()
         payload = response.json()
         hits = payload.get("hits") if isinstance(payload, dict) else None
-        return list(hits) if isinstance(hits, list) else []
+        nb_pages = int(payload.get("nbPages") or 0) if isinstance(payload, dict) else 0
+        has_next_page = nb_pages > 0 and page + 1 < nb_pages
+        return (list(hits) if isinstance(hits, list) else [], has_next_page)
 
     def _should_keep_draft(self, draft: ItemDraft) -> bool:
         source_item_id = str(draft.source_item_id or "").strip()

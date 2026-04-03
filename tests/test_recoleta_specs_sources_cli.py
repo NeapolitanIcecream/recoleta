@@ -532,6 +532,67 @@ def test_fetch_hn_drafts_uses_algolia_search_for_requested_window(
     assert "created_at_i<" in observed_queries[0]["numericFilters"]
 
 
+def test_fetch_hn_drafts_keeps_scanning_after_zero_keep_page(
+    respx_mock: respx.Router,
+) -> None:
+    observed_pages: list[str] = []
+
+    def _response(request: httpx.Request) -> httpx.Response:
+        page = request.url.params["page"]
+        observed_pages.append(page)
+        if page == "0":
+            return httpx.Response(
+                200,
+                json={
+                    "hits": [
+                        {
+                            "objectID": "hn-missing-title",
+                            "author": "dang",
+                            "created_at_i": int(
+                                datetime(2025, 1, 20, 11, tzinfo=UTC).timestamp()
+                            ),
+                            "url": "https://example.com/missing-title",
+                        }
+                    ],
+                    "nbPages": 2,
+                    "page": 0,
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "hits": [
+                    {
+                        "objectID": "hn-2",
+                        "title": "Recovered HN Story",
+                        "author": "pg",
+                        "created_at_i": int(
+                            datetime(2025, 1, 20, 10, tzinfo=UTC).timestamp()
+                        ),
+                        "url": "https://example.com/recovered-hn-story",
+                    }
+                ],
+                "nbPages": 2,
+                "page": 1,
+            },
+        )
+
+    respx_mock.get("https://hn.algolia.com/api/v1/search_by_date").mock(
+        side_effect=_response
+    )
+
+    drafts = fetch_hn_drafts(
+        feed_urls=["https://news.ycombinator.com/rss"],
+        max_items_per_feed=5,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert observed_pages == ["0", "1"]
+    assert [draft.source_item_id for draft in drafts] == ["hn-2"]
+    assert drafts[0].canonical_url == "https://example.com/recovered-hn-story"
+
+
 def test_fetch_arxiv_drafts_uses_saved_watermark_when_no_window_requested(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
