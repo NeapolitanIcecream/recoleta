@@ -6,7 +6,7 @@ import hashlib
 import time
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypedDict, Unpack, cast
 
 import orjson
 from loguru import logger
@@ -45,6 +45,18 @@ def _trend_metric_name(name: str) -> str:
     return str(name or "").strip()
 
 
+@dataclass(slots=True, frozen=True)
+class TrendStageRequest:
+    run_id: str
+    granularity: str = "day"
+    anchor_date: date | None = None
+    llm_model: str | None = None
+    backfill: bool = False
+    backfill_mode: str = "missing"
+    debug_pdf: bool = False
+    reuse_existing_corpus: bool = False
+
+
 @dataclass(slots=True)
 class _TrendProjectionState:
     doc_id: int
@@ -57,6 +69,101 @@ class _TrendProjectionState:
     trend_delivery_hash: str
 
 
+@dataclass(slots=True)
+class _TrendStageState:
+    include_debug: bool
+    normalized_granularity: str
+    normalized_backfill_mode: str
+    anchor: date
+    period_start: Any
+    period_end: Any
+    corpus_doc_type: str
+    corpus_granularity: str | None
+    index_stats: dict[str, Any]
+    model: str
+
+
+@dataclass(slots=True)
+class _TrendGenerationArtifacts:
+    payload: Any
+    debug: dict[str, Any] | None
+    empty_corpus: bool
+    corpus_docs_total: int
+    overview_pack_md: str | None = None
+    history_pack_md: str | None = None
+    rag_sources: list[dict[str, str | None]] | None = None
+    ranking_n: int | None = None
+    rep_source_doc_type: str | None = None
+    evolution_max_signals: int | None = None
+    overview_pack_stats: dict[str, Any] | None = None
+    history_pack_stats: dict[str, Any] | None = None
+    evolution_normalization_stats: dict[str, int] | None = None
+    evolution_suppressed_without_history: bool = False
+    plan: trends.TrendGenerationPlan | None = None
+    rep_dropped_non_item_total: int = 0
+    rep_backfilled_total: int = 0
+    rep_failed_clusters_total: int = 0
+
+
+@dataclass(slots=True)
+class _TrendDeliveryStats:
+    markdown_note_path: Path | None = None
+    pdf_generated_total: int = 0
+    pdf_failed_total: int = 0
+    pdf_debug_generated_total: int = 0
+    pdf_debug_failed_total: int = 0
+    pdf_browser_generated_total: int = 0
+    pdf_story_generated_total: int = 0
+    telegram_sent_total: int = 0
+    telegram_failed_total: int = 0
+
+
+@dataclass(slots=True)
+class _TrendProjectionContext:
+    service: TrendStageService
+    request: TrendStageRequest
+    state: _TrendStageState
+    generation: _TrendGenerationArtifacts
+    log: Any
+    record_metric: Any
+    pass_output_failure: dict[str, str] | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class _TrendGenerationInputs:
+    overview_pack_md: str | None
+    history_pack_md: str | None
+    rag_sources: list[dict[str, str | None]] | None
+    ranking_n: int | None
+    rep_source_doc_type: str | None
+    evolution_max_signals: int | None
+
+
+@dataclass(slots=True, frozen=True)
+class _TrendDebugAnnotation:
+    payload: Any
+    overview_pack_md: str | None
+    history_pack_md: str | None
+    overview_pack_stats: dict[str, Any] | None
+    history_pack_stats: dict[str, Any] | None
+    evolution_normalization_stats: dict[str, int]
+    evolution_suppressed_without_history: bool
+
+
+@dataclass(slots=True, frozen=True)
+class _TrendArtifactsRequest:
+    payload: Any
+    debug: dict[str, Any] | None
+    corpus_docs_total: int
+    inputs: _TrendGenerationInputs
+    overview_pack_stats: dict[str, Any] | None
+    history_pack_stats: dict[str, Any] | None
+    evolution_normalization_stats: dict[str, int]
+    evolution_suppressed_without_history: bool
+    plan: trends.TrendGenerationPlan | None
+    rep_stats: dict[str, int]
+
+
 class TrendStageService(Protocol):
     settings: Any
     analyzer: Any
@@ -66,19 +173,6 @@ class TrendStageService(Protocol):
 
     @property
     def repository(self) -> TrendStageRepositoryPort: ...
-
-    def trends(
-        self,
-        *,
-        run_id: str,
-        granularity: str = "day",
-        anchor_date: date | None = None,
-        llm_model: str | None = None,
-        backfill: bool = False,
-        backfill_mode: str = "missing",
-        debug_pdf: bool = False,
-        reuse_existing_corpus: bool = False,
-    ) -> TrendResult: ...
 
     def _telegram_delivery_destination(self) -> str: ...
 
@@ -125,136 +219,235 @@ class TrendStageService(Protocol):
     @staticmethod
     def _classify_exception(exc: BaseException) -> dict[str, Any]: ...
 
+
+class _TrendStageRequestKwargs(TypedDict, total=False):
+    run_id: str
+    granularity: str
+    anchor_date: date | None
+    llm_model: str | None
+    backfill: bool
+    backfill_mode: str
+    debug_pdf: bool
+    reuse_existing_corpus: bool
+
+
 def run_trends_stage(
     service: TrendStageService,
     *,
-    run_id: str,
-    granularity: str = "day",
-    anchor_date: date | None = None,
-    llm_model: str | None = None,
-    backfill: bool = False,
-    backfill_mode: str = "missing",
-    debug_pdf: bool = False,
-    reuse_existing_corpus: bool = False,
+    request: TrendStageRequest | None = None,
+    **legacy_kwargs: Unpack[_TrendStageRequestKwargs],
 ) -> TrendResult:
-    log = logger.bind(module="pipeline.trends", run_id=run_id)
-    metric_namespace = _trend_metric_name("pipeline.trends")
-    started = time.perf_counter()
-    normalized_granularity = str(granularity or "").strip().lower()
-    if normalized_granularity not in {"day", "week", "month"}:
-        raise ValueError("granularity must be one of: day, week, month")
-    anchor = anchor_date or utc_now().date()
+    normalized_request = request or TrendStageRequest(**legacy_kwargs)
+    return _TrendStageRunner(service=service, request=normalized_request).run()
 
-    index_stats: dict[str, Any] = {}
 
-    def record_metric(*, name: str, value: float, unit: str | None = None) -> None:
-        service.repository.record_metric(
-            run_id=run_id,
+class _TrendStageRunner:
+    def __init__(self, *, service: TrendStageService, request: TrendStageRequest) -> None:
+        self.service = service
+        self.request = request
+        self.log = logger.bind(module="pipeline.trends", run_id=request.run_id)
+        self.started = time.perf_counter()
+        self.metric_namespace = _trend_metric_name("pipeline.trends")
+
+    def run(self) -> TrendResult:
+        state: _TrendStageState | None = None
+        try:
+            state = self._prepare_state()
+            self._run_backfill_if_requested(state)
+            generation = self._build_generation_artifacts(state)
+            projection_context = _TrendProjectionContext(
+                service=self.service,
+                request=self.request,
+                state=state,
+                generation=generation,
+                log=self.log,
+                record_metric=self.record_metric,
+            )
+            pass_execution = self._run_pass_execution(
+                state=state,
+                generation=generation,
+                context=projection_context,
+            )
+            trend_synthesis_pass_output_id = pass_execution.pass_output_id
+            trend_projection_state = pass_execution.projection_state
+            if trend_projection_state is None:
+                raise RuntimeError("trend projection state preparation returned empty")
+            delivery_stats = self._deliver_outputs(
+                state=state,
+                generation=generation,
+                projection_state=trend_projection_state,
+                projection_results=pass_execution.projection_results,
+            )
+            self._record_delivery_metrics(delivery_stats)
+            self._record_success_debug_artifact(
+                state=state,
+                generation=generation,
+                doc_id=trend_projection_state.doc_id,
+                pass_output_id=trend_synthesis_pass_output_id,
+            )
+            self._record_tool_metrics(generation.debug)
+            self.record_metric(
+                name="pipeline.trends.duration_ms",
+                value=int((time.perf_counter() - self.started) * 1000),
+                unit="ms",
+            )
+            self.log.info(
+                "Trends completed doc_id={} granularity={} period_start={} period_end={}",
+                trend_projection_state.doc_id,
+                state.normalized_granularity,
+                state.period_start.isoformat(),
+                state.period_end.isoformat(),
+            )
+            return TrendResult(
+                doc_id=int(trend_projection_state.doc_id),
+                granularity=state.normalized_granularity,
+                period_start=state.period_start,
+                period_end=state.period_end,
+                title=str(generation.payload.title),
+                pass_output_id=trend_synthesis_pass_output_id,
+            )
+        except Exception as exc:
+            self._handle_failure(exc=exc, state=state)
+            raise
+
+    def record_metric(self, *, name: str, value: float, unit: str | None = None) -> None:
+        self.service.repository.record_metric(
+            run_id=self.request.run_id,
             name=_trend_metric_name(name),
             value=value,
             unit=unit,
         )
 
-    def record_duration_metric(*, name: str, started_at: float) -> int:
+    def record_duration_metric(self, *, name: str, started_at: float) -> int:
         duration_ms = int((time.perf_counter() - started_at) * 1000)
-        record_metric(name=name, value=duration_ms, unit="ms")
+        self.record_metric(name=name, value=duration_ms, unit="ms")
         return duration_ms
 
-    try:
+    def _prepare_state(self) -> _TrendStageState:
         include_debug = bool(
-            service.settings.write_debug_artifacts
-            and service.settings.artifacts_dir is not None
+            self.service.settings.write_debug_artifacts
+            and self.service.settings.artifacts_dir is not None
         )
-        record_metric(
+        self.record_metric(
             name="pipeline.trends.corpus.reuse_existing",
-            value=1.0 if reuse_existing_corpus else 0.0,
+            value=1.0 if self.request.reuse_existing_corpus else 0.0,
             unit="bool",
         )
+        normalized_granularity = self._normalize_granularity()
+        normalized_backfill_mode = self._normalize_backfill_mode()
+        anchor = self.request.anchor_date or utc_now().date()
+        period_start, period_end, corpus_doc_type, corpus_granularity, index_stats = (
+            self._prepare_period_state(
+                normalized_granularity=normalized_granularity,
+                anchor=anchor,
+            )
+        )
+        model = self.request.llm_model or self.service.settings.llm_model
+        return _TrendStageState(
+            include_debug=include_debug,
+            normalized_granularity=normalized_granularity,
+            normalized_backfill_mode=normalized_backfill_mode,
+            anchor=anchor,
+            period_start=period_start,
+            period_end=period_end,
+            corpus_doc_type=corpus_doc_type,
+            corpus_granularity=corpus_granularity,
+            index_stats=index_stats,
+            model=model,
+        )
 
-        def _record_index_metrics(stats: dict[str, Any], *, failed: bool) -> None:
-            record_metric(
-                name="pipeline.trends.index.items_total",
-                value=float(stats.get("items_total") or 0),
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.index.docs_upserted_total",
-                value=float(stats.get("docs_upserted") or 0),
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.index.docs_deleted_total",
-                value=float(stats.get("docs_deleted") or 0),
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.index.chunks_upserted_total",
-                value=float(stats.get("chunks_upserted") or 0),
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.index.items_filtered_out_total",
-                value=float(stats.get("items_filtered_out") or 0),
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.index.duration_ms",
-                value=float(stats.get("duration_ms") or 0),
-                unit="ms",
-            )
-            record_metric(
-                name="pipeline.trends.index.failed_total",
-                value=1 if failed else 0,
-                unit="count",
-            )
+    def _normalize_granularity(self) -> str:
+        normalized = str(self.request.granularity or "").strip().lower()
+        if normalized not in {"day", "week", "month"}:
+            raise ValueError("granularity must be one of: day, week, month")
+        return normalized
 
-        def _index_items_for_period(*, required: bool) -> dict[str, Any]:
-            try:
-                stats = trends.index_items_as_documents(
-                    repository=cast(Any, service.repository),
-                    run_id=run_id,
-                    period_start=period_start,
-                    period_end=period_end,
-                    min_relevance_score=float(
-                        getattr(service.settings, "min_relevance_score", 0.0) or 0.0
-                    ),
-                )
-            except Exception as exc:
-                failed_stats = {
-                    "items_total": 0,
-                    "docs_upserted": 0,
-                    "chunks_upserted": 0,
-                    "duration_ms": 0,
-                }
-                _record_index_metrics(failed_stats, failed=True)
-                log.warning(
-                    "Trends index failed granularity={} period_start={} period_end={} error_type={} error={}",
-                    normalized_granularity,
-                    period_start.isoformat(),
-                    period_end.isoformat(),
-                    type(exc).__name__,
-                    service._sanitize_error_message(str(exc)),
-                )
-                if required:
-                    raise
-                return failed_stats
-            _record_index_metrics(stats, failed=False)
-            return stats
+    def _normalize_backfill_mode(self) -> str:
+        normalized = str(self.request.backfill_mode or "missing").strip().lower()
+        if normalized not in {"missing", "all"}:
+            raise ValueError("backfill_mode must be one of: missing, all")
+        return normalized
 
-        def _prepare_period_backlog() -> None:
-            service.prepare(
-                run_id=run_id,
+    def _prepare_period_state(
+        self,
+        *,
+        normalized_granularity: str,
+        anchor: date,
+    ) -> tuple[Any, Any, str, str | None, dict[str, Any]]:
+        if normalized_granularity == "day":
+            period_start, period_end = trends.day_period_bounds(anchor)
+            corpus_doc_type = "item"
+            corpus_granularity: str | None = None
+            index_required = True
+        elif normalized_granularity == "week":
+            period_start, period_end = trends.week_period_bounds(anchor)
+            corpus_doc_type = "trend"
+            corpus_granularity = "day"
+            index_required = False
+        else:
+            period_start, period_end = trends.month_period_bounds(anchor)
+            corpus_doc_type = "trend"
+            corpus_granularity = "week"
+            index_required = False
+
+        skipped = bool(self.request.reuse_existing_corpus)
+        self.record_metric(
+            name="pipeline.trends.prepare.skipped_total",
+            value=1 if skipped else 0,
+            unit="count",
+        )
+        self.record_metric(
+            name="pipeline.trends.index.skipped_total",
+            value=1 if skipped else 0,
+            unit="count",
+        )
+        if skipped:
+            index_stats = self._skipped_index_stats()
+        else:
+            self._prepare_period_backlog(
                 period_start=period_start,
                 period_end=period_end,
             )
-            service.analyze(
-                run_id=run_id,
+            index_stats = self._index_items_for_period(
+                normalized_granularity=normalized_granularity,
                 period_start=period_start,
                 period_end=period_end,
+                required=index_required,
             )
+        return period_start, period_end, corpus_doc_type, corpus_granularity, index_stats
 
-        def _skipped_index_stats() -> dict[str, Any]:
-            skipped_stats = {
+    def _prepare_period_backlog(self, *, period_start: Any, period_end: Any) -> None:
+        self.service.prepare(
+            run_id=self.request.run_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        self.service.analyze(
+            run_id=self.request.run_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+
+    def _index_items_for_period(
+        self,
+        *,
+        normalized_granularity: str,
+        period_start: Any,
+        period_end: Any,
+        required: bool,
+    ) -> dict[str, Any]:
+        try:
+            stats = trends.index_items_as_documents(
+                repository=cast(Any, self.service.repository),
+                run_id=self.request.run_id,
+                period_start=period_start,
+                period_end=period_end,
+                min_relevance_score=float(
+                    getattr(self.service.settings, "min_relevance_score", 0.0) or 0.0
+                ),
+            )
+        except Exception as exc:
+            failed_stats = {
                 "items_total": 0,
                 "docs_upserted": 0,
                 "docs_deleted": 0,
@@ -262,1486 +455,1791 @@ def run_trends_stage(
                 "items_filtered_out": 0,
                 "duration_ms": 0,
             }
-            _record_index_metrics(skipped_stats, failed=False)
-            return skipped_stats
+            self._record_index_metrics(failed_stats, failed=True)
+            self.log.warning(
+                "Trends index failed granularity={} period_start={} period_end={} error_type={} error={}",
+                normalized_granularity,
+                period_start.isoformat(),
+                period_end.isoformat(),
+                type(exc).__name__,
+                self.service._sanitize_error_message(str(exc)),
+            )
+            if required:
+                raise
+            return failed_stats
+        self._record_index_metrics(stats, failed=False)
+        return stats
 
-        if normalized_granularity == "day":
-            period_start, period_end = trends.day_period_bounds(anchor)
-            corpus_doc_type = "item"
-            corpus_granularity: str | None = None
-            if reuse_existing_corpus:
-                record_metric(
-                    name="pipeline.trends.prepare.skipped_total",
-                    value=1,
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.index.skipped_total",
-                    value=1,
-                    unit="count",
-                )
-                index_stats = _skipped_index_stats()
-            else:
-                record_metric(
-                    name="pipeline.trends.prepare.skipped_total",
-                    value=0,
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.index.skipped_total",
-                    value=0,
-                    unit="count",
-                )
-                _prepare_period_backlog()
-                index_stats = _index_items_for_period(required=True)
-        elif normalized_granularity == "week":
-            period_start, period_end = trends.week_period_bounds(anchor)
-            corpus_doc_type = "trend"
-            corpus_granularity = "day"
-            if reuse_existing_corpus:
-                record_metric(
-                    name="pipeline.trends.prepare.skipped_total",
-                    value=1,
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.index.skipped_total",
-                    value=1,
-                    unit="count",
-                )
-                index_stats = _skipped_index_stats()
-            else:
-                record_metric(
-                    name="pipeline.trends.prepare.skipped_total",
-                    value=0,
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.index.skipped_total",
-                    value=0,
-                    unit="count",
-                )
-                _prepare_period_backlog()
-                index_stats = _index_items_for_period(required=False)
-        else:
-            period_start, period_end = trends.month_period_bounds(anchor)
-            corpus_doc_type = "trend"
-            corpus_granularity = "week"
-            if reuse_existing_corpus:
-                record_metric(
-                    name="pipeline.trends.prepare.skipped_total",
-                    value=1,
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.index.skipped_total",
-                    value=1,
-                    unit="count",
-                )
-                index_stats = _skipped_index_stats()
-            else:
-                record_metric(
-                    name="pipeline.trends.prepare.skipped_total",
-                    value=0,
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.index.skipped_total",
-                    value=0,
-                    unit="count",
-                )
-                _prepare_period_backlog()
-                index_stats = _index_items_for_period(required=False)
+    def _skipped_index_stats(self) -> dict[str, Any]:
+        stats = {
+            "items_total": 0,
+            "docs_upserted": 0,
+            "docs_deleted": 0,
+            "chunks_upserted": 0,
+            "items_filtered_out": 0,
+            "duration_ms": 0,
+        }
+        self._record_index_metrics(stats, failed=False)
+        return stats
 
-        model = llm_model or service.settings.llm_model
-
-        normalized_backfill_mode = str(backfill_mode or "missing").strip().lower()
-        if normalized_backfill_mode not in {"missing", "all"}:
-            raise ValueError("backfill_mode must be one of: missing, all")
-
-        prev_granularity = cast(Any, trends).prev_level_for_granularity(
-            normalized_granularity
+    def _record_index_metrics(self, stats: dict[str, Any], *, failed: bool) -> None:
+        for metric_name, source_key in (
+            ("pipeline.trends.index.items_total", "items_total"),
+            ("pipeline.trends.index.docs_upserted_total", "docs_upserted"),
+            ("pipeline.trends.index.docs_deleted_total", "docs_deleted"),
+            ("pipeline.trends.index.chunks_upserted_total", "chunks_upserted"),
+            ("pipeline.trends.index.items_filtered_out_total", "items_filtered_out"),
+            ("pipeline.trends.index.duration_ms", "duration_ms"),
+        ):
+            self.record_metric(
+                name=metric_name,
+                value=float(stats.get(source_key) or 0),
+                unit="ms" if metric_name.endswith("duration_ms") else "count",
+            )
+        self.record_metric(
+            name="pipeline.trends.index.failed_total",
+            value=1 if failed else 0,
+            unit="count",
         )
-        if bool(backfill) and prev_granularity in {"day", "week"}:
-            backfill_started = time.perf_counter()
-            backfill_days_total = 0
-            backfill_missing_total = 0
-            backfill_generated_total = 0
-            backfill_skipped_total = 0
-            backfill_failed_total = 0
 
-            if prev_granularity == "day":
-                backfill_days_total = 7
-                week_start_day = period_start.date()
-                for offset in range(backfill_days_total):
-                    day = week_start_day + timedelta(days=offset)
-                    day_start, day_end = trends.day_period_bounds(day)
-                    existing = cast(Any, service.repository).list_documents(
-                        doc_type="trend",
-                        granularity="day",
-                        period_start=day_start,
-                        period_end=day_end,
-                        order_by="event_desc",
-                        offset=0,
-                        limit=1,
-                    )
-                    is_missing = not bool(existing)
-                    if is_missing:
-                        backfill_missing_total += 1
-                    if normalized_backfill_mode == "missing" and not is_missing:
-                        backfill_skipped_total += 1
-                        log.info(
-                            "Trends backfill progress target={} current={} total={} substage={} action={}",
-                            day.isoformat(),
-                            offset + 1,
-                            backfill_days_total,
-                            "probe_existing",
-                            "skip_existing",
-                        )
-                        continue
-                    log.info(
-                        "Trends backfill progress target={} current={} total={} substage={} action={}",
-                        day.isoformat(),
-                        offset + 1,
-                        backfill_days_total,
-                        "generate_day_trend",
-                        "start",
-                    )
-                    try:
-                        _ = run_trends_stage(
-                            service,
-                            run_id=run_id,
-                            granularity="day",
-                            anchor_date=day,
-                            llm_model=model,
-                            backfill=False,
-                            backfill_mode="missing",
-                            reuse_existing_corpus=reuse_existing_corpus,
-                        )
-                        backfill_generated_total += 1
-                        log.info(
-                            "Trends backfill progress target={} current={} total={} substage={} action={}",
-                            day.isoformat(),
-                            offset + 1,
-                            backfill_days_total,
-                            "generate_day_trend",
-                            "done",
-                        )
-                    except Exception as day_exc:  # noqa: BLE001
-                        backfill_failed_total += 1
-                        log.warning(
-                            "Trends week backfill failed day={} error_type={} error={}",
-                            day.isoformat(),
-                            type(day_exc).__name__,
-                            service._sanitize_error_message(str(day_exc)),
-                        )
-            else:
-                cursor = period_start.date()
-                while True:
-                    week_start, week_end = trends.week_period_bounds(cursor)
-                    if week_start >= period_end:
-                        break
-                    backfill_days_total += 1
-                    existing = cast(Any, service.repository).list_documents(
-                        doc_type="trend",
-                        granularity="week",
-                        period_start=week_start,
-                        period_end=week_end,
-                        order_by="event_desc",
-                        offset=0,
-                        limit=1,
-                    )
-                    is_missing = not bool(existing)
-                    if is_missing:
-                        backfill_missing_total += 1
-                    if normalized_backfill_mode == "missing" and not is_missing:
-                        backfill_skipped_total += 1
-                        log.info(
-                            "Trends backfill progress target={} current={} total={} substage={} action={}",
-                            week_start.date().isoformat(),
-                            backfill_days_total,
-                            "-",
-                            "probe_existing",
-                            "skip_existing",
-                        )
-                        cursor = (week_start + timedelta(days=7)).date()
-                        continue
-                    log.info(
-                        "Trends backfill progress target={} current={} total={} substage={} action={}",
-                        week_start.date().isoformat(),
-                        backfill_days_total,
-                        "-",
-                        "generate_week_trend",
-                        "start",
-                    )
-                    try:
-                        _ = run_trends_stage(
-                            service,
-                            run_id=run_id,
-                            granularity="week",
-                            anchor_date=week_start.date(),
-                            llm_model=model,
-                            backfill=False,
-                            backfill_mode="missing",
-                            reuse_existing_corpus=reuse_existing_corpus,
-                        )
-                        backfill_generated_total += 1
-                        log.info(
-                            "Trends backfill progress target={} current={} total={} substage={} action={}",
-                            week_start.date().isoformat(),
-                            backfill_days_total,
-                            "-",
-                            "generate_week_trend",
-                            "done",
-                        )
-                    except Exception as week_exc:  # noqa: BLE001
-                        backfill_failed_total += 1
-                        log.warning(
-                            "Trends month backfill failed week_start={} error_type={} error={}",
-                            week_start.date().isoformat(),
-                            type(week_exc).__name__,
-                            service._sanitize_error_message(str(week_exc)),
-                        )
-                    cursor = (week_start + timedelta(days=7)).date()
+    def _run_backfill_if_requested(self, state: _TrendStageState) -> None:
+        prev_granularity = cast(Any, trends).prev_level_for_granularity(
+            state.normalized_granularity
+        )
+        if not self.request.backfill or prev_granularity not in {"day", "week"}:
+            return
 
-            backfill_duration_ms = int((time.perf_counter() - backfill_started) * 1000)
-            backfill_stats = {
-                "days_total": backfill_days_total,
-                "missing_total": backfill_missing_total,
-                "generated_total": backfill_generated_total,
-                "skipped_total": backfill_skipped_total,
-                "failed_total": backfill_failed_total,
-                "duration_ms": backfill_duration_ms,
-                "mode": normalized_backfill_mode,
-            }
-            log_label = "week" if prev_granularity == "day" else "month"
-            log.info("Trends {} backfill done stats={}", log_label, backfill_stats)
-            record_metric(
-                name="pipeline.trends.backfill.days_total",
-                value=backfill_days_total,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.backfill.missing_total",
-                value=backfill_missing_total,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.backfill.generated_total",
-                value=backfill_generated_total,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.backfill.skipped_total",
-                value=backfill_skipped_total,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.backfill.failed_total",
-                value=backfill_failed_total,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.backfill.duration_ms",
-                value=backfill_duration_ms,
-                unit="ms",
-            )
-
-        corpus_docs_total = 0
-        if corpus_doc_type == "item" and not reuse_existing_corpus:
-            corpus_docs_total = int(index_stats.get("docs_upserted") or 0)
+        backfill_started = time.perf_counter()
+        if prev_granularity == "day":
+            stats = self._run_day_backfill(state)
+            log_label = "week"
         else:
-            probe = cast(Any, service.repository).list_documents(
-                doc_type=corpus_doc_type,
-                granularity=corpus_granularity if corpus_doc_type == "trend" else None,
-                period_start=period_start,
-                period_end=period_end,
-                order_by="event_desc",
-                offset=0,
-                limit=1,
+            stats = self._run_week_backfill(state)
+            log_label = "month"
+        stats["duration_ms"] = int((time.perf_counter() - backfill_started) * 1000)
+        stats["mode"] = state.normalized_backfill_mode
+        self.log.info("Trends {} backfill done stats={}", log_label, stats)
+        for metric_name, value in (
+            ("pipeline.trends.backfill.days_total", stats["days_total"]),
+            ("pipeline.trends.backfill.missing_total", stats["missing_total"]),
+            ("pipeline.trends.backfill.generated_total", stats["generated_total"]),
+            ("pipeline.trends.backfill.skipped_total", stats["skipped_total"]),
+            ("pipeline.trends.backfill.failed_total", stats["failed_total"]),
+            ("pipeline.trends.backfill.duration_ms", stats["duration_ms"]),
+        ):
+            self.record_metric(
+                name=metric_name,
+                value=value,
+                unit="ms" if metric_name.endswith("duration_ms") else "count",
             )
-            corpus_docs_total = 1 if probe else 0
 
-        record_metric(
+    def _run_day_backfill(self, state: _TrendStageState) -> dict[str, int]:
+        stats = {
+            "days_total": 7,
+            "missing_total": 0,
+            "generated_total": 0,
+            "skipped_total": 0,
+            "failed_total": 0,
+        }
+        week_start_day = state.period_start.date()
+        for offset in range(stats["days_total"]):
+            day = week_start_day + timedelta(days=offset)
+            day_start, day_end = trends.day_period_bounds(day)
+            is_missing = self._trend_missing(
+                granularity="day",
+                period_start=day_start,
+                period_end=day_end,
+            )
+            if is_missing:
+                stats["missing_total"] += 1
+            if state.normalized_backfill_mode == "missing" and not is_missing:
+                stats["skipped_total"] += 1
+                self.log.info(
+                    "Trends backfill progress target={} current={} total={} substage={} action={}",
+                    day.isoformat(),
+                    offset + 1,
+                    stats["days_total"],
+                    "probe_existing",
+                    "skip_existing",
+                )
+                continue
+            self.log.info(
+                "Trends backfill progress target={} current={} total={} substage={} action={}",
+                day.isoformat(),
+                offset + 1,
+                stats["days_total"],
+                "generate_day_trend",
+                "start",
+            )
+            try:
+                self._run_child_request(
+                    granularity="day",
+                    anchor_date=day,
+                    model=state.model,
+                )
+                stats["generated_total"] += 1
+                self.log.info(
+                    "Trends backfill progress target={} current={} total={} substage={} action={}",
+                    day.isoformat(),
+                    offset + 1,
+                    stats["days_total"],
+                    "generate_day_trend",
+                    "done",
+                )
+            except Exception as exc:  # noqa: BLE001
+                stats["failed_total"] += 1
+                self.log.warning(
+                    "Trends week backfill failed day={} error_type={} error={}",
+                    day.isoformat(),
+                    type(exc).__name__,
+                    self.service._sanitize_error_message(str(exc)),
+                )
+        return stats
+
+    def _run_week_backfill(self, state: _TrendStageState) -> dict[str, int]:
+        stats = {
+            "days_total": 0,
+            "missing_total": 0,
+            "generated_total": 0,
+            "skipped_total": 0,
+            "failed_total": 0,
+        }
+        cursor = state.period_start.date()
+        while True:
+            week_start, week_end = trends.week_period_bounds(cursor)
+            if week_start >= state.period_end:
+                break
+            stats["days_total"] += 1
+            is_missing = self._trend_missing(
+                granularity="week",
+                period_start=week_start,
+                period_end=week_end,
+            )
+            if is_missing:
+                stats["missing_total"] += 1
+            if state.normalized_backfill_mode == "missing" and not is_missing:
+                stats["skipped_total"] += 1
+                self.log.info(
+                    "Trends backfill progress target={} current={} total={} substage={} action={}",
+                    week_start.date().isoformat(),
+                    stats["days_total"],
+                    "-",
+                    "probe_existing",
+                    "skip_existing",
+                )
+                cursor = (week_start + timedelta(days=7)).date()
+                continue
+            self.log.info(
+                "Trends backfill progress target={} current={} total={} substage={} action={}",
+                week_start.date().isoformat(),
+                stats["days_total"],
+                "-",
+                "generate_week_trend",
+                "start",
+            )
+            try:
+                self._run_child_request(
+                    granularity="week",
+                    anchor_date=week_start.date(),
+                    model=state.model,
+                )
+                stats["generated_total"] += 1
+                self.log.info(
+                    "Trends backfill progress target={} current={} total={} substage={} action={}",
+                    week_start.date().isoformat(),
+                    stats["days_total"],
+                    "-",
+                    "generate_week_trend",
+                    "done",
+                )
+            except Exception as exc:  # noqa: BLE001
+                stats["failed_total"] += 1
+                self.log.warning(
+                    "Trends month backfill failed week_start={} error_type={} error={}",
+                    week_start.date().isoformat(),
+                    type(exc).__name__,
+                    self.service._sanitize_error_message(str(exc)),
+                )
+            cursor = (week_start + timedelta(days=7)).date()
+        return stats
+
+    def _run_child_request(
+        self,
+        *,
+        granularity: str,
+        anchor_date: date,
+        model: str,
+    ) -> None:
+        run_trends_stage(
+            self.service,
+            request=TrendStageRequest(
+                run_id=self.request.run_id,
+                granularity=granularity,
+                anchor_date=anchor_date,
+                llm_model=model,
+                backfill=False,
+                backfill_mode="missing",
+                reuse_existing_corpus=self.request.reuse_existing_corpus,
+            ),
+        )
+
+    def _trend_missing(
+        self,
+        *,
+        granularity: str,
+        period_start: Any,
+        period_end: Any,
+    ) -> bool:
+        existing = cast(Any, self.service.repository).list_documents(
+            doc_type="trend",
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            order_by="event_desc",
+            offset=0,
+            limit=1,
+        )
+        return not bool(existing)
+
+    def _build_generation_artifacts(
+        self,
+        state: _TrendStageState,
+    ) -> _TrendGenerationArtifacts:
+        corpus_docs_total = self._corpus_docs_total(state)
+        self.record_metric(
             name="pipeline.trends.corpus.docs_total",
             value=corpus_docs_total,
             unit="count",
         )
-        empty_corpus = corpus_docs_total <= 0
-        overview_pack_md: str | None = None
-        history_pack_md: str | None = None
-        rag_sources: list[dict[str, str | None]] | None = None
-        ranking_n: int | None = None
-        rep_source_doc_type: str | None = None
-        evolution_max_signals: int | None = None
-        overview_pack_stats: dict[str, Any] | None = None
-        history_pack_stats: dict[str, Any] | None = None
+        if corpus_docs_total <= 0:
+            return self._build_empty_generation(state, corpus_docs_total)
+        return self._build_non_empty_generation(state, corpus_docs_total)
+
+    def _corpus_docs_total(self, state: _TrendStageState) -> int:
+        if state.corpus_doc_type == "item" and not self.request.reuse_existing_corpus:
+            return int(state.index_stats.get("docs_upserted") or 0)
+        probe = cast(Any, self.service.repository).list_documents(
+            doc_type=state.corpus_doc_type,
+            granularity=state.corpus_granularity if state.corpus_doc_type == "trend" else None,
+            period_start=state.period_start,
+            period_end=state.period_end,
+            order_by="event_desc",
+            offset=0,
+            limit=1,
+        )
+        return 1 if probe else 0
+
+    def _build_empty_generation(
+        self,
+        state: _TrendStageState,
+        corpus_docs_total: int,
+    ) -> _TrendGenerationArtifacts:
+        self.log.info(
+            "Trends corpus is empty; skipping LLM invocation granularity={} period_start={} period_end={}",
+            state.normalized_granularity,
+            state.period_start.isoformat(),
+            state.period_end.isoformat(),
+        )
+        self.record_metric(
+            name="pipeline.trends.corpus.empty",
+            value=1.0,
+            unit="bool",
+        )
+        payload = trends.build_empty_trend_payload(
+            granularity=state.normalized_granularity,
+            period_start=state.period_start,
+            period_end=state.period_end,
+            output_language=self.service.settings.llm_output_language,
+        )
+        debug = {"empty_corpus": True} if state.include_debug else None
+        for metric_name, value, unit in (
+            ("pipeline.trends.llm_requests_total", 0, "count"),
+            ("pipeline.trends.llm_input_tokens_total", 0, "count"),
+            ("pipeline.trends.llm_output_tokens_total", 0, "count"),
+            ("pipeline.trends.estimated_cost_usd", 0.0, "usd"),
+        ):
+            self.record_metric(name=metric_name, value=value, unit=unit)
+        return _TrendGenerationArtifacts(
+            payload=payload,
+            debug=debug,
+            empty_corpus=True,
+            corpus_docs_total=corpus_docs_total,
+            evolution_normalization_stats={
+                "history_windows_normalized_total": 0,
+                "history_windows_dropped_total": 0,
+                "signals_dropped_total": 0,
+            },
+        )
+
+    def _build_non_empty_generation(
+        self,
+        state: _TrendStageState,
+        corpus_docs_total: int,
+    ) -> _TrendGenerationArtifacts:
+        self.record_metric(
+            name="pipeline.trends.corpus.empty",
+            value=0.0,
+            unit="bool",
+        )
+        plan = self._build_generation_plan(state)
+        (
+            overview_pack_md,
+            overview_pack_stats,
+            rag_sources,
+            ranking_n,
+            rep_source_doc_type,
+        ) = self._build_overview_pack(state, plan)
+        history_pack_md, history_pack_stats, evolution_max_signals = (
+            self._build_history_pack(state, plan)
+        )
+        generation_inputs = _TrendGenerationInputs(
+            overview_pack_md=overview_pack_md,
+            history_pack_md=history_pack_md,
+            rag_sources=rag_sources,
+            ranking_n=ranking_n,
+            rep_source_doc_type=rep_source_doc_type,
+            evolution_max_signals=evolution_max_signals,
+        )
+        payload, debug = self._generate_trend_payload(
+            state=state,
+            corpus_docs_total=corpus_docs_total,
+            inputs=generation_inputs,
+        )
+
+        evolution_normalization_stats, evolution_suppressed_without_history = (
+            self._normalize_evolution(
+                state=state,
+                payload=payload,
+                plan=plan,
+                history_pack_stats=history_pack_stats,
+            )
+        )
+        self._record_generation_debug(
+            debug=debug,
+            annotation=_TrendDebugAnnotation(
+                payload=payload,
+                overview_pack_md=overview_pack_md,
+                history_pack_md=history_pack_md,
+                overview_pack_stats=overview_pack_stats,
+                history_pack_stats=history_pack_stats,
+                evolution_normalization_stats=evolution_normalization_stats,
+                evolution_suppressed_without_history=evolution_suppressed_without_history,
+            ),
+        )
+        self._record_evolution_metrics(
+            payload=payload,
+            evolution_normalization_stats=evolution_normalization_stats,
+            evolution_suppressed_without_history=evolution_suppressed_without_history,
+        )
+        rep_stats = self._record_rep_enforcement(payload=payload, state=state)
+        return self._generation_artifacts_from_payload(
+            _TrendArtifactsRequest(
+                payload=payload,
+                debug=debug,
+                corpus_docs_total=corpus_docs_total,
+                inputs=generation_inputs,
+                overview_pack_stats=overview_pack_stats,
+                history_pack_stats=history_pack_stats,
+                evolution_normalization_stats=evolution_normalization_stats,
+                evolution_suppressed_without_history=evolution_suppressed_without_history,
+                plan=plan,
+                rep_stats=rep_stats,
+            )
+        )
+
+    def _record_generation_debug(
+        self,
+        *,
+        debug: dict[str, Any] | None,
+        annotation: _TrendDebugAnnotation,
+    ) -> None:
+        if not isinstance(debug, dict):
+            return
+        self._annotate_trend_debug(debug=debug, annotation=annotation)
+        self._record_debug_usage_metrics(debug)
+
+    def _record_rep_enforcement(
+        self,
+        *,
+        payload: Any,
+        state: _TrendStageState,
+    ) -> dict[str, int]:
+        rep_stats = self._enforce_representative_chunks(payload=payload, state=state)
+        self._record_rep_metrics(rep_stats)
+        return rep_stats
+
+    def _generate_trend_payload(
+        self,
+        *,
+        state: _TrendStageState,
+        corpus_docs_total: int,
+        inputs: _TrendGenerationInputs,
+    ) -> tuple[Any, dict[str, Any] | None]:
+        self.log.info(
+            "Trends synthesis starting granularity={} corpus_doc_type={} corpus_docs_total={} overview_pack_chars={} history_pack_chars={}",
+            state.normalized_granularity,
+            state.corpus_doc_type,
+            corpus_docs_total,
+            len(str(inputs.overview_pack_md or "")),
+            len(str(inputs.history_pack_md or "")),
+        )
+        generate_started = time.perf_counter()
+        payload, debug = trends.generate_trend_via_tools(
+            repository=cast(Any, self.service.repository),
+            run_id=self.request.run_id,
+            llm_model=state.model,
+            output_language=self.service.settings.llm_output_language,
+            embedding_model=self.service.settings.trends_embedding_model,
+            embedding_dimensions=self.service.settings.trends_embedding_dimensions,
+            embedding_batch_max_inputs=self.service.settings.trends_embedding_batch_max_inputs,
+            embedding_batch_max_chars=self.service.settings.trends_embedding_batch_max_chars,
+            embedding_failure_mode=getattr(
+                self.service.settings,
+                "trends_embedding_failure_mode",
+                "continue",
+            ),
+            embedding_max_errors=int(
+                getattr(self.service.settings, "trends_embedding_max_errors", 0) or 0
+            ),
+            lancedb_dir=self.service.settings.rag_lancedb_dir,
+            granularity=state.normalized_granularity,
+            period_start=state.period_start,
+            period_end=state.period_end,
+            corpus_doc_type=state.corpus_doc_type,
+            corpus_granularity=state.corpus_granularity,
+            overview_pack_md=inputs.overview_pack_md,
+            history_pack_md=inputs.history_pack_md,
+            rag_sources=inputs.rag_sources,
+            ranking_n=inputs.ranking_n,
+            rep_source_doc_type=inputs.rep_source_doc_type,
+            evolution_max_signals=inputs.evolution_max_signals,
+            include_debug=state.include_debug,
+            metric_namespace=self.metric_namespace,
+            llm_connection=self.service._llm_connection,
+        )
+        generate_duration_ms = self.record_duration_metric(
+            name="pipeline.trends.generate.duration_ms",
+            started_at=generate_started,
+        )
+        self.log.info(
+            "Trends synthesis completed granularity={} duration_ms={} tool_calls_total={}",
+            state.normalized_granularity,
+            generate_duration_ms,
+            int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0,
+        )
+        return payload, debug if isinstance(debug, dict) else None
+
+    def _annotate_trend_debug(
+        self,
+        *,
+        debug: dict[str, Any],
+        annotation: _TrendDebugAnnotation,
+    ) -> None:
+        debug["context_packs"] = {
+            "overview_pack_md": annotation.overview_pack_md,
+            "history_pack_md": annotation.history_pack_md,
+        }
+        if annotation.overview_pack_stats is not None:
+            debug["overview_pack_stats"] = annotation.overview_pack_stats
+        if annotation.history_pack_stats is not None:
+            debug["history_pack_stats"] = annotation.history_pack_stats
+        debug["evolution"] = {
+            "present": annotation.payload.evolution is not None,
+            "signals_total": len(annotation.payload.evolution.signals or [])
+            if annotation.payload.evolution is not None
+            else 0,
+            "suppressed_without_history": annotation.evolution_suppressed_without_history,
+            "normalization": annotation.evolution_normalization_stats,
+        }
+
+    def _generation_artifacts_from_payload(
+        self,
+        request: _TrendArtifactsRequest,
+    ) -> _TrendGenerationArtifacts:
+        return _TrendGenerationArtifacts(
+            payload=request.payload,
+            debug=request.debug,
+            empty_corpus=False,
+            corpus_docs_total=request.corpus_docs_total,
+            overview_pack_md=request.inputs.overview_pack_md,
+            history_pack_md=request.inputs.history_pack_md,
+            rag_sources=request.inputs.rag_sources,
+            ranking_n=request.inputs.ranking_n,
+            rep_source_doc_type=request.inputs.rep_source_doc_type,
+            evolution_max_signals=request.inputs.evolution_max_signals,
+            overview_pack_stats=request.overview_pack_stats,
+            history_pack_stats=request.history_pack_stats,
+            evolution_normalization_stats=request.evolution_normalization_stats,
+            evolution_suppressed_without_history=request.evolution_suppressed_without_history,
+            plan=request.plan,
+            rep_dropped_non_item_total=int(request.rep_stats["dropped_non_item_total"]),
+            rep_backfilled_total=int(request.rep_stats["backfilled_total"]),
+            rep_failed_clusters_total=int(request.rep_stats["failed_clusters_total"]),
+        )
+
+    def _build_generation_plan(
+        self,
+        state: _TrendStageState,
+    ) -> trends.TrendGenerationPlan | None:
+        self_similar_enabled = bool(
+            getattr(self.service.settings, "trends_self_similar_enabled", False)
+        )
+        peer_history_enabled = bool(
+            getattr(self.service.settings, "trends_peer_history_enabled", False)
+        )
+        if not self_similar_enabled and not peer_history_enabled:
+            return None
+        return trends.TrendGenerationPlan(
+            target_granularity=state.normalized_granularity,
+            period_start=state.period_start,
+            period_end=state.period_end,
+            peer_history_window_count=(
+                int(
+                    getattr(
+                        self.service.settings,
+                        "trends_peer_history_window_count",
+                        0,
+                    )
+                    or 0
+                )
+                if peer_history_enabled
+                else 0
+            ),
+        )
+
+    def _build_overview_pack(
+        self,
+        state: _TrendStageState,
+        plan: trends.TrendGenerationPlan | None,
+    ) -> tuple[
+        str | None,
+        dict[str, Any] | None,
+        list[dict[str, str | None]] | None,
+        int | None,
+        str | None,
+    ]:
+        if not bool(getattr(self.service.settings, "trends_self_similar_enabled", False)):
+            return None, None, None, None, None
+        if plan is None:
+            return None, None, None, None, None
+        overview_pack_started = time.perf_counter()
+        self.log.info(
+            "Trends overview pack building granularity={} strategy={}",
+            state.normalized_granularity,
+            str(getattr(plan, "overview_pack_strategy", "") or "").strip() or "-",
+        )
+        overview_pack_md, pack_stats = trends.build_overview_pack_md(
+            cast(Any, self.service.repository),
+            plan,
+            overview_pack_max_chars=int(
+                getattr(self.service.settings, "trends_overview_pack_max_chars", 8000)
+                or 8000
+            ),
+            item_overview_top_k=int(
+                getattr(self.service.settings, "trends_item_overview_top_k", 20) or 20
+            ),
+            item_overview_item_max_chars=int(
+                getattr(
+                    self.service.settings,
+                    "trends_item_overview_item_max_chars",
+                    500,
+                )
+                or 500
+            ),
+            min_relevance_score=float(
+                getattr(self.service.settings, "min_relevance_score", 0.0) or 0.0
+            ),
+        )
+        overview_pack_duration_ms = self.record_duration_metric(
+            name="pipeline.trends.overview_pack.duration_ms",
+            started_at=overview_pack_started,
+        )
+        self.log.info(
+            "Trends overview pack built granularity={} duration_ms={} chars={} truncated={}",
+            state.normalized_granularity,
+            overview_pack_duration_ms,
+            len(str(overview_pack_md or "")),
+            bool(isinstance(pack_stats, dict) and pack_stats.get("truncated")),
+        )
+        if isinstance(pack_stats, dict) and bool(pack_stats.get("truncated")):
+            self.record_metric(
+                name="pipeline.trends.overview_pack.truncated_total",
+                value=1,
+                unit="count",
+            )
+        rag_sources = list(getattr(plan, "rag_sources", []) or [])
+        ranking_n = int(getattr(self.service.settings, "trends_ranking_n", 10) or 10)
+        rep_source_doc_type = str(
+            getattr(plan, "rep_source_doc_type", "item") or "item"
+        ).strip()
+        return overview_pack_md, pack_stats, rag_sources, ranking_n, rep_source_doc_type
+
+    def _build_history_pack(
+        self,
+        state: _TrendStageState,
+        plan: trends.TrendGenerationPlan | None,
+    ) -> tuple[str | None, dict[str, Any] | None, int | None]:
+        if not bool(getattr(self.service.settings, "trends_peer_history_enabled", False)):
+            return None, None, None
+        if plan is None:
+            return None, None, None
+        history_pack_started = time.perf_counter()
+        self.log.info(
+            "Trends history pack building granularity={} window_count={}",
+            state.normalized_granularity,
+            int(getattr(plan, "peer_history_window_count", 0) or 0),
+        )
+        history_pack_md, history_pack_stats = trends.build_history_pack_md(
+            cast(Any, self.service.repository),
+            plan,
+            history_pack_max_chars=int(
+                getattr(
+                    self.service.settings,
+                    "trends_peer_history_max_chars",
+                    6000,
+                )
+                or 6000
+            ),
+        )
+        history_pack_duration_ms = self.record_duration_metric(
+            name="pipeline.trends.history.pack.duration_ms",
+            started_at=history_pack_started,
+        )
+        self.log.info(
+            "Trends history pack built granularity={} duration_ms={} chars={} available_windows={} missing_windows={}",
+            state.normalized_granularity,
+            history_pack_duration_ms,
+            len(str(history_pack_md or "")),
+            int(history_pack_stats.get("available_windows") or 0),
+            int(history_pack_stats.get("missing_windows") or 0),
+        )
+        self.record_metric(
+            name="pipeline.trends.history.windows_requested",
+            value=float(history_pack_stats.get("requested_windows") or 0),
+            unit="count",
+        )
+        self.record_metric(
+            name="pipeline.trends.history.windows_available",
+            value=float(history_pack_stats.get("available_windows") or 0),
+            unit="count",
+        )
+        self.record_metric(
+            name="pipeline.trends.history.windows_missing",
+            value=float(history_pack_stats.get("missing_windows") or 0),
+            unit="count",
+        )
+        if bool(history_pack_stats.get("truncated")):
+            self.record_metric(
+                name="pipeline.trends.history.pack.truncated_total",
+                value=1,
+                unit="count",
+            )
+        evolution_max_signals = int(
+            getattr(self.service.settings, "trends_evolution_max_signals", 5) or 5
+        )
+        return history_pack_md, history_pack_stats, evolution_max_signals
+
+    def _normalize_evolution(
+        self,
+        *,
+        state: _TrendStageState,
+        payload: Any,
+        plan: trends.TrendGenerationPlan | None,
+        history_pack_stats: dict[str, Any] | None,
+    ) -> tuple[dict[str, int], bool]:
         evolution_normalization_stats = {
             "history_windows_normalized_total": 0,
             "history_windows_dropped_total": 0,
             "signals_dropped_total": 0,
         }
+        if payload.evolution is not None and plan is not None:
+            available_window_ids = set()
+            if isinstance(history_pack_stats, dict):
+                available_window_ids = {
+                    str(window_id).strip()
+                    for window_id in (history_pack_stats.get("available_window_ids") or [])
+                    if str(window_id).strip()
+                }
+            payload.evolution, evolution_normalization_stats = (
+                trends.normalize_trend_evolution(
+                    payload.evolution,
+                    granularity=state.normalized_granularity,
+                    period_start=state.period_start,
+                    history_windows=list(getattr(plan, "peer_history_windows", []) or []),
+                    available_window_ids=available_window_ids,
+                )
+            )
+        history_windows_available = int(
+            history_pack_stats.get("available_windows") or 0
+        ) if isinstance(history_pack_stats, dict) else 0
         evolution_suppressed_without_history = False
-        plan: trends.TrendGenerationPlan | None = None
+        if payload.evolution is not None and history_windows_available <= 0:
+            payload.evolution = None
+            evolution_suppressed_without_history = True
+        return evolution_normalization_stats, evolution_suppressed_without_history
 
-        if empty_corpus:
-            log.info(
-                "Trends corpus is empty; skipping LLM invocation granularity={} period_start={} period_end={}",
-                normalized_granularity,
-                period_start.isoformat(),
-                period_end.isoformat(),
+    def _record_debug_usage_metrics(self, debug: dict[str, Any]) -> None:
+        usage = debug.get("usage")
+        if isinstance(usage, dict):
+            if isinstance(usage.get("requests"), (int, float)):
+                self.record_metric(
+                    name="pipeline.trends.llm_requests_total",
+                    value=float(usage["requests"]),
+                    unit="count",
+                )
+            if isinstance(usage.get("input_tokens"), (int, float)):
+                self.record_metric(
+                    name="pipeline.trends.llm_input_tokens_total",
+                    value=float(usage["input_tokens"]),
+                    unit="count",
+                )
+            if isinstance(usage.get("output_tokens"), (int, float)):
+                self.record_metric(
+                    name="pipeline.trends.llm_output_tokens_total",
+                    value=float(usage["output_tokens"]),
+                    unit="count",
+                )
+        if isinstance(debug.get("prompt_chars"), (int, float)):
+            self.record_metric(
+                name="pipeline.trends.prompt_chars",
+                value=float(debug["prompt_chars"]),
+                unit="chars",
             )
-            record_metric(
-                name="pipeline.trends.corpus.empty",
-                value=1.0,
-                unit="bool",
+        if isinstance(debug.get("overview_pack_chars"), (int, float)):
+            self.record_metric(
+                name="pipeline.trends.overview_pack.chars",
+                value=float(debug["overview_pack_chars"]),
+                unit="chars",
             )
-            payload = trends.build_empty_trend_payload(
-                granularity=normalized_granularity,
-                period_start=period_start,
-                period_end=period_end,
-                output_language=service.settings.llm_output_language,
+        if isinstance(debug.get("history_pack_chars"), (int, float)):
+            self.record_metric(
+                name="pipeline.trends.history.pack.chars",
+                value=float(debug["history_pack_chars"]),
+                unit="chars",
             )
-            debug = {"empty_corpus": True} if include_debug else None
-            record_metric(
-                name="pipeline.trends.llm_requests_total",
-                value=0,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.llm_input_tokens_total",
-                value=0,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.llm_output_tokens_total",
-                value=0,
-                unit="count",
-            )
-            record_metric(
+        if isinstance(debug.get("estimated_cost_usd"), (int, float)):
+            self.record_metric(
                 name="pipeline.trends.estimated_cost_usd",
-                value=0.0,
+                value=float(debug["estimated_cost_usd"]),
                 unit="usd",
             )
         else:
-            record_metric(
-                name="pipeline.trends.corpus.empty",
-                value=0.0,
-                unit="bool",
-            )
-            self_similar_enabled = bool(
-                getattr(service.settings, "trends_self_similar_enabled", False)
-            )
-            peer_history_enabled = bool(
-                getattr(service.settings, "trends_peer_history_enabled", False)
-            )
-            if self_similar_enabled or peer_history_enabled:
-                plan = trends.TrendGenerationPlan(
-                    target_granularity=normalized_granularity,
-                    period_start=period_start,
-                    period_end=period_end,
-                    peer_history_window_count=(
-                        int(
-                            getattr(
-                                service.settings,
-                                "trends_peer_history_window_count",
-                                0,
-                            )
-                            or 0
-                        )
-                        if peer_history_enabled
-                        else 0
-                    ),
-                )
-            if self_similar_enabled and plan is not None:
-                overview_pack_started = time.perf_counter()
-                log.info(
-                    "Trends overview pack building granularity={} strategy={}",
-                    normalized_granularity,
-                    str(getattr(plan, "overview_pack_strategy", "") or "").strip()
-                    or "-",
-                )
-                overview_pack_md, pack_stats = trends.build_overview_pack_md(
-                    cast(Any, service.repository),
-                    plan,
-                    overview_pack_max_chars=int(
-                        getattr(
-                            service.settings, "trends_overview_pack_max_chars", 8000
-                        )
-                        or 8000
-                    ),
-                    item_overview_top_k=int(
-                        getattr(service.settings, "trends_item_overview_top_k", 20)
-                        or 20
-                    ),
-                    item_overview_item_max_chars=int(
-                        getattr(
-                            service.settings, "trends_item_overview_item_max_chars", 500
-                        )
-                        or 500
-                    ),
-                    min_relevance_score=float(
-                        getattr(service.settings, "min_relevance_score", 0.0) or 0.0
-                    ),
-                )
-                overview_pack_duration_ms = record_duration_metric(
-                    name="pipeline.trends.overview_pack.duration_ms",
-                    started_at=overview_pack_started,
-                )
-                overview_pack_stats = pack_stats
-                rag_sources = list(getattr(plan, "rag_sources", []) or [])
-                ranking_n = int(getattr(service.settings, "trends_ranking_n", 10) or 10)
-                rep_source_doc_type = str(
-                    getattr(plan, "rep_source_doc_type", "item") or "item"
-                ).strip()
-                log.info(
-                    "Trends overview pack built granularity={} duration_ms={} chars={} truncated={}",
-                    normalized_granularity,
-                    overview_pack_duration_ms,
-                    len(str(overview_pack_md or "")),
-                    bool(isinstance(pack_stats, dict) and pack_stats.get("truncated")),
-                )
-                if isinstance(pack_stats, dict) and bool(pack_stats.get("truncated")):
-                    record_metric(
-                        name="pipeline.trends.overview_pack.truncated_total",
-                        value=1,
-                        unit="count",
-                    )
-            if peer_history_enabled and plan is not None:
-                history_pack_started = time.perf_counter()
-                log.info(
-                    "Trends history pack building granularity={} window_count={}",
-                    normalized_granularity,
-                    int(getattr(plan, "peer_history_window_count", 0) or 0),
-                )
-                history_pack_md, history_pack_stats = trends.build_history_pack_md(
-                    cast(Any, service.repository),
-                    plan,
-                    history_pack_max_chars=int(
-                        getattr(
-                            service.settings,
-                            "trends_peer_history_max_chars",
-                            6000,
-                        )
-                        or 6000
-                    ),
-                )
-                history_pack_duration_ms = record_duration_metric(
-                    name="pipeline.trends.history.pack.duration_ms",
-                    started_at=history_pack_started,
-                )
-                log.info(
-                    "Trends history pack built granularity={} duration_ms={} chars={} available_windows={} missing_windows={}",
-                    normalized_granularity,
-                    history_pack_duration_ms,
-                    len(str(history_pack_md or "")),
-                    int(history_pack_stats.get("available_windows") or 0),
-                    int(history_pack_stats.get("missing_windows") or 0),
-                )
-                record_metric(
-                    name="pipeline.trends.history.windows_requested",
-                    value=float(history_pack_stats.get("requested_windows") or 0),
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.history.windows_available",
-                    value=float(history_pack_stats.get("available_windows") or 0),
-                    unit="count",
-                )
-                record_metric(
-                    name="pipeline.trends.history.windows_missing",
-                    value=float(history_pack_stats.get("missing_windows") or 0),
-                    unit="count",
-                )
-                if bool(history_pack_stats.get("truncated")):
-                    record_metric(
-                        name="pipeline.trends.history.pack.truncated_total",
-                        value=1,
-                        unit="count",
-                )
-                evolution_max_signals = int(
-                    getattr(service.settings, "trends_evolution_max_signals", 5) or 5
-                )
-            log.info(
-                "Trends synthesis starting granularity={} corpus_doc_type={} corpus_docs_total={} overview_pack_chars={} history_pack_chars={}",
-                normalized_granularity,
-                corpus_doc_type,
-                corpus_docs_total,
-                len(str(overview_pack_md or "")),
-                len(str(history_pack_md or "")),
-            )
-            generate_started = time.perf_counter()
-            payload, debug = trends.generate_trend_via_tools(
-                repository=cast(Any, service.repository),
-                run_id=run_id,
-                llm_model=model,
-                output_language=service.settings.llm_output_language,
-                embedding_model=service.settings.trends_embedding_model,
-                embedding_dimensions=service.settings.trends_embedding_dimensions,
-                embedding_batch_max_inputs=service.settings.trends_embedding_batch_max_inputs,
-                embedding_batch_max_chars=service.settings.trends_embedding_batch_max_chars,
-                embedding_failure_mode=getattr(
-                    service.settings, "trends_embedding_failure_mode", "continue"
-                ),
-                embedding_max_errors=int(
-                    getattr(service.settings, "trends_embedding_max_errors", 0) or 0
-                ),
-                lancedb_dir=service.settings.rag_lancedb_dir,
-                granularity=normalized_granularity,
-                period_start=period_start,
-                period_end=period_end,
-                corpus_doc_type=corpus_doc_type,
-                corpus_granularity=corpus_granularity,
-                overview_pack_md=overview_pack_md,
-                history_pack_md=history_pack_md,
-                rag_sources=rag_sources,
-                ranking_n=ranking_n,
-                rep_source_doc_type=rep_source_doc_type,
-                evolution_max_signals=evolution_max_signals,
-                include_debug=include_debug,
-                metric_namespace=metric_namespace,
-                llm_connection=service._llm_connection,
-            )
-            generate_duration_ms = record_duration_metric(
-                name="pipeline.trends.generate.duration_ms",
-                started_at=generate_started,
-            )
-            log.info(
-                "Trends synthesis completed granularity={} duration_ms={} tool_calls_total={}",
-                normalized_granularity,
-                generate_duration_ms,
-                int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0,
-            )
-            if payload.evolution is not None and plan is not None:
-                available_window_ids = set()
-                if isinstance(history_pack_stats, dict):
-                    available_window_ids = {
-                        str(window_id).strip()
-                        for window_id in (
-                            history_pack_stats.get("available_window_ids") or []
-                        )
-                        if str(window_id).strip()
-                    }
-                payload.evolution, evolution_normalization_stats = (
-                    trends.normalize_trend_evolution(
-                        payload.evolution,
-                        granularity=normalized_granularity,
-                        period_start=period_start,
-                        history_windows=list(
-                            getattr(plan, "peer_history_windows", []) or []
-                        ),
-                        available_window_ids=available_window_ids,
-                    )
-                )
-            history_windows_available = int(
-                history_pack_stats.get("available_windows") or 0
-            ) if isinstance(history_pack_stats, dict) else 0
-            evolution_suppressed_without_history = False
-            if payload.evolution is not None and history_windows_available <= 0:
-                payload.evolution = None
-                evolution_suppressed_without_history = True
-            if isinstance(debug, dict):
-                debug["context_packs"] = {
-                    "overview_pack_md": overview_pack_md,
-                    "history_pack_md": history_pack_md,
-                }
-                if overview_pack_stats is not None:
-                    debug["overview_pack_stats"] = overview_pack_stats
-                if history_pack_stats is not None:
-                    debug["history_pack_stats"] = history_pack_stats
-                debug["evolution"] = {
-                    "present": payload.evolution is not None,
-                    "signals_total": len(payload.evolution.signals or [])
-                    if payload.evolution is not None
-                    else 0,
-                    "suppressed_without_history": evolution_suppressed_without_history,
-                    "normalization": evolution_normalization_stats,
-                }
-                usage = debug.get("usage")
-                if isinstance(usage, dict):
-                    requests = usage.get("requests")
-                    input_tokens = usage.get("input_tokens")
-                    output_tokens = usage.get("output_tokens")
-                    if isinstance(requests, (int, float)):
-                        record_metric(
-                            name="pipeline.trends.llm_requests_total",
-                            value=float(requests),
-                            unit="count",
-                        )
-                    if isinstance(input_tokens, (int, float)):
-                        record_metric(
-                            name="pipeline.trends.llm_input_tokens_total",
-                            value=float(input_tokens),
-                            unit="count",
-                        )
-                    if isinstance(output_tokens, (int, float)):
-                        record_metric(
-                            name="pipeline.trends.llm_output_tokens_total",
-                            value=float(output_tokens),
-                            unit="count",
-                        )
-                prompt_chars = debug.get("prompt_chars")
-                if isinstance(prompt_chars, (int, float)):
-                    record_metric(
-                        name="pipeline.trends.prompt_chars",
-                        value=float(prompt_chars),
-                        unit="chars",
-                    )
-                overview_pack_chars = debug.get("overview_pack_chars")
-                if isinstance(overview_pack_chars, (int, float)):
-                    record_metric(
-                        name="pipeline.trends.overview_pack.chars",
-                        value=float(overview_pack_chars),
-                        unit="chars",
-                    )
-                history_pack_chars = debug.get("history_pack_chars")
-                if isinstance(history_pack_chars, (int, float)):
-                    record_metric(
-                        name="pipeline.trends.history.pack.chars",
-                        value=float(history_pack_chars),
-                        unit="chars",
-                    )
-                cost_usd = debug.get("estimated_cost_usd")
-                if isinstance(cost_usd, (int, float)):
-                    record_metric(
-                        name="pipeline.trends.estimated_cost_usd",
-                        value=float(cost_usd),
-                        unit="usd",
-                    )
-                else:
-                    record_metric(
-                        name="pipeline.trends.cost_missing_total",
-                        value=1,
-                        unit="count",
-                    )
-            record_metric(
-                name="pipeline.trends.evolution.emitted_total",
-                value=1 if payload.evolution is not None else 0,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.evolution.signals_total",
-                value=len(payload.evolution.signals or [])
-                if payload.evolution is not None
-                else 0,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.evolution.suppressed_without_history_total",
-                value=1 if evolution_suppressed_without_history else 0,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.evolution.history_windows_normalized_total",
-                value=float(
-                    evolution_normalization_stats.get(
-                        "history_windows_normalized_total", 0
-                    )
-                ),
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.evolution.history_windows_dropped_total",
-                value=float(
-                    evolution_normalization_stats.get(
-                        "history_windows_dropped_total", 0
-                    )
-                ),
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.evolution.signals_dropped_total",
-                value=float(
-                    evolution_normalization_stats.get("signals_dropped_total", 0)
-                ),
+            self.record_metric(
+                name="pipeline.trends.cost_missing_total",
+                value=1,
                 unit="count",
             )
 
-        rep_dropped_non_item_total = 0
-        rep_backfilled_total = 0
-        rep_failed_clusters_total = 0
+    def _record_evolution_metrics(
+        self,
+        *,
+        payload: Any,
+        evolution_normalization_stats: dict[str, int],
+        evolution_suppressed_without_history: bool,
+    ) -> None:
+        self.record_metric(
+            name="pipeline.trends.evolution.emitted_total",
+            value=1 if payload.evolution is not None else 0,
+            unit="count",
+        )
+        self.record_metric(
+            name="pipeline.trends.evolution.signals_total",
+            value=len(payload.evolution.signals or []) if payload.evolution is not None else 0,
+            unit="count",
+        )
+        self.record_metric(
+            name="pipeline.trends.evolution.suppressed_without_history_total",
+            value=1 if evolution_suppressed_without_history else 0,
+            unit="count",
+        )
+        for metric_name, key in (
+            (
+                "pipeline.trends.evolution.history_windows_normalized_total",
+                "history_windows_normalized_total",
+            ),
+            (
+                "pipeline.trends.evolution.history_windows_dropped_total",
+                "history_windows_dropped_total",
+            ),
+            (
+                "pipeline.trends.evolution.signals_dropped_total",
+                "signals_dropped_total",
+            ),
+        ):
+            self.record_metric(
+                name=metric_name,
+                value=float(evolution_normalization_stats.get(key, 0)),
+                unit="count",
+            )
 
+    def _enforce_representative_chunks(
+        self,
+        *,
+        payload: Any,
+        state: _TrendStageState,
+    ) -> dict[str, int]:
         rep_doc_type_cache: dict[int, str | None] = {}
-
-        def _doc_type_for_doc_id(doc_id_value: int) -> str | None:
-            normalized_doc_id = int(doc_id_value)
-            if normalized_doc_id <= 0:
-                return None
-            if normalized_doc_id not in rep_doc_type_cache:
-                doc = cast(Any, service.repository).get_document(
-                    doc_id=normalized_doc_id
-                )
-                if doc is None:
-                    rep_doc_type_cache[normalized_doc_id] = None
-                else:
-                    rep_doc_type_cache[normalized_doc_id] = (
-                        str(getattr(doc, "doc_type", "") or "").strip().lower() or None
-                    )
-            return rep_doc_type_cache.get(normalized_doc_id)
-
-        def _cluster_queries(cluster: Any) -> list[str]:
-            name = str(getattr(cluster, "name", "") or "").strip()
-            desc = str(getattr(cluster, "description", "") or "").strip()
-            candidates = [" ".join([name, desc]).strip(), name, desc]
-            out: list[str] = []
-            seen: set[str] = set()
-            for candidate in candidates:
-                normalized = " ".join(str(candidate or "").split()).strip()
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                out.append(normalized)
-            return out
-
-        def _backfill_item_reps_text(cluster: Any, *, limit: int) -> list[Any]:
-            reps: list[Any] = []
-            seen: set[tuple[int, int]] = set()
-            for query in _cluster_queries(cluster):
-                try:
-                    rows = cast(Any, service.repository).search_chunks_text(
-                        query=query,
-                        doc_type="item",
-                        period_start=period_start,
-                        period_end=period_end,
-                        limit=limit,
-                    )
-                except Exception:
-                    rows = []
-                for row in rows or []:
-                    if not isinstance(row, dict):
-                        continue
-                    raw_doc_id = row.get("doc_id")
-                    raw_chunk_index = row.get("chunk_index")
-                    if raw_doc_id is None or raw_chunk_index is None:
-                        continue
-                    try:
-                        doc_id_int = int(raw_doc_id)
-                        chunk_index_int = int(raw_chunk_index)
-                    except Exception:
-                        continue
-                    if doc_id_int <= 0 or chunk_index_int < 0:
-                        continue
-                    key = (doc_id_int, chunk_index_int)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    reps.append(
-                        trends.TrendCluster.RepresentativeChunk(
-                            doc_id=doc_id_int,
-                            chunk_index=chunk_index_int,
-                            score=None,
-                        )
-                    )
-                    if len(reps) >= limit:
-                        return reps
-            return reps
-
-        def _backfill_item_reps_semantic(cluster: Any, *, limit: int) -> list[Any]:
-            queries = _cluster_queries(cluster)
-            if not queries:
-                return []
-            query = queries[0]
-            try:
-                hits = trends.semantic_search_summaries_in_period(
-                    repository=cast(Any, service.repository),
-                    lancedb_dir=service.settings.rag_lancedb_dir,
-                    run_id=run_id,
-                    doc_type="item",
-                    period_start=period_start,
-                    period_end=period_end,
-                    query=query,
-                    embedding_model=service.settings.trends_embedding_model,
-                    embedding_dimensions=service.settings.trends_embedding_dimensions,
-                    max_batch_inputs=service.settings.trends_embedding_batch_max_inputs,
-                    max_batch_chars=service.settings.trends_embedding_batch_max_chars,
-                    embedding_failure_mode=getattr(
-                        service.settings, "trends_embedding_failure_mode", "continue"
-                    ),
-                    embedding_max_errors=int(
-                        getattr(service.settings, "trends_embedding_max_errors", 0) or 0
-                    ),
-                    limit=limit,
-                    metric_namespace=metric_namespace,
-                    llm_connection=service._llm_connection,
-                )
-            except Exception:
-                return []
-            reps: list[Any] = []
-            seen: set[tuple[int, int]] = set()
-            for hit in hits or []:
-                try:
-                    doc_id_int = int(getattr(hit, "doc_id"))
-                    chunk_index_int = int(getattr(hit, "chunk_index"))
-                except Exception:
-                    continue
-                if doc_id_int <= 0 or chunk_index_int < 0:
-                    continue
-                key = (doc_id_int, chunk_index_int)
-                if key in seen:
-                    continue
-                seen.add(key)
-                score_raw = getattr(hit, "score", None)
-                score_value: float | None
-                if score_raw is None:
-                    score_value = None
-                else:
-                    try:
-                        score_value = float(score_raw)
-                    except Exception:
-                        score_value = None
-                reps.append(
-                    trends.TrendCluster.RepresentativeChunk(
-                        doc_id=doc_id_int,
-                        chunk_index=chunk_index_int,
-                        score=round(score_value, 6)
-                        if score_value is not None
-                        else None,
-                    )
-                )
-                if len(reps) >= limit:
-                    break
-            return reps
-
-        def _rep_chunk_key(rep: Any) -> tuple[int, int] | None:
-            try:
-                doc_id_int = int(getattr(rep, "doc_id"))
-                chunk_index_int = int(getattr(rep, "chunk_index"))
-            except Exception:
-                return None
-            if doc_id_int <= 0 or chunk_index_int < 0:
-                return None
-            return doc_id_int, chunk_index_int
-
         max_reps = 6
+        totals = {
+            "dropped_non_item_total": 0,
+            "backfilled_total": 0,
+            "failed_clusters_total": 0,
+        }
         for cluster in list(getattr(payload, "clusters", []) or []):
-            cleaned: list[Any] = []
-            seen_rep_keys: set[tuple[int, int]] = set()
-            for rep in list(getattr(cluster, "representative_chunks", []) or []):
-                rep_key = _rep_chunk_key(rep)
-                if rep_key is None:
-                    continue
-                doc_id_int, _chunk_index_int = rep_key
-                doc_type = _doc_type_for_doc_id(doc_id_int)
-                if doc_type != "item":
-                    rep_dropped_non_item_total += 1
-                    continue
-                if rep_key in seen_rep_keys:
-                    continue
-                seen_rep_keys.add(rep_key)
-                cleaned.append(rep)
-            cluster.representative_chunks = cleaned[:max_reps]
+            cleaned, dropped_total = self._clean_cluster_reps(
+                cluster=cluster,
+                rep_doc_type_cache=rep_doc_type_cache,
+                max_reps=max_reps,
+            )
+            totals["dropped_non_item_total"] += dropped_total
+            cluster.representative_chunks = cleaned
             if cluster.representative_chunks:
                 continue
-            backfilled = _backfill_item_reps_text(cluster, limit=max_reps)
+            backfilled = self._backfill_item_reps_text(
+                cluster=cluster,
+                state=state,
+                limit=max_reps,
+            )
             if not backfilled:
-                backfilled = _backfill_item_reps_semantic(cluster, limit=max_reps)
+                backfilled = self._backfill_item_reps_semantic(
+                    cluster=cluster,
+                    state=state,
+                    limit=max_reps,
+                )
             if backfilled:
                 cluster.representative_chunks = backfilled[:max_reps]
-                rep_backfilled_total += 1
+                totals["backfilled_total"] += 1
             else:
                 cluster.representative_chunks = []
-                rep_failed_clusters_total += 1
+                totals["failed_clusters_total"] += 1
+        return totals
 
-        record_metric(
-            name="pipeline.trends.rep_enforcement.dropped_non_item_total",
-            value=rep_dropped_non_item_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.rep_enforcement.backfilled_total",
-            value=rep_backfilled_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.rep_enforcement.failed_clusters_total",
-            value=rep_failed_clusters_total,
-            unit="count",
+    def _clean_cluster_reps(
+        self,
+        *,
+        cluster: Any,
+        rep_doc_type_cache: dict[int, str | None],
+        max_reps: int,
+    ) -> tuple[list[Any], int]:
+        cleaned: list[Any] = []
+        dropped_non_item_total = 0
+        seen_rep_keys: set[tuple[int, int]] = set()
+        for rep in list(getattr(cluster, "representative_chunks", []) or []):
+            rep_key = self._rep_chunk_key(rep)
+            if rep_key is None:
+                continue
+            doc_id_int, _ = rep_key
+            doc_type = self._doc_type_for_doc_id(
+                doc_id_value=doc_id_int,
+                rep_doc_type_cache=rep_doc_type_cache,
+            )
+            if doc_type != "item":
+                dropped_non_item_total += 1
+                continue
+            if rep_key in seen_rep_keys:
+                continue
+            seen_rep_keys.add(rep_key)
+            cleaned.append(rep)
+        return cleaned[:max_reps], dropped_non_item_total
+
+    def _doc_type_for_doc_id(
+        self,
+        *,
+        doc_id_value: int,
+        rep_doc_type_cache: dict[int, str | None],
+    ) -> str | None:
+        normalized_doc_id = int(doc_id_value)
+        if normalized_doc_id <= 0:
+            return None
+        if normalized_doc_id not in rep_doc_type_cache:
+            doc = cast(Any, self.service.repository).get_document(doc_id=normalized_doc_id)
+            rep_doc_type_cache[normalized_doc_id] = (
+                str(getattr(doc, "doc_type", "") or "").strip().lower() or None
+                if doc is not None
+                else None
+            )
+        return rep_doc_type_cache.get(normalized_doc_id)
+
+    @staticmethod
+    def _cluster_queries(cluster: Any) -> list[str]:
+        name = str(getattr(cluster, "name", "") or "").strip()
+        desc = str(getattr(cluster, "description", "") or "").strip()
+        candidates = [" ".join([name, desc]).strip(), name, desc]
+        out: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            normalized = " ".join(str(candidate or "").split()).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            out.append(normalized)
+        return out
+
+    def _backfill_item_reps_text(
+        self,
+        *,
+        cluster: Any,
+        state: _TrendStageState,
+        limit: int,
+    ) -> list[Any]:
+        reps: list[Any] = []
+        seen: set[tuple[int, int]] = set()
+        for query in self._cluster_queries(cluster):
+            rows = self._text_search_rows(query=query, state=state, limit=limit)
+            self._append_text_reps(rows=rows, reps=reps, seen=seen, limit=limit)
+            if len(reps) >= limit:
+                return reps
+        return reps
+
+    def _text_search_rows(
+        self,
+        *,
+        query: str,
+        state: _TrendStageState,
+        limit: int,
+    ) -> list[Any]:
+        try:
+            return cast(Any, self.service.repository).search_chunks_text(
+                query=query,
+                doc_type="item",
+                period_start=state.period_start,
+                period_end=state.period_end,
+                limit=limit,
+            )
+        except Exception:
+            return []
+
+    def _append_text_reps(
+        self,
+        *,
+        rows: list[Any],
+        reps: list[Any],
+        seen: set[tuple[int, int]],
+        limit: int,
+    ) -> None:
+        for row in rows or []:
+            rep = self._row_to_rep(row)
+            if rep is None:
+                continue
+            rep_key = self._rep_chunk_key(rep)
+            if rep_key is None or rep_key in seen:
+                continue
+            seen.add(rep_key)
+            reps.append(rep)
+            if len(reps) >= limit:
+                return
+
+    def _row_to_rep(self, row: Any) -> Any | None:
+        if not isinstance(row, dict):
+            return None
+        raw_doc_id = row.get("doc_id")
+        raw_chunk_index = row.get("chunk_index")
+        if raw_doc_id is None or raw_chunk_index is None:
+            return None
+        try:
+            doc_id_int = int(raw_doc_id)
+            chunk_index_int = int(raw_chunk_index)
+        except Exception:
+            return None
+        if doc_id_int <= 0 or chunk_index_int < 0:
+            return None
+        return trends.TrendCluster.RepresentativeChunk(
+            doc_id=doc_id_int,
+            chunk_index=chunk_index_int,
+            score=None,
         )
 
-        trend_synthesis_pass_output_id: int | None = None
+    def _backfill_item_reps_semantic(
+        self,
+        *,
+        cluster: Any,
+        state: _TrendStageState,
+        limit: int,
+    ) -> list[Any]:
+        queries = self._cluster_queries(cluster)
+        if not queries:
+            return []
+        try:
+            hits = trends.semantic_search_summaries_in_period(
+                repository=cast(Any, self.service.repository),
+                lancedb_dir=self.service.settings.rag_lancedb_dir,
+                run_id=self.request.run_id,
+                doc_type="item",
+                period_start=state.period_start,
+                period_end=state.period_end,
+                query=queries[0],
+                embedding_model=self.service.settings.trends_embedding_model,
+                embedding_dimensions=self.service.settings.trends_embedding_dimensions,
+                max_batch_inputs=self.service.settings.trends_embedding_batch_max_inputs,
+                max_batch_chars=self.service.settings.trends_embedding_batch_max_chars,
+                embedding_failure_mode=getattr(
+                    self.service.settings,
+                    "trends_embedding_failure_mode",
+                    "continue",
+                ),
+                embedding_max_errors=int(
+                    getattr(self.service.settings, "trends_embedding_max_errors", 0) or 0
+                ),
+                limit=limit,
+                metric_namespace=self.metric_namespace,
+                llm_connection=self.service._llm_connection,
+            )
+        except Exception:
+            return []
+        reps: list[Any] = []
+        seen: set[tuple[int, int]] = set()
+        for hit in hits or []:
+            try:
+                doc_id_int = int(getattr(hit, "doc_id"))
+                chunk_index_int = int(getattr(hit, "chunk_index"))
+            except Exception:
+                continue
+            if doc_id_int <= 0 or chunk_index_int < 0:
+                continue
+            key = (doc_id_int, chunk_index_int)
+            if key in seen:
+                continue
+            seen.add(key)
+            score_raw = getattr(hit, "score", None)
+            score_value: float | None
+            if score_raw is None:
+                score_value = None
+            else:
+                try:
+                    score_value = float(score_raw)
+                except Exception:
+                    score_value = None
+            reps.append(
+                trends.TrendCluster.RepresentativeChunk(
+                    doc_id=doc_id_int,
+                    chunk_index=chunk_index_int,
+                    score=round(score_value, 6) if score_value is not None else None,
+                )
+            )
+            if len(reps) >= limit:
+                break
+        return reps
+
+    @staticmethod
+    def _rep_chunk_key(rep: Any) -> tuple[int, int] | None:
+        try:
+            doc_id_int = int(getattr(rep, "doc_id"))
+            chunk_index_int = int(getattr(rep, "chunk_index"))
+        except Exception:
+            return None
+        if doc_id_int <= 0 or chunk_index_int < 0:
+            return None
+        return doc_id_int, chunk_index_int
+
+    def _record_rep_metrics(self, rep_stats: dict[str, int]) -> None:
+        for metric_name, key in (
+            (
+                "pipeline.trends.rep_enforcement.dropped_non_item_total",
+                "dropped_non_item_total",
+            ),
+            (
+                "pipeline.trends.rep_enforcement.backfilled_total",
+                "backfilled_total",
+            ),
+            (
+                "pipeline.trends.rep_enforcement.failed_clusters_total",
+                "failed_clusters_total",
+            ),
+        ):
+            self.record_metric(
+                name=metric_name,
+                value=rep_stats[key],
+                unit="count",
+            )
+
+    def _run_pass_execution(
+        self,
+        *,
+        state: _TrendStageState,
+        generation: _TrendGenerationArtifacts,
+        context: _TrendProjectionContext,
+    ) -> Any:
         trend_synthesis_diagnostics: dict[str, Any] = {
             "context_packs": {
-                "overview_pack_md": overview_pack_md,
-                "history_pack_md": history_pack_md,
+                "overview_pack_md": generation.overview_pack_md,
+                "history_pack_md": generation.history_pack_md,
             },
-            "overview_pack_stats": overview_pack_stats,
-            "history_pack_stats": history_pack_stats,
+            "overview_pack_stats": generation.overview_pack_stats,
+            "history_pack_stats": generation.history_pack_stats,
             "evolution": {
-                "present": payload.evolution is not None,
-                "signals_total": len(payload.evolution.signals or [])
-                if payload.evolution is not None
+                "present": generation.payload.evolution is not None,
+                "signals_total": len(generation.payload.evolution.signals or [])
+                if generation.payload.evolution is not None
                 else 0,
-                "suppressed_without_history": evolution_suppressed_without_history,
-                "normalization": evolution_normalization_stats,
+                "suppressed_without_history": generation.evolution_suppressed_without_history,
+                "normalization": generation.evolution_normalization_stats or {},
             },
             "rep_enforcement": {
-                "dropped_non_item_total": rep_dropped_non_item_total,
-                "backfilled_total": rep_backfilled_total,
-                "failed_clusters_total": rep_failed_clusters_total,
+                "dropped_non_item_total": generation.rep_dropped_non_item_total,
+                "backfilled_total": generation.rep_backfilled_total,
+                "failed_clusters_total": generation.rep_failed_clusters_total,
             },
         }
-        if isinstance(debug, dict):
-            trend_synthesis_diagnostics["debug"] = debug
+        if isinstance(generation.debug, dict):
+            trend_synthesis_diagnostics["debug"] = generation.debug
         trend_synthesis_envelope = build_trend_synthesis_pass_output(
-            run_id=run_id,
-            granularity=normalized_granularity,
-            period_start=period_start,
-            period_end=period_end,
-            payload=payload,
+            run_id=self.request.run_id,
+            granularity=state.normalized_granularity,
+            period_start=state.period_start,
+            period_end=state.period_end,
+            payload=generation.payload,
             diagnostics=trend_synthesis_diagnostics,
         )
-        pass_output_failure: dict[str, str] | None = None
 
         def _capture_pass_output_failure(exc: BaseException) -> None:
-            nonlocal pass_output_failure
-            pass_output_failure = {
+            context.pass_output_failure = {
                 "error_type": type(exc).__name__,
-                "error_message": service._sanitize_error_message(str(exc)),
+                "error_message": self.service._sanitize_error_message(str(exc)),
             }
 
-        targets = set(service.settings.publish_targets or [])
-
-        markdown_note_path: Path | None = None
-        pdf_generated_total = 0
-        pdf_failed_total = 0
-        pdf_debug_generated_total = 0
-        pdf_debug_failed_total = 0
-        pdf_browser_generated_total = 0
-        pdf_story_generated_total = 0
-        telegram_sent_total = 0
-        telegram_failed_total = 0
-
-        def _prepare_trend_projection_state(
-            pass_output_id: int | None,
-        ) -> _TrendProjectionState:
-            if pass_output_id is None:
-                service._record_debug_artifact(
-                    run_id=run_id,
-                    item_id=None,
-                    kind="pass_output_failure",
-                    payload={
-                        "stage": "trends",
-                        "pass_kind": "trend_synthesis",
-                        "granularity": normalized_granularity,
-                        "period_start": period_start.isoformat(),
-                        "period_end": period_end.isoformat(),
-                        "failure": pass_output_failure or {},
-                    },
-                    log=log,
-                    failure_message="Trends pass output failure artifact record failed: {}",
-                )
-
-            doc_id = trends.persist_trend_payload(
-                repository=cast(Any, service.repository),
-                granularity=normalized_granularity,
-                period_start=period_start,
-                period_end=period_end,
-                payload=payload,
-                pass_output_id=pass_output_id,
-                pass_kind=TREND_SYNTHESIS_PASS_KIND,
-            )
-            materialized = materialize_trend_note_payload(
-                repository=cast(Any, service.repository),
-                payload=payload,
-                markdown_output_dir=service.settings.markdown_output_dir,
-                output_language=service.settings.llm_output_language,
-            )
-
-            rewrite_occurrences_total = (
-                materialized.rewrite_stats.doc_ref_occurrences_total
-            )
-            rewrite_doc_ids_resolved_total = (
-                materialized.rewrite_stats.doc_ref_resolved_total
-            )
-            rewrite_doc_ids_unresolved_total = (
-                materialized.rewrite_stats.doc_ref_unresolved_total
-            )
-
-            if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
-                log.info(
-                    "Trend note doc refs rewritten occurrences={} resolved_doc_ids={} unresolved_doc_ids={}",
-                    rewrite_occurrences_total,
-                    rewrite_doc_ids_resolved_total,
-                    rewrite_doc_ids_unresolved_total,
-                )
-            record_metric(
-                name="pipeline.trends.note_doc_refs_rewrite_occurrences_total",
-                value=rewrite_occurrences_total,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.note_doc_refs_resolved_total",
-                value=rewrite_doc_ids_resolved_total,
-                unit="count",
-            )
-            record_metric(
-                name="pipeline.trends.note_doc_refs_unresolved_total",
-                value=rewrite_doc_ids_unresolved_total,
-                unit="count",
-            )
-
-            trend_delivery_hash = hashlib.sha256(
-                orjson.dumps(
-                    {
-                        "title": materialized.title,
-                        "granularity": normalized_granularity,
-                        "period_start": period_start.isoformat(),
-                        "period_end": period_end.isoformat(),
-                        "overview_md": materialized.overview_md,
-                        "topics": list(materialized.topics),
-                        "clusters": materialized.clusters,
-                    },
-                    option=orjson.OPT_SORT_KEYS,
-                )
-            ).hexdigest()
-
-            if "obsidian" in targets and service.settings.obsidian_vault_path is None:
-                raise ValueError(
-                    "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
-                )
-            if "telegram" in targets and service.telegram_sender is None:
-                if (
-                    service.settings.telegram_bot_token is None
-                    or service.settings.telegram_chat_id is None
-                ):
-                    raise ValueError(
-                        "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'"
-                    )
-                service.telegram_sender = TelegramSender(
-                    token=service.settings.telegram_bot_token.get_secret_value(),
-                    chat_id=service.settings.telegram_chat_id.get_secret_value(),
-                )
-
-            repository_any = cast(Any, service.repository)
-            telegram_destination = service._telegram_delivery_destination()
-            telegram_remaining_today: int | None = None
-            telegram_already_sent = False
-            if "telegram" in targets:
-                (
-                    _,
-                    _,
-                    telegram_remaining_today,
-                ) = service._telegram_delivery_budget()
-            if (
-                "telegram" in targets
-                and not empty_corpus
-                and telegram_remaining_today is not None
-                and telegram_remaining_today > 0
-            ):
-                telegram_already_sent = bool(
-                    repository_any.has_sent_trend_delivery(
-                        doc_id=doc_id,
-                        channel=DELIVERY_CHANNEL_TELEGRAM,
-                        destination=telegram_destination,
-                        content_hash=trend_delivery_hash,
-                    )
-                )
-
-            telegram_can_attempt_delivery = (
-                "telegram" in targets
-                and not empty_corpus
-                and telegram_remaining_today is not None
-                and telegram_remaining_today > 0
-                and not telegram_already_sent
-            )
-            return _TrendProjectionState(
-                doc_id=doc_id,
-                materialized=materialized,
-                targets=set(targets),
-                telegram_destination=telegram_destination,
-                telegram_remaining_today=telegram_remaining_today,
-                telegram_already_sent=telegram_already_sent,
-                telegram_can_attempt_delivery=telegram_can_attempt_delivery,
-                trend_delivery_hash=trend_delivery_hash,
-            )
-
-        def _build_trend_projection_specs(
-            pass_output_id: int | None,
-            state: _TrendProjectionState | None,
-        ) -> list[ProjectionSpec]:
-            if state is None:
-                raise RuntimeError("trend projection state is required")
-            warning_context = {
-                "doc_id": state.doc_id,
-                "granularity": normalized_granularity,
-                "period_start": period_start.isoformat(),
-                "period_end": period_end.isoformat(),
-            }
-            return [
-                ProjectionSpec(
-                    name="markdown",
-                    enabled="markdown" in state.targets
-                    or state.telegram_can_attempt_delivery,
-                    metric_base="pipeline.trends.projection.trend_markdown",
-                    log=log.bind(module="pipeline.trends.projection.trend_markdown"),
-                    failure_message=(
-                        "Trend markdown projection failed doc_id={doc_id} "
-                        "granularity={granularity} period_start={period_start} "
-                        "period_end={period_end} error_type={error_type} error={error}"
-                    ),
-                    execute=lambda: write_markdown_trend_note(
-                        output_dir=service.settings.markdown_output_dir,
-                        trend_doc_id=state.doc_id,
-                        title=state.materialized.title,
-                        granularity=normalized_granularity,
-                        period_start=period_start,
-                        period_end=period_end,
-                        run_id=run_id,
-                        overview_md=state.materialized.overview_md,
-                        topics=list(state.materialized.topics),
-                        evolution=state.materialized.evolution,
-                        history_window_refs=state.materialized.history_window_refs,
-                        counter_signal=state.materialized.counter_signal,
-                        clusters=state.materialized.clusters,
-                        highlights=state.materialized.highlights,
-                        output_language=service.settings.llm_output_language,
-                        pass_output_id=pass_output_id,
-                        pass_kind=TREND_SYNTHESIS_PASS_KIND,
-                        site_exclude=empty_corpus,
-                    ),
-                    warning_context=warning_context,
-                    sanitize_error=service._sanitize_error_message,
-                    reraise=False,
-                ),
-                ProjectionSpec(
-                    name="obsidian",
-                    enabled="obsidian" in state.targets
-                    and service.settings.obsidian_vault_path is not None,
-                    metric_base="pipeline.trends.projection.trend_obsidian",
-                    log=log.bind(module="pipeline.trends.projection.trend_obsidian"),
-                    failure_message=(
-                        "Trend obsidian projection failed doc_id={doc_id} "
-                        "granularity={granularity} period_start={period_start} "
-                        "period_end={period_end} error_type={error_type} error={error}"
-                    ),
-                    execute=lambda: write_obsidian_trend_note(
-                        vault_path=service.settings.obsidian_vault_path,
-                        base_folder=service.settings.obsidian_base_folder,
-                        trend_doc_id=state.doc_id,
-                        title=state.materialized.title,
-                        granularity=normalized_granularity,
-                        period_start=period_start,
-                        period_end=period_end,
-                        run_id=run_id,
-                        overview_md=state.materialized.overview_md,
-                        topics=list(state.materialized.topics),
-                        evolution=state.materialized.evolution,
-                        history_window_refs=state.materialized.history_window_refs,
-                        counter_signal=state.materialized.counter_signal,
-                        clusters=state.materialized.clusters,
-                        highlights=state.materialized.highlights,
-                        output_language=service.settings.llm_output_language,
-                        pass_output_id=pass_output_id,
-                        pass_kind=TREND_SYNTHESIS_PASS_KIND,
-                        site_exclude=empty_corpus,
-                    ),
-                    warning_context=warning_context,
-                    sanitize_error=service._sanitize_error_message,
-                    reraise=False,
-                ),
-            ]
-
-        pass_execution = run_pass_definition(
-            repository=service.repository,
-            record_metric=record_metric,
+        return run_pass_definition(
+            repository=self.service.repository,
+            record_metric=self.record_metric,
             definition=PassDefinition(
                 persist=PassPersistSpec(
                     envelope=trend_synthesis_envelope,
-                    period_start=period_start,
-                    period_end=period_end,
-                    log=log.bind(module="pipeline.trends.pass.synthesis"),
+                    period_start=state.period_start,
+                    period_end=state.period_end,
+                    log=self.log.bind(module="pipeline.trends.pass.synthesis"),
                     failure_message=(
                         "Trend synthesis pass output persist failed pass_kind={pass_kind} "
                         "granularity={granularity} period_start={period_start} "
                         "period_end={period_end} error_type={error_type} error={error}"
                     ),
                     warning_context={
-                        "granularity": normalized_granularity,
-                        "period_start": period_start.isoformat(),
-                        "period_end": period_end.isoformat(),
+                        "granularity": state.normalized_granularity,
+                        "period_start": state.period_start.isoformat(),
+                        "period_end": state.period_end.isoformat(),
                     },
-                    sanitize_error=service._sanitize_error_message,
+                    sanitize_error=self.service._sanitize_error_message,
                     on_failure=_capture_pass_output_failure,
                     persisted_metric_name="pipeline.trends.pass.synthesis.persisted_total",
                     reraise=False,
                 ),
-                prepare_projection_state=_prepare_trend_projection_state,
-                build_projection_specs=_build_trend_projection_specs,
+                prepare_projection_state=lambda pass_output_id: _prepare_trend_projection_state(
+                    context,
+                    pass_output_id,
+                ),
+                build_projection_specs=lambda pass_output_id, projection_state: _build_trend_projection_specs(
+                    context,
+                    pass_output_id,
+                    projection_state,
+                ),
                 allow_projection_without_pass_output=True,
             ),
         )
-        trend_synthesis_pass_output_id = pass_execution.pass_output_id
-        trend_projection_state = pass_execution.projection_state
-        if trend_projection_state is None:
-            raise RuntimeError("trend projection state preparation returned empty")
-        doc_id = trend_projection_state.doc_id
-        materialized = trend_projection_state.materialized
-        targets = trend_projection_state.targets
-        telegram_destination = trend_projection_state.telegram_destination
-        telegram_remaining_today = trend_projection_state.telegram_remaining_today
-        telegram_already_sent = trend_projection_state.telegram_already_sent
-        trend_delivery_hash = trend_projection_state.trend_delivery_hash
-        repository_any = cast(Any, service.repository)
-        projection_results = pass_execution.projection_results
+
+    def _deliver_outputs(
+        self,
+        *,
+        state: _TrendStageState,
+        generation: _TrendGenerationArtifacts,
+        projection_state: _TrendProjectionState,
+        projection_results: dict[str, Any],
+    ) -> _TrendDeliveryStats:
+        delivery = _TrendDeliveryStats()
         raw_markdown_note_path = projection_results.get("markdown")
-        markdown_note_path = (
+        delivery.markdown_note_path = (
             raw_markdown_note_path if isinstance(raw_markdown_note_path, Path) else None
         )
+        skip_reason = self._telegram_skip_reason(
+            state=state,
+            generation=generation,
+            projection_state=projection_state,
+        )
+        if skip_reason is not None:
+            self._log_telegram_skip(
+                reason=skip_reason,
+                state=state,
+                projection_state=projection_state,
+            )
+            return delivery
 
-        if "telegram" in targets:
-            if empty_corpus:
-                log.info(
-                    "Trend Telegram delivery skipped for empty corpus doc_id={} granularity={} period_start={} period_end={}",
-                    doc_id,
-                    normalized_granularity,
-                    period_start.isoformat(),
-                    period_end.isoformat(),
-                )
-            elif telegram_remaining_today is not None and telegram_remaining_today <= 0:
-                log.info(
-                    "Trend Telegram delivery skipped for daily cap doc_id={} granularity={} period_start={} period_end={}",
-                    doc_id,
-                    normalized_granularity,
-                    period_start.isoformat(),
-                    period_end.isoformat(),
-                )
-            elif telegram_already_sent:
-                log.info(
-                    "Trend Telegram delivery skipped for unchanged content doc_id={} granularity={} period_start={} period_end={}",
-                    doc_id,
-                    normalized_granularity,
-                    period_start.isoformat(),
-                    period_end.isoformat(),
-                )
-            else:
-                trend_pdf_path: Path | None = None
-                trend_pdf_result = None
-                try:
-                    if markdown_note_path is None:
-                        raise RuntimeError(
-                            "trend markdown note is unavailable for PDF delivery"
-                        )
-                    trend_pdf_result = render_trend_note_pdf_result(
-                        markdown_path=markdown_note_path,
-                        backend="auto",
-                        page_mode="continuous",
-                    )
-                    trend_pdf_path = trend_pdf_result.path
-                    pdf_generated_total = 1
-                    if trend_pdf_result.prepared.renderer == "browser":
-                        pdf_browser_generated_total = 1
-                    else:
-                        pdf_story_generated_total = 1
-                except Exception as pdf_exc:  # noqa: BLE001
-                    pdf_failed_total = 1
-                    log.bind(module="pipeline.trends.pdf").warning(
-                        "Trend PDF render failed: {}",
-                        service._sanitize_error_message(str(pdf_exc)),
-                    )
-
-                if trend_pdf_path is not None and debug_pdf:
-                    try:
-                        if markdown_note_path is None:
-                            raise RuntimeError(
-                                "trend markdown note is unavailable for PDF debug export"
-                            )
-                        debug_dir = (
-                            markdown_note_path.parent
-                            / ".pdf-debug"
-                            / trend_pdf_path.stem
-                        )
-                        export_trend_note_pdf_debug_bundle(
-                            markdown_path=markdown_note_path,
-                            pdf_path=trend_pdf_path,
-                            debug_dir=debug_dir,
-                            prepared=(
-                                trend_pdf_result.prepared
-                                if trend_pdf_result is not None
-                                else None
-                            ),
-                        )
-                        pdf_debug_generated_total = 1
-                        log.bind(
-                            module="pipeline.trends.pdf.debug",
-                            debug_path=str(debug_dir),
-                        ).info("Trend PDF debug export completed")
-                    except Exception as debug_exc:  # noqa: BLE001
-                        pdf_debug_failed_total = 1
-                        log.bind(module="pipeline.trends.pdf.debug").warning(
-                            "Trend PDF debug export failed: {}",
-                            service._sanitize_error_message(str(debug_exc)),
-                        )
-
-                if trend_pdf_path is not None:
-                    try:
-                        if service.telegram_sender is None:
-                            raise RuntimeError("telegram sender is not configured")
-                        caption = build_telegram_trend_document_caption(
-                            title=materialized.title,
-                            overview_md=materialized.overview_md,
-                            granularity=normalized_granularity,
-                            period_start=period_start,
-                        )
-                        message_id = service.telegram_sender.send_document(
-                            filename=trend_pdf_path.name,
-                            content=trend_pdf_path.read_bytes(),
-                            caption=caption,
-                        )
-                        repository_any.upsert_trend_delivery(
-                            doc_id=doc_id,
-                            channel=DELIVERY_CHANNEL_TELEGRAM,
-                            destination=telegram_destination,
-                            content_hash=trend_delivery_hash,
-                            message_id=message_id,
-                            status=DELIVERY_STATUS_SENT,
-                        )
-                        telegram_sent_total = 1
-                    except Exception as telegram_exc:  # noqa: BLE001
-                        telegram_failed_total = 1
-                        sanitized_error = service._sanitize_error_message(
-                            str(telegram_exc)
-                        )
-                        repository_any.upsert_trend_delivery(
-                            doc_id=doc_id,
-                            channel=DELIVERY_CHANNEL_TELEGRAM,
-                            destination=telegram_destination,
-                            content_hash=trend_delivery_hash,
-                            message_id=None,
-                            status=DELIVERY_STATUS_FAILED,
-                            error=sanitized_error,
-                        )
-                        log.bind(module="pipeline.trends.telegram").warning(
-                            "Trend Telegram delivery failed: {}",
-                            sanitized_error,
-                        )
-
-        record_metric(
-            name="pipeline.trends.pdf.generated_total",
-            value=pdf_generated_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.pdf.failed_total",
-            value=pdf_failed_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.pdf.debug.generated_total",
-            value=pdf_debug_generated_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.pdf.debug.failed_total",
-            value=pdf_debug_failed_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.pdf.browser.generated_total",
-            value=pdf_browser_generated_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.pdf.story.generated_total",
-            value=pdf_story_generated_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.telegram.sent_total",
-            value=telegram_sent_total,
-            unit="count",
-        )
-        record_metric(
-            name="pipeline.trends.telegram.failed_total",
-            value=telegram_failed_total,
-            unit="count",
+        trend_pdf_path, trend_pdf_result = self._render_trend_pdf(
+            delivery=delivery,
+            markdown_note_path=delivery.markdown_note_path,
         )
 
-        if include_debug and debug is not None:
-            service._record_debug_artifact(
-                run_id=run_id,
-                item_id=None,
-                kind="llm_response",
-                payload={
-                    "stage": "trends",
-                    "granularity": normalized_granularity,
-                    "period_start": period_start.isoformat(),
-                    "period_end": period_end.isoformat(),
-                    "trend_doc_id": doc_id,
-                    "trend_synthesis_pass_output_id": trend_synthesis_pass_output_id,
-                    "debug": debug,
-                },
-                log=log,
-                failure_message="Trends debug artifact record failed: {}",
+        if trend_pdf_path is not None and self.request.debug_pdf:
+            self._export_trend_pdf_debug(
+                delivery=delivery,
+                markdown_note_path=delivery.markdown_note_path,
+                trend_pdf_path=trend_pdf_path,
+                trend_pdf_result=trend_pdf_result,
             )
 
-        tool_calls_total = 0
-        if isinstance(debug, dict):
-            tool_calls_total = int(debug.get("tool_calls_total") or 0)
-        record_metric(
+        if trend_pdf_path is None:
+            return delivery
+        self._deliver_pdf_to_telegram(
+            delivery=delivery,
+            state=state,
+            projection_state=projection_state,
+            trend_pdf_path=trend_pdf_path,
+        )
+        return delivery
+
+    def _telegram_skip_reason(
+        self,
+        *,
+        state: _TrendStageState,
+        generation: _TrendGenerationArtifacts,
+        projection_state: _TrendProjectionState,
+    ) -> str | None:
+        if "telegram" not in projection_state.targets:
+            return "target_disabled"
+        if generation.empty_corpus:
+            return "empty_corpus"
+        if (
+            projection_state.telegram_remaining_today is not None
+            and projection_state.telegram_remaining_today <= 0
+        ):
+            return "daily_cap"
+        if projection_state.telegram_already_sent:
+            return "unchanged"
+        return None
+
+    def _log_telegram_skip(
+        self,
+        *,
+        reason: str,
+        state: _TrendStageState,
+        projection_state: _TrendProjectionState,
+    ) -> None:
+        if reason == "target_disabled":
+            return
+        reason_labels = {
+            "empty_corpus": "empty corpus",
+            "daily_cap": "daily cap",
+            "unchanged": "unchanged content",
+        }
+        self.log.info(
+            "Trend Telegram delivery skipped for {} doc_id={} granularity={} period_start={} period_end={}",
+            reason_labels.get(reason, reason),
+            projection_state.doc_id,
+            state.normalized_granularity,
+            state.period_start.isoformat(),
+            state.period_end.isoformat(),
+        )
+
+    def _render_trend_pdf(
+        self,
+        *,
+        delivery: _TrendDeliveryStats,
+        markdown_note_path: Path | None,
+    ) -> tuple[Path | None, Any]:
+        trend_pdf_result = None
+        try:
+            if markdown_note_path is None:
+                raise RuntimeError("trend markdown note is unavailable for PDF delivery")
+            trend_pdf_result = render_trend_note_pdf_result(
+                markdown_path=markdown_note_path,
+                backend="auto",
+                page_mode="continuous",
+            )
+            if trend_pdf_result.prepared.renderer == "browser":
+                delivery.pdf_browser_generated_total = 1
+            else:
+                delivery.pdf_story_generated_total = 1
+            delivery.pdf_generated_total = 1
+            return trend_pdf_result.path, trend_pdf_result
+        except Exception as pdf_exc:  # noqa: BLE001
+            delivery.pdf_failed_total = 1
+            self.log.bind(module="pipeline.trends.pdf").warning(
+                "Trend PDF render failed: {}",
+                self.service._sanitize_error_message(str(pdf_exc)),
+            )
+            return None, trend_pdf_result
+
+    def _export_trend_pdf_debug(
+        self,
+        *,
+        delivery: _TrendDeliveryStats,
+        markdown_note_path: Path | None,
+        trend_pdf_path: Path,
+        trend_pdf_result: Any,
+    ) -> None:
+        try:
+            if markdown_note_path is None:
+                raise RuntimeError("trend markdown note is unavailable for PDF debug export")
+            debug_dir = markdown_note_path.parent / ".pdf-debug" / trend_pdf_path.stem
+            export_trend_note_pdf_debug_bundle(
+                markdown_path=markdown_note_path,
+                pdf_path=trend_pdf_path,
+                debug_dir=debug_dir,
+                prepared=trend_pdf_result.prepared if trend_pdf_result is not None else None,
+            )
+            delivery.pdf_debug_generated_total = 1
+            self.log.bind(
+                module="pipeline.trends.pdf.debug",
+                debug_path=str(debug_dir),
+            ).info("Trend PDF debug export completed")
+        except Exception as debug_exc:  # noqa: BLE001
+            delivery.pdf_debug_failed_total = 1
+            self.log.bind(module="pipeline.trends.pdf.debug").warning(
+                "Trend PDF debug export failed: {}",
+                self.service._sanitize_error_message(str(debug_exc)),
+            )
+
+    def _deliver_pdf_to_telegram(
+        self,
+        *,
+        delivery: _TrendDeliveryStats,
+        state: _TrendStageState,
+        projection_state: _TrendProjectionState,
+        trend_pdf_path: Path,
+    ) -> None:
+        repository_any = cast(Any, self.service.repository)
+        try:
+            if self.service.telegram_sender is None:
+                raise RuntimeError("telegram sender is not configured")
+            caption = build_telegram_trend_document_caption(
+                title=projection_state.materialized.title,
+                overview_md=projection_state.materialized.overview_md,
+                granularity=state.normalized_granularity,
+                period_start=state.period_start,
+            )
+            message_id = self.service.telegram_sender.send_document(
+                filename=trend_pdf_path.name,
+                content=trend_pdf_path.read_bytes(),
+                caption=caption,
+            )
+            repository_any.upsert_trend_delivery(
+                doc_id=projection_state.doc_id,
+                channel=DELIVERY_CHANNEL_TELEGRAM,
+                destination=projection_state.telegram_destination,
+                content_hash=projection_state.trend_delivery_hash,
+                message_id=message_id,
+                status=DELIVERY_STATUS_SENT,
+            )
+            delivery.telegram_sent_total = 1
+        except Exception as telegram_exc:  # noqa: BLE001
+            delivery.telegram_failed_total = 1
+            sanitized_error = self.service._sanitize_error_message(str(telegram_exc))
+            repository_any.upsert_trend_delivery(
+                doc_id=projection_state.doc_id,
+                channel=DELIVERY_CHANNEL_TELEGRAM,
+                destination=projection_state.telegram_destination,
+                content_hash=projection_state.trend_delivery_hash,
+                message_id=None,
+                status=DELIVERY_STATUS_FAILED,
+                error=sanitized_error,
+            )
+            self.log.bind(module="pipeline.trends.telegram").warning(
+                "Trend Telegram delivery failed: {}",
+                sanitized_error,
+            )
+
+    def _record_delivery_metrics(self, delivery: _TrendDeliveryStats) -> None:
+        for metric_name, value in (
+            ("pipeline.trends.pdf.generated_total", delivery.pdf_generated_total),
+            ("pipeline.trends.pdf.failed_total", delivery.pdf_failed_total),
+            ("pipeline.trends.pdf.debug.generated_total", delivery.pdf_debug_generated_total),
+            ("pipeline.trends.pdf.debug.failed_total", delivery.pdf_debug_failed_total),
+            ("pipeline.trends.pdf.browser.generated_total", delivery.pdf_browser_generated_total),
+            ("pipeline.trends.pdf.story.generated_total", delivery.pdf_story_generated_total),
+            ("pipeline.trends.telegram.sent_total", delivery.telegram_sent_total),
+            ("pipeline.trends.telegram.failed_total", delivery.telegram_failed_total),
+        ):
+            self.record_metric(name=metric_name, value=value, unit="count")
+
+    def _record_success_debug_artifact(
+        self,
+        *,
+        state: _TrendStageState,
+        generation: _TrendGenerationArtifacts,
+        doc_id: int,
+        pass_output_id: int | None,
+    ) -> None:
+        if not state.include_debug or generation.debug is None:
+            return
+        self.service._record_debug_artifact(
+            run_id=self.request.run_id,
+            item_id=None,
+            kind="llm_response",
+            payload={
+                "stage": "trends",
+                "granularity": state.normalized_granularity,
+                "period_start": state.period_start.isoformat(),
+                "period_end": state.period_end.isoformat(),
+                "trend_doc_id": doc_id,
+                "trend_synthesis_pass_output_id": pass_output_id,
+                "debug": generation.debug,
+            },
+            log=self.log,
+            failure_message="Trends debug artifact record failed: {}",
+        )
+
+    def _record_tool_metrics(self, debug: dict[str, Any] | None) -> None:
+        tool_calls_total = int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0
+        self.record_metric(
             name="pipeline.trends.tool_calls_total",
             value=tool_calls_total,
             unit="count",
         )
-        if isinstance(debug, dict):
-            tool_call_breakdown = debug.get("tool_call_breakdown")
-            if isinstance(tool_call_breakdown, dict):
-                for raw_tool_name, raw_count in sorted(tool_call_breakdown.items()):
-                    if not isinstance(raw_count, (int, float)):
-                        continue
-                    metric_tool_name = metric_token(str(raw_tool_name), max_len=32)
-                    if not metric_tool_name:
-                        continue
-                    record_metric(
-                        name=f"pipeline.trends.tool.{metric_tool_name}.calls_total",
-                        value=float(raw_count),
-                        unit="count",
-                    )
-        record_metric(
-            name="pipeline.trends.duration_ms",
-            value=int((time.perf_counter() - started) * 1000),
-            unit="ms",
+        if not isinstance(debug, dict):
+            return
+        tool_call_breakdown = debug.get("tool_call_breakdown")
+        if not isinstance(tool_call_breakdown, dict):
+            return
+        for raw_tool_name, raw_count in sorted(tool_call_breakdown.items()):
+            if not isinstance(raw_count, (int, float)):
+                continue
+            metric_tool_name = metric_token(str(raw_tool_name), max_len=32)
+            if not metric_tool_name:
+                continue
+            self.record_metric(
+                name=f"pipeline.trends.tool.{metric_tool_name}.calls_total",
+                value=float(raw_count),
+                unit="count",
+            )
+
+    def _handle_failure(
+        self,
+        *,
+        exc: BaseException,
+        state: _TrendStageState | None,
+    ) -> None:
+        sanitized_error = self.service._sanitize_error_message(str(exc))
+        anchor = state.anchor if state is not None else (self.request.anchor_date or utc_now().date())
+        granularity = (
+            state.normalized_granularity
+            if state is not None
+            else str(self.request.granularity or "").strip().lower()
         )
-        log.info(
-            "Trends completed doc_id={} granularity={} period_start={} period_end={}",
-            doc_id,
-            normalized_granularity,
-            period_start.isoformat(),
-            period_end.isoformat(),
-        )
-        return TrendResult(
-            doc_id=int(doc_id),
-            granularity=normalized_granularity,
-            period_start=period_start,
-            period_end=period_end,
-            title=str(payload.title),
-            pass_output_id=trend_synthesis_pass_output_id,
-        )
-    except Exception as exc:
-        sanitized_error = service._sanitize_error_message(str(exc))
-        service._record_debug_artifact(
-            run_id=run_id,
+        self.service._record_debug_artifact(
+            run_id=self.request.run_id,
             item_id=None,
             kind="error_context",
             payload={
                 "stage": "trends",
                 "error_type": type(exc).__name__,
                 "error_message": sanitized_error,
-                "granularity": normalized_granularity,
+                "granularity": granularity,
                 "anchor_date": anchor.isoformat(),
-                **service._classify_exception(exc),
+                **self.service._classify_exception(exc),
             },
-            log=log,
+            log=self.log,
             failure_message="Trends error artifact record failed: {}",
         )
-        record_metric(
+        self.record_metric(
             name="pipeline.trends.failed_total",
             value=1,
             unit="count",
         )
-        record_metric(
+        self.record_metric(
             name="pipeline.trends.duration_ms",
-            value=int((time.perf_counter() - started) * 1000),
+            value=int((time.perf_counter() - self.started) * 1000),
             unit="ms",
         )
-        log.warning("Trends failed: {}", sanitized_error)
-        raise
+        self.log.warning("Trends failed: {}", sanitized_error)
+
+
+def _prepare_trend_projection_state(
+    context: _TrendProjectionContext,
+    pass_output_id: int | None,
+) -> _TrendProjectionState:
+    state = context.state
+    generation = context.generation
+    service = context.service
+    if pass_output_id is None:
+        service._record_debug_artifact(
+            run_id=context.request.run_id,
+            item_id=None,
+            kind="pass_output_failure",
+            payload={
+                "stage": "trends",
+                "pass_kind": "trend_synthesis",
+                "granularity": state.normalized_granularity,
+                "period_start": state.period_start.isoformat(),
+                "period_end": state.period_end.isoformat(),
+                "failure": context.pass_output_failure or {},
+            },
+            log=context.log,
+            failure_message="Trends pass output failure artifact record failed: {}",
+        )
+
+    doc_id = trends.persist_trend_payload(
+        repository=cast(Any, service.repository),
+        granularity=state.normalized_granularity,
+        period_start=state.period_start,
+        period_end=state.period_end,
+        payload=generation.payload,
+        pass_output_id=pass_output_id,
+        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+    )
+    materialized = materialize_trend_note_payload(
+        repository=cast(Any, service.repository),
+        payload=generation.payload,
+        markdown_output_dir=service.settings.markdown_output_dir,
+        output_language=service.settings.llm_output_language,
+    )
+    _record_note_doc_ref_metrics(context, materialized)
+    targets = set(service.settings.publish_targets or [])
+    _validate_projection_targets(context, targets)
+    trend_delivery_hash = _build_trend_delivery_hash(
+        normalized_granularity=state.normalized_granularity,
+        period_start=state.period_start,
+        period_end=state.period_end,
+        materialized=materialized,
+    )
+    (
+        telegram_destination,
+        telegram_remaining_today,
+        telegram_already_sent,
+        telegram_can_attempt_delivery,
+    ) = _resolve_telegram_delivery_state(
+        context=context,
+        doc_id=doc_id,
+        targets=targets,
+        trend_delivery_hash=trend_delivery_hash,
+    )
+    return _TrendProjectionState(
+        doc_id=doc_id,
+        materialized=materialized,
+        targets=targets,
+        telegram_destination=telegram_destination,
+        telegram_remaining_today=telegram_remaining_today,
+        telegram_already_sent=telegram_already_sent,
+        telegram_can_attempt_delivery=telegram_can_attempt_delivery,
+        trend_delivery_hash=trend_delivery_hash,
+    )
+
+
+def _record_note_doc_ref_metrics(
+    context: _TrendProjectionContext,
+    materialized: MaterializedTrendNotePayload,
+) -> None:
+    rewrite_occurrences_total = materialized.rewrite_stats.doc_ref_occurrences_total
+    rewrite_doc_ids_resolved_total = materialized.rewrite_stats.doc_ref_resolved_total
+    rewrite_doc_ids_unresolved_total = materialized.rewrite_stats.doc_ref_unresolved_total
+    if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
+        context.log.info(
+            "Trend note doc refs rewritten occurrences={} resolved_doc_ids={} unresolved_doc_ids={}",
+            rewrite_occurrences_total,
+            rewrite_doc_ids_resolved_total,
+            rewrite_doc_ids_unresolved_total,
+        )
+    for metric_name, value in (
+        ("pipeline.trends.note_doc_refs_rewrite_occurrences_total", rewrite_occurrences_total),
+        ("pipeline.trends.note_doc_refs_resolved_total", rewrite_doc_ids_resolved_total),
+        ("pipeline.trends.note_doc_refs_unresolved_total", rewrite_doc_ids_unresolved_total),
+    ):
+        context.record_metric(name=metric_name, value=value, unit="count")
+
+
+def _build_trend_delivery_hash(
+    *,
+    normalized_granularity: str,
+    period_start: Any,
+    period_end: Any,
+    materialized: MaterializedTrendNotePayload,
+) -> str:
+    return hashlib.sha256(
+        orjson.dumps(
+            {
+                "title": materialized.title,
+                "granularity": normalized_granularity,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "overview_md": materialized.overview_md,
+                "topics": list(materialized.topics),
+                "clusters": materialized.clusters,
+            },
+            option=orjson.OPT_SORT_KEYS,
+        )
+    ).hexdigest()
+
+
+def _validate_projection_targets(
+    context: _TrendProjectionContext,
+    targets: set[str],
+) -> None:
+    service = context.service
+    if "obsidian" in targets and service.settings.obsidian_vault_path is None:
+        raise ValueError(
+            "OBSIDIAN_VAULT_PATH is required when PUBLISH_TARGETS includes 'obsidian'"
+        )
+    if "telegram" in targets and service.telegram_sender is None:
+        if (
+            service.settings.telegram_bot_token is None
+            or service.settings.telegram_chat_id is None
+        ):
+            raise ValueError(
+                "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required when PUBLISH_TARGETS includes 'telegram'"
+            )
+        service.telegram_sender = TelegramSender(
+            token=service.settings.telegram_bot_token.get_secret_value(),
+            chat_id=service.settings.telegram_chat_id.get_secret_value(),
+        )
+
+
+def _resolve_telegram_delivery_state(
+    *,
+    context: _TrendProjectionContext,
+    doc_id: int,
+    targets: set[str],
+    trend_delivery_hash: str,
+) -> tuple[str, int | None, bool, bool]:
+    service = context.service
+    repository_any = cast(Any, service.repository)
+    telegram_destination = service._telegram_delivery_destination()
+    telegram_remaining_today: int | None = None
+    telegram_already_sent = False
+    if "telegram" in targets:
+        _, _, telegram_remaining_today = service._telegram_delivery_budget()
+    if (
+        "telegram" in targets
+        and not context.generation.empty_corpus
+        and telegram_remaining_today is not None
+        and telegram_remaining_today > 0
+    ):
+        telegram_already_sent = bool(
+            repository_any.has_sent_trend_delivery(
+                doc_id=doc_id,
+                channel=DELIVERY_CHANNEL_TELEGRAM,
+                destination=telegram_destination,
+                content_hash=trend_delivery_hash,
+            )
+        )
+    telegram_can_attempt_delivery = (
+        "telegram" in targets
+        and not context.generation.empty_corpus
+        and telegram_remaining_today is not None
+        and telegram_remaining_today > 0
+        and not telegram_already_sent
+    )
+    return (
+        telegram_destination,
+        telegram_remaining_today,
+        telegram_already_sent,
+        telegram_can_attempt_delivery,
+    )
+
+
+def _build_trend_projection_specs(
+    context: _TrendProjectionContext,
+    pass_output_id: int | None,
+    state: _TrendProjectionState | None,
+) -> list[ProjectionSpec]:
+    if state is None:
+        raise RuntimeError("trend projection state is required")
+    warning_context = {
+        "doc_id": state.doc_id,
+        "granularity": context.state.normalized_granularity,
+        "period_start": context.state.period_start.isoformat(),
+        "period_end": context.state.period_end.isoformat(),
+    }
+    return [
+        _trend_markdown_projection_spec(
+            context=context,
+            pass_output_id=pass_output_id,
+            projection_state=state,
+            warning_context=warning_context,
+        ),
+        _trend_obsidian_projection_spec(
+            context=context,
+            pass_output_id=pass_output_id,
+            projection_state=state,
+            warning_context=warning_context,
+        ),
+    ]
+
+
+def _trend_markdown_projection_spec(
+    *,
+    context: _TrendProjectionContext,
+    pass_output_id: int | None,
+    projection_state: _TrendProjectionState,
+    warning_context: dict[str, Any],
+) -> ProjectionSpec:
+    service = context.service
+    stage_state = context.state
+    materialized = projection_state.materialized
+    return ProjectionSpec(
+        name="markdown",
+        enabled="markdown" in projection_state.targets
+        or projection_state.telegram_can_attempt_delivery,
+        metric_base="pipeline.trends.projection.trend_markdown",
+        log=context.log.bind(module="pipeline.trends.projection.trend_markdown"),
+        failure_message=(
+            "Trend markdown projection failed doc_id={doc_id} "
+            "granularity={granularity} period_start={period_start} "
+            "period_end={period_end} error_type={error_type} error={error}"
+        ),
+        execute=lambda: write_markdown_trend_note(
+            output_dir=service.settings.markdown_output_dir,
+            trend_doc_id=projection_state.doc_id,
+            title=materialized.title,
+            granularity=stage_state.normalized_granularity,
+            period_start=stage_state.period_start,
+            period_end=stage_state.period_end,
+            run_id=context.request.run_id,
+            overview_md=materialized.overview_md,
+            topics=list(materialized.topics),
+            evolution=materialized.evolution,
+            history_window_refs=materialized.history_window_refs,
+            counter_signal=materialized.counter_signal,
+            clusters=materialized.clusters,
+            highlights=materialized.highlights,
+            output_language=service.settings.llm_output_language,
+            pass_output_id=pass_output_id,
+            pass_kind=TREND_SYNTHESIS_PASS_KIND,
+            site_exclude=context.generation.empty_corpus,
+        ),
+        warning_context=warning_context,
+        sanitize_error=service._sanitize_error_message,
+        reraise=False,
+    )
+
+
+def _trend_obsidian_projection_spec(
+    *,
+    context: _TrendProjectionContext,
+    pass_output_id: int | None,
+    projection_state: _TrendProjectionState,
+    warning_context: dict[str, Any],
+) -> ProjectionSpec:
+    service = context.service
+    stage_state = context.state
+    materialized = projection_state.materialized
+    return ProjectionSpec(
+        name="obsidian",
+        enabled="obsidian" in projection_state.targets
+        and service.settings.obsidian_vault_path is not None,
+        metric_base="pipeline.trends.projection.trend_obsidian",
+        log=context.log.bind(module="pipeline.trends.projection.trend_obsidian"),
+        failure_message=(
+            "Trend obsidian projection failed doc_id={doc_id} "
+            "granularity={granularity} period_start={period_start} "
+            "period_end={period_end} error_type={error_type} error={error}"
+        ),
+        execute=lambda: write_obsidian_trend_note(
+            vault_path=service.settings.obsidian_vault_path,
+            base_folder=service.settings.obsidian_base_folder,
+            trend_doc_id=projection_state.doc_id,
+            title=materialized.title,
+            granularity=stage_state.normalized_granularity,
+            period_start=stage_state.period_start,
+            period_end=stage_state.period_end,
+            run_id=context.request.run_id,
+            overview_md=materialized.overview_md,
+            topics=list(materialized.topics),
+            evolution=materialized.evolution,
+            history_window_refs=materialized.history_window_refs,
+            counter_signal=materialized.counter_signal,
+            clusters=materialized.clusters,
+            highlights=materialized.highlights,
+            output_language=service.settings.llm_output_language,
+            pass_output_id=pass_output_id,
+            pass_kind=TREND_SYNTHESIS_PASS_KIND,
+            site_exclude=context.generation.empty_corpus,
+        ),
+        warning_context=warning_context,
+        sanitize_error=service._sanitize_error_message,
+        reraise=False,
+    )

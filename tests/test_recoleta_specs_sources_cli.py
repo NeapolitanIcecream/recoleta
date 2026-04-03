@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 import subprocess
 import sys
@@ -235,6 +236,59 @@ def test_fetch_rss_drafts_uses_conditional_headers_from_pull_state(
         "if-none-match": '"feed-etag"',
         "if-modified-since": "Wed, 22 Jan 2025 00:00:00 GMT",
     }
+
+
+def test_fetch_rss_drafts_counts_watermark_filtered_entries(
+    respx_mock: respx.Router,
+) -> None:
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Incremental Feed</title>
+    <item>
+      <title>Fresh Entry</title>
+      <link>https://example.com/fresh</link>
+      <guid>fresh-entry</guid>
+      <pubDate>Mon, 20 Jan 2025 14:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Stale Entry</title>
+      <link>https://example.com/stale</link>
+      <guid>stale-entry</guid>
+      <pubDate>Mon, 20 Jan 2025 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
+"""
+    watermark = datetime(2025, 1, 20, 12, tzinfo=UTC)
+    respx_mock.get("https://feeds.example/incremental.xml").respond(
+        200,
+        text=rss_xml,
+        headers={"Content-Type": "application/rss+xml; charset=utf-8"},
+    )
+
+    result = cast(
+        SourcePullResult,
+        fetch_rss_drafts(
+            feed_urls=["https://feeds.example/incremental.xml"],
+            source="rss",
+            max_items_per_feed=10,
+            include_stats=True,
+            pull_state_lookup=lambda scope_kind, scope_key: (
+                SourcePullStateSnapshot(
+                    scope_kind=scope_kind,
+                    scope_key=scope_key,
+                    watermark_published_at=watermark,
+                )
+                if scope_kind == "feed"
+                and scope_key == "https://feeds.example/incremental.xml"
+                else None
+            ),
+        ),
+    )
+
+    assert [draft.source_item_id for draft in result.drafts] == ["fresh-entry"]
+    assert result.filtered_out_total == 1
 
 
 def test_fetch_hf_daily_papers_drafts_uses_hf_api_and_preserves_daily_submission_time(
@@ -488,6 +542,59 @@ def test_fetch_openreview_drafts_uses_window_filters_and_excludes_future_notes(
     assert [draft.source_item_id for draft in drafts] == ["window-note"]
 
 
+def test_fetch_openreview_drafts_accepts_mapping_wrapped_note_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MappingWrapper(Mapping[str, object]):
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __getitem__(self, key: str) -> object:
+            return self.payload[key]
+
+        def __iter__(self) -> Iterator[str]:
+            return iter(self.payload)
+
+        def __len__(self) -> int:
+            return len(self.payload)
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002,ANN003
+            _ = args, kwargs
+
+        def get_notes(self, **kwargs):  # type: ignore[no-untyped-def]
+            _ = kwargs
+            return [
+                SimpleNamespace(
+                    id="mapping-note",
+                    content=MappingWrapper(
+                        {
+                            "title": MappingWrapper({"value": "Mapped Note"}),
+                            "authors": MappingWrapper({"value": ["Alice", "Bob"]}),
+                        }
+                    ),
+                    tcdate=int(
+                        datetime(2025, 1, 20, 12, tzinfo=UTC).timestamp() * 1000
+                    ),
+                )
+            ]
+
+    import recoleta.sources as source_module
+
+    monkeypatch.setattr(source_module.openreview, "Client", FakeClient)
+
+    drafts = fetch_openreview_drafts(
+        venues=["ICLR.cc/2026/Conference"],
+        max_results_per_venue=5,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert len(drafts) == 1
+    assert drafts[0].title == "Mapped Note"
+    assert drafts[0].authors == ["Alice", "Bob"]
+
+
 def test_fetch_hn_drafts_uses_algolia_search_for_requested_window(
     respx_mock: respx.Router,
 ) -> None:
@@ -530,6 +637,67 @@ def test_fetch_hn_drafts_uses_algolia_search_for_requested_window(
     assert observed_queries[0]["tags"] == "story"
     assert "created_at_i>=" in observed_queries[0]["numericFilters"]
     assert "created_at_i<" in observed_queries[0]["numericFilters"]
+
+
+def test_fetch_hn_drafts_keeps_scanning_after_zero_keep_page(
+    respx_mock: respx.Router,
+) -> None:
+    observed_pages: list[str] = []
+
+    def _response(request: httpx.Request) -> httpx.Response:
+        page = request.url.params["page"]
+        observed_pages.append(page)
+        if page == "0":
+            return httpx.Response(
+                200,
+                json={
+                    "hits": [
+                        {
+                            "objectID": "hn-missing-title",
+                            "author": "dang",
+                            "created_at_i": int(
+                                datetime(2025, 1, 20, 11, tzinfo=UTC).timestamp()
+                            ),
+                            "url": "https://example.com/missing-title",
+                        }
+                    ],
+                    "nbPages": 2,
+                    "page": 0,
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "hits": [
+                    {
+                        "objectID": "hn-2",
+                        "title": "Recovered HN Story",
+                        "author": "pg",
+                        "created_at_i": int(
+                            datetime(2025, 1, 20, 10, tzinfo=UTC).timestamp()
+                        ),
+                        "url": "https://example.com/recovered-hn-story",
+                    }
+                ],
+                "nbPages": 2,
+                "page": 1,
+            },
+        )
+
+    respx_mock.get("https://hn.algolia.com/api/v1/search_by_date").mock(
+        side_effect=_response
+    )
+
+    drafts = fetch_hn_drafts(
+        feed_urls=["https://news.ycombinator.com/rss"],
+        max_items_per_feed=5,
+        period_start=datetime(2025, 1, 20, tzinfo=UTC),
+        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    assert observed_pages == ["0", "1"]
+    assert [draft.source_item_id for draft in drafts] == ["hn-2"]
+    assert drafts[0].canonical_url == "https://example.com/recovered-hn-story"
 
 
 def test_fetch_arxiv_drafts_uses_saved_watermark_when_no_window_requested(

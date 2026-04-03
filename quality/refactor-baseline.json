@@ -839,7 +839,7 @@
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::method::_metric_token",
       "kind": "method",
-      "line": 554,
+      "line": 586,
       "size": null,
       "subsystem": "pipeline",
       "symbol": "_metric_token"
@@ -850,7 +850,7 @@
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::attribute::_telegram_senders",
       "kind": "attribute",
-      "line": 166,
+      "line": 233,
       "size": null,
       "subsystem": "pipeline",
       "symbol": "_telegram_senders"
@@ -861,7 +861,7 @@
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::method::publish",
       "kind": "method",
-      "line": 3107,
+      "line": 1848,
       "size": null,
       "subsystem": "pipeline",
       "symbol": "publish"
@@ -1285,203 +1285,8 @@
       "symbol": "HOTSPOT_CLASSIFICATIONS"
     }
   ],
-  "generated_at": "2026-04-03T02:40:14.242063+00:00",
+  "generated_at": "2026-04-03T04:09:30.655131+00:00",
   "hotspots": [
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/pipeline/trends_stage.py",
-      "id": "recoleta/pipeline/trends_stage.py::run_trends_stage",
-      "line": 128,
-      "metrics": {
-        "complexipy": {
-          "complexity": 378
-        },
-        "lizard": {
-          "ccn": 142,
-          "length": 1620,
-          "nloc": 1116,
-          "parameter_count": 9,
-          "token_count": 4917
-        },
-        "ruff": {
-          "complexity": 120
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=378",
-          "metrics": {
-            "complexity": 378
-          },
-          "severity": "critical",
-          "symbol": "run_trends_stage",
-          "tool": "complexipy"
-        },
-        {
-          "line": 128,
-          "message": "CCN=142, NLOC=1116, parameter_count=9, length=1620",
-          "metrics": {
-            "ccn": 142,
-            "length": 1620,
-            "nloc": 1116,
-            "parameter_count": 9,
-            "token_count": 4917
-          },
-          "severity": "critical",
-          "symbol": "run_trends_stage",
-          "tool": "lizard"
-        },
-        {
-          "line": 128,
-          "message": "`run_trends_stage` is too complex (120 > 10)",
-          "metrics": {
-            "complexity": 120
-          },
-          "severity": "critical",
-          "symbol": "run_trends_stage",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "run_trends_stage",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::enrich",
-      "line": 847,
-      "metrics": {
-        "complexipy": {
-          "complexity": 172
-        },
-        "lizard": {
-          "ccn": 43,
-          "length": 672,
-          "nloc": 391,
-          "parameter_count": 5,
-          "token_count": 1836
-        },
-        "ruff": {
-          "complexity": 52
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=172",
-          "metrics": {
-            "complexity": 172
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::enrich",
-          "tool": "complexipy"
-        },
-        {
-          "line": 847,
-          "message": "CCN=43, NLOC=391, parameter_count=5, length=672",
-          "metrics": {
-            "ccn": 43,
-            "length": 672,
-            "nloc": 391,
-            "parameter_count": 5,
-            "token_count": 1836
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::enrich",
-          "tool": "lizard"
-        },
-        {
-          "line": 847,
-          "message": "`enrich` is too complex (52 > 10)",
-          "metrics": {
-            "complexity": 52
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::enrich",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::enrich",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/sources.py",
-      "id": "recoleta/sources.py::fetch_rss_drafts",
-      "line": 805,
-      "metrics": {
-        "complexipy": {
-          "complexity": 128
-        },
-        "lizard": {
-          "ccn": 59,
-          "length": 212,
-          "nloc": 212,
-          "parameter_count": 8,
-          "token_count": 1112
-        },
-        "ruff": {
-          "complexity": 25
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=128",
-          "metrics": {
-            "complexity": 128
-          },
-          "severity": "critical",
-          "symbol": "fetch_rss_drafts",
-          "tool": "complexipy"
-        },
-        {
-          "line": 805,
-          "message": "CCN=59, NLOC=212, parameter_count=8, length=212",
-          "metrics": {
-            "ccn": 59,
-            "length": 212,
-            "nloc": 212,
-            "parameter_count": 8,
-            "token_count": 1112
-          },
-          "severity": "critical",
-          "symbol": "fetch_rss_drafts",
-          "tool": "lizard"
-        },
-        {
-          "line": 805,
-          "message": "`fetch_rss_drafts` is too complex (25 > 10)",
-          "metrics": {
-            "complexity": 25
-          },
-          "severity": "critical",
-          "symbol": "fetch_rss_drafts",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "sources",
-      "symbol": "fetch_rss_drafts",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
     {
       "classification": "refactor_now",
       "file": "recoleta/translation.py",
@@ -1540,71 +1345,6 @@
       ],
       "subsystem": "translation",
       "symbol": "_load_idea_candidates",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/sources.py",
-      "id": "recoleta/sources.py::fetch_openreview_drafts",
-      "line": 623,
-      "metrics": {
-        "complexipy": {
-          "complexity": 115
-        },
-        "lizard": {
-          "ccn": 53,
-          "length": 180,
-          "nloc": 171,
-          "parameter_count": 7,
-          "token_count": 890
-        },
-        "ruff": {
-          "complexity": 27
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=115",
-          "metrics": {
-            "complexity": 115
-          },
-          "severity": "critical",
-          "symbol": "fetch_openreview_drafts",
-          "tool": "complexipy"
-        },
-        {
-          "line": 623,
-          "message": "CCN=53, NLOC=171, parameter_count=7, length=180",
-          "metrics": {
-            "ccn": 53,
-            "length": 180,
-            "nloc": 171,
-            "parameter_count": 7,
-            "token_count": 890
-          },
-          "severity": "critical",
-          "symbol": "fetch_openreview_drafts",
-          "tool": "lizard"
-        },
-        {
-          "line": 623,
-          "message": "`fetch_openreview_drafts` is too complex (27 > 10)",
-          "metrics": {
-            "complexity": 27
-          },
-          "severity": "critical",
-          "symbol": "fetch_openreview_drafts",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "sources",
-      "symbol": "fetch_openreview_drafts",
       "tool_count": 3,
       "tools": [
         "complexipy",
@@ -1679,71 +1419,6 @@
     },
     {
       "classification": "refactor_now",
-      "file": "recoleta/sources.py",
-      "id": "recoleta/sources.py::fetch_arxiv_drafts",
-      "line": 460,
-      "metrics": {
-        "complexipy": {
-          "complexity": 87
-        },
-        "lizard": {
-          "ccn": 53,
-          "length": 161,
-          "nloc": 154,
-          "parameter_count": 7,
-          "token_count": 877
-        },
-        "ruff": {
-          "complexity": 24
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=87",
-          "metrics": {
-            "complexity": 87
-          },
-          "severity": "critical",
-          "symbol": "fetch_arxiv_drafts",
-          "tool": "complexipy"
-        },
-        {
-          "line": 460,
-          "message": "CCN=53, NLOC=154, parameter_count=7, length=161",
-          "metrics": {
-            "ccn": 53,
-            "length": 161,
-            "nloc": 154,
-            "parameter_count": 7,
-            "token_count": 877
-          },
-          "severity": "critical",
-          "symbol": "fetch_arxiv_drafts",
-          "tool": "lizard"
-        },
-        {
-          "line": 460,
-          "message": "`fetch_arxiv_drafts` is too complex (24 > 10)",
-          "metrics": {
-            "complexity": 24
-          },
-          "severity": "high",
-          "symbol": "fetch_arxiv_drafts",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "sources",
-      "symbol": "fetch_arxiv_drafts",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
       "file": "scripts/bench_trends_hotspots.py",
       "id": "scripts/bench_trends_hotspots.py::_run_stage_rep_enforcement_like_current",
       "line": 510,
@@ -1800,71 +1475,6 @@
       ],
       "subsystem": "other",
       "symbol": "_run_stage_rep_enforcement_like_current",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::_ensure_arxiv_html_document_content",
-      "line": 2754,
-      "metrics": {
-        "complexipy": {
-          "complexity": 77
-        },
-        "lizard": {
-          "ccn": 44,
-          "length": 225,
-          "nloc": 205,
-          "parameter_count": 9,
-          "token_count": 1218
-        },
-        "ruff": {
-          "complexity": 34
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=77",
-          "metrics": {
-            "complexity": 77
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::_ensure_arxiv_html_document_content",
-          "tool": "complexipy"
-        },
-        {
-          "line": 2754,
-          "message": "CCN=44, NLOC=205, parameter_count=9, length=225",
-          "metrics": {
-            "ccn": 44,
-            "length": 225,
-            "nloc": 205,
-            "parameter_count": 9,
-            "token_count": 1218
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::_ensure_arxiv_html_document_content",
-          "tool": "lizard"
-        },
-        {
-          "line": 2754,
-          "message": "`_ensure_arxiv_html_document_content` is too complex (34 > 10)",
-          "metrics": {
-            "complexity": 34
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::_ensure_arxiv_html_document_content",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::_ensure_arxiv_html_document_content",
       "tool_count": 3,
       "tools": [
         "complexipy",
@@ -1941,7 +1551,7 @@
       "classification": "refactor_now",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::_build_triage_candidates",
-      "line": 3377,
+      "line": 1955,
       "metrics": {
         "complexipy": {
           "complexity": 68
@@ -1969,7 +1579,7 @@
           "tool": "complexipy"
         },
         {
-          "line": 3377,
+          "line": 1955,
           "message": "CCN=44, NLOC=122, parameter_count=2, length=130",
           "metrics": {
             "ccn": 44,
@@ -1983,7 +1593,7 @@
           "tool": "lizard"
         },
         {
-          "line": 3377,
+          "line": 1955,
           "message": "`_build_triage_candidates` is too complex (25 > 10)",
           "metrics": {
             "complexity": 25
@@ -2134,74 +1744,9 @@
     },
     {
       "classification": "refactor_now",
-      "file": "recoleta/sources.py",
-      "id": "recoleta/sources.py::fetch_hn_drafts",
-      "line": 1019,
-      "metrics": {
-        "complexipy": {
-          "complexity": 57
-        },
-        "lizard": {
-          "ccn": 27,
-          "length": 137,
-          "nloc": 131,
-          "parameter_count": 7,
-          "token_count": 714
-        },
-        "ruff": {
-          "complexity": 14
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=57",
-          "metrics": {
-            "complexity": 57
-          },
-          "severity": "critical",
-          "symbol": "fetch_hn_drafts",
-          "tool": "complexipy"
-        },
-        {
-          "line": 1019,
-          "message": "CCN=27, NLOC=131, parameter_count=7, length=137",
-          "metrics": {
-            "ccn": 27,
-            "length": 137,
-            "nloc": 131,
-            "parameter_count": 7,
-            "token_count": 714
-          },
-          "severity": "high",
-          "symbol": "fetch_hn_drafts",
-          "tool": "lizard"
-        },
-        {
-          "line": 1019,
-          "message": "`fetch_hn_drafts` is too complex (14 > 10)",
-          "metrics": {
-            "complexity": 14
-          },
-          "severity": "warning",
-          "symbol": "fetch_hn_drafts",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "sources",
-      "symbol": "fetch_hn_drafts",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::analyze",
-      "line": 2146,
+      "line": 1289,
       "metrics": {
         "complexipy": {
           "complexity": 57
@@ -2229,7 +1774,7 @@
           "tool": "complexipy"
         },
         {
-          "line": 2146,
+          "line": 1289,
           "message": "CCN=21, NLOC=288, parameter_count=5, length=331",
           "metrics": {
             "ccn": 21,
@@ -2243,7 +1788,7 @@
           "tool": "lizard"
         },
         {
-          "line": 2146,
+          "line": 1289,
           "message": "`analyze` is too complex (23 > 10)",
           "metrics": {
             "complexity": 23
@@ -2385,71 +1930,6 @@
       ],
       "subsystem": "rag",
       "symbol": "ensure_summary_vectors_for_period",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/sources.py",
-      "id": "recoleta/sources.py::fetch_hf_daily_papers_drafts",
-      "line": 331,
-      "metrics": {
-        "complexipy": {
-          "complexity": 51
-        },
-        "lizard": {
-          "ccn": 30,
-          "length": 107,
-          "nloc": 102,
-          "parameter_count": 5,
-          "token_count": 499
-        },
-        "ruff": {
-          "complexity": 16
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=51",
-          "metrics": {
-            "complexity": 51
-          },
-          "severity": "critical",
-          "symbol": "fetch_hf_daily_papers_drafts",
-          "tool": "complexipy"
-        },
-        {
-          "line": 331,
-          "message": "CCN=30, NLOC=102, parameter_count=5, length=107",
-          "metrics": {
-            "ccn": 30,
-            "length": 107,
-            "nloc": 102,
-            "parameter_count": 5,
-            "token_count": 499
-          },
-          "severity": "critical",
-          "symbol": "fetch_hf_daily_papers_drafts",
-          "tool": "lizard"
-        },
-        {
-          "line": 331,
-          "message": "`fetch_hf_daily_papers_drafts` is too complex (16 > 10)",
-          "metrics": {
-            "complexity": 16
-          },
-          "severity": "high",
-          "symbol": "fetch_hf_daily_papers_drafts",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "sources",
-      "symbol": "fetch_hf_daily_papers_drafts",
       "tool_count": 3,
       "tools": [
         "complexipy",
@@ -2710,71 +2190,6 @@
       ],
       "subsystem": "other",
       "symbol": "main",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::ingest",
-      "line": 563,
-      "metrics": {
-        "complexipy": {
-          "complexity": 40
-        },
-        "lizard": {
-          "ccn": 31,
-          "length": 251,
-          "nloc": 248,
-          "parameter_count": 5,
-          "token_count": 1241
-        },
-        "ruff": {
-          "complexity": 13
-        }
-      },
-      "signals": [
-        {
-          "line": 563,
-          "message": "CCN=31, NLOC=248, parameter_count=5, length=251",
-          "metrics": {
-            "ccn": 31,
-            "length": 251,
-            "nloc": 248,
-            "parameter_count": 5,
-            "token_count": 1241
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::ingest",
-          "tool": "lizard"
-        },
-        {
-          "line": null,
-          "message": "cognitive complexity=40",
-          "metrics": {
-            "complexity": 40
-          },
-          "severity": "high",
-          "symbol": "PipelineService::ingest",
-          "tool": "complexipy"
-        },
-        {
-          "line": 563,
-          "message": "`ingest` is too complex (13 > 10)",
-          "metrics": {
-            "complexity": 13
-          },
-          "severity": "warning",
-          "symbol": "PipelineService::ingest",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::ingest",
       "tool_count": 3,
       "tools": [
         "complexipy",
@@ -3111,7 +2526,7 @@
       "classification": "refactor_now",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::triage",
-      "line": 1520,
+      "line": 663,
       "metrics": {
         "complexipy": {
           "complexity": 29
@@ -3129,7 +2544,7 @@
       },
       "signals": [
         {
-          "line": 1520,
+          "line": 663,
           "message": "CCN=24, NLOC=280, parameter_count=6, length=296",
           "metrics": {
             "ccn": 24,
@@ -3143,7 +2558,7 @@
           "tool": "lizard"
         },
         {
-          "line": 1520,
+          "line": 663,
           "message": "`triage` is too complex (16 > 10)",
           "metrics": {
             "complexity": 16
@@ -3750,43 +3165,6 @@
       "tools": [
         "lizard",
         "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::enrich._consume_result",
-      "line": 1043,
-      "metrics": {
-        "lizard": {
-          "ccn": 54,
-          "length": 154,
-          "nloc": 151,
-          "parameter_count": 2,
-          "token_count": 910
-        }
-      },
-      "signals": [
-        {
-          "line": 1043,
-          "message": "CCN=54, NLOC=151, parameter_count=2, length=154",
-          "metrics": {
-            "ccn": 54,
-            "length": 154,
-            "nloc": 151,
-            "parameter_count": 2,
-            "token_count": 910
-          },
-          "severity": "critical",
-          "symbol": "enrich._consume_result",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "enrich._consume_result",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
       ]
     },
     {
@@ -4784,7 +4162,7 @@
       "classification": "refactor_now",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::_build_analyze_metric_points",
-      "line": 1972,
+      "line": 1115,
       "metrics": {
         "lizard": {
           "ccn": 9,
@@ -4796,7 +4174,7 @@
       },
       "signals": [
         {
-          "line": 1972,
+          "line": 1115,
           "message": "CCN=9, NLOC=173, parameter_count=24, length=173",
           "metrics": {
             "ccn": 9,
@@ -4812,43 +4190,6 @@
       ],
       "subsystem": "pipeline",
       "symbol": "PipelineService::_build_analyze_metric_points",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::_ensure_arxiv_content",
-      "line": 2601,
-      "metrics": {
-        "lizard": {
-          "ccn": 9,
-          "length": 90,
-          "nloc": 87,
-          "parameter_count": 9,
-          "token_count": 381
-        }
-      },
-      "signals": [
-        {
-          "line": 2601,
-          "message": "CCN=9, NLOC=87, parameter_count=9, length=90",
-          "metrics": {
-            "ccn": 9,
-            "length": 90,
-            "nloc": 87,
-            "parameter_count": 9,
-            "token_count": 381
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::_ensure_arxiv_content",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::_ensure_arxiv_content",
       "tool_count": 1,
       "tools": [
         "lizard"
@@ -5558,43 +4899,6 @@
       ]
     },
     {
-      "classification": "refactor_now",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::trends",
-      "line": 3123,
-      "metrics": {
-        "lizard": {
-          "ccn": 1,
-          "length": 23,
-          "nloc": 23,
-          "parameter_count": 9,
-          "token_count": 98
-        }
-      },
-      "signals": [
-        {
-          "line": 3123,
-          "message": "CCN=1, NLOC=23, parameter_count=9, length=23",
-          "metrics": {
-            "ccn": 1,
-            "length": 23,
-            "nloc": 23,
-            "parameter_count": 9,
-            "token_count": 98
-          },
-          "severity": "critical",
-          "symbol": "PipelineService::trends",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::trends",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
       "classification": "refactor_soon",
       "file": "recoleta/translation.py",
       "id": "recoleta/translation.py::_load_trend_candidates",
@@ -5656,49 +4960,6 @@
       "tools": [
         "complexipy",
         "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::_pull_source_drafts",
-      "line": 3163,
-      "metrics": {
-        "complexipy": {
-          "complexity": 33
-        },
-        "ruff": {
-          "complexity": 12
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=33",
-          "metrics": {
-            "complexity": 33
-          },
-          "severity": "high",
-          "symbol": "PipelineService::_pull_source_drafts",
-          "tool": "complexipy"
-        },
-        {
-          "line": 3163,
-          "message": "`_pull_source_drafts` is too complex (12 > 10)",
-          "metrics": {
-            "complexity": 12
-          },
-          "severity": "warning",
-          "symbol": "PipelineService::_pull_source_drafts",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::_pull_source_drafts",
-      "tool_count": 2,
-      "tools": [
-        "complexipy",
         "ruff"
       ]
     },
@@ -6702,57 +5963,6 @@
     },
     {
       "classification": "refactor_soon",
-      "file": "recoleta/sources.py",
-      "id": "recoleta/sources.py::_discover_feed_url_from_html",
-      "line": 235,
-      "metrics": {
-        "complexipy": {
-          "complexity": 19
-        },
-        "lizard": {
-          "ccn": 17,
-          "length": 36,
-          "nloc": 36,
-          "parameter_count": 2,
-          "token_count": 297
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=19",
-          "metrics": {
-            "complexity": 19
-          },
-          "severity": "warning",
-          "symbol": "_discover_feed_url_from_html",
-          "tool": "complexipy"
-        },
-        {
-          "line": 235,
-          "message": "CCN=17, NLOC=36, parameter_count=2, length=36",
-          "metrics": {
-            "ccn": 17,
-            "length": 36,
-            "nloc": 36,
-            "parameter_count": 2,
-            "token_count": 297
-          },
-          "severity": "warning",
-          "symbol": "_discover_feed_url_from_html",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "sources",
-      "symbol": "_discover_feed_url_from_html",
-      "tool_count": 2,
-      "tools": [
-        "complexipy",
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
       "file": "recoleta/storage/documents.py",
       "id": "recoleta/storage/documents.py::DocumentStoreMixin::list_documents",
       "line": 327,
@@ -7422,57 +6632,6 @@
     },
     {
       "classification": "refactor_soon",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::_rebalance_items_by_source",
-      "line": 316,
-      "metrics": {
-        "complexipy": {
-          "complexity": 17
-        },
-        "lizard": {
-          "ccn": 15,
-          "length": 42,
-          "nloc": 40,
-          "parameter_count": 2,
-          "token_count": 269
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=17",
-          "metrics": {
-            "complexity": 17
-          },
-          "severity": "warning",
-          "symbol": "PipelineService::_rebalance_items_by_source",
-          "tool": "complexipy"
-        },
-        {
-          "line": 316,
-          "message": "CCN=15, NLOC=40, parameter_count=2, length=42",
-          "metrics": {
-            "ccn": 15,
-            "length": 42,
-            "nloc": 40,
-            "parameter_count": 2,
-            "token_count": 269
-          },
-          "severity": "warning",
-          "symbol": "PipelineService::_rebalance_items_by_source",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::_rebalance_items_by_source",
-      "tool_count": 2,
-      "tools": [
-        "complexipy",
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
       "file": "recoleta/rag/corpus_tools.py",
       "id": "recoleta/rag/corpus_tools.py::_normalize_summary_sections",
       "line": 40,
@@ -7962,80 +7121,6 @@
     },
     {
       "classification": "refactor_soon",
-      "file": "recoleta/sources.py",
-      "id": "recoleta/sources.py::_paper_info_to_draft",
-      "line": 273,
-      "metrics": {
-        "lizard": {
-          "ccn": 21,
-          "length": 56,
-          "nloc": 52,
-          "parameter_count": 4,
-          "token_count": 378
-        }
-      },
-      "signals": [
-        {
-          "line": 273,
-          "message": "CCN=21, NLOC=52, parameter_count=4, length=56",
-          "metrics": {
-            "ccn": 21,
-            "length": 56,
-            "nloc": 52,
-            "parameter_count": 4,
-            "token_count": 378
-          },
-          "severity": "high",
-          "symbol": "_paper_info_to_draft",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "sources",
-      "symbol": "_paper_info_to_draft",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/pipeline/trends_stage.py",
-      "id": "recoleta/pipeline/trends_stage.py::run_trends_stage._prepare_trend_projection_state",
-      "line": 1214,
-      "metrics": {
-        "lizard": {
-          "ccn": 20,
-          "length": 143,
-          "nloc": 136,
-          "parameter_count": 1,
-          "token_count": 558
-        }
-      },
-      "signals": [
-        {
-          "line": 1214,
-          "message": "CCN=20, NLOC=136, parameter_count=1, length=143",
-          "metrics": {
-            "ccn": 20,
-            "length": 143,
-            "nloc": 136,
-            "parameter_count": 1,
-            "token_count": 558
-          },
-          "severity": "high",
-          "symbol": "run_trends_stage._prepare_trend_projection_state",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "run_trends_stage._prepare_trend_projection_state",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
       "file": "recoleta/triage.py",
       "id": "recoleta/triage.py::SemanticTriage::_select_from_scored",
       "line": 387,
@@ -8256,43 +7341,6 @@
       ],
       "subsystem": "site/render",
       "symbol": "_render_home_page",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::_ensure_pdf_content",
-      "line": 2980,
-      "metrics": {
-        "lizard": {
-          "ccn": 12,
-          "length": 71,
-          "nloc": 69,
-          "parameter_count": 8,
-          "token_count": 436
-        }
-      },
-      "signals": [
-        {
-          "line": 2980,
-          "message": "CCN=12, NLOC=69, parameter_count=8, length=71",
-          "metrics": {
-            "ccn": 12,
-            "length": 71,
-            "nloc": 69,
-            "parameter_count": 8,
-            "token_count": 436
-          },
-          "severity": "high",
-          "symbol": "PipelineService::_ensure_pdf_content",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::_ensure_pdf_content",
       "tool_count": 1,
       "tools": [
         "lizard"
@@ -9100,43 +8148,6 @@
     },
     {
       "classification": "monitor",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::_pull_source_drafts.pull",
-      "line": 3195,
-      "metrics": {
-        "lizard": {
-          "ccn": 16,
-          "length": 86,
-          "nloc": 86,
-          "parameter_count": 3,
-          "token_count": 486
-        }
-      },
-      "signals": [
-        {
-          "line": 3195,
-          "message": "CCN=16, NLOC=86, parameter_count=3, length=86",
-          "metrics": {
-            "ccn": 16,
-            "length": 86,
-            "nloc": 86,
-            "parameter_count": 3,
-            "token_count": 486
-          },
-          "severity": "warning",
-          "symbol": "PipelineService::_pull_source_drafts.pull",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::_pull_source_drafts.pull",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "monitor",
       "file": "recoleta/app/runtime.py",
       "id": "recoleta/app/runtime.py::_print_ingest_html_document_summary",
       "line": 146,
@@ -9398,7 +8409,7 @@
       "classification": "monitor",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::_update_item_states_batch",
-      "line": 448,
+      "line": 480,
       "metrics": {
         "lizard": {
           "ccn": 15,
@@ -9410,7 +8421,7 @@
       },
       "signals": [
         {
-          "line": 448,
+          "line": 480,
           "message": "CCN=15, NLOC=31, parameter_count=2, length=31",
           "metrics": {
             "ccn": 15,
@@ -9953,7 +8964,7 @@
       "classification": "monitor",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::__init__",
-      "line": 131,
+      "line": 198,
       "metrics": {
         "lizard": {
           "ccn": 10,
@@ -9965,7 +8976,7 @@
       },
       "signals": [
         {
-          "line": 131,
+          "line": 198,
           "message": "CCN=10, NLOC=46, parameter_count=6, length=46",
           "metrics": {
             "ccn": 10,
@@ -10175,7 +9186,7 @@
       "classification": "monitor",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::_ensure_arxiv_latex_source_content",
-      "line": 2692,
+      "line": 1713,
       "metrics": {
         "lizard": {
           "ccn": 8,
@@ -10187,7 +9198,7 @@
       },
       "signals": [
         {
-          "line": 2692,
+          "line": 1713,
           "message": "CCN=8, NLOC=61, parameter_count=6, length=61",
           "metrics": {
             "ccn": 8,
@@ -10240,43 +9251,6 @@
       ],
       "subsystem": "other",
       "symbol": "persist_trend_payload",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "monitor",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::PipelineService::_ensure_item_content",
-      "line": 2552,
-      "metrics": {
-        "lizard": {
-          "ccn": 7,
-          "length": 48,
-          "nloc": 46,
-          "parameter_count": 7,
-          "token_count": 258
-        }
-      },
-      "signals": [
-        {
-          "line": 2552,
-          "message": "CCN=7, NLOC=46, parameter_count=7, length=48",
-          "metrics": {
-            "ccn": 7,
-            "length": 48,
-            "nloc": 46,
-            "parameter_count": 7,
-            "token_count": 258
-          },
-          "severity": "warning",
-          "symbol": "PipelineService::_ensure_item_content",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "PipelineService::_ensure_item_content",
       "tool_count": 1,
       "tools": [
         "lizard"
@@ -10499,43 +9473,6 @@
       ],
       "subsystem": "storage",
       "symbol": "DocumentStoreMixin::_sync_chunk_fts",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "monitor",
-      "file": "recoleta/pipeline/trends_stage.py",
-      "id": "recoleta/pipeline/trends_stage.py::run_trends_stage._build_trend_projection_specs",
-      "line": 1358,
-      "metrics": {
-        "lizard": {
-          "ccn": 4,
-          "length": 85,
-          "nloc": 85,
-          "parameter_count": 2,
-          "token_count": 441
-        }
-      },
-      "signals": [
-        {
-          "line": 1358,
-          "message": "CCN=4, NLOC=85, parameter_count=2, length=85",
-          "metrics": {
-            "ccn": 4,
-            "length": 85,
-            "nloc": 85,
-            "parameter_count": 2,
-            "token_count": 441
-          },
-          "severity": "warning",
-          "symbol": "run_trends_stage._build_trend_projection_specs",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "run_trends_stage._build_trend_projection_specs",
       "tool_count": 1,
       "tools": [
         "lizard"
@@ -10989,7 +9926,7 @@
       "classification": "monitor",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::_record_debug_artifact",
-      "line": 3340,
+      "line": 1918,
       "metrics": {
         "lizard": {
           "ccn": 3,
@@ -11001,7 +9938,7 @@
       },
       "signals": [
         {
-          "line": 3340,
+          "line": 1918,
           "message": "CCN=3, NLOC=36, parameter_count=7, length=36",
           "metrics": {
             "ccn": 3,
@@ -11507,7 +10444,7 @@
       "classification": "monitor",
       "file": "recoleta/pipeline/service.py",
       "id": "recoleta/pipeline/service.py::PipelineService::prepare",
-      "line": 815,
+      "line": 613,
       "metrics": {
         "lizard": {
           "ccn": 1,
@@ -11519,7 +10456,7 @@
       },
       "signals": [
         {
-          "line": 815,
+          "line": 613,
           "message": "CCN=1, NLOC=31, parameter_count=6, length=31",
           "metrics": {
             "ccn": 1,
@@ -12181,62 +11118,15 @@
       "tools": [
         "ruff"
       ]
-    },
-    {
-      "classification": "monitor",
-      "file": "recoleta/pipeline/service.py",
-      "id": "recoleta/pipeline/service.py::_consume_result",
-      "line": 1043,
-      "metrics": {
-        "ruff": {
-          "complexity": 11
-        }
-      },
-      "signals": [
-        {
-          "line": 1043,
-          "message": "`_consume_result` is too complex (11 > 10)",
-          "metrics": {
-            "complexity": 11
-          },
-          "severity": "warning",
-          "symbol": "_consume_result",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "pipeline",
-      "symbol": "_consume_result",
-      "tool_count": 1,
-      "tools": [
-        "ruff"
-      ]
     }
   ],
   "recommended_refactor_queue": [
     {
-      "hotspot_count": 19,
-      "refactor_now": 15,
-      "refactor_soon": 4,
+      "hotspot_count": 8,
+      "refactor_now": 8,
+      "refactor_soon": 0,
       "subsystem": "pipeline",
       "top_hotspots": [
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/pipeline/trends_stage.py",
-          "id": "recoleta/pipeline/trends_stage.py::run_trends_stage",
-          "symbol": "run_trends_stage"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/pipeline/service.py",
-          "id": "recoleta/pipeline/service.py::PipelineService::enrich",
-          "symbol": "PipelineService::enrich"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/pipeline/service.py",
-          "id": "recoleta/pipeline/service.py::PipelineService::_ensure_arxiv_html_document_content",
-          "symbol": "PipelineService::_ensure_arxiv_html_document_content"
-        },
         {
           "classification": "refactor_now",
           "file": "recoleta/pipeline/service.py",
@@ -12248,6 +11138,24 @@
           "file": "recoleta/pipeline/publish_stage.py",
           "id": "recoleta/pipeline/publish_stage.py::run_publish_stage",
           "symbol": "run_publish_stage"
+        },
+        {
+          "classification": "refactor_now",
+          "file": "recoleta/pipeline/service.py",
+          "id": "recoleta/pipeline/service.py::PipelineService::analyze",
+          "symbol": "PipelineService::analyze"
+        },
+        {
+          "classification": "refactor_now",
+          "file": "recoleta/pipeline/ideas_stage.py",
+          "id": "recoleta/pipeline/ideas_stage.py::run_ideas_stage",
+          "symbol": "run_ideas_stage"
+        },
+        {
+          "classification": "refactor_now",
+          "file": "recoleta/pipeline/service.py",
+          "id": "recoleta/pipeline/service.py::PipelineService::triage",
+          "symbol": "PipelineService::triage"
         }
       ]
     },
@@ -12328,23 +11236,11 @@
       ]
     },
     {
-      "hotspot_count": 11,
-      "refactor_now": 7,
-      "refactor_soon": 4,
+      "hotspot_count": 4,
+      "refactor_now": 2,
+      "refactor_soon": 2,
       "subsystem": "sources",
       "top_hotspots": [
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/sources.py",
-          "id": "recoleta/sources.py::fetch_rss_drafts",
-          "symbol": "fetch_rss_drafts"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/sources.py",
-          "id": "recoleta/sources.py::fetch_openreview_drafts",
-          "symbol": "fetch_openreview_drafts"
-        },
         {
           "classification": "refactor_now",
           "file": "recoleta/extract.py",
@@ -12353,15 +11249,21 @@
         },
         {
           "classification": "refactor_now",
-          "file": "recoleta/sources.py",
-          "id": "recoleta/sources.py::fetch_arxiv_drafts",
-          "symbol": "fetch_arxiv_drafts"
+          "file": "recoleta/extract.py",
+          "id": "recoleta/extract.py::extract_html_document_cleaned_with_references._simplify_arxiv_html",
+          "symbol": "extract_html_document_cleaned_with_references._simplify_arxiv_html"
         },
         {
-          "classification": "refactor_now",
-          "file": "recoleta/sources.py",
-          "id": "recoleta/sources.py::fetch_hn_drafts",
-          "symbol": "fetch_hn_drafts"
+          "classification": "refactor_soon",
+          "file": "recoleta/extract.py",
+          "id": "recoleta/extract.py::extract_pdf_text",
+          "symbol": "extract_pdf_text"
+        },
+        {
+          "classification": "refactor_soon",
+          "file": "recoleta/extract.py",
+          "id": "recoleta/extract.py::convert_html_document_to_markdown",
+          "symbol": "convert_html_document_to_markdown"
         }
       ]
     },
@@ -12520,13 +11422,13 @@
   ],
   "repo_verdict": {
     "has_regressions": false,
-    "refactor_now_total": 85,
+    "refactor_now_total": 73,
     "status": "strained",
     "summary": "Existing hotspots remain, but the current scope did not regress."
   },
   "schema_version": 1,
   "scope": {
-    "file_count": 120,
+    "file_count": 123,
     "files": [
       "recoleta/__init__.py",
       "recoleta/analyzer.py",
@@ -12571,7 +11473,9 @@
       "recoleta/pipeline/__init__.py",
       "recoleta/pipeline/artifacts.py",
       "recoleta/pipeline/delivery_budget.py",
+      "recoleta/pipeline/enrich_stage.py",
       "recoleta/pipeline/ideas_stage.py",
+      "recoleta/pipeline/ingest_stage.py",
       "recoleta/pipeline/metrics.py",
       "recoleta/pipeline/pass_runner.py",
       "recoleta/pipeline/projections.py",
@@ -12611,6 +11515,7 @@
       "recoleta/site_models.py",
       "recoleta/site_pages.py",
       "recoleta/site_presentation.py",
+      "recoleta/source_pullers.py",
       "recoleta/sources.py",
       "recoleta/storage.py",
       "recoleta/storage/__init__.py",
@@ -12658,30 +11563,30 @@
   "summary": {
     "dead_code_candidates_total": 116,
     "dead_code_high_confidence_total": 0,
-    "files_scanned": 120,
-    "hotspots_total": 246,
-    "monitor_total": 101,
-    "refactor_now_total": 85,
-    "refactor_soon_total": 60
+    "files_scanned": 123,
+    "hotspots_total": 224,
+    "monitor_total": 97,
+    "refactor_now_total": 73,
+    "refactor_soon_total": 54
   },
   "tool_summaries": {
     "complexipy": {
-      "critical": 18,
-      "findings_total": 85,
-      "high": 13,
-      "warning": 54
+      "critical": 10,
+      "findings_total": 73,
+      "high": 11,
+      "warning": 52
     },
     "lizard": {
-      "critical": 77,
-      "findings_total": 227,
-      "high": 40,
-      "warning": 110
+      "critical": 66,
+      "findings_total": 207,
+      "high": 36,
+      "warning": 105
     },
     "ruff": {
-      "critical": 15,
-      "findings_total": 75,
-      "high": 23,
-      "warning": 37
+      "critical": 10,
+      "findings_total": 64,
+      "high": 21,
+      "warning": 33
     },
     "vulture": {
       "findings_total": 116,
