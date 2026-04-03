@@ -161,16 +161,20 @@ def project_source_metadata(
 
 
 def _ordered_refs_by_doc_id(raw_evidence_refs: Sequence[Any]) -> list[list[Any]]:
-    grouped: dict[int | None, list[Any]] = {}
-    ordered_keys: list[int | None] = []
+    grouped_by_doc_id: dict[int, list[Any]] = {}
+    ordered_groups: list[list[Any]] = []
     for raw_ref in raw_evidence_refs:
         doc_id = _int_or_none(_value_from(raw_ref, "doc_id", None))
-        key = doc_id if doc_id is not None and doc_id > 0 else None
-        if key not in grouped:
-            grouped[key] = []
-            ordered_keys.append(key)
-        grouped[key].append(raw_ref)
-    return [grouped[key] for key in ordered_keys if grouped.get(key)]
+        if doc_id is None or doc_id <= 0:
+            ordered_groups.append([raw_ref])
+            continue
+        refs = grouped_by_doc_id.get(doc_id)
+        if refs is None:
+            refs = []
+            grouped_by_doc_id[doc_id] = refs
+            ordered_groups.append(refs)
+        refs.append(raw_ref)
+    return ordered_groups
 
 
 def _dedupe_reason_list(refs: Sequence[Any]) -> list[str]:
