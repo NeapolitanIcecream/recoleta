@@ -102,3 +102,17 @@ def test_convert_html_document_to_markdown_replaces_mathml_with_tex_annotations(
     assert diag["pandoc_math_block_total"] == 1
     assert diag["pandoc_warning_count"] == 1
     assert diag["pandoc_warning_tex_math_convert_failed"] == 1
+
+
+def test_extract_latex_text_files_from_tar_returns_empty_list_when_archive_open_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: broken LaTeX archives should degrade to an empty file list."""
+
+    def fake_open(*args: object, **kwargs: object) -> object:
+        _ = (args, kwargs)
+        raise OSError("broken archive")
+
+    monkeypatch.setattr(extract.tarfile, "open", fake_open)
+
+    assert extract._extract_latex_text_files_from_tar(b"broken") == []
