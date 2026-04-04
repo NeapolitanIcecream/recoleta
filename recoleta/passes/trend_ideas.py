@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -17,6 +18,38 @@ TREND_IDEA_KIND_VALUES = (
     "workflow_shift",
 )
 TREND_IDEA_TIME_HORIZON_VALUES = ("now", "near", "frontier")
+
+
+@dataclass(frozen=True, slots=True)
+class _TrendIdeasPassOutputRequest:
+    run_id: str
+    status: PassStatus
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    payload: TrendIdeasPayload
+    input_refs: list[PassInputRef] | None = None
+    diagnostics: dict[str, Any] | None = None
+
+
+def _coerce_trend_ideas_pass_output_request(
+    *,
+    request: _TrendIdeasPassOutputRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> _TrendIdeasPassOutputRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return _TrendIdeasPassOutputRequest(
+        run_id=str(values["run_id"]),
+        status=values["status"],
+        granularity=str(values["granularity"]),
+        period_start=values["period_start"],
+        period_end=values["period_end"],
+        payload=values["payload"],
+        input_refs=list(values.get("input_refs") or []),
+        diagnostics=values.get("diagnostics"),
+    )
 
 
 def _is_chinese_output_language(output_language: str | None) -> bool:
@@ -308,26 +341,28 @@ def _snapshot_pack_counter_signal_lines(*, counter_signal: Any) -> list[str]:
 
 def build_trend_ideas_pass_output(
     *,
-    run_id: str,
-    status: PassStatus,
-    granularity: str,
-    period_start: datetime,
-    period_end: datetime,
-    payload: TrendIdeasPayload,
-    input_refs: list[PassInputRef] | None = None,
-    diagnostics: dict[str, Any] | None = None,
+    request: _TrendIdeasPassOutputRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> PassOutputEnvelope:
-    normalized_diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    normalized_request = _coerce_trend_ideas_pass_output_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
+    normalized_diagnostics = (
+        normalized_request.diagnostics
+        if isinstance(normalized_request.diagnostics, dict)
+        else {}
+    )
     return PassOutputEnvelope(
         pass_kind=TREND_IDEAS_PASS_KIND,
         schema_version=TREND_IDEAS_SCHEMA_VERSION,
-        status=status,
-        granularity=str(granularity or "").strip().lower() or None,
-        period_start=period_start.isoformat(),
-        period_end=period_end.isoformat(),
-        run_id=str(run_id),
-        input_refs=list(input_refs or []),
-        payload=payload.model_dump(mode="json"),
+        status=normalized_request.status,
+        granularity=str(normalized_request.granularity or "").strip().lower() or None,
+        period_start=normalized_request.period_start.isoformat(),
+        period_end=normalized_request.period_end.isoformat(),
+        run_id=str(normalized_request.run_id),
+        input_refs=list(normalized_request.input_refs or []),
+        payload=normalized_request.payload.model_dump(mode="json"),
         diagnostics=normalized_diagnostics,
     )
 

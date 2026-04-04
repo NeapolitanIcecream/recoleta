@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -16,6 +17,16 @@ __all__ = [
     "write_markdown_note",
     "write_obsidian_note",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class _ItemNoteHrefRequest:
+    note_dir: Path
+    from_dir: Path
+    item_id: int
+    title: str
+    canonical_url: str
+    published_at: datetime | None
 
 
 def _read_yaml_frontmatter(path: Path) -> dict[str, Any] | None:
@@ -82,23 +93,41 @@ def resolve_item_note_path(
     )
 
 
+def _coerce_item_note_href_request(
+    *,
+    request: _ItemNoteHrefRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> _ItemNoteHrefRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return _ItemNoteHrefRequest(
+        note_dir=values["note_dir"],
+        from_dir=values["from_dir"],
+        item_id=int(values["item_id"]),
+        title=str(values["title"]),
+        canonical_url=str(values["canonical_url"]),
+        published_at=values.get("published_at"),
+    )
+
+
 def resolve_item_note_href(
     *,
-    note_dir: Path,
-    from_dir: Path,
-    item_id: int,
-    title: str,
-    canonical_url: str,
-    published_at: datetime | None,
+    request: _ItemNoteHrefRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> str:
-    note_path = resolve_item_note_path(
-        note_dir=note_dir,
-        item_id=item_id,
-        title=title,
-        canonical_url=canonical_url,
-        published_at=published_at,
+    normalized_request = _coerce_item_note_href_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
     )
-    relative = Path(os.path.relpath(note_path, start=from_dir))
+    note_path = resolve_item_note_path(
+        note_dir=normalized_request.note_dir,
+        item_id=normalized_request.item_id,
+        title=normalized_request.title,
+        canonical_url=normalized_request.canonical_url,
+        published_at=normalized_request.published_at,
+    )
+    relative = Path(os.path.relpath(note_path, start=normalized_request.from_dir))
     return relative.as_posix()
 
 

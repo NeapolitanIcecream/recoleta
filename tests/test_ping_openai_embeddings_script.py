@@ -48,15 +48,20 @@ def test_embedding_probe_reports_success_metadata() -> None:
     with httpx.Client(transport=transport) as client:
         result = script._run_probe_attempt(
             client=client,
-            url="http://llm.local/v1/embeddings",
-            headers={"Authorization": "Bearer sk-test", "Content-Type": "application/json"},
-            payload=script._build_payload(
-                model="text-embedding-3-small",
-                inputs=["probe text", "probe text 2"],
-                dimensions=None,
+            request=script._ProbeAttemptRequest(
+                url="http://llm.local/v1/embeddings",
+                headers={
+                    "Authorization": "Bearer sk-test",
+                    "Content-Type": "application/json",
+                },
+                payload=script._build_payload(
+                    model="text-embedding-3-small",
+                    inputs=["probe text", "probe text 2"],
+                    dimensions=None,
+                ),
+                attempt=1,
+                timeout_seconds=12.0,
             ),
-            attempt=1,
-            timeout_seconds=12.0,
         )
 
     assert result["ok"] is True
@@ -87,15 +92,20 @@ def test_embedding_probe_surfaces_gateway_timeout_payload() -> None:
     with httpx.Client(transport=transport) as client:
         result = script._run_probe_attempt(
             client=client,
-            url="http://llm.local/v1/embeddings",
-            headers={"Authorization": "Bearer sk-test", "Content-Type": "application/json"},
-            payload=script._build_payload(
-                model="text-embedding-3-small",
-                inputs=["probe text"],
-                dimensions=1536,
+            request=script._ProbeAttemptRequest(
+                url="http://llm.local/v1/embeddings",
+                headers={
+                    "Authorization": "Bearer sk-test",
+                    "Content-Type": "application/json",
+                },
+                payload=script._build_payload(
+                    model="text-embedding-3-small",
+                    inputs=["probe text"],
+                    dimensions=1536,
+                ),
+                attempt=2,
+                timeout_seconds=12.0,
             ),
-            attempt=2,
-            timeout_seconds=12.0,
         )
 
     assert result["ok"] is False
@@ -117,15 +127,20 @@ def test_embedding_probe_rejects_success_payload_without_vectors() -> None:
     with httpx.Client(transport=transport) as client:
         result = script._run_probe_attempt(
             client=client,
-            url="http://llm.local/v1/embeddings",
-            headers={"Authorization": "Bearer sk-test", "Content-Type": "application/json"},
-            payload=script._build_payload(
-                model="text-embedding-3-small",
-                inputs=["probe text"],
-                dimensions=None,
+            request=script._ProbeAttemptRequest(
+                url="http://llm.local/v1/embeddings",
+                headers={
+                    "Authorization": "Bearer sk-test",
+                    "Content-Type": "application/json",
+                },
+                payload=script._build_payload(
+                    model="text-embedding-3-small",
+                    inputs=["probe text"],
+                    dimensions=None,
+                ),
+                attempt=3,
+                timeout_seconds=12.0,
             ),
-            attempt=3,
-            timeout_seconds=12.0,
         )
 
     assert result["ok"] is False

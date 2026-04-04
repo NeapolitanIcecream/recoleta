@@ -175,29 +175,31 @@ def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Pa
     window_manifest = manifest["windows"][0]
 
     harness.write_window_capture_artifacts(
-        window_manifest=window_manifest,
-        run_id="run-week-baseline",
-        doc_id=42,
-        report_markdown="- grounded weekly trend\n",
-        payload_json={"title": "Weekly Trend", "clusters": []},
-        tool_trace={
-            "tool_calls_total": 3,
-            "tool_call_breakdown": {"search_hybrid": 1, "get_doc_bundle": 2},
-            "raw_tool_trace": {
-                "status": "captured",
-                "events": [
-                    {
-                        "kind": "tool-call",
-                        "tool_name": "search_hybrid",
-                        "args": {"query": "agent memory loops"},
-                    }
-                ],
-                "events_total": 1,
-                "tool_calls_total": 1,
-                "events_truncated": False,
+        request=harness._WindowArtifactWriteRequest(
+            window_manifest=window_manifest,
+            run_id="run-week-baseline",
+            doc_id=42,
+            report_markdown="- grounded weekly trend\n",
+            payload_json={"title": "Weekly Trend", "clusters": []},
+            tool_trace={
+                "tool_calls_total": 3,
+                "tool_call_breakdown": {"search_hybrid": 1, "get_doc_bundle": 2},
+                "raw_tool_trace": {
+                    "status": "captured",
+                    "events": [
+                        {
+                            "kind": "tool-call",
+                            "tool_name": "search_hybrid",
+                            "args": {"query": "agent memory loops"},
+                        }
+                    ],
+                    "events_total": 1,
+                    "tool_calls_total": 1,
+                    "events_truncated": False,
+                },
             },
-        },
-        capture_metadata={"capture_mode": "pipeline"},
+            capture_metadata={"capture_mode": "pipeline"},
+        )
     )
 
     artifact_dir = Path(window_manifest["artifact_dir"])
@@ -556,15 +558,17 @@ def test_run_window_trends_capture_rejects_non_default_stream_window() -> None:
     ):
         harness._run_window_trends_capture(
             _FakeService(),
-            stage_run_id="run-stream-window",
-            window_manifest={
-                "granularity": "week",
-                "anchor_date": "2026-03-05",
-                "stream": "software_intelligence",
-            },
-            llm_model="test/fake-model",
-            reuse_existing_corpus=True,
-            backfill=False,
+            request=harness._WindowTrendsCaptureRequest(
+                stage_run_id="run-stream-window",
+                window_manifest={
+                    "granularity": "week",
+                    "anchor_date": "2026-03-05",
+                    "stream": "software_intelligence",
+                },
+                llm_model="test/fake-model",
+                reuse_existing_corpus=True,
+                backfill=False,
+            ),
         )
 
 

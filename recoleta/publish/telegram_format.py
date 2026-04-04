@@ -10,11 +10,7 @@ from recoleta.item_summary import normalize_item_summary_markdown
 from recoleta.publish.trend_render_shared import _trend_date_token
 
 
-def _format_telegram_markdownish_html(text: str) -> str:
-    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not raw:
-        return ""
-
+def _stash_codeblocks(text: str) -> tuple[str, list[str]]:
     codeblocks: list[str] = []
 
     def _stash_codeblock(match: re.Match[str]) -> str:
@@ -23,88 +19,106 @@ def _format_telegram_markdownish_html(text: str) -> str:
         codeblocks.append(f"<pre><code>{html.escape(code)}</code></pre>")
         return token
 
-    raw = re.sub(r"```[^\n]*\n([\s\S]*?)```", _stash_codeblock, raw)
+    return re.sub(r"```[^\n]*\n([\s\S]*?)```", _stash_codeblock, text), codeblocks
 
+
+def _apply_outside_tags(value: str, transform: Callable[[str], str]) -> str:
+    parts = re.split(r"(<[^>]+>)", value)
+    for idx in range(0, len(parts), 2):
+        parts[idx] = transform(parts[idx])
+    return "".join(parts)
+
+
+def _stash_codespans(line: str) -> tuple[str, list[str]]:
     codespans: list[str] = []
 
-    def _inline_to_html(line: str) -> str:
-        def _apply_outside_tags(value: str, transform: Callable[[str], str]) -> str:
-            parts = re.split(r"(<[^>]+>)", value)
-            for idx in range(0, len(parts), 2):
-                parts[idx] = transform(parts[idx])
-            return "".join(parts)
+    def _stash_codespan(match: re.Match[str]) -> str:
+        code = match.group(1) or ""
+        token = f"\x00CS{len(codespans)}\x00"
+        codespans.append(f"<code>{html.escape(code)}</code>")
+        return token
 
-        def _stash_codespan(match: re.Match[str]) -> str:
-            code = match.group(1) or ""
-            token = f"\x00CS{len(codespans)}\x00"
-            codespans.append(f"<code>{html.escape(code)}</code>")
-            return token
+    return re.sub(r"`([^`\n]+)`", _stash_codespan, line), codespans
 
-        protected = re.sub(r"`([^`\n]+)`", _stash_codespan, line)
-        escaped = html.escape(protected, quote=True)
 
-        def _replace_link(match: re.Match[str]) -> str:
-            label = match.group(1) or ""
-            url_escaped = match.group(2) or ""
-            url_unescaped = html.unescape(url_escaped)
-            try:
-                parsed = urlparse(url_unescaped)
-            except Exception:
-                return match.group(0)
-            if parsed.scheme and parsed.scheme not in {"http", "https"}:
-                return f"{label} ({url_escaped})"
-            safe_href = html.escape(url_unescaped, quote=True)
-            return f'<a href="{safe_href}">{label}</a>'
+def _replace_markdown_link(match: re.Match[str]) -> str:
+    label = match.group(1) or ""
+    url_escaped = match.group(2) or ""
+    url_unescaped = html.unescape(url_escaped)
+    try:
+        parsed = urlparse(url_unescaped)
+    except Exception:
+        return match.group(0)
+    if parsed.scheme and parsed.scheme not in {"http", "https"}:
+        return f"{label} ({url_escaped})"
+    safe_href = html.escape(url_unescaped, quote=True)
+    return f'<a href="{safe_href}">{label}</a>'
 
-        escaped = re.sub(r"\[([^\]\n]+)\]\(([^)\s\n]+)\)", _replace_link, escaped)
-        escaped = _apply_outside_tags(
-            escaped,
-            lambda s: re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", s),
-        )
-        escaped = _apply_outside_tags(
-            escaped,
-            lambda s: re.sub(r"__([^\n]+?)__", r"<b>\1</b>", s),
-        )
-        escaped = _apply_outside_tags(
-            escaped,
-            lambda s: re.sub(r"(?<!\*)\*([^\n]+?)\*(?!\*)", r"<i>\1</i>", s),
-        )
-        escaped = _apply_outside_tags(
-            escaped,
-            lambda s: re.sub(r"(?<!_)_([^\n]+?)_(?!_)", r"<i>\1</i>", s),
-        )
 
-        for idx, html_snippet in enumerate(codespans):
-            escaped = escaped.replace(f"\x00CS{idx}\x00", html_snippet)
-        return escaped
+def _apply_inline_emphasis(text: str) -> str:
+    emphasized = _apply_outside_tags(
+        text,
+        lambda value: re.sub(r"\*\*([^\n]+?)\*\*", r"<b>\1</b>", value),
+    )
+    emphasized = _apply_outside_tags(
+        emphasized,
+        lambda value: re.sub(r"__([^\n]+?)__", r"<b>\1</b>", value),
+    )
+    emphasized = _apply_outside_tags(
+        emphasized,
+        lambda value: re.sub(r"(?<!\*)\*([^\n]+?)\*(?!\*)", r"<i>\1</i>", value),
+    )
+    return _apply_outside_tags(
+        emphasized,
+        lambda value: re.sub(r"(?<!_)_([^\n]+?)_(?!_)", r"<i>\1</i>", value),
+    )
 
-    lines: list[str] = []
-    for raw_line in raw.splitlines():
-        stripped = raw_line.strip()
-        cb = re.fullmatch(r"\x00CB(\d+)\x00", stripped)
-        if cb:
-            idx = int(cb.group(1))
-            if 0 <= idx < len(codeblocks):
-                lines.append(codeblocks[idx])
-                continue
 
-        if not stripped:
-            lines.append("")
-            continue
+def _restore_codespans(text: str, codespans: list[str]) -> str:
+    restored = text
+    for idx, html_snippet in enumerate(codespans):
+        restored = restored.replace(f"\x00CS{idx}\x00", html_snippet)
+    return restored
 
-        heading = re.match(r"^\s*#{1,6}\s+(.*)$", raw_line)
-        if heading:
-            content = heading.group(1).strip()
-            lines.append(f"<b>{_inline_to_html(content)}</b>")
-            continue
 
-        bullet = re.match(r"^\s*[-*]\s+(.*)$", raw_line)
-        if bullet:
-            content = bullet.group(1).strip()
-            lines.append(f"• {_inline_to_html(content)}")
-            continue
+def _inline_to_html(line: str) -> str:
+    protected, codespans = _stash_codespans(line)
+    escaped = html.escape(protected, quote=True)
+    escaped = re.sub(r"\[([^\]\n]+)\]\(([^)\s\n]+)\)", _replace_markdown_link, escaped)
+    return _restore_codespans(_apply_inline_emphasis(escaped), codespans)
 
-        lines.append(_inline_to_html(raw_line.strip()))
+
+def _render_markdownish_line(
+    *,
+    raw_line: str,
+    codeblocks: list[str],
+) -> str:
+    stripped = raw_line.strip()
+    codeblock_match = re.fullmatch(r"\x00CB(\d+)\x00", stripped)
+    if codeblock_match:
+        idx = int(codeblock_match.group(1))
+        if 0 <= idx < len(codeblocks):
+            return codeblocks[idx]
+    if not stripped:
+        return ""
+    heading = re.match(r"^\s*#{1,6}\s+(.*)$", raw_line)
+    if heading:
+        return f"<b>{_inline_to_html(heading.group(1).strip())}</b>"
+    bullet = re.match(r"^\s*[-*]\s+(.*)$", raw_line)
+    if bullet:
+        return f"• {_inline_to_html(bullet.group(1).strip())}"
+    return _inline_to_html(raw_line.strip())
+
+
+def _format_telegram_markdownish_html(text: str) -> str:
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not raw:
+        return ""
+    raw, codeblocks = _stash_codeblocks(raw)
+    lines = [
+        _render_markdownish_line(raw_line=raw_line, codeblocks=codeblocks)
+        for raw_line in raw.splitlines()
+    ]
 
     rendered = "\n".join(lines).strip()
     while "\n\n\n" in rendered:

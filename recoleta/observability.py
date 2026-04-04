@@ -34,33 +34,46 @@ _DEFAULT_SECRET_ENV_KEY_SUBSTRINGS = (
 
 
 def collect_environment_secrets(*, extra_keys: Iterable[str] = ()) -> tuple[str, ...]:
-    keys = {key.upper() for key in _DEFAULT_SECRET_ENV_KEYS}
+    keys = _normalized_secret_keys(extra_keys=extra_keys)
+    collected = _collect_explicit_secret_values(keys=keys)
+    collected.extend(_collect_discovered_secret_values(keys=keys))
+    return tuple(dict.fromkeys(collected))
+
+
+def _normalized_secret_keys(*, extra_keys: Iterable[str]) -> tuple[str, ...]:
+    keys: list[str] = [key.upper() for key in _DEFAULT_SECRET_ENV_KEYS]
     for key in extra_keys:
         if not isinstance(key, str):
             continue
         stripped = key.strip()
-        if not stripped:
-            continue
-        keys.add(stripped.upper())
+        if stripped:
+            keys.append(stripped.upper())
+    return tuple(dict.fromkeys(keys))
 
-    collected: list[str] = []
+
+def _collect_explicit_secret_values(*, keys: tuple[str, ...]) -> list[str]:
+    values: list[str] = []
     for key in keys:
         value = os.getenv(key, "").strip()
         if value:
-            collected.append(value)
+            values.append(value)
+    return values
 
+
+def _collect_discovered_secret_values(*, keys: tuple[str, ...]) -> list[str]:
+    explicit_keys = set(keys)
+    values: list[str] = []
     for key, value in os.environ.items():
         if not value:
             continue
         upper = key.upper()
-        if upper in keys:
+        if upper in explicit_keys:
             continue
         if any(token in upper for token in _DEFAULT_SECRET_ENV_KEY_SUBSTRINGS):
             candidate = str(value).strip()
             if candidate:
-                collected.append(candidate)
-
-    return tuple(dict.fromkeys(collected))
+                values.append(candidate)
+    return values
 
 
 def _stream_supports_ansi(stream: object) -> bool:

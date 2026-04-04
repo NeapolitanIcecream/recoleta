@@ -100,6 +100,66 @@ class _SiteLanguageOverrideSpec:
     language_code_by_slug: dict[str, str]
 
 
+@dataclass(frozen=True, slots=True)
+class _TopicCardRenderRequest:
+    topic: str
+    trend_count: int
+    idea_count: int
+    latest_token: str
+    page_path: Path
+    topic_page_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _CollectionSectionRenderRequest:
+    title: str
+    count_text: str
+    cards_html: str
+    empty_copy: str
+    action_label: str | None = None
+    action_href: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _TopicPageRenderRequest:
+    topic: str
+    topic_slug: str
+    documents: list[TrendSiteDocument]
+    idea_documents: list[IdeaSiteDocument]
+    output_dir: Path
+    topic_pages: dict[str, Path]
+
+
+@dataclass(frozen=True, slots=True)
+class _TopicCardGridRenderRequest:
+    page_path: Path
+    topic_pages: dict[str, Path]
+    label_by_slug: dict[str, str]
+    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument]
+    topic_counter: Counter[str]
+    trend_counter: Counter[str]
+    idea_counter: Counter[str]
+    limit: int | None = None
+
+
+def _coerce_topic_page_render_request(
+    *,
+    request: _TopicPageRenderRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> _TopicPageRenderRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return _TopicPageRenderRequest(
+        topic=str(values["topic"]),
+        topic_slug=str(values["topic_slug"]),
+        documents=list(values["documents"]),
+        idea_documents=list(values["idea_documents"]),
+        output_dir=values["output_dir"],
+        topic_pages=dict(values["topic_pages"]),
+    )
+
+
 def _parse_site_datetime(value: Any) -> datetime | None:
     raw = str(value or "").strip()
     if not raw:
@@ -748,19 +808,36 @@ def _render_trend_card(
 
 def _render_topic_card(
     *,
-    topic: str,
-    trend_count: int,
-    idea_count: int,
-    latest_token: str,
-    page_path: Path,
-    topic_page_path: Path,
+    request: _TopicCardRenderRequest,
 ) -> str:
-    href = _site_href(from_page=page_path, to_page=topic_page_path)
+    href = _site_href(from_page=request.page_path, to_page=request.topic_page_path)
     return (
         "<article class='topic-card'>"
-        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(topic)}</a></h2>"
-        f"<div class='topic-card-meta'>{html.escape(_format_collection_meta(trend_count=trend_count, idea_count=idea_count, latest_token=latest_token))}</div>"
+        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(request.topic)}</a></h2>"
+        f"<div class='topic-card-meta'>{html.escape(_format_collection_meta(trend_count=request.trend_count, idea_count=request.idea_count, latest_token=request.latest_token))}</div>"
         "</article>"
+    )
+
+
+def _render_topic_card_grid(*, request: _TopicCardGridRenderRequest) -> str:
+    most_common = (
+        request.topic_counter.most_common(request.limit)
+        if request.limit is not None
+        else request.topic_counter.most_common()
+    )
+    return "".join(
+        _render_topic_card(
+            request=_TopicCardRenderRequest(
+                topic=request.label_by_slug[slug],
+                trend_count=request.trend_counter[slug],
+                idea_count=request.idea_counter[slug],
+                latest_token=request.latest_by_topic[slug].period_token,
+                page_path=request.page_path,
+                topic_page_path=request.topic_pages[slug],
+            )
+        )
+        for slug, _count in most_common
+        if slug in request.topic_pages
     )
 
 
@@ -790,31 +867,26 @@ def _collection_window_span(
 
 def _render_collection_section(
     *,
-    title: str,
-    count_text: str,
-    cards_html: str,
-    empty_copy: str,
-    action_label: str | None = None,
-    action_href: str | None = None,
+    request: _CollectionSectionRenderRequest,
 ) -> str:
     action_html = ""
-    if action_label is not None and action_href is not None:
+    if request.action_label is not None and request.action_href is not None:
         action_html = (
-            f"<a class='action-link secondary' href='{action_href}'>"
-            f"{html.escape(action_label)}"
+            f"<a class='action-link secondary' href='{request.action_href}'>"
+            f"{html.escape(request.action_label)}"
             "</a>"
         )
-    empty_html = f"<div class='empty-card'>{html.escape(empty_copy)}</div>"
+    empty_html = f"<div class='empty-card'>{html.escape(request.empty_copy)}</div>"
     return (
         "<div class='home-section collection-section'>"
         "<div class='section-heading-row'>"
-        f"<h2 class='section-title'>{html.escape(title)}</h2>"
+        f"<h2 class='section-title'>{html.escape(request.title)}</h2>"
         "<div class='section-heading-actions'>"
-        f"<span class='meta-date'>{html.escape(count_text)}</span>"
+        f"<span class='meta-date'>{html.escape(request.count_text)}</span>"
         f"{action_html}"
         "</div>"
         "</div>"
-        f"<div class='trend-grid'>{cards_html or empty_html}</div>"
+        f"<div class='trend-grid'>{request.cards_html or empty_html}</div>"
         "</div>"
     )
 
@@ -1368,17 +1440,17 @@ def _render_home_page(
                 document=document,
             )
 
-    topic_cards = "".join(
-        _render_topic_card(
-            topic=label_by_slug[slug],
-            trend_count=topic_trend_counter[slug],
-            idea_count=topic_idea_counter[slug],
-            latest_token=latest_by_topic[slug].period_token,
+    topic_cards = _render_topic_card_grid(
+        request=_TopicCardGridRenderRequest(
             page_path=page_path,
-            topic_page_path=topic_pages[slug],
+            topic_pages=topic_pages,
+            label_by_slug=label_by_slug,
+            latest_by_topic=latest_by_topic,
+            topic_counter=topic_counter,
+            trend_counter=topic_trend_counter,
+            idea_counter=topic_idea_counter,
+            limit=12,
         )
-        for slug, _count in topic_counter.most_common(12)
-        if slug in topic_pages
     )
 
     archive_preview = "".join(
@@ -1414,8 +1486,8 @@ def _render_home_page(
         "</div>"
         "</section>"
         "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=latest_cards, empty_copy='No trend briefs available yet.', action_label='Browse trends', action_href=_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html'))}"
-        f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=latest_idea_cards, empty_copy='No idea briefs available yet.', action_label='Browse ideas', action_href=_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html'))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=latest_cards, empty_copy='No trend briefs available yet.', action_label='Browse trends', action_href=_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=latest_idea_cards, empty_copy='No idea briefs available yet.', action_label='Browse ideas', action_href=_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')))}"
         "</section>"
         "<section class='home-section split-layout'>"
         "<div>"
@@ -1481,17 +1553,16 @@ def _render_topics_index_page(
                 document=document,
             )
 
-    cards = "".join(
-        _render_topic_card(
-            topic=label_by_slug[slug],
-            trend_count=trend_counter[slug],
-            idea_count=idea_counter[slug],
-            latest_token=latest_by_topic[slug].period_token,
+    cards = _render_topic_card_grid(
+        request=_TopicCardGridRenderRequest(
             page_path=page_path,
-            topic_page_path=topic_pages[slug],
+            topic_pages=topic_pages,
+            label_by_slug=label_by_slug,
+            latest_by_topic=latest_by_topic,
+            topic_counter=topic_counter,
+            trend_counter=trend_counter,
+            idea_counter=idea_counter,
         )
-        for slug, _count in topic_counter.most_common()
-        if slug in topic_pages
     )
 
     content_html = (
@@ -1512,44 +1583,55 @@ def _render_topics_index_page(
         )
     )
 
-def _render_topic_page(
+def _render_topic_page_collections(
     *,
-    topic: str,
-    topic_slug: str,
-    documents: list[TrendSiteDocument],
-    idea_documents: list[IdeaSiteDocument],
-    output_dir: Path,
-    topic_pages: dict[str, Path],
+    request: _TopicPageRenderRequest,
+    page_path: Path,
 ) -> str:
-    page_path = topic_pages[topic_slug]
     cards = "".join(
         _render_trend_card(
             document=document,
             from_page=page_path,
-            topic_pages=topic_pages,
+            topic_pages=request.topic_pages,
         )
-        for document in documents
+        for document in request.documents
     )
     idea_cards = "".join(
         _render_idea_card(
             document=document,
             from_page=page_path,
-            topic_pages=topic_pages,
+            topic_pages=request.topic_pages,
         )
-        for document in idea_documents
+        for document in request.idea_documents
     )
-    latest_token = _latest_collection_token([*documents, *idea_documents])
-    content_html = (
-        f"{_render_collection_summary_section(summary_label='Topic summary', title=topic, trend_count=len(documents), idea_count=len(idea_documents), latest_token=latest_token)}"
+    latest_token = _latest_collection_token([*request.documents, *request.idea_documents])
+    return (
+        f"{_render_collection_summary_section(summary_label='Topic summary', title=request.topic, trend_count=len(request.documents), idea_count=len(request.idea_documents), latest_token=latest_token)}"
         "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=cards, empty_copy='No trend briefs available yet.')}"
-        f"{_render_collection_section(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No idea briefs available yet.')}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trend briefs', count_text=_count_label(len(request.documents), singular='trend'), cards_html=cards, empty_copy='No trend briefs available yet.'))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Idea briefs', count_text=_count_label(len(request.idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No idea briefs available yet.'))}"
         "</section>"
+    )
+
+
+def _render_topic_page(
+    *,
+    request: _TopicPageRenderRequest | None = None,
+    **legacy_kwargs: Any,
+) -> str:
+    normalized_request = _coerce_topic_page_render_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
+    page_path = normalized_request.topic_pages[normalized_request.topic_slug]
+    content_html = _render_topic_page_collections(
+        request=normalized_request,
+        page_path=page_path,
     )
     return _render_site_page(
         SitePageShellInput(
-            title=f"{topic} · Recoleta Trends", page_path=page_path, output_dir=output_dir,
-            page_heading=topic, page_subtitle="", body_class="page-topic",
+            title=f"{normalized_request.topic} · Recoleta Trends", page_path=page_path, output_dir=normalized_request.output_dir,
+            page_heading=normalized_request.topic, page_subtitle="", body_class="page-topic",
             active_nav="topics", content_html=content_html, repo_url=RECOLETA_REPO_URL,
         )
     )

@@ -53,6 +53,67 @@ class EvalRuntimeSnapshot:
     backup_bundle_dir: str | None = None
 
 
+@dataclass(slots=True)
+class _RunMetricSummary:
+    by_name: dict[str, float]
+    tool_call_breakdown: dict[str, int]
+    tool_calls_total: int = 0
+    prompt_chars: int | None = None
+    overview_pack_chars: int | None = None
+    duration_ms: int | None = None
+
+
+@dataclass(slots=True)
+class _WindowManifestContext:
+    window_manifest: dict[str, Any]
+    granularity: str
+    anchor_date: str
+    artifact_dir: Path
+
+
+@dataclass(slots=True)
+class _TrendRenderRequest:
+    repository: Any
+    payload_json: dict[str, Any]
+    doc_id: int
+    run_id: str
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    output_dir: Path
+    output_language: str | None
+
+
+@dataclass(slots=True)
+class _WindowTrendsCaptureRequest:
+    stage_run_id: str
+    window_manifest: dict[str, Any]
+    llm_model: str | None
+    reuse_existing_corpus: bool
+    backfill: bool
+
+
+@dataclass(slots=True)
+class _RerunCaptureRequest:
+    manifest: dict[str, Any]
+    llm_model: str | None
+    isolate_runtime: bool
+    capture_mode: str
+    reuse_existing_corpus: bool
+    backfill: bool
+
+
+@dataclass(slots=True)
+class _WindowArtifactWriteRequest:
+    window_manifest: dict[str, Any]
+    run_id: str
+    doc_id: int
+    report_markdown: str
+    payload_json: dict[str, Any]
+    tool_trace: dict[str, Any]
+    capture_metadata: dict[str, Any] | None = None
+
+
 def _normalize_string(value: Any, *, field_name: str) -> str:
     normalized = str(value or "").strip()
     if not normalized:
@@ -245,48 +306,67 @@ def render_eval_runbook_sh(*, manifest: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def summarize_run_metrics(metrics: list[Any]) -> dict[str, Any]:
-    by_name: dict[str, float] = {}
-    tool_call_breakdown: dict[str, int] = {}
-    tool_calls_total = 0
-    prompt_chars: int | None = None
-    overview_pack_chars: int | None = None
-    duration_ms: int | None = None
+def _metric_name_value(metric: Any) -> tuple[str, float] | None:
+    name = str(getattr(metric, "name", "") or "").strip()
+    if not name:
+        return None
+    value = float(getattr(metric, "value", 0.0) or 0.0)
+    return name, value
 
+
+def _tool_call_metric_name(name: str) -> str | None:
+    if ".tool." not in name or not name.endswith(".calls_total"):
+        return None
+    tool_name = name.split(".tool.", 1)[1].removesuffix(".calls_total")
+    normalized_tool_name = str(tool_name or "").strip()
+    return normalized_tool_name or None
+
+
+def _record_metric_value(
+    summary: _RunMetricSummary,
+    *,
+    name: str,
+    value: float,
+) -> None:
+    summary.by_name[name] = value
+    if name.endswith(".tool_calls_total"):
+        summary.tool_calls_total = int(value)
+        return
+    tool_name = _tool_call_metric_name(name)
+    if tool_name is not None:
+        summary.tool_call_breakdown[tool_name] = int(value)
+        return
+    if name.endswith(".prompt_chars"):
+        summary.prompt_chars = int(value)
+        return
+    if name.endswith(".overview_pack.chars"):
+        summary.overview_pack_chars = int(value)
+        return
+    if name.endswith(".duration_ms"):
+        summary.duration_ms = int(value)
+
+
+def summarize_run_metrics(metrics: list[Any]) -> dict[str, Any]:
+    summary = _RunMetricSummary(by_name={}, tool_call_breakdown={})
     for metric in metrics:
-        name = str(getattr(metric, "name", "") or "").strip()
-        if not name:
+        name_value = _metric_name_value(metric)
+        if name_value is None:
             continue
-        value = float(getattr(metric, "value", 0.0) or 0.0)
-        by_name[name] = value
-        if name.endswith(".tool_calls_total"):
-            tool_calls_total = int(value)
-            continue
-        if ".tool." in name and name.endswith(".calls_total"):
-            tool_name = name.split(".tool.", 1)[1].removesuffix(".calls_total")
-            normalized_tool_name = str(tool_name or "").strip()
-            if normalized_tool_name:
-                tool_call_breakdown[normalized_tool_name] = int(value)
-            continue
-        if name.endswith(".prompt_chars"):
-            prompt_chars = int(value)
-            continue
-        if name.endswith(".overview_pack.chars"):
-            overview_pack_chars = int(value)
-            continue
-        if name.endswith(".duration_ms"):
-            duration_ms = int(value)
+        name, value = name_value
+        _record_metric_value(summary, name=name, value=value)
 
     return {
-        "tool_calls_total": tool_calls_total,
+        "tool_calls_total": summary.tool_calls_total,
         "tool_call_breakdown": {
-            tool_name: tool_call_breakdown[tool_name]
-            for tool_name in sorted(tool_call_breakdown)
+            tool_name: summary.tool_call_breakdown[tool_name]
+            for tool_name in sorted(summary.tool_call_breakdown)
         },
-        "prompt_chars": prompt_chars,
-        "overview_pack_chars": overview_pack_chars,
-        "duration_ms": duration_ms,
-        "metrics_by_name": {name: by_name[name] for name in sorted(by_name)},
+        "prompt_chars": summary.prompt_chars,
+        "overview_pack_chars": summary.overview_pack_chars,
+        "duration_ms": summary.duration_ms,
+        "metrics_by_name": {
+            name: summary.by_name[name] for name in sorted(summary.by_name)
+        },
     }
 
 
@@ -362,44 +442,46 @@ def _build_rubric_stub(
     }
 
 
-def write_window_capture_artifacts(
-    *,
-    window_manifest: dict[str, Any],
-    run_id: str,
-    doc_id: int,
-    report_markdown: str,
-    payload_json: dict[str, Any],
-    tool_trace: dict[str, Any],
-    capture_metadata: dict[str, Any] | None = None,
-) -> None:
+def write_window_capture_artifacts(*, request: _WindowArtifactWriteRequest) -> None:
+    window_manifest = request.window_manifest
     artifacts = cast(dict[str, str], window_manifest["artifacts"])
     artifact_dir = Path(str(window_manifest["artifact_dir"]))
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    Path(artifacts["report_markdown"]).write_text(report_markdown, encoding="utf-8")
-    _json_dump(Path(artifacts["payload_json"]), payload_json)
+    Path(artifacts["report_markdown"]).write_text(
+        request.report_markdown,
+        encoding="utf-8",
+    )
+    _json_dump(Path(artifacts["payload_json"]), request.payload_json)
     _json_dump(
         Path(artifacts["tool_trace"]),
         {
             "status": "captured",
-            "run_id": run_id,
-            "doc_id": doc_id,
-            **tool_trace,
+            "run_id": request.run_id,
+            "doc_id": request.doc_id,
+            **request.tool_trace,
         },
     )
-    _json_dump(Path(artifacts["prompt"]), _build_prompt_capture_stub(run_id=run_id, doc_id=doc_id))
+    _json_dump(
+        Path(artifacts["prompt"]),
+        _build_prompt_capture_stub(run_id=request.run_id, doc_id=request.doc_id),
+    )
     _json_dump(
         Path(artifacts["rubric"]),
-        _build_rubric_stub(window_manifest=window_manifest, run_id=run_id, doc_id=doc_id),
+        _build_rubric_stub(
+            window_manifest=window_manifest,
+            run_id=request.run_id,
+            doc_id=request.doc_id,
+        ),
     )
     _json_dump(
         Path(artifacts["capture_summary"]),
         {
             "status": "captured",
-            "run_id": run_id,
-            "doc_id": doc_id,
+            "run_id": request.run_id,
+            "doc_id": request.doc_id,
             "window_id": str(window_manifest.get("id", "") or ""),
             "granularity": str(window_manifest.get("granularity", "") or ""),
-            **(capture_metadata or {}),
+            **(request.capture_metadata or {}),
         },
     )
 
@@ -467,44 +549,33 @@ def _load_payload_json(*, repository: Any, doc_id: int) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def _render_report_markdown(
-    *,
-    repository: Any,
-    payload_json: dict[str, Any],
-    doc_id: int,
-    run_id: str,
-    granularity: str,
-    period_start: datetime,
-    period_end: datetime,
-    output_dir: Path,
-    output_language: str | None,
-) -> str:
+def _render_report_markdown(*, request: _TrendRenderRequest) -> str:
     from recoleta.publish.trend_notes import write_markdown_trend_note
     from recoleta.trend_materialize import materialize_trend_note_payload
     from recoleta.trends import TrendPayload
 
-    payload = TrendPayload.model_validate(payload_json)
+    payload = TrendPayload.model_validate(request.payload_json)
     materialized = materialize_trend_note_payload(
-        repository=repository,
+        repository=request.repository,
         payload=payload,
-        markdown_output_dir=output_dir,
-        output_language=output_language,
+        markdown_output_dir=request.output_dir,
+        output_language=request.output_language,
     )
     note_path = write_markdown_trend_note(
-        output_dir=output_dir,
-        trend_doc_id=doc_id,
+        output_dir=request.output_dir,
+        trend_doc_id=request.doc_id,
         title=materialized.title,
-        granularity=granularity,
-        period_start=period_start,
-        period_end=period_end,
-        run_id=run_id,
+        granularity=request.granularity,
+        period_start=request.period_start,
+        period_end=request.period_end,
+        run_id=request.run_id,
         overview_md=materialized.overview_md,
         topics=materialized.topics,
         evolution=materialized.evolution,
         history_window_refs=materialized.history_window_refs,
         clusters=materialized.clusters,
         highlights=materialized.highlights,
-        output_language=output_language,
+        output_language=request.output_language,
     )
     return note_path.read_text(encoding="utf-8")
 
@@ -645,6 +716,199 @@ def _find_existing_trend_document(
     return selected, period_start, period_end
 
 
+def _window_manifest_context(window_manifest: dict[str, Any]) -> _WindowManifestContext:
+    return _WindowManifestContext(
+        window_manifest=window_manifest,
+        granularity=str(window_manifest.get("granularity", "") or "").strip().lower(),
+        anchor_date=str(window_manifest.get("anchor_date", "") or "").strip(),
+        artifact_dir=Path(str(window_manifest.get("artifact_dir", "") or "")),
+    )
+
+
+def _captured_window_result(
+    *,
+    context: _WindowManifestContext,
+    run_id: str | None,
+    doc_id: int | None,
+) -> dict[str, Any]:
+    return asdict(
+        EvalCaptureResult(
+            window_id=str(context.window_manifest.get("id", "") or ""),
+            status="captured",
+            run_id=run_id,
+            doc_id=doc_id,
+            artifact_dir=str(context.artifact_dir),
+        )
+    )
+
+
+def _failed_window_result(
+    *,
+    context: _WindowManifestContext,
+    exc: Exception,
+) -> dict[str, Any]:
+    return asdict(
+        EvalCaptureResult(
+            window_id=str(context.window_manifest.get("id", "") or ""),
+            status="failed",
+            run_id=None,
+            doc_id=None,
+            artifact_dir=str(context.artifact_dir),
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+    )
+
+
+def _build_baseline_summary(
+    *,
+    capture_mode: str,
+    runtime: dict[str, Any],
+    results: list[dict[str, Any]],
+    capture_budget: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "capture_mode": capture_mode,
+        "runtime": runtime,
+        "captured_total": sum(1 for row in results if row["status"] == "captured"),
+        "failed_total": sum(1 for row in results if row["status"] == "failed"),
+        "windows": results,
+    }
+    if capture_budget is not None:
+        summary["capture_budget"] = capture_budget
+    return summary
+
+
+def _write_runtime_failure_artifacts(
+    *,
+    request: _RerunCaptureRequest,
+    runtime_error: Exception,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    windows = cast(list[dict[str, Any]], request.manifest.get("windows", []))
+    for window_manifest in windows:
+        context = _window_manifest_context(window_manifest)
+        write_window_capture_failure_artifacts(
+            window_manifest=window_manifest,
+            error_type=type(runtime_error).__name__,
+            error_message=str(runtime_error),
+        )
+        results.append(_failed_window_result(context=context, exc=runtime_error))
+    return results
+
+
+def _bootstrap_rerun_runtime(*, request: _RerunCaptureRequest) -> dict[str, Any]:
+    out_dir = Path(str(request.manifest["out_dir"]))
+    if request.isolate_runtime:
+        return prepare_isolated_eval_runtime(out_dir=out_dir)
+    return describe_live_eval_runtime()
+
+
+def _runtime_env_overrides(runtime: dict[str, Any]) -> dict[str, str]:
+    return {
+        "RECOLETA_DB_PATH": str(runtime["active_db_path"]),
+        "RAG_LANCEDB_DIR": str(runtime["active_lancedb_dir"]),
+        **_capture_budget_env_overrides(),
+    }
+
+
+def _window_env_overrides(
+    *,
+    runtime_env_overrides: dict[str, str],
+    artifact_dir: Path,
+) -> dict[str, str]:
+    return {
+        **runtime_env_overrides,
+        "PUBLISH_TARGETS": "markdown",
+        "MARKDOWN_OUTPUT_DIR": str(artifact_dir / "published"),
+        "ARTIFACTS_DIR": str(artifact_dir / "debug-artifacts"),
+        "WRITE_DEBUG_ARTIFACTS": "true",
+    }
+
+
+def _merge_debug_payload_tool_trace(
+    *,
+    tool_trace: dict[str, Any],
+    debug_payload: dict[str, Any] | None,
+) -> None:
+    if debug_payload is None:
+        return
+    debug = debug_payload.get("debug")
+    tool_trace["llm_debug"] = debug
+    if not isinstance(debug, dict):
+        return
+    raw_tool_trace = debug.get("raw_tool_trace")
+    if isinstance(raw_tool_trace, dict):
+        tool_trace["raw_tool_trace"] = raw_tool_trace
+
+
+def _execute_rerun_stage_capture(
+    *,
+    cli_module: Any,
+    request: _RerunCaptureRequest,
+    context: _WindowManifestContext,
+    runtime_env_overrides: dict[str, str],
+) -> tuple[Any, Any, str, Any]:
+    with _temporary_env(
+        _window_env_overrides(
+            runtime_env_overrides=runtime_env_overrides,
+            artifact_dir=context.artifact_dir,
+        )
+    ):
+        return cli_module._execute_stage(
+            stage_name="trends",
+            stage_runner=lambda service, stage_run_id: _run_window_trends_capture(
+                service,
+                request=_WindowTrendsCaptureRequest(
+                    stage_run_id=stage_run_id,
+                    window_manifest=context.window_manifest,
+                    llm_model=request.llm_model,
+                    reuse_existing_corpus=request.reuse_existing_corpus,
+                    backfill=request.backfill,
+                ),
+            ),
+        )
+
+
+def _build_rerun_window_artifacts(
+    *,
+    context: _WindowManifestContext,
+    settings: Any,
+    repository: Any,
+    run_id: str,
+    result: Any,
+) -> tuple[int, dict[str, Any], str, dict[str, Any]]:
+    period_start, period_end = _period_bounds(
+        granularity=context.granularity,
+        anchor_date=context.anchor_date,
+    )
+    doc_id = int(getattr(result, "doc_id"))
+    payload_json = _load_payload_json(repository=repository, doc_id=doc_id)
+    report_markdown = _render_report_markdown(
+        request=_TrendRenderRequest(
+            repository=repository,
+            payload_json=payload_json,
+            doc_id=doc_id,
+            run_id=run_id,
+            granularity=context.granularity,
+            period_start=period_start,
+            period_end=period_end,
+            output_dir=context.artifact_dir / "rendered-note",
+            output_language=getattr(settings, "llm_output_language", None),
+        )
+    )
+    tool_trace = summarize_run_metrics(repository.list_metrics(run_id=run_id))
+    _merge_debug_payload_tool_trace(
+        tool_trace=tool_trace,
+        debug_payload=_load_debug_payload(
+            artifact_dir=context.artifact_dir,
+            run_id=run_id,
+        ),
+    )
+    return doc_id, payload_json, report_markdown, tool_trace
+
+
 def capture_existing_trends_baseline(
     *,
     manifest: dict[str, Any],
@@ -659,27 +923,27 @@ def capture_existing_trends_baseline(
     out_dir = Path(str(manifest["out_dir"]))
     windows = cast(list[dict[str, Any]], manifest.get("windows", []))
     for window_manifest in windows:
-        granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
-        anchor_date = str(window_manifest.get("anchor_date", "") or "").strip()
-        artifact_dir = Path(str(window_manifest.get("artifact_dir", "") or ""))
+        context = _window_manifest_context(window_manifest)
         try:
             document, period_start, period_end = _find_existing_trend_document(
                 repository=repository,
-                granularity=granularity,
-                anchor_date=anchor_date,
+                granularity=context.granularity,
+                anchor_date=context.anchor_date,
             )
             doc_id = int(getattr(document, "id") or 0)
             payload_json = _load_payload_json(repository=repository, doc_id=doc_id)
             report_markdown = _render_report_markdown(
-                repository=repository,
-                payload_json=payload_json,
-                doc_id=doc_id,
-                run_id=f"eval-existing-trends-{window_manifest['id']}",
-                granularity=granularity,
-                period_start=period_start,
-                period_end=period_end,
-                output_dir=artifact_dir / "rendered-note",
-                output_language=cli._build_settings().llm_output_language,
+                request=_TrendRenderRequest(
+                    repository=repository,
+                    payload_json=payload_json,
+                    doc_id=doc_id,
+                    run_id=f"eval-existing-trends-{window_manifest['id']}",
+                    granularity=context.granularity,
+                    period_start=period_start,
+                    period_end=period_end,
+                    output_dir=context.artifact_dir / "rendered-note",
+                    output_language=cli._build_settings().llm_output_language,
+                )
             )
             tool_trace = {
                 "trace_status": "unavailable_from_existing_doc",
@@ -690,27 +954,21 @@ def capture_existing_trends_baseline(
                 "source_document": _serialize_capture_source_document(document),
             }
             write_window_capture_artifacts(
-                window_manifest=window_manifest,
-                run_id=f"existing-trend-doc-{doc_id}",
-                doc_id=doc_id,
-                report_markdown=report_markdown,
-                payload_json=payload_json,
-                tool_trace=tool_trace,
-                capture_metadata={
-                    "capture_mode": "existing-trends",
-                    "source_document": _serialize_capture_source_document(document),
-                },
+                request=_WindowArtifactWriteRequest(
+                    window_manifest=window_manifest,
+                    run_id=f"existing-trend-doc-{doc_id}",
+                    doc_id=doc_id,
+                    report_markdown=report_markdown,
+                    payload_json=payload_json,
+                    tool_trace=tool_trace,
+                    capture_metadata={
+                        "capture_mode": "existing-trends",
+                        "source_document": _serialize_capture_source_document(document),
+                    },
+                )
             )
             results.append(
-                asdict(
-                    EvalCaptureResult(
-                        window_id=str(window_manifest.get("id", "") or ""),
-                        status="captured",
-                        run_id=None,
-                        doc_id=doc_id,
-                        artifact_dir=str(artifact_dir),
-                    )
-                )
+                _captured_window_result(context=context, run_id=None, doc_id=doc_id)
             )
         except Exception as exc:  # noqa: BLE001
             write_window_capture_failure_artifacts(
@@ -718,27 +976,12 @@ def capture_existing_trends_baseline(
                 error_type=type(exc).__name__,
                 error_message=str(exc),
             )
-            results.append(
-                asdict(
-                    EvalCaptureResult(
-                        window_id=str(window_manifest.get("id", "") or ""),
-                        status="failed",
-                        run_id=None,
-                        doc_id=None,
-                        artifact_dir=str(artifact_dir),
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                )
-            )
-    baseline_summary = {
-        "generated_at": datetime.now(tz=UTC).isoformat(),
-        "capture_mode": "existing-trends",
-        "runtime": runtime,
-        "captured_total": sum(1 for row in results if row["status"] == "captured"),
-        "failed_total": sum(1 for row in results if row["status"] == "failed"),
-        "windows": results,
-    }
+            results.append(_failed_window_result(context=context, exc=exc))
+    baseline_summary = _build_baseline_summary(
+        capture_mode="existing-trends",
+        runtime=runtime,
+        results=results,
+    )
     _json_dump(out_dir / "baseline-summary.json", baseline_summary)
     return baseline_summary
 
@@ -766,14 +1009,13 @@ def _apply_eval_publish_overrides(*, base_settings: Any, scoped_settings: Any) -
 def _run_window_trends_capture(
     service: Any,
     *,
-    stage_run_id: str,
-    window_manifest: dict[str, Any],
-    llm_model: str | None,
-    reuse_existing_corpus: bool,
-    backfill: bool,
+    request: _WindowTrendsCaptureRequest,
 ) -> Any:
+    window_manifest = request.window_manifest
     granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
-    anchor_date = date.fromisoformat(str(window_manifest.get("anchor_date", "") or "").strip())
+    anchor_date = date.fromisoformat(
+        str(window_manifest.get("anchor_date", "") or "").strip()
+    )
     stream = str(window_manifest.get("stream", "") or "").strip() or "default"
     if stream != "default":
         raise ValueError(
@@ -781,131 +1023,43 @@ def _run_window_trends_capture(
             f"{stream}"
         )
     return service.trends(
-        run_id=stage_run_id,
+        run_id=request.stage_run_id,
         granularity=granularity,
         anchor_date=anchor_date,
-        llm_model=llm_model,
-        backfill=backfill,
+        llm_model=request.llm_model,
+        backfill=request.backfill,
         backfill_mode="missing",
         debug_pdf=False,
-        reuse_existing_corpus=reuse_existing_corpus,
+        reuse_existing_corpus=request.reuse_existing_corpus,
     )
 
 
-def capture_trends_rerun_baseline(
+def _capture_rerun_window(
     *,
-    manifest: dict[str, Any],
-    llm_model: str | None,
-    isolate_runtime: bool,
-    capture_mode: str,
-    reuse_existing_corpus: bool,
-    backfill: bool,
+    cli_module: Any,
+    request: _RerunCaptureRequest,
+    capture_budget: dict[str, int],
+    runtime_env_overrides: dict[str, str],
+    window_manifest: dict[str, Any],
 ) -> dict[str, Any]:
-    import recoleta.cli as cli
-
-    results: list[dict[str, Any]] = []
-    runtime: dict[str, Any]
-    capture_budget = _capture_budget_summary()
-    out_dir = Path(str(manifest["out_dir"]))
-    windows = cast(list[dict[str, Any]], manifest.get("windows", []))
+    context = _window_manifest_context(window_manifest)
+    context.artifact_dir.mkdir(parents=True, exist_ok=True)
     try:
-        runtime = (
-            prepare_isolated_eval_runtime(out_dir=out_dir)
-            if isolate_runtime
-            else describe_live_eval_runtime()
+        settings, repository, run_id, result = _execute_rerun_stage_capture(
+            cli_module=cli_module,
+            request=request,
+            context=context,
+            runtime_env_overrides=runtime_env_overrides,
         )
-    except Exception as exc:  # noqa: BLE001
-        for window_manifest in windows:
-            write_window_capture_failure_artifacts(
-                window_manifest=window_manifest,
-                error_type=type(exc).__name__,
-                error_message=str(exc),
-            )
-            results.append(
-                asdict(
-                    EvalCaptureResult(
-                        window_id=str(window_manifest.get("id", "") or ""),
-                        status="failed",
-                        run_id=None,
-                        doc_id=None,
-                        artifact_dir=str(window_manifest.get("artifact_dir", "") or ""),
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                )
-            )
-        baseline_summary = {
-            "generated_at": datetime.now(tz=UTC).isoformat(),
-            "capture_mode": capture_mode,
-            "runtime": {
-                "mode": "isolated_copy" if isolate_runtime else "live_workspace",
-                "status": "failed",
-                "error": {"type": type(exc).__name__, "message": str(exc)},
-            },
-            "captured_total": 0,
-            "failed_total": len(results),
-            "windows": results,
-        }
-        _json_dump(out_dir / "baseline-summary.json", baseline_summary)
-        return baseline_summary
-
-    runtime_env_overrides = {
-        "RECOLETA_DB_PATH": str(runtime["active_db_path"]),
-        "RAG_LANCEDB_DIR": str(runtime["active_lancedb_dir"]),
-        **_capture_budget_env_overrides(),
-    }
-    for window_manifest in windows:
-        granularity = str(window_manifest.get("granularity", "") or "").strip().lower()
-        anchor_date = str(window_manifest.get("anchor_date", "") or "").strip()
-        artifact_dir = Path(str(window_manifest.get("artifact_dir", "") or ""))
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        env_overrides = {
-            **runtime_env_overrides,
-            "PUBLISH_TARGETS": "markdown",
-            "MARKDOWN_OUTPUT_DIR": str(artifact_dir / "published"),
-            "ARTIFACTS_DIR": str(artifact_dir / "debug-artifacts"),
-            "WRITE_DEBUG_ARTIFACTS": "true",
-        }
-        try:
-            with _temporary_env(env_overrides):
-                settings, repository, run_id, result = cli._execute_stage(
-                    stage_name="trends",
-                    stage_runner=lambda service, stage_run_id: _run_window_trends_capture(
-                        service,
-                        stage_run_id=stage_run_id,
-                        window_manifest=window_manifest,
-                        llm_model=llm_model,
-                        reuse_existing_corpus=reuse_existing_corpus,
-                        backfill=backfill,
-                    ),
-                )
-            period_start, period_end = _period_bounds(
-                granularity=granularity,
-                anchor_date=anchor_date,
-            )
-            doc_id = int(getattr(result, "doc_id"))
-            payload_json = _load_payload_json(repository=repository, doc_id=doc_id)
-            report_markdown = _render_report_markdown(
-                repository=repository,
-                payload_json=payload_json,
-                doc_id=doc_id,
-                run_id=run_id,
-                granularity=granularity,
-                period_start=period_start,
-                period_end=period_end,
-                output_dir=artifact_dir / "rendered-note",
-                output_language=getattr(settings, "llm_output_language", None),
-            )
-            tool_trace = summarize_run_metrics(repository.list_metrics(run_id=run_id))
-            debug_payload = _load_debug_payload(artifact_dir=artifact_dir, run_id=run_id)
-            if debug_payload is not None:
-                debug = debug_payload.get("debug")
-                tool_trace["llm_debug"] = debug
-                if isinstance(debug, dict):
-                    raw_tool_trace = debug.get("raw_tool_trace")
-                    if isinstance(raw_tool_trace, dict):
-                        tool_trace["raw_tool_trace"] = raw_tool_trace
-            write_window_capture_artifacts(
+        doc_id, payload_json, report_markdown, tool_trace = _build_rerun_window_artifacts(
+            context=context,
+            settings=settings,
+            repository=repository,
+            run_id=run_id,
+            result=result,
+        )
+        write_window_capture_artifacts(
+            request=_WindowArtifactWriteRequest(
                 window_manifest=window_manifest,
                 run_id=run_id,
                 doc_id=doc_id,
@@ -913,50 +1067,65 @@ def capture_trends_rerun_baseline(
                 payload_json=payload_json,
                 tool_trace=tool_trace,
                 capture_metadata={
-                    "capture_mode": capture_mode,
-                    "reuse_existing_corpus": reuse_existing_corpus,
+                    "capture_mode": request.capture_mode,
+                    "reuse_existing_corpus": request.reuse_existing_corpus,
                     "capture_budget": capture_budget,
                 },
             )
-            results.append(
-                asdict(
-                    EvalCaptureResult(
-                        window_id=str(window_manifest.get("id", "") or ""),
-                        status="captured",
-                        run_id=run_id,
-                        doc_id=doc_id,
-                        artifact_dir=str(artifact_dir),
-                    )
-                )
-            )
-        except Exception as exc:  # noqa: BLE001
-            write_window_capture_failure_artifacts(
-                window_manifest=window_manifest,
-                error_type=type(exc).__name__,
-                error_message=str(exc),
-            )
-            results.append(
-                asdict(
-                    EvalCaptureResult(
-                        window_id=str(window_manifest.get("id", "") or ""),
-                        status="failed",
-                        run_id=None,
-                        doc_id=None,
-                        artifact_dir=str(artifact_dir),
-                        error_type=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                )
-            )
-    baseline_summary = {
-        "generated_at": datetime.now(tz=UTC).isoformat(),
-        "capture_mode": capture_mode,
-        "capture_budget": capture_budget,
-        "runtime": runtime,
-        "captured_total": sum(1 for row in results if row["status"] == "captured"),
-        "failed_total": sum(1 for row in results if row["status"] == "failed"),
-        "windows": results,
-    }
+        )
+        return _captured_window_result(context=context, run_id=run_id, doc_id=doc_id)
+    except Exception as exc:  # noqa: BLE001
+        write_window_capture_failure_artifacts(
+            window_manifest=window_manifest,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+        return _failed_window_result(context=context, exc=exc)
+
+
+def capture_trends_rerun_baseline(*, request: _RerunCaptureRequest) -> dict[str, Any]:
+    import recoleta.cli as cli
+
+    capture_budget = _capture_budget_summary()
+    out_dir = Path(str(request.manifest["out_dir"]))
+    try:
+        runtime = _bootstrap_rerun_runtime(request=request)
+    except Exception as exc:  # noqa: BLE001
+        results = _write_runtime_failure_artifacts(
+            request=request,
+            runtime_error=exc,
+        )
+        baseline_summary = _build_baseline_summary(
+            capture_mode=request.capture_mode,
+            runtime={
+                "mode": "isolated_copy" if request.isolate_runtime else "live_workspace",
+                "status": "failed",
+                "error": {"type": type(exc).__name__, "message": str(exc)},
+            },
+            results=results,
+            capture_budget=capture_budget,
+        )
+        _json_dump(out_dir / "baseline-summary.json", baseline_summary)
+        return baseline_summary
+
+    runtime_env_overrides = _runtime_env_overrides(runtime)
+    windows = cast(list[dict[str, Any]], request.manifest.get("windows", []))
+    results = [
+        _capture_rerun_window(
+            cli_module=cli,
+            request=request,
+            capture_budget=capture_budget,
+            runtime_env_overrides=runtime_env_overrides,
+            window_manifest=window_manifest,
+        )
+        for window_manifest in windows
+    ]
+    baseline_summary = _build_baseline_summary(
+        capture_mode=request.capture_mode,
+        runtime=runtime,
+        results=results,
+        capture_budget=capture_budget,
+    )
     _json_dump(out_dir / "baseline-summary.json", baseline_summary)
     return baseline_summary
 
@@ -975,20 +1144,24 @@ def capture_eval_baseline(
         return capture_existing_trends_baseline(manifest=manifest)
     if normalized_mode == "existing-corpus":
         return capture_trends_rerun_baseline(
+            request=_RerunCaptureRequest(
+                manifest=manifest,
+                llm_model=llm_model,
+                isolate_runtime=isolate_runtime,
+                capture_mode="existing-corpus",
+                reuse_existing_corpus=True,
+                backfill=False,
+            )
+        )
+    return capture_trends_rerun_baseline(
+        request=_RerunCaptureRequest(
             manifest=manifest,
             llm_model=llm_model,
             isolate_runtime=isolate_runtime,
-            capture_mode="existing-corpus",
-            reuse_existing_corpus=True,
-            backfill=False,
+            capture_mode="pipeline",
+            reuse_existing_corpus=False,
+            backfill=True,
         )
-    return capture_trends_rerun_baseline(
-        manifest=manifest,
-        llm_model=llm_model,
-        isolate_runtime=isolate_runtime,
-        capture_mode="pipeline",
-        reuse_existing_corpus=False,
-        backfill=True,
     )
 
 
