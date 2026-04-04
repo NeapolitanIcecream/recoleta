@@ -653,64 +653,85 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         config_path = self._resolve_config_path()
         if config_path is None:
             return {}
+        self._validate_config_path(config_path)
+        loaded = self._read_config_file(config_path)
+        normalized = self._normalize_loaded_config(loaded)
+        self._reject_disallowed_config_keys(normalized)
+        return self._map_config_keys(normalized)
 
+    @staticmethod
+    def _validate_config_path(config_path: Path) -> None:
         if not config_path.exists():
             raise ValueError(f"RECOLETA_CONFIG_PATH does not exist: {config_path}")
         if not config_path.is_file():
             raise ValueError(f"RECOLETA_CONFIG_PATH must be a file: {config_path}")
 
+    @staticmethod
+    def _read_config_file(config_path: Path) -> Any:
         suffix = config_path.suffix.lower()
         if suffix in {".yaml", ".yml"}:
-            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        elif suffix == ".json":
-            loaded = json.loads(config_path.read_text(encoding="utf-8"))
-        else:
-            raise ValueError(
-                f"Unsupported config file type: {config_path.suffix} (expected .yaml/.yml/.json)"
-            )
+            return yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        if suffix == ".json":
+            return json.loads(config_path.read_text(encoding="utf-8"))
+        raise ValueError(
+            f"Unsupported config file type: {config_path.suffix} (expected .yaml/.yml/.json)"
+        )
 
+    @staticmethod
+    def _normalize_loaded_config(loaded: Any) -> dict[str, Any]:
         if loaded is None:
             return {}
         if not isinstance(loaded, dict):
-            raise ValueError(
-                "Config file must contain a mapping/object at the top level"
-            )
+            raise ValueError("Config file must contain a mapping/object at the top level")
+        return loaded
 
-        deprecated_scheduler_keys = [
+    def _reject_disallowed_config_keys(self, loaded: dict[str, Any]) -> None:
+        deprecated_scheduler_keys = self._collect_deprecated_scheduler_keys(loaded)
+        if deprecated_scheduler_keys:
+            raise ValueError(_legacy_scheduler_interval_message(deprecated_scheduler_keys))
+        unsupported_keys = self._collect_unsupported_top_level_keys(loaded)
+        if unsupported_keys:
+            raise ValueError(_unsupported_config_format_message(unsupported_keys))
+        self._reject_forbidden_top_level_keys(loaded)
+
+    @staticmethod
+    def _collect_deprecated_scheduler_keys(loaded: dict[str, Any]) -> list[str]:
+        return [
             key
             for key in loaded
             if isinstance(key, str) and key.upper() in _DEPRECATED_SCHEDULER_INTERVAL_KEYS
         ]
-        if deprecated_scheduler_keys:
-            raise ValueError(
-                _legacy_scheduler_interval_message(deprecated_scheduler_keys)
-            )
 
-        unsupported_keys = [
+    def _collect_unsupported_top_level_keys(self, loaded: dict[str, Any]) -> list[str]:
+        return [
             key
             for key in loaded
             if isinstance(key, str) and key in self._UNSUPPORTED_TOP_LEVEL_KEYS
         ]
-        if unsupported_keys:
-            raise ValueError(_unsupported_config_format_message(unsupported_keys))
 
+    def _reject_forbidden_top_level_keys(self, loaded: dict[str, Any]) -> None:
         for key in loaded:
             if key in self._FORBIDDEN_TOP_LEVEL_KEYS:
                 raise ValueError(
                     f"Secrets must come from environment variables only: {key}"
                 )
 
+    def _map_config_keys(self, loaded: dict[str, Any]) -> dict[str, Any]:
         mapped: dict[str, Any] = {}
         for key, value in loaded.items():
             if not isinstance(key, str):
                 raise ValueError("Config file keys must be strings")
             mapped_key = self._KEY_MAP.get(key, key)
-            if mapped_key in {"telegram_bot_token", "telegram_chat_id"}:
-                raise ValueError(
-                    f"Secrets must come from environment variables only: {key}"
-                )
+            self._reject_mapped_secret_key(raw_key=key, mapped_key=mapped_key)
             mapped[mapped_key] = value
         return mapped
+
+    @staticmethod
+    def _reject_mapped_secret_key(*, raw_key: str, mapped_key: str) -> None:
+        if mapped_key in {"telegram_bot_token", "telegram_chat_id"}:
+            raise ValueError(
+                f"Secrets must come from environment variables only: {raw_key}"
+            )
 
     def get_field_value(
         self, field: FieldInfo, field_name: str

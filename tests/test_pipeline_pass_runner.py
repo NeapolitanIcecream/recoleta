@@ -100,18 +100,20 @@ def test_persist_pass_output_envelope_records_failure_metric_when_nonfatal() -> 
 
     persisted_id = persist_pass_output_envelope(
         repository=_FakeRepository(should_fail=True),
-        envelope=envelope,
-        period_start=datetime(2026, 3, 2, tzinfo=UTC),
-        period_end=datetime(2026, 3, 3, tzinfo=UTC),
         record_metric=_record_metric,
-        log=log,
-        failure_message=(
-            "Pass output persist failed pass_kind={pass_kind} "
-            "error_type={error_type} error={error}"
+        spec=PassPersistSpec(
+            envelope=envelope,
+            period_start=datetime(2026, 3, 2, tzinfo=UTC),
+            period_end=datetime(2026, 3, 3, tzinfo=UTC),
+            log=log,
+            failure_message=(
+                "Pass output persist failed pass_kind={pass_kind} "
+                "error_type={error_type} error={error}"
+            ),
+            sanitize_error=lambda message: message.upper(),
+            on_failure=lambda exc: captured_failures.append(type(exc).__name__),
+            reraise=False,
         ),
-        sanitize_error=lambda message: message.upper(),
-        on_failure=lambda exc: captured_failures.append(type(exc).__name__),
-        reraise=False,
     )
 
     assert persisted_id is None
@@ -149,13 +151,15 @@ def test_persist_pass_output_envelope_returns_id_and_records_success_metric() ->
 
     persisted_id = persist_pass_output_envelope(
         repository=repository,
-        envelope=envelope,
-        period_start=datetime(2026, 3, 2, tzinfo=UTC),
-        period_end=datetime(2026, 3, 3, tzinfo=UTC),
         record_metric=_record_metric,
-        log=_FakeLog(),
-        failure_message="unused",
-        persisted_metric_name="pipeline.trends.pass.ideas.persisted_total",
+        spec=PassPersistSpec(
+            envelope=envelope,
+            period_start=datetime(2026, 3, 2, tzinfo=UTC),
+            period_end=datetime(2026, 3, 3, tzinfo=UTC),
+            log=_FakeLog(),
+            failure_message="unused",
+            persisted_metric_name="pipeline.trends.pass.ideas.persisted_total",
+        ),
     )
 
     assert persisted_id == 9

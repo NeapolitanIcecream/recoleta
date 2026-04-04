@@ -45,7 +45,19 @@ def iter_pricing_model_candidates(
     *models: str | None,
     pricing_model_alias: str | None = None,
 ) -> Iterator[str]:
-    seen: set[str] = set()
+    yield from _iter_unique_pricing_candidates(
+        _seed_pricing_model_candidates(
+            models=models,
+            pricing_model_alias=pricing_model_alias,
+        )
+    )
+
+
+def _seed_pricing_model_candidates(
+    *,
+    models: tuple[str | None, ...],
+    pricing_model_alias: str | None,
+) -> list[str]:
     queue: list[str] = []
     if pricing_model_alias is not None:
         alias = str(pricing_model_alias).strip()
@@ -55,27 +67,36 @@ def iter_pricing_model_candidates(
         normalized = str(model or "").strip()
         if normalized:
             queue.append(normalized)
+    return queue
 
-    while queue:
-        candidate = queue.pop(0).strip()
+
+def _iter_unique_pricing_candidates(queue: list[str]) -> Iterator[str]:
+    seen: set[str] = set()
+    pending = list(queue)
+    while pending:
+        candidate = pending.pop(0).strip()
         if not candidate or candidate in seen:
             continue
         seen.add(candidate)
         yield candidate
+        expanded = _expand_pricing_model_candidate(candidate)
+        if expanded is not None:
+            pending.append(expanded)
 
-        next_candidate: str | None = None
-        if ":" in candidate:
-            _, rest = candidate.split(":", 1)
-            rest = rest.strip()
-            if rest and rest != candidate:
-                next_candidate = rest
-        elif "/" in candidate:
-            _, rest = candidate.split("/", 1)
-            rest = rest.strip()
-            if rest and rest != candidate:
-                next_candidate = rest
-        if next_candidate:
-            queue.append(next_candidate)
+
+def _expand_pricing_model_candidate(candidate: str) -> str | None:
+    separator: str | None = None
+    if ":" in candidate:
+        separator = ":"
+    elif "/" in candidate:
+        separator = "/"
+    if separator is None:
+        return None
+    _, rest = candidate.split(separator, 1)
+    normalized = rest.strip()
+    if not normalized or normalized == candidate:
+        return None
+    return normalized
 
 
 def estimate_cost_usd_from_tokens(

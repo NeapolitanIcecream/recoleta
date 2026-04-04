@@ -150,6 +150,33 @@ class _AnalyzePersistResult:
     analysis_rows_total: int = 0
 
 
+@dataclass(slots=True)
+class _AnalyzeMetricBuildRequest:
+    analyze_result: AnalyzeResult
+    llm_calls_total: int
+    llm_errors_total: int
+    missing_content_total: int
+    llm_prompt_tokens_total: int
+    llm_completion_tokens_total: int
+    llm_tokens_seen: bool
+    llm_cost_usd_total: float
+    llm_cost_seen: bool
+    llm_cost_missing_total: int
+    llm_calls_by_provider_token: dict[str, int]
+    llm_errors_by_provider_token: dict[str, int]
+    llm_calls_by_model_token: dict[str, int]
+    llm_errors_by_model_token: dict[str, int]
+    duration_ms: int
+    parallelism: _AnalyzeParallelismStats
+    sql_queries_total: int
+    sql_commits_total: int
+    analysis_batches_total: int
+    analysis_rows_total: int
+    state_batches_total: int
+    state_rows_total: int
+    extra_metrics: list[MetricPoint] | None = None
+
+
 class _EnsureItemContentKwargs(TypedDict, total=False):
     client: httpx.Client
     item: Any
@@ -839,176 +866,208 @@ class PipelineService:
 
         return state_batches_total, state_rows_total
 
-    def _build_analyze_metric_points(
+    def _analyze_parallelism_metric_points(
         self,
         *,
-        analyze_result: AnalyzeResult,
-        llm_calls_total: int,
-        llm_errors_total: int,
-        missing_content_total: int,
-        llm_prompt_tokens_total: int,
-        llm_completion_tokens_total: int,
-        llm_tokens_seen: bool,
-        llm_cost_usd_total: float,
-        llm_cost_seen: bool,
-        llm_cost_missing_total: int,
-        llm_calls_by_provider_token: dict[str, int],
-        llm_errors_by_provider_token: dict[str, int],
-        llm_calls_by_model_token: dict[str, int],
-        llm_errors_by_model_token: dict[str, int],
-        duration_ms: int,
-        parallelism: _AnalyzeParallelismStats,
-        sql_queries_total: int,
-        sql_commits_total: int,
-        analysis_batches_total: int,
-        analysis_rows_total: int,
-        state_batches_total: int,
-        state_rows_total: int,
-        extra_metrics: list[MetricPoint] | None = None,
+        request: _AnalyzeMetricBuildRequest,
+    ) -> list[MetricPoint]:
+        return [
+            MetricPoint(
+                name="pipeline.analyze.parallelism.requested",
+                value=request.parallelism.requested,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.parallelism.effective",
+                value=request.parallelism.effective,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.parallelism.max_inflight",
+                value=request.parallelism.max_inflight,
+                unit="count",
+            ),
+        ]
+
+    def _analyze_db_metric_points(
+        self,
+        *,
+        request: _AnalyzeMetricBuildRequest,
+    ) -> list[MetricPoint]:
+        return [
+            MetricPoint(
+                name="pipeline.analyze.db.sql_queries_total",
+                value=request.sql_queries_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.db.sql_commits_total",
+                value=request.sql_commits_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.db.analysis_batches_total",
+                value=request.analysis_batches_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.db.analysis_rows_total",
+                value=request.analysis_rows_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.db.state_batches_total",
+                value=request.state_batches_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.db.state_rows_total",
+                value=request.state_rows_total,
+                unit="count",
+            ),
+        ]
+
+    def _analyze_result_metric_points(
+        self,
+        *,
+        request: _AnalyzeMetricBuildRequest,
+    ) -> list[MetricPoint]:
+        return [
+            MetricPoint(
+                name="pipeline.analyze.llm_calls_total",
+                value=request.llm_calls_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.llm_errors_total",
+                value=request.llm_errors_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.missing_content_total",
+                value=request.missing_content_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.processed_total",
+                value=request.analyze_result.processed,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.failed_total",
+                value=request.analyze_result.failed,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.duration_ms",
+                value=request.duration_ms,
+                unit="ms",
+            ),
+        ]
+
+    def _base_analyze_metric_points(
+        self,
+        *,
+        request: _AnalyzeMetricBuildRequest,
+    ) -> list[MetricPoint]:
+        return (
+            self._analyze_parallelism_metric_points(request=request)
+            + self._analyze_result_metric_points(request=request)
+            + self._analyze_db_metric_points(request=request)
+        )
+
+    def _analyze_token_metric_points(
+        self,
+        *,
+        request: _AnalyzeMetricBuildRequest,
+    ) -> list[MetricPoint]:
+        if not request.llm_tokens_seen:
+            return []
+        return [
+            MetricPoint(
+                name="pipeline.analyze.llm_prompt_tokens_total",
+                value=request.llm_prompt_tokens_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.llm_completion_tokens_total",
+                value=request.llm_completion_tokens_total,
+                unit="count",
+            ),
+        ]
+
+    def _analyze_cost_metric_points(
+        self,
+        *,
+        request: _AnalyzeMetricBuildRequest,
     ) -> list[MetricPoint]:
         metrics: list[MetricPoint] = []
-        metrics.extend(
-            [
-                MetricPoint(
-                    name="pipeline.analyze.parallelism.requested",
-                    value=parallelism.requested,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.parallelism.effective",
-                    value=parallelism.effective,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.parallelism.max_inflight",
-                    value=parallelism.max_inflight,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.llm_calls_total",
-                    value=llm_calls_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.llm_errors_total",
-                    value=llm_errors_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.missing_content_total",
-                    value=missing_content_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.db.sql_queries_total",
-                    value=sql_queries_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.db.sql_commits_total",
-                    value=sql_commits_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.db.analysis_batches_total",
-                    value=analysis_batches_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.db.analysis_rows_total",
-                    value=analysis_rows_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.db.state_batches_total",
-                    value=state_batches_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.db.state_rows_total",
-                    value=state_rows_total,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.processed_total",
-                    value=analyze_result.processed,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.failed_total",
-                    value=analyze_result.failed,
-                    unit="count",
-                ),
-                MetricPoint(
-                    name="pipeline.analyze.duration_ms",
-                    value=duration_ms,
-                    unit="ms",
-                ),
-            ]
-        )
-        if llm_tokens_seen:
-            metrics.extend(
-                [
-                    MetricPoint(
-                        name="pipeline.analyze.llm_prompt_tokens_total",
-                        value=llm_prompt_tokens_total,
-                        unit="count",
-                    ),
-                    MetricPoint(
-                        name="pipeline.analyze.llm_completion_tokens_total",
-                        value=llm_completion_tokens_total,
-                        unit="count",
-                    ),
-                ]
-            )
-        if llm_cost_seen:
+        if request.llm_cost_seen:
             metrics.append(
                 MetricPoint(
                     name="pipeline.analyze.estimated_cost_usd",
-                    value=llm_cost_usd_total,
+                    value=request.llm_cost_usd_total,
                     unit="usd",
                 )
             )
-        if llm_cost_missing_total > 0:
+        if request.llm_cost_missing_total > 0:
             metrics.append(
                 MetricPoint(
                     name="pipeline.analyze.cost_missing_total",
-                    value=llm_cost_missing_total,
+                    value=request.llm_cost_missing_total,
                     unit="count",
                 )
             )
-        for provider_token, count in llm_calls_by_provider_token.items():
-            metrics.append(
-                MetricPoint(
-                    name=f"pipeline.analyze.llm_calls.provider.{provider_token}",
-                    value=count,
-                    unit="count",
-                )
+        return metrics
+
+    def _analyze_counter_metric_points(
+        self,
+        *,
+        metric_prefix: str,
+        values: dict[str, int],
+    ) -> list[MetricPoint]:
+        return [
+            MetricPoint(
+                name=f"pipeline.analyze.{metric_prefix}.{token}",
+                value=count,
+                unit="count",
             )
-        for provider_token, count in llm_errors_by_provider_token.items():
-            metrics.append(
-                MetricPoint(
-                    name=f"pipeline.analyze.llm_errors.provider.{provider_token}",
-                    value=count,
-                    unit="count",
-                )
+            for token, count in values.items()
+        ]
+
+    def _build_analyze_metric_points(
+        self,
+        *,
+        request: _AnalyzeMetricBuildRequest,
+    ) -> list[MetricPoint]:
+        metrics = self._base_analyze_metric_points(request=request)
+        metrics.extend(self._analyze_token_metric_points(request=request))
+        metrics.extend(self._analyze_cost_metric_points(request=request))
+        metrics.extend(
+            self._analyze_counter_metric_points(
+                metric_prefix="llm_calls.provider",
+                values=request.llm_calls_by_provider_token,
             )
-        for model_token, count in llm_calls_by_model_token.items():
-            metrics.append(
-                MetricPoint(
-                    name=f"pipeline.analyze.llm_calls.model.{model_token}",
-                    value=count,
-                    unit="count",
-                )
+        )
+        metrics.extend(
+            self._analyze_counter_metric_points(
+                metric_prefix="llm_errors.provider",
+                values=request.llm_errors_by_provider_token,
             )
-        for model_token, count in llm_errors_by_model_token.items():
-            metrics.append(
-                MetricPoint(
-                    name=f"pipeline.analyze.llm_errors.model.{model_token}",
-                    value=count,
-                    unit="count",
-                )
+        )
+        metrics.extend(
+            self._analyze_counter_metric_points(
+                metric_prefix="llm_calls.model",
+                values=request.llm_calls_by_model_token,
             )
+        )
+        metrics.extend(
+            self._analyze_counter_metric_points(
+                metric_prefix="llm_errors.model",
+                values=request.llm_errors_by_model_token,
+            )
+        )
+        extra_metrics = getattr(request, "extra_metrics", None)
         if extra_metrics:
             metrics.extend(extra_metrics)
         return metrics

@@ -48,7 +48,6 @@ class TriageStats:
     duration_ms: int
     method: str
     embedding_prompt_tokens_total: int | None = None
-    embedding_prompt_tokens_missing_total: int | None = None
     embedding_cost_usd_total: float | None = None
     embedding_cost_missing_total: int | None = None
 
@@ -58,6 +57,94 @@ class TriageOutput:
     selected: list[TriageScoredCandidate]
     stats: TriageStats
     artifacts: dict[str, dict[str, Any]]
+
+
+@dataclass(slots=True)
+class _EmbeddingDebugTotals:
+    calls_total: int = 0
+    errors_total: int = 0
+    prompt_tokens_total: int = 0
+    prompt_tokens_missing_total: int = 0
+    cost_usd_total: float = 0.0
+    cost_missing_total: int = 0
+
+    def record_call(self) -> None:
+        self.calls_total += 1
+
+    def record_error(self) -> None:
+        self.errors_total += 1
+
+    def absorb_debug(self, debug: Any) -> None:
+        if not isinstance(debug, dict):
+            self.prompt_tokens_missing_total += 1
+            self.cost_missing_total += 1
+            return
+        raw_prompt = debug.get("prompt_tokens")
+        if raw_prompt is None:
+            raw_prompt = debug.get("total_tokens")
+        if isinstance(raw_prompt, (int, float)):
+            self.prompt_tokens_total += int(raw_prompt)
+        else:
+            self.prompt_tokens_missing_total += 1
+        raw_cost = debug.get("cost_usd")
+        if isinstance(raw_cost, (int, float)):
+            self.cost_usd_total += float(raw_cost)
+        else:
+            self.cost_missing_total += 1
+
+
+@dataclass(slots=True)
+class _TriageScoringResult:
+    scored: list[TriageScoredCandidate]
+    method: str
+    debug_totals: _EmbeddingDebugTotals
+    embedding_request: dict[str, Any] | None = None
+    embedding_response: dict[str, Any] | None = None
+
+
+@dataclass(slots=True)
+class _EmbeddingRunContext:
+    run_id: str
+    candidates: list[TriageCandidate]
+    topics: list[str]
+    query_mode: str
+    embedding_model: str
+    embedding_dimensions: int | None
+    include_debug: bool
+
+
+@dataclass(slots=True)
+class _TriageSelectionConfig:
+    run_id: str
+    limit: int
+    mode: str
+    min_similarity: float
+    exploration_rate: float
+    recency_floor: int
+
+
+@dataclass(slots=True)
+class _TriageStatsContext:
+    candidates_total: int
+    scored_total: int
+    selected_total: int
+    skipped_total: int
+    duration_ms: int
+    method: str
+    debug_totals: _EmbeddingDebugTotals
+
+
+@dataclass(slots=True)
+class _TriageArtifactsContext:
+    run_id: str
+    include_debug: bool
+    scoring: _TriageScoringResult
+    mode: str
+    min_similarity: float
+    exploration_rate: float
+    recency_floor: int
+    stats: TriageStats
+    selected: list[TriageScoredCandidate]
 
 
 class SemanticTriage:
@@ -90,240 +177,235 @@ class SemanticTriage:
         include_debug: bool,
     ) -> TriageOutput:
         started = time.perf_counter()
-        artifacts: dict[str, dict[str, Any]] = {}
-
         if limit <= 0 or not candidates:
-            duration_ms = int((time.perf_counter() - started) * 1000)
-            stats = TriageStats(
-                candidates_total=len(candidates),
-                scored_total=0,
-                selected_total=0,
-                skipped_total=0,
-                embedding_calls_total=0,
-                embedding_errors_total=0,
-                duration_ms=duration_ms,
+            return _build_early_triage_output(
+                candidates=candidates,
+                duration_ms=int((time.perf_counter() - started) * 1000),
                 method="noop",
+                selected=[],
             )
-            return TriageOutput(selected=[], stats=stats, artifacts={})
 
-        normalized_topics = [
-            str(topic).strip() for topic in topics if str(topic).strip()
-        ]
+        normalized_topics = _normalize_topics(topics)
         if not normalized_topics:
-            duration_ms = int((time.perf_counter() - started) * 1000)
-            selected = [
-                TriageScoredCandidate(candidate=candidate, score=0.0)
-                for candidate in candidates[:limit]
-            ]
-            stats = TriageStats(
-                candidates_total=len(candidates),
-                scored_total=0,
-                selected_total=len(selected),
-                skipped_total=0,
-                embedding_calls_total=0,
-                embedding_errors_total=0,
-                duration_ms=duration_ms,
+            return _build_early_triage_output(
+                candidates=candidates,
+                duration_ms=int((time.perf_counter() - started) * 1000),
                 method="topics_empty_fallback",
+                selected=[
+                    TriageScoredCandidate(candidate=candidate, score=0.0)
+                    for candidate in candidates[:limit]
+                ],
             )
-            return TriageOutput(selected=selected, stats=stats, artifacts={})
-
-        embedding_calls_total = 0
-        embedding_errors_total = 0
-        method = "embedding_cosine"
-        embedding_prompt_tokens_total = 0
-        embedding_prompt_tokens_missing_total = 0
-        embedding_cost_usd_total = 0.0
-        embedding_cost_missing_total = 0
-
-        def _accumulate_embedding_debug(debug: Any) -> None:
-            nonlocal embedding_prompt_tokens_total
-            nonlocal embedding_prompt_tokens_missing_total
-            nonlocal embedding_cost_usd_total
-            nonlocal embedding_cost_missing_total
-
-            if not isinstance(debug, dict):
-                embedding_prompt_tokens_missing_total += 1
-                embedding_cost_missing_total += 1
-                return
-
-            raw_prompt = debug.get("prompt_tokens")
-            if raw_prompt is None:
-                raw_prompt = debug.get("total_tokens")
-            if isinstance(raw_prompt, (int, float)):
-                embedding_prompt_tokens_total += int(raw_prompt)
-            else:
-                embedding_prompt_tokens_missing_total += 1
-
-            raw_cost = debug.get("cost_usd")
-            if isinstance(raw_cost, (int, float)):
-                embedding_cost_usd_total += float(raw_cost)
-            else:
-                embedding_cost_missing_total += 1
-
-        embedding_request: dict[str, Any] | None = None
-        if include_debug:
-            embedding_request = {
-                "run_id_fingerprint": _fingerprint(run_id),
-                "model": embedding_model,
-                "dimensions": embedding_dimensions,
-                "query_mode": query_mode,
-                "topics_total": len(normalized_topics),
-                "candidates_total": len(candidates),
-                "batching": {
-                    "max_inputs": self.embedding_batch_max_inputs,
-                    "max_chars": self.embedding_batch_max_chars,
-                },
-            }
-
-        embedding_debug: dict[str, Any] | None = None
-        try:
-            embedding_calls_total += 1
-            query_vectors, query_debug = self._embed_query(
+        scoring = self._score_candidates(
+            context=_EmbeddingRunContext(
+                run_id=run_id,
+                candidates=candidates,
                 topics=normalized_topics,
                 query_mode=query_mode,
-                model=embedding_model,
-                dimensions=embedding_dimensions,
+                embedding_model=embedding_model,
+                embedding_dimensions=embedding_dimensions,
+                include_debug=include_debug,
             )
-            _accumulate_embedding_debug(query_debug)
-            embedding_debug = {"query": query_debug}
-
-            item_texts = [candidate.text for candidate in candidates]
-            item_vectors: list[list[float]] = []
-            items_usage_totals: dict[str, float] = {}
-            items_elapsed_ms_total = 0
-            items_batches_total = 0
-            items_batch_inputs_max = 0
-            items_batch_chars_max = 0
-            items_sample_head: list[float] = []
-
-            for batch in iter_embedding_batches(
-                item_texts,
-                max_batch_inputs=self.embedding_batch_max_inputs,
-                max_batch_chars=self.embedding_batch_max_chars,
-            ):
-                items_batches_total += 1
-                items_batch_inputs_max = max(items_batch_inputs_max, len(batch))
-                items_batch_chars_max = max(
-                    items_batch_chars_max, sum(len(text) for text in batch)
-                )
-
-                embedding_calls_total += 1
-                batch_vectors, batch_debug = self.embedder.embed(
-                    model=embedding_model,
-                    inputs=batch,
-                    dimensions=embedding_dimensions,
-                )
-                _accumulate_embedding_debug(batch_debug)
-                if len(batch_vectors) != len(batch):
-                    raise ValueError("embedding output size mismatch")
-                item_vectors.extend(batch_vectors)
-
-                if not items_sample_head and batch_vectors and batch_vectors[0]:
-                    items_sample_head = [float(value) for value in batch_vectors[0][:8]]
-                if isinstance(batch_debug, dict):
-                    raw_elapsed_ms = batch_debug.get("elapsed_ms")
-                    if isinstance(raw_elapsed_ms, (int, float)):
-                        items_elapsed_ms_total += int(raw_elapsed_ms)
-                    _merge_usage_totals(items_usage_totals, batch_debug.get("usage"))
-
-            if len(item_vectors) != len(candidates):
-                raise ValueError("embedding output size mismatch")
-
-            items_debug: dict[str, Any] = {
-                "model": embedding_model,
-                "inputs_total": len(item_texts),
-                "dimensions": embedding_dimensions,
-                "batching": {
-                    "max_inputs": self.embedding_batch_max_inputs,
-                    "max_chars": self.embedding_batch_max_chars,
-                },
-                "batches_total": items_batches_total,
-                "batch_inputs_max": items_batch_inputs_max,
-                "batch_chars_max": items_batch_chars_max,
-                "elapsed_ms_total": items_elapsed_ms_total,
-                "usage_total": items_usage_totals or None,
-                "sample_embedding_head": items_sample_head,
-            }
-            embedding_debug["items"] = items_debug
-            scored = self._score_with_vectors(
-                candidates=candidates,
-                query_vectors=query_vectors,
-                item_vectors=item_vectors,
-            )
-        except Exception as exc:  # noqa: BLE001
-            embedding_errors_total += 1
-            method = "fuzz_title"
-            scored = self._score_with_rapidfuzz(
-                candidates=candidates, topics=normalized_topics
-            )
-            if include_debug:
-                payload: dict[str, Any] = {
-                    "error_type": type(exc).__name__,
-                    "error_message": str(exc),
-                }
-                if embedding_debug is not None:
-                    payload["debug"] = embedding_debug
-                artifacts["embedding_response"] = payload
-
-        if include_debug and embedding_request is not None:
-            artifacts.setdefault("embedding_request", embedding_request)
-            if embedding_debug is not None:
-                artifacts.setdefault("embedding_response", embedding_debug)
+        )
 
         selected, skipped_total = self._select_from_scored(
-            run_id=run_id,
-            scored=scored,
-            limit=limit,
-            mode=mode,
-            min_similarity=min_similarity,
-            exploration_rate=exploration_rate,
-            recency_floor=recency_floor,
+            scored=scoring.scored,
+            config=_TriageSelectionConfig(
+                run_id=run_id,
+                limit=limit,
+                mode=mode,
+                min_similarity=min_similarity,
+                exploration_rate=exploration_rate,
+                recency_floor=recency_floor,
+            ),
         )
 
         duration_ms = int((time.perf_counter() - started) * 1000)
-        prompt_tokens_total: int | None = None
-        if embedding_calls_total <= 0:
-            prompt_tokens_total = 0
-        elif embedding_prompt_tokens_total > 0:
-            prompt_tokens_total = embedding_prompt_tokens_total
-        cost_usd_total: float | None = None
-        if embedding_calls_total <= 0:
-            cost_usd_total = 0.0
-        elif embedding_cost_usd_total > 0.0:
-            cost_usd_total = embedding_cost_usd_total
-        stats = TriageStats(
-            candidates_total=len(candidates),
-            scored_total=len(scored),
-            selected_total=len(selected),
-            skipped_total=skipped_total,
-            embedding_calls_total=embedding_calls_total,
-            embedding_errors_total=embedding_errors_total,
-            duration_ms=duration_ms,
-            method=method,
-            embedding_prompt_tokens_total=prompt_tokens_total,
-            embedding_prompt_tokens_missing_total=embedding_prompt_tokens_missing_total
-            if embedding_calls_total > 0
-            else 0,
-            embedding_cost_usd_total=cost_usd_total,
-            embedding_cost_missing_total=embedding_cost_missing_total
-            if embedding_calls_total > 0
-            else 0,
+        stats = _build_triage_stats(
+            context=_TriageStatsContext(
+                candidates_total=len(candidates),
+                scored_total=len(scoring.scored),
+                selected_total=len(selected),
+                skipped_total=skipped_total,
+                duration_ms=duration_ms,
+                method=scoring.method,
+                debug_totals=scoring.debug_totals,
+            )
         )
-
-        if include_debug:
-            artifacts["triage_summary"] = _build_triage_summary(
+        artifacts = _build_triage_artifacts(
+            context=_TriageArtifactsContext(
                 run_id=run_id,
+                include_debug=include_debug,
+                scoring=scoring,
                 mode=mode,
-                method=method,
                 min_similarity=min_similarity,
                 exploration_rate=exploration_rate,
                 recency_floor=recency_floor,
                 stats=stats,
-                scored=scored,
                 selected=selected,
             )
-
+        )
         return TriageOutput(selected=selected, stats=stats, artifacts=artifacts)
+
+    def _score_candidates(
+        self,
+        *,
+        context: _EmbeddingRunContext,
+    ) -> _TriageScoringResult:
+        debug_totals = _EmbeddingDebugTotals()
+        embedding_request = _build_embedding_request_artifact(
+            context=context,
+            max_inputs=self.embedding_batch_max_inputs,
+            max_chars=self.embedding_batch_max_chars,
+        )
+        try:
+            scored, embedding_response = self._score_candidates_with_embeddings(
+                context=context,
+                debug_totals=debug_totals,
+            )
+            return _TriageScoringResult(
+                scored=scored,
+                method="embedding_cosine",
+                debug_totals=debug_totals,
+                embedding_request=embedding_request,
+                embedding_response=(
+                    embedding_response if context.include_debug else None
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            debug_totals.record_error()
+            return _TriageScoringResult(
+                scored=self._score_with_rapidfuzz(
+                    candidates=context.candidates,
+                    topics=context.topics,
+                ),
+                method="fuzz_title",
+                debug_totals=debug_totals,
+                embedding_request=embedding_request,
+                embedding_response=_build_embedding_error_artifact(
+                    exc=exc,
+                    embedding_response=None,
+                )
+                if context.include_debug
+                else None,
+            )
+
+    def _score_candidates_with_embeddings(
+        self,
+        *,
+        context: _EmbeddingRunContext,
+        debug_totals: _EmbeddingDebugTotals,
+    ) -> tuple[list[TriageScoredCandidate], dict[str, Any]]:
+        query_vectors, query_debug = self._embed_query_vectors(
+            context=context,
+            debug_totals=debug_totals,
+        )
+        item_vectors, items_debug = self._embed_candidate_vectors(
+            context=context,
+            debug_totals=debug_totals,
+        )
+        return (
+            self._score_with_vectors(
+                candidates=context.candidates,
+                query_vectors=query_vectors,
+                item_vectors=item_vectors,
+            ),
+            {"query": query_debug, "items": items_debug},
+        )
+
+    def _embed_query_vectors(
+        self,
+        *,
+        context: _EmbeddingRunContext,
+        debug_totals: _EmbeddingDebugTotals,
+    ) -> tuple[list[list[float]], dict[str, Any]]:
+        debug_totals.record_call()
+        query_vectors, query_debug = self._embed_query(
+            topics=context.topics,
+            query_mode=context.query_mode,
+            model=context.embedding_model,
+            dimensions=context.embedding_dimensions,
+        )
+        debug_totals.absorb_debug(query_debug)
+        return query_vectors, query_debug
+
+    def _embed_candidate_vectors(
+        self,
+        *,
+        context: _EmbeddingRunContext,
+        debug_totals: _EmbeddingDebugTotals,
+    ) -> tuple[list[list[float]], dict[str, Any]]:
+        item_texts = [candidate.text for candidate in context.candidates]
+        item_vectors: list[list[float]] = []
+        items_usage_totals: dict[str, float] = {}
+        items_elapsed_ms_total = 0
+        items_batches_total = 0
+        items_batch_inputs_max = 0
+        items_batch_chars_max = 0
+        items_sample_head: list[float] = []
+
+        for batch in iter_embedding_batches(
+            item_texts,
+            max_batch_inputs=self.embedding_batch_max_inputs,
+            max_batch_chars=self.embedding_batch_max_chars,
+        ):
+            items_batches_total += 1
+            items_batch_inputs_max = max(items_batch_inputs_max, len(batch))
+            items_batch_chars_max = max(
+                items_batch_chars_max,
+                sum(len(text) for text in batch),
+            )
+            batch_vectors, batch_debug = self._embed_candidate_batch(
+                batch=batch,
+                embedding_model=context.embedding_model,
+                embedding_dimensions=context.embedding_dimensions,
+                debug_totals=debug_totals,
+            )
+            item_vectors.extend(batch_vectors)
+            if not items_sample_head and batch_vectors and batch_vectors[0]:
+                items_sample_head = [float(value) for value in batch_vectors[0][:8]]
+            if isinstance(batch_debug, dict):
+                raw_elapsed_ms = batch_debug.get("elapsed_ms")
+                if isinstance(raw_elapsed_ms, (int, float)):
+                    items_elapsed_ms_total += int(raw_elapsed_ms)
+                _merge_usage_totals(items_usage_totals, batch_debug.get("usage"))
+
+        if len(item_vectors) != len(context.candidates):
+            raise ValueError("embedding output size mismatch")
+        return item_vectors, {
+            "model": context.embedding_model,
+            "inputs_total": len(item_texts),
+            "dimensions": context.embedding_dimensions,
+            "batching": {
+                "max_inputs": self.embedding_batch_max_inputs,
+                "max_chars": self.embedding_batch_max_chars,
+            },
+            "batches_total": items_batches_total,
+            "batch_inputs_max": items_batch_inputs_max,
+            "batch_chars_max": items_batch_chars_max,
+            "elapsed_ms_total": items_elapsed_ms_total,
+            "usage_total": items_usage_totals or None,
+            "sample_embedding_head": items_sample_head,
+        }
+
+    def _embed_candidate_batch(
+        self,
+        *,
+        batch: list[str],
+        embedding_model: str,
+        embedding_dimensions: int | None,
+        debug_totals: _EmbeddingDebugTotals,
+    ) -> tuple[list[list[float]], Any]:
+        debug_totals.record_call()
+        batch_vectors, batch_debug = self.embedder.embed(
+            model=embedding_model,
+            inputs=batch,
+            dimensions=embedding_dimensions,
+        )
+        debug_totals.absorb_debug(batch_debug)
+        if len(batch_vectors) != len(batch):
+            raise ValueError("embedding output size mismatch")
+        return batch_vectors, batch_debug
 
     def _embed_query(
         self,
@@ -386,22 +468,17 @@ class SemanticTriage:
     @staticmethod
     def _select_from_scored(
         *,
-        run_id: str,
         scored: list[TriageScoredCandidate],
-        limit: int,
-        mode: str,
-        min_similarity: float,
-        exploration_rate: float,
-        recency_floor: int,
+        config: _TriageSelectionConfig,
     ) -> tuple[list[TriageScoredCandidate], int]:
-        if limit <= 0 or not scored:
+        if config.limit <= 0 or not scored:
             return [], 0
 
-        normalized_mode = str(mode or "").strip().lower()
+        normalized_mode = str(config.mode or "").strip().lower()
         if normalized_mode not in {"prioritize", "filter"}:
             normalized_mode = "prioritize"
 
-        recency_n = max(0, min(int(recency_floor), limit, len(scored)))
+        recency_n = max(0, min(int(config.recency_floor), config.limit, len(scored)))
         recency_items = scored[:recency_n]
         recency_ids = {
             item.candidate.item.id
@@ -416,7 +493,7 @@ class SemanticTriage:
         eligible = remaining
         skipped_total = 0
         if normalized_mode == "filter":
-            threshold = max(0.0, min(1.0, float(min_similarity)))
+            threshold = max(0.0, min(1.0, float(config.min_similarity)))
             eligible = [entry for entry in remaining if entry.score >= threshold]
             skipped_total = sum(1 for entry in remaining if entry.score < threshold)
 
@@ -429,12 +506,16 @@ class SemanticTriage:
 
         eligible_sorted = sorted(eligible, key=sort_key, reverse=True)
 
-        remaining_slots = max(0, limit - len(recency_items))
+        remaining_slots = max(0, config.limit - len(recency_items))
         exploration_slots = max(
             0,
             min(
                 remaining_slots,
-                int(math.floor(limit * max(0.0, float(exploration_rate)))),
+                int(
+                    math.floor(
+                        config.limit * max(0.0, float(config.exploration_rate))
+                    )
+                ),
             ),
         )
         exploitation_slots = max(0, remaining_slots - exploration_slots)
@@ -453,14 +534,14 @@ class SemanticTriage:
         ]
         exploration: list[TriageScoredCandidate] = []
         if exploration_slots > 0 and exploration_pool:
-            rng = random.Random(_stable_seed(run_id))
+            rng = random.Random(_stable_seed(config.run_id))
             exploration = rng.sample(
                 exploration_pool, k=min(exploration_slots, len(exploration_pool))
             )
 
         selected = recency_items + exploitation + exploration
         selected = sorted(selected, key=sort_key, reverse=True)
-        return selected[:limit], skipped_total
+        return selected[: config.limit], skipped_total
 
 
 def _bounded_cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
@@ -496,15 +577,7 @@ def _fingerprint(value: str) -> str:
 
 def _build_triage_summary(
     *,
-    run_id: str,
-    mode: str,
-    method: str,
-    min_similarity: float,
-    exploration_rate: float,
-    recency_floor: int,
-    stats: TriageStats,
-    scored: list[TriageScoredCandidate],
-    selected: list[TriageScoredCandidate],
+    context: _TriageArtifactsContext,
 ) -> dict[str, Any]:
     def preview(
         entries: list[TriageScoredCandidate], *, limit: int
@@ -525,23 +598,137 @@ def _build_triage_summary(
             )
         return rows
 
-    scored_sorted = sorted(scored, key=lambda e: e.score, reverse=True)
+    scored_sorted = sorted(context.scoring.scored, key=lambda e: e.score, reverse=True)
     return {
-        "run_id_fingerprint": _fingerprint(run_id),
-        "mode": mode,
-        "method": method,
-        "min_similarity": float(min_similarity),
-        "exploration_rate": float(exploration_rate),
-        "recency_floor": int(recency_floor),
+        "run_id_fingerprint": _fingerprint(context.run_id),
+        "mode": context.mode,
+        "method": context.scoring.method,
+        "min_similarity": float(context.min_similarity),
+        "exploration_rate": float(context.exploration_rate),
+        "recency_floor": int(context.recency_floor),
         "stats": {
-            "candidates_total": stats.candidates_total,
-            "scored_total": stats.scored_total,
-            "selected_total": stats.selected_total,
-            "skipped_total": stats.skipped_total,
-            "embedding_calls_total": stats.embedding_calls_total,
-            "embedding_errors_total": stats.embedding_errors_total,
-            "duration_ms": stats.duration_ms,
+            "candidates_total": context.stats.candidates_total,
+            "scored_total": context.stats.scored_total,
+            "selected_total": context.stats.selected_total,
+            "skipped_total": context.stats.skipped_total,
+            "embedding_calls_total": context.stats.embedding_calls_total,
+            "embedding_errors_total": context.stats.embedding_errors_total,
+            "duration_ms": context.stats.duration_ms,
         },
-        "selected_preview": preview(selected, limit=20),
+        "selected_preview": preview(context.selected, limit=20),
         "top_scores_preview": preview(scored_sorted, limit=20),
     }
+
+
+def _normalize_topics(topics: list[str]) -> list[str]:
+    return [str(topic).strip() for topic in topics if str(topic).strip()]
+
+
+def _build_early_triage_output(
+    *,
+    candidates: list[TriageCandidate],
+    duration_ms: int,
+    method: str,
+    selected: list[TriageScoredCandidate],
+) -> TriageOutput:
+    return TriageOutput(
+        selected=selected,
+        stats=TriageStats(
+            candidates_total=len(candidates),
+            scored_total=0,
+            selected_total=len(selected),
+            skipped_total=0,
+            embedding_calls_total=0,
+            embedding_errors_total=0,
+            duration_ms=duration_ms,
+            method=method,
+        ),
+        artifacts={},
+    )
+
+
+def _build_embedding_request_artifact(
+    *,
+    context: _EmbeddingRunContext,
+    max_inputs: int,
+    max_chars: int,
+) -> dict[str, Any] | None:
+    if not context.include_debug:
+        return None
+    return {
+        "run_id_fingerprint": _fingerprint(context.run_id),
+        "model": context.embedding_model,
+        "dimensions": context.embedding_dimensions,
+        "query_mode": context.query_mode,
+        "topics_total": len(context.topics),
+        "candidates_total": len(context.candidates),
+        "batching": {"max_inputs": max_inputs, "max_chars": max_chars},
+    }
+
+
+def _build_embedding_error_artifact(
+    *,
+    exc: BaseException,
+    embedding_response: dict[str, Any] | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "error_type": type(exc).__name__,
+        "error_message": str(exc),
+    }
+    if embedding_response is not None:
+        payload["debug"] = embedding_response
+    return payload
+
+
+def _build_triage_stats(
+    *,
+    context: _TriageStatsContext,
+) -> TriageStats:
+    return TriageStats(
+        candidates_total=context.candidates_total,
+        scored_total=context.scored_total,
+        selected_total=context.selected_total,
+        skipped_total=context.skipped_total,
+        embedding_calls_total=context.debug_totals.calls_total,
+        embedding_errors_total=context.debug_totals.errors_total,
+        duration_ms=context.duration_ms,
+        method=context.method,
+        embedding_prompt_tokens_total=_optional_prompt_tokens(context.debug_totals),
+        embedding_cost_usd_total=_optional_cost_total(context.debug_totals),
+        embedding_cost_missing_total=(
+            context.debug_totals.cost_missing_total
+            if context.debug_totals.calls_total > 0
+            else 0
+        ),
+    )
+
+
+def _optional_prompt_tokens(debug_totals: _EmbeddingDebugTotals) -> int | None:
+    if debug_totals.calls_total <= 0:
+        return 0
+    if debug_totals.prompt_tokens_total > 0:
+        return debug_totals.prompt_tokens_total
+    return None
+
+
+def _optional_cost_total(debug_totals: _EmbeddingDebugTotals) -> float | None:
+    if debug_totals.calls_total <= 0:
+        return 0.0
+    if debug_totals.cost_usd_total > 0.0:
+        return debug_totals.cost_usd_total
+    return None
+
+
+def _build_triage_artifacts(
+    *,
+    context: _TriageArtifactsContext,
+) -> dict[str, dict[str, Any]]:
+    if not context.include_debug:
+        return {}
+    artifacts: dict[str, dict[str, Any]] = {}
+    if context.scoring.embedding_request is not None:
+        artifacts["embedding_request"] = context.scoring.embedding_request
+    if context.scoring.embedding_response is not None:
+        artifacts["embedding_response"] = context.scoring.embedding_response
+    artifacts["triage_summary"] = _build_triage_summary(context=context)
+    return artifacts

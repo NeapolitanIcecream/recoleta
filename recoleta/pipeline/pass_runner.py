@@ -5,25 +5,10 @@ from datetime import datetime
 from typing import Any, Callable, Generic, Sequence, TypeVar
 
 from recoleta.passes.base import PassOutputEnvelope
-from recoleta.pipeline.projections import run_projection_target
+from recoleta.pipeline.projections import ProjectionSpec, run_projection_target
 
 T = TypeVar("T")
 S = TypeVar("S")
-
-
-@dataclass(slots=True)
-class ProjectionSpec:
-    name: str
-    enabled: bool
-    metric_base: str
-    log: Any
-    failure_message: str
-    execute: Callable[[], Any]
-    warning_context: dict[str, Any] = field(default_factory=dict)
-    sanitize_error: Callable[[str], str] | None = None
-    reraise: bool = True
-
-
 @dataclass(slots=True)
 class PassPersistSpec:
     envelope: PassOutputEnvelope
@@ -65,15 +50,8 @@ def run_projection_specs(
     results: dict[str, Any | None] = {}
     for spec in specs:
         results[spec.name] = run_projection_target(
-            enabled=spec.enabled,
-            metric_base=spec.metric_base,
+            spec=spec,
             record_metric=record_metric,
-            log=spec.log,
-            failure_message=spec.failure_message,
-            execute=spec.execute,
-            warning_context=spec.warning_context,
-            sanitize_error=spec.sanitize_error,
-            reraise=spec.reraise,
         )
     return results
 
@@ -81,60 +59,60 @@ def run_projection_specs(
 def persist_pass_output_envelope(
     *,
     repository: Any,
-    envelope: PassOutputEnvelope,
-    period_start: datetime | None,
-    period_end: datetime | None,
     record_metric: Callable[..., None],
-    log: Any,
-    failure_message: str,
-    warning_context: dict[str, Any] | None = None,
-    sanitize_error: Callable[[str], str] | None = None,
-    on_failure: Callable[[BaseException], None] | None = None,
-    failed_metric_name: str = "pipeline.trends.pass_outputs.persist_failed_total",
-    persisted_metric_name: str | None = None,
-    reraise: bool = True,
+    spec: PassPersistSpec,
 ) -> int | None:
     try:
         row = repository.create_pass_output(
-            run_id=envelope.run_id,
-            pass_kind=envelope.pass_kind,
-            status=envelope.status.value,
-            granularity=envelope.granularity,
-            period_start=period_start,
-            period_end=period_end,
-            schema_version=envelope.schema_version,
-            payload=envelope.payload,
-            diagnostics=envelope.diagnostics,
-            input_refs=[ref.model_dump(mode="json") for ref in envelope.input_refs],
+            run_id=spec.envelope.run_id,
+            pass_kind=spec.envelope.pass_kind,
+            status=spec.envelope.status.value,
+            granularity=spec.envelope.granularity,
+            period_start=spec.period_start,
+            period_end=spec.period_end,
+            schema_version=spec.envelope.schema_version,
+            payload=spec.envelope.payload,
+            diagnostics=spec.envelope.diagnostics,
+            input_refs=[
+                ref.model_dump(mode="json") for ref in spec.envelope.input_refs
+            ],
         )
         pass_output_id = int(getattr(row, "id") or 0)
         if pass_output_id <= 0:
             raise RuntimeError("pass output persistence returned an empty id")
     except Exception as exc:  # noqa: BLE001
-        if callable(on_failure):
-            on_failure(exc)
-        if str(failed_metric_name or "").strip():
-            record_metric(name=failed_metric_name, value=1, unit="count")
-        log.warning(
-            failure_message,
-            **{
-                **(warning_context or {}),
-                "pass_kind": envelope.pass_kind,
-                "error_type": type(exc).__name__,
-                "error": (
-                    sanitize_error(str(exc))
-                    if callable(sanitize_error)
-                    else str(exc)
-                ),
-            },
+        if callable(spec.on_failure):
+            spec.on_failure(exc)
+        if str(spec.failed_metric_name or "").strip():
+            record_metric(name=spec.failed_metric_name, value=1, unit="count")
+        spec.log.warning(
+            spec.failure_message,
+            **_pass_persist_warning_payload(spec=spec, exc=exc),
         )
-        if reraise:
+        if spec.reraise:
             raise
         return None
 
-    if str(persisted_metric_name or "").strip():
-        record_metric(name=str(persisted_metric_name), value=1, unit="count")
+    if str(spec.persisted_metric_name or "").strip():
+        record_metric(name=str(spec.persisted_metric_name), value=1, unit="count")
     return pass_output_id
+
+
+def _pass_persist_warning_payload(
+    *,
+    spec: PassPersistSpec,
+    exc: BaseException,
+) -> dict[str, Any]:
+    return {
+        **spec.warning_context,
+        "pass_kind": spec.envelope.pass_kind,
+        "error_type": type(exc).__name__,
+        "error": (
+            spec.sanitize_error(str(exc))
+            if callable(spec.sanitize_error)
+            else str(exc)
+        ),
+    }
 
 
 def run_pass_definition(
@@ -146,18 +124,8 @@ def run_pass_definition(
     persist = definition.persist
     pass_output_id = persist_pass_output_envelope(
         repository=repository,
-        envelope=persist.envelope,
-        period_start=persist.period_start,
-        period_end=persist.period_end,
         record_metric=record_metric,
-        log=persist.log,
-        failure_message=persist.failure_message,
-        warning_context=persist.warning_context,
-        sanitize_error=persist.sanitize_error,
-        on_failure=persist.on_failure,
-        failed_metric_name=persist.failed_metric_name,
-        persisted_metric_name=persist.persisted_metric_name,
-        reraise=persist.reraise,
+        spec=persist,
     )
 
     projection_state = (
