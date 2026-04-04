@@ -41,11 +41,13 @@ def _open_pdf_extraction_context(
     get_pymupdf4llm_module: Callable[[], Any | None],
 ) -> tuple[Any | None, Any | None]:
     pymupdf4llm = get_pymupdf4llm_module()
+    if pymupdf4llm is None:
+        return None, None
     doc, pymupdf = _open_pdf_document(
         pdf_bytes=pdf_bytes,
         get_pymupdf_module=get_pymupdf_module,
     )
-    if pymupdf is None or pymupdf4llm is None or doc is None:
+    if pymupdf is None or doc is None:
         return None, None
     return doc, pymupdf4llm
 
