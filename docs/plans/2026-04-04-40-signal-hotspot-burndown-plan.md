@@ -2,7 +2,7 @@
 
 Date: 2026-04-04
 
-Status: Planned
+Status: Completed
 
 ## Goal
 
@@ -21,6 +21,27 @@ This plan keeps the existing proactive-refactor discipline:
 For this plan, "active hotspot signals" means the signals attached to
 `refactor_now` and `refactor_soon` hotspots only. `monitor` items remain part of
 the audit evidence but do not count toward the 40-signal target.
+
+## Outcome
+
+The execution work landed in PR #36 on 2026-04-04.
+
+Measured closing result before the baseline update:
+
+- `baseline_diff.resolved = 40`
+- `baseline_diff.new = 0`
+- `baseline_diff.worsened = 0`
+
+Closing validation run for the execution branch:
+
+- `uv run ruff check .`
+- `uv run pyright`
+- `uv run pytest`
+- `uv run python scripts/refactor_audit.py`
+- `uv run python scripts/refactor_audit.py --fail-on-regression`
+
+After the measured reduction was confirmed, `quality/refactor-baseline.json` was
+updated so the branch returned to a neutral `baseline_diff`.
 
 ## Audit Snapshot
 
