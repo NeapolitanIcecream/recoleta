@@ -579,13 +579,14 @@ def build_overview_pack_md(
         coerce_build_overview_pack_request,
     )
 
+    normalized_legacy_kwargs = dict(legacy_kwargs)
+    if repository is not None:
+        normalized_legacy_kwargs["repository"] = repository
+    if plan is not None:
+        normalized_legacy_kwargs["plan"] = plan
     normalized_request = coerce_build_overview_pack_request(
         request=request,
-        legacy_kwargs={
-            "repository": repository if repository is not None else legacy_kwargs["repository"],
-            "plan": plan if plan is not None else legacy_kwargs["plan"],
-            **legacy_kwargs,
-        },
+        legacy_kwargs=normalized_legacy_kwargs,
     )
     return build_overview_pack_md_impl(request=normalized_request)
 
