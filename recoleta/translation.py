@@ -118,6 +118,135 @@ class _CompletedTranslationTask:
     duration_ms: int
 
 
+@dataclass(frozen=True, slots=True)
+class TranslateStructuredPayloadRequest:
+    model: str
+    source_kind: str
+    payload: dict[str, Any]
+    source_language_code: str
+    target_language_code: str
+    source_language_label: str | None = None
+    target_language_label: str | None = None
+    context: dict[str, Any] | None = None
+    payload_model: type[BaseModel] | None = None
+    llm_connection: LLMConnectionConfig | None = None
+    return_debug: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class IncrementalCandidatesCompatRequest:
+    repository: Any
+    granularity: str | None
+    include: set[str]
+    limit: int | None
+    source_language_code: str
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    all_history: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class PrepareTranslationTaskCompatRequest:
+    repository: Any
+    settings: Settings
+    candidate: TranslationCandidate
+    target: TranslationTarget
+    context_assist: str
+    force: bool
+    run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PersistTranslationTaskCompatRequest:
+    repository: Any
+    task: _PreparedTranslationTask
+    completed: _CompletedTranslationTask
+    context_assist: str
+    source_language_code: str
+    run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TranslateCandidateCompatRequest:
+    repository: Any
+    settings: Settings
+    candidate: TranslationCandidate
+    target: TranslationTarget
+    llm_model: str
+    source_language_code: str
+    source_language_label: str
+    context_assist: str
+    llm_connection: LLMConnectionConfig
+    force: bool
+    run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunTranslationRequest:
+    repository: Any
+    settings: Settings
+    granularity: str | None = None
+    include: str | list[str] | None = None
+    limit: int | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    all_history: bool = True
+    force: bool = False
+    context_assist: str = "direct"
+    run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RunTranslationBackfillRequest:
+    repository: Any
+    settings: Settings
+    granularity: str | None = None
+    include: str | list[str] | None = None
+    limit: int | None = None
+    force: bool = False
+    context_assist: str = "direct"
+    legacy_source_language: str | None = None
+    emit_mirror_targets: bool = False
+    all_history: bool = False
+    run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _TranslationCandidatesRequest:
+    repository: Any
+    granularity: str | None
+    include: str | list[str] | None
+    limit: int | None
+    source_language_code: str
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    all_history: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class _TranslationBatchContextRequest:
+    repository: Any
+    settings: Settings
+    force: bool
+    run_id: str | None
+    context_assist: str
+    llm_model: str
+    source_language_code: str
+
+
+@dataclass(frozen=True, slots=True)
+class _TranslationBackfillContextRequest:
+    repository: Any
+    settings: Settings
+    localization: LocalizationConfig
+    force: bool
+    run_id: str | None
+    context_assist: str
+    llm_model: str
+    source_language_code: str
+    emit_mirror_targets: bool
+
+
 @dataclass(slots=True)
 class _ProviderFailureTracker:
     last_signature: tuple[str, str] | None = None
@@ -146,6 +275,148 @@ class _ProviderFailureTracker:
     def reset(self) -> None:
         self.last_signature = None
         self.consecutive_count = 0
+
+
+def coerce_translate_structured_payload_request(
+    *,
+    request: TranslateStructuredPayloadRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> TranslateStructuredPayloadRequest:
+    if request is not None:
+        return request
+    return TranslateStructuredPayloadRequest(
+        model=legacy_kwargs["model"],
+        source_kind=legacy_kwargs["source_kind"],
+        payload=legacy_kwargs["payload"],
+        source_language_code=legacy_kwargs["source_language_code"],
+        target_language_code=legacy_kwargs["target_language_code"],
+        source_language_label=legacy_kwargs.get("source_language_label"),
+        target_language_label=legacy_kwargs.get("target_language_label"),
+        context=legacy_kwargs.get("context"),
+        payload_model=legacy_kwargs.get("payload_model"),
+        llm_connection=legacy_kwargs.get("llm_connection"),
+        return_debug=bool(legacy_kwargs.get("return_debug", False)),
+    )
+
+
+def coerce_incremental_candidates_request(
+    *,
+    request: IncrementalCandidatesCompatRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> IncrementalCandidatesCompatRequest:
+    if request is not None:
+        return request
+    return IncrementalCandidatesCompatRequest(
+        repository=legacy_kwargs["repository"],
+        granularity=legacy_kwargs.get("granularity"),
+        include=legacy_kwargs["include"],
+        limit=legacy_kwargs.get("limit"),
+        source_language_code=legacy_kwargs["source_language_code"],
+        period_start=legacy_kwargs.get("period_start"),
+        period_end=legacy_kwargs.get("period_end"),
+        all_history=bool(legacy_kwargs.get("all_history", True)),
+    )
+
+
+def coerce_prepare_translation_task_request(
+    *,
+    request: PrepareTranslationTaskCompatRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> PrepareTranslationTaskCompatRequest:
+    if request is not None:
+        return request
+    return PrepareTranslationTaskCompatRequest(
+        repository=legacy_kwargs["repository"],
+        settings=legacy_kwargs["settings"],
+        candidate=legacy_kwargs["candidate"],
+        target=legacy_kwargs["target"],
+        context_assist=legacy_kwargs["context_assist"],
+        force=bool(legacy_kwargs["force"]),
+        run_id=legacy_kwargs.get("run_id"),
+    )
+
+
+def coerce_persist_translation_task_request(
+    *,
+    request: PersistTranslationTaskCompatRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> PersistTranslationTaskCompatRequest:
+    if request is not None:
+        return request
+    return PersistTranslationTaskCompatRequest(
+        repository=legacy_kwargs["repository"],
+        task=legacy_kwargs["task"],
+        completed=legacy_kwargs["completed"],
+        context_assist=legacy_kwargs["context_assist"],
+        source_language_code=legacy_kwargs["source_language_code"],
+        run_id=legacy_kwargs.get("run_id"),
+    )
+
+
+def coerce_translate_candidate_request(
+    *,
+    request: TranslateCandidateCompatRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> TranslateCandidateCompatRequest:
+    if request is not None:
+        return request
+    return TranslateCandidateCompatRequest(
+        repository=legacy_kwargs["repository"],
+        settings=legacy_kwargs["settings"],
+        candidate=legacy_kwargs["candidate"],
+        target=legacy_kwargs["target"],
+        llm_model=legacy_kwargs["llm_model"],
+        source_language_code=legacy_kwargs["source_language_code"],
+        source_language_label=legacy_kwargs["source_language_label"],
+        context_assist=legacy_kwargs["context_assist"],
+        llm_connection=legacy_kwargs["llm_connection"],
+        force=bool(legacy_kwargs["force"]),
+        run_id=legacy_kwargs.get("run_id"),
+    )
+
+
+def coerce_run_translation_request(
+    *,
+    request: RunTranslationRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> RunTranslationRequest:
+    if request is not None:
+        return request
+    return RunTranslationRequest(
+        repository=legacy_kwargs["repository"],
+        settings=legacy_kwargs["settings"],
+        granularity=legacy_kwargs.get("granularity"),
+        include=legacy_kwargs.get("include"),
+        limit=legacy_kwargs.get("limit"),
+        period_start=legacy_kwargs.get("period_start"),
+        period_end=legacy_kwargs.get("period_end"),
+        all_history=bool(legacy_kwargs.get("all_history", True)),
+        force=bool(legacy_kwargs.get("force", False)),
+        context_assist=str(legacy_kwargs.get("context_assist", "direct")),
+        run_id=legacy_kwargs.get("run_id"),
+    )
+
+
+def coerce_run_translation_backfill_request(
+    *,
+    request: RunTranslationBackfillRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> RunTranslationBackfillRequest:
+    if request is not None:
+        return request
+    return RunTranslationBackfillRequest(
+        repository=legacy_kwargs["repository"],
+        settings=legacy_kwargs["settings"],
+        granularity=legacy_kwargs.get("granularity"),
+        include=legacy_kwargs.get("include"),
+        limit=legacy_kwargs.get("limit"),
+        force=bool(legacy_kwargs.get("force", False)),
+        context_assist=str(legacy_kwargs.get("context_assist", "direct")),
+        legacy_source_language=legacy_kwargs.get("legacy_source_language"),
+        emit_mirror_targets=bool(legacy_kwargs.get("emit_mirror_targets", False)),
+        all_history=bool(legacy_kwargs.get("all_history", False)),
+        run_id=legacy_kwargs.get("run_id"),
+    )
 
 
 def normalize_context_assist(value: str | None) -> str:
@@ -208,58 +479,59 @@ def _translation_llm_deps() -> TranslationLLMDeps:
 
 def translate_structured_payload(
     *,
-    model: str,
-    source_kind: str,
-    payload: dict[str, Any],
-    source_language_code: str,
-    target_language_code: str,
-    source_language_label: str | None = None, target_language_label: str | None = None,
-    context: dict[str, Any] | None = None,
-    payload_model: type[BaseModel] | None = None,
-    llm_connection: LLMConnectionConfig | None = None,
-    return_debug: bool = False,
+    request: TranslateStructuredPayloadRequest | None = None,
+    **legacy_kwargs: Any,
+) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+    normalized_request = coerce_translate_structured_payload_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
+    return _translate_structured_payload_impl(request=normalized_request)
+
+
+def _translate_structured_payload_impl(
+    *,
+    request: TranslateStructuredPayloadRequest,
 ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     translated = _llm_translate_structured_payload_with_debug(
         TranslationLLMRequest(
-            model,
-            source_kind,
-            payload,
-            source_language_code,
-            target_language_code,
-            source_language_label,
-            target_language_label,
-            context,
-            payload_model,
-            llm_connection,
+            request.model,
+            request.source_kind,
+            request.payload,
+            request.source_language_code,
+            request.target_language_code,
+            request.source_language_label,
+            request.target_language_label,
+            request.context,
+            request.payload_model,
+            request.llm_connection,
         ),
         _translation_llm_deps(),
     )
-    return translated if return_debug else translated[0]
+    return translated if request.return_debug else translated[0]
 
 
 def _incremental_candidates(
     *,
-    repository: Any,
-    granularity: str | None,
-    include: set[str],
-    limit: int | None,
-    source_language_code: str,
-    period_start: datetime | None = None,
-    period_end: datetime | None = None,
-    all_history: bool = True,
+    request: IncrementalCandidatesCompatRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> list[TranslationCandidate]:
+    normalized_request = coerce_incremental_candidates_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
     return _candidate_incremental_candidates(
         IncrementalCandidatesRequest(
-            repository=repository,
-            granularity=granularity,
-            include=include,
-            limit=limit,
-            source_language_code=source_language_code,
+            repository=normalized_request.repository,
+            granularity=normalized_request.granularity,
+            include=normalized_request.include,
+            limit=normalized_request.limit,
+            source_language_code=normalized_request.source_language_code,
             candidate_factory=TranslationCandidate,
             analysis_payload_model=_AnalysisTranslationPayload,
-            period_start=period_start,
-            period_end=period_end,
-            all_history=all_history,
+            period_start=normalized_request.period_start,
+            period_end=normalized_request.period_end,
+            all_history=normalized_request.all_history,
         )
     )
 
@@ -290,23 +562,22 @@ def _translation_parallelism(task_total: int) -> int:
 
 def _prepare_translation_task(
     *,
-    repository: Any,
-    settings: Settings,
-    candidate: TranslationCandidate,
-    target: TranslationTarget,
-    context_assist: str,
-    force: bool,
-    run_id: str | None = None,
+    request: PrepareTranslationTaskCompatRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> tuple[str, _PreparedTranslationTask | None]:
+    normalized_request = coerce_prepare_translation_task_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
     return _runtime_prepare_translation_task(
         PrepareTaskRequest(
-            repository=repository,
-            settings=settings,
-            candidate=candidate,
-            target=target,
-            context_assist=context_assist,
-            force=force,
-            run_id=run_id,
+            repository=normalized_request.repository,
+            settings=normalized_request.settings,
+            candidate=normalized_request.candidate,
+            target=normalized_request.target,
+            context_assist=normalized_request.context_assist,
+            force=normalized_request.force,
+            run_id=normalized_request.run_id,
         ),
         PrepareTaskDeps(
             payload_hash_fn=_payload_hash,
@@ -386,21 +657,21 @@ def _record_translation_llm_metrics(
 
 def _persist_completed_translation_task(
     *,
-    repository: Any,
-    task: _PreparedTranslationTask,
-    completed: _CompletedTranslationTask,
-    context_assist: str,
-    source_language_code: str,
-    run_id: str | None = None,
+    request: PersistTranslationTaskCompatRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> None:
+    normalized_request = coerce_persist_translation_task_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
     _runtime_persist_completed_translation_task(
         PersistTaskRequest(
-            repository=repository,
-            task=task,
-            completed=completed,
-            context_assist=context_assist,
-            source_language_code=source_language_code,
-            run_id=run_id,
+            repository=normalized_request.repository,
+            task=normalized_request.task,
+            completed=normalized_request.completed,
+            context_assist=normalized_request.context_assist,
+            source_language_code=normalized_request.source_language_code,
+            run_id=normalized_request.run_id,
         ),
         PersistTaskDeps(
             record_translation_llm_metrics_fn=_record_translation_llm_metrics,
@@ -410,37 +681,146 @@ def _persist_completed_translation_task(
 
 def _translate_candidate_into_language(
     *,
-    repository: Any,
-    settings: Settings,
-    candidate: TranslationCandidate,
-    target: TranslationTarget,
-    llm_model: str,
-    source_language_code: str,
-    source_language_label: str,
-    context_assist: str,
-    llm_connection: LLMConnectionConfig,
-    force: bool,
-    run_id: str | None = None,
+    request: TranslateCandidateCompatRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> tuple[str, bool]:
+    normalized_request = coerce_translate_candidate_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
     return _runtime_translate_candidate_into_language(
         TranslateCandidateRequest(
-            repository=repository,
-            settings=settings,
-            candidate=candidate,
-            target=target,
-            llm_model=llm_model,
-            source_language_code=source_language_code,
-            source_language_label=source_language_label,
-            context_assist=context_assist,
-            llm_connection=llm_connection,
-            force=force,
-            run_id=run_id,
+            repository=normalized_request.repository,
+            settings=normalized_request.settings,
+            candidate=normalized_request.candidate,
+            target=normalized_request.target,
+            llm_model=normalized_request.llm_model,
+            source_language_code=normalized_request.source_language_code,
+            source_language_label=normalized_request.source_language_label,
+            context_assist=normalized_request.context_assist,
+            llm_connection=normalized_request.llm_connection,
+            force=normalized_request.force,
+            run_id=normalized_request.run_id,
         ),
         TranslateCandidateDeps(
             prepare_task_fn=_prepare_translation_task,
             execute_task_fn=_execute_prepared_translation_task,
             persist_task_fn=_persist_completed_translation_task,
         ),
+    )
+
+
+def _normalized_translation_granularity(granularity: str | None) -> str | None:
+    return str(granularity or "").strip().lower() or None if granularity is not None else None
+
+
+def _translation_localization(
+    *,
+    settings: Settings,
+    require_targets: bool,
+    error_message: str,
+) -> LocalizationConfig:
+    localization = settings.localization
+    if localization is None or (require_targets and not localization.targets):
+        raise ValueError(error_message)
+    return localization
+
+
+def _resolved_translation_model(*, settings: Settings) -> str:
+    llm_model = str(settings.llm_model or "").strip()
+    if not llm_model:
+        raise ValueError("llm_model must not be empty")
+    return llm_model
+
+
+def _translation_targets(*, localization: LocalizationConfig) -> list[TranslationTarget]:
+    return [
+        TranslationTarget(code=target.code, llm_label=target.llm_label)
+        for target in localization.targets
+    ]
+
+
+def _translation_candidates(
+    request: _TranslationCandidatesRequest,
+) -> list[TranslationCandidate]:
+    return _incremental_candidates(
+        repository=request.repository,
+        granularity=request.granularity,
+        include=normalize_include(request.include),
+        limit=request.limit,
+        source_language_code=request.source_language_code,
+        period_start=request.period_start,
+        period_end=request.period_end,
+        all_history=request.all_history,
+    )
+
+
+def _translation_batch_context(
+    request: _TranslationBatchContextRequest,
+) -> TranslationBatchContext:
+    return TranslationBatchContext(
+        repository=request.repository,
+        settings=request.settings,
+        result=TranslationRunResult(),
+        provider_failures=_ProviderFailureTracker(),
+        log=logger.bind(module="translation.run"),
+        force=request.force,
+        run_id=request.run_id,
+        context_assist=normalize_context_assist(request.context_assist),
+        llm_model=request.llm_model,
+        source_language_code=request.source_language_code,
+        source_language_label=str(
+            request.settings.llm_output_language or request.source_language_code
+        ).strip(),
+        llm_connection=request.settings.llm_connection_config(),
+    )
+
+
+def _backfill_source_language_code(
+    *,
+    legacy_source_language: str | None,
+    localization: LocalizationConfig,
+) -> str:
+    source_language_code = str(
+        legacy_source_language or localization.legacy_backfill_source_language_code or ""
+    ).strip()
+    if not source_language_code:
+        raise ValueError(
+            "legacy_source_language or localization.legacy_backfill_source_language_code is required for translation backfill"
+        )
+    return source_language_code
+
+
+def _translation_backfill_context(
+    request: _TranslationBackfillContextRequest,
+) -> TranslationBackfillContext:
+    canonical_language_code = str(request.localization.source_language_code).strip()
+    return TranslationBackfillContext(
+        repository=request.repository,
+        settings=request.settings,
+        result=TranslationRunResult(),
+        provider_failures=_ProviderFailureTracker(),
+        log=logger.bind(module="translation.backfill"),
+        force=request.force,
+        run_id=request.run_id,
+        context_assist=normalize_context_assist(request.context_assist),
+        llm_model=request.llm_model,
+        source_language_code=request.source_language_code,
+        source_language_label=_target_language_label(
+            language_code=request.source_language_code,
+            localization=request.localization,
+            fallback=None,
+        ),
+        llm_connection=request.settings.llm_connection_config(),
+        translation_target=TranslationTarget(
+            code=canonical_language_code,
+            llm_label=_target_language_label(
+                language_code=canonical_language_code,
+                localization=request.localization,
+                fallback=request.settings.llm_output_language,
+            ),
+        ),
+        emit_mirror_targets=request.emit_mirror_targets,
     )
 
 
@@ -492,60 +872,46 @@ def _mirror_candidate_into_language(
 
 def run_translation(
     *,
-    repository: Any,
-    settings: Settings,
-    granularity: str | None = None,
-    include: str | list[str] | None = None,
-    limit: int | None = None,
-    period_start: datetime | None = None,
-    period_end: datetime | None = None,
-    all_history: bool = True,
-    force: bool = False,
-    context_assist: str = "direct",
-    run_id: str | None = None,
+    request: RunTranslationRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> TranslationRunResult:
-    localization = settings.localization
-    if localization is None or not localization.targets:
-        raise ValueError("localization.targets must be configured for translation")
-    normalized_granularity = (
-        str(granularity or "").strip().lower() or None if granularity is not None else None
+    normalized_request = coerce_run_translation_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
     )
-    llm_model = str(settings.llm_model or "").strip()
-    if not llm_model:
-        raise ValueError("llm_model must not be empty")
+    localization = _translation_localization(
+        settings=normalized_request.settings,
+        require_targets=True,
+        error_message="localization.targets must be configured for translation",
+    )
+    normalized_granularity = _normalized_translation_granularity(normalized_request.granularity)
+    llm_model = _resolved_translation_model(settings=normalized_request.settings)
     source_language_code = str(localization.source_language_code).strip()
-    targets = [
-        TranslationTarget(code=target.code, llm_label=target.llm_label)
-        for target in localization.targets
-    ]
     return _runtime_run_translation_batch(
-        TranslationBatchContext(
-            repository=repository,
-            settings=settings,
-            result=TranslationRunResult(),
-            provider_failures=_ProviderFailureTracker(),
-            log=logger.bind(module="translation.run"),
-            force=force,
-            run_id=run_id,
-            context_assist=normalize_context_assist(context_assist),
-            llm_model=llm_model,
-            source_language_code=source_language_code,
-            source_language_label=str(
-                settings.llm_output_language or source_language_code
-            ).strip(),
-            llm_connection=settings.llm_connection_config(),
+        _translation_batch_context(
+            _TranslationBatchContextRequest(
+                repository=normalized_request.repository,
+                settings=normalized_request.settings,
+                force=normalized_request.force,
+                run_id=normalized_request.run_id,
+                context_assist=normalized_request.context_assist,
+                llm_model=llm_model,
+                source_language_code=source_language_code,
+            )
         ),
-        candidates=_incremental_candidates(
-            repository=repository,
-            granularity=normalized_granularity,
-            include=normalize_include(include),
-            limit=limit,
-            source_language_code=source_language_code,
-            period_start=period_start,
-            period_end=period_end,
-            all_history=all_history,
+        candidates=_translation_candidates(
+            _TranslationCandidatesRequest(
+                repository=normalized_request.repository,
+                granularity=normalized_granularity,
+                include=normalized_request.include,
+                limit=normalized_request.limit,
+                source_language_code=source_language_code,
+                period_start=normalized_request.period_start,
+                period_end=normalized_request.period_end,
+                all_history=normalized_request.all_history,
+            )
         ),
-        targets=targets,
+        targets=_translation_targets(localization=localization),
         deps=TranslationBatchDeps(
             prepare_task_fn=_prepare_translation_task,
             execute_task_fn=_execute_prepared_translation_task,
@@ -558,71 +924,47 @@ def run_translation(
 
 def run_translation_backfill(
     *,
-    repository: Any,
-    settings: Settings,
-    granularity: str | None = None,
-    include: str | list[str] | None = None,
-    limit: int | None = None,
-    force: bool = False,
-    context_assist: str = "direct",
-    legacy_source_language: str | None = None,
-    emit_mirror_targets: bool = False,
-    all_history: bool = False,
-    run_id: str | None = None,
+    request: RunTranslationBackfillRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> TranslationRunResult:
-    localization = settings.localization
-    if localization is None:
-        raise ValueError("localization must be configured for translation backfill")
-    normalized_granularity = (
-        str(granularity or "").strip().lower() or None if granularity is not None else None
+    normalized_request = coerce_run_translation_backfill_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
     )
-    llm_model = str(settings.llm_model or "").strip()
-    if not llm_model:
-        raise ValueError("llm_model must not be empty")
-    source_language_code = (
-        str(
-            legacy_source_language or localization.legacy_backfill_source_language_code or ""
-        ).strip()
+    localization = _translation_localization(
+        settings=normalized_request.settings,
+        require_targets=False,
+        error_message="localization must be configured for translation backfill",
     )
-    if not source_language_code:
-        raise ValueError(
-            "legacy_source_language or localization.legacy_backfill_source_language_code is required for translation backfill"
-        )
+    normalized_granularity = _normalized_translation_granularity(normalized_request.granularity)
+    llm_model = _resolved_translation_model(settings=normalized_request.settings)
+    source_language_code = _backfill_source_language_code(
+        legacy_source_language=normalized_request.legacy_source_language,
+        localization=localization,
+    )
     return _runtime_run_translation_backfill_batch(
-        TranslationBackfillContext(
-            repository=repository,
-            settings=settings,
-            result=TranslationRunResult(),
-            provider_failures=_ProviderFailureTracker(),
-            log=logger.bind(module="translation.backfill"),
-            force=force,
-            run_id=run_id,
-            context_assist=normalize_context_assist(context_assist),
-            llm_model=llm_model,
-            source_language_code=source_language_code,
-            source_language_label=_target_language_label(
-                language_code=source_language_code,
+        _translation_backfill_context(
+            _TranslationBackfillContextRequest(
+                repository=normalized_request.repository,
+                settings=normalized_request.settings,
                 localization=localization,
-                fallback=None,
-            ),
-            llm_connection=settings.llm_connection_config(),
-            translation_target=TranslationTarget(
-                code=str(localization.source_language_code).strip(),
-                llm_label=_target_language_label(
-                    language_code=str(localization.source_language_code).strip(),
-                    localization=localization,
-                    fallback=settings.llm_output_language,
-                ),
-            ),
-            emit_mirror_targets=emit_mirror_targets,
+                force=normalized_request.force,
+                run_id=normalized_request.run_id,
+                context_assist=normalized_request.context_assist,
+                llm_model=llm_model,
+                source_language_code=source_language_code,
+                emit_mirror_targets=normalized_request.emit_mirror_targets,
+            )
         ),
-        candidates=_incremental_candidates(
-            repository=repository,
-            granularity=normalized_granularity,
-            include=normalize_include(include),
-            limit=limit,
-            source_language_code=source_language_code,
-            all_history=all_history,
+        candidates=_translation_candidates(
+            _TranslationCandidatesRequest(
+                repository=normalized_request.repository,
+                granularity=normalized_granularity,
+                include=normalized_request.include,
+                limit=normalized_request.limit,
+                source_language_code=source_language_code,
+                all_history=normalized_request.all_history,
+            )
         ),
         deps=TranslationBackfillDeps(
             mirror_language_codes_by_candidate=lambda _candidate: {

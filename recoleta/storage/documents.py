@@ -63,6 +63,75 @@ def _update_document_chunk(*, existing: DocumentChunk, spec: Any) -> DocumentChu
     return existing
 
 
+def _persist_new_document_chunk(
+    *,
+    store: Any,
+    session: Session,
+    spec: Any,
+) -> tuple[DocumentChunk, bool]:
+    chunk = _build_document_chunk(spec=spec)
+    session.add(chunk)
+    store._commit(session)
+    session.refresh(chunk)
+    return chunk, True
+
+
+def _persist_existing_document_chunk(
+    *,
+    store: Any,
+    session: Session,
+    existing: DocumentChunk,
+    spec: Any,
+) -> tuple[DocumentChunk, bool, bool]:
+    if str(getattr(existing, "text_hash", "") or "") == spec.text_hash:
+        return existing, False, False
+    chunk = _update_document_chunk(existing=existing, spec=spec)
+    session.add(chunk)
+    store._commit(session)
+    session.refresh(chunk)
+    return chunk, False, True
+
+
+def _stored_document_chunk(
+    *,
+    store: Any,
+    session: Session,
+    existing: DocumentChunk | None,
+    spec: Any,
+) -> tuple[DocumentChunk, bool, bool]:
+    if existing is None:
+        chunk, inserted = _persist_new_document_chunk(
+            store=store,
+            session=session,
+            spec=spec,
+        )
+        return chunk, inserted, True
+    return _persist_existing_document_chunk(
+        store=store,
+        session=session,
+        existing=existing,
+        spec=spec,
+    )
+
+
+def _sync_document_chunk_fts(
+    *,
+    store: Any,
+    chunk: DocumentChunk,
+    spec: Any,
+) -> None:
+    chunk_id = getattr(chunk, "id", None)
+    if chunk_id is None:
+        return
+    store._sync_chunk_fts(
+        chunk_id=int(chunk_id),
+        doc_id=spec.doc_id,
+        chunk_index=spec.chunk_index,
+        kind=spec.kind,
+        text_value=spec.text,
+    )
+
+
 class DocumentStoreMixin:
     engine: Any
 
@@ -189,14 +258,8 @@ class DocumentStoreMixin:
             return existing
 
     def upsert_document_chunk(
-        self,
-        *,
-        doc_id: int,
-        chunk_index: int,
-        kind: str,
-        text_value: str,
-        start_char: int | None = None,
-        end_char: int | None = None,
+        self, *, doc_id: int, chunk_index: int, kind: str, text_value: str,
+        start_char: int | None = None, end_char: int | None = None,
         source_content_type: str | None = None,
     ) -> tuple[DocumentChunk, bool]:
         spec = normalize_chunk_upsert(
@@ -210,38 +273,26 @@ class DocumentStoreMixin:
                 source_content_type=source_content_type,
             )
         )
-
-        inserted = False
         with Session(self.engine) as session:
             existing = _load_existing_document_chunk(
                 session,
                 doc_id=spec.doc_id,
                 chunk_index=spec.chunk_index,
             )
-            if existing is None:
-                chunk = _build_document_chunk(spec=spec)
-                session.add(chunk)
-                self._commit(session)
-                session.refresh(chunk)
-                inserted = True
-            else:
-                if str(getattr(existing, "text_hash", "") or "") == spec.text_hash:
-                    return existing, False
-                existing = _update_document_chunk(existing=existing, spec=spec)
-                session.add(existing)
-                self._commit(session)
-                session.refresh(existing)
-                chunk = existing
-
-        chunk_id = getattr(chunk, "id", None)
-        if chunk_id is not None:
-            self._sync_chunk_fts(
-                chunk_id=int(chunk_id),
-                doc_id=spec.doc_id,
-                chunk_index=spec.chunk_index,
-                kind=spec.kind,
-                text_value=spec.text,
+            chunk, inserted, changed = _stored_document_chunk(
+                store=self,
+                session=session,
+                existing=existing,
+                spec=spec,
             )
+            if not changed:
+                return chunk, inserted
+
+        _sync_document_chunk_fts(
+            store=self,
+            chunk=chunk,
+            spec=spec,
+        )
         return chunk, inserted
 
     def delete_document_chunks(
@@ -305,15 +356,9 @@ class DocumentStoreMixin:
             )
 
     def list_documents(
-        self,
-        *,
-        doc_type: str,
-        period_start: datetime,
-        period_end: datetime,
-        granularity: str | None = None,
-        order_by: str = "event_desc",
-        offset: int = 0,
-        limit: int = 50,
+        self, *, doc_type: str, period_start: datetime, period_end: datetime,
+        granularity: str | None = None, order_by: str = "event_desc",
+        offset: int = 0, limit: int = 50,
     ) -> list[Document]:
         normalized_type = normalize_doc_type(doc_type)
         normalized_limit, normalized_offset = normalize_limit_offset(
@@ -323,15 +368,19 @@ class DocumentStoreMixin:
         if normalized_limit <= 0:
             return []
         with Session(self.engine) as session:
-            statement = build_document_list_statement(
-                normalized_type=normalized_type,
-                period_start=period_start,
-                period_end=period_end,
-                granularity=granularity,
-                order_by=order_by,
+            return list(
+                session.exec(
+                    build_document_list_statement(
+                        normalized_type=normalized_type,
+                        period_start=period_start,
+                        period_end=period_end,
+                        granularity=granularity,
+                        order_by=order_by,
+                    )
+                    .offset(normalized_offset)
+                    .limit(normalized_limit)
+                )
             )
-            statement = statement.offset(normalized_offset).limit(normalized_limit)
-            return list(session.exec(statement))
 
     def get_document(self, *, doc_id: int) -> Document | None:
         normalized_id = int(doc_id)

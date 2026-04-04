@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,13 +19,7 @@ class SourcePullStateStoreMixin:
 
     @staticmethod
     def _normalize_published_at(value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        return (
-            value.replace(tzinfo=timezone.utc)
-            if value.tzinfo is None
-            else value.astimezone(timezone.utc)
-        )
+        return _normalize_published_at(value)
 
     def get_source_pull_state(
         self,
@@ -56,17 +51,17 @@ class SourcePullStateStoreMixin:
     def upsert_source_pull_state(
         self,
         *,
-        source: str,
-        update: SourcePullStateUpdate,
+        request: UpsertSourcePullStateRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> None:
-        normalized_source = str(source or "").strip().lower()
-        normalized_scope_kind = str(update.scope_kind or "").strip().lower()
-        normalized_scope_key = str(update.scope_key or "").strip()
-        if (
-            not normalized_source
-            or not normalized_scope_kind
-            or not normalized_scope_key
-        ):
+        normalized_request = _coerce_source_pull_state_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
+        normalized_source, normalized_scope_kind, normalized_scope_key = (
+            _normalized_source_pull_state_request(normalized_request)
+        )
+        if not normalized_source or not normalized_scope_kind or not normalized_scope_key:
             return
 
         with Session(self.engine) as session:
@@ -77,44 +72,129 @@ class SourcePullStateStoreMixin:
             )
             existing = session.exec(statement).first()
             normalized_watermark = self._normalize_published_at(
-                update.watermark_published_at
+                normalized_request.update.watermark_published_at
             )
             now = utc_now()
 
             if existing is None:
                 session.add(
-                    SourcePullState(
-                        source=normalized_source,
-                        scope_kind=normalized_scope_kind,
-                        scope_key=normalized_scope_key,
-                        etag=str(update.etag or "").strip() or None,
-                        last_modified=str(update.last_modified or "").strip() or None,
-                        watermark_published_at=normalized_watermark,
-                        cursor_json=_to_json(update.cursor or {}),
-                        created_at=now,
-                        updated_at=now,
+                    _new_source_pull_state(
+                        request=normalized_request,
+                        normalized_identity=(
+                            normalized_source,
+                            normalized_scope_kind,
+                            normalized_scope_key,
+                        ),
+                        normalized_watermark=normalized_watermark,
+                        now=now,
                     )
                 )
                 self._commit(session)
                 return
 
-            if update.etag is not None:
-                existing.etag = str(update.etag or "").strip() or None
-            if update.last_modified is not None:
-                existing.last_modified = str(update.last_modified or "").strip() or None
-            if normalized_watermark is not None:
-                current_watermark = self._normalize_published_at(
-                    existing.watermark_published_at
-                )
-                if (
-                    current_watermark is None
-                    or normalized_watermark > current_watermark
-                ):
-                    existing.watermark_published_at = normalized_watermark
-            if update.cursor:
-                current_cursor = _from_json_object(existing.cursor_json)
-                current_cursor.update(update.cursor)
-                existing.cursor_json = _to_json(current_cursor)
-            existing.updated_at = now
+            _apply_source_pull_state_update(
+                existing=existing,
+                update=normalized_request.update,
+                normalized_watermark=normalized_watermark,
+                now=now,
+            )
             session.add(existing)
             self._commit(session)
+
+
+@dataclass(frozen=True, slots=True)
+class UpsertSourcePullStateRequest:
+    source: str
+    update: SourcePullStateUpdate
+
+    @staticmethod
+    def _normalize_published_at(value: datetime | None) -> datetime | None:
+        return _normalize_published_at(value)
+
+
+def _normalize_published_at(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return (
+        value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(timezone.utc)
+    )
+
+
+def _normalized_source_pull_state_request(
+    request: UpsertSourcePullStateRequest,
+) -> tuple[str, str, str]:
+    normalized_source = str(request.source or "").strip().lower()
+    normalized_scope_kind = str(request.update.scope_kind or "").strip().lower()
+    normalized_scope_key = str(request.update.scope_key or "").strip()
+    return normalized_source, normalized_scope_kind, normalized_scope_key
+
+
+def _coerce_source_pull_state_request(
+    *,
+    request: UpsertSourcePullStateRequest | None,
+    legacy_kwargs: dict[str, Any],
+) -> UpsertSourcePullStateRequest:
+    if request is not None:
+        return request
+    return UpsertSourcePullStateRequest(
+        source=legacy_kwargs["source"],
+        update=legacy_kwargs["update"],
+    )
+
+
+def _normalized_state_text(value: str | None) -> str | None:
+    return str(value or "").strip() or None
+
+
+def _merged_cursor_json(
+    *,
+    existing: SourcePullState,
+    update: SourcePullStateUpdate,
+) -> str:
+    if not update.cursor:
+        return str(existing.cursor_json or "{}")
+    current_cursor = _from_json_object(existing.cursor_json)
+    current_cursor.update(update.cursor)
+    return _to_json(current_cursor)
+
+
+def _new_source_pull_state(
+    *,
+    request: UpsertSourcePullStateRequest,
+    normalized_identity: tuple[str, str, str],
+    normalized_watermark: datetime | None,
+    now: datetime,
+) -> SourcePullState:
+    normalized_source, normalized_scope_kind, normalized_scope_key = normalized_identity
+    return SourcePullState(
+        source=normalized_source,
+        scope_kind=normalized_scope_kind,
+        scope_key=normalized_scope_key,
+        etag=_normalized_state_text(request.update.etag),
+        last_modified=_normalized_state_text(request.update.last_modified),
+        watermark_published_at=normalized_watermark,
+        cursor_json=_to_json(request.update.cursor or {}),
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _apply_source_pull_state_update(
+    *,
+    existing: SourcePullState,
+    update: SourcePullStateUpdate,
+    normalized_watermark: datetime | None,
+    now: datetime,
+) -> None:
+    if update.etag is not None:
+        existing.etag = _normalized_state_text(update.etag)
+    if update.last_modified is not None:
+        existing.last_modified = _normalized_state_text(update.last_modified)
+    if normalized_watermark is not None:
+        current_watermark = _normalize_published_at(existing.watermark_published_at)
+        if current_watermark is None or normalized_watermark > current_watermark:
+            existing.watermark_published_at = normalized_watermark
+    existing.cursor_json = _merged_cursor_json(existing=existing, update=update)
+    existing.updated_at = now
