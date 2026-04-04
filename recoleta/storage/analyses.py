@@ -23,6 +23,105 @@ from recoleta.types import (
 )
 
 
+def _normalized_analysis_write(analysis: AnalysisWrite) -> AnalysisWrite | None:
+    try:
+        item_id = int(analysis.item_id)
+    except Exception:
+        return None
+    if item_id <= 0:
+        return None
+    return AnalysisWrite(
+        item_id=item_id,
+        result=analysis.result,
+        mirror_item_state=bool(analysis.mirror_item_state),
+    )
+
+
+def _normalized_analysis_writes(analyses: list[AnalysisWrite]) -> list[AnalysisWrite]:
+    normalized: list[AnalysisWrite] = []
+    seen: dict[int, int] = {}
+    for analysis in analyses:
+        normalized_write = _normalized_analysis_write(analysis)
+        if normalized_write is None:
+            continue
+        existing_index = seen.get(normalized_write.item_id)
+        if existing_index is None:
+            seen[normalized_write.item_id] = len(normalized)
+            normalized.append(normalized_write)
+        else:
+            normalized[existing_index] = normalized_write
+    return normalized
+
+
+def _existing_analyses_by_item_id(
+    *,
+    session: Session,
+    item_ids: list[int],
+) -> dict[int, Analysis]:
+    statement = select(Analysis).where(cast(Any, Analysis.item_id).in_(item_ids))
+    return {int(analysis.item_id): analysis for analysis in session.exec(statement)}
+
+
+def _mirror_items_by_id(
+    *,
+    session: Session,
+    mirror_item_ids: list[int],
+) -> dict[int, Item]:
+    if not mirror_item_ids:
+        return {}
+    item_statement = select(Item).where(cast(Any, Item.id).in_(mirror_item_ids))
+    return {
+        int(item.id): item
+        for item in session.exec(item_statement)
+        if item.id is not None
+    }
+
+
+def _analysis_row(
+    *,
+    analysis_write: AnalysisWrite,
+    existing: Analysis | None,
+) -> Analysis:
+    result = analysis_write.result
+    if existing is None:
+        return Analysis(
+            item_id=analysis_write.item_id,
+            model=result.model,
+            provider=result.provider,
+            summary=result.summary,
+            topics_json=_to_json(result.topics),
+            relevance_score=result.relevance_score,
+            novelty_score=result.novelty_score,
+            cost_usd=result.cost_usd,
+            latency_ms=result.latency_ms,
+        )
+    existing.model = result.model
+    existing.provider = result.provider
+    existing.summary = result.summary
+    existing.topics_json = _to_json(result.topics)
+    existing.relevance_score = result.relevance_score
+    existing.novelty_score = result.novelty_score
+    existing.cost_usd = result.cost_usd
+    existing.latency_ms = result.latency_ms
+    return existing
+
+
+def _mirror_analyzed_item(
+    *,
+    session: Session,
+    items_by_id: dict[int, Item],
+    analysis_write: AnalysisWrite,
+) -> None:
+    if not analysis_write.mirror_item_state:
+        return
+    item = items_by_id.get(analysis_write.item_id)
+    if item is None:
+        return
+    item.state = ITEM_STATE_ANALYZED
+    item.updated_at = utc_now()
+    session.add(item)
+
+
 class AnalysisStoreMixin:
     engine: Any
 
@@ -110,27 +209,7 @@ class AnalysisStoreMixin:
             return analysis
 
     def save_analyses_batch(self, *, analyses: list[AnalysisWrite]) -> int:
-        normalized: list[AnalysisWrite] = []
-        seen: dict[int, int] = {}
-        for analysis in analyses:
-            try:
-                item_id = int(analysis.item_id)
-            except Exception:
-                continue
-            if item_id <= 0:
-                continue
-            key = item_id
-            normalized_write = AnalysisWrite(
-                item_id=item_id,
-                result=analysis.result,
-                mirror_item_state=bool(analysis.mirror_item_state),
-            )
-            existing_index = seen.get(key)
-            if existing_index is None:
-                seen[key] = len(normalized)
-                normalized.append(normalized_write)
-            else:
-                normalized[existing_index] = normalized_write
+        normalized = _normalized_analysis_writes(analyses)
         if not normalized:
             return 0
 
@@ -143,56 +222,29 @@ class AnalysisStoreMixin:
             }
         )
         with Session(self.engine) as session:
-            existing_by_key: dict[int, Analysis] = {}
-            statement = select(Analysis).where(cast(Any, Analysis.item_id).in_(item_ids))
-            for analysis in session.exec(statement):
-                existing_by_key[int(analysis.item_id)] = analysis
-
-            items_by_id: dict[int, Item] = {}
-            if mirror_item_ids:
-                item_statement = select(Item).where(cast(Any, Item.id).in_(mirror_item_ids))
-                items_by_id = {
-                    int(item.id): item
-                    for item in session.exec(item_statement)
-                    if item.id is not None
-                }
+            existing_by_key = _existing_analyses_by_item_id(
+                session=session,
+                item_ids=item_ids,
+            )
+            items_by_id = _mirror_items_by_id(
+                session=session,
+                mirror_item_ids=mirror_item_ids,
+            )
 
             applied = 0
             for analysis_write in normalized:
-                key = analysis_write.item_id
-                existing = existing_by_key.get(key)
-                result = analysis_write.result
-                if existing is None:
-                    existing = Analysis(
-                        item_id=analysis_write.item_id,
-                        model=result.model,
-                        provider=result.provider,
-                        summary=result.summary,
-                        topics_json=_to_json(result.topics),
-                        relevance_score=result.relevance_score,
-                        novelty_score=result.novelty_score,
-                        cost_usd=result.cost_usd,
-                        latency_ms=result.latency_ms,
-                    )
-                    existing_by_key[key] = existing
-                else:
-                    existing.model = result.model
-                    existing.provider = result.provider
-                    existing.summary = result.summary
-                    existing.topics_json = _to_json(result.topics)
-                    existing.relevance_score = result.relevance_score
-                    existing.novelty_score = result.novelty_score
-                    existing.cost_usd = result.cost_usd
-                    existing.latency_ms = result.latency_ms
+                analysis_row = _analysis_row(
+                    analysis_write=analysis_write,
+                    existing=existing_by_key.get(analysis_write.item_id),
+                )
+                existing_by_key[analysis_write.item_id] = analysis_row
+                _mirror_analyzed_item(
+                    session=session,
+                    items_by_id=items_by_id,
+                    analysis_write=analysis_write,
+                )
 
-                if analysis_write.mirror_item_state:
-                    item = items_by_id.get(analysis_write.item_id)
-                    if item is not None:
-                        item.state = ITEM_STATE_ANALYZED
-                        item.updated_at = utc_now()
-                        session.add(item)
-
-                session.add(existing)
+                session.add(analysis_row)
                 applied += 1
 
             if applied > 0:

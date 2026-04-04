@@ -53,6 +53,33 @@ class GitHubPagesDeployResult:
     pages_source: PagesSourceConfigResult
 
 
+@dataclass(frozen=True, slots=True)
+class _DeployPreparationRequest:
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec]
+    site_dir: Path
+    limit: int | None
+    default_language_code: str | None
+    item_export_scope: str
+    cname: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _DeployContext:
+    normalized_mode: str
+    repo_root: Path
+    branch: str
+    remote_info: GitRemoteInfo
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedDeploySite:
+    manifest: dict[str, Any]
+    commit_sha: str | None
+    skipped: bool
+    files_total: int
+    pages_source: PagesSourceConfigResult
+
+
 def _run_command(
     args: list[str],
     *,
@@ -398,52 +425,79 @@ def _gh_api_configure_pages_source(
     if base_args is None:
         return _pages_skip_result(detail="gh CLI was not found in PATH")
 
-    endpoint = f"repos/{remote_info.owner}/{remote_info.repo}/pages"
-    payload_args = [
-        "-f",
-        f"source[branch]={branch}",
-        "-f",
-        "source[path]=/",
-    ]
-
-    update = _run_command(
-        [*base_args, "-X", "PUT", endpoint, *payload_args],
-        cwd=Path.cwd(),
-        check=False,
+    endpoint = _gh_pages_endpoint(remote_info=remote_info)
+    payload_args = _gh_pages_payload_args(branch=branch)
+    failure = _gh_pages_update_or_create(
+        base_args=base_args,
+        endpoint=endpoint,
+        payload_args=payload_args,
     )
-    if update.returncode != 0:
-        stderr = update.stderr.strip()
-        if "404" in stderr or "Not Found" in stderr:
-            create = _run_command(
-                [*base_args, "-X", "POST", endpoint, *payload_args],
-                cwd=Path.cwd(),
-                check=False,
-            )
-            if create.returncode != 0:
-                detail = create.stderr.strip() or create.stdout.strip() or "Pages source configuration failed"
-                return _pages_failed_result(method="gh", detail=detail)
-        else:
-            detail = stderr or update.stdout.strip() or "Pages source configuration failed"
-            return _pages_failed_result(method="gh", detail=detail)
-
-    info = _run_command(
-        [*base_args, endpoint],
-        cwd=Path.cwd(),
-        check=False,
-    )
-    site_url: str | None = None
-    if info.returncode == 0:
-        try:
-            payload = json.loads(info.stdout or "{}")
-            candidate = str(payload.get("html_url") or "").strip()
-            site_url = candidate or None
-        except Exception:
-            site_url = None
+    if failure is not None:
+        return failure
+    site_url = _gh_pages_site_url(base_args=base_args, endpoint=endpoint)
     return _pages_success_result(
         method="gh",
         detail=f"configured GitHub Pages to publish from {branch}",
         site_url=site_url,
     )
+
+
+def _gh_pages_endpoint(*, remote_info: GitRemoteInfo) -> str:
+    return f"repos/{remote_info.owner}/{remote_info.repo}/pages"
+
+
+def _gh_pages_payload_args(*, branch: str) -> list[str]:
+    return ["-f", f"source[branch]={branch}", "-f", "source[path]=/"]
+
+
+def _pages_failure_detail(*, completed: subprocess.CompletedProcess[str]) -> str:
+    return (
+        completed.stderr.strip()
+        or completed.stdout.strip()
+        or "Pages source configuration failed"
+    )
+
+
+def _gh_pages_update_or_create(
+    *,
+    base_args: list[str],
+    endpoint: str,
+    payload_args: list[str],
+) -> PagesSourceConfigResult | None:
+    update = _run_command(
+        [*base_args, "-X", "PUT", endpoint, *payload_args],
+        cwd=Path.cwd(),
+        check=False,
+    )
+    if update.returncode == 0:
+        return None
+    stderr = update.stderr.strip()
+    if "404" not in stderr and "Not Found" not in stderr:
+        return _pages_failed_result(method="gh", detail=_pages_failure_detail(completed=update))
+    create = _run_command(
+        [*base_args, "-X", "POST", endpoint, *payload_args],
+        cwd=Path.cwd(),
+        check=False,
+    )
+    if create.returncode == 0:
+        return None
+    return _pages_failed_result(method="gh", detail=_pages_failure_detail(completed=create))
+
+
+def _gh_pages_site_url(*, base_args: list[str], endpoint: str) -> str | None:
+    info = _run_command(
+        [*base_args, endpoint],
+        cwd=Path.cwd(),
+        check=False,
+    )
+    if info.returncode != 0:
+        return None
+    try:
+        payload = json.loads(info.stdout or "{}")
+    except Exception:
+        return None
+    candidate = str(payload.get("html_url") or "").strip()
+    return candidate or None
 
 
 def _github_token() -> str | None:
@@ -539,81 +593,135 @@ def _configure_pages_source(
 
 
 def deploy_trend_static_site_to_github_pages(
-    *,
-    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
-    repo_dir: Path,
-    remote: str = "origin",
-    branch: str = _DEFAULT_DEPLOY_BRANCH,
-    limit: int | None = None,
-    commit_message: str | None = None,
-    cname: str | None = None,
-    pages_config_mode: str = "auto",
-    force: bool = True,
-    default_language_code: str | None = None,
-    item_export_scope: str = "linked",
+    *, input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
+    repo_dir: Path, remote: str = "origin", branch: str = _DEFAULT_DEPLOY_BRANCH,
+    limit: int | None = None, commit_message: str | None = None,
+    cname: str | None = None, pages_config_mode: str = "auto", force: bool = True,
+    default_language_code: str | None = None, item_export_scope: str = "linked",
 ) -> GitHubPagesDeployResult:
-    normalized_mode = _normalize_pages_config_mode(pages_config_mode)
-    resolved_repo_root = _resolve_git_repo_root(repo_dir.expanduser().resolve())
-    remote_info = _resolve_git_remote(
-        repo_root=resolved_repo_root,
-        remote_name=str(remote or "origin").strip() or "origin",
+    context = _resolved_deploy_context(
+        repo_dir=repo_dir,
+        remote=remote,
+        branch=branch,
+        pages_config_mode=pages_config_mode,
+    )
+    prepared = _prepare_deploy_site(
+        context=context,
+        request=_deploy_preparation_request(
+            input_dir=input_dir,
+            limit=limit,
+            default_language_code=default_language_code,
+            item_export_scope=item_export_scope,
+            cname=cname,
+        ),
+        commit_message=commit_message,
+        force=force,
+    )
+    result = _deploy_result(context=context, prepared=prepared)
+    _log_deploy_result(result=result)
+    return result
+
+
+def _resolved_deploy_context(
+    *,
+    repo_dir: Path,
+    remote: str,
+    branch: str,
+    pages_config_mode: str,
+) -> _DeployContext:
+    repo_root = _resolve_git_repo_root(repo_dir.expanduser().resolve())
+    return _DeployContext(
+        normalized_mode=_normalize_pages_config_mode(pages_config_mode),
+        repo_root=repo_root,
+        branch=_resolved_deploy_branch(branch=branch),
+        remote_info=_resolve_git_remote(
+            repo_root=repo_root,
+            remote_name=str(remote or "origin").strip() or "origin",
+        ),
     )
 
+
+def _deploy_preparation_request(
+    *,
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
+    limit: int | None,
+    default_language_code: str | None,
+    item_export_scope: str,
+    cname: str | None,
+) -> _DeployPreparationRequest:
+    return _DeployPreparationRequest(
+        input_dir=input_dir,
+        site_dir=Path(),
+        limit=limit,
+        default_language_code=default_language_code,
+        item_export_scope=item_export_scope,
+        cname=cname,
+    )
+
+
+def _prepare_deploy_site(
+    *,
+    context: _DeployContext,
+    request: _DeployPreparationRequest,
+    commit_message: str | None,
+    force: bool,
+) -> _PreparedDeploySite:
     with tempfile.TemporaryDirectory(
         prefix="recoleta-gh-pages-site-",
         ignore_cleanup_errors=True,
     ) as tmp_dir:
         site_dir = Path(tmp_dir).resolve() / "site"
-        normalized_item_export_scope = (
-            str(item_export_scope or "").strip().lower() or "linked"
+        manifest = _prepare_site_dir(
+            request=_DeployPreparationRequest(
+                input_dir=request.input_dir,
+                site_dir=site_dir,
+                limit=request.limit,
+                default_language_code=request.default_language_code,
+                item_export_scope=request.item_export_scope,
+                cname=request.cname,
+            )
         )
-        export_kwargs: dict[str, Any] = {
-            "input_dir": input_dir,
-            "output_dir": site_dir,
-            "limit": limit,
-            "default_language_code": default_language_code,
-        }
-        if normalized_item_export_scope != "linked":
-            export_kwargs["item_export_scope"] = normalized_item_export_scope
-        manifest_path = export_trend_static_site(
-            **export_kwargs,
-        )
-        _ = manifest_path
-        manifest = _sanitize_public_manifests(site_dir=site_dir)
-        if cname is not None:
-            _write_cname(site_dir=site_dir, cname=cname)
-        _ensure_no_symlinks(site_dir)
-
         commit_sha, skipped = _publish_site_snapshot(
             site_dir=site_dir,
-            repo_root=resolved_repo_root,
-            remote_info=remote_info,
-            branch=str(branch or _DEFAULT_DEPLOY_BRANCH).strip() or _DEFAULT_DEPLOY_BRANCH,
-            commit_message=(str(commit_message).strip() if commit_message is not None else "")
-            or _DEFAULT_DEPLOY_MESSAGE,
+            repo_root=context.repo_root,
+            remote_info=context.remote_info,
+            branch=context.branch,
+            commit_message=_resolved_deploy_message(commit_message=commit_message),
             force=force,
         )
-
-        pages_source = _configure_pages_source(
-            remote_info=remote_info,
-            branch=str(branch or _DEFAULT_DEPLOY_BRANCH).strip() or _DEFAULT_DEPLOY_BRANCH,
-            mode=normalized_mode,
+        return _PreparedDeploySite(
+            manifest=manifest,
+            commit_sha=commit_sha or None,
+            skipped=skipped,
+            files_total=_site_files_total(site_dir=site_dir),
+            pages_source=_configure_pages_source(
+                remote_info=context.remote_info,
+                branch=context.branch,
+                mode=context.normalized_mode,
+            ),
         )
 
-        files_total = sum(1 for child in site_dir.rglob("*") if child.is_file())
 
-    result = GitHubPagesDeployResult(
-        branch=str(branch or _DEFAULT_DEPLOY_BRANCH).strip() or _DEFAULT_DEPLOY_BRANCH,
-        remote=remote_info.name,
-        remote_url=remote_info.url,
-        repo_root=resolved_repo_root,
-        commit_sha=commit_sha or None,
-        skipped=skipped,
-        trends_total=int(manifest.get("trends_total") or 0),
-        topics_total=int(manifest.get("topics_total") or 0),
-        files_total=files_total,
-        pages_source=pages_source,
+def _deploy_result(
+    *,
+    context: _DeployContext,
+    prepared: _PreparedDeploySite,
+) -> GitHubPagesDeployResult:
+    return GitHubPagesDeployResult(
+        branch=context.branch,
+        remote=context.remote_info.name,
+        remote_url=context.remote_info.url,
+        repo_root=context.repo_root,
+        commit_sha=prepared.commit_sha,
+        skipped=prepared.skipped,
+        trends_total=int(prepared.manifest.get("trends_total") or 0),
+        topics_total=int(prepared.manifest.get("topics_total") or 0),
+        files_total=prepared.files_total,
+        pages_source=prepared.pages_source,
     )
+
+
+def _log_deploy_result(*, result: GitHubPagesDeployResult) -> None:
     logger.bind(
         module="site.gh_deploy",
         repo_root=str(result.repo_root),
@@ -624,4 +732,55 @@ def deploy_trend_static_site_to_github_pages(
         topics_total=result.topics_total,
         pages_source_status=result.pages_source.status,
     ).info("GitHub Pages branch deployment completed")
-    return result
+
+
+def _resolved_deploy_branch(*, branch: str) -> str:
+    return str(branch or _DEFAULT_DEPLOY_BRANCH).strip() or _DEFAULT_DEPLOY_BRANCH
+
+
+def _resolved_deploy_message(*, commit_message: str | None) -> str:
+    return (str(commit_message).strip() if commit_message is not None else "") or _DEFAULT_DEPLOY_MESSAGE
+
+
+def _site_export_kwargs(
+    *,
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
+    site_dir: Path,
+    limit: int | None,
+    default_language_code: str | None,
+    item_export_scope: str,
+) -> dict[str, Any]:
+    normalized_item_export_scope = str(item_export_scope or "").strip().lower() or "linked"
+    export_kwargs: dict[str, Any] = {
+        "input_dir": input_dir,
+        "output_dir": site_dir,
+        "limit": limit,
+        "default_language_code": default_language_code,
+    }
+    if normalized_item_export_scope != "linked":
+        export_kwargs["item_export_scope"] = normalized_item_export_scope
+    return export_kwargs
+
+
+def _prepare_site_dir(
+    *,
+    request: _DeployPreparationRequest,
+) -> dict[str, Any]:
+    export_trend_static_site(
+        **_site_export_kwargs(
+            input_dir=request.input_dir,
+            site_dir=request.site_dir,
+            limit=request.limit,
+            default_language_code=request.default_language_code,
+            item_export_scope=request.item_export_scope,
+        )
+    )
+    manifest = _sanitize_public_manifests(site_dir=request.site_dir)
+    if request.cname is not None:
+        _write_cname(site_dir=request.site_dir, cname=request.cname)
+    _ensure_no_symlinks(request.site_dir)
+    return manifest
+
+
+def _site_files_total(*, site_dir: Path) -> int:
+    return sum(1 for child in site_dir.rglob("*") if child.is_file())

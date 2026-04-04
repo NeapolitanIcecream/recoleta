@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +18,7 @@ from recoleta.models import (
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
 )
-from recoleta.storage_common import _from_json_object, _to_json
+from recoleta.storage import item_content_queries, item_content_writes, item_dedup_helpers
 from recoleta.types import ItemDraft, ItemStateUpdate, sha256_hex, utc_now
 
 
@@ -31,55 +31,25 @@ class ItemStoreMixin:
 
     @staticmethod
     def _normalize_published_at(value: datetime | None) -> datetime | None:
-        if value is None:
-            return None
-        return (
-            value.replace(tzinfo=timezone.utc)
-            if value.tzinfo is None
-            else value.astimezone(timezone.utc)
-        )
+        return item_dedup_helpers.normalize_published_at(value)
 
     @classmethod
     def _merge_published_at(
         cls, *, existing: datetime | None, incoming: datetime | None
     ) -> datetime | None:
-        normalized_existing = cls._normalize_published_at(existing)
-        normalized_incoming = cls._normalize_published_at(incoming)
-        if normalized_existing is None:
-            return normalized_incoming
-        if normalized_incoming is None:
-            return normalized_existing
-        return (
-            normalized_incoming
-            if normalized_incoming < normalized_existing
-            else normalized_existing
+        return item_dedup_helpers.merge_published_at(
+            existing=existing,
+            incoming=incoming,
         )
-
-    @classmethod
-    def _merge_raw_metadata_values(cls, existing: Any, incoming: Any) -> Any:
-        if incoming is None:
-            return existing
-        if isinstance(existing, dict) and isinstance(incoming, dict):
-            merged = dict(existing)
-            for key, value in incoming.items():
-                merged[key] = cls._merge_raw_metadata_values(merged.get(key), value)
-            return merged
-        if isinstance(existing, list) and isinstance(incoming, list):
-            merged = list(existing)
-            for value in incoming:
-                if value not in merged:
-                    merged.append(value)
-            return merged
-        return incoming
 
     @classmethod
     def _merge_raw_metadata(
         cls, *, existing: dict[str, Any], incoming: dict[str, Any]
     ) -> dict[str, Any]:
-        merged = dict(existing)
-        for key, value in incoming.items():
-            merged[key] = cls._merge_raw_metadata_values(merged.get(key), value)
-        return merged
+        return item_dedup_helpers.merge_raw_metadata(
+            existing=existing,
+            incoming=incoming,
+        )
 
     def count_items(self) -> int:
         with Session(self.engine) as session:
@@ -89,58 +59,22 @@ class ItemStoreMixin:
     def _find_near_duplicate_by_title(
         self, session: Session, *, title: str
     ) -> tuple[Item, float] | None:
-        normalized_title = title.strip()
-        if not normalized_title:
-            return None
-        if self.title_dedup_max_candidates <= 0:
-            return None
-
-        statement = (
-            select(Item)
-            .order_by(desc(cast(Any, Item.created_at)))
-            .limit(self.title_dedup_max_candidates)
+        match = item_dedup_helpers.find_near_duplicate_by_title(
+            session,
+            title=title,
+            title_dedup_threshold=self.title_dedup_threshold,
+            title_dedup_max_candidates=self.title_dedup_max_candidates,
+            score_title_similarity=fuzz.token_set_ratio,
         )
-        candidates = list(session.exec(statement))
-        for candidate in candidates:
-            candidate_title = str(getattr(candidate, "title", "") or "").strip()
-            if candidate_title == normalized_title:
-                if 100.0 < self.title_dedup_threshold:
-                    return None
-                return candidate, 100.0
-
-        best_item: Item | None = None
-        best_score = -1.0
-        for candidate in candidates:
-            score = float(fuzz.token_set_ratio(normalized_title, candidate.title))
-            if score > best_score:
-                best_score = score
-                best_item = candidate
-                if best_score >= 100.0:
-                    return candidate, best_score
-        if best_item is None:
+        if match is None:
             return None
-        if best_score < self.title_dedup_threshold:
-            return None
-        return best_item, best_score
+        return match.item, match.score
 
     def upsert_item(self, draft: ItemDraft) -> tuple[Item, bool]:
         with Session(self.engine) as session:
-            existing: Item | None = None
+            existing = item_dedup_helpers.find_existing_item(session, draft=draft)
             matched_by_title = False
             title_dedup_score: float | None = None
-            if draft.source_item_id:
-                statement = select(Item).where(
-                    Item.source == draft.source,
-                    Item.source_item_id == draft.source_item_id,
-                )
-                existing = session.exec(statement).first()
-
-            if existing is None:
-                by_url_hash = select(Item).where(
-                    Item.canonical_url_hash == draft.canonical_url_hash
-                )
-                existing = session.exec(by_url_hash).first()
-
             if existing is None and self.title_dedup_threshold > 0:
                 match = self._find_near_duplicate_by_title(session, title=draft.title)
                 if match is not None:
@@ -148,17 +82,7 @@ class ItemStoreMixin:
                     matched_by_title = True
 
             if existing is None:
-                created = Item(
-                    source=draft.source,
-                    source_item_id=draft.source_item_id,
-                    canonical_url=draft.canonical_url,
-                    canonical_url_hash=draft.canonical_url_hash,
-                    title=draft.title,
-                    authors=_to_json(draft.authors),
-                    published_at=draft.published_at,
-                    raw_metadata_json=_to_json(draft.raw_metadata),
-                    state=ITEM_STATE_INGESTED,
-                )
+                created = item_dedup_helpers.create_item_from_draft(draft)
                 session.add(created)
                 self._commit(session)
                 session.refresh(created)
@@ -166,60 +90,26 @@ class ItemStoreMixin:
 
             previous_state = existing.state
             if matched_by_title:
-                current_metadata = _from_json_object(existing.raw_metadata_json)
-                alternate_urls = current_metadata.get("alternate_urls")
-                if not isinstance(alternate_urls, list):
-                    alternate_urls = []
-                if (
-                    draft.canonical_url != existing.canonical_url
-                    and draft.canonical_url not in alternate_urls
-                ):
-                    alternate_urls.append(draft.canonical_url)
-                current_metadata["alternate_urls"] = alternate_urls
-
-                dedup_events = current_metadata.get("dedup_events")
-                if not isinstance(dedup_events, list):
-                    dedup_events = []
-                dedup_events.append(
-                    {
-                        "source": draft.source,
-                        "source_item_id": draft.source_item_id,
-                        "canonical_url_hash": draft.canonical_url_hash,
-                        "title_similarity": round(float(title_dedup_score or 0.0), 2),
-                    }
-                )
-                current_metadata["dedup_events"] = dedup_events[-20:]
-                existing.raw_metadata_json = _to_json(current_metadata)
-                existing.published_at = self._merge_published_at(
-                    existing=existing.published_at,
-                    incoming=draft.published_at,
+                item_dedup_helpers.apply_title_dedup_merge(
+                    existing=existing,
+                    draft=draft,
+                    title_dedup_score=title_dedup_score,
+                    merge_published_at_fn=self._merge_published_at,
                 )
             else:
-                existing.canonical_url = draft.canonical_url
-                existing.canonical_url_hash = draft.canonical_url_hash
-                existing.title = draft.title
-                existing.authors = _to_json(draft.authors)
-                existing.published_at = self._merge_published_at(
-                    existing=existing.published_at,
-                    incoming=draft.published_at,
+                item_dedup_helpers.apply_direct_item_merge(
+                    existing=existing,
+                    draft=draft,
+                    merge_published_at_fn=self._merge_published_at,
+                    merge_raw_metadata_fn=self._merge_raw_metadata,
                 )
-                existing_metadata = _from_json_object(existing.raw_metadata_json)
-                existing.raw_metadata_json = _to_json(
-                    self._merge_raw_metadata(
-                        existing=existing_metadata,
-                        incoming=draft.raw_metadata,
-                    )
-                )
-            if previous_state in {ITEM_STATE_FAILED, ITEM_STATE_RETRYABLE_FAILED}:
-                existing.state = ITEM_STATE_INGESTED
+            existing.state = item_dedup_helpers.reset_state_after_upsert(previous_state)
             existing.updated_at = utc_now()
-            if (
-                (not matched_by_title)
-                and existing.source == draft.source
-                and existing.source_item_id is None
-                and draft.source_item_id is not None
-            ):
-                existing.source_item_id = draft.source_item_id
+            item_dedup_helpers.maybe_fill_source_item_id(
+                existing=existing,
+                draft=draft,
+                matched_by_title=matched_by_title,
+            )
             session.add(existing)
             self._commit(session)
             session.refresh(existing)
@@ -274,94 +164,27 @@ class ItemStoreMixin:
     def get_latest_content_texts(
         self, *, item_id: int, content_types: list[str]
     ) -> dict[str, str | None]:
-        normalized_item_id = int(item_id)
-        types = [str(t or "").strip() for t in (content_types or [])]
-        types = [t for t in types if t]
-        if normalized_item_id <= 0 or not types:
-            return {}
-
-        wanted = set(types)
-        out: dict[str, str | None] = {t: None for t in types}
         with Session(self.engine) as session:
-            statement = (
-                select(Content)
-                .where(
-                    Content.item_id == normalized_item_id,
-                    cast(Any, Content.content_type).in_(types),
-                )
-                .order_by(desc(cast(Any, Content.id)))
+            return item_content_queries.load_latest_content_texts(
+                session=session,
+                item_id=item_id,
+                content_types=content_types,
             )
-            for content in session.exec(statement):
-                ctype = str(getattr(content, "content_type", "") or "").strip()
-                if ctype in wanted and out.get(ctype) is None:
-                    text = getattr(content, "text", None)
-                    out[ctype] = (
-                        text if isinstance(text, str) and text.strip() else None
-                    )
-                    wanted.discard(ctype)
-                    if not wanted:
-                        break
-        return out
 
     def get_latest_content_texts_for_items(
         self, *, item_ids: list[int], content_types: list[str]
     ) -> dict[int, dict[str, str | None]]:
-        normalized_ids: list[int] = []
-        seen_ids: set[int] = set()
-        for raw_item_id in item_ids:
-            try:
-                item_id = int(raw_item_id)
-            except Exception:
-                continue
-            if item_id <= 0 or item_id in seen_ids:
-                continue
-            seen_ids.add(item_id)
-            normalized_ids.append(item_id)
-
-        normalized_types: list[str] = []
-        seen_types: set[str] = set()
-        for raw_type in content_types:
-            content_type = str(raw_type or "").strip()
-            if not content_type or content_type in seen_types:
-                continue
-            seen_types.add(content_type)
-            normalized_types.append(content_type)
-
-        if not normalized_ids or not normalized_types:
+        request = item_content_queries.coerce_latest_content_texts_request(
+            item_ids=item_ids,
+            content_types=content_types,
+        )
+        if request is None:
             return {}
-
-        out: dict[int, dict[str, str | None]] = {
-            item_id: {content_type: None for content_type in normalized_types}
-            for item_id in normalized_ids
-        }
         with Session(self.engine) as session:
-            latest_ids = (
-                select(
-                    cast(Any, Content.item_id).label("item_id"),
-                    cast(Any, Content.content_type).label("content_type"),
-                    func.max(cast(Any, Content.id)).label("max_id"),
-                )
-                .where(
-                    cast(Any, Content.item_id).in_(normalized_ids),
-                    cast(Any, Content.content_type).in_(normalized_types),
-                )
-                .group_by(
-                    cast(Any, Content.item_id),
-                    cast(Any, Content.content_type),
-                )
-                .subquery()
+            return item_content_queries.load_latest_content_texts_by_item(
+                session=session,
+                request=request,
             )
-            statement = select(Content).join(
-                latest_ids, cast(Any, Content.id) == latest_ids.c.max_id
-            )
-            for content in session.exec(statement):
-                item_id = int(getattr(content, "item_id"))
-                content_type = str(getattr(content, "content_type", "") or "").strip()
-                text = getattr(content, "text", None)
-                out[item_id][content_type] = (
-                    text if isinstance(text, str) and text.strip() else None
-                )
-        return out
 
     def get_latest_contents(
         self, *, item_ids: list[int], content_type: str
@@ -403,58 +226,25 @@ class ItemStoreMixin:
     def upsert_contents_texts(
         self, *, item_id: int, texts_by_type: dict[str, str]
     ) -> int:
-        normalized_item_id = int(item_id)
-        if normalized_item_id <= 0:
-            raise ValueError("item_id must be > 0")
-        if not isinstance(texts_by_type, dict) or not texts_by_type:
+        spec = item_content_writes.normalize_content_text_upsert(
+            item_id=item_id,
+            texts_by_type=texts_by_type,
+        )
+        if spec is None:
             return 0
 
-        normalized: dict[str, str] = {}
-        for raw_type, raw_text in texts_by_type.items():
-            content_type = str(raw_type or "").strip()
-            if not content_type:
-                continue
-            if not isinstance(raw_text, str):
-                continue
-            text_value = raw_text.strip()
-            if not text_value:
-                continue
-            normalized[content_type] = text_value
-        if not normalized:
-            return 0
-
-        hashes_by_type: dict[str, str] = {
-            ctype: sha256_hex(text_value) for ctype, text_value in normalized.items()
-        }
-        target_types = list(hashes_by_type.keys())
-        target_hashes = list(set(hashes_by_type.values()))
-
-        inserted = 0
         with Session(self.engine) as session:
-            existing_pairs: set[tuple[str, str]] = set()
-            statement = select(Content.content_type, Content.content_hash).where(
-                Content.item_id == normalized_item_id,
-                cast(Any, Content.content_type).in_(target_types),
-                cast(Any, Content.content_hash).in_(target_hashes),
+            existing_pairs = item_content_writes.load_existing_content_pairs(
+                session=session,
+                spec=spec,
             )
-            for ctype, chash in session.exec(statement):
-                existing_pairs.add((str(ctype), str(chash)))
-
-            for ctype, text_value in normalized.items():
-                chash = hashes_by_type[ctype]
-                if (ctype, chash) in existing_pairs:
-                    continue
-                session.add(
-                    Content(
-                        item_id=normalized_item_id,
-                        content_type=ctype,
-                        text=text_value,
-                        artifact_path=None,
-                        content_hash=chash,
-                    )
-                )
-                inserted += 1
-
+            rows = item_content_writes.build_new_content_rows(
+                spec=spec,
+                existing_pairs=existing_pairs,
+            )
+            for row in rows:
+                session.add(row)
+            inserted = len(rows)
             if inserted > 0:
                 self._commit(session)
         return inserted

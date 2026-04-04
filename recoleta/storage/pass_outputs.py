@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
@@ -19,51 +20,32 @@ class PassOutputStoreMixin:
     def create_pass_output(
         self,
         *,
-        run_id: str,
-        pass_kind: str,
-        status: str,
-        granularity: str | None = None,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
-        schema_version: int = 1,
-        payload: dict[str, Any] | list[Any] | None = None,
-        diagnostics: dict[str, Any] | list[Any] | None = None,
-        input_refs: list[dict[str, Any]] | None = None,
-        content_hash: str | None = None,
+        request: CreatePassOutputRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> PassOutput:
-        normalized_run_id = str(run_id or "").strip()
-        if not normalized_run_id:
-            raise ValueError("run_id must not be empty")
-        normalized_pass_kind = str(pass_kind or "").strip()
-        if not normalized_pass_kind:
-            raise ValueError("pass_kind must not be empty")
-        normalized_status = str(status or "").strip()
-        if not normalized_status:
-            raise ValueError("status must not be empty")
-        normalized_granularity = (
-            str(granularity or "").strip().lower() or None
-            if granularity is not None
-            else None
+        normalized_request = _normalized_create_pass_output(
+            coerce_create_pass_output_request(
+                request=request,
+                legacy_kwargs=legacy_kwargs,
+            )
         )
-        payload_obj = payload if payload is not None else {}
-        diagnostics_obj = diagnostics if diagnostics is not None else {}
-        input_refs_obj = list(input_refs or [])
-        payload_json = _to_json(payload_obj)
-        diagnostics_json = _to_json(diagnostics_obj)
-        input_refs_json = _to_json(input_refs_obj)
+        payload_json = _to_json(normalized_request.payload)
+        diagnostics_json = _to_json(normalized_request.diagnostics)
+        input_refs_json = _to_json(normalized_request.input_refs)
         normalized_content_hash = (
-            str(content_hash or "").strip() or sha256_hex(payload_json)
+            str(normalized_request.content_hash or "").strip()
+            or sha256_hex(payload_json)
         )
 
         with Session(self.engine) as session:
             row = PassOutput(
-                run_id=normalized_run_id,
-                pass_kind=normalized_pass_kind,
-                status=normalized_status,
-                granularity=normalized_granularity,
-                period_start=period_start,
-                period_end=period_end,
-                schema_version=max(1, int(schema_version)),
+                run_id=normalized_request.run_id,
+                pass_kind=normalized_request.pass_kind,
+                status=normalized_request.status,
+                granularity=normalized_request.granularity,
+                period_start=normalized_request.period_start,
+                period_end=normalized_request.period_end,
+                schema_version=normalized_request.schema_version,
                 content_hash=normalized_content_hash,
                 payload_json=payload_json,
                 diagnostics_json=diagnostics_json,
@@ -131,3 +113,70 @@ class PassOutputStoreMixin:
                 )
             )
             return list(session.exec(statement))
+
+
+@dataclass(frozen=True, slots=True)
+class CreatePassOutputRequest:
+    run_id: str
+    pass_kind: str
+    status: str
+    granularity: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    schema_version: int = 1
+    payload: dict[str, Any] | list[Any] | None = None
+    diagnostics: dict[str, Any] | list[Any] | None = None
+    input_refs: list[dict[str, Any]] | None = None
+    content_hash: str | None = None
+
+
+def coerce_create_pass_output_request(
+    *,
+    request: CreatePassOutputRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> CreatePassOutputRequest:
+    if request is not None:
+        return request
+    return CreatePassOutputRequest(
+        run_id=legacy_kwargs["run_id"],
+        pass_kind=legacy_kwargs["pass_kind"],
+        status=legacy_kwargs["status"],
+        granularity=legacy_kwargs.get("granularity"),
+        period_start=legacy_kwargs.get("period_start"),
+        period_end=legacy_kwargs.get("period_end"),
+        schema_version=int(legacy_kwargs.get("schema_version", 1)),
+        payload=legacy_kwargs.get("payload"),
+        diagnostics=legacy_kwargs.get("diagnostics"),
+        input_refs=legacy_kwargs.get("input_refs"),
+        content_hash=legacy_kwargs.get("content_hash"),
+    )
+
+
+def _normalized_create_pass_output(request: CreatePassOutputRequest) -> CreatePassOutputRequest:
+    normalized_run_id = str(request.run_id or "").strip()
+    if not normalized_run_id:
+        raise ValueError("run_id must not be empty")
+    normalized_pass_kind = str(request.pass_kind or "").strip()
+    if not normalized_pass_kind:
+        raise ValueError("pass_kind must not be empty")
+    normalized_status = str(request.status or "").strip()
+    if not normalized_status:
+        raise ValueError("status must not be empty")
+    normalized_granularity = (
+        str(request.granularity or "").strip().lower() or None
+        if request.granularity is not None
+        else None
+    )
+    return CreatePassOutputRequest(
+        run_id=normalized_run_id,
+        pass_kind=normalized_pass_kind,
+        status=normalized_status,
+        granularity=normalized_granularity,
+        period_start=request.period_start,
+        period_end=request.period_end,
+        schema_version=max(1, int(request.schema_version)),
+        payload=request.payload if request.payload is not None else {},
+        diagnostics=request.diagnostics if request.diagnostics is not None else {},
+        input_refs=list(request.input_refs or []),
+        content_hash=request.content_hash,
+    )

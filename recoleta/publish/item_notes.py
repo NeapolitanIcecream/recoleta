@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 from slugify import slugify
 
-from recoleta.item_summary import normalize_item_summary_markdown
+from recoleta.publish.item_note_writer import ItemNoteSpec, render_item_note_lines, write_item_note
 
 __all__ = [
     "resolve_item_note_path",
@@ -102,133 +102,70 @@ def resolve_item_note_href(
     return relative.as_posix()
 
 
+def _coerce_item_note_spec(
+    *, spec: ItemNoteSpec | None = None, legacy_kwargs: dict[str, Any] | None = None
+) -> ItemNoteSpec:
+    if spec is not None:
+        return spec
+    values = dict(legacy_kwargs or {})
+    return ItemNoteSpec(
+        item_id=int(values.pop("item_id")),
+        title=str(values.pop("title")),
+        source=str(values.pop("source")),
+        canonical_url=str(values.pop("canonical_url")),
+        published_at=values.pop("published_at"),
+        authors=list(values.pop("authors")),
+        topics=list(values.pop("topics")),
+        relevance_score=float(values.pop("relevance_score")),
+        run_id=str(values.pop("run_id")),
+        summary=str(values.pop("summary")),
+        language_code=values.pop("language_code", None),
+    )
+
+
 def _render_item_note_lines(
-    *,
-    title: str,
-    source: str,
-    canonical_url: str,
-    published_at: datetime | None,
-    authors: list[str],
-    topics: list[str],
-    relevance_score: float,
-    run_id: str,
-    summary: str,
-    language_code: str | None,
+    *, spec: ItemNoteSpec | None = None, **legacy_kwargs: Any
 ) -> list[str]:
-    normalized_summary = normalize_item_summary_markdown(summary)
-    frontmatter = {
-        "source": source,
-        "url": canonical_url,
-        "published_at": published_at.isoformat() if published_at else None,
-        "authors": authors,
-        "topics": topics,
-        "relevance_score": round(relevance_score, 4),
-        "run_id": run_id,
-    }
-    normalized_language_code = str(language_code or "").strip()
-    if normalized_language_code:
-        frontmatter["language_code"] = normalized_language_code
-    return [
-        "---",
-        yaml.safe_dump(frontmatter, sort_keys=False).strip(),
-        "---",
-        "",
-        f"# {title}",
-        "",
-        normalized_summary,
-        "",
-        "## Link",
-        f"- [{canonical_url}]({canonical_url})",
-        "",
-    ]
+    return render_item_note_lines(
+        spec=_coerce_item_note_spec(spec=spec, legacy_kwargs=legacy_kwargs)
+    )
 
 
 def _write_item_note(
     *,
     note_dir: Path,
-    item_id: int,
-    title: str,
-    source: str,
-    canonical_url: str,
-    published_at: datetime | None,
-    authors: list[str],
-    topics: list[str],
-    relevance_score: float,
-    run_id: str,
-    summary: str,
-    language_code: str | None = None,
+    spec: ItemNoteSpec | None = None,
+    **legacy_kwargs: Any,
 ) -> Path:
-    note_dir.mkdir(parents=True, exist_ok=True)
-    note_path = _item_note_path(
+    normalized_spec = _coerce_item_note_spec(spec=spec, legacy_kwargs=legacy_kwargs)
+    return write_item_note(
         note_dir=note_dir,
-        item_id=item_id,
-        title=title,
-        canonical_url=canonical_url,
-        published_at=published_at,
+        spec=normalized_spec,
+        resolve_note_path=_item_note_path,
+        lines=_render_item_note_lines(spec=normalized_spec),
     )
-    lines = _render_item_note_lines(
-        title=title,
-        source=source,
-        canonical_url=canonical_url,
-        published_at=published_at,
-        authors=authors,
-        topics=topics,
-        relevance_score=relevance_score,
-        run_id=run_id,
-        summary=summary,
-        language_code=language_code,
-    )
-    note_path.write_text("\n".join(lines), encoding="utf-8")
-    return note_path
 
 
 def write_obsidian_note(
     *,
     vault_path: Path,
     base_folder: str,
-    item_id: int,
-    title: str,
-    source: str,
-    canonical_url: str,
-    published_at: datetime | None,
-    authors: list[str],
-    topics: list[str],
-    relevance_score: float,
-    run_id: str,
-    summary: str,
-    language_code: str | None = None,
+    spec: ItemNoteSpec | None = None,
+    **legacy_kwargs: Any,
 ) -> Path:
     note_dir = vault_path / base_folder / "Inbox"
     return _write_item_note(
         note_dir=note_dir,
-        item_id=item_id,
-        title=title,
-        source=source,
-        canonical_url=canonical_url,
-        published_at=published_at,
-        authors=authors,
-        topics=topics,
-        relevance_score=relevance_score,
-        run_id=run_id,
-        summary=summary,
-        language_code=language_code,
+        spec=spec,
+        **legacy_kwargs,
     )
 
 
 def write_markdown_note(
     *,
     output_dir: Path,
-    item_id: int,
-    title: str,
-    source: str,
-    canonical_url: str,
-    published_at: datetime | None,
-    authors: list[str],
-    topics: list[str],
-    relevance_score: float,
-    run_id: str,
-    summary: str,
-    language_code: str | None = None,
+    spec: ItemNoteSpec | None = None,
+    **legacy_kwargs: Any,
 ) -> Path:
     output_dir = output_dir.expanduser().resolve()
     if output_dir.exists() and not output_dir.is_dir():
@@ -237,15 +174,6 @@ def write_markdown_note(
     note_dir = output_dir / "Inbox"
     return _write_item_note(
         note_dir=note_dir,
-        item_id=item_id,
-        title=title,
-        source=source,
-        canonical_url=canonical_url,
-        published_at=published_at,
-        authors=authors,
-        topics=topics,
-        relevance_score=relevance_score,
-        run_id=run_id,
-        summary=summary,
-        language_code=language_code,
+        spec=spec,
+        **legacy_kwargs,
     )

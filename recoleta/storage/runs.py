@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
 from typing import Any, cast
@@ -72,69 +73,21 @@ class RunStoreMixin:
     def update_run_context(
         self,
         *,
-        run_id: str,
-        command: str | None = None,
-        operation_kind: str | None = None,
-        scope: str | None = None,
-        granularity: str | None = None,
-        period_start: datetime | None = None,
-        period_end: datetime | None = None,
-        target_granularity: str | None = None,
-        target_period_start: datetime | None = None,
-        target_period_end: datetime | None = None,
-        requested_steps: list[str] | None = None,
-        executed_steps: list[str] | None = None,
-        skipped_steps: list[str] | None = None,
-        billing_by_step: dict[str, Any] | None = None,
+        request: UpdateRunContextRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> None:
-        normalized_run_id = str(run_id or "").strip()
-        if not normalized_run_id:
+        normalized_request = coerce_update_run_context_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
+        if not normalized_request.run_id:
             return
-        normalized_command = str(command or "").strip() or None
-        normalized_operation_kind = str(operation_kind or "").strip() or None
-        normalized_scope = str(scope or "").strip() or None
-        normalized_granularity = str(granularity or "").strip() or None
-        normalized_target_granularity = str(target_granularity or "").strip() or None
-        requested_steps_json = (
-            json.dumps(requested_steps, ensure_ascii=False, sort_keys=True)
-            if requested_steps is not None
-            else None
-        )
-        executed_steps_json = (
-            json.dumps(executed_steps, ensure_ascii=False, sort_keys=True)
-            if executed_steps is not None
-            else None
-        )
-        skipped_steps_json = (
-            json.dumps(skipped_steps, ensure_ascii=False, sort_keys=True)
-            if skipped_steps is not None
-            else None
-        )
-        billing_by_step_json = (
-            json.dumps(billing_by_step, ensure_ascii=False, sort_keys=True)
-            if billing_by_step is not None
-            else None
-        )
         with Session(self.engine) as session:
-            run = session.get(Run, normalized_run_id)
+            run = session.get(Run, normalized_request.run_id)
             if run is None:
                 return
             changed = False
-            for name, value in (
-                ("command", normalized_command),
-                ("operation_kind", normalized_operation_kind),
-                ("scope", normalized_scope),
-                ("granularity", normalized_granularity),
-                ("period_start", period_start),
-                ("period_end", period_end),
-                ("target_granularity", normalized_target_granularity),
-                ("target_period_start", target_period_start),
-                ("target_period_end", target_period_end),
-                ("requested_steps_json", requested_steps_json),
-                ("executed_steps_json", executed_steps_json),
-                ("skipped_steps_json", skipped_steps_json),
-                ("billing_by_step_json", billing_by_step_json),
-            ):
+            for name, value in _run_context_updates(normalized_request):
                 if value is None or getattr(run, name, None) == value:
                     continue
                 setattr(run, name, value)
@@ -255,3 +208,72 @@ class RunStoreMixin:
                 .order_by(cast(Any, Metric.id))
             )
             return list(session.exec(statement))
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateRunContextRequest:
+    run_id: str
+    command: str | None = None
+    operation_kind: str | None = None
+    scope: str | None = None
+    granularity: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    target_granularity: str | None = None
+    target_period_start: datetime | None = None
+    target_period_end: datetime | None = None
+    requested_steps: list[str] | None = None
+    executed_steps: list[str] | None = None
+    skipped_steps: list[str] | None = None
+    billing_by_step: dict[str, Any] | None = None
+
+
+def _normalized_optional_text(value: str | None) -> str | None:
+    return str(value or "").strip() or None
+
+
+def _normalized_json(value: Any) -> str | None:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True) if value is not None else None
+
+
+def coerce_update_run_context_request(
+    *,
+    request: UpdateRunContextRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> UpdateRunContextRequest:
+    if request is not None:
+        return request
+    return UpdateRunContextRequest(
+        run_id=str(legacy_kwargs["run_id"] or "").strip(),
+        command=legacy_kwargs.get("command"),
+        operation_kind=legacy_kwargs.get("operation_kind"),
+        scope=legacy_kwargs.get("scope"),
+        granularity=legacy_kwargs.get("granularity"),
+        period_start=legacy_kwargs.get("period_start"),
+        period_end=legacy_kwargs.get("period_end"),
+        target_granularity=legacy_kwargs.get("target_granularity"),
+        target_period_start=legacy_kwargs.get("target_period_start"),
+        target_period_end=legacy_kwargs.get("target_period_end"),
+        requested_steps=legacy_kwargs.get("requested_steps"),
+        executed_steps=legacy_kwargs.get("executed_steps"),
+        skipped_steps=legacy_kwargs.get("skipped_steps"),
+        billing_by_step=legacy_kwargs.get("billing_by_step"),
+    )
+
+
+def _run_context_updates(request: UpdateRunContextRequest) -> tuple[tuple[str, Any], ...]:
+    return (
+        ("command", _normalized_optional_text(request.command)),
+        ("operation_kind", _normalized_optional_text(request.operation_kind)),
+        ("scope", _normalized_optional_text(request.scope)),
+        ("granularity", _normalized_optional_text(request.granularity)),
+        ("period_start", request.period_start),
+        ("period_end", request.period_end),
+        ("target_granularity", _normalized_optional_text(request.target_granularity)),
+        ("target_period_start", request.target_period_start),
+        ("target_period_end", request.target_period_end),
+        ("requested_steps_json", _normalized_json(request.requested_steps)),
+        ("executed_steps_json", _normalized_json(request.executed_steps)),
+        ("skipped_steps_json", _normalized_json(request.skipped_steps)),
+        ("billing_by_step_json", _normalized_json(request.billing_by_step)),
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, cast
 
 from sqlalchemy import desc
@@ -18,55 +19,43 @@ class LocalizedOutputStoreMixin:
     def upsert_localized_output(
         self,
         *,
-        source_kind: str,
-        source_record_id: int,
-        language_code: str,
-        status: str,
-        source_hash: str,
-        payload: dict[str, Any] | list[Any] | None = None,
-        diagnostics: dict[str, Any] | list[Any] | None = None,
-        variant_role: str = "translation",
-        schema_version: int = 1,
+        request: LocalizedOutputUpsertRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> tuple[LocalizedOutput, bool]:
-        normalized_source_kind = str(source_kind or "").strip().lower()
-        if not normalized_source_kind:
-            raise ValueError("source_kind must not be empty")
-        normalized_source_record_id = int(source_record_id)
-        if normalized_source_record_id <= 0:
-            raise ValueError("source_record_id must be > 0")
-        normalized_language_code = str(language_code or "").strip()
-        if not normalized_language_code:
-            raise ValueError("language_code must not be empty")
-        normalized_status = str(status or "").strip()
-        if not normalized_status:
-            raise ValueError("status must not be empty")
-        normalized_source_hash = str(source_hash or "").strip()
-        if not normalized_source_hash:
-            raise ValueError("source_hash must not be empty")
-        normalized_variant_role = str(variant_role or "").strip().lower()
-        if not normalized_variant_role:
-            raise ValueError("variant_role must not be empty")
-
-        payload_json = _to_json(payload if payload is not None else {})
-        diagnostics_json = _to_json(diagnostics if diagnostics is not None else {})
+        normalized_request = _normalized_localized_output(
+            coerce_localized_output_request(
+                request=request,
+                legacy_kwargs=legacy_kwargs,
+            )
+        )
+        payload_json = _to_json(
+            normalized_request.payload if normalized_request.payload is not None else {}
+        )
+        diagnostics_json = _to_json(
+            normalized_request.diagnostics
+            if normalized_request.diagnostics is not None
+            else {}
+        )
 
         with Session(self.engine) as session:
             existing = session.exec(
                 select(LocalizedOutput).where(
-                    LocalizedOutput.source_kind == normalized_source_kind,
-                    LocalizedOutput.source_record_id == normalized_source_record_id,
-                    LocalizedOutput.language_code == normalized_language_code,
+                    LocalizedOutput.source_kind == normalized_request.source_kind,
+                    LocalizedOutput.source_record_id
+                    == normalized_request.source_record_id,
+                    LocalizedOutput.language_code
+                    == normalized_request.language_code,
                 )
             ).first()
             if existing is None:
                 row = LocalizedOutput(
-                    source_kind=normalized_source_kind,
-                    source_record_id=normalized_source_record_id,
-                    language_code=normalized_language_code,
-                    status=normalized_status,
-                    schema_version=max(1, int(schema_version)),
-                    source_hash=normalized_source_hash,
-                    variant_role=normalized_variant_role,
+                    source_kind=normalized_request.source_kind,
+                    source_record_id=normalized_request.source_record_id,
+                    language_code=normalized_request.language_code,
+                    status=normalized_request.status,
+                    schema_version=normalized_request.schema_version,
+                    source_hash=normalized_request.source_hash,
+                    variant_role=normalized_request.variant_role,
                     payload_json=payload_json,
                     diagnostics_json=diagnostics_json,
                 )
@@ -75,10 +64,10 @@ class LocalizedOutputStoreMixin:
                 session.refresh(row)
                 return row, True
 
-            existing.status = normalized_status
-            existing.schema_version = max(1, int(schema_version))
-            existing.source_hash = normalized_source_hash
-            existing.variant_role = normalized_variant_role
+            existing.status = normalized_request.status
+            existing.schema_version = normalized_request.schema_version
+            existing.source_hash = normalized_request.source_hash
+            existing.variant_role = normalized_request.variant_role
             existing.payload_json = payload_json
             existing.diagnostics_json = diagnostics_json
             existing.updated_at = utc_now()
@@ -135,3 +124,67 @@ class LocalizedOutputStoreMixin:
                 desc(cast(Any, LocalizedOutput.id)),
             )
             return list(session.exec(statement))
+
+
+@dataclass(frozen=True, slots=True)
+class LocalizedOutputUpsertRequest:
+    source_kind: str
+    source_record_id: int
+    language_code: str
+    status: str
+    source_hash: str
+    payload: dict[str, Any] | list[Any] | None = None
+    diagnostics: dict[str, Any] | list[Any] | None = None
+    variant_role: str = "translation"
+    schema_version: int = 1
+
+
+def coerce_localized_output_request(
+    *,
+    request: LocalizedOutputUpsertRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> LocalizedOutputUpsertRequest:
+    if request is not None:
+        return request
+    return LocalizedOutputUpsertRequest(
+        source_kind=legacy_kwargs["source_kind"],
+        source_record_id=int(legacy_kwargs["source_record_id"]),
+        language_code=legacy_kwargs["language_code"],
+        status=legacy_kwargs["status"],
+        source_hash=legacy_kwargs["source_hash"],
+        payload=legacy_kwargs.get("payload"),
+        diagnostics=legacy_kwargs.get("diagnostics"),
+        variant_role=str(legacy_kwargs.get("variant_role", "translation")),
+        schema_version=int(legacy_kwargs.get("schema_version", 1)),
+    )
+
+
+def _normalized_localized_output(request: LocalizedOutputUpsertRequest) -> LocalizedOutputUpsertRequest:
+    normalized_source_kind = str(request.source_kind or "").strip().lower()
+    if not normalized_source_kind:
+        raise ValueError("source_kind must not be empty")
+    if int(request.source_record_id) <= 0:
+        raise ValueError("source_record_id must be > 0")
+    normalized_language_code = str(request.language_code or "").strip()
+    if not normalized_language_code:
+        raise ValueError("language_code must not be empty")
+    normalized_status = str(request.status or "").strip()
+    if not normalized_status:
+        raise ValueError("status must not be empty")
+    normalized_source_hash = str(request.source_hash or "").strip()
+    if not normalized_source_hash:
+        raise ValueError("source_hash must not be empty")
+    normalized_variant_role = str(request.variant_role or "").strip().lower()
+    if not normalized_variant_role:
+        raise ValueError("variant_role must not be empty")
+    return LocalizedOutputUpsertRequest(
+        source_kind=normalized_source_kind,
+        source_record_id=int(request.source_record_id),
+        language_code=normalized_language_code,
+        status=normalized_status,
+        source_hash=normalized_source_hash,
+        payload=request.payload,
+        diagnostics=request.diagnostics,
+        variant_role=normalized_variant_role,
+        schema_version=max(1, int(request.schema_version)),
+    )

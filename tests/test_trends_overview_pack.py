@@ -12,6 +12,7 @@ from recoleta.trends import (
     day_period_bounds,
     week_period_bounds,
 )
+from recoleta.trends_overview import BuildOverviewPackRequest
 from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
@@ -114,6 +115,37 @@ def test_overview_pack_week_marks_missing_chunk_when_trend_doc_has_no_summary_ch
     assert "doc_id" not in md
     assert f"### day {day_start.date().isoformat()}" in md
     assert "- status=missing_chunk" in md
+
+
+def test_overview_pack_request_entrypoint_matches_legacy_args(configured_env) -> None:
+    _ = configured_env
+    _, repository = _build_runtime()
+
+    anchor = datetime(2026, 3, 2, tzinfo=UTC).date()
+    week_start, week_end = week_period_bounds(anchor)
+    plan = TrendGenerationPlan(
+        target_granularity="week", period_start=week_start, period_end=week_end
+    )
+
+    expected_md, expected_stats = build_overview_pack_md(
+        repository,
+        plan,
+        overview_pack_max_chars=10_000,
+        item_overview_top_k=20,
+        item_overview_item_max_chars=200,
+    )
+
+    request = BuildOverviewPackRequest(
+        repository=repository,
+        plan=plan,
+        overview_pack_max_chars=10_000,
+        item_overview_top_k=20,
+        item_overview_item_max_chars=200,
+    )
+    md, stats = build_overview_pack_md(request=request)
+
+    assert md == expected_md
+    assert stats == expected_stats
 
 
 def test_overview_pack_week_prefers_structured_trend_payload_meta_chunks(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, cast
 
@@ -30,82 +31,52 @@ from recoleta.storage_common import (
 from recoleta.types import utc_now
 
 
+@dataclass(frozen=True, slots=True)
+class AcquireWorkspaceLeaseRequest:
+    owner_token: str
+    command: str
+    lease_timeout_seconds: int
+    run_id: str | None = None
+    hostname: str | None = None
+    pid: int | None = None
+    name: str = WORKSPACE_LEASE_NAME
+    now: datetime | None = None
+
+
 class WorkspaceLeaseStoreMixin:
     engine: Any
 
     def acquire_workspace_lease(
-        self,
-        *,
-        owner_token: str,
-        command: str,
-        lease_timeout_seconds: int,
-        run_id: str | None = None,
-        hostname: str | None = None,
-        pid: int | None = None,
-        name: str = WORKSPACE_LEASE_NAME,
+        self, *, owner_token: str, command: str, lease_timeout_seconds: int,
+        run_id: str | None = None, hostname: str | None = None,
+        pid: int | None = None, name: str = WORKSPACE_LEASE_NAME,
         now: datetime | None = None,
     ) -> WorkspaceLease:
-        acquired_at = now or utc_now()
-        expires_at = acquired_at + timedelta(seconds=max(1, int(lease_timeout_seconds)))
-        statement = text(
-            """
-            INSERT INTO workspace_leases (
-                name,
-                owner_token,
-                run_id,
-                pid,
-                hostname,
-                command,
-                acquired_at,
-                heartbeat_at,
-                expires_at
-            )
-            VALUES (
-                :name,
-                :owner_token,
-                :run_id,
-                :pid,
-                :hostname,
-                :command,
-                :acquired_at,
-                :heartbeat_at,
-                :expires_at
-            )
-            ON CONFLICT(name) DO UPDATE SET
-                owner_token = excluded.owner_token,
-                run_id = excluded.run_id,
-                pid = excluded.pid,
-                hostname = excluded.hostname,
-                command = excluded.command,
-                acquired_at = excluded.acquired_at,
-                heartbeat_at = excluded.heartbeat_at,
-                expires_at = excluded.expires_at
-            WHERE workspace_leases.expires_at <= :acquired_at
-               OR workspace_leases.owner_token = :owner_token;
-            """
+        request = AcquireWorkspaceLeaseRequest(
+            owner_token=owner_token,
+            command=command,
+            lease_timeout_seconds=lease_timeout_seconds,
+            run_id=run_id,
+            hostname=hostname,
+            pid=pid,
+            name=name,
+            now=now,
         )
+        acquired_at, expires_at = _lease_window(request=request)
         with self.engine.begin() as conn:
             result = conn.execute(
-                statement,
-                {
-                    "name": name,
-                    "owner_token": owner_token,
-                    "run_id": run_id,
-                    "pid": pid,
-                    "hostname": hostname,
-                    "command": command,
-                    "acquired_at": acquired_at,
-                    "heartbeat_at": acquired_at,
-                    "expires_at": expires_at,
-                },
+                _workspace_lease_upsert_statement(),
+                _workspace_lease_upsert_params(
+                    request=request,
+                    acquired_at=acquired_at,
+                    expires_at=expires_at,
+                ),
             )
-        lease = self.get_workspace_lease(name=name)
-        if int(result.rowcount or 0) <= 0 or lease is None:
-            raise self._workspace_lease_held_error(
-                name=name,
-                requested_run_id=run_id,
-            )
-        return lease
+        return _acquired_workspace_lease(
+            store=self,
+            request=request,
+            rowcount=int(result.rowcount or 0),
+        )
 
     def renew_workspace_lease(
         self,
@@ -286,3 +257,88 @@ class WorkspaceLeaseStoreMixin:
             expires_at=(lease.expires_at if lease is not None else None),
             requested_run_id=requested_run_id,
         )
+
+
+def _lease_window(
+    *,
+    request: AcquireWorkspaceLeaseRequest,
+) -> tuple[datetime, datetime]:
+    acquired_at = request.now or utc_now()
+    expires_at = acquired_at + timedelta(
+        seconds=max(1, int(request.lease_timeout_seconds))
+    )
+    return acquired_at, expires_at
+
+
+def _acquired_workspace_lease(
+    *,
+    store: Any,
+    request: AcquireWorkspaceLeaseRequest,
+    rowcount: int,
+) -> WorkspaceLease:
+    lease = store.get_workspace_lease(name=request.name)
+    if rowcount <= 0 or lease is None:
+        raise store._workspace_lease_held_error(
+            name=request.name,
+            requested_run_id=request.run_id,
+        )
+    return lease
+
+
+def _workspace_lease_upsert_statement() -> Any:
+    return text(
+        """
+        INSERT INTO workspace_leases (
+            name,
+            owner_token,
+            run_id,
+            pid,
+            hostname,
+            command,
+            acquired_at,
+            heartbeat_at,
+            expires_at
+        )
+        VALUES (
+            :name,
+            :owner_token,
+            :run_id,
+            :pid,
+            :hostname,
+            :command,
+            :acquired_at,
+            :heartbeat_at,
+            :expires_at
+        )
+        ON CONFLICT(name) DO UPDATE SET
+            owner_token = excluded.owner_token,
+            run_id = excluded.run_id,
+            pid = excluded.pid,
+            hostname = excluded.hostname,
+            command = excluded.command,
+            acquired_at = excluded.acquired_at,
+            heartbeat_at = excluded.heartbeat_at,
+            expires_at = excluded.expires_at
+        WHERE workspace_leases.expires_at <= :acquired_at
+           OR workspace_leases.owner_token = :owner_token;
+        """
+    )
+
+
+def _workspace_lease_upsert_params(
+    *,
+    request: AcquireWorkspaceLeaseRequest,
+    acquired_at: datetime,
+    expires_at: datetime,
+) -> dict[str, Any]:
+    return {
+        "name": request.name,
+        "owner_token": request.owner_token,
+        "run_id": request.run_id,
+        "pid": request.pid,
+        "hostname": request.hostname,
+        "command": request.command,
+        "acquired_at": acquired_at,
+        "heartbeat_at": acquired_at,
+        "expires_at": expires_at,
+    }
