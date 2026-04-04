@@ -282,24 +282,27 @@ def _stored_chunk_embedding(
     *,
     existing: ChunkEmbedding | None,
     values: _NormalizedChunkEmbeddingValues,
-) -> ChunkEmbedding:
+) -> tuple[ChunkEmbedding, bool]:
     if existing is None:
-        return ChunkEmbedding(
-            chunk_id=values.chunk_id,
-            model=values.model,
-            dimensions=values.dimensions,
-            vector_json=values.vector_json,
-            text_hash=values.text_hash,
+        return (
+            ChunkEmbedding(
+                chunk_id=values.chunk_id,
+                model=values.model,
+                dimensions=values.dimensions,
+                vector_json=values.vector_json,
+                text_hash=values.text_hash,
+            ),
+            True,
         )
     if (
         str(getattr(existing, "text_hash", "") or "") == values.text_hash
         and str(getattr(existing, "vector_json", "") or "") == values.vector_json
     ):
-        return existing
+        return existing, False
     existing.dimensions = values.dimensions
     existing.vector_json = values.vector_json
     existing.text_hash = values.text_hash
-    return existing
+    return existing, True
 
 
 def coerce_item_document_request(
@@ -881,7 +884,7 @@ class DocumentStoreMixin:
         normalized_values = _normalized_embedding_values(normalized_request)
 
         with Session(self.engine) as session:
-            row = _stored_chunk_embedding(
+            row, changed = _stored_chunk_embedding(
                 existing=_existing_chunk_embedding(
                     session=session,
                     chunk_id=normalized_values.chunk_id,
@@ -889,6 +892,8 @@ class DocumentStoreMixin:
                 ),
                 values=normalized_values,
             )
+            if not changed:
+                return row
             session.add(row)
             self._commit(session)
             session.refresh(row)
