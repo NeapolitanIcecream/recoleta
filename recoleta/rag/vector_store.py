@@ -22,6 +22,231 @@ class VectorRow:
     vector: list[float]
 
 
+@dataclass(frozen=True, slots=True)
+class VectorSearchRequest:
+    query_vector: list[float]
+    where: str
+    limit: int
+    metric: str = "cosine"
+    refine_factor: int = 10
+    nprobes: int = 20
+    select_columns: list[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VectorIndexBuildRequest:
+    build_vector_index: bool = True
+    vector_index_type: str = "IVF_HNSW_SQ"
+    vector_metric: str = "cosine"
+    vector_num_partitions: int | None = None
+    vector_num_sub_vectors: int | None = None
+    vector_m: int = 20
+    vector_ef_construction: int = 300
+    build_scalar_indices: bool = True
+    scalar_columns: list[tuple[str, str]] | None = None
+    replace: bool = True
+    strict: bool = False
+
+
+def _coerce_vector_search_request(
+    *,
+    request: VectorSearchRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> VectorSearchRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return VectorSearchRequest(
+        query_vector=[float(value) for value in values["query_vector"]],
+        where=str(values["where"]),
+        limit=int(values["limit"]),
+        metric=str(values.get("metric") or "cosine"),
+        refine_factor=int(values.get("refine_factor") or 10),
+        nprobes=int(values.get("nprobes") or 20),
+        select_columns=(
+            list(values["select_columns"])
+            if values.get("select_columns") is not None
+            else None
+        ),
+    )
+
+
+def _coerce_vector_index_build_request(
+    *,
+    request: VectorIndexBuildRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> VectorIndexBuildRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return VectorIndexBuildRequest(
+        build_vector_index=bool(values.get("build_vector_index", True)),
+        vector_index_type=str(values.get("vector_index_type") or "IVF_HNSW_SQ"),
+        vector_metric=str(values.get("vector_metric") or "cosine"),
+        vector_num_partitions=values.get("vector_num_partitions"),
+        vector_num_sub_vectors=values.get("vector_num_sub_vectors"),
+        vector_m=int(values.get("vector_m") or 20),
+        vector_ef_construction=int(values.get("vector_ef_construction") or 300),
+        build_scalar_indices=bool(values.get("build_scalar_indices", True)),
+        scalar_columns=(
+            list(values["scalar_columns"])
+            if values.get("scalar_columns") is not None
+            else None
+        ),
+        replace=bool(values.get("replace", True)),
+        strict=bool(values.get("strict", False)),
+    )
+
+
+def _default_scalar_index_plan() -> list[tuple[str, str]]:
+    return [
+        ("chunk_id", "BTREE"),
+        ("doc_id", "BTREE"),
+        ("event_start_ts", "BTREE"),
+        ("event_end_ts", "BTREE"),
+        ("doc_type", "BITMAP"),
+        ("kind", "BITMAP"),
+    ]
+
+
+def _vector_index_error(*, exc: Exception) -> dict[str, str]:
+    return {
+        "kind": "vector",
+        "error_type": type(exc).__name__,
+        "error_message": str(exc),
+    }
+
+
+def _scalar_index_error(
+    *,
+    column: str,
+    index_type: str,
+    exc: Exception,
+) -> dict[str, str]:
+    return {
+        "kind": "scalar",
+        "column": str(column),
+        "index_type": str(index_type),
+        "error_type": type(exc).__name__,
+        "error_message": str(exc),
+    }
+
+
+def _record_index_build_error(
+    *,
+    error: dict[str, str],
+    exc: Exception,
+    errors: list[dict[str, str]],
+    log: Any,
+    strict: bool,
+) -> None:
+    errors.append(error)
+    if error["kind"] == "vector":
+        log.warning(
+            "Vector index build failed error_type={} error={}",
+            error["error_type"],
+            error["error_message"],
+        )
+    else:
+        log.warning(
+            "Scalar index build failed column={} index_type={} error_type={} error={}",
+            error["column"],
+            error["index_type"],
+            error["error_type"],
+            error["error_message"],
+        )
+    if strict:
+        raise exc
+
+
+def _vector_index_stats(
+    *,
+    table: Any,
+    request: VectorIndexBuildRequest,
+    log: Any,
+    errors: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    if not request.build_vector_index:
+        return None
+    try:
+        table.create_index(  # type: ignore[no-untyped-call]
+            metric=str(request.vector_metric),
+            index_type=str(request.vector_index_type),
+            num_partitions=request.vector_num_partitions,
+            num_sub_vectors=request.vector_num_sub_vectors,
+            m=int(request.vector_m),
+            ef_construction=int(request.vector_ef_construction),
+            replace=bool(request.replace),
+        )
+        return {
+            "built": True,
+            "metric": str(request.vector_metric),
+            "index_type": str(request.vector_index_type),
+        }
+    except Exception as exc:  # noqa: BLE001
+        error = _vector_index_error(exc=exc)
+        _record_index_build_error(
+            error=error,
+            exc=exc,
+            errors=errors,
+            log=log,
+            strict=request.strict,
+        )
+        return {
+            "built": False,
+            "metric": str(request.vector_metric),
+            "index_type": str(request.vector_index_type),
+        }
+
+
+def _scalar_index_stats(
+    *,
+    table: Any,
+    request: VectorIndexBuildRequest,
+    scalar_plan: list[tuple[str, str]],
+    log: Any,
+    errors: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    if not request.build_scalar_indices:
+        return None
+    built = 0
+    attempted = 0
+    for column, index_type in scalar_plan:
+        attempted += 1
+        try:
+            table.create_scalar_index(  # type: ignore[no-untyped-call]
+                str(column),
+                replace=bool(request.replace),
+                index_type=str(index_type),
+            )
+            built += 1
+        except Exception as exc:  # noqa: BLE001
+            error = _scalar_index_error(
+                column=str(column),
+                index_type=str(index_type),
+                exc=exc,
+            )
+            _record_index_build_error(
+                error=error,
+                exc=exc,
+                errors=errors,
+                log=log,
+                strict=request.strict,
+            )
+    return {
+        "built_total": built,
+        "attempted_total": attempted,
+        "columns": [{"column": column, "index_type": index_type} for column, index_type in scalar_plan],
+    }
+
+
+def _table_indices_total(table: Any) -> int:
+    try:
+        return len(list(table.list_indices()))  # type: ignore[no-untyped-call]
+    except Exception:
+        return 0
+
+
 class LanceVectorStore:
     def __init__(
         self,
@@ -162,54 +387,48 @@ class LanceVectorStore:
 
     def search(
         self,
-        *,
-        query_vector: list[float],
-        where: str,
-        limit: int,
-        metric: str = "cosine",
-        refine_factor: int = 10,
-        nprobes: int = 20,
-        select_columns: list[str] | None = None,
+        request: VectorSearchRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> list[dict[str, Any]]:
-        normalized_limit = max(1, min(int(limit), 50))
+        resolved_request = _coerce_vector_search_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
+        normalized_limit = max(1, min(int(resolved_request.limit), 50))
         try:
             table = self._open_table()
         except Exception:
             return []
 
         query = (
-            table.search([float(v) for v in query_vector]).metric(metric).where(where)
+            table.search([float(v) for v in resolved_request.query_vector])
+            .metric(resolved_request.metric)
+            .where(resolved_request.where)
         )  # type: ignore[no-untyped-call]
         query = (
-            query.refine_factor(int(refine_factor))
-            .nprobes(int(nprobes))
+            query.refine_factor(int(resolved_request.refine_factor))
+            .nprobes(int(resolved_request.nprobes))
             .limit(normalized_limit)
         )  # type: ignore[no-untyped-call]
-        if select_columns:
-            query = query.select(select_columns)  # type: ignore[no-untyped-call]
+        if resolved_request.select_columns:
+            query = query.select(resolved_request.select_columns)  # type: ignore[no-untyped-call]
         rows = query.to_list()  # type: ignore[no-untyped-call]
         return [dict(row) for row in rows]
 
     def build_indices(
         self,
-        *,
-        build_vector_index: bool = True,
-        vector_index_type: str = "IVF_HNSW_SQ",
-        vector_metric: str = "cosine",
-        vector_num_partitions: int | None = None,
-        vector_num_sub_vectors: int | None = None,
-        vector_m: int = 20,
-        vector_ef_construction: int = 300,
-        build_scalar_indices: bool = True,
-        scalar_columns: list[tuple[str, str]] | None = None,
-        replace: bool = True,
-        strict: bool = False,
+        request: VectorIndexBuildRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> dict[str, Any]:
         """Build vector/scalar indices for the current table.
 
         This is a best-effort operation by default; set strict=True to raise on errors.
         """
 
+        resolved_request = _coerce_vector_index_build_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
         log = logger.bind(module="rag.vector_store", table=self.table_name)
         table = self.try_open_table()
         if table is None:
@@ -221,95 +440,21 @@ class LanceVectorStore:
             }
 
         errors: list[dict[str, str]] = []
-
-        scalar_plan = scalar_columns or [
-            ("chunk_id", "BTREE"),
-            ("doc_id", "BTREE"),
-            ("event_start_ts", "BTREE"),
-            ("event_end_ts", "BTREE"),
-            ("doc_type", "BITMAP"),
-            ("kind", "BITMAP"),
-        ]
-
-        vector_stats: dict[str, Any] | None = None
-        if build_vector_index:
-            try:
-                table.create_index(  # type: ignore[no-untyped-call]
-                    metric=str(vector_metric),
-                    index_type=str(vector_index_type),
-                    num_partitions=vector_num_partitions,
-                    num_sub_vectors=vector_num_sub_vectors,
-                    m=int(vector_m),
-                    ef_construction=int(vector_ef_construction),
-                    replace=bool(replace),
-                )
-                vector_stats = {
-                    "built": True,
-                    "metric": str(vector_metric),
-                    "index_type": str(vector_index_type),
-                }
-            except Exception as exc:  # noqa: BLE001
-                error = {
-                    "kind": "vector",
-                    "error_type": type(exc).__name__,
-                    "error_message": str(exc),
-                }
-                errors.append(error)
-                log.warning(
-                    "Vector index build failed error_type={} error={}",
-                    error["error_type"],
-                    error["error_message"],
-                )
-                vector_stats = {
-                    "built": False,
-                    "metric": str(vector_metric),
-                    "index_type": str(vector_index_type),
-                }
-                if strict:
-                    raise
-
-        scalar_stats: dict[str, Any] | None = None
-        if build_scalar_indices:
-            built = 0
-            attempted = 0
-            for column, index_type in scalar_plan:
-                attempted += 1
-                try:
-                    table.create_scalar_index(  # type: ignore[no-untyped-call]
-                        str(column),
-                        replace=bool(replace),
-                        index_type=str(index_type),
-                    )
-                    built += 1
-                except Exception as exc:  # noqa: BLE001
-                    error = {
-                        "kind": "scalar",
-                        "column": str(column),
-                        "index_type": str(index_type),
-                        "error_type": type(exc).__name__,
-                        "error_message": str(exc),
-                    }
-                    errors.append(error)
-                    log.warning(
-                        "Scalar index build failed column={} index_type={} error_type={} error={}",
-                        error["column"],
-                        error["index_type"],
-                        error["error_type"],
-                        error["error_message"],
-                    )
-                    if strict:
-                        raise
-            scalar_stats = {
-                "built_total": built,
-                "attempted_total": attempted,
-                "columns": [{"column": c, "index_type": t} for c, t in scalar_plan],
-            }
-
-        indices_total = 0
-        try:
-            indices_total = len(list(table.list_indices()))  # type: ignore[no-untyped-call]
-        except Exception:
-            indices_total = 0
+        scalar_plan = resolved_request.scalar_columns or _default_scalar_index_plan()
+        vector_stats = _vector_index_stats(
+            table=table,
+            request=resolved_request,
+            log=log,
+            errors=errors,
+        )
+        scalar_stats = _scalar_index_stats(
+            table=table,
+            request=resolved_request,
+            scalar_plan=scalar_plan,
+            log=log,
+            errors=errors,
+        )
+        indices_total = _table_indices_total(table)
 
         out = {
             "table_exists": True,

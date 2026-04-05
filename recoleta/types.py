@@ -15,6 +15,36 @@ def sha256_hex(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class ItemDraftValues:
+    source: str
+    source_item_id: str | None
+    canonical_url: str
+    title: str
+    authors: list[str] | None = None
+    published_at: datetime | None = None
+    raw_metadata: dict[str, Any] | None = None
+
+
+def _coerce_item_draft_values(
+    *,
+    values: ItemDraftValues | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> ItemDraftValues:
+    if values is not None:
+        return values
+    raw = dict(legacy_kwargs or {})
+    return ItemDraftValues(
+        source=str(raw["source"]),
+        source_item_id=raw.get("source_item_id"),
+        canonical_url=str(raw["canonical_url"]),
+        title=str(raw["title"]),
+        authors=raw.get("authors"),
+        published_at=raw.get("published_at"),
+        raw_metadata=raw.get("raw_metadata"),
+    )
+
+
 @dataclass(slots=True)
 class ItemDraft:
     source: str
@@ -29,30 +59,28 @@ class ItemDraft:
     @classmethod
     def from_values(
         cls,
-        *,
-        source: str,
-        source_item_id: str | None,
-        canonical_url: str,
-        title: str,
-        authors: list[str] | None = None,
-        published_at: datetime | None = None,
-        raw_metadata: dict[str, Any] | None = None,
+        values: ItemDraftValues | None = None,
+        **legacy_kwargs: Any,
     ) -> "ItemDraft":
-        normalized_url = canonical_url.strip()
+        request = _coerce_item_draft_values(
+            values=values,
+            legacy_kwargs=legacy_kwargs,
+        )
+        normalized_url = request.canonical_url.strip()
         if not normalized_url:
             raise ValueError("canonical_url must not be empty")
-        normalized_title = title.strip()
+        normalized_title = request.title.strip()
         if not normalized_title:
             raise ValueError("title must not be empty")
         return cls(
-            source=source,
-            source_item_id=source_item_id,
+            source=request.source,
+            source_item_id=request.source_item_id,
             canonical_url=normalized_url,
             canonical_url_hash=sha256_hex(normalized_url),
             title=normalized_title,
-            authors=authors or [],
-            published_at=published_at,
-            raw_metadata=raw_metadata or {},
+            authors=list(request.authors or []),
+            published_at=request.published_at,
+            raw_metadata=dict(request.raw_metadata or {}),
         )
 
 

@@ -47,34 +47,33 @@ class WorkspaceLeaseStoreMixin:
     engine: Any
 
     def acquire_workspace_lease(
-        self, *, owner_token: str, command: str, lease_timeout_seconds: int,
-        run_id: str | None = None, hostname: str | None = None,
-        pid: int | None = None, name: str = WORKSPACE_LEASE_NAME,
-        now: datetime | None = None,
+        self,
+        request: AcquireWorkspaceLeaseRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> WorkspaceLease:
-        request = AcquireWorkspaceLeaseRequest(
-            owner_token=owner_token,
-            command=command,
-            lease_timeout_seconds=lease_timeout_seconds,
-            run_id=run_id,
-            hostname=hostname,
-            pid=pid,
-            name=name,
-            now=now,
+        resolved_request = request or AcquireWorkspaceLeaseRequest(
+            owner_token=str(legacy_kwargs["owner_token"]),
+            command=str(legacy_kwargs["command"]),
+            lease_timeout_seconds=int(legacy_kwargs["lease_timeout_seconds"]),
+            run_id=legacy_kwargs.get("run_id"),
+            hostname=legacy_kwargs.get("hostname"),
+            pid=legacy_kwargs.get("pid"),
+            name=str(legacy_kwargs.get("name") or WORKSPACE_LEASE_NAME),
+            now=legacy_kwargs.get("now"),
         )
-        acquired_at, expires_at = _lease_window(request=request)
+        acquired_at, expires_at = _lease_window(request=resolved_request)
         with self.engine.begin() as conn:
             result = conn.execute(
                 _workspace_lease_upsert_statement(),
                 _workspace_lease_upsert_params(
-                    request=request,
+                    request=resolved_request,
                     acquired_at=acquired_at,
                     expires_at=expires_at,
                 ),
             )
         return _acquired_workspace_lease(
             store=self,
-            request=request,
+            request=resolved_request,
             rowcount=int(result.rowcount or 0),
         )
 

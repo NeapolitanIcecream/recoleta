@@ -142,6 +142,15 @@ class _TopicCardGridRenderRequest:
     limit: int | None = None
 
 
+@dataclass(slots=True)
+class _TopicCardGridData:
+    topic_counter: Counter[str]
+    trend_counter: Counter[str]
+    idea_counter: Counter[str]
+    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument]
+    label_by_slug: dict[str, str]
+
+
 def _coerce_topic_page_render_request(
     *,
     request: _TopicPageRenderRequest | None = None,
@@ -1405,50 +1414,20 @@ def _render_home_page(
         )
         for document in idea_documents[:4]
     )
-
-    topic_counter: Counter[str] = Counter()
-    topic_trend_counter: Counter[str] = Counter()
-    topic_idea_counter: Counter[str] = Counter()
-    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument] = {}
-    label_by_slug: dict[str, str] = {}
-    for document in documents:
-        for topic in document.topics:
-            cleaned = str(topic).strip()
-            if not cleaned:
-                continue
-            slug = _topic_slug(cleaned)
-            topic_counter[slug] += 1
-            topic_trend_counter[slug] += 1
-            label_by_slug.setdefault(slug, cleaned)
-            _record_latest_document(
-                latest_by_slug=latest_by_topic,
-                slug=slug,
-                document=document,
-            )
-    for document in idea_documents:
-        for topic in document.topics:
-            cleaned = str(topic).strip()
-            if not cleaned:
-                continue
-            slug = _topic_slug(cleaned)
-            topic_counter[slug] += 1
-            topic_idea_counter[slug] += 1
-            label_by_slug.setdefault(slug, cleaned)
-            _record_latest_document(
-                latest_by_slug=latest_by_topic,
-                slug=slug,
-                document=document,
-            )
+    topic_grid_data = _collect_home_page_topic_grid_data(
+        documents=documents,
+        idea_documents=idea_documents,
+    )
 
     topic_cards = _render_topic_card_grid(
         request=_TopicCardGridRenderRequest(
             page_path=page_path,
             topic_pages=topic_pages,
-            label_by_slug=label_by_slug,
-            latest_by_topic=latest_by_topic,
-            topic_counter=topic_counter,
-            trend_counter=topic_trend_counter,
-            idea_counter=topic_idea_counter,
+            label_by_slug=topic_grid_data.label_by_slug,
+            latest_by_topic=topic_grid_data.latest_by_topic,
+            topic_counter=topic_grid_data.topic_counter,
+            trend_counter=topic_grid_data.trend_counter,
+            idea_counter=topic_grid_data.idea_counter,
             limit=12,
         )
     )
@@ -1508,6 +1487,59 @@ def _render_home_page(
             active_nav="home", content_html=content_html, repo_url=RECOLETA_REPO_URL,
         )
     )
+
+
+def _collect_home_page_topic_grid_data(
+    *,
+    documents: list[TrendSiteDocument],
+    idea_documents: list[IdeaSiteDocument],
+) -> _TopicCardGridData:
+    data = _TopicCardGridData(
+        topic_counter=Counter(),
+        trend_counter=Counter(),
+        idea_counter=Counter(),
+        latest_by_topic={},
+        label_by_slug={},
+    )
+    _accumulate_topic_grid_documents(
+        documents=documents,
+        total_counter=data.topic_counter,
+        kind_counter=data.trend_counter,
+        latest_by_topic=data.latest_by_topic,
+        label_by_slug=data.label_by_slug,
+    )
+    _accumulate_topic_grid_documents(
+        documents=idea_documents,
+        total_counter=data.topic_counter,
+        kind_counter=data.idea_counter,
+        latest_by_topic=data.latest_by_topic,
+        label_by_slug=data.label_by_slug,
+    )
+    return data
+
+
+def _accumulate_topic_grid_documents(
+    *,
+    documents: list[TrendSiteDocument] | list[IdeaSiteDocument],
+    total_counter: Counter[str],
+    kind_counter: Counter[str],
+    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument],
+    label_by_slug: dict[str, str],
+) -> None:
+    for document in documents:
+        for topic in document.topics:
+            cleaned = str(topic).strip()
+            if not cleaned:
+                continue
+            slug = _topic_slug(cleaned)
+            total_counter[slug] += 1
+            kind_counter[slug] += 1
+            label_by_slug.setdefault(slug, cleaned)
+            _record_latest_document(
+                latest_by_slug=latest_by_topic,
+                slug=slug,
+                document=document,
+            )
 
 
 def _render_topics_index_page(

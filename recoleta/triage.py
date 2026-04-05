@@ -147,6 +147,46 @@ class _TriageArtifactsContext:
     selected: list[TriageScoredCandidate]
 
 
+@dataclass(slots=True)
+class TriageSelectionRequest:
+    run_id: str
+    candidates: list[TriageCandidate]
+    topics: list[str]
+    limit: int
+    mode: str
+    query_mode: str
+    embedding_model: str
+    embedding_dimensions: int | None
+    min_similarity: float
+    exploration_rate: float
+    recency_floor: int
+    include_debug: bool
+
+
+def _coerce_triage_selection_request(
+    *,
+    request: TriageSelectionRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> TriageSelectionRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return TriageSelectionRequest(
+        run_id=str(values["run_id"]),
+        candidates=list(values["candidates"]),
+        topics=list(values["topics"]),
+        limit=int(values["limit"]),
+        mode=str(values["mode"]),
+        query_mode=str(values["query_mode"]),
+        embedding_model=str(values["embedding_model"]),
+        embedding_dimensions=values.get("embedding_dimensions"),
+        min_similarity=float(values["min_similarity"]),
+        exploration_rate=float(values["exploration_rate"]),
+        recency_floor=int(values["recency_floor"]),
+        include_debug=bool(values["include_debug"]),
+    )
+
+
 class SemanticTriage:
     def __init__(
         self,
@@ -162,68 +202,61 @@ class SemanticTriage:
 
     def select(
         self,
-        *,
-        run_id: str,
-        candidates: list[TriageCandidate],
-        topics: list[str],
-        limit: int,
-        mode: str,
-        query_mode: str,
-        embedding_model: str,
-        embedding_dimensions: int | None,
-        min_similarity: float,
-        exploration_rate: float,
-        recency_floor: int,
-        include_debug: bool,
+        request: TriageSelectionRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> TriageOutput:
+        resolved_request = _coerce_triage_selection_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
         started = time.perf_counter()
-        if limit <= 0 or not candidates:
+        if resolved_request.limit <= 0 or not resolved_request.candidates:
             return _build_early_triage_output(
-                candidates=candidates,
+                candidates=resolved_request.candidates,
                 duration_ms=int((time.perf_counter() - started) * 1000),
                 method="noop",
                 selected=[],
             )
 
-        normalized_topics = _normalize_topics(topics)
+        normalized_topics = _normalize_topics(resolved_request.topics)
         if not normalized_topics:
             return _build_early_triage_output(
-                candidates=candidates,
+                candidates=resolved_request.candidates,
                 duration_ms=int((time.perf_counter() - started) * 1000),
                 method="topics_empty_fallback",
                 selected=[
                     TriageScoredCandidate(candidate=candidate, score=0.0)
-                    for candidate in candidates[:limit]
+                    for candidate in resolved_request.candidates[: resolved_request.limit]
                 ],
             )
         scoring = self._score_candidates(
             context=_EmbeddingRunContext(
-                run_id=run_id,
-                candidates=candidates,
+                run_id=resolved_request.run_id,
+                candidates=resolved_request.candidates,
                 topics=normalized_topics,
-                query_mode=query_mode,
-                embedding_model=embedding_model,
-                embedding_dimensions=embedding_dimensions,
-                include_debug=include_debug,
+                query_mode=resolved_request.query_mode,
+                embedding_model=resolved_request.embedding_model,
+                embedding_dimensions=resolved_request.embedding_dimensions,
+                include_debug=resolved_request.include_debug,
             )
         )
 
         selected, skipped_total = self._select_from_scored(
             scored=scoring.scored,
             config=_TriageSelectionConfig(
-                run_id=run_id,
-                limit=limit,
-                mode=mode,
-                min_similarity=min_similarity,
-                exploration_rate=exploration_rate,
-                recency_floor=recency_floor,
+                run_id=resolved_request.run_id,
+                limit=resolved_request.limit,
+                mode=resolved_request.mode,
+                min_similarity=resolved_request.min_similarity,
+                exploration_rate=resolved_request.exploration_rate,
+                recency_floor=resolved_request.recency_floor,
             ),
         )
 
         duration_ms = int((time.perf_counter() - started) * 1000)
         stats = _build_triage_stats(
             context=_TriageStatsContext(
-                candidates_total=len(candidates),
+                candidates_total=len(resolved_request.candidates),
                 scored_total=len(scoring.scored),
                 selected_total=len(selected),
                 skipped_total=skipped_total,
@@ -234,13 +267,13 @@ class SemanticTriage:
         )
         artifacts = _build_triage_artifacts(
             context=_TriageArtifactsContext(
-                run_id=run_id,
-                include_debug=include_debug,
+                run_id=resolved_request.run_id,
+                include_debug=resolved_request.include_debug,
                 scoring=scoring,
-                mode=mode,
-                min_similarity=min_similarity,
-                exploration_rate=exploration_rate,
-                recency_floor=recency_floor,
+                mode=resolved_request.mode,
+                min_similarity=resolved_request.min_similarity,
+                exploration_rate=resolved_request.exploration_rate,
+                recency_floor=resolved_request.recency_floor,
                 stats=stats,
                 selected=selected,
             )
@@ -466,18 +499,25 @@ class SemanticTriage:
         return scored
 
     @staticmethod
-    def _select_from_scored(
+    def _selection_sort_key(entry: TriageScoredCandidate) -> tuple[float, float]:
+        created_ts = 0.0
+        created_at = getattr(entry.candidate.item, "created_at", None)
+        if created_at is not None:
+            created_ts = float(getattr(created_at, "timestamp")())
+        return (entry.score, created_ts)
+
+    @staticmethod
+    def _normalize_selection_mode(mode: str) -> str:
+        normalized_mode = str(mode or "").strip().lower()
+        return normalized_mode if normalized_mode in {"prioritize", "filter"} else "prioritize"
+
+    @classmethod
+    def _recency_items(
+        cls,
         *,
         scored: list[TriageScoredCandidate],
         config: _TriageSelectionConfig,
-    ) -> tuple[list[TriageScoredCandidate], int]:
-        if config.limit <= 0 or not scored:
-            return [], 0
-
-        normalized_mode = str(config.mode or "").strip().lower()
-        if normalized_mode not in {"prioritize", "filter"}:
-            normalized_mode = "prioritize"
-
+    ) -> tuple[list[TriageScoredCandidate], set[int]]:
         recency_n = max(0, min(int(config.recency_floor), config.limit, len(scored)))
         recency_items = scored[:recency_n]
         recency_ids = {
@@ -485,28 +525,32 @@ class SemanticTriage:
             for item in recency_items
             if item.candidate.item.id is not None
         }
+        return recency_items, recency_ids
 
-        remaining = [
-            entry for entry in scored if entry.candidate.item.id not in recency_ids
-        ]
+    @classmethod
+    def _eligible_entries(
+        cls,
+        *,
+        scored: list[TriageScoredCandidate],
+        normalized_mode: str,
+        min_similarity: float,
+    ) -> tuple[list[TriageScoredCandidate], int]:
+        if normalized_mode != "filter":
+            return scored, 0
+        threshold = max(0.0, min(1.0, float(min_similarity)))
+        eligible = [entry for entry in scored if entry.score >= threshold]
+        skipped_total = sum(1 for entry in scored if entry.score < threshold)
+        return eligible, skipped_total
 
-        eligible = remaining
-        skipped_total = 0
-        if normalized_mode == "filter":
-            threshold = max(0.0, min(1.0, float(config.min_similarity)))
-            eligible = [entry for entry in remaining if entry.score >= threshold]
-            skipped_total = sum(1 for entry in remaining if entry.score < threshold)
-
-        def sort_key(entry: TriageScoredCandidate) -> tuple[float, float]:
-            created_ts = 0.0
-            created_at = getattr(entry.candidate.item, "created_at", None)
-            if created_at is not None:
-                created_ts = float(getattr(created_at, "timestamp")())
-            return (entry.score, created_ts)
-
-        eligible_sorted = sorted(eligible, key=sort_key, reverse=True)
-
-        remaining_slots = max(0, config.limit - len(recency_items))
+    @classmethod
+    def _sample_exploration_entries(
+        cls,
+        *,
+        eligible_sorted: list[TriageScoredCandidate],
+        selected_ids: set[int],
+        remaining_slots: int,
+        config: _TriageSelectionConfig,
+    ) -> list[TriageScoredCandidate]:
         exploration_slots = max(
             0,
             min(
@@ -519,6 +563,53 @@ class SemanticTriage:
             ),
         )
         exploitation_slots = max(0, remaining_slots - exploration_slots)
+        exploration_pool = [
+            entry
+            for entry in eligible_sorted[exploitation_slots:]
+            if entry.candidate.item.id not in selected_ids
+        ]
+        if exploration_slots <= 0 or not exploration_pool:
+            return []
+        rng = random.Random(_stable_seed(config.run_id))
+        return rng.sample(exploration_pool, k=min(exploration_slots, len(exploration_pool)))
+
+    @staticmethod
+    def _select_from_scored(
+        *,
+        scored: list[TriageScoredCandidate],
+        config: _TriageSelectionConfig,
+    ) -> tuple[list[TriageScoredCandidate], int]:
+        if config.limit <= 0 or not scored:
+            return [], 0
+
+        normalized_mode = SemanticTriage._normalize_selection_mode(config.mode)
+        recency_items, recency_ids = SemanticTriage._recency_items(
+            scored=scored,
+            config=config,
+        )
+        remaining = [
+            entry for entry in scored if entry.candidate.item.id not in recency_ids
+        ]
+        eligible, skipped_total = SemanticTriage._eligible_entries(
+            scored=remaining,
+            normalized_mode=normalized_mode,
+            min_similarity=config.min_similarity,
+        )
+        eligible_sorted = sorted(
+            eligible,
+            key=SemanticTriage._selection_sort_key,
+            reverse=True,
+        )
+
+        remaining_slots = max(0, config.limit - len(recency_items))
+        exploration_slots = max(
+            0,
+            min(
+                remaining_slots,
+                int(math.floor(config.limit * max(0.0, float(config.exploration_rate)))),
+            ),
+        )
+        exploitation_slots = max(0, remaining_slots - exploration_slots)
 
         exploitation = eligible_sorted[:exploitation_slots]
         selected_ids = {
@@ -526,21 +617,19 @@ class SemanticTriage:
             for entry in recency_items + exploitation
             if entry.candidate.item.id is not None
         }
-
-        exploration_pool = [
-            entry
-            for entry in eligible_sorted[exploitation_slots:]
-            if entry.candidate.item.id not in selected_ids
-        ]
-        exploration: list[TriageScoredCandidate] = []
-        if exploration_slots > 0 and exploration_pool:
-            rng = random.Random(_stable_seed(config.run_id))
-            exploration = rng.sample(
-                exploration_pool, k=min(exploration_slots, len(exploration_pool))
-            )
+        exploration = SemanticTriage._sample_exploration_entries(
+            eligible_sorted=eligible_sorted,
+            selected_ids=selected_ids,
+            remaining_slots=remaining_slots,
+            config=config,
+        )
 
         selected = recency_items + exploitation + exploration
-        selected = sorted(selected, key=sort_key, reverse=True)
+        selected = sorted(
+            selected,
+            key=SemanticTriage._selection_sort_key,
+            reverse=True,
+        )
         return selected[: config.limit], skipped_total
 
 

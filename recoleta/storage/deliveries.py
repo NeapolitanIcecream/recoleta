@@ -69,6 +69,25 @@ def _trend_delivery_row(
     return existing
 
 
+def _coerce_trend_delivery_upsert_request(
+    *,
+    request: _TrendDeliveryUpsertRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> _TrendDeliveryUpsertRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return _TrendDeliveryUpsertRequest(
+        doc_id=int(values["doc_id"]),
+        channel=str(values["channel"]),
+        destination=str(values["destination"]),
+        content_hash=str(values["content_hash"]),
+        message_id=values.get("message_id"),
+        status=str(values["status"]),
+        error=values.get("error"),
+    )
+
+
 class DeliveryStoreMixin:
     engine: Any
 
@@ -171,26 +190,22 @@ class DeliveryStoreMixin:
             return session.exec(statement).first() is not None
 
     def upsert_trend_delivery(
-        self, *, doc_id: int, channel: str, destination: str, content_hash: str,
-        message_id: str | None, status: str, error: str | None = None,
+        self,
+        request: _TrendDeliveryUpsertRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> TrendDelivery:
         now = utc_now()
-        request = _TrendDeliveryUpsertRequest(
-            doc_id=doc_id,
-            channel=channel,
-            destination=destination,
-            content_hash=content_hash,
-            message_id=message_id,
-            status=status,
-            error=error,
+        resolved_request = _coerce_trend_delivery_upsert_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
         )
         with Session(self.engine) as session:
             existing = _trend_delivery_for_scope(
                 session=session,
-                request=request,
+                request=resolved_request,
             )
             delivery = _trend_delivery_row(
-                request=request,
+                request=resolved_request,
                 existing=existing,
                 now=now,
             )

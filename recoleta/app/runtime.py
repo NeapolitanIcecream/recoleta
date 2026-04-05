@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date
 import importlib
 import os
@@ -309,27 +310,69 @@ def _raise_typer_exit_for_workspace_lock(
     raise typer.Exit(code=1) from None
 
 
+@dataclass(frozen=True, slots=True)
+class _LeaseHeartbeatMonitorConfig:
+    repository: Any
+    run_id: str | None
+    owner_token: str
+    lease_timeout_seconds: int
+    interval_seconds: int
+    log: Any
+    lease_lost_error_cls: type[BaseException]
+    thread_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ManagedRunStartupContext:
+    settings: Any
+    repository: Any
+    logger: Any
+    lock_log: Any
+    log_module: str
+    command: str
+    run_id: str
+    owner_token: str
+    workspace_lease_lost_error: type[BaseException]
+
+
+def _coerce_lease_heartbeat_monitor_config(
+    *,
+    config: _LeaseHeartbeatMonitorConfig | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> _LeaseHeartbeatMonitorConfig:
+    if config is not None:
+        return config
+    values = dict(legacy_kwargs or {})
+    return _LeaseHeartbeatMonitorConfig(
+        repository=values["repository"],
+        run_id=values.get("run_id"),
+        owner_token=str(values["owner_token"]),
+        lease_timeout_seconds=int(values["lease_timeout_seconds"]),
+        interval_seconds=int(values["interval_seconds"]),
+        log=values["log"],
+        lease_lost_error_cls=values["lease_lost_error_cls"],
+        thread_name=str(values["thread_name"]),
+    )
+
+
 class _LeaseHeartbeatMonitor:
     def __init__(
         self,
-        *,
-        repository: Any,
-        run_id: str | None,
-        owner_token: str,
-        lease_timeout_seconds: int,
-        interval_seconds: int,
-        log: Any,
-        lease_lost_error_cls: type[BaseException],
-        thread_name: str,
+        config: _LeaseHeartbeatMonitorConfig | None = None,
+        **legacy_kwargs: Any,
     ) -> None:
-        self._repository = repository
-        self._run_id = run_id
-        self._owner_token = owner_token
-        self._lease_timeout_seconds = lease_timeout_seconds
-        self._interval_seconds = max(1, int(interval_seconds))
-        self._log = log
-        self._lease_lost_error_cls = lease_lost_error_cls
-        self._thread_name = thread_name
+        resolved = _coerce_lease_heartbeat_monitor_config(
+            config=config,
+            legacy_kwargs=legacy_kwargs,
+        )
+        self._repository = resolved.repository
+        self._run_id = resolved.run_id
+        self._owner_token = resolved.owner_token
+        self._lease_timeout_seconds = resolved.lease_timeout_seconds
+        self._interval_seconds = max(1, int(resolved.interval_seconds))
+        self._log = resolved.log
+        self._lease_lost_error_cls = resolved.lease_lost_error_cls
+        self._thread_name = resolved.thread_name
         self._stop_event = Event()
         self._thread: Thread | None = None
         self._fatal_error: BaseException | None = None
@@ -380,6 +423,74 @@ class _LeaseHeartbeatMonitor:
                 )
 
 
+def _build_heartbeat_monitor(
+    *,
+    config: _LeaseHeartbeatMonitorConfig,
+) -> _LeaseHeartbeatMonitor:
+    return _LeaseHeartbeatMonitor(config=config)
+
+
+def _maybe_update_run_context(
+    *,
+    repository: Any,
+    run_id: str,
+    command: str,
+    log: Any,
+) -> None:
+    update_run_context = getattr(repository, "update_run_context", None)
+    if not callable(update_run_context):
+        return
+    try:
+        update_run_context(run_id=run_id, command=command)
+    except Exception:
+        log.exception("Run context update failed during startup")
+
+
+def _start_managed_run_resources(
+    context: _ManagedRunStartupContext,
+) -> tuple[Any, Any, _LeaseHeartbeatMonitor]:
+    recovered_total = context.repository.mark_stale_runs_failed(
+        stale_after_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS
+    )
+    if int(recovered_total or 0) > 0:
+        context.lock_log.warning(
+            "Recovered stale runs recovered_total={}",
+            int(recovered_total),
+        )
+    run = context.repository.create_run(
+        config_fingerprint=context.settings.safe_fingerprint(),
+        run_id=context.run_id,
+    )
+    _maybe_update_run_context(
+        repository=context.repository,
+        run_id=run.id,
+        command=context.command,
+        log=context.lock_log,
+    )
+    heartbeat_monitor = _build_heartbeat_monitor(
+        config=_LeaseHeartbeatMonitorConfig(
+            repository=context.repository,
+            run_id=run.id,
+            owner_token=context.owner_token,
+            lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
+            interval_seconds=_RUN_HEARTBEAT_INTERVAL_SECONDS,
+            log=context.logger.bind(
+                module="cli.runtime.heartbeat",
+                command=context.command,
+                run_id=run.id,
+            ),
+            lease_lost_error_cls=context.workspace_lease_lost_error,
+            thread_name=f"recoleta-heartbeat-{run.id}",
+        ),
+    )
+    heartbeat_monitor.start()
+    return (
+        run,
+        context.logger.bind(module=context.log_module, run_id=run.id),
+        heartbeat_monitor,
+    )
+
+
 def _begin_managed_run(
     *,
     command: str,
@@ -424,38 +535,19 @@ def _begin_managed_run(
         )
 
     try:
-        recovered_total = repository.mark_stale_runs_failed(
-            stale_after_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS
-        )
-        if int(recovered_total or 0) > 0:
-            lock_log.warning(
-                "Recovered stale runs recovered_total={}",
-                int(recovered_total),
+        run, command_log, heartbeat_monitor = _start_managed_run_resources(
+            _ManagedRunStartupContext(
+                settings=settings,
+                repository=repository,
+                logger=logger,
+                lock_log=lock_log,
+                log_module=log_module,
+                command=command,
+                run_id=run_id,
+                owner_token=owner_token,
+                workspace_lease_lost_error=workspace_lease_lost_error,
             )
-        run = repository.create_run(
-            config_fingerprint=settings.safe_fingerprint(),
-            run_id=run_id,
         )
-        update_run_context = getattr(repository, "update_run_context", None)
-        if callable(update_run_context):
-            try:
-                update_run_context(run_id=run.id, command=command)
-            except Exception:
-                lock_log.exception("Run context update failed during startup")
-        command_log = logger.bind(module=log_module, run_id=run.id)
-        heartbeat_monitor = _LeaseHeartbeatMonitor(
-            repository=repository,
-            run_id=run.id,
-            owner_token=owner_token,
-            lease_timeout_seconds=_WORKSPACE_LEASE_TIMEOUT_SECONDS,
-            interval_seconds=_RUN_HEARTBEAT_INTERVAL_SECONDS,
-            log=logger.bind(
-                module="cli.runtime.heartbeat", command=command, run_id=run.id
-            ),
-            lease_lost_error_cls=workspace_lease_lost_error,
-            thread_name=f"recoleta-heartbeat-{run.id}",
-        )
-        heartbeat_monitor.start()
         return (
             settings,
             repository,

@@ -34,6 +34,22 @@ class DbPaths:
     bench_results_path: Path | None
 
 
+@dataclass(frozen=True)
+class _PromptCostRow:
+    arxiv_id: str
+    title: str
+    values: list[str]
+    warnings: list[str]
+
+
+@dataclass(frozen=True)
+class _PromptCostContext:
+    con: sqlite3.Connection
+    analyzer: LiteLLMAnalyzer
+    effective_model: str
+    user_topics: list[str]
+
+
 def _open_db(path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(str(path))
     con.row_factory = sqlite3.Row
@@ -173,6 +189,83 @@ def _markup_stats(text: str, *, max_chars: int = 5000) -> dict[str, Any]:
         "href=": excerpt.count("href="),
         "orcid": excerpt.count("orcid.org"),
     }
+
+
+def _prompt_cost_messages(
+    *,
+    analyzer: LiteLLMAnalyzer,
+    title: str,
+    canonical_url: str,
+    user_topics: list[str],
+    content: str,
+) -> list[dict[str, str]]:
+    prompt = analyzer._build_prompt(  # noqa: SLF001
+        title=title,
+        canonical_url=canonical_url,
+        user_topics=user_topics,
+        content=content,
+    )
+    system_msg = analyzer._build_system_message()  # noqa: SLF001
+    return [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": prompt},
+    ]
+
+
+def _prompt_cost_cell(
+    *,
+    context: _PromptCostContext,
+    item_row: sqlite3.Row,
+    content_type: str,
+) -> tuple[list[str], str | None]:
+    text = _text_for(
+        context.con,
+        item_id=int(item_row["id"]),
+        content_type=content_type,
+    )
+    tok, warn = _safe_token_counter(
+        model=context.effective_model,
+        messages=_prompt_cost_messages(
+            analyzer=context.analyzer,
+            title=str(item_row["title"] or ""),
+            canonical_url=str(item_row["canonical_url"] or ""),
+            user_topics=context.user_topics,
+            content=text,
+        ),
+    )
+    markup = _markup_stats(text)
+    return [str(tok), str(markup.get("lt_per_1k", 0))], warn
+
+
+def _build_prompt_cost_row(
+    *,
+    context: _PromptCostContext,
+    content_types: list[str],
+    item_row: sqlite3.Row,
+) -> _PromptCostRow:
+    title = str(item_row["title"] or "").strip()
+    if len(title) > 56:
+        title = title[:53] + "..."
+
+    row_values: list[str] = []
+    warnings: list[str] = []
+    for content_type in content_types:
+        values, warn = _prompt_cost_cell(
+            context=context,
+            item_row=item_row,
+            content_type=str(content_type),
+        )
+        row_values.extend(values)
+        if warn:
+            warnings.append(
+                f"{item_row['source_item_id'] or item_row['id']} [{content_type}]: {warn}"
+            )
+    return _PromptCostRow(
+        arxiv_id=str(item_row["source_item_id"] or ""),
+        title=title,
+        values=row_values,
+        warnings=warnings,
+    )
 
 
 @app.command()
@@ -397,34 +490,20 @@ def prompt_cost(
             table.add_column(f"{ct}_lt/1k", justify="right")
 
         warnings: list[str] = []
+        prompt_cost_context = _PromptCostContext(
+            con=con,
+            analyzer=analyzer,
+            effective_model=effective_model,
+            user_topics=list(settings.topics) if settings else [],
+        )
         for it in items_rows:
-            title = str(it["title"] or "").strip()
-            if len(title) > 56:
-                title = title[:53] + "..."
-
-            row_values: list[str] = []
-            for ct in content_types:
-                text = _text_for(con, item_id=int(it["id"]), content_type=str(ct))
-                prompt = analyzer._build_prompt(  # noqa: SLF001
-                    title=str(it["title"] or ""),
-                    canonical_url=str(it["canonical_url"] or ""),
-                    user_topics=list(settings.topics) if settings else [],
-                    content=text,
-                )
-                system_msg = analyzer._build_system_message()  # noqa: SLF001
-                tok, warn = _safe_token_counter(
-                    model=effective_model,
-                    messages=[
-                        {"role": "system", "content": system_msg},
-                        {"role": "user", "content": prompt},
-                    ],
-                )
-                if warn:
-                    warnings.append(warn)
-                ms = _markup_stats(text, max_chars=5000)
-                row_values.extend([str(tok), str(ms.get("lt_per_1k", 0))])
-
-            table.add_row(str(it["source_item_id"] or ""), title, *row_values)
+            row = _build_prompt_cost_row(
+                context=prompt_cost_context,
+                content_types=content_types,
+                item_row=it,
+            )
+            table.add_row(row.arxiv_id, row.title, *row.values)
+            warnings.extend(row.warnings)
 
         console.print(table)
         unique_warnings = list(dict.fromkeys(warnings))[:5]

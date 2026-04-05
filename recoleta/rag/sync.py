@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 import time
 from typing import Any
@@ -11,6 +12,52 @@ from recoleta.ports import TrendRepositoryPort
 from recoleta.rag.semantic_search import ensure_summary_vectors_for_period
 from recoleta.rag.search_models import SummaryCorpusWindow, SummaryVectorSyncRequest
 from recoleta.rag.vector_store import LanceVectorStore
+
+
+@dataclass(frozen=True, slots=True)
+class SummaryVectorSyncRunRequest:
+    repository: TrendRepositoryPort
+    vector_store: LanceVectorStore
+    run_id: str
+    doc_type: str
+    period_start: datetime
+    period_end: datetime
+    embedding_model: str
+    embedding_dimensions: int | None
+    max_batch_inputs: int
+    max_batch_chars: int
+    embedding_failure_mode: str = "continue"
+    embedding_max_errors: int = 0
+    page_size: int = 500
+    max_pages: int = 10_000
+    llm_connection: LLMConnectionConfig | None = None
+
+
+def _coerce_summary_vector_sync_run_request(
+    *,
+    request: SummaryVectorSyncRunRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> SummaryVectorSyncRunRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return SummaryVectorSyncRunRequest(
+        repository=values["repository"],
+        vector_store=values["vector_store"],
+        run_id=str(values["run_id"]),
+        doc_type=str(values["doc_type"]),
+        period_start=values["period_start"],
+        period_end=values["period_end"],
+        embedding_model=str(values["embedding_model"]),
+        embedding_dimensions=values.get("embedding_dimensions"),
+        max_batch_inputs=int(values["max_batch_inputs"]),
+        max_batch_chars=int(values["max_batch_chars"]),
+        embedding_failure_mode=str(values.get("embedding_failure_mode") or "continue"),
+        embedding_max_errors=int(values.get("embedding_max_errors") or 0),
+        page_size=int(values.get("page_size") or 500),
+        max_pages=int(values.get("max_pages") or 10_000),
+        llm_connection=values.get("llm_connection"),
+    )
 
 
 def _empty_sync_totals() -> dict[str, float | int]:
@@ -125,37 +172,31 @@ def _record_sync_metrics(
 
 
 def sync_summary_vectors_in_period(
-    *,
-    repository: TrendRepositoryPort,
-    vector_store: LanceVectorStore,
-    run_id: str,
-    doc_type: str,
-    period_start: datetime,
-    period_end: datetime,
-    embedding_model: str,
-    embedding_dimensions: int | None,
-    max_batch_inputs: int,
-    max_batch_chars: int,
-    embedding_failure_mode: str = "continue",
-    embedding_max_errors: int = 0,
-    page_size: int = 500,
-    max_pages: int = 10_000,
-    llm_connection: LLMConnectionConfig | None = None,
+    request: SummaryVectorSyncRunRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> dict[str, Any]:
     """Rebuild/sync vectors by paging through the SQLite corpus window."""
 
-    log = logger.bind(module="rag.sync", run_id=run_id, doc_type=doc_type)
+    resolved_request = _coerce_summary_vector_sync_run_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
+    log = logger.bind(
+        module="rag.sync",
+        run_id=resolved_request.run_id,
+        doc_type=resolved_request.doc_type,
+    )
     started = time.perf_counter()
-    normalized_page = max(1, min(int(page_size), 5000))
-    normalized_max_pages = max(1, int(max_pages))
+    normalized_page = max(1, min(int(resolved_request.page_size), 5000))
+    normalized_max_pages = max(1, int(resolved_request.max_pages))
     totals = _empty_sync_totals()
     window = SummaryCorpusWindow(
-        repository=repository,
-        vector_store=vector_store,
-        run_id=run_id,
-        doc_type=doc_type,
-        period_start=period_start,
-        period_end=period_end,
+        repository=resolved_request.repository,
+        vector_store=resolved_request.vector_store,
+        run_id=resolved_request.run_id,
+        doc_type=resolved_request.doc_type,
+        period_start=resolved_request.period_start,
+        period_end=resolved_request.period_end,
     )
 
     for page in range(normalized_max_pages):
@@ -163,15 +204,15 @@ def sync_summary_vectors_in_period(
         stats = ensure_summary_vectors_for_period(
             request=SummaryVectorSyncRequest(
                 window=window,
-                embedding_model=embedding_model,
-                embedding_dimensions=embedding_dimensions,
-                max_batch_inputs=max_batch_inputs,
-                max_batch_chars=max_batch_chars,
-                embedding_failure_mode=embedding_failure_mode,
-                embedding_max_errors=embedding_max_errors,
+                embedding_model=resolved_request.embedding_model,
+                embedding_dimensions=resolved_request.embedding_dimensions,
+                max_batch_inputs=resolved_request.max_batch_inputs,
+                max_batch_chars=resolved_request.max_batch_chars,
+                embedding_failure_mode=resolved_request.embedding_failure_mode,
+                embedding_max_errors=resolved_request.embedding_max_errors,
                 limit=normalized_page,
                 offset=offset,
-                llm_connection=llm_connection,
+                llm_connection=resolved_request.llm_connection,
             )
         )
         page_chunks = _accumulate_sync_totals(totals, stats=stats)
@@ -180,7 +221,12 @@ def sync_summary_vectors_in_period(
         if page_chunks < normalized_page:
             break
 
-    _record_sync_metrics(repository=repository, run_id=run_id, totals=totals, started=started)
+    _record_sync_metrics(
+        repository=resolved_request.repository,
+        run_id=resolved_request.run_id,
+        totals=totals,
+        started=started,
+    )
 
     out = {
         "chunks_total": int(totals["chunks_total"]),
@@ -194,9 +240,11 @@ def sync_summary_vectors_in_period(
         ),
         "embedding_cost_usd_total": float(totals["embedding_cost_usd_total"]),
         "embedding_cost_missing_total": int(totals["embedding_cost_missing_total"]),
-        "embedding_failure_mode": str(embedding_failure_mode or "").strip().lower()
+        "embedding_failure_mode": str(
+            resolved_request.embedding_failure_mode or ""
+        ).strip().lower()
         or "continue",
-        "embedding_max_errors": max(0, int(embedding_max_errors or 0)),
+        "embedding_max_errors": max(0, int(resolved_request.embedding_max_errors or 0)),
         "page_size": normalized_page,
     }
     log.info("Vector sync finished stats={}", out)
