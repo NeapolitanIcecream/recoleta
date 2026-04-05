@@ -2,7 +2,7 @@
 
 Date: 2026-04-05
 
-Status: In Progress
+Status: Completed
 
 ## Goal
 
@@ -113,3 +113,19 @@ After the closing audit confirms the reduction:
 - branch: `codex/active-hotspot-burndown-wave-3`
 - draft PR title: `[codex] Track active hotspot burndown wave 3`
 - merge title: `refactor(repo): remove the final active hotspot signals`
+
+## Outcome
+
+Closing audit after the implementation and review-fix loop:
+
+- hotspots: `66`
+- active hotspot signals: `0`
+- `refactor_now`: `0`
+- `refactor_soon`: `0`
+- `baseline_diff.new = 0`
+- `baseline_diff.worsened = 0`
+- `baseline_diff.resolved = 0`
+
+The PR also closed the follow-up Codex review regressions around explicit zero
+parameter handling in `recoleta/rag/sync.py` and `recoleta/rag/vector_store.py`
+before merge.
