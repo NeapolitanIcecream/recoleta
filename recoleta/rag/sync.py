@@ -14,6 +14,10 @@ from recoleta.rag.search_models import SummaryCorpusWindow, SummaryVectorSyncReq
 from recoleta.rag.vector_store import LanceVectorStore
 
 
+def _int_with_default(value: Any, *, default: int) -> int:
+    return default if value is None else int(value)
+
+
 @dataclass(frozen=True, slots=True)
 class SummaryVectorSyncRunRequest:
     repository: TrendRepositoryPort
@@ -54,8 +58,8 @@ def _coerce_summary_vector_sync_run_request(
         max_batch_chars=int(values["max_batch_chars"]),
         embedding_failure_mode=str(values.get("embedding_failure_mode") or "continue"),
         embedding_max_errors=int(values.get("embedding_max_errors") or 0),
-        page_size=int(values.get("page_size") or 500),
-        max_pages=int(values.get("max_pages") or 10_000),
+        page_size=_int_with_default(values.get("page_size"), default=500),
+        max_pages=_int_with_default(values.get("max_pages"), default=10_000),
         llm_connection=values.get("llm_connection"),
     )
 

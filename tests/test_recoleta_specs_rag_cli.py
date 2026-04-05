@@ -152,3 +152,43 @@ def test_rag_sync_vectors_prints_billing_report(
     assert "rag sync completed" in result.stdout
     assert "Billing report" in result.stdout
     assert fake_repo.finished == [("run-rag-sync", True)]
+
+
+def test_sync_summary_vectors_preserves_explicit_zero_limits_for_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: explicit zero limits should normalize to 1, not reset to broad defaults."""
+
+    captured_limits: list[tuple[int, int]] = []
+
+    class _MetricRepo:
+        def record_metric(self, **_: object) -> None:
+            return None
+
+    def _fake_ensure_summary_vectors_for_period(*, request):  # type: ignore[no-untyped-def]
+        captured_limits.append((int(request.limit), int(request.offset)))
+        return {"chunks_total": 0}
+
+    monkeypatch.setattr(
+        rag_sync_module,
+        "ensure_summary_vectors_for_period",
+        _fake_ensure_summary_vectors_for_period,
+    )
+
+    stats = rag_sync_module.sync_summary_vectors_in_period(
+        repository=_MetricRepo(),
+        vector_store=SimpleNamespace(),
+        run_id="run-rag-zero-limits",
+        doc_type="item",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 3, 2, tzinfo=UTC),
+        embedding_model="openai/text-embedding-3-small",
+        embedding_dimensions=1536,
+        max_batch_inputs=16,
+        max_batch_chars=8000,
+        page_size=0,
+        max_pages=0,
+    )
+
+    assert stats["page_size"] == 1
+    assert captured_limits == [(1, 0)]
