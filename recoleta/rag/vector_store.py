@@ -8,6 +8,10 @@ from typing import Any
 from loguru import logger
 
 
+def _int_with_default(value: Any, *, default: int) -> int:
+    return default if value is None else int(value)
+
+
 @dataclass(frozen=True, slots=True)
 class VectorRow:
     chunk_id: int
@@ -61,8 +65,8 @@ def _coerce_vector_search_request(
         where=str(values["where"]),
         limit=int(values["limit"]),
         metric=str(values.get("metric") or "cosine"),
-        refine_factor=int(values.get("refine_factor") or 10),
-        nprobes=int(values.get("nprobes") or 20),
+        refine_factor=_int_with_default(values.get("refine_factor"), default=10),
+        nprobes=_int_with_default(values.get("nprobes"), default=20),
         select_columns=(
             list(values["select_columns"])
             if values.get("select_columns") is not None
@@ -85,8 +89,11 @@ def _coerce_vector_index_build_request(
         vector_metric=str(values.get("vector_metric") or "cosine"),
         vector_num_partitions=values.get("vector_num_partitions"),
         vector_num_sub_vectors=values.get("vector_num_sub_vectors"),
-        vector_m=int(values.get("vector_m") or 20),
-        vector_ef_construction=int(values.get("vector_ef_construction") or 300),
+        vector_m=_int_with_default(values.get("vector_m"), default=20),
+        vector_ef_construction=_int_with_default(
+            values.get("vector_ef_construction"),
+            default=300,
+        ),
         build_scalar_indices=bool(values.get("build_scalar_indices", True)),
         scalar_columns=(
             list(values["scalar_columns"])
