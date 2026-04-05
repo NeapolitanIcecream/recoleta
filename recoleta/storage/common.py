@@ -20,39 +20,72 @@ class WorkspaceLeaseError(RuntimeError):
     """Raised when workspace lease operations fail."""
 
 
+@dataclass(frozen=True, slots=True)
+class WorkspaceLeaseHeldDetails:
+    lease_name: str
+    holder_run_id: str | None
+    holder_command: str | None
+    holder_hostname: str | None
+    holder_pid: int | None
+    expires_at: datetime | None
+    requested_run_id: str | None
+
+
+def _coerce_workspace_lease_held_details(
+    *,
+    details: WorkspaceLeaseHeldDetails | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> WorkspaceLeaseHeldDetails:
+    if details is not None:
+        return details
+    values = dict(legacy_kwargs or {})
+    return WorkspaceLeaseHeldDetails(
+        lease_name=str(values["lease_name"]),
+        holder_run_id=values.get("holder_run_id"),
+        holder_command=values.get("holder_command"),
+        holder_hostname=values.get("holder_hostname"),
+        holder_pid=values.get("holder_pid"),
+        expires_at=values.get("expires_at"),
+        requested_run_id=values.get("requested_run_id"),
+    )
+
+
+def _workspace_lease_held_message(details: WorkspaceLeaseHeldDetails) -> str:
+    expires_text = (
+        details.expires_at.isoformat()
+        if isinstance(details.expires_at, datetime)
+        else ""
+    )
+    message_parts = (
+        f"lease={details.lease_name}",
+        f"holder_run_id={details.holder_run_id}" if details.holder_run_id else "",
+        f"holder_command={details.holder_command}" if details.holder_command else "",
+        f"holder_hostname={details.holder_hostname}" if details.holder_hostname else "",
+        f"holder_pid={details.holder_pid}" if details.holder_pid is not None else "",
+        f"expires_at={expires_text}" if expires_text else "",
+    )
+    detail_text = " ".join(part for part in message_parts if part)
+    return f"workspace lease is held {detail_text}".strip()
+
+
 class WorkspaceLeaseHeldError(WorkspaceLeaseError):
     def __init__(
         self,
-        *,
-        lease_name: str,
-        holder_run_id: str | None,
-        holder_command: str | None,
-        holder_hostname: str | None,
-        holder_pid: int | None,
-        expires_at: datetime | None,
-        requested_run_id: str | None,
+        details: WorkspaceLeaseHeldDetails | None = None,
+        **legacy_kwargs: Any,
     ) -> None:
-        self.lease_name = lease_name
-        self.holder_run_id = holder_run_id
-        self.holder_command = holder_command
-        self.holder_hostname = holder_hostname
-        self.holder_pid = holder_pid
-        self.expires_at = expires_at
-        self.requested_run_id = requested_run_id
-        expires_text = expires_at.isoformat() if isinstance(expires_at, datetime) else ""
-        details = " ".join(
-            part
-            for part in (
-                f"lease={lease_name}",
-                f"holder_run_id={holder_run_id}" if holder_run_id else "",
-                f"holder_command={holder_command}" if holder_command else "",
-                f"holder_hostname={holder_hostname}" if holder_hostname else "",
-                f"holder_pid={holder_pid}" if holder_pid is not None else "",
-                f"expires_at={expires_text}" if expires_text else "",
-            )
-            if part
+        resolved = _coerce_workspace_lease_held_details(
+            details=details,
+            legacy_kwargs=legacy_kwargs,
         )
-        super().__init__(f"workspace lease is held {details}".strip())
+        self.lease_name = resolved.lease_name
+        self.holder_run_id = resolved.holder_run_id
+        self.holder_command = resolved.holder_command
+        self.holder_hostname = resolved.holder_hostname
+        self.holder_pid = resolved.holder_pid
+        self.expires_at = resolved.expires_at
+        self.requested_run_id = resolved.requested_run_id
+        super().__init__(_workspace_lease_held_message(resolved))
 
 
 class WorkspaceLeaseLostError(WorkspaceLeaseError):

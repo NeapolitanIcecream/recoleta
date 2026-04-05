@@ -37,6 +37,64 @@ class IdeasAgentDeps:
     llm_connection: LLMConnectionConfig | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TrendIdeasGenerationRequest:
+    repository: TrendRepositoryPort
+    vector_store: LanceVectorStore
+    run_id: str
+    llm_model: str
+    embedding_model: str
+    embedding_dimensions: int | None
+    embedding_batch_max_inputs: int
+    embedding_batch_max_chars: int
+    granularity: str
+    period_start: datetime
+    period_end: datetime
+    trend_payload: TrendPayload
+    trend_snapshot_pack_md: str
+    output_language: str | None = None
+    embedding_failure_mode: str = "continue"
+    embedding_max_errors: int = 0
+    rag_sources: list[dict[str, Any]] | None = None
+    include_debug: bool = False
+    metric_namespace: str = "pipeline.trends.pass.ideas"
+    llm_connection: LLMConnectionConfig | None = None
+
+
+def _coerce_trend_ideas_generation_request(
+    *,
+    request: TrendIdeasGenerationRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> TrendIdeasGenerationRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return TrendIdeasGenerationRequest(
+        repository=values["repository"],
+        vector_store=values["vector_store"],
+        run_id=str(values["run_id"]),
+        llm_model=str(values["llm_model"]),
+        output_language=values.get("output_language"),
+        embedding_model=str(values["embedding_model"]),
+        embedding_dimensions=values.get("embedding_dimensions"),
+        embedding_batch_max_inputs=int(values["embedding_batch_max_inputs"]),
+        embedding_batch_max_chars=int(values["embedding_batch_max_chars"]),
+        embedding_failure_mode=str(values.get("embedding_failure_mode") or "continue"),
+        embedding_max_errors=int(values.get("embedding_max_errors") or 0),
+        granularity=str(values["granularity"]),
+        period_start=values["period_start"],
+        period_end=values["period_end"],
+        trend_payload=values["trend_payload"],
+        trend_snapshot_pack_md=str(values["trend_snapshot_pack_md"]),
+        rag_sources=values.get("rag_sources"),
+        include_debug=bool(values.get("include_debug", False)),
+        metric_namespace=str(
+            values.get("metric_namespace") or "pipeline.trends.pass.ideas"
+        ),
+        llm_connection=values.get("llm_connection"),
+    )
+
+
 def _search_service_from_deps(deps: IdeasAgentDeps) -> SearchService:
     return SearchService(
         repository=deps.repository,
@@ -306,58 +364,43 @@ def _estimate_cost_usd_from_tokens(
 
 
 def generate_trend_ideas_payload(
-    *,
-    repository: TrendRepositoryPort,
-    vector_store: LanceVectorStore,
-    run_id: str,
-    llm_model: str,
-    output_language: str | None = None,
-    embedding_model: str,
-    embedding_dimensions: int | None,
-    embedding_batch_max_inputs: int,
-    embedding_batch_max_chars: int,
-    embedding_failure_mode: str = "continue",
-    embedding_max_errors: int = 0,
-    granularity: str,
-    period_start: datetime,
-    period_end: datetime,
-    trend_payload: TrendPayload,
-    trend_snapshot_pack_md: str,
-    rag_sources: list[dict[str, Any]] | None = None,
-    include_debug: bool = False,
-    metric_namespace: str = "pipeline.trends.pass.ideas",
-    llm_connection: LLMConnectionConfig | None = None,
+    request: TrendIdeasGenerationRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> tuple[TrendIdeasPayload, dict[str, Any] | None]:
-    log = logger.bind(module="rag.ideas_agent", run_id=run_id)
+    resolved_request = _coerce_trend_ideas_generation_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
+    log = logger.bind(module="rag.ideas_agent", run_id=resolved_request.run_id)
     agent = build_trend_ideas_agent(
-        llm_model=llm_model,
-        output_language=output_language,
-        llm_connection=llm_connection,
+        llm_model=resolved_request.llm_model,
+        output_language=resolved_request.output_language,
+        llm_connection=resolved_request.llm_connection,
     )
     deps = IdeasAgentDeps(
-        repository=repository,
-        vector_store=vector_store,
-        run_id=run_id,
-        period_start=period_start,
-        period_end=period_end,
-        rag_sources=rag_sources,
-        embedding_model=embedding_model,
-        embedding_dimensions=embedding_dimensions,
-        embedding_batch_max_inputs=embedding_batch_max_inputs,
-        embedding_batch_max_chars=embedding_batch_max_chars,
-        embedding_failure_mode=str(embedding_failure_mode or "continue"),
-        embedding_max_errors=int(embedding_max_errors or 0),
-        metric_namespace=metric_namespace,
-        llm_connection=llm_connection,
+        repository=resolved_request.repository,
+        vector_store=resolved_request.vector_store,
+        run_id=resolved_request.run_id,
+        period_start=resolved_request.period_start,
+        period_end=resolved_request.period_end,
+        rag_sources=resolved_request.rag_sources,
+        embedding_model=resolved_request.embedding_model,
+        embedding_dimensions=resolved_request.embedding_dimensions,
+        embedding_batch_max_inputs=resolved_request.embedding_batch_max_inputs,
+        embedding_batch_max_chars=resolved_request.embedding_batch_max_chars,
+        embedding_failure_mode=str(resolved_request.embedding_failure_mode or "continue"),
+        embedding_max_errors=int(resolved_request.embedding_max_errors or 0),
+        metric_namespace=resolved_request.metric_namespace,
+        llm_connection=resolved_request.llm_connection,
     )
     prompt = json.dumps(
         build_trend_ideas_prompt_payload(
-            granularity=granularity,
-            period_start=period_start,
-            period_end=period_end,
-            trend_payload=trend_payload,
-            trend_snapshot_pack_md=trend_snapshot_pack_md,
-            rag_sources=rag_sources,
+            granularity=resolved_request.granularity,
+            period_start=resolved_request.period_start,
+            period_end=resolved_request.period_end,
+            trend_payload=resolved_request.trend_payload,
+            trend_snapshot_pack_md=resolved_request.trend_snapshot_pack_md,
+            rag_sources=resolved_request.rag_sources,
         ),
         ensure_ascii=False,
         separators=(",", ":"),
@@ -376,7 +419,7 @@ def generate_trend_ideas_payload(
         "requests": getattr(usage, "requests", None),
     }
     estimated_cost_usd = _estimate_cost_usd_from_tokens(
-        model=llm_model,
+        model=resolved_request.llm_model,
         input_tokens=getattr(usage, "input_tokens", None),
         output_tokens=getattr(usage, "output_tokens", None),
     )
@@ -386,12 +429,12 @@ def generate_trend_ideas_payload(
         "tool_calls_total": tool_calls_total,
         "tool_call_breakdown": tool_call_breakdown,
         "prompt_chars": len(prompt),
-        "trend_snapshot_pack_chars": len(str(trend_snapshot_pack_md or "")),
-        "include_debug": bool(include_debug),
+        "trend_snapshot_pack_chars": len(str(resolved_request.trend_snapshot_pack_md or "")),
+        "include_debug": bool(resolved_request.include_debug),
     }
     log.info(
         "Ideas generation done include_debug={} cost_present={}",
-        bool(include_debug),
+        bool(resolved_request.include_debug),
         estimated_cost_usd is not None,
     )
     return payload, debug
@@ -400,6 +443,7 @@ def generate_trend_ideas_payload(
 __all__ = [
     "IdeasAgentDeps",
     "TrendIdeasPayload",
+    "TrendIdeasGenerationRequest",
     "build_trend_ideas_agent",
     "build_trend_ideas_prompt_payload",
     "generate_trend_ideas_payload",

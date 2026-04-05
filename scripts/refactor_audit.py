@@ -14,7 +14,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Literal, cast
+from typing import Any, Callable, Iterable, Literal, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = 1
@@ -145,6 +145,16 @@ class ScopeLookup:
 
 
 @dataclass(frozen=True)
+class RefactorAuditRunRequest:
+    scope_targets: list[str]
+    out_dir: Path
+    baseline_path: Path
+    update_baseline: bool
+    fail_on_regression: bool
+    config: AuditConfig
+
+
+@dataclass(frozen=True)
 class HotspotSignal:
     tool: Literal["ruff", "lizard", "complexipy"]
     file: str
@@ -157,6 +167,43 @@ class HotspotSignal:
     @property
     def symbol_key(self) -> str:
         return f"{self.file}::{normalize_symbol_key(self.symbol)}"
+
+
+@dataclass(frozen=True)
+class AuditScopeState:
+    files: list[Path]
+    current_scope_files: list[str]
+    is_partial_scope: bool
+    lookup: ScopeLookup
+    raw_dir: Path
+
+
+@dataclass(frozen=True)
+class AuditToolRunResult:
+    ruff_signals: list[HotspotSignal]
+    lizard_signals: list[HotspotSignal]
+    complexipy_signals: list[HotspotSignal]
+    dead_code_candidates: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class _DiffRegressionContext:
+    current_items_by_id: dict[str, dict[str, Any]]
+    baseline_items_by_id: dict[str, dict[str, Any]]
+    kind: str
+    summarize: Callable[[dict[str, Any]], dict[str, Any]]
+    regression_reasons: Callable[[dict[str, Any], dict[str, Any]], list[str]]
+
+
+@dataclass(frozen=True)
+class _AuditReportContext:
+    request: RefactorAuditRunRequest
+    scope_state: AuditScopeState
+    hotspots: list[dict[str, Any]]
+    dead_code_candidates: list[dict[str, Any]]
+    tool_summaries: dict[str, dict[str, Any]]
+    baseline_diff: dict[str, Any]
+    repo_verdict: dict[str, Any]
 
 
 def load_audit_config(*, repo_root: Path = REPO_ROOT) -> AuditConfig:
@@ -668,71 +715,85 @@ def infer_subsystem(rel_path: str) -> str:
     return "other"
 
 
+def _classify_hotspot(values: list[HotspotSignal]) -> str:
+    distinct_warning_plus = {
+        signal.tool for signal in values if SEVERITY_RANK[signal.severity] >= 1
+    }
+    distinct_high_plus = {
+        signal.tool for signal in values if SEVERITY_RANK[signal.severity] >= 2
+    }
+    has_critical_complexity = any(
+        signal.tool in {"lizard", "complexipy"} and signal.severity == "critical"
+        for signal in values
+    )
+    if has_critical_complexity or len(distinct_high_plus) >= 2:
+        return "refactor_now"
+    if any(signal.severity in {"high", "critical"} for signal in values) or len(
+        distinct_warning_plus
+    ) >= 2:
+        return "refactor_soon"
+    return "monitor"
+
+
+def _hotspot_metrics_by_tool(values: list[HotspotSignal]) -> dict[str, dict[str, int]]:
+    metrics_by_tool: dict[str, dict[str, int]] = {}
+    for signal in values:
+        existing = metrics_by_tool.setdefault(signal.tool, {})
+        for key, value in signal.metrics.items():
+            existing[key] = max(existing.get(key, value), value)
+    return metrics_by_tool
+
+
+def _hotspot_signal_payload(values: list[HotspotSignal]) -> list[dict[str, Any]]:
+    return [
+        {
+            "tool": signal.tool,
+            "severity": signal.severity,
+            "symbol": signal.symbol,
+            "line": signal.line,
+            "metrics": signal.metrics,
+            "message": signal.message,
+        }
+        for signal in sorted(
+            values,
+            key=lambda item: (
+                -SEVERITY_RANK[item.severity],
+                item.tool,
+                item.symbol,
+            ),
+        )
+    ]
+
+
+def _aggregate_hotspot_record(
+    *,
+    hotspot_id: str,
+    values: list[HotspotSignal],
+) -> dict[str, Any]:
+    line_candidates = [signal.line for signal in values if signal.line is not None]
+    return {
+        "id": hotspot_id,
+        "file": values[0].file,
+        "symbol": max((signal.symbol for signal in values), key=len),
+        "line": min(line_candidates) if line_candidates else None,
+        "classification": _classify_hotspot(values),
+        "subsystem": infer_subsystem(values[0].file),
+        "tool_count": len({signal.tool for signal in values}),
+        "tools": sorted({signal.tool for signal in values}),
+        "metrics": _hotspot_metrics_by_tool(values),
+        "signals": _hotspot_signal_payload(values),
+    }
+
+
 def aggregate_hotspots(signals: list[HotspotSignal]) -> list[dict[str, Any]]:
     grouped: dict[str, list[HotspotSignal]] = defaultdict(list)
     for signal in signals:
         grouped[signal.symbol_key].append(signal)
 
-    hotspots: list[dict[str, Any]] = []
-    for hotspot_id, values in grouped.items():
-        distinct_warning_plus = {
-            signal.tool for signal in values if SEVERITY_RANK[signal.severity] >= 1
-        }
-        distinct_high_plus = {
-            signal.tool for signal in values if SEVERITY_RANK[signal.severity] >= 2
-        }
-        has_critical_complexity = any(
-            signal.tool in {"lizard", "complexipy"} and signal.severity == "critical"
-            for signal in values
-        )
-        if has_critical_complexity or len(distinct_high_plus) >= 2:
-            classification = "refactor_now"
-        elif any(signal.severity in {"high", "critical"} for signal in values) or len(
-            distinct_warning_plus
-        ) >= 2:
-            classification = "refactor_soon"
-        else:
-            classification = "monitor"
-
-        metrics_by_tool: dict[str, dict[str, int]] = {}
-        for signal in values:
-            existing = metrics_by_tool.setdefault(signal.tool, {})
-            for key, value in signal.metrics.items():
-                existing[key] = max(existing.get(key, value), value)
-
-        display_symbol = max((signal.symbol for signal in values), key=len)
-        line_candidates = [signal.line for signal in values if signal.line is not None]
-        hotspots.append(
-            {
-                "id": hotspot_id,
-                "file": values[0].file,
-                "symbol": display_symbol,
-                "line": min(line_candidates) if line_candidates else None,
-                "classification": classification,
-                "subsystem": infer_subsystem(values[0].file),
-                "tool_count": len({signal.tool for signal in values}),
-                "tools": sorted({signal.tool for signal in values}),
-                "metrics": metrics_by_tool,
-                "signals": [
-                    {
-                        "tool": signal.tool,
-                        "severity": signal.severity,
-                        "symbol": signal.symbol,
-                        "line": signal.line,
-                        "metrics": signal.metrics,
-                        "message": signal.message,
-                    }
-                    for signal in sorted(
-                        values,
-                        key=lambda item: (
-                            -SEVERITY_RANK[item.severity],
-                            item.tool,
-                            item.symbol,
-                        ),
-                    )
-                ],
-            }
-        )
+    hotspots = [
+        _aggregate_hotspot_record(hotspot_id=hotspot_id, values=values)
+        for hotspot_id, values in grouped.items()
+    ]
     hotspots.sort(key=hotspot_sort_key)
     return hotspots
 
@@ -912,110 +973,57 @@ def build_baseline_diff(
 ) -> dict[str, Any]:
     scoped_files = set(scope_files)
     if baseline_report is None:
-        return {
-            "baseline_available": False,
-            "baseline_path": None,
-            "has_regressions": False,
-            "new": [],
-            "worsened": [],
-            "resolved": [],
-        }
+        return _empty_baseline_diff()
 
-    baseline_hotspots = {
-        item["id"]: item
-        for item in baseline_report.get("hotspots", [])
-        if item.get("file") in scoped_files
-    }
+    baseline_hotspots = _baseline_items_by_id(
+        baseline_report=baseline_report,
+        key="hotspots",
+        scoped_files=scoped_files,
+    )
     current_hotspots_by_id = {item["id"]: item for item in current_hotspots}
-    baseline_dead_code = {
-        item["id"]: item
-        for item in baseline_report.get("dead_code_candidates", [])
-        if item.get("file") in scoped_files
-    }
+    baseline_dead_code = _baseline_items_by_id(
+        baseline_report=baseline_report,
+        key="dead_code_candidates",
+        scoped_files=scoped_files,
+    )
     current_dead_code_by_id = {item["id"]: item for item in current_dead_code_candidates}
 
     diff_items = {"new": [], "worsened": [], "resolved": []}
-
-    for hotspot_id, item in current_hotspots_by_id.items():
-        previous = baseline_hotspots.get(hotspot_id)
-        if previous is None:
-            diff_items["new"].append(
-                {
-                    "kind": "hotspot",
-                    "id": hotspot_id,
-                    "file": item["file"],
-                    "symbol": item["symbol"],
-                    "after": summarize_hotspot(item),
-                }
-            )
-            continue
-        reasons = hotspot_regression_reasons(previous, item)
-        if reasons:
-            diff_items["worsened"].append(
-                {
-                    "kind": "hotspot",
-                    "id": hotspot_id,
-                    "file": item["file"],
-                    "symbol": item["symbol"],
-                    "before": summarize_hotspot(previous),
-                    "after": summarize_hotspot(item),
-                    "reasons": reasons,
-                }
-            )
-
-    for hotspot_id, item in baseline_hotspots.items():
-        if hotspot_id not in current_hotspots_by_id:
-            diff_items["resolved"].append(
-                {
-                    "kind": "hotspot",
-                    "id": hotspot_id,
-                    "file": item["file"],
-                    "symbol": item["symbol"],
-                    "before": summarize_hotspot(item),
-                }
-            )
-
-    for candidate_id, item in current_dead_code_by_id.items():
-        previous = baseline_dead_code.get(candidate_id)
-        if previous is None:
-            diff_items["new"].append(
-                {
-                    "kind": "dead_code",
-                    "id": candidate_id,
-                    "file": item["file"],
-                    "symbol": item["symbol"],
-                    "after": summarize_dead_code(item),
-                }
-            )
-            continue
-        reasons = dead_code_regression_reasons(previous, item)
-        if reasons:
-            diff_items["worsened"].append(
-                {
-                    "kind": "dead_code",
-                    "id": candidate_id,
-                    "file": item["file"],
-                    "symbol": item["symbol"],
-                    "before": summarize_dead_code(previous),
-                    "after": summarize_dead_code(item),
-                    "reasons": reasons,
-                }
-            )
-
-    for candidate_id, item in baseline_dead_code.items():
-        if candidate_id not in current_dead_code_by_id:
-            diff_items["resolved"].append(
-                {
-                    "kind": "dead_code",
-                    "id": candidate_id,
-                    "file": item["file"],
-                    "symbol": item["symbol"],
-                    "before": summarize_dead_code(item),
-                }
-            )
-
-    for key in diff_items:
-        diff_items[key].sort(key=lambda item: (item["kind"], item["file"], item["symbol"]))
+    _collect_item_regressions(
+        diff_items=diff_items,
+        context=_DiffRegressionContext(
+            current_items_by_id=current_hotspots_by_id,
+            baseline_items_by_id=baseline_hotspots,
+            kind="hotspot",
+            summarize=summarize_hotspot,
+            regression_reasons=hotspot_regression_reasons,
+        ),
+    )
+    _collect_resolved_items(
+        diff_items=diff_items,
+        current_items_by_id=current_hotspots_by_id,
+        baseline_items_by_id=baseline_hotspots,
+        kind="hotspot",
+        summarize=summarize_hotspot,
+    )
+    _collect_item_regressions(
+        diff_items=diff_items,
+        context=_DiffRegressionContext(
+            current_items_by_id=current_dead_code_by_id,
+            baseline_items_by_id=baseline_dead_code,
+            kind="dead_code",
+            summarize=summarize_dead_code,
+            regression_reasons=dead_code_regression_reasons,
+        ),
+    )
+    _collect_resolved_items(
+        diff_items=diff_items,
+        current_items_by_id=current_dead_code_by_id,
+        baseline_items_by_id=baseline_dead_code,
+        kind="dead_code",
+        summarize=summarize_dead_code,
+    )
+    _sort_diff_items(diff_items)
 
     return {
         "baseline_available": True,
@@ -1025,6 +1033,90 @@ def build_baseline_diff(
         "worsened": diff_items["worsened"],
         "resolved": diff_items["resolved"],
     }
+
+
+def _empty_baseline_diff() -> dict[str, Any]:
+    return {
+        "baseline_available": False,
+        "baseline_path": None,
+        "has_regressions": False,
+        "new": [],
+        "worsened": [],
+        "resolved": [],
+    }
+
+
+def _baseline_items_by_id(
+    *,
+    baseline_report: dict[str, Any],
+    key: str,
+    scoped_files: set[str],
+) -> dict[str, dict[str, Any]]:
+    return {
+        item["id"]: item
+        for item in baseline_report.get(key, [])
+        if item.get("file") in scoped_files
+    }
+
+
+def _collect_item_regressions(
+    *,
+    diff_items: dict[str, list[dict[str, Any]]],
+    context: _DiffRegressionContext,
+) -> None:
+    for item_id, item in context.current_items_by_id.items():
+        previous = context.baseline_items_by_id.get(item_id)
+        if previous is None:
+            diff_items["new"].append(
+                {
+                    "kind": context.kind,
+                    "id": item_id,
+                    "file": item["file"],
+                    "symbol": item["symbol"],
+                    "after": context.summarize(item),
+                }
+            )
+            continue
+        reasons = context.regression_reasons(previous, item)
+        if reasons:
+            diff_items["worsened"].append(
+                {
+                    "kind": context.kind,
+                    "id": item_id,
+                    "file": item["file"],
+                    "symbol": item["symbol"],
+                    "before": context.summarize(previous),
+                    "after": context.summarize(item),
+                    "reasons": reasons,
+                }
+            )
+
+
+def _collect_resolved_items(
+    *,
+    diff_items: dict[str, list[dict[str, Any]]],
+    current_items_by_id: dict[str, dict[str, Any]],
+    baseline_items_by_id: dict[str, dict[str, Any]],
+    kind: str,
+    summarize: Callable[[dict[str, Any]], dict[str, Any]],
+) -> None:
+    for item_id, item in baseline_items_by_id.items():
+        if item_id in current_items_by_id:
+            continue
+        diff_items["resolved"].append(
+            {
+                "kind": kind,
+                "id": item_id,
+                "file": item["file"],
+                "symbol": item["symbol"],
+                "before": summarize(item),
+            }
+        )
+
+
+def _sort_diff_items(diff_items: dict[str, list[dict[str, Any]]]) -> None:
+    for key in diff_items:
+        diff_items[key].sort(key=lambda item: (item["kind"], item["file"], item["symbol"]))
 
 
 def summarize_hotspot(item: dict[str, Any]) -> dict[str, Any]:
@@ -1346,36 +1438,62 @@ def build_baseline_snapshot(
     return snapshot
 
 
-def run_refactor_audit(
+def _coerce_refactor_audit_run_request(
     *,
-    scope_targets: list[str],
-    out_dir: Path,
-    baseline_path: Path,
-    update_baseline: bool,
-    fail_on_regression: bool,
-    config: AuditConfig,
-) -> tuple[int, dict[str, Any]]:
+    request: RefactorAuditRunRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> RefactorAuditRunRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return RefactorAuditRunRequest(
+        scope_targets=list(values["scope_targets"]),
+        out_dir=Path(values["out_dir"]),
+        baseline_path=Path(values["baseline_path"]),
+        update_baseline=bool(values["update_baseline"]),
+        fail_on_regression=bool(values["fail_on_regression"]),
+        config=values["config"],
+    )
+
+
+def _prepare_audit_scope(request: RefactorAuditRunRequest) -> AuditScopeState:
     files = collect_python_files(
-        repo_root=config.repo_root,
-        targets=scope_targets,
-        exclude_patterns=config.exclude,
+        repo_root=request.config.repo_root,
+        targets=request.scope_targets,
+        exclude_patterns=request.config.exclude,
     )
     default_scope_files = collect_python_files(
-        repo_root=config.repo_root,
-        targets=list(config.targets),
-        exclude_patterns=config.exclude,
+        repo_root=request.config.repo_root,
+        targets=list(request.config.targets),
+        exclude_patterns=request.config.exclude,
     )
     if not files:
         raise RuntimeError("No Python files matched the requested scope.")
-    lookup = ScopeLookup.from_files(repo_root=config.repo_root, files=files)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    raw_dir = out_dir / "raw"
+    lookup = ScopeLookup.from_files(repo_root=request.config.repo_root, files=files)
+    request.out_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir = request.out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
+    current_scope_files = [relative_path(path, request.config.repo_root) for path in files]
+    full_scope_file_set = {
+        relative_path(path, request.config.repo_root) for path in default_scope_files
+    }
+    return AuditScopeState(
+        files=files,
+        current_scope_files=current_scope_files,
+        is_partial_scope=set(current_scope_files) != full_scope_file_set,
+        lookup=lookup,
+        raw_dir=raw_dir,
+    )
 
-    file_args = [str(path) for path in files]
 
-    ruff_raw = raw_dir / "ruff.json"
-    ruff_completed = run_command(
+def _run_ruff_audit(
+    *,
+    file_args: list[str],
+    raw_dir: Path,
+    lookup: ScopeLookup,
+    config: AuditConfig,
+) -> list[HotspotSignal]:
+    completed = run_command(
         [
             "ruff",
             "check",
@@ -1388,28 +1506,50 @@ def run_refactor_audit(
         cwd=config.repo_root,
         allowed_returncodes={0, 1},
     )
-    ruff_raw.write_text(ruff_completed.stdout or "[]", encoding="utf-8")
-    ruff_signals = parse_ruff_findings(
-        raw_text=ruff_completed.stdout, lookup=lookup, config=config
+    raw_path = raw_dir / "ruff.json"
+    raw_path.write_text(completed.stdout or "[]", encoding="utf-8")
+    return parse_ruff_findings(
+        raw_text=completed.stdout,
+        lookup=lookup,
+        config=config,
     )
 
-    lizard_raw = raw_dir / "lizard.csv"
-    lizard_completed = run_command(
+
+def _run_lizard_audit(
+    *,
+    file_args: list[str],
+    raw_dir: Path,
+    lookup: ScopeLookup,
+    config: AuditConfig,
+) -> list[HotspotSignal]:
+    completed = run_command(
         ["lizard", *file_args, "-l", "python", "--csv"],
         cwd=config.repo_root,
         allowed_returncodes={0, 1},
     )
-    lizard_raw.write_text(lizard_completed.stdout, encoding="utf-8")
-    lizard_signals = parse_lizard_findings(
-        raw_text=lizard_completed.stdout, lookup=lookup, config=config
+    raw_path = raw_dir / "lizard.csv"
+    raw_path.write_text(completed.stdout, encoding="utf-8")
+    return parse_lizard_findings(
+        raw_text=completed.stdout,
+        lookup=lookup,
+        config=config,
     )
 
-    complexipy_raw = raw_dir / "complexipy.json"
+
+def _run_complexipy_audit(
+    *,
+    file_args: list[str],
+    raw_dir: Path,
+    lookup: ScopeLookup,
+    config: AuditConfig,
+) -> list[HotspotSignal]:
+    raw_path = raw_dir / "complexipy.json"
     with tempfile.TemporaryDirectory(
-        dir=raw_dir, prefix="complexipy-run-"
+        dir=raw_dir,
+        prefix="complexipy-run-",
     ) as complexipy_temp_dir:
         temp_dir_path = Path(complexipy_temp_dir)
-        complexipy_completed = run_command(
+        completed = run_command(
             [
                 "complexipy",
                 *file_args,
@@ -1422,102 +1562,195 @@ def run_refactor_audit(
             cwd=temp_dir_path,
             allowed_returncodes={0, 1},
         )
-        generated_complexipy = list(temp_dir_path.glob("complexipy_results_*.json"))
-        if not generated_complexipy:
+        generated = list(temp_dir_path.glob("complexipy_results_*.json"))
+        if not generated:
             raise RuntimeError(
                 "complexipy did not emit a JSON report. "
-                + (complexipy_completed.stderr.strip() or complexipy_completed.stdout.strip())
+                + (completed.stderr.strip() or completed.stdout.strip())
             )
-        latest_complexipy = max(
-            generated_complexipy, key=lambda path: path.stat().st_mtime_ns
-        )
-        complexipy_raw.write_text(
-            latest_complexipy.read_text(encoding="utf-8"),
+        latest = max(generated, key=lambda path: path.stat().st_mtime_ns)
+        raw_path.write_text(
+            latest.read_text(encoding="utf-8"),
             encoding="utf-8",
         )
-    complexipy_signals = parse_complexipy_findings(
-        raw_text=complexipy_raw.read_text(encoding="utf-8"),
+    return parse_complexipy_findings(
+        raw_text=raw_path.read_text(encoding="utf-8"),
         lookup=lookup,
         config=config,
     )
 
-    vulture_raw = raw_dir / "vulture.txt"
-    vulture_completed = run_command(
-        ["vulture", *file_args, "--min-confidence", str(config.vulture.review_candidate_min)],
+
+def _run_vulture_audit(
+    *,
+    file_args: list[str],
+    raw_dir: Path,
+    lookup: ScopeLookup,
+    config: AuditConfig,
+) -> list[dict[str, Any]]:
+    completed = run_command(
+        [
+            "vulture",
+            *file_args,
+            "--min-confidence",
+            str(config.vulture.review_candidate_min),
+        ],
         cwd=config.repo_root,
         allowed_returncodes={0, 3},
     )
-    vulture_raw.write_text(vulture_completed.stdout, encoding="utf-8")
-    dead_code_candidates = parse_vulture_candidates(
-        raw_text=vulture_completed.stdout, lookup=lookup, config=config
+    raw_path = raw_dir / "vulture.txt"
+    raw_path.write_text(completed.stdout, encoding="utf-8")
+    return parse_vulture_candidates(
+        raw_text=completed.stdout,
+        lookup=lookup,
+        config=config,
     )
 
-    current_scope_files = [relative_path(path, config.repo_root) for path in files]
-    full_scope_file_set = {
-        relative_path(path, config.repo_root) for path in default_scope_files
-    }
-    is_partial_scope = set(current_scope_files) != full_scope_file_set
 
-    hotspots = aggregate_hotspots(ruff_signals + lizard_signals + complexipy_signals)
-    tool_summaries = build_tool_summaries(
-        ruff_signals=ruff_signals,
-        lizard_signals=lizard_signals,
-        complexipy_signals=complexipy_signals,
-        dead_code_candidates=dead_code_candidates,
+def _run_audit_tools(
+    scope_state: AuditScopeState,
+    request: RefactorAuditRunRequest,
+) -> AuditToolRunResult:
+    file_args = [str(path) for path in scope_state.files]
+    return AuditToolRunResult(
+        ruff_signals=_run_ruff_audit(
+            file_args=file_args,
+            raw_dir=scope_state.raw_dir,
+            lookup=scope_state.lookup,
+            config=request.config,
+        ),
+        lizard_signals=_run_lizard_audit(
+            file_args=file_args,
+            raw_dir=scope_state.raw_dir,
+            lookup=scope_state.lookup,
+            config=request.config,
+        ),
+        complexipy_signals=_run_complexipy_audit(
+            file_args=file_args,
+            raw_dir=scope_state.raw_dir,
+            lookup=scope_state.lookup,
+            config=request.config,
+        ),
+        dead_code_candidates=_run_vulture_audit(
+            file_args=file_args,
+            raw_dir=scope_state.raw_dir,
+            lookup=scope_state.lookup,
+            config=request.config,
+        ),
     )
 
-    baseline_report: dict[str, Any] | None = None
-    if baseline_path.exists():
-        baseline_report = json.loads(baseline_path.read_text(encoding="utf-8"))
-        if baseline_report is not None:
-            baseline_report["_baseline_path"] = str(baseline_path)
-    baseline_diff = build_baseline_diff(
-        current_hotspots=hotspots,
-        current_dead_code_candidates=dead_code_candidates,
-        baseline_report=baseline_report,
-        scope_files=current_scope_files,
-    )
-    repo_verdict = build_repo_verdict(hotspots=hotspots, baseline_diff=baseline_diff)
-    summary = build_summary(
-        files=files, hotspots=hotspots, dead_code_candidates=dead_code_candidates
-    )
-    report = {
+
+def _load_baseline_report(baseline_path: Path) -> dict[str, Any] | None:
+    if not baseline_path.exists():
+        return None
+    baseline_report = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline_report["_baseline_path"] = str(baseline_path)
+    return baseline_report
+
+
+def _build_audit_report(
+    context: _AuditReportContext,
+) -> dict[str, Any]:
+    return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "scope": {
-            "requested_targets": scope_targets,
-            "files": current_scope_files,
-            "file_count": len(files),
-            "repo_root": str(config.repo_root),
+            "requested_targets": context.request.scope_targets,
+            "files": context.scope_state.current_scope_files,
+            "file_count": len(context.scope_state.files),
+            "repo_root": str(context.request.config.repo_root),
         },
-        "summary": summary,
-        "repo_verdict": repo_verdict,
-        "tool_summaries": tool_summaries,
-        "hotspots": hotspots,
-        "dead_code_candidates": dead_code_candidates,
-        "baseline_diff": baseline_diff,
-        "recommended_refactor_queue": build_recommended_queue(hotspots),
+        "summary": build_summary(
+            files=context.scope_state.files,
+            hotspots=context.hotspots,
+            dead_code_candidates=context.dead_code_candidates,
+        ),
+        "repo_verdict": context.repo_verdict,
+        "tool_summaries": context.tool_summaries,
+        "hotspots": context.hotspots,
+        "dead_code_candidates": context.dead_code_candidates,
+        "baseline_diff": context.baseline_diff,
+        "recommended_refactor_queue": build_recommended_queue(context.hotspots),
     }
 
+
+def _write_audit_outputs(*, out_dir: Path, report: dict[str, Any]) -> None:
     write_json(out_dir / "report.json", report)
     (out_dir / "report.md").write_text(render_markdown_report(report), encoding="utf-8")
-    if update_baseline:
-        if is_partial_scope and baseline_report is None:
-            raise RuntimeError(
-                "--update-baseline requires an existing baseline when auditing a partial scope."
-            )
-        write_json(
-            baseline_path,
-            build_baseline_snapshot(
-                report,
-                baseline_report=baseline_report if is_partial_scope else None,
-                scope_files=current_scope_files if is_partial_scope else None,
-            ),
-        )
 
-    exit_code = 0
-    if fail_on_regression and baseline_diff["has_regressions"]:
-        exit_code = 1
+
+def _maybe_update_baseline(
+    *,
+    request: RefactorAuditRunRequest,
+    scope_state: AuditScopeState,
+    baseline_report: dict[str, Any] | None,
+    report: dict[str, Any],
+) -> None:
+    if not request.update_baseline:
+        return
+    if scope_state.is_partial_scope and baseline_report is None:
+        raise RuntimeError(
+            "--update-baseline requires an existing baseline when auditing a partial scope."
+        )
+    write_json(
+        request.baseline_path,
+        build_baseline_snapshot(
+            report,
+            baseline_report=baseline_report if scope_state.is_partial_scope else None,
+            scope_files=scope_state.current_scope_files if scope_state.is_partial_scope else None,
+        ),
+    )
+
+
+def run_refactor_audit(
+    request: RefactorAuditRunRequest | None = None,
+    **legacy_kwargs: Any,
+) -> tuple[int, dict[str, Any]]:
+    resolved_request = _coerce_refactor_audit_run_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
+    scope_state = _prepare_audit_scope(resolved_request)
+    tool_run = _run_audit_tools(scope_state, resolved_request)
+    hotspots = aggregate_hotspots(
+        tool_run.ruff_signals
+        + tool_run.lizard_signals
+        + tool_run.complexipy_signals
+    )
+    tool_summaries = build_tool_summaries(
+        ruff_signals=tool_run.ruff_signals,
+        lizard_signals=tool_run.lizard_signals,
+        complexipy_signals=tool_run.complexipy_signals,
+        dead_code_candidates=tool_run.dead_code_candidates,
+    )
+    baseline_report = _load_baseline_report(resolved_request.baseline_path)
+    baseline_diff = build_baseline_diff(
+        current_hotspots=hotspots,
+        current_dead_code_candidates=tool_run.dead_code_candidates,
+        baseline_report=baseline_report,
+        scope_files=scope_state.current_scope_files,
+    )
+    repo_verdict = build_repo_verdict(hotspots=hotspots, baseline_diff=baseline_diff)
+    report = _build_audit_report(
+        _AuditReportContext(
+            request=resolved_request,
+            scope_state=scope_state,
+            hotspots=hotspots,
+            dead_code_candidates=tool_run.dead_code_candidates,
+            tool_summaries=tool_summaries,
+            baseline_diff=baseline_diff,
+            repo_verdict=repo_verdict,
+        )
+    )
+    _write_audit_outputs(out_dir=resolved_request.out_dir, report=report)
+    _maybe_update_baseline(
+        request=resolved_request,
+        scope_state=scope_state,
+        baseline_report=baseline_report,
+        report=report,
+    )
+    exit_code = int(
+        bool(resolved_request.fail_on_regression and baseline_diff["has_regressions"])
+    )
     return exit_code, report
 
 

@@ -795,7 +795,7 @@
       "file": "recoleta/rag/vector_store.py",
       "id": "recoleta/rag/vector_store.py::function::_vector_dims_from_schema",
       "kind": "function",
-      "line": 331,
+      "line": 476,
       "size": null,
       "subsystem": "rag",
       "symbol": "_vector_dims_from_schema"
@@ -806,7 +806,7 @@
       "file": "recoleta/site.py",
       "id": "recoleta/site.py::attribute::string",
       "kind": "attribute",
-      "line": 4295,
+      "line": 4327,
       "size": null,
       "subsystem": "site/render",
       "symbol": "string"
@@ -817,7 +817,7 @@
       "file": "recoleta/site.py",
       "id": "recoleta/site.py::attribute::string",
       "kind": "attribute",
-      "line": 4319,
+      "line": 4351,
       "size": null,
       "subsystem": "site/render",
       "symbol": "string"
@@ -828,7 +828,7 @@
       "file": "recoleta/site.py",
       "id": "recoleta/site.py::attribute::string",
       "kind": "attribute",
-      "line": 4324,
+      "line": 4356,
       "size": null,
       "subsystem": "site/render",
       "symbol": "string"
@@ -839,7 +839,7 @@
       "file": "recoleta/site_deploy.py",
       "id": "recoleta/site_deploy.py::function::deploy_trend_static_site_to_github_pages",
       "kind": "function",
-      "line": 595,
+      "line": 633,
       "size": null,
       "subsystem": "site/render",
       "symbol": "deploy_trend_static_site_to_github_pages"
@@ -872,7 +872,7 @@
       "file": "recoleta/storage/documents.py",
       "id": "recoleta/storage/documents.py::method::get_chunk_embedding",
       "kind": "method",
-      "line": 830,
+      "line": 833,
       "size": null,
       "subsystem": "storage",
       "symbol": "get_chunk_embedding"
@@ -883,7 +883,7 @@
       "file": "recoleta/storage/documents.py",
       "id": "recoleta/storage/documents.py::method::list_chunk_embeddings",
       "kind": "method",
-      "line": 844,
+      "line": 847,
       "size": null,
       "subsystem": "storage",
       "symbol": "list_chunk_embeddings"
@@ -894,7 +894,7 @@
       "file": "recoleta/storage/documents.py",
       "id": "recoleta/storage/documents.py::method::list_summary_chunks_in_period",
       "kind": "method",
-      "line": 741,
+      "line": 744,
       "size": null,
       "subsystem": "storage",
       "symbol": "list_summary_chunks_in_period"
@@ -905,7 +905,7 @@
       "file": "recoleta/storage/documents.py",
       "id": "recoleta/storage/documents.py::method::upsert_chunk_embedding",
       "kind": "method",
-      "line": 871,
+      "line": 874,
       "size": null,
       "subsystem": "storage",
       "symbol": "upsert_chunk_embedding"
@@ -1026,7 +1026,7 @@
       "file": "scripts/inspect_bench_out_db.py",
       "id": "scripts/inspect_bench_out_db.py::attribute::row_factory",
       "kind": "attribute",
-      "line": 39,
+      "line": 55,
       "size": null,
       "subsystem": "other",
       "symbol": "row_factory"
@@ -1043,693 +1043,8 @@
       "symbol": "HOTSPOT_CLASSIFICATIONS"
     }
   ],
-  "generated_at": "2026-04-04T10:49:42.840572+00:00",
+  "generated_at": "2026-04-05T06:43:09.644941+00:00",
   "hotspots": [
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/rag/vector_store.py",
-      "id": "recoleta/rag/vector_store.py::LanceVectorStore::build_indices",
-      "line": 193,
-      "metrics": {
-        "complexipy": {
-          "complexity": 16
-        },
-        "lizard": {
-          "ccn": 15,
-          "length": 136,
-          "nloc": 125,
-          "parameter_count": 12,
-          "token_count": 630
-        }
-      },
-      "signals": [
-        {
-          "line": 193,
-          "message": "CCN=15, NLOC=125, parameter_count=12, length=136",
-          "metrics": {
-            "ccn": 15,
-            "length": 136,
-            "nloc": 125,
-            "parameter_count": 12,
-            "token_count": 630
-          },
-          "severity": "critical",
-          "symbol": "LanceVectorStore::build_indices",
-          "tool": "lizard"
-        },
-        {
-          "line": null,
-          "message": "cognitive complexity=16",
-          "metrics": {
-            "complexity": 16
-          },
-          "severity": "warning",
-          "symbol": "LanceVectorStore::build_indices",
-          "tool": "complexipy"
-        }
-      ],
-      "subsystem": "rag",
-      "symbol": "LanceVectorStore::build_indices",
-      "tool_count": 2,
-      "tools": [
-        "complexipy",
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "scripts/refactor_audit.py",
-      "id": "scripts/refactor_audit.py::run_refactor_audit",
-      "line": 1349,
-      "metrics": {
-        "lizard": {
-          "ccn": 17,
-          "length": 173,
-          "nloc": 163,
-          "parameter_count": 6,
-          "token_count": 876
-        }
-      },
-      "signals": [
-        {
-          "line": 1349,
-          "message": "CCN=17, NLOC=163, parameter_count=6, length=173",
-          "metrics": {
-            "ccn": 17,
-            "length": 173,
-            "nloc": 163,
-            "parameter_count": 6,
-            "token_count": 876
-          },
-          "severity": "critical",
-          "symbol": "run_refactor_audit",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "run_refactor_audit",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/rag/sync.py",
-      "id": "recoleta/rag/sync.py::sync_summary_vectors_in_period",
-      "line": 127,
-      "metrics": {
-        "lizard": {
-          "ccn": 7,
-          "length": 77,
-          "nloc": 72,
-          "parameter_count": 15,
-          "token_count": 418
-        }
-      },
-      "signals": [
-        {
-          "line": 127,
-          "message": "CCN=7, NLOC=72, parameter_count=15, length=77",
-          "metrics": {
-            "ccn": 7,
-            "length": 77,
-            "nloc": 72,
-            "parameter_count": 15,
-            "token_count": 418
-          },
-          "severity": "critical",
-          "symbol": "sync_summary_vectors_in_period",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "rag",
-      "symbol": "sync_summary_vectors_in_period",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/rag/ideas_agent.py",
-      "id": "recoleta/rag/ideas_agent.py::generate_trend_ideas_payload",
-      "line": 308,
-      "metrics": {
-        "lizard": {
-          "ccn": 6,
-          "length": 90,
-          "nloc": 89,
-          "parameter_count": 20,
-          "token_count": 493
-        }
-      },
-      "signals": [
-        {
-          "line": 308,
-          "message": "CCN=6, NLOC=89, parameter_count=20, length=90",
-          "metrics": {
-            "ccn": 6,
-            "length": 90,
-            "nloc": 89,
-            "parameter_count": 20,
-            "token_count": 493
-          },
-          "severity": "critical",
-          "symbol": "generate_trend_ideas_payload",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "rag",
-      "symbol": "generate_trend_ideas_payload",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/triage.py",
-      "id": "recoleta/triage.py::SemanticTriage::select",
-      "line": 163,
-      "metrics": {
-        "lizard": {
-          "ccn": 5,
-          "length": 86,
-          "nloc": 83,
-          "parameter_count": 13,
-          "token_count": 394
-        }
-      },
-      "signals": [
-        {
-          "line": 163,
-          "message": "CCN=5, NLOC=83, parameter_count=13, length=86",
-          "metrics": {
-            "ccn": 5,
-            "length": 86,
-            "nloc": 83,
-            "parameter_count": 13,
-            "token_count": 394
-          },
-          "severity": "critical",
-          "symbol": "SemanticTriage::select",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "SemanticTriage::select",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/storage/leases.py",
-      "id": "recoleta/storage/leases.py::WorkspaceLeaseStoreMixin::acquire_workspace_lease",
-      "line": 49,
-      "metrics": {
-        "lizard": {
-          "ccn": 2,
-          "length": 31,
-          "nloc": 31,
-          "parameter_count": 9,
-          "token_count": 168
-        }
-      },
-      "signals": [
-        {
-          "line": 49,
-          "message": "CCN=2, NLOC=31, parameter_count=9, length=31",
-          "metrics": {
-            "ccn": 2,
-            "length": 31,
-            "nloc": 31,
-            "parameter_count": 9,
-            "token_count": 168
-          },
-          "severity": "critical",
-          "symbol": "WorkspaceLeaseStoreMixin::acquire_workspace_lease",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "storage",
-      "symbol": "WorkspaceLeaseStoreMixin::acquire_workspace_lease",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/site_deploy.py",
-      "id": "recoleta/site_deploy.py::deploy_trend_static_site_to_github_pages",
-      "line": 595,
-      "metrics": {
-        "lizard": {
-          "ccn": 1,
-          "length": 28,
-          "nloc": 28,
-          "parameter_count": 11,
-          "token_count": 171
-        }
-      },
-      "signals": [
-        {
-          "line": 595,
-          "message": "CCN=1, NLOC=28, parameter_count=11, length=28",
-          "metrics": {
-            "ccn": 1,
-            "length": 28,
-            "nloc": 28,
-            "parameter_count": 11,
-            "token_count": 171
-          },
-          "severity": "critical",
-          "symbol": "deploy_trend_static_site_to_github_pages",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "site/render",
-      "symbol": "deploy_trend_static_site_to_github_pages",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_now",
-      "file": "recoleta/app/runtime.py",
-      "id": "recoleta/app/runtime.py::_LeaseHeartbeatMonitor::__init__",
-      "line": 313,
-      "metrics": {
-        "lizard": {
-          "ccn": 1,
-          "length": 23,
-          "nloc": 23,
-          "parameter_count": 9,
-          "token_count": 120
-        }
-      },
-      "signals": [
-        {
-          "line": 313,
-          "message": "CCN=1, NLOC=23, parameter_count=9, length=23",
-          "metrics": {
-            "ccn": 1,
-            "length": 23,
-            "nloc": 23,
-            "parameter_count": 9,
-            "token_count": 120
-          },
-          "severity": "critical",
-          "symbol": "_LeaseHeartbeatMonitor::__init__",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "_LeaseHeartbeatMonitor::__init__",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "scripts/refactor_audit.py",
-      "id": "scripts/refactor_audit.py::build_baseline_diff",
-      "line": 906,
-      "metrics": {
-        "complexipy": {
-          "complexity": 19
-        },
-        "lizard": {
-          "ccn": 20,
-          "length": 122,
-          "nloc": 114,
-          "parameter_count": 4,
-          "token_count": 652
-        },
-        "ruff": {
-          "complexity": 13
-        }
-      },
-      "signals": [
-        {
-          "line": 906,
-          "message": "CCN=20, NLOC=114, parameter_count=4, length=122",
-          "metrics": {
-            "ccn": 20,
-            "length": 122,
-            "nloc": 114,
-            "parameter_count": 4,
-            "token_count": 652
-          },
-          "severity": "high",
-          "symbol": "build_baseline_diff",
-          "tool": "lizard"
-        },
-        {
-          "line": null,
-          "message": "cognitive complexity=19",
-          "metrics": {
-            "complexity": 19
-          },
-          "severity": "warning",
-          "symbol": "build_baseline_diff",
-          "tool": "complexipy"
-        },
-        {
-          "line": 906,
-          "message": "`build_baseline_diff` is too complex (13 > 10)",
-          "metrics": {
-            "complexity": 13
-          },
-          "severity": "warning",
-          "symbol": "build_baseline_diff",
-          "tool": "ruff"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "build_baseline_diff",
-      "tool_count": 3,
-      "tools": [
-        "complexipy",
-        "lizard",
-        "ruff"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "scripts/inspect_bench_out_db.py",
-      "id": "scripts/inspect_bench_out_db.py::prompt_cost",
-      "line": 356,
-      "metrics": {
-        "complexipy": {
-          "complexity": 17
-        },
-        "lizard": {
-          "ccn": 18,
-          "length": 85,
-          "nloc": 79,
-          "parameter_count": 2,
-          "token_count": 548
-        }
-      },
-      "signals": [
-        {
-          "line": null,
-          "message": "cognitive complexity=17",
-          "metrics": {
-            "complexity": 17
-          },
-          "severity": "warning",
-          "symbol": "prompt_cost",
-          "tool": "complexipy"
-        },
-        {
-          "line": 356,
-          "message": "CCN=18, NLOC=79, parameter_count=2, length=85",
-          "metrics": {
-            "ccn": 18,
-            "length": 85,
-            "nloc": 79,
-            "parameter_count": 2,
-            "token_count": 548
-          },
-          "severity": "warning",
-          "symbol": "prompt_cost",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "prompt_cost",
-      "tool_count": 2,
-      "tools": [
-        "complexipy",
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "scripts/refactor_audit.py",
-      "id": "scripts/refactor_audit.py::aggregate_hotspots",
-      "line": 671,
-      "metrics": {
-        "lizard": {
-          "ccn": 23,
-          "length": 67,
-          "nloc": 64,
-          "parameter_count": 1,
-          "token_count": 458
-        }
-      },
-      "signals": [
-        {
-          "line": 671,
-          "message": "CCN=23, NLOC=64, parameter_count=1, length=67",
-          "metrics": {
-            "ccn": 23,
-            "length": 67,
-            "nloc": 64,
-            "parameter_count": 1,
-            "token_count": 458
-          },
-          "severity": "high",
-          "symbol": "aggregate_hotspots",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "aggregate_hotspots",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/triage.py",
-      "id": "recoleta/triage.py::SemanticTriage::_select_from_scored",
-      "line": 469,
-      "metrics": {
-        "lizard": {
-          "ccn": 20,
-          "length": 76,
-          "nloc": 61,
-          "parameter_count": 2,
-          "token_count": 434
-        }
-      },
-      "signals": [
-        {
-          "line": 469,
-          "message": "CCN=20, NLOC=61, parameter_count=2, length=76",
-          "metrics": {
-            "ccn": 20,
-            "length": 76,
-            "nloc": 61,
-            "parameter_count": 2,
-            "token_count": 434
-          },
-          "severity": "high",
-          "symbol": "SemanticTriage::_select_from_scored",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "SemanticTriage::_select_from_scored",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/site.py",
-      "id": "recoleta/site.py::_render_home_page",
-      "line": 1384,
-      "metrics": {
-        "lizard": {
-          "ccn": 10,
-          "length": 127,
-          "nloc": 121,
-          "parameter_count": 4,
-          "token_count": 467
-        }
-      },
-      "signals": [
-        {
-          "line": 1384,
-          "message": "CCN=10, NLOC=121, parameter_count=4, length=127",
-          "metrics": {
-            "ccn": 10,
-            "length": 127,
-            "nloc": 121,
-            "parameter_count": 4,
-            "token_count": 467
-          },
-          "severity": "high",
-          "symbol": "_render_home_page",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "site/render",
-      "symbol": "_render_home_page",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/storage/common.py",
-      "id": "recoleta/storage/common.py::WorkspaceLeaseHeldError::__init__",
-      "line": 24,
-      "metrics": {
-        "lizard": {
-          "ccn": 9,
-          "length": 32,
-          "nloc": 32,
-          "parameter_count": 8,
-          "token_count": 170
-        }
-      },
-      "signals": [
-        {
-          "line": 24,
-          "message": "CCN=9, NLOC=32, parameter_count=8, length=32",
-          "metrics": {
-            "ccn": 9,
-            "length": 32,
-            "nloc": 32,
-            "parameter_count": 8,
-            "token_count": 170
-          },
-          "severity": "high",
-          "symbol": "WorkspaceLeaseHeldError::__init__",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "storage",
-      "symbol": "WorkspaceLeaseHeldError::__init__",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/rag/vector_store.py",
-      "id": "recoleta/rag/vector_store.py::LanceVectorStore::search",
-      "line": 163,
-      "metrics": {
-        "lizard": {
-          "ccn": 5,
-          "length": 29,
-          "nloc": 28,
-          "parameter_count": 8,
-          "token_count": 177
-        }
-      },
-      "signals": [
-        {
-          "line": 163,
-          "message": "CCN=5, NLOC=28, parameter_count=8, length=29",
-          "metrics": {
-            "ccn": 5,
-            "length": 29,
-            "nloc": 28,
-            "parameter_count": 8,
-            "token_count": 177
-          },
-          "severity": "high",
-          "symbol": "LanceVectorStore::search",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "rag",
-      "symbol": "LanceVectorStore::search",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/types.py",
-      "id": "recoleta/types.py::ItemDraft::from_values",
-      "line": 30,
-      "metrics": {
-        "lizard": {
-          "ccn": 5,
-          "length": 27,
-          "nloc": 27,
-          "parameter_count": 8,
-          "token_count": 137
-        }
-      },
-      "signals": [
-        {
-          "line": 30,
-          "message": "CCN=5, NLOC=27, parameter_count=8, length=27",
-          "metrics": {
-            "ccn": 5,
-            "length": 27,
-            "nloc": 27,
-            "parameter_count": 8,
-            "token_count": 137
-          },
-          "severity": "high",
-          "symbol": "ItemDraft::from_values",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "ItemDraft::from_values",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "refactor_soon",
-      "file": "recoleta/storage/deliveries.py",
-      "id": "recoleta/storage/deliveries.py::DeliveryStoreMixin::upsert_trend_delivery",
-      "line": 173,
-      "metrics": {
-        "lizard": {
-          "ccn": 1,
-          "length": 28,
-          "nloc": 28,
-          "parameter_count": 8,
-          "token_count": 142
-        }
-      },
-      "signals": [
-        {
-          "line": 173,
-          "message": "CCN=1, NLOC=28, parameter_count=8, length=28",
-          "metrics": {
-            "ccn": 1,
-            "length": 28,
-            "nloc": 28,
-            "parameter_count": 8,
-            "token_count": 142
-          },
-          "severity": "high",
-          "symbol": "DeliveryStoreMixin::upsert_trend_delivery",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "storage",
-      "symbol": "DeliveryStoreMixin::upsert_trend_delivery",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
     {
       "classification": "monitor",
       "file": "recoleta/rag/corpus_tools.py",
@@ -1937,7 +1252,7 @@
       "classification": "monitor",
       "file": "scripts/refactor_audit.py",
       "id": "scripts/refactor_audit.py::build_recommended_queue",
-      "line": 835,
+      "line": 896,
       "metrics": {
         "lizard": {
           "ccn": 19,
@@ -1949,7 +1264,7 @@
       },
       "signals": [
         {
-          "line": 835,
+          "line": 896,
           "message": "CCN=19, NLOC=68, parameter_count=1, length=69",
           "metrics": {
             "ccn": 19,
@@ -1974,7 +1289,7 @@
       "classification": "monitor",
       "file": "recoleta/site.py",
       "id": "recoleta/site.py::export_trend_static_site",
-      "line": 4482,
+      "line": 4514,
       "metrics": {
         "lizard": {
           "ccn": 16,
@@ -1986,7 +1301,7 @@
       },
       "signals": [
         {
-          "line": 4482,
+          "line": 4514,
           "message": "CCN=16, NLOC=113, parameter_count=5, length=121",
           "metrics": {
             "ccn": 16,
@@ -2048,7 +1363,7 @@
       "classification": "monitor",
       "file": "recoleta/app/runtime.py",
       "id": "recoleta/app/runtime.py::_print_ingest_html_document_summary",
-      "line": 146,
+      "line": 147,
       "metrics": {
         "lizard": {
           "ccn": 16,
@@ -2060,7 +1375,7 @@
       },
       "signals": [
         {
-          "line": 146,
+          "line": 147,
           "message": "CCN=16, NLOC=67, parameter_count=3, length=70",
           "metrics": {
             "ccn": 16,
@@ -2085,7 +1400,7 @@
       "classification": "monitor",
       "file": "recoleta/storage/leases.py",
       "id": "recoleta/storage/leases.py::WorkspaceLeaseStoreMixin::collect_workspace_stats",
-      "line": 152,
+      "line": 151,
       "metrics": {
         "lizard": {
           "ccn": 15,
@@ -2097,7 +1412,7 @@
       },
       "signals": [
         {
-          "line": 152,
+          "line": 151,
           "message": "CCN=15, NLOC=84, parameter_count=3, length=91",
           "metrics": {
             "ccn": 15,
@@ -2344,7 +1659,7 @@
       "classification": "monitor",
       "file": "scripts/refactor_audit.py",
       "id": "scripts/refactor_audit.py::render_markdown_report",
-      "line": 1152,
+      "line": 1244,
       "metrics": {
         "lizard": {
           "ccn": 11,
@@ -2356,7 +1671,7 @@
       },
       "signals": [
         {
-          "line": 1152,
+          "line": 1244,
           "message": "CCN=11, NLOC=113, parameter_count=1, length=117",
           "metrics": {
             "ccn": 11,
@@ -2455,7 +1770,7 @@
       "classification": "monitor",
       "file": "recoleta/site.py",
       "id": "recoleta/site.py::_load_idea_site_documents",
-      "line": 4030,
+      "line": 4062,
       "metrics": {
         "lizard": {
           "ccn": 10,
@@ -2467,7 +1782,7 @@
       },
       "signals": [
         {
-          "line": 4030,
+          "line": 4062,
           "message": "CCN=10, NLOC=96, parameter_count=3, length=98",
           "metrics": {
             "ccn": 10,
@@ -2483,43 +1798,6 @@
       ],
       "subsystem": "site/render",
       "symbol": "_load_idea_site_documents",
-      "tool_count": 1,
-      "tools": [
-        "lizard"
-      ]
-    },
-    {
-      "classification": "monitor",
-      "file": "recoleta/app/runtime.py",
-      "id": "recoleta/app/runtime.py::_begin_managed_run",
-      "line": 383,
-      "metrics": {
-        "lizard": {
-          "ccn": 10,
-          "length": 92,
-          "nloc": 90,
-          "parameter_count": 4,
-          "token_count": 450
-        }
-      },
-      "signals": [
-        {
-          "line": 383,
-          "message": "CCN=10, NLOC=90, parameter_count=4, length=92",
-          "metrics": {
-            "ccn": 10,
-            "length": 92,
-            "nloc": 90,
-            "parameter_count": 4,
-            "token_count": 450
-          },
-          "severity": "warning",
-          "symbol": "_begin_managed_run",
-          "tool": "lizard"
-        }
-      ],
-      "subsystem": "other",
-      "symbol": "_begin_managed_run",
       "tool_count": 1,
       "tools": [
         "lizard"
@@ -2566,7 +1844,7 @@
       "classification": "monitor",
       "file": "recoleta/site.py",
       "id": "recoleta/site.py::_render_detail_page",
-      "line": 970,
+      "line": 979,
       "metrics": {
         "lizard": {
           "ccn": 9,
@@ -2578,7 +1856,7 @@
       },
       "signals": [
         {
-          "line": 970,
+          "line": 979,
           "message": "CCN=9, NLOC=109, parameter_count=5, length=113",
           "metrics": {
             "ccn": 9,
@@ -2640,7 +1918,7 @@
       "classification": "monitor",
       "file": "recoleta/site.py",
       "id": "recoleta/site.py::_render_item_page",
-      "line": 1085,
+      "line": 1094,
       "metrics": {
         "lizard": {
           "ccn": 9,
@@ -2652,7 +1930,7 @@
       },
       "signals": [
         {
-          "line": 1085,
+          "line": 1094,
           "message": "CCN=9, NLOC=87, parameter_count=3, length=87",
           "metrics": {
             "ccn": 9,
@@ -2823,6 +2101,43 @@
     },
     {
       "classification": "monitor",
+      "file": "recoleta/site.py",
+      "id": "recoleta/site.py::_render_home_page",
+      "line": 1393,
+      "metrics": {
+        "lizard": {
+          "ccn": 4,
+          "length": 97,
+          "nloc": 92,
+          "parameter_count": 4,
+          "token_count": 300
+        }
+      },
+      "signals": [
+        {
+          "line": 1393,
+          "message": "CCN=4, NLOC=92, parameter_count=4, length=97",
+          "metrics": {
+            "ccn": 4,
+            "length": 97,
+            "nloc": 92,
+            "parameter_count": 4,
+            "token_count": 300
+          },
+          "severity": "warning",
+          "symbol": "_render_home_page",
+          "tool": "lizard"
+        }
+      ],
+      "subsystem": "site/render",
+      "symbol": "_render_home_page",
+      "tool_count": 1,
+      "tools": [
+        "lizard"
+      ]
+    },
+    {
+      "classification": "monitor",
       "file": "recoleta/analyzer.py",
       "id": "recoleta/analyzer.py::LiteLLMAnalyzer::analyze",
       "line": 122,
@@ -2899,7 +2214,7 @@
       "classification": "monitor",
       "file": "recoleta/site_deploy.py",
       "id": "recoleta/site_deploy.py::_publish_site_snapshot",
-      "line": 322,
+      "line": 360,
       "metrics": {
         "lizard": {
           "ccn": 4,
@@ -2911,7 +2226,7 @@
       },
       "signals": [
         {
-          "line": 322,
+          "line": 360,
           "message": "CCN=4, NLOC=43, parameter_count=6, length=50",
           "metrics": {
             "ccn": 4,
@@ -2936,7 +2251,7 @@
       "classification": "monitor",
       "file": "recoleta/storage/deliveries.py",
       "id": "recoleta/storage/deliveries.py::DeliveryStoreMixin::upsert_delivery",
-      "line": 111,
+      "line": 130,
       "metrics": {
         "lizard": {
           "ccn": 4,
@@ -2948,7 +2263,7 @@
       },
       "signals": [
         {
-          "line": 111,
+          "line": 130,
           "message": "CCN=4, NLOC=42, parameter_count=7, length=43",
           "metrics": {
             "ccn": 4,
@@ -3010,7 +2325,7 @@
       "classification": "monitor",
       "file": "recoleta/rag/ideas_agent.py",
       "id": "recoleta/rag/ideas_agent.py::build_trend_ideas_prompt_payload",
-      "line": 127,
+      "line": 185,
       "metrics": {
         "lizard": {
           "ccn": 4,
@@ -3022,7 +2337,7 @@
       },
       "signals": [
         {
-          "line": 127,
+          "line": 185,
           "message": "CCN=4, NLOC=22, parameter_count=6, length=22",
           "metrics": {
             "ccn": 4,
@@ -3935,7 +3250,7 @@
       "classification": "monitor",
       "file": "recoleta/rag/ideas_agent.py",
       "id": "recoleta/rag/ideas_agent.py::build_trend_ideas_agent.list_docs",
-      "line": 185,
+      "line": 243,
       "metrics": {
         "lizard": {
           "ccn": 1,
@@ -3947,7 +3262,7 @@
       },
       "signals": [
         {
-          "line": 185,
+          "line": 243,
           "message": "CCN=1, NLOC=15, parameter_count=6, length=16",
           "metrics": {
             "ccn": 1,
@@ -4110,24 +3425,11 @@
       "top_hotspots": []
     },
     {
-      "hotspot_count": 2,
-      "refactor_now": 1,
-      "refactor_soon": 1,
+      "hotspot_count": 0,
+      "refactor_now": 0,
+      "refactor_soon": 0,
       "subsystem": "site/render",
-      "top_hotspots": [
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/site_deploy.py",
-          "id": "recoleta/site_deploy.py::deploy_trend_static_site_to_github_pages",
-          "symbol": "deploy_trend_static_site_to_github_pages"
-        },
-        {
-          "classification": "refactor_soon",
-          "file": "recoleta/site.py",
-          "id": "recoleta/site.py::_render_home_page",
-          "symbol": "_render_home_page"
-        }
-      ]
+      "top_hotspots": []
     },
     {
       "hotspot_count": 0,
@@ -4144,30 +3446,11 @@
       "top_hotspots": []
     },
     {
-      "hotspot_count": 3,
-      "refactor_now": 1,
-      "refactor_soon": 2,
+      "hotspot_count": 0,
+      "refactor_now": 0,
+      "refactor_soon": 0,
       "subsystem": "storage",
-      "top_hotspots": [
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/storage/leases.py",
-          "id": "recoleta/storage/leases.py::WorkspaceLeaseStoreMixin::acquire_workspace_lease",
-          "symbol": "WorkspaceLeaseStoreMixin::acquire_workspace_lease"
-        },
-        {
-          "classification": "refactor_soon",
-          "file": "recoleta/storage/common.py",
-          "id": "recoleta/storage/common.py::WorkspaceLeaseHeldError::__init__",
-          "symbol": "WorkspaceLeaseHeldError::__init__"
-        },
-        {
-          "classification": "refactor_soon",
-          "file": "recoleta/storage/deliveries.py",
-          "id": "recoleta/storage/deliveries.py::DeliveryStoreMixin::upsert_trend_delivery",
-          "symbol": "DeliveryStoreMixin::upsert_trend_delivery"
-        }
-      ]
+      "top_hotspots": []
     },
     {
       "hotspot_count": 0,
@@ -4177,81 +3460,25 @@
       "top_hotspots": []
     },
     {
-      "hotspot_count": 4,
-      "refactor_now": 3,
-      "refactor_soon": 1,
+      "hotspot_count": 0,
+      "refactor_now": 0,
+      "refactor_soon": 0,
       "subsystem": "rag",
-      "top_hotspots": [
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/rag/vector_store.py",
-          "id": "recoleta/rag/vector_store.py::LanceVectorStore::build_indices",
-          "symbol": "LanceVectorStore::build_indices"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/rag/sync.py",
-          "id": "recoleta/rag/sync.py::sync_summary_vectors_in_period",
-          "symbol": "sync_summary_vectors_in_period"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/rag/ideas_agent.py",
-          "id": "recoleta/rag/ideas_agent.py::generate_trend_ideas_payload",
-          "symbol": "generate_trend_ideas_payload"
-        },
-        {
-          "classification": "refactor_soon",
-          "file": "recoleta/rag/vector_store.py",
-          "id": "recoleta/rag/vector_store.py::LanceVectorStore::search",
-          "symbol": "LanceVectorStore::search"
-        }
-      ]
+      "top_hotspots": []
     },
     {
-      "hotspot_count": 8,
-      "refactor_now": 3,
-      "refactor_soon": 5,
+      "hotspot_count": 0,
+      "refactor_now": 0,
+      "refactor_soon": 0,
       "subsystem": "other",
-      "top_hotspots": [
-        {
-          "classification": "refactor_now",
-          "file": "scripts/refactor_audit.py",
-          "id": "scripts/refactor_audit.py::run_refactor_audit",
-          "symbol": "run_refactor_audit"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/triage.py",
-          "id": "recoleta/triage.py::SemanticTriage::select",
-          "symbol": "SemanticTriage::select"
-        },
-        {
-          "classification": "refactor_now",
-          "file": "recoleta/app/runtime.py",
-          "id": "recoleta/app/runtime.py::_LeaseHeartbeatMonitor::__init__",
-          "symbol": "_LeaseHeartbeatMonitor::__init__"
-        },
-        {
-          "classification": "refactor_soon",
-          "file": "scripts/refactor_audit.py",
-          "id": "scripts/refactor_audit.py::build_baseline_diff",
-          "symbol": "build_baseline_diff"
-        },
-        {
-          "classification": "refactor_soon",
-          "file": "scripts/inspect_bench_out_db.py",
-          "id": "scripts/inspect_bench_out_db.py::prompt_cost",
-          "symbol": "prompt_cost"
-        }
-      ]
+      "top_hotspots": []
     }
   ],
   "repo_verdict": {
     "has_regressions": false,
-    "refactor_now_total": 8,
-    "status": "strained",
-    "summary": "Existing hotspots remain, but the current scope did not regress."
+    "refactor_now_total": 0,
+    "status": "stable",
+    "summary": "No refactor-now hotspots or regressions were detected."
   },
   "schema_version": 1,
   "scope": {
@@ -4422,29 +3649,29 @@
     "dead_code_candidates_total": 94,
     "dead_code_high_confidence_total": 0,
     "files_scanned": 154,
-    "hotspots_total": 83,
+    "hotspots_total": 66,
     "monitor_total": 66,
-    "refactor_now_total": 8,
-    "refactor_soon_total": 9
+    "refactor_now_total": 0,
+    "refactor_soon_total": 0
   },
   "tool_summaries": {
     "complexipy": {
       "critical": 0,
-      "findings_total": 10,
+      "findings_total": 7,
       "high": 0,
-      "warning": 10
+      "warning": 7
     },
     "lizard": {
-      "critical": 8,
-      "findings_total": 74,
-      "high": 8,
-      "warning": 58
+      "critical": 0,
+      "findings_total": 57,
+      "high": 0,
+      "warning": 57
     },
     "ruff": {
       "critical": 0,
-      "findings_total": 3,
+      "findings_total": 2,
       "high": 0,
-      "warning": 3
+      "warning": 2
     },
     "vulture": {
       "findings_total": 94,

@@ -54,6 +54,44 @@ class GitHubPagesDeployResult:
 
 
 @dataclass(frozen=True, slots=True)
+class GitHubPagesDeployRequest:
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec]
+    repo_dir: Path
+    remote: str = "origin"
+    branch: str = _DEFAULT_DEPLOY_BRANCH
+    limit: int | None = None
+    commit_message: str | None = None
+    cname: str | None = None
+    pages_config_mode: str = "auto"
+    force: bool = True
+    default_language_code: str | None = None
+    item_export_scope: str = "linked"
+
+
+def _coerce_github_pages_deploy_request(
+    *,
+    request: GitHubPagesDeployRequest | None = None,
+    legacy_kwargs: dict[str, Any] | None = None,
+) -> GitHubPagesDeployRequest:
+    if request is not None:
+        return request
+    values = dict(legacy_kwargs or {})
+    return GitHubPagesDeployRequest(
+        input_dir=values["input_dir"],
+        repo_dir=values["repo_dir"],
+        remote=str(values.get("remote") or "origin"),
+        branch=str(values.get("branch") or _DEFAULT_DEPLOY_BRANCH),
+        limit=values.get("limit"),
+        commit_message=values.get("commit_message"),
+        cname=values.get("cname"),
+        pages_config_mode=str(values.get("pages_config_mode") or "auto"),
+        force=bool(values.get("force", True)),
+        default_language_code=values.get("default_language_code"),
+        item_export_scope=str(values.get("item_export_scope") or "linked"),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class _DeployPreparationRequest:
     input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec]
     site_dir: Path
@@ -593,29 +631,30 @@ def _configure_pages_source(
 
 
 def deploy_trend_static_site_to_github_pages(
-    *, input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
-    repo_dir: Path, remote: str = "origin", branch: str = _DEFAULT_DEPLOY_BRANCH,
-    limit: int | None = None, commit_message: str | None = None,
-    cname: str | None = None, pages_config_mode: str = "auto", force: bool = True,
-    default_language_code: str | None = None, item_export_scope: str = "linked",
+    request: GitHubPagesDeployRequest | None = None,
+    **legacy_kwargs: Any,
 ) -> GitHubPagesDeployResult:
+    resolved_request = _coerce_github_pages_deploy_request(
+        request=request,
+        legacy_kwargs=legacy_kwargs,
+    )
     context = _resolved_deploy_context(
-        repo_dir=repo_dir,
-        remote=remote,
-        branch=branch,
-        pages_config_mode=pages_config_mode,
+        repo_dir=resolved_request.repo_dir,
+        remote=resolved_request.remote,
+        branch=resolved_request.branch,
+        pages_config_mode=resolved_request.pages_config_mode,
     )
     prepared = _prepare_deploy_site(
         context=context,
         request=_deploy_preparation_request(
-            input_dir=input_dir,
-            limit=limit,
-            default_language_code=default_language_code,
-            item_export_scope=item_export_scope,
-            cname=cname,
+            input_dir=resolved_request.input_dir,
+            limit=resolved_request.limit,
+            default_language_code=resolved_request.default_language_code,
+            item_export_scope=resolved_request.item_export_scope,
+            cname=resolved_request.cname,
         ),
-        commit_message=commit_message,
-        force=force,
+        commit_message=resolved_request.commit_message,
+        force=resolved_request.force,
     )
     result = _deploy_result(context=context, prepared=prepared)
     _log_deploy_result(result=result)
