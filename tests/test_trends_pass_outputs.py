@@ -282,7 +282,9 @@ def test_trends_records_projection_failure_metric_without_failing_stage(
         _ = kwargs
         raise RuntimeError("simulated markdown projection failure")
 
-    monkeypatch.setattr(trends_stage, "write_markdown_trend_note", _explode_markdown_note)
+    monkeypatch.setattr(
+        trends_stage, "write_markdown_trend_note", _explode_markdown_note
+    )
 
     result = service.trends(
         run_id="run-trend-projection-failure",
@@ -298,7 +300,9 @@ def test_trends_records_projection_failure_metric_without_failing_stage(
     metric_values = _metric_values(
         repository=repository, run_id="run-trend-projection-failure"
     )
-    assert metric_values["pipeline.trends.projection.trend_markdown.failed_total"] == 1.0
+    assert (
+        metric_values["pipeline.trends.projection.trend_markdown.failed_total"] == 1.0
+    )
 
 
 def test_trends_records_obsidian_projection_metric_when_note_is_written(

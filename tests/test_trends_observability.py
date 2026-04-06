@@ -230,7 +230,10 @@ def test_semantic_search_emits_doc_type_duration_metrics(
     )
 
     assert len(hits) == 1
-    metric_names = {metric.name for metric in repository.list_metrics(run_id="run-search-observability")}
+    metric_names = {
+        metric.name
+        for metric in repository.list_metrics(run_id="run-search-observability")
+    }
     assert "pipeline.trends.semantic_index.trend.duration_ms" in metric_names
     assert "pipeline.trends.semantic_search.trend.duration_ms" in metric_names
 
@@ -301,7 +304,10 @@ def test_week_trends_emit_backfill_progress_logs_and_stage_duration_metrics(
         loguru_logger.remove(sink_id)
 
     assert result.granularity == "week"
-    metric_names = {metric.name for metric in repository.list_metrics(run_id="run-week-observability")}
+    metric_names = {
+        metric.name
+        for metric in repository.list_metrics(run_id="run-week-observability")
+    }
     assert "pipeline.trends.overview_pack.duration_ms" in metric_names
     assert "pipeline.trends.history.pack.duration_ms" in metric_names
     assert "pipeline.trends.generate.duration_ms" in metric_names

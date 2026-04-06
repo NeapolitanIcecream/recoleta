@@ -268,7 +268,9 @@ def _render_presentation_evidence_lines(entry: dict[str, Any]) -> list[str]:
     return [f"- {rendered}", *[f"  - {reason}" for reason in reasons]]
 
 
-def _normalized_payload_ideas(payload: TrendIdeasPayload, *, max_count: int = 3) -> list[Any]:
+def _normalized_payload_ideas(
+    payload: TrendIdeasPayload, *, max_count: int = 3
+) -> list[Any]:
     return list(payload.ideas or [])[:max_count]
 
 
@@ -403,7 +405,8 @@ def _write_ideas_note(*, write_input: _IdeasNoteWriteInput) -> Path:
         output_language=write_input.output_language,
     )
     resolved_display_language_code = (
-        resolve_presentation_language_code(language_code=write_input.language_code) or "en"
+        resolve_presentation_language_code(language_code=write_input.language_code)
+        or "en"
     )
     note_path = resolve_ideas_note_path(
         note_dir=note_dir,

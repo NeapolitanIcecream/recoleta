@@ -461,7 +461,11 @@ class PipelineService:
         metrics: list[MetricPoint],
     ) -> int:
         normalized = [
-            MetricPoint(name=str(metric.name or "").strip(), value=metric.value, unit=metric.unit)
+            MetricPoint(
+                name=str(metric.name or "").strip(),
+                value=metric.value,
+                unit=metric.unit,
+            )
             for metric in metrics
             if str(metric.name or "").strip()
         ]
@@ -722,7 +726,9 @@ class PipelineService:
         _AnalyzeParallelismStats,
     ]:
         if not work_items:
-            return [], _AnalyzeParallelismStats(requested=0, effective=0, max_inflight=0)
+            return [], _AnalyzeParallelismStats(
+                requested=0, effective=0, max_inflight=0
+            )
 
         requested = self._requested_analyze_parallelism()
         effective = min(requested, len(work_items))
@@ -763,7 +769,9 @@ class PipelineService:
                     try:
                         result, debug = _invoke(work_item)
                     except Exception as exc:  # noqa: BLE001
-                        outcomes.append(_AnalyzeCallFailure(work_item=work_item, error=exc))
+                        outcomes.append(
+                            _AnalyzeCallFailure(work_item=work_item, error=exc)
+                        )
                     else:
                         outcomes.append(
                             _AnalyzeCallSuccess(

@@ -491,9 +491,7 @@ def _content_text_for_item(
         item_id=item_id,
         content_type=content_type,
     )
-    return (
-        (getattr(content, "text", None) or "").strip() if content is not None else ""
-    )
+    return (getattr(content, "text", None) or "").strip() if content is not None else ""
 
 
 def _prompt_token_inputs(
@@ -641,7 +639,9 @@ def _append_report_pairs(
         lines.append(f"- {label}: {value}")
 
 
-def _append_duration_section(lines: list[str], *, method_results: dict[str, Any]) -> None:
+def _append_duration_section(
+    lines: list[str], *, method_results: dict[str, Any]
+) -> None:
     lines.append("### durations\n")
     durations = method_results.get("durations") or {}
     _append_report_pairs(
@@ -670,7 +670,10 @@ def _append_diagnostics_section(
     _append_report_pairs(
         lines,
         values=[
-            ("html_document_items_total", enrich_result.get("html_document_items_total")),
+            (
+                "html_document_items_total",
+                enrich_result.get("html_document_items_total"),
+            ),
             ("pandoc_failed_total", enrich_result.get("pandoc_failed_total")),
             (
                 "pandoc_warning_items_total",
@@ -755,7 +758,9 @@ def _append_tokens_section(lines: list[str], *, method_results: dict[str, Any]) 
     lines.append("")
 
 
-def _append_per_item_section(lines: list[str], *, method_results: dict[str, Any]) -> None:
+def _append_per_item_section(
+    lines: list[str], *, method_results: dict[str, Any]
+) -> None:
     lines.append("### per-item\n")
     per_items = method_results.get("per_item") or []
     for item in per_items:
@@ -824,8 +829,12 @@ def _build_cli_config(args: argparse.Namespace) -> _BenchCliConfig:
         out_dir=out_dir,
         n=_validated_int(label="--n", value=args.n, minimum=1, maximum=50),
         candidates=max(5, int(args.candidates)),
-        repeat=_validated_int(label="--repeat", value=args.repeat, minimum=1, maximum=50),
-        warmup=_validated_int(label="--warmup", value=args.warmup, minimum=0, maximum=20),
+        repeat=_validated_int(
+            label="--repeat", value=args.repeat, minimum=1, maximum=50
+        ),
+        warmup=_validated_int(
+            label="--warmup", value=args.warmup, minimum=0, maximum=20
+        ),
         concurrency=_validated_int(
             label="--concurrency",
             value=args.concurrency,
@@ -854,7 +863,9 @@ def _load_existing_frozen_drafts(
         raise ValueError(f"--drafts must point to a non-empty JSON list: {drafts_path}")
     frozen = [FrozenDraft(**cast(dict[str, Any], item)) for item in loaded]  # type: ignore[arg-type]
     if len(frozen) < n:
-        raise ValueError(f"--drafts has only {len(frozen)} items, but --n={n} was requested.")
+        raise ValueError(
+            f"--drafts has only {len(frozen)} items, but --n={n} was requested."
+        )
     selected = frozen[:n]
     _json_dump(out_dir / "drafts.json", [draft.__dict__ for draft in selected])
     return selected, {
@@ -1014,20 +1025,27 @@ def _merge_per_item_tokens(
                 ),
                 "status": (
                     "ok"
-                    if (html_part.get("status") == "ok" and md_part.get("status") == "ok")
+                    if (
+                        html_part.get("status") == "ok"
+                        and md_part.get("status") == "ok"
+                    )
                     else "partial"
                 ),
                 "html_full_tokens": html_part.get("full_tokens"),
                 "html_prompt_tokens": html_part.get("prompt_tokens"),
                 "md_full_tokens": md_part.get("full_tokens"),
                 "md_prompt_tokens": md_part.get("prompt_tokens"),
-                "enrich_item_ms": (per_item_by_id.get(item_id) or {}).get("enrich_item_ms"),
+                "enrich_item_ms": (per_item_by_id.get(item_id) or {}).get(
+                    "enrich_item_ms"
+                ),
             }
         )
     return merged_per_item
 
 
-def _token_results(snapshot: _MethodRunSnapshot) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _token_results(
+    snapshot: _MethodRunSnapshot,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     html_tokens_summary, html_tokens_per_item = _compute_tokens(
         service=snapshot.service,
         items=snapshot.items,
@@ -1130,12 +1148,12 @@ def _print_summary_table(*, console: Console, results: dict[str, Any]) -> None:
     table.add_column("md_minus_html_full", justify="right")
     for method in ("html_document",):
         method_results = results["methods"][method]
-        html_sum = ((method_results.get("tokens") or {}).get("html_document") or {}).get(
-            "full_tokens_sum"
-        )
-        md_sum = ((method_results.get("tokens") or {}).get("html_document_md") or {}).get(
-            "full_tokens_sum"
-        )
+        html_sum = (
+            (method_results.get("tokens") or {}).get("html_document") or {}
+        ).get("full_tokens_sum")
+        md_sum = (
+            (method_results.get("tokens") or {}).get("html_document_md") or {}
+        ).get("full_tokens_sum")
         delta = ((method_results.get("tokens") or {}).get("delta") or {}).get(
             "full_tokens_sum_delta"
         )

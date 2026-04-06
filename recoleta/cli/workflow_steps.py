@@ -65,7 +65,9 @@ def localization_targets_configured(settings: Any) -> bool:
         except Exception:
             return False
     localization = getattr(settings, "localization", None)
-    return bool(getattr(localization, "targets", []) if localization is not None else [])
+    return bool(
+        getattr(localization, "targets", []) if localization is not None else []
+    )
 
 
 @contextmanager
@@ -96,7 +98,9 @@ def delivery_mode_override(*, settings: Any, delivery_mode: str) -> Iterator[Non
 
 
 def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
-    run_translation = cli._import_symbol("recoleta.translation", attr_name="run_translation")
+    run_translation = cli._import_symbol(
+        "recoleta.translation", attr_name="run_translation"
+    )
     totals = {
         "scanned": 0,
         "translated": 0,
@@ -105,7 +109,9 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
         "failed": 0,
     }
     normalized_include = ",".join(request.include)
-    for granularity in request.granularities if request.granularities is not None else [None]:
+    for granularity in (
+        request.granularities if request.granularities is not None else [None]
+    ):
         result = run_translation(
             repository=request.repository,
             settings=request.settings,
@@ -156,7 +162,9 @@ def run_site_deploy_step(*, request: SiteDeployStepRequest) -> dict[str, Any]:
         "recoleta.site_deploy",
         attr_name="deploy_trend_static_site_to_github_pages",
     )
-    normalized_item_export_scope = normalize_item_export_scope(request.item_export_scope)
+    normalized_item_export_scope = normalize_item_export_scope(
+        request.item_export_scope
+    )
     deploy_kwargs: dict[str, Any] = {
         "input_dir": site_input_dir_from_settings(request.settings),
         "repo_dir": (request.repo_dir or Path.cwd()).expanduser().resolve(),
@@ -183,7 +191,9 @@ def run_site_deploy_step(*, request: SiteDeployStepRequest) -> dict[str, Any]:
     }
 
 
-def _execute_ingest_step(invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_ingest_step(
+    invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     result = cli._invoke_service_method(
         context.service,
         "prepare",
@@ -197,7 +207,9 @@ def _execute_ingest_step(invocation: WorkflowInvocation, context: WorkflowExecut
     }
 
 
-def _execute_analyze_step(invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_analyze_step(
+    invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     result = cli._invoke_service_method(
         context.service,
         "analyze",
@@ -212,13 +224,17 @@ def _execute_analyze_step(invocation: WorkflowInvocation, context: WorkflowExecu
     }
 
 
-def _execute_publish_step(invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_publish_step(
+    invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     normalized_delivery_mode = str(context.delivery_mode or "").strip().lower() or "all"
     if normalized_delivery_mode == "none" and context.publish_requested_explicitly:
         normalized_delivery_mode = "all"
     if normalized_delivery_mode == "none":
         return {"status": "skipped", "reason": "delivery_mode=none"}
-    with delivery_mode_override(settings=context.settings, delivery_mode=normalized_delivery_mode):
+    with delivery_mode_override(
+        settings=context.settings, delivery_mode=normalized_delivery_mode
+    ):
         result = cli._invoke_service_method(
             context.service,
             "publish",
@@ -234,7 +250,9 @@ def _execute_publish_step(invocation: WorkflowInvocation, context: WorkflowExecu
     }
 
 
-def _execute_trends_step(invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_trends_step(
+    invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     granularity = invocation.step_id.split(":", 1)[1]
     result = cli._invoke_service_method(
         context.service,
@@ -253,7 +271,9 @@ def _execute_trends_step(invocation: WorkflowInvocation, context: WorkflowExecut
     }
 
 
-def _execute_ideas_step(invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_ideas_step(
+    invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     granularity = invocation.step_id.split(":", 1)[1]
     result = cli._invoke_service_method(
         context.service,
@@ -269,7 +289,9 @@ def _execute_ideas_step(invocation: WorkflowInvocation, context: WorkflowExecuti
     }
 
 
-def _execute_translate_step(_invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_translate_step(
+    _invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     return run_translation_step(
         request=TranslationStepRequest(
             repository=context.repository,
@@ -279,21 +301,26 @@ def _execute_translate_step(_invocation: WorkflowInvocation, context: WorkflowEx
             period_start=context.target_period_start,
             period_end=context.target_period_end,
             all_history=not (
-                context.target_period_start is not None or context.target_period_end is not None
+                context.target_period_start is not None
+                or context.target_period_end is not None
             ),
             run_id=context.run_id,
         )
     )
 
 
-def _execute_site_build_step(_invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_site_build_step(
+    _invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     return run_site_build_step(
         settings=context.settings,
         item_export_scope=context.item_export_scope,
     )
 
 
-def _execute_site_deploy_step(_invocation: WorkflowInvocation, context: WorkflowExecutionContext) -> dict[str, Any]:
+def _execute_site_deploy_step(
+    _invocation: WorkflowInvocation, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     return run_site_deploy_step(
         request=SiteDeployStepRequest(
             settings=context.settings,
@@ -321,7 +348,9 @@ _TRENDS_STEPS = {STEP_TRENDS_DAY, STEP_TRENDS_WEEK, STEP_TRENDS_MONTH}
 _IDEAS_STEPS = {STEP_IDEAS_DAY, STEP_IDEAS_WEEK, STEP_IDEAS_MONTH}
 
 
-def execute_step(invocation: WorkflowInvocation, *, context: WorkflowExecutionContext) -> dict[str, Any]:
+def execute_step(
+    invocation: WorkflowInvocation, *, context: WorkflowExecutionContext
+) -> dict[str, Any]:
     handler = _STEP_EXECUTORS.get(invocation.step_id)
     if handler is not None:
         return handler(invocation, context)

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from recoleta.passes.base import PassInputRef, PassOutputEnvelope, PassStatus
 from recoleta.trends import TrendPayload
+
 TREND_IDEAS_PASS_KIND = "trend_ideas"
 TREND_IDEAS_SCHEMA_VERSION = 1
 TREND_IDEA_KIND_VALUES = (
@@ -256,7 +257,11 @@ def _snapshot_pack_header_lines(
 
 
 def _snapshot_pack_highlight_lines(*, highlights: list[str] | None) -> list[str]:
-    rendered = [f"- {normalized}" for highlight in highlights or [] if (normalized := str(highlight or "").strip())]
+    rendered = [
+        f"- {normalized}"
+        for highlight in highlights or []
+        if (normalized := str(highlight or "").strip())
+    ]
     return ["", "### Highlights", *rendered] if rendered else []
 
 

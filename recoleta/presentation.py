@@ -26,7 +26,9 @@ _VALID_SOURCE_TYPES = {
 }
 _VALID_CONFIDENCE_LEVELS = {"high", "medium", "low"}
 
-_HISTORY_WINDOW_MENTION_RE = re.compile(r"(?<![\w\[])(prev_\d+)(?![\w\]])", re.IGNORECASE)
+_HISTORY_WINDOW_MENTION_RE = re.compile(
+    r"(?<![\w\[])(prev_\d+)(?![\w\]])", re.IGNORECASE
+)
 _PLACEHOLDER_TOKEN_RE = re.compile(r"\bprev_?\d+\b", re.IGNORECASE)
 _LOCALIZED_LANGUAGE_SEGMENT_RE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$")
 _LOCALIZED_SURFACE_DIRS = {"Inbox", "Trends", "Ideas", "site"}
@@ -393,7 +395,9 @@ def _render_history_refs_in_text(
         indent_match = re.match(r"^[ \t]*", line)
         indent = indent_match.group(0) if indent_match is not None else ""
         body = line[len(indent) :]
-        normalized_body = re.sub(r"[ \t]+([,.;:!?])", r"\1", re.sub(r"[ \t]{2,}", " ", body))
+        normalized_body = re.sub(
+            r"[ \t]+([,.;:!?])", r"\1", re.sub(r"[ \t]{2,}", " ", body)
+        )
         normalized_lines.append(f"{indent}{normalized_body.rstrip()}")
     normalized = "\n".join(normalized_lines)
     normalized = re.sub(r"\n{3,}", "\n\n", normalized)
@@ -404,8 +408,10 @@ def _display_language_family(language_code: str | None) -> str:
     normalized = resolve_presentation_language_code(language_code=language_code)
     if normalized:
         lowered = normalized.lower()
-        if lowered.startswith("zh-tw") or "-hant" in lowered or lowered.startswith(
-            ("zh-hk", "zh-mo")
+        if (
+            lowered.startswith("zh-tw")
+            or "-hant" in lowered
+            or lowered.startswith(("zh-hk", "zh-mo"))
         ):
             return "zh-TW"
     if normalized and normalized.lower().startswith("zh"):
@@ -555,7 +561,9 @@ def is_localized_output_path(path: Path) -> bool:
     return False
 
 
-def write_presentation_sidecar(*, note_path: Path, presentation: Mapping[str, Any]) -> Path:
+def write_presentation_sidecar(
+    *, note_path: Path, presentation: Mapping[str, Any]
+) -> Path:
     errors = validate_presentation(presentation)
     if errors:
         raise ValueError("invalid presentation sidecar: " + "; ".join(errors))
@@ -650,9 +658,10 @@ def _resolve_presentation_languages(
     resolved_language_code = resolve_presentation_language_code(
         language_code=language_code
     )
-    resolved_display_language_code = resolve_presentation_language_code(
-        language_code=display_language_code
-    ) or resolved_language_code
+    resolved_display_language_code = (
+        resolve_presentation_language_code(language_code=display_language_code)
+        or resolved_language_code
+    )
     return resolved_language_code, resolved_display_language_code
 
 
@@ -669,7 +678,9 @@ def _trend_ranked_shifts(
     history_window_refs: Mapping[str, Mapping[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     ranked_shifts: list[dict[str, Any]] = []
-    for index, raw_signal in enumerate(list((evolution or {}).get("signals") or [])[:3], start=1):
+    for index, raw_signal in enumerate(
+        list((evolution or {}).get("signals") or [])[:3], start=1
+    ):
         projected = _project_ranked_shift(
             index=index,
             raw_signal=raw_signal,
@@ -796,9 +807,11 @@ def _build_trend_presentation_content(
 def _build_trend_presentation(
     build_input: _TrendPresentationBuildInput,
 ) -> dict[str, Any]:
-    resolved_language_code, resolved_display_language_code = _resolve_presentation_languages(
-        language_code=build_input.language_code,
-        display_language_code=build_input.display_language_code,
+    resolved_language_code, resolved_display_language_code = (
+        _resolve_presentation_languages(
+            language_code=build_input.language_code,
+            display_language_code=build_input.display_language_code,
+        )
     )
     normalized_overview = _render_history_refs_in_text(
         build_input.overview_md,
@@ -864,9 +877,7 @@ def build_trend_presentation_v1(
         language_code=normalized_kwargs["language_code"],
         display_language_code=normalized_kwargs["display_language_code"],
     )
-    presentation = _build_trend_presentation(
-        build_input
-    )
+    presentation = _build_trend_presentation(build_input)
     presentation["content"]["counter_signal"] = None
     return presentation
 
@@ -892,9 +903,7 @@ def build_trend_presentation_v2(
         language_code=normalized_kwargs["language_code"],
         display_language_code=normalized_kwargs["display_language_code"],
     )
-    presentation = _build_trend_presentation(
-        build_input
-    )
+    presentation = _build_trend_presentation(build_input)
     presentation["content"]["counter_signal"] = _project_counter_signal(
         build_input.counter_signal
     )
@@ -925,7 +934,9 @@ def _idea_opportunity_presentation(
         "thesis": _normalize_markdown(_value_from(idea, "thesis", "") or ""),
         "anti_thesis": _normalize_markdown(_value_from(idea, "anti_thesis", "") or ""),
         "why_now": _normalize_markdown(_value_from(idea, "why_now", "") or ""),
-        "what_changed": _normalize_markdown(_value_from(idea, "what_changed", "") or ""),
+        "what_changed": _normalize_markdown(
+            _value_from(idea, "what_changed", "") or ""
+        ),
         "validation_next_step": _normalize_markdown(
             _value_from(idea, "validation_next_step", "") or ""
         ),
@@ -953,9 +964,11 @@ def _idea_opportunities(
 def _build_idea_presentation(
     build_input: _IdeaPresentationBuildInput,
 ) -> dict[str, Any]:
-    resolved_language_code, resolved_display_language_code = _resolve_presentation_languages(
-        language_code=build_input.language_code,
-        display_language_code=build_input.display_language_code,
+    resolved_language_code, resolved_display_language_code = (
+        _resolve_presentation_languages(
+            language_code=build_input.language_code,
+            display_language_code=build_input.display_language_code,
+        )
     )
 
     return {
@@ -996,9 +1009,7 @@ def build_idea_presentation_v1(
         language_code=normalized_kwargs["language_code"],
         display_language_code=normalized_kwargs["display_language_code"],
     )
-    presentation = _build_idea_presentation(
-        build_input
-    )
+    presentation = _build_idea_presentation(build_input)
     for opportunity in list(presentation["content"].get("opportunities") or []):
         if isinstance(opportunity, dict):
             opportunity.pop("anti_thesis", None)
@@ -1033,7 +1044,14 @@ def _trend_user_visible_strings(presentation: Mapping[str, Any]) -> list[str]:
         return []
     strings = [
         _single_line(content.get("title") or ""),
-        _normalize_markdown(((content.get("hero") or {}) if isinstance(content.get("hero"), Mapping) else {}).get("dek") or ""),
+        _normalize_markdown(
+            (
+                (content.get("hero") or {})
+                if isinstance(content.get("hero"), Mapping)
+                else {}
+            ).get("dek")
+            or ""
+        ),
         _normalize_markdown(content.get("overview") or ""),
     ]
     _append_mapping_text_fields(
@@ -1231,7 +1249,9 @@ def _validate_trend_ranked_shifts(
         normalized_rank = _int_or_none(shift.get("rank"))
         if normalized_rank is not None:
             normalized_ranks.append(normalized_rank)
-    if _ranks_break_consecutive_order(normalized_ranks, expected_total=len(ranked_shifts)):
+    if _ranks_break_consecutive_order(
+        normalized_ranks, expected_total=len(ranked_shifts)
+    ):
         errors.append(
             "trend ranked_shifts ranks must be consecutive integers starting at 1"
         )
@@ -1369,8 +1389,10 @@ def _validate_source_metadata_reason_field(
     field_path: str,
     errors: list[str],
 ) -> None:
-    if "reason" in entry and entry.get("reason") is not None and not isinstance(
-        entry.get("reason"), str
+    if (
+        "reason" in entry
+        and entry.get("reason") is not None
+        and not isinstance(entry.get("reason"), str)
     ):
         errors.append(f"{field_path}.reason must be a string")
 
@@ -1403,9 +1425,7 @@ def _validate_metadata_enum_field(
     errors: list[str],
 ) -> None:
     if value and value not in allowed:
-        errors.append(
-            f"{field_path} must be one of: " + ", ".join(sorted(allowed))
-        )
+        errors.append(f"{field_path} must be one of: " + ", ".join(sorted(allowed)))
 
 
 def _validate_source_metadata_list(
@@ -1472,7 +1492,9 @@ def _validate_trend_presentation(
     )
     _validate_trend_content_scalars(content=content, errors=errors)
     _validate_trend_hero(content=content, errors=errors)
-    ranked_shifts = list(content.get("ranked_shifts") or []) if content is not None else []
+    ranked_shifts = (
+        list(content.get("ranked_shifts") or []) if content is not None else []
+    )
     _validate_trend_ranked_shifts(
         ranked_shifts,
         allow_empty=schema_version < PRESENTATION_SCHEMA_VERSION,
@@ -1576,7 +1598,9 @@ def _validate_idea_opportunities(
         if normalized_rank is not None:
             normalized_ranks.append(normalized_rank)
         normalized_tiers.append(_single_line(opportunity.get("tier") or ""))
-    if _ranks_break_consecutive_order(normalized_ranks, expected_total=len(opportunities)):
+    if _ranks_break_consecutive_order(
+        normalized_ranks, expected_total=len(opportunities)
+    ):
         errors.append(
             "idea opportunities ranks must be consecutive integers starting at 1"
         )
@@ -1597,9 +1621,10 @@ def _validate_opportunity_tier_order(
 
 
 def _is_best_bet_opportunity(opportunity: Any) -> bool:
-    return isinstance(opportunity, Mapping) and _single_line(
-        opportunity.get("tier") or ""
-    ) == "best_bet"
+    return (
+        isinstance(opportunity, Mapping)
+        and _single_line(opportunity.get("tier") or "") == "best_bet"
+    )
 
 
 def _validate_idea_opportunity(
@@ -1620,7 +1645,9 @@ def _validate_idea_opportunity(
         - set(opportunity)
     )
     if missing_opportunity:
-        errors.append("idea opportunities must include: " + ", ".join(missing_opportunity))
+        errors.append(
+            "idea opportunities must include: " + ", ".join(missing_opportunity)
+        )
         return False
     _validate_idea_opportunity_string_fields(
         opportunity,
@@ -1703,7 +1730,9 @@ def _validate_idea_presentation(
                 field_path=f"idea content.{key}",
                 errors=errors,
             )
-    opportunities = list(content.get("opportunities") or []) if content is not None else []
+    opportunities = (
+        list(content.get("opportunities") or []) if content is not None else []
+    )
     _validate_idea_opportunities(
         opportunities,
         schema_version=schema_version,
@@ -1732,10 +1761,12 @@ def _validate_user_visible_strings(
 
 def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
-    schema_version, surface_kind, display_labels, content = _validate_presentation_common_fields(
-        presentation,
-        allowed_schema_versions={PRESENTATION_SCHEMA_VERSION_V1},
-        errors=errors,
+    schema_version, surface_kind, display_labels, content = (
+        _validate_presentation_common_fields(
+            presentation,
+            allowed_schema_versions={PRESENTATION_SCHEMA_VERSION_V1},
+            errors=errors,
+        )
     )
     _ = schema_version
 
@@ -1765,13 +1796,17 @@ def validate_presentation_v1(presentation: Mapping[str, Any]) -> list[str]:
 
 def validate_presentation_v2(presentation: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
-    schema_version, surface_kind, display_labels, content = _validate_presentation_common_fields(
-        presentation,
-        allowed_schema_versions={PRESENTATION_SCHEMA_VERSION},
-        errors=errors,
+    schema_version, surface_kind, display_labels, content = (
+        _validate_presentation_common_fields(
+            presentation,
+            allowed_schema_versions={PRESENTATION_SCHEMA_VERSION},
+            errors=errors,
+        )
     )
     normalized_schema_version = (
-        schema_version if isinstance(schema_version, int) else PRESENTATION_SCHEMA_VERSION
+        schema_version
+        if isinstance(schema_version, int)
+        else PRESENTATION_SCHEMA_VERSION
     )
 
     if surface_kind == "trend":
@@ -1806,9 +1841,7 @@ def validate_presentation(presentation: Mapping[str, Any]) -> list[str]:
         return validate_presentation_v1(presentation)
     if schema_version == PRESENTATION_SCHEMA_VERSION:
         return validate_presentation_v2(presentation)
-    return [
-        "presentation_schema_version must be 1 or 2"
-    ]
+    return ["presentation_schema_version must be 1 or 2"]
 
 
 __all__ = [

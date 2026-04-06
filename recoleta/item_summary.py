@@ -86,7 +86,9 @@ def _legacy_line_parts(line: str) -> tuple[str | None, str]:
     return _section_key(match.group("label")), str(match.group("body") or "").strip()
 
 
-def _append_legacy_section_body(buffers: dict[str, list[str]], *, key: str, body: str) -> None:
+def _append_legacy_section_body(
+    buffers: dict[str, list[str]], *, key: str, body: str
+) -> None:
     if not body:
         return
     if key == "summary":

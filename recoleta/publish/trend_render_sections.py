@@ -424,7 +424,9 @@ def _render_browser_clusters_section_html(*, section: TrendPdfSection) -> str:
     )
 
 
-def _render_browser_summary_cards(sections: list[TrendPdfSection]) -> tuple[list[str], set[str]]:
+def _render_browser_summary_cards(
+    sections: list[TrendPdfSection],
+) -> tuple[list[str], set[str]]:
     rendered: list[str] = []
     used: set[str] = set()
     for section in sections:
@@ -432,7 +434,9 @@ def _render_browser_summary_cards(sections: list[TrendPdfSection]) -> tuple[list
         if _section_matches(section.heading, "tl;dr", "summary"):
             card_classes = "surface-card section-card summary-card summary-card-primary"
         elif _section_matches(section.heading, "must-read"):
-            card_classes = "surface-card section-card summary-card summary-card-secondary"
+            card_classes = (
+                "surface-card section-card summary-card summary-card-secondary"
+            )
         if card_classes is None:
             continue
         rendered.append(

@@ -117,7 +117,12 @@ class SchemaStoreMixin:
     def _assert_no_legacy_shared_stream_tables(self) -> None:
         legacy_scope_tables = [
             table_name
-            for table_name in ("analyses", "documents", "pass_outputs", "localized_outputs")
+            for table_name in (
+                "analyses",
+                "documents",
+                "pass_outputs",
+                "localized_outputs",
+            )
             if "scope" in self._table_columns(table_name)
         ]
         if not legacy_scope_tables:
@@ -136,16 +141,12 @@ class SchemaStoreMixin:
         ddl: list[str] = []
         index_ddl: list[str] = []
         if "operation_kind" not in columns:
-            ddl.append(
-                "ALTER TABLE runs ADD COLUMN operation_kind VARCHAR(64);"
-            )
+            ddl.append("ALTER TABLE runs ADD COLUMN operation_kind VARCHAR(64);")
             index_ddl.append(
                 "CREATE INDEX IF NOT EXISTS ix_runs_operation_kind ON runs (operation_kind);"
             )
         if "target_granularity" not in columns:
-            ddl.append(
-                "ALTER TABLE runs ADD COLUMN target_granularity VARCHAR(16);"
-            )
+            ddl.append("ALTER TABLE runs ADD COLUMN target_granularity VARCHAR(16);")
             index_ddl.append(
                 "CREATE INDEX IF NOT EXISTS ix_runs_target_granularity ON runs (target_granularity);"
             )

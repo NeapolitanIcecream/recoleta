@@ -128,7 +128,9 @@ def coerce_semantic_search_request(
         embedding_dimensions=legacy_kwargs.get("embedding_dimensions"),
         max_batch_inputs=int(legacy_kwargs["max_batch_inputs"]),
         max_batch_chars=int(legacy_kwargs["max_batch_chars"]),
-        embedding_failure_mode=str(legacy_kwargs.get("embedding_failure_mode", "continue")),
+        embedding_failure_mode=str(
+            legacy_kwargs.get("embedding_failure_mode", "continue")
+        ),
         embedding_max_errors=int(legacy_kwargs.get("embedding_max_errors", 0)),
         limit=int(legacy_kwargs.get("limit", 10)),
         corpus_limit=int(legacy_kwargs.get("corpus_limit", 500)),
@@ -138,7 +140,9 @@ def coerce_semantic_search_request(
 
 
 def coerce_index_items_request(
-    *, request: IndexItemsAsDocumentsRequest | None = None, legacy_kwargs: dict[str, Any]
+    *,
+    request: IndexItemsAsDocumentsRequest | None = None,
+    legacy_kwargs: dict[str, Any],
 ) -> IndexItemsAsDocumentsRequest:
     if request is not None:
         return request
@@ -149,7 +153,9 @@ def coerce_index_items_request(
         period_end=legacy_kwargs["period_end"],
         limit=int(legacy_kwargs.get("limit", 2000)),
         content_chunk_chars=int(legacy_kwargs.get("content_chunk_chars", 1200)),
-        max_content_chunks_per_item=int(legacy_kwargs.get("max_content_chunks_per_item", 8)),
+        max_content_chunks_per_item=int(
+            legacy_kwargs.get("max_content_chunks_per_item", 8)
+        ),
         min_relevance_score=float(legacy_kwargs.get("min_relevance_score", 0.0)),
     )
 
@@ -168,7 +174,9 @@ def coerce_generate_trend_request(
         embedding_dimensions=legacy_kwargs.get("embedding_dimensions"),
         embedding_batch_max_inputs=int(legacy_kwargs["embedding_batch_max_inputs"]),
         embedding_batch_max_chars=int(legacy_kwargs["embedding_batch_max_chars"]),
-        embedding_failure_mode=str(legacy_kwargs.get("embedding_failure_mode", "continue")),
+        embedding_failure_mode=str(
+            legacy_kwargs.get("embedding_failure_mode", "continue")
+        ),
         embedding_max_errors=int(legacy_kwargs.get("embedding_max_errors", 0)),
         lancedb_dir=Path(legacy_kwargs["lancedb_dir"]),
         granularity=str(legacy_kwargs["granularity"]),
@@ -204,7 +212,9 @@ def _normalize_item_ids(item_ids: list[int]) -> list[int]:
 
 
 def _normalize_content_types(content_types: list[str]) -> list[str]:
-    normalized_types = [str(content_type or "").strip() for content_type in content_types]
+    normalized_types = [
+        str(content_type or "").strip() for content_type in content_types
+    ]
     return [content_type for content_type in normalized_types if content_type]
 
 
@@ -237,9 +247,13 @@ def load_latest_content_texts_for_items_impl(
             )
             for item_id, content in contents.items():
                 text_value = getattr(content, "text", None)
-                bucket = out.setdefault(item_id, {ctype: None for ctype in normalized_types})
+                bucket = out.setdefault(
+                    item_id, {ctype: None for ctype in normalized_types}
+                )
                 bucket[content_type] = (
-                    text_value if isinstance(text_value, str) and text_value.strip() else None
+                    text_value
+                    if isinstance(text_value, str) and text_value.strip()
+                    else None
                 )
         return out
     for item_id in normalized_ids:
@@ -318,12 +332,16 @@ def _item_event_at(item: Any) -> Any:
 
 def _apply_item_document_fields(existing: Any, *, item: Any) -> None:
     existing.source = str(getattr(item, "source", "") or "").strip() or None
-    existing.canonical_url = str(getattr(item, "canonical_url", "") or "").strip() or None
+    existing.canonical_url = (
+        str(getattr(item, "canonical_url", "") or "").strip() or None
+    )
     existing.title = str(getattr(item, "title", "") or "").strip() or None
     existing.published_at = _item_event_at(item)
 
 
-def _existing_chunks_by_key(*, session: Any, doc_ids: list[int]) -> tuple[list[Any], dict[tuple[int, int], Any]]:
+def _existing_chunks_by_key(
+    *, session: Any, doc_ids: list[int]
+) -> tuple[list[Any], dict[tuple[int, int], Any]]:
     existing_chunks = (
         list(
             session.exec(
@@ -338,7 +356,9 @@ def _existing_chunks_by_key(*, session: Any, doc_ids: list[int]) -> tuple[list[A
     )
     existing_chunks_by_key: dict[tuple[int, int], Any] = {}
     for chunk in existing_chunks:
-        existing_chunks_by_key[(int(getattr(chunk, "doc_id")), int(getattr(chunk, "chunk_index")))] = chunk
+        existing_chunks_by_key[
+            (int(getattr(chunk, "doc_id")), int(getattr(chunk, "chunk_index")))
+        ] = chunk
     return existing_chunks, existing_chunks_by_key
 
 
@@ -552,7 +572,8 @@ def _sync_chunk_indexes(
             "kind": str(getattr(chunk, "kind")),
         }
         for chunk in changed_chunks
-        if (raw_chunk_id := getattr(chunk, "id", None)) is not None and int(raw_chunk_id) > 0
+        if (raw_chunk_id := getattr(chunk, "id", None)) is not None
+        and int(raw_chunk_id) > 0
     ]
     if changed_fts_rows:
         conn.execute(
@@ -620,7 +641,9 @@ def index_items_as_documents_batched_impl(
         session.flush()
         doc_ids = [
             int(raw_doc_id)
-            for raw_doc_id in (getattr(doc, "id", None) for doc in docs_by_item_id.values())
+            for raw_doc_id in (
+                getattr(doc, "id", None) for doc in docs_by_item_id.values()
+            )
             if raw_doc_id is not None and int(raw_doc_id) > 0
         ]
         existing_chunks, existing_chunks_by_key = _existing_chunks_by_key(
@@ -661,7 +684,9 @@ def index_items_as_documents_batched_impl(
         }
 
 
-def index_items_as_documents_impl(*, request: IndexItemsAsDocumentsRequest) -> dict[str, Any]:
+def index_items_as_documents_impl(
+    *, request: IndexItemsAsDocumentsRequest
+) -> dict[str, Any]:
     from recoleta import trends as trends_module
 
     log = logger.bind(module="trends.index_items", run_id=request.run_id)
@@ -782,7 +807,9 @@ def semantic_search_summaries_in_period_impl(
     ]
 
 
-def generate_trend_via_tools_impl(*, request: GenerateTrendRequest) -> tuple[Any, dict[str, Any] | None]:
+def generate_trend_via_tools_impl(
+    *, request: GenerateTrendRequest
+) -> tuple[Any, dict[str, Any] | None]:
     from recoleta.rag.agent import generate_trend_payload
     from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 

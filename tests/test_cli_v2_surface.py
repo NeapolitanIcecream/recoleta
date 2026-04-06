@@ -79,18 +79,22 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
 @pytest.mark.parametrize(
     ("argv", "target_name", "expected"),
     [
-        (["inspect", "health"], "run_doctor_command", {"command_name": "inspect health"}),
+        (
+            ["inspect", "health"],
+            "run_doctor_command",
+            {"command_name": "inspect health"},
+        ),
         (["inspect", "stats"], "run_stats_command", {"command_name": "inspect stats"}),
         (["inspect", "llm"], "run_doctor_llm_command", {"command_name": "inspect llm"}),
         (
             ["fleet", "run", "day", "--manifest", "/tmp/fleet.yaml"],
             "execute_fleet_granularity_workflow",
-                {
-                    "workflow_name": "day",
-                    "command": "fleet run day",
-                    "manifest_path": Path("/tmp/fleet.yaml").resolve(),
-                },
-            ),
+            {
+                "workflow_name": "day",
+                "command": "fleet run day",
+                "manifest_path": Path("/tmp/fleet.yaml").resolve(),
+            },
+        ),
         (
             ["fleet", "site", "build", "--manifest", "/tmp/fleet.yaml"],
             "run_fleet_site_build_command",
@@ -112,7 +116,11 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             "run_doctor_why_empty_command",
             {"command_name": "inspect why-empty"},
         ),
-        (["run", "translate"], "run_translate_run_command", {"command_name": "run translate"}),
+        (
+            ["run", "translate"],
+            "run_translate_run_command",
+            {"command_name": "run translate"},
+        ),
         (
             ["stage", "translate", "run"],
             "run_translate_run_command",

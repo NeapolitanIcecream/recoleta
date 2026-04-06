@@ -19,7 +19,11 @@ from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.presentation import presentation_sidecar_path, validate_presentation
 from recoleta.publish.item_notes import resolve_item_note_path
 from recoleta.storage import Repository
-from recoleta.trends import TrendPayload, build_empty_trend_payload, persist_trend_payload
+from recoleta.trends import (
+    TrendPayload,
+    build_empty_trend_payload,
+    persist_trend_payload,
+)
 from recoleta.types import AnalysisResult, ItemDraft
 
 
@@ -74,8 +78,7 @@ def _seed_materialize_fixture(
                 {
                     "name": "Reward models",
                     "description": (
-                        "Follow "
-                        "[Robometer](https://example.com/robometer)."
+                        "Follow [Robometer](https://example.com/robometer)."
                     ),
                     "representative_chunks": [
                         {
@@ -137,7 +140,9 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     )
 
     item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
-    trend_note_path = output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    trend_note_path = (
+        output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    )
     trend_sidecar_path = presentation_sidecar_path(note_path=trend_note_path)
     assert result.site_manifest_path == output_dir / "site" / "manifest.json"
     assert item_note_path.exists()
@@ -147,8 +152,7 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     trend_markdown = trend_note_path.read_text(encoding="utf-8")
     trend_sidecar = json.loads(trend_sidecar_path.read_text(encoding="utf-8"))
     assert (
-        "## Overview\nStart with "
-        f"[Robometer](../Inbox/{item_note_path.name})."
+        f"## Overview\nStart with [Robometer](../Inbox/{item_note_path.name})."
     ) in trend_markdown
     assert f"[Robometer](../Inbox/{item_note_path.name})" in trend_markdown
     assert "https://example.com/robometer" not in trend_markdown
@@ -159,10 +163,7 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     assert validate_presentation(trend_sidecar) == []
 
     trend_html = (
-        output_dir
-        / "site"
-        / "trends"
-        / f"day--2026-03-02--trend--{trend_doc_id}.html"
+        output_dir / "site" / "trends" / f"day--2026-03-02--trend--{trend_doc_id}.html"
     ).read_text(encoding="utf-8")
     assert f"../items/{item_note_path.stem}.html" in trend_html
     assert "https://example.com/robometer" not in trend_html
@@ -204,7 +205,9 @@ def test_materialize_outputs_renders_default_scope_items_without_legacy_stream_s
     )
 
     item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
-    trend_note_path = output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    trend_note_path = (
+        output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    )
     assert result.site_manifest_path == output_dir / "site" / "manifest.json"
     assert item_note_path.exists()
     assert trend_note_path.exists()
@@ -298,7 +301,9 @@ def test_materialize_outputs_preserves_trend_projection_provenance_in_note_front
         site_output_dir=None,
     )
 
-    trend_note_path = output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    trend_note_path = (
+        output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    )
     note_text = trend_note_path.read_text(encoding="utf-8")
     assert "pass_output_id: 17" in note_text
     assert "pass_kind: trend_synthesis" in note_text
@@ -340,7 +345,9 @@ def test_materialize_outputs_removes_stale_managed_scope_files(
     assert not stale_idea_path.exists()
     assert not stale_localized_path.exists()
     assert (output_dir / "Inbox" / placeholder_item_note_path.name).exists()
-    assert (output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md").exists()
+    assert (
+        output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    ).exists()
 
 
 def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
@@ -391,7 +398,9 @@ def test_materialize_outputs_cli_can_regenerate_pdfs_with_explicit_paths(
     assert "repair outputs completed" in result.stdout
     assert len(pdf_calls) == 1
     assert pdf_calls[0].name == f"day--2026-03-02--trend--{trend_doc_id}.md"
-    assert (output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.pdf").exists()
+    assert (
+        output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.pdf"
+    ).exists()
 
 
 def test_repair_outputs_cli_forwards_explicit_item_export_scope(
@@ -404,7 +413,9 @@ def test_repair_outputs_cli_forwards_explicit_item_export_scope(
     repository.init_schema()
     calls: dict[str, object] = {}
 
-    def _fake_materialize_outputs(**kwargs: object) -> materialize_module.MaterializeOutputsResult:
+    def _fake_materialize_outputs(
+        **kwargs: object,
+    ) -> materialize_module.MaterializeOutputsResult:
         calls.update(kwargs)
         output_dir = tmp_path / "outputs"
         site_dir = output_dir / "site"
@@ -640,8 +651,14 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
 
     idea_markdown = idea_note_path.read_text(encoding="utf-8")
     idea_sidecar = json.loads(idea_sidecar_path.read_text(encoding="utf-8"))
-    assert f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)" in idea_markdown
-    assert f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})" in idea_markdown
+    assert (
+        f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)"
+        in idea_markdown
+    )
+    assert (
+        f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})"
+        in idea_markdown
+    )
     assert "Kind:" not in idea_markdown
     assert "Time horizon:" not in idea_markdown
     assert "User/job:" not in idea_markdown
@@ -908,11 +925,12 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
     item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
     obsidian_item_note = vault_path / "Recoleta" / "Inbox" / item_note_path.name
     obsidian_trend_note = (
-        vault_path / "Recoleta" / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+        vault_path
+        / "Recoleta"
+        / "Trends"
+        / f"day--2026-03-02--trend--{trend_doc_id}.md"
     )
-    obsidian_idea_note = (
-        vault_path / "Recoleta" / "Ideas" / "day--2026-03-02--ideas.md"
-    )
+    obsidian_idea_note = vault_path / "Recoleta" / "Ideas" / "day--2026-03-02--ideas.md"
 
     assert obsidian_item_note.exists()
     assert obsidian_trend_note.exists()
@@ -921,8 +939,14 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
     assert result.output.obsidian_failures_total == 0
 
     idea_markdown = obsidian_idea_note.read_text(encoding="utf-8")
-    assert f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)" in idea_markdown
-    assert f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})" in idea_markdown
+    assert (
+        f"[Agent Systems](../Trends/day--2026-03-02--trend--{trend_doc_id}.md)"
+        in idea_markdown
+    )
+    assert (
+        f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})"
+        in idea_markdown
+    )
 
 
 def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppressed(
@@ -1118,7 +1142,9 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
         site_output_dir=output_dir / "site",
     )
 
-    trend_note_path = output_dir / "Trends" / f"day--2026-03-13--trend--{trend_doc_id}.md"
+    trend_note_path = (
+        output_dir / "Trends" / f"day--2026-03-13--trend--{trend_doc_id}.md"
+    )
     idea_note_path = output_dir / "Ideas" / "day--2026-03-13--ideas.md"
     trend_note_text = trend_note_path.read_text(encoding="utf-8")
     assert result.site_manifest_path is not None
@@ -1130,7 +1156,9 @@ def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_tr
     assert manifest["ideas_total"] == 0
     assert manifest["files"]["trend_pages"] == []
     assert manifest["files"]["idea_pages"] == []
-    assert not (output_dir / "site" / "trends" / f"{trend_note_path.stem}.html").exists()
+    assert not (
+        output_dir / "site" / "trends" / f"{trend_note_path.stem}.html"
+    ).exists()
     assert not (output_dir / "site" / "ideas" / "day--2026-03-13--ideas.html").exists()
 
 
@@ -1311,10 +1339,10 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
     config_path = tmp_path / "recoleta.yml"
     config_path.write_text(
         "\n".join(
-                [
-                    f"recoleta_db_path: {repository.db_path}",
-                    f"markdown_output_dir: {output_dir}",
-                    f"obsidian_vault_path: {vault_path}",
+            [
+                f"recoleta_db_path: {repository.db_path}",
+                f"markdown_output_dir: {output_dir}",
+                f"obsidian_vault_path: {vault_path}",
                 "obsidian_base_folder: Recoleta",
                 "publish_targets: [markdown, obsidian]",
                 "llm_model: test/fake-model",

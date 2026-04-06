@@ -56,10 +56,14 @@ class SingleLanguageSiteExportDeps:
     load_trend_source_documents: Callable[..., list[TrendSiteSourceDocument]]
     load_idea_source_documents: Callable[..., list[IdeaSiteSourceDocument]]
     select_item_source_documents: Callable[..., ItemSiteSelection]
-    load_item_site_documents: Callable[..., tuple[list[ItemSiteDocument], dict[SiteSourceKey, Path]]]
+    load_item_site_documents: Callable[
+        ..., tuple[list[ItemSiteDocument], dict[SiteSourceKey, Path]]
+    ]
     load_trend_site_documents: Callable[..., list[TrendSiteDocument]]
     site_source_key: Callable[..., SiteSourceKey]
-    load_idea_site_documents: Callable[..., tuple[list[IdeaSiteDocument], dict[SiteSourceKey, Path]]]
+    load_idea_site_documents: Callable[
+        ..., tuple[list[IdeaSiteDocument], dict[SiteSourceKey, Path]]
+    ]
     topic_slug: Callable[[str], str]
     render_home_page: Callable[..., str]
     render_trends_index_page: Callable[..., str]
@@ -117,12 +121,20 @@ def _page_nav_links(
     spec: SitePageShellInput,
     site_href: Callable[..., str],
 ) -> tuple[str, str, str, str, str]:
-    index_href = site_href(from_page=spec.page_path, to_page=spec.output_dir / "index.html")
+    index_href = site_href(
+        from_page=spec.page_path, to_page=spec.output_dir / "index.html"
+    )
     return (
         index_href,
-        site_href(from_page=spec.page_path, to_page=spec.output_dir / "trends" / "index.html"),
-        site_href(from_page=spec.page_path, to_page=spec.output_dir / "ideas" / "index.html"),
-        site_href(from_page=spec.page_path, to_page=spec.output_dir / "topics" / "index.html"),
+        site_href(
+            from_page=spec.page_path, to_page=spec.output_dir / "trends" / "index.html"
+        ),
+        site_href(
+            from_page=spec.page_path, to_page=spec.output_dir / "ideas" / "index.html"
+        ),
+        site_href(
+            from_page=spec.page_path, to_page=spec.output_dir / "topics" / "index.html"
+        ),
         site_href(from_page=spec.page_path, to_page=spec.output_dir / "archive.html"),
     )
 
@@ -205,7 +217,9 @@ def _validate_export_output_dir(
 ) -> None:
     for input_info in resolved_input_dirs:
         if paths_overlap(input_info.path, resolved_output_dir):
-            raise ValueError("Trend site output directory must not overlap the input directory")
+            raise ValueError(
+                "Trend site output directory must not overlap the input directory"
+            )
 
 
 def _prepare_export_output_dir(
@@ -217,7 +231,9 @@ def _prepare_export_output_dir(
     reset_directory(resolved_output_dir)
     for name in ("assets", "ideas", "items", "topics"):
         (resolved_output_dir / name).mkdir(parents=True, exist_ok=True)
-    (resolved_output_dir / "assets" / "site.css").write_text(site_css.strip() + "\n", encoding="utf-8")
+    (resolved_output_dir / "assets" / "site.css").write_text(
+        site_css.strip() + "\n", encoding="utf-8"
+    )
     (resolved_output_dir / ".nojekyll").write_text("", encoding="utf-8")
 
 
@@ -248,7 +264,9 @@ def _collect_topic_page_artifacts(
             idea_documents_by_topic[slug].append(document)
     topic_pages = {
         slug: resolved_output_dir / "topics" / f"{slug}.html"
-        for slug in sorted(set(topic_documents.keys()) | set(idea_documents_by_topic.keys()))
+        for slug in sorted(
+            set(topic_documents.keys()) | set(idea_documents_by_topic.keys())
+        )
     }
     return label_by_topic_slug, topic_documents, idea_documents_by_topic, topic_pages
 
@@ -258,7 +276,9 @@ def _load_export_artifacts(
     request: SingleLanguageSiteExportRequest,
     deps: SingleLanguageSiteExportDeps,
 ) -> SingleLanguageSiteExportArtifacts:
-    normalized_item_export_scope = deps.normalize_item_export_scope(request.item_export_scope)
+    normalized_item_export_scope = deps.normalize_item_export_scope(
+        request.item_export_scope
+    )
     resolved_input_roots = deps.coerce_site_input_specs(request.input_dir)
     resolved_input_dirs = deps.discover_trend_site_input_dirs(
         resolved_input_roots,
@@ -389,7 +409,9 @@ def _write_detail_pages(
     output_dir = artifacts.resolved_output_dir
     for idx, document in enumerate(artifacts.documents):
         previous_document = artifacts.documents[idx - 1] if idx > 0 else None
-        next_document = artifacts.documents[idx + 1] if idx + 1 < len(artifacts.documents) else None
+        next_document = (
+            artifacts.documents[idx + 1] if idx + 1 < len(artifacts.documents) else None
+        )
         document.page_path.write_text(
             deps.render_detail_page(
                 document=document,
@@ -448,8 +470,12 @@ def _single_language_export_manifest(
         "input_dirs": [
             {
                 "path": str(input_info.path),
-                "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
-                "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
+                "ideas_path": str(input_info.ideas_path)
+                if input_info.ideas_path is not None
+                else None,
+                "inbox_path": str(input_info.inbox_path)
+                if input_info.inbox_path is not None
+                else None,
                 "instance": input_info.instance,
             }
             for input_info in artifacts.resolved_input_dirs
@@ -495,7 +521,9 @@ def export_trend_static_site_single_language(
     request: SingleLanguageSiteExportRequest,
     deps: SingleLanguageSiteExportDeps,
 ) -> Path:
-    normalized_item_export_scope = deps.normalize_item_export_scope(request.item_export_scope)
+    normalized_item_export_scope = deps.normalize_item_export_scope(
+        request.item_export_scope
+    )
     artifacts = _load_export_artifacts(request=request, deps=deps)
     _write_index_pages(artifacts=artifacts, deps=deps)
     _write_detail_pages(artifacts=artifacts, deps=deps)

@@ -461,9 +461,7 @@ def _build_trend_frontmatter(
     return frontmatter
 
 
-def _evolution_section_labels(
-    *, output_language: str | None
-) -> _EvolutionLabels:
+def _evolution_section_labels(*, output_language: str | None) -> _EvolutionLabels:
     chinese_output = _is_chinese_output_language(output_language)
     return _EvolutionLabels(
         change_label="变化" if chinese_output else "Change",
@@ -799,7 +797,9 @@ def _render_trend_note_lines(*, kwargs: _TrendNoteRenderKwargs) -> list[str]:
     return lines
 
 
-def _render_trend_note_content(**kwargs: Unpack[_TrendNoteWriteKwargs]) -> _TrendNoteContent:
+def _render_trend_note_content(
+    **kwargs: Unpack[_TrendNoteWriteKwargs],
+) -> _TrendNoteContent:
     return {
         "title": kwargs["title"],
         "overview_md": kwargs["overview_md"],
@@ -844,7 +844,8 @@ def _write_trend_note(
         output_language=write_input.output_language,
     )
     resolved_display_language_code = (
-        resolve_presentation_language_code(language_code=write_input.language_code) or "en"
+        resolve_presentation_language_code(language_code=write_input.language_code)
+        or "en"
     )
     sanitized_title = sanitize_trend_title(write_input.content["title"])
     sanitized_overview_md = sanitize_trend_overview_markdown(
@@ -868,7 +869,8 @@ def _write_trend_note(
             "projection_provenance": (
                 build_projection_provenance(
                     pass_output_id=write_input.pass_output_id,
-                    pass_kind=str(write_input.pass_kind or "").strip() or "trend_synthesis",
+                    pass_kind=str(write_input.pass_kind or "").strip()
+                    or "trend_synthesis",
                 )
                 if write_input.pass_output_id is not None
                 else None

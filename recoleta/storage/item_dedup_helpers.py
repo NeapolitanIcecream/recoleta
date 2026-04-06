@@ -85,7 +85,9 @@ def find_existing_item(session: Session, *, draft: ItemDraft) -> Item | None:
         if existing is not None:
             return existing
 
-    by_url_hash = select(Item).where(Item.canonical_url_hash == draft.canonical_url_hash)
+    by_url_hash = select(Item).where(
+        Item.canonical_url_hash == draft.canonical_url_hash
+    )
     return session.exec(by_url_hash).first()
 
 

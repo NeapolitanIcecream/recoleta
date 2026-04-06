@@ -7,14 +7,20 @@ from typing import Any, Callable
 
 from loguru import logger
 
-from recoleta.llm_costs import estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens
+from recoleta.llm_costs import (
+    estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens,
+)
 from recoleta.rag.agent_models import (
     RepresentativeBackfillRequest,
     TrendGenerationRequest,
     TrendPromptRequest,
 )
 from recoleta.rag.search_helpers import truncate_text
-from recoleta.trends import TREND_EVOLUTION_CHANGE_TYPE_VALUES, TrendCluster, TrendPayload
+from recoleta.trends import (
+    TREND_EVOLUTION_CHANGE_TYPE_VALUES,
+    TrendCluster,
+    TrendPayload,
+)
 
 _RAW_TOOL_TRACE_MAX_EVENTS = 64
 _RAW_TOOL_TRACE_MAX_ITEMS = 12
@@ -136,7 +142,9 @@ def _backfilled_chunks_from_doc_ids(
             continue
         if doc_id <= 0:
             continue
-        out.append(TrendCluster.RepresentativeChunk(doc_id=doc_id, chunk_index=0, score=None))
+        out.append(
+            TrendCluster.RepresentativeChunk(doc_id=doc_id, chunk_index=0, score=None)
+        )
         if len(out) >= max_reps:
             break
     return out
@@ -288,8 +296,12 @@ def ensure_trend_cluster_representatives(
                 repository=request.repository,
                 vector_store=request.vector_store,
                 run_id=request.run_id,
-                doc_type=request.search_request(query=query, limit=limit).window.doc_type,
-                granularity=request.search_request(query=query, limit=limit).window.granularity,
+                doc_type=request.search_request(
+                    query=query, limit=limit
+                ).window.doc_type,
+                granularity=request.search_request(
+                    query=query, limit=limit
+                ).window.granularity,
                 period_start=request.period_start,
                 period_end=request.period_end,
                 query=query,
@@ -312,19 +324,25 @@ def _compact_mapping_value(value: dict[Any, Any], *, depth: int) -> dict[str, An
     compacted_dict: dict[str, Any] = {}
     items = list(value.items())
     for key, item_value in items[:_RAW_TOOL_TRACE_MAX_ITEMS]:
-        compacted_dict[str(key)] = _compact_tool_trace_value(item_value, depth=depth + 1)
+        compacted_dict[str(key)] = _compact_tool_trace_value(
+            item_value, depth=depth + 1
+        )
     if len(items) > _RAW_TOOL_TRACE_MAX_ITEMS:
         compacted_dict["__truncated_items__"] = len(items) - _RAW_TOOL_TRACE_MAX_ITEMS
     return compacted_dict
 
 
-def _compact_sequence_value(value: list[Any] | tuple[Any, ...], *, depth: int) -> list[Any]:
+def _compact_sequence_value(
+    value: list[Any] | tuple[Any, ...], *, depth: int
+) -> list[Any]:
     compacted_list = [
         _compact_tool_trace_value(item, depth=depth + 1)
         for item in list(value)[:_RAW_TOOL_TRACE_MAX_ITEMS]
     ]
     if len(value) > _RAW_TOOL_TRACE_MAX_ITEMS:
-        compacted_list.append({"__truncated_items__": len(value) - _RAW_TOOL_TRACE_MAX_ITEMS})
+        compacted_list.append(
+            {"__truncated_items__": len(value) - _RAW_TOOL_TRACE_MAX_ITEMS}
+        )
     return compacted_list
 
 
@@ -812,7 +830,9 @@ def generate_trend_payload(
             type(metric_exc).__name__,
             str(metric_exc),
         )
-    debug = _generation_debug_payload(request=request, result=result, prompt_chars=prompt_chars)
+    debug = _generation_debug_payload(
+        request=request, result=result, prompt_chars=prompt_chars
+    )
     _log_generation_done(
         log=log,
         request=request,

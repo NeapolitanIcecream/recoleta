@@ -370,7 +370,9 @@ class _TrendNoteMaterializer:
     def _normalized_history_windows(self, history_windows: Any) -> list[str]:
         if not isinstance(history_windows, list):
             return []
-        normalized = [str(window).strip() for window in history_windows if str(window).strip()]
+        normalized = [
+            str(window).strip() for window in history_windows if str(window).strip()
+        ]
         for window in normalized:
             self.history_window_ref(window)
         return normalized

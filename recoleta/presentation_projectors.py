@@ -106,7 +106,9 @@ def _project_reasons(raw_source: Any) -> tuple[list[str], str | None]:
     return reasons, reason
 
 
-def _project_title(*, raw_source: Any, fallback_title: str | None) -> tuple[int | None, str]:
+def _project_title(
+    *, raw_source: Any, fallback_title: str | None
+) -> tuple[int | None, str]:
     doc_id = _int_or_none(_value_from(raw_source, "doc_id", None))
     title = _single_line(_value_from(raw_source, "title", "") or fallback_title or "")
     if not title and doc_id is not None and doc_id > 0:

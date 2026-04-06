@@ -186,6 +186,7 @@ def run_gc_command(
             log=log,
         )
 
+
 def run_doctor_why_empty_command(
     *,
     db_path: Path | None,
@@ -461,7 +462,9 @@ def run_stats_command(
     console = symbols["Console"]()
     log = symbols["logger"].bind(module="cli.stats", json=json_output)
     try:
-        resolved_db_path = cli._resolve_db_path(db_path=db_path, config_path=config_path)
+        resolved_db_path = cli._resolve_db_path(
+            db_path=db_path, config_path=config_path
+        )
     except Exception as exc:  # noqa: BLE001
         _emit_command_failure(
             context=CommandFailureContext(
@@ -533,7 +536,9 @@ def run_doctor_command(
     log = symbols["logger"].bind(module="cli.doctor", healthcheck=healthcheck)
     failure_name = "healthcheck" if healthcheck else command_name
     try:
-        resolved_db_path = cli._resolve_db_path(db_path=db_path, config_path=config_path)
+        resolved_db_path = cli._resolve_db_path(
+            db_path=db_path, config_path=config_path
+        )
     except Exception as exc:  # noqa: BLE001
         _emit_command_failure(
             context=CommandFailureContext(
@@ -619,7 +624,9 @@ def run_doctor_command(
     )
 
 
-def _doctor_llm_billing(*, repository: Any, run_id: str, log: Any) -> dict[str, Any] | None:
+def _doctor_llm_billing(
+    *, repository: Any, run_id: str, log: Any
+) -> dict[str, Any] | None:
     try:
         return cli._billing_summary_payload(repository.list_metrics(run_id=run_id))
     except Exception as exc:  # noqa: BLE001
@@ -675,26 +682,34 @@ def _render_doctor_llm_output(*, context: DoctorLlmRenderContext) -> None:
 
 
 def _doctor_llm_api_key_line(payload: dict[str, Any]) -> str:
-    return "api_key=" + (
-        f"configured fingerprint={payload['connection']['api_key']['fingerprint']}"
-        if payload["connection"]["api_key"]["configured"]
-        else "missing"
-    ) + (
-        " env_present=true"
-        if payload["connection"]["api_key"]["env_present"]
-        else " env_present=false"
+    return (
+        "api_key="
+        + (
+            f"configured fingerprint={payload['connection']['api_key']['fingerprint']}"
+            if payload["connection"]["api_key"]["configured"]
+            else "missing"
+        )
+        + (
+            " env_present=true"
+            if payload["connection"]["api_key"]["env_present"]
+            else " env_present=false"
+        )
     )
 
 
 def _doctor_llm_base_url_line(payload: dict[str, Any]) -> str:
-    return "base_url=" + (
-        str(payload["connection"]["base_url"]["value"])
-        if payload["connection"]["base_url"]["configured"]
-        else "default"
-    ) + (
-        " env_present=true"
-        if payload["connection"]["base_url"]["env_present"]
-        else " env_present=false"
+    return (
+        "base_url="
+        + (
+            str(payload["connection"]["base_url"]["value"])
+            if payload["connection"]["base_url"]["configured"]
+            else "default"
+        )
+        + (
+            " env_present=true"
+            if payload["connection"]["base_url"]["env_present"]
+            else " env_present=false"
+        )
     )
 
 
@@ -783,7 +798,9 @@ def _setup_doctor_llm_run(
             )
         )
     try:
-        repository = cast(Any, cli._build_repository_for_db_path(db_path=Path(raw_db_path)))
+        repository = cast(
+            Any, cli._build_repository_for_db_path(db_path=Path(raw_db_path))
+        )
         repository.init_schema()
         run_id, observed_log = cli._begin_observed_run_for_settings(
             settings=settings,
@@ -839,7 +856,9 @@ def _run_doctor_llm_probe(
             try:
                 context.repository.finish_run(context.run_id, success=False)
             except Exception:
-                context.log.exception("Doctor llm run finish failed during error handling")
+                context.log.exception(
+                    "Doctor llm run finish failed during error handling"
+                )
         _emit_doctor_llm_failure(
             context=DoctorLlmFailureContext(
                 console=context.console,
@@ -901,7 +920,9 @@ def run_doctor_llm_command(**kwargs: Any) -> None:
             log=log,
         )
     )
-    payload = _build_llm_diagnostics_payload(settings=settings, ping_payload=ping_payload)
+    payload = _build_llm_diagnostics_payload(
+        settings=settings, ping_payload=ping_payload
+    )
     if request.ping and str(ping_payload.get("status", "") or "") != "ok":
         log.warning(
             "LLM ping failed model={} provider={} error_type={} error={}",

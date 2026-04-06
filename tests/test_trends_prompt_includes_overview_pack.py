@@ -53,7 +53,8 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
     }
     notes = prompt_payload.get("notes") or []
     assert any(
-        "use the exact prev_n token" in str(note) and "do not manually repeat" in str(note)
+        "use the exact prev_n token" in str(note)
+        and "do not manually repeat" in str(note)
         for note in notes
     )
 

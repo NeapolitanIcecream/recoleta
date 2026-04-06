@@ -225,7 +225,10 @@ def test_overview_pack_week_prefers_structured_trend_payload_meta_chunks(
     assert "- title=Agent systems get tighter loops" in md
     assert "- must_read=[Must Read Paper](https://example.com/must-read)" in md
     assert "- cluster=Loop closing" in md
-    assert "- representative=[Representative Paper](https://example.com/meta-pack-item-1)" in md
+    assert (
+        "- representative=[Representative Paper](https://example.com/meta-pack-item-1)"
+        in md
+    )
 
 
 def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> None:
@@ -356,7 +359,9 @@ def test_overview_pack_day_item_top_k_deduplicates_duplicate_urls(
     def _duplicate_first_pair(**_kwargs):  # type: ignore[no-untyped-def]
         return [pairs[0], pairs[0], pairs[1]]
 
-    monkeypatch.setattr(repository, "list_analyzed_items_in_period", _duplicate_first_pair)
+    monkeypatch.setattr(
+        repository, "list_analyzed_items_in_period", _duplicate_first_pair
+    )
 
     plan = TrendGenerationPlan(
         target_granularity="day", period_start=day_start, period_end=day_end

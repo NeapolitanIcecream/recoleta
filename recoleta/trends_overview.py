@@ -127,7 +127,11 @@ def _window_alias_lookup(
         if str(window.window_id).strip()
     }
     if available_window_ids is not None:
-        allowed_window_ids &= {str(window_id).strip() for window_id in available_window_ids if str(window_id).strip()}
+        allowed_window_ids &= {
+            str(window_id).strip()
+            for window_id in available_window_ids
+            if str(window_id).strip()
+        }
     for window in history_windows:
         window_id = str(window.window_id).strip()
         if not window_id:
@@ -167,7 +171,9 @@ def _normalized_history_windows_for_signal(
 ) -> list[str]:
     normalized_history_windows: list[str] = []
     seen_history_windows: set[str] = set()
-    for candidate in _split_history_window_candidates(list(signal.history_windows or [])):
+    for candidate in _split_history_window_candidates(
+        list(signal.history_windows or [])
+    ):
         normalized_candidate = _normalized_history_window_candidate(
             candidate=candidate,
             current_period_token=current_period_token,
@@ -316,7 +322,9 @@ def _representative_links_and_clusters(
     if not isinstance(clusters, list):
         return [], []
     normalized_clusters = [cluster for cluster in clusters if isinstance(cluster, dict)]
-    cluster_names = _dedup_strings(_cluster_name(cluster) for cluster in normalized_clusters)
+    cluster_names = _dedup_strings(
+        _cluster_name(cluster) for cluster in normalized_clusters
+    )
     representative_links = [
         link
         for cluster in normalized_clusters
@@ -358,7 +366,9 @@ def _summary_lines_from_meta_chunk(
         str(payload.get("title") or getattr(doc, "title", "") or "").strip(),
         fallback="Trend",
     )
-    overview_md = clamp_trend_overview_markdown(str(payload.get("overview_md") or "").strip())
+    overview_md = clamp_trend_overview_markdown(
+        str(payload.get("overview_md") or "").strip()
+    )
     representative_links, cluster_names = _representative_links_and_clusters(
         repository=repository,
         clusters=payload.get("clusters") or [],
@@ -499,9 +509,9 @@ def _is_week_day_overview(
     request: BuildOverviewPackRequest,
     prev_level: str,
 ) -> bool:
-    target_granularity = str(
-        getattr(request.plan, "target_granularity", "") or ""
-    ).strip().lower()
+    target_granularity = (
+        str(getattr(request.plan, "target_granularity", "") or "").strip().lower()
+    )
     return target_granularity == "week" and prev_level == "day"
 
 
@@ -627,9 +637,15 @@ def _item_top_k_lines(
             break
     lines = [f"- items_total={len(pairs)} | selected={len(selected)} | top_k={top_k}"]
     for rank, (item, analysis) in enumerate(selected, start=1):
-        title = _sanitize_inline_text(str(getattr(item, "title", "") or "")) or "(untitled)"
-        url = _sanitize_inline_text(str(getattr(item, "canonical_url", "") or "")) or "-"
-        sections = extract_item_summary_sections(str(getattr(analysis, "summary", "") or ""))
+        title = (
+            _sanitize_inline_text(str(getattr(item, "title", "") or "")) or "(untitled)"
+        )
+        url = (
+            _sanitize_inline_text(str(getattr(item, "canonical_url", "") or "")) or "-"
+        )
+        sections = extract_item_summary_sections(
+            str(getattr(analysis, "summary", "") or "")
+        )
         lines.extend(
             [
                 f"### item rank={rank}",
@@ -648,7 +664,9 @@ def build_overview_pack_md_impl(
     *,
     request: BuildOverviewPackRequest,
 ) -> tuple[str, dict[str, Any]]:
-    strategy = str(getattr(request.plan, "overview_pack_strategy", "") or "").strip().lower()
+    strategy = (
+        str(getattr(request.plan, "overview_pack_strategy", "") or "").strip().lower()
+    )
     stats: dict[str, Any] = {"strategy": strategy, "truncated": False}
     period_start = _to_utc_datetime(request.plan.period_start)
     period_end = _to_utc_datetime(request.plan.period_end)

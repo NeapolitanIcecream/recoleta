@@ -176,7 +176,9 @@ def _run_probe_attempt(
     try:
         data = response.json()
     except Exception as exc:  # noqa: BLE001
-        return _mark_probe_json_decode_failure(result=result, response=response, exc=exc)
+        return _mark_probe_json_decode_failure(
+            result=result, response=response, exc=exc
+        )
 
     _attach_embedding_metadata(result=result, data=data)
     if response.is_success:
@@ -448,7 +450,11 @@ def main(
     except ValueError as exc:
         message = str(exc)
         if not message.startswith("missing api key env:"):
-            message = f"invalid base url: {message}" if message == "base URL is required" else message
+            message = (
+                f"invalid base url: {message}"
+                if message == "base URL is required"
+                else message
+            )
         print(message, file=err)
         return 2
 

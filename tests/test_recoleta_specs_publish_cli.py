@@ -82,7 +82,9 @@ class _FakeService:
                 "sent": 2,
                 "skipped": 1,
                 "failed": 0,
-                "note_paths": [Path("/tmp/recoleta-output/Inbox/2026-01-02-example.md")],
+                "note_paths": [
+                    Path("/tmp/recoleta-output/Inbox/2026-01-02-example.md")
+                ],
             },
         )()
 
@@ -150,7 +152,9 @@ def test_publish_cli_emits_json_output(
     assert payload["period_end"] == "2026-01-03T00:00:00+00:00"
     assert payload["targets"] == ["markdown", "obsidian"]
     assert payload["markdown_output_dir"] == str(fake_settings.markdown_output_dir)
-    assert payload["latest_index_path"] == str(fake_settings.markdown_output_dir / "latest.md")
+    assert payload["latest_index_path"] == str(
+        fake_settings.markdown_output_dir / "latest.md"
+    )
     assert payload["obsidian_inbox_path"] == str(
         fake_settings.obsidian_vault_path / fake_settings.obsidian_base_folder / "Inbox"
     )

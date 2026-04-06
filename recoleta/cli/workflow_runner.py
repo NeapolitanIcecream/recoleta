@@ -87,7 +87,9 @@ def normalize_anchor_date(anchor_date: str | None, *, workflow_name: str) -> dat
     return cli._parse_anchor_date_option(str(anchor_date).strip())
 
 
-def granularity_stack(*, target_granularity: str, recursive_lower_levels: bool) -> list[str]:
+def granularity_stack(
+    *, target_granularity: str, recursive_lower_levels: bool
+) -> list[str]:
     normalized = str(target_granularity or "").strip().lower()
     if normalized not in GRANULARITY_ORDER:
         raise ValueError("target granularity must be one of: day, week, month")
@@ -97,7 +99,9 @@ def granularity_stack(*, target_granularity: str, recursive_lower_levels: bool) 
     return list(GRANULARITY_ORDER[: stop_index + 1])
 
 
-def period_bounds_for_granularity(*, granularity: str, anchor: date) -> tuple[datetime, datetime]:
+def period_bounds_for_granularity(
+    *, granularity: str, anchor: date
+) -> tuple[datetime, datetime]:
     if granularity == "day":
         return day_period_bounds(anchor)
     if granularity == "week":
@@ -116,7 +120,9 @@ def enumerate_days(period_start: datetime, period_end: datetime) -> list[date]:
     return dates
 
 
-def enumerate_weeks_for_period(period_start: datetime, period_end: datetime) -> list[date]:
+def enumerate_weeks_for_period(
+    period_start: datetime, period_end: datetime
+) -> list[date]:
     cursor = period_start.date()
     anchors: list[date] = []
     while True:
@@ -164,10 +170,13 @@ def validate_step_overrides(
     skip_steps: list[str],
 ) -> None:
     allowed = allowed_skip_steps(workflow_name=workflow_name)
-    unsupported = sorted({step for step in include_steps + skip_steps if step not in allowed})
+    unsupported = sorted(
+        {step for step in include_steps + skip_steps if step not in allowed}
+    )
     if unsupported:
         raise ValueError(
-            f"{workflow_name} only supports --include/--skip for: " + ", ".join(sorted(allowed))
+            f"{workflow_name} only supports --include/--skip for: "
+            + ", ".join(sorted(allowed))
         )
 
 
@@ -199,7 +208,9 @@ def metric_diff(
     return diff_metrics
 
 
-def billing_by_step_payload(billing_metrics_by_step: dict[str, list[Any]]) -> dict[str, Any]:
+def billing_by_step_payload(
+    billing_metrics_by_step: dict[str, list[Any]],
+) -> dict[str, Any]:
     return {
         step_id: cli._billing_summary_payload(billing_metrics_by_step[step_id])
         for step_id in sorted(billing_metrics_by_step)
@@ -267,10 +278,9 @@ def build_deploy_plan(
     policy = settings.workflows.deploy
     requested_steps: list[str] = []
     skipped: list[str] = []
-    if (
-        str(policy.translation or "").strip().lower() == "auto"
-        and localization_targets_configured(settings)
-    ):
+    if str(
+        policy.translation or ""
+    ).strip().lower() == "auto" and localization_targets_configured(settings):
         requested_steps.append(STEP_TRANSLATE)
     else:
         skipped.append(STEP_TRANSLATE)
@@ -293,7 +303,9 @@ def build_deploy_plan(
         target_period_end=None,
         requested_steps=requested_steps,
         skipped_steps=skipped,
-        invocations=[WorkflowInvocation(step_id=step_id) for step_id in requested_steps],
+        invocations=[
+            WorkflowInvocation(step_id=step_id) for step_id in requested_steps
+        ],
     )
 
 
@@ -323,7 +335,9 @@ def execute_workflow_loop(
     with cli._graceful_shutdown_signals(), stdout_guard(enabled=request.json_output):
         for invocation in request.plan.invocations:
             try:
-                step_payload = execute_step(invocation, context=request.execution_context)
+                step_payload = execute_step(
+                    invocation, context=request.execution_context
+                )
             except Exception as exc:
                 if (
                     invocation.step_id != STEP_TRANSLATE
@@ -347,9 +361,7 @@ def execute_workflow_loop(
                 continue
             request.heartbeat_monitor.raise_if_failed()
             current_snapshot = metric_snapshot(
-                request.repository.list_metrics(
-                    run_id=request.execution_context.run_id
-                )
+                request.repository.list_metrics(run_id=request.execution_context.run_id)
             )
             billing_metrics_by_step[invocation.step_id].extend(
                 metric_diff(previous_snapshot, current_snapshot)
@@ -389,7 +401,9 @@ def finalize_workflow_success(
     )
 
 
-def finish_workflow_failure(*, repository: Any, run_id: str, log: Any, message: str) -> None:
+def finish_workflow_failure(
+    *, repository: Any, run_id: str, log: Any, message: str
+) -> None:
     try:
         cli._finish_run(
             repository,
@@ -404,9 +418,7 @@ def finish_workflow_failure(*, repository: Any, run_id: str, log: Any, message: 
 def granularity_workflow_payload(*, context: WorkflowPayloadContext) -> dict[str, Any]:
     return {
         "status": (
-            "ok"
-            if context.terminal_state != RUN_TERMINAL_STATE_FAILED
-            else "error"
+            "ok" if context.terminal_state != RUN_TERMINAL_STATE_FAILED else "error"
         ),
         "command": context.command,
         "run_id": context.run_id,
@@ -429,7 +441,8 @@ def deploy_workflow_payload(*, context: WorkflowPayloadContext) -> dict[str, Any
         (
             step_result.payload
             for step_result in context.step_results
-            if step_result.step_id == STEP_SITE_DEPLOY and isinstance(step_result.payload, dict)
+            if step_result.step_id == STEP_SITE_DEPLOY
+            and isinstance(step_result.payload, dict)
         ),
         {},
     )
@@ -467,10 +480,9 @@ def _optional_workflow_steps(
     policy: Any,
 ) -> list[str]:
     skipped: list[str] = []
-    if (
-        str(policy.translation or "").strip().lower() == "auto"
-        and localization_targets_configured(settings)
-    ):
+    if str(
+        policy.translation or ""
+    ).strip().lower() == "auto" and localization_targets_configured(settings):
         requested_steps.append(STEP_TRANSLATE)
     else:
         skipped.append(STEP_TRANSLATE)
@@ -493,7 +505,9 @@ def _apply_skip_overrides(
             requested_steps.remove(step_id)
         if step_id not in skipped:
             skipped.append(step_id)
-    return requested_steps, [step_id for step_id in skipped if step_id not in requested_steps]
+    return requested_steps, [
+        step_id for step_id in skipped if step_id not in requested_steps
+    ]
 
 
 def _apply_deploy_skip_overrides(
@@ -533,7 +547,9 @@ def _build_granularity_invocations(
         day_dates = enumerate_days(target_period_start, target_period_end)
         week_dates = enumerate_weeks_for_period(target_period_start, target_period_end)
         month_dates = [target_period_start.date()]
-    _extend_day_invocations(invocations=invocations, day_dates=day_dates, requested_steps=requested_steps)
+    _extend_day_invocations(
+        invocations=invocations, day_dates=day_dates, requested_steps=requested_steps
+    )
     _extend_window_invocations(
         invocations=invocations,
         anchors=week_dates,
@@ -575,7 +591,9 @@ def _extend_day_invocations(
                 )
         for step_id in ("trends:day", "ideas:day"):
             if step_id in requested_steps:
-                invocations.append(WorkflowInvocation(step_id=step_id, anchor_date=day_anchor))
+                invocations.append(
+                    WorkflowInvocation(step_id=step_id, anchor_date=day_anchor)
+                )
 
 
 def _extend_window_invocations(
@@ -588,9 +606,13 @@ def _extend_window_invocations(
 ) -> None:
     for anchor_date in anchors:
         if trends_step in requested_steps:
-            invocations.append(WorkflowInvocation(step_id=trends_step, anchor_date=anchor_date))
+            invocations.append(
+                WorkflowInvocation(step_id=trends_step, anchor_date=anchor_date)
+            )
         if ideas_step in requested_steps:
-            invocations.append(WorkflowInvocation(step_id=ideas_step, anchor_date=anchor_date))
+            invocations.append(
+                WorkflowInvocation(step_id=ideas_step, anchor_date=anchor_date)
+            )
 
 
 def _workflow_override(name: str, *, current: Any) -> Any | None:
@@ -603,6 +625,10 @@ def _workflow_override(name: str, *, current: Any) -> Any | None:
         return None
     default_hooks = getattr(workflows_module, "_MONKEYPATCHABLE_CLOCK_HOOKS", ())
     for hook in default_hooks:
-        if callable(hook) and getattr(hook, "__name__", None) == name and override is hook:
+        if (
+            callable(hook)
+            and getattr(hook, "__name__", None) == name
+            and override is hook
+        ):
             return None
     return override

@@ -124,7 +124,9 @@ class ScopeLookup:
             grouped[Path(rel_path).name].append(rel_path)
             path = repo_root / rel_path
             symbol_index = build_symbol_index(path)
-            qualified_names_by_path[rel_path] = frozenset(symbol_index["qualified_names"])
+            qualified_names_by_path[rel_path] = frozenset(
+                symbol_index["qualified_names"]
+            )
             qualified_names_by_path_and_leaf[rel_path] = symbol_index["by_leaf"]
             qualified_names_by_path_and_line[rel_path] = symbol_index["by_line"]
             vulture_ignored_lines_by_path[rel_path] = frozenset(
@@ -416,7 +418,9 @@ def _record_function_symbol(
         buffers.vulture_ignored_lines.update(_vulture_ignored_line_span(node))
 
 
-def _has_vulture_ignored_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _has_vulture_ignored_decorator(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
     return any(
         _decorator_base_name(decorator) in _VULTURE_IGNORED_DECORATORS
         for decorator in node.decorator_list
@@ -438,7 +442,10 @@ def _vulture_ignored_line_span(
 ) -> set[int]:
     if not node.decorator_list:
         return {int(node.lineno)}
-    start_line = min(int(getattr(decorator, "lineno", node.lineno)) for decorator in node.decorator_list)
+    start_line = min(
+        int(getattr(decorator, "lineno", node.lineno))
+        for decorator in node.decorator_list
+    )
     end_line = int(node.lineno)
     return set(range(start_line, end_line + 1))
 
@@ -569,9 +576,7 @@ def parse_lizard_findings(
             "nloc": config.lizard.nloc.classify(nloc),
             "parameter_count": config.lizard.parameter_count.classify(parameter_count),
         }
-        ranked = [
-            value for value in severities.values() if value is not None
-        ]
+        ranked = [value for value in severities.values() if value is not None]
         if not ranked:
             continue
         severity = cast(
@@ -616,7 +621,9 @@ def parse_complexipy_findings(
         severity = config.complexipy.classify(complexity)
         if severity is None:
             continue
-        rel_path = resolve_reported_path(str(item.get("path") or item.get("file_name")), lookup)
+        rel_path = resolve_reported_path(
+            str(item.get("path") or item.get("file_name")), lookup
+        )
         if rel_path is None:
             continue
         symbol = str(item.get("function_name") or "<unknown>")
@@ -662,7 +669,9 @@ def parse_vulture_candidates(
         if rel_path is None:
             continue
         line_number = int(match.group("line"))
-        if line_number in lookup.vulture_ignored_lines_by_path.get(rel_path, frozenset()):
+        if line_number in lookup.vulture_ignored_lines_by_path.get(
+            rel_path, frozenset()
+        ):
             continue
         symbol = match.group("symbol")
         kind = match.group("kind")
@@ -703,7 +712,9 @@ def infer_subsystem(rel_path: str) -> str:
         return "rag"
     if rel_path.startswith("recoleta/translation"):
         return "translation"
-    if rel_path.startswith("recoleta/sources") or rel_path.startswith("recoleta/extract"):
+    if rel_path.startswith("recoleta/sources") or rel_path.startswith(
+        "recoleta/extract"
+    ):
         return "sources"
     if (
         rel_path.startswith("recoleta/site")
@@ -728,9 +739,10 @@ def _classify_hotspot(values: list[HotspotSignal]) -> str:
     )
     if has_critical_complexity or len(distinct_high_plus) >= 2:
         return "refactor_now"
-    if any(signal.severity in {"high", "critical"} for signal in values) or len(
-        distinct_warning_plus
-    ) >= 2:
+    if (
+        any(signal.severity in {"high", "critical"} for signal in values)
+        or len(distinct_warning_plus) >= 2
+    ):
         return "refactor_soon"
     return "monitor"
 
@@ -909,14 +921,10 @@ def build_recommended_queue(hotspots: list[dict[str, Any]]) -> list[dict[str, An
                 "subsystem": subsystem,
                 "hotspot_count": len(items),
                 "refactor_now": sum(
-                    1
-                    for item in items
-                    if item["classification"] == "refactor_now"
+                    1 for item in items if item["classification"] == "refactor_now"
                 ),
                 "refactor_soon": sum(
-                    1
-                    for item in items
-                    if item["classification"] == "refactor_soon"
+                    1 for item in items if item["classification"] == "refactor_soon"
                 ),
                 "top_hotspots": [
                     {
@@ -941,14 +949,10 @@ def build_recommended_queue(hotspots: list[dict[str, Any]]) -> list[dict[str, An
                 "subsystem": subsystem,
                 "hotspot_count": len(items),
                 "refactor_now": sum(
-                    1
-                    for item in items
-                    if item["classification"] == "refactor_now"
+                    1 for item in items if item["classification"] == "refactor_now"
                 ),
                 "refactor_soon": sum(
-                    1
-                    for item in items
-                    if item["classification"] == "refactor_soon"
+                    1 for item in items if item["classification"] == "refactor_soon"
                 ),
                 "top_hotspots": [
                     {
@@ -986,7 +990,9 @@ def build_baseline_diff(
         key="dead_code_candidates",
         scoped_files=scoped_files,
     )
-    current_dead_code_by_id = {item["id"]: item for item in current_dead_code_candidates}
+    current_dead_code_by_id = {
+        item["id"]: item for item in current_dead_code_candidates
+    }
 
     diff_items = {"new": [], "worsened": [], "resolved": []}
     _collect_item_regressions(
@@ -1116,7 +1122,9 @@ def _collect_resolved_items(
 
 def _sort_diff_items(diff_items: dict[str, list[dict[str, Any]]]) -> None:
     for key in diff_items:
-        diff_items[key].sort(key=lambda item: (item["kind"], item["file"], item["symbol"]))
+        diff_items[key].sort(
+            key=lambda item: (item["kind"], item["file"], item["symbol"])
+        )
 
 
 def summarize_hotspot(item: dict[str, Any]) -> dict[str, Any]:
@@ -1140,9 +1148,10 @@ def hotspot_regression_reasons(
     previous: dict[str, Any], current: dict[str, Any]
 ) -> list[str]:
     reasons: list[str] = []
-    if HOTSPOT_CLASSIFICATION_RANK[current["classification"]] > HOTSPOT_CLASSIFICATION_RANK[
-        previous["classification"]
-    ]:
+    if (
+        HOTSPOT_CLASSIFICATION_RANK[current["classification"]]
+        > HOTSPOT_CLASSIFICATION_RANK[previous["classification"]]
+    ):
         reasons.append("classification")
 
     previous_metrics = previous.get("metrics", {})
@@ -1184,8 +1193,7 @@ def build_repo_verdict(
         hotspot for hotspot in hotspots if hotspot["classification"] == "refactor_now"
     ]
     new_refactor_now = any(
-        item["kind"] == "hotspot"
-        and item["after"]["classification"] == "refactor_now"
+        item["kind"] == "hotspot" and item["after"]["classification"] == "refactor_now"
         for item in baseline_diff.get("new", [])
     )
     if has_regressions or new_refactor_now:
@@ -1339,9 +1347,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             continue
         lines.extend(["", f"### {label.title()}", ""])
         for item in items[:10]:
-            lines.append(
-                f"- `{item['kind']}` {item['file']} :: {item['symbol']}"
-            )
+            lines.append(f"- `{item['kind']}` {item['file']} :: {item['symbol']}")
 
     lines.extend(
         [
@@ -1473,7 +1479,9 @@ def _prepare_audit_scope(request: RefactorAuditRunRequest) -> AuditScopeState:
     request.out_dir.mkdir(parents=True, exist_ok=True)
     raw_dir = request.out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    current_scope_files = [relative_path(path, request.config.repo_root) for path in files]
+    current_scope_files = [
+        relative_path(path, request.config.repo_root) for path in files
+    ]
     full_scope_file_set = {
         relative_path(path, request.config.repo_root) for path in default_scope_files
     }
@@ -1696,7 +1704,9 @@ def _maybe_update_baseline(
         build_baseline_snapshot(
             report,
             baseline_report=baseline_report if scope_state.is_partial_scope else None,
-            scope_files=scope_state.current_scope_files if scope_state.is_partial_scope else None,
+            scope_files=scope_state.current_scope_files
+            if scope_state.is_partial_scope
+            else None,
         ),
     )
 
@@ -1712,9 +1722,7 @@ def run_refactor_audit(
     scope_state = _prepare_audit_scope(resolved_request)
     tool_run = _run_audit_tools(scope_state, resolved_request)
     hotspots = aggregate_hotspots(
-        tool_run.ruff_signals
-        + tool_run.lizard_signals
-        + tool_run.complexipy_signals
+        tool_run.ruff_signals + tool_run.lizard_signals + tool_run.complexipy_signals
     )
     tool_summaries = build_tool_summaries(
         ruff_signals=tool_run.ruff_signals,
@@ -1791,15 +1799,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config = load_audit_config()
     scope_targets = args.paths or list(config.targets)
-    out_dir = (
-        args.out_dir.resolve()
-        if args.out_dir is not None
-        else config.out_dir
-    )
+    out_dir = args.out_dir.resolve() if args.out_dir is not None else config.out_dir
     baseline_path = (
-        args.baseline.resolve()
-        if args.baseline is not None
-        else config.baseline
+        args.baseline.resolve() if args.baseline is not None else config.baseline
     )
     exit_code, report = run_refactor_audit(
         scope_targets=scope_targets,

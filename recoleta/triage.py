@@ -226,7 +226,9 @@ class SemanticTriage:
                 method="topics_empty_fallback",
                 selected=[
                     TriageScoredCandidate(candidate=candidate, score=0.0)
-                    for candidate in resolved_request.candidates[: resolved_request.limit]
+                    for candidate in resolved_request.candidates[
+                        : resolved_request.limit
+                    ]
                 ],
             )
         scoring = self._score_candidates(
@@ -509,7 +511,11 @@ class SemanticTriage:
     @staticmethod
     def _normalize_selection_mode(mode: str) -> str:
         normalized_mode = str(mode or "").strip().lower()
-        return normalized_mode if normalized_mode in {"prioritize", "filter"} else "prioritize"
+        return (
+            normalized_mode
+            if normalized_mode in {"prioritize", "filter"}
+            else "prioritize"
+        )
 
     @classmethod
     def _recency_items(
@@ -556,9 +562,7 @@ class SemanticTriage:
             min(
                 remaining_slots,
                 int(
-                    math.floor(
-                        config.limit * max(0.0, float(config.exploration_rate))
-                    )
+                    math.floor(config.limit * max(0.0, float(config.exploration_rate)))
                 ),
             ),
         )
@@ -571,7 +575,9 @@ class SemanticTriage:
         if exploration_slots <= 0 or not exploration_pool:
             return []
         rng = random.Random(_stable_seed(config.run_id))
-        return rng.sample(exploration_pool, k=min(exploration_slots, len(exploration_pool)))
+        return rng.sample(
+            exploration_pool, k=min(exploration_slots, len(exploration_pool))
+        )
 
     @staticmethod
     def _select_from_scored(
@@ -606,7 +612,9 @@ class SemanticTriage:
             0,
             min(
                 remaining_slots,
-                int(math.floor(config.limit * max(0.0, float(config.exploration_rate)))),
+                int(
+                    math.floor(config.limit * max(0.0, float(config.exploration_rate)))
+                ),
             ),
         )
         exploitation_slots = max(0, remaining_slots - exploration_slots)

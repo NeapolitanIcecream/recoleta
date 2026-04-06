@@ -242,7 +242,9 @@ def run_trends_stage(
 
 
 class _TrendStageRunner:
-    def __init__(self, *, service: TrendStageService, request: TrendStageRequest) -> None:
+    def __init__(
+        self, *, service: TrendStageService, request: TrendStageRequest
+    ) -> None:
         self.service = service
         self.request = request
         self.log = logger.bind(module="pipeline.trends", run_id=request.run_id)
@@ -310,7 +312,9 @@ class _TrendStageRunner:
             self._handle_failure(exc=exc, state=state)
             raise
 
-    def record_metric(self, *, name: str, value: float, unit: str | None = None) -> None:
+    def record_metric(
+        self, *, name: str, value: float, unit: str | None = None
+    ) -> None:
         self.service.repository.record_metric(
             run_id=self.request.run_id,
             name=_trend_metric_name(name),
@@ -414,7 +418,13 @@ class _TrendStageRunner:
                 period_end=period_end,
                 required=index_required,
             )
-        return period_start, period_end, corpus_doc_type, corpus_granularity, index_stats
+        return (
+            period_start,
+            period_end,
+            corpus_doc_type,
+            corpus_granularity,
+            index_stats,
+        )
 
     def _prepare_period_backlog(self, *, period_start: Any, period_end: Any) -> None:
         self.service.prepare(
@@ -724,7 +734,9 @@ class _TrendStageRunner:
             return int(state.index_stats.get("docs_upserted") or 0)
         probe = cast(Any, self.service.repository).list_documents(
             doc_type=state.corpus_doc_type,
-            granularity=state.corpus_granularity if state.corpus_doc_type == "trend" else None,
+            granularity=state.corpus_granularity
+            if state.corpus_doc_type == "trend"
+            else None,
             period_start=state.period_start,
             period_end=state.period_end,
             order_by="event_desc",
@@ -1022,7 +1034,9 @@ class _TrendStageRunner:
         int | None,
         str | None,
     ]:
-        if not bool(getattr(self.service.settings, "trends_self_similar_enabled", False)):
+        if not bool(
+            getattr(self.service.settings, "trends_self_similar_enabled", False)
+        ):
             return None, None, None, None, None
         if plan is None:
             return None, None, None, None, None
@@ -1083,7 +1097,9 @@ class _TrendStageRunner:
         state: _TrendStageState,
         plan: trends.TrendGenerationPlan | None,
     ) -> tuple[str | None, dict[str, Any] | None, int | None]:
-        if not bool(getattr(self.service.settings, "trends_peer_history_enabled", False)):
+        if not bool(
+            getattr(self.service.settings, "trends_peer_history_enabled", False)
+        ):
             return None, None, None
         if plan is None:
             return None, None, None
@@ -1161,7 +1177,9 @@ class _TrendStageRunner:
             if isinstance(history_pack_stats, dict):
                 available_window_ids = {
                     str(window_id).strip()
-                    for window_id in (history_pack_stats.get("available_window_ids") or [])
+                    for window_id in (
+                        history_pack_stats.get("available_window_ids") or []
+                    )
                     if str(window_id).strip()
                 }
             payload.evolution, evolution_normalization_stats = (
@@ -1169,13 +1187,17 @@ class _TrendStageRunner:
                     payload.evolution,
                     granularity=state.normalized_granularity,
                     period_start=state.period_start,
-                    history_windows=list(getattr(plan, "peer_history_windows", []) or []),
+                    history_windows=list(
+                        getattr(plan, "peer_history_windows", []) or []
+                    ),
                     available_window_ids=available_window_ids,
                 )
             )
-        history_windows_available = int(
-            history_pack_stats.get("available_windows") or 0
-        ) if isinstance(history_pack_stats, dict) else 0
+        history_windows_available = (
+            int(history_pack_stats.get("available_windows") or 0)
+            if isinstance(history_pack_stats, dict)
+            else 0
+        )
         evolution_suppressed_without_history = False
         if payload.evolution is not None and history_windows_available <= 0:
             payload.evolution = None
@@ -1248,7 +1270,9 @@ class _TrendStageRunner:
         )
         self.record_metric(
             name="pipeline.trends.evolution.signals_total",
-            value=len(payload.evolution.signals or []) if payload.evolution is not None else 0,
+            value=len(payload.evolution.signals or [])
+            if payload.evolution is not None
+            else 0,
             unit="count",
         )
         self.record_metric(
@@ -1356,7 +1380,9 @@ class _TrendStageRunner:
         if normalized_doc_id <= 0:
             return None
         if normalized_doc_id not in rep_doc_type_cache:
-            doc = cast(Any, self.service.repository).get_document(doc_id=normalized_doc_id)
+            doc = cast(Any, self.service.repository).get_document(
+                doc_id=normalized_doc_id
+            )
             rep_doc_type_cache[normalized_doc_id] = (
                 str(getattr(doc, "doc_type", "") or "").strip().lower() or None
                 if doc is not None
@@ -1482,7 +1508,8 @@ class _TrendStageRunner:
                     "continue",
                 ),
                 embedding_max_errors=int(
-                    getattr(self.service.settings, "trends_embedding_max_errors", 0) or 0
+                    getattr(self.service.settings, "trends_embedding_max_errors", 0)
+                    or 0
                 ),
                 limit=limit,
                 metric_namespace=self.metric_namespace,
@@ -1625,14 +1652,18 @@ class _TrendStageRunner:
                     persisted_metric_name="pipeline.trends.pass.synthesis.persisted_total",
                     reraise=False,
                 ),
-                prepare_projection_state=lambda pass_output_id: _prepare_trend_projection_state(
-                    context,
-                    pass_output_id,
+                prepare_projection_state=lambda pass_output_id: (
+                    _prepare_trend_projection_state(
+                        context,
+                        pass_output_id,
+                    )
                 ),
-                build_projection_specs=lambda pass_output_id, projection_state: _build_trend_projection_specs(
-                    context,
-                    pass_output_id,
-                    projection_state,
+                build_projection_specs=lambda pass_output_id, projection_state: (
+                    _build_trend_projection_specs(
+                        context,
+                        pass_output_id,
+                        projection_state,
+                    )
                 ),
                 allow_projection_without_pass_output=True,
             ),
@@ -1739,7 +1770,9 @@ class _TrendStageRunner:
         trend_pdf_result = None
         try:
             if markdown_note_path is None:
-                raise RuntimeError("trend markdown note is unavailable for PDF delivery")
+                raise RuntimeError(
+                    "trend markdown note is unavailable for PDF delivery"
+                )
             trend_pdf_result = render_trend_note_pdf_result(
                 markdown_path=markdown_note_path,
                 backend="auto",
@@ -1769,13 +1802,17 @@ class _TrendStageRunner:
     ) -> None:
         try:
             if markdown_note_path is None:
-                raise RuntimeError("trend markdown note is unavailable for PDF debug export")
+                raise RuntimeError(
+                    "trend markdown note is unavailable for PDF debug export"
+                )
             debug_dir = markdown_note_path.parent / ".pdf-debug" / trend_pdf_path.stem
             export_trend_note_pdf_debug_bundle(
                 markdown_path=markdown_note_path,
                 pdf_path=trend_pdf_path,
                 debug_dir=debug_dir,
-                prepared=trend_pdf_result.prepared if trend_pdf_result is not None else None,
+                prepared=trend_pdf_result.prepared
+                if trend_pdf_result is not None
+                else None,
             )
             delivery.pdf_debug_generated_total = 1
             self.log.bind(
@@ -1842,10 +1879,19 @@ class _TrendStageRunner:
         for metric_name, value in (
             ("pipeline.trends.pdf.generated_total", delivery.pdf_generated_total),
             ("pipeline.trends.pdf.failed_total", delivery.pdf_failed_total),
-            ("pipeline.trends.pdf.debug.generated_total", delivery.pdf_debug_generated_total),
+            (
+                "pipeline.trends.pdf.debug.generated_total",
+                delivery.pdf_debug_generated_total,
+            ),
             ("pipeline.trends.pdf.debug.failed_total", delivery.pdf_debug_failed_total),
-            ("pipeline.trends.pdf.browser.generated_total", delivery.pdf_browser_generated_total),
-            ("pipeline.trends.pdf.story.generated_total", delivery.pdf_story_generated_total),
+            (
+                "pipeline.trends.pdf.browser.generated_total",
+                delivery.pdf_browser_generated_total,
+            ),
+            (
+                "pipeline.trends.pdf.story.generated_total",
+                delivery.pdf_story_generated_total,
+            ),
             ("pipeline.trends.telegram.sent_total", delivery.telegram_sent_total),
             ("pipeline.trends.telegram.failed_total", delivery.telegram_failed_total),
         ):
@@ -1879,7 +1925,9 @@ class _TrendStageRunner:
         )
 
     def _record_tool_metrics(self, debug: dict[str, Any] | None) -> None:
-        tool_calls_total = int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0
+        tool_calls_total = (
+            int(debug.get("tool_calls_total") or 0) if isinstance(debug, dict) else 0
+        )
         self.record_metric(
             name="pipeline.trends.tool_calls_total",
             value=tool_calls_total,
@@ -1909,7 +1957,11 @@ class _TrendStageRunner:
         state: _TrendStageState | None,
     ) -> None:
         sanitized_error = self.service._sanitize_error_message(str(exc))
-        anchor = state.anchor if state is not None else (self.request.anchor_date or utc_now().date())
+        anchor = (
+            state.anchor
+            if state is not None
+            else (self.request.anchor_date or utc_now().date())
+        )
         granularity = (
             state.normalized_granularity
             if state is not None
@@ -2020,7 +2072,9 @@ def _record_note_doc_ref_metrics(
 ) -> None:
     rewrite_occurrences_total = materialized.rewrite_stats.doc_ref_occurrences_total
     rewrite_doc_ids_resolved_total = materialized.rewrite_stats.doc_ref_resolved_total
-    rewrite_doc_ids_unresolved_total = materialized.rewrite_stats.doc_ref_unresolved_total
+    rewrite_doc_ids_unresolved_total = (
+        materialized.rewrite_stats.doc_ref_unresolved_total
+    )
     if rewrite_occurrences_total or rewrite_doc_ids_unresolved_total:
         context.log.info(
             "Trend note doc refs rewritten occurrences={} resolved_doc_ids={} unresolved_doc_ids={}",
@@ -2029,9 +2083,18 @@ def _record_note_doc_ref_metrics(
             rewrite_doc_ids_unresolved_total,
         )
     for metric_name, value in (
-        ("pipeline.trends.note_doc_refs_rewrite_occurrences_total", rewrite_occurrences_total),
-        ("pipeline.trends.note_doc_refs_resolved_total", rewrite_doc_ids_resolved_total),
-        ("pipeline.trends.note_doc_refs_unresolved_total", rewrite_doc_ids_unresolved_total),
+        (
+            "pipeline.trends.note_doc_refs_rewrite_occurrences_total",
+            rewrite_occurrences_total,
+        ),
+        (
+            "pipeline.trends.note_doc_refs_resolved_total",
+            rewrite_doc_ids_resolved_total,
+        ),
+        (
+            "pipeline.trends.note_doc_refs_unresolved_total",
+            rewrite_doc_ids_unresolved_total,
+        ),
     ):
         context.record_metric(name=metric_name, value=value, unit="count")
 

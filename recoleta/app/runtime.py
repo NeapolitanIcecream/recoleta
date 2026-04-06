@@ -178,15 +178,13 @@ def _print_ingest_html_document_summary(
         or 0
     )
     pandoc_warning_count_sum = int(
-        by_name.get("pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum")
-        or 0
+        by_name.get("pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum") or 0
     )
     fallback_to_pdf_total = int(
         by_name.get("pipeline.enrich.arxiv.html_document.fallback_to_pdf_total") or 0
     )
     pandoc_math_replaced_sum = int(
-        by_name.get("pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum")
-        or 0
+        by_name.get("pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum") or 0
     )
     console.print(
         "[cyan]arxiv html_document[/cyan] "
@@ -243,7 +241,7 @@ def _interrupt_exit_code(exc: KeyboardInterrupt) -> int:
 def _graceful_shutdown_signals() -> Iterator[None]:
     try:
         previous_sigterm = signal.getsignal(signal.SIGTERM)
-    except (AttributeError, ValueError):
+    except AttributeError, ValueError:
         yield
         return
 
@@ -304,8 +302,7 @@ def _raise_typer_exit_for_workspace_lock(
     ]
     detail_text = " ".join(part for part in details if part)
     console.print(
-        "[red]workspace is locked[/red]"
-        + (f" {detail_text}" if detail_text else "")
+        "[red]workspace is locked[/red]" + (f" {detail_text}" if detail_text else "")
     )
     raise typer.Exit(code=1) from None
 

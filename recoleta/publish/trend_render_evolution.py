@@ -81,7 +81,9 @@ def _extract_history_links(li: Tag) -> list[tuple[str, str]]:
     ]
 
 
-def _extract_history_metadata(meta_list: Tag | None) -> tuple[str, list[str], list[tuple[str, str]]]:
+def _extract_history_metadata(
+    meta_list: Tag | None,
+) -> tuple[str, list[str], list[tuple[str, str]]]:
     if meta_list is None:
         return "", [], []
 
@@ -129,7 +131,9 @@ def _extract_evolution_signal(
             break
 
     change_type, history_labels, history_links = _extract_history_metadata(meta_list)
-    summary_html = "".join(str(node) for node in soup.contents if str(node).strip()).strip()
+    summary_html = "".join(
+        str(node) for node in soup.contents if str(node).strip()
+    ).strip()
     return TrendEvolutionSignal(
         theme=theme,
         change_type=change_type,

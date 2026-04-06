@@ -115,7 +115,9 @@ def rebalance_items_by_source(
     if normalized_limit <= 0 or not request.items:
         return [], {}, {}
     queues, source_order = _items_by_source(request.items)
-    candidate_counts = {source_name: len(queue) for source_name, queue in queues.items()}
+    candidate_counts = {
+        source_name: len(queue) for source_name, queue in queues.items()
+    }
     selected = _round_robin_selection(
         queues=queues,
         source_order=source_order,
@@ -131,7 +133,9 @@ def _items_by_source(items: list[Any]) -> tuple[dict[str, deque[Any]], list[str]
     queues: dict[str, deque[Any]] = {}
     source_order: list[str] = []
     for item in items:
-        source_name = str(getattr(item, "source", "") or "").strip().lower() or "unknown"
+        source_name = (
+            str(getattr(item, "source", "") or "").strip().lower() or "unknown"
+        )
         queue = queues.get(source_name)
         if queue is None:
             queue = deque()
@@ -164,7 +168,9 @@ def _round_robin_selection(
 
 
 class _IngestStageRunner:
-    def __init__(self, *, service: IngestStageService, request: IngestStageRequest) -> None:
+    def __init__(
+        self, *, service: IngestStageService, request: IngestStageRequest
+    ) -> None:
         self.service = service
         self.request = request
         self.log = logger.bind(module="pipeline.ingest", run_id=request.run_id)
@@ -206,7 +212,9 @@ class _IngestStageRunner:
             )
             return
         for draft in self.source_drafts or []:
-            bucket = _ensure_source_pull_bucket(self.source_stats, str(draft.source or ""))
+            bucket = _ensure_source_pull_bucket(
+                self.source_stats, str(draft.source or "")
+            )
             bucket["drafts_total"] += 1
 
     def _ingest_draft(self, draft: ItemDraft) -> None:
@@ -488,7 +496,9 @@ class _SourcePullRunner:
                 **legacy_kwargs,
             )
             pull_result = self.service._normalize_source_pull_result(raw_result)
-            self._merge_pull_result(source_name=source_name, bucket=bucket, pull_result=pull_result)
+            self._merge_pull_result(
+                source_name=source_name, bucket=bucket, pull_result=pull_result
+            )
         except Exception as exc:
             self._record_pull_failure(source_name=source_name, bucket=bucket, exc=exc)
         finally:

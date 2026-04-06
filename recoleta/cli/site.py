@@ -261,7 +261,9 @@ def _site_manifest_summary(
 
 def _resolve_site_serve_output(request: SiteServeRequest) -> tuple[Path, Any | None]:
     resolved_output_dir = (
-        request.output_dir.expanduser().resolve() if request.output_dir is not None else None
+        request.output_dir.expanduser().resolve()
+        if request.output_dir is not None
+        else None
     )
     settings = (
         cli._build_settings()
@@ -269,7 +271,9 @@ def _resolve_site_serve_output(request: SiteServeRequest) -> tuple[Path, Any | N
         else None
     )
     return (
-        resolved_output_dir if resolved_output_dir is not None else site_output_dir_from_settings(settings),
+        resolved_output_dir
+        if resolved_output_dir is not None
+        else site_output_dir_from_settings(settings),
         settings,
     )
 
@@ -281,7 +285,9 @@ def _serve_site_directory(
     request: SiteServeRequest,
 ) -> None:
     if not output_dir.exists() or not output_dir.is_dir():
-        raise ValueError(f"Static site output directory must exist before serving: {output_dir}")
+        raise ValueError(
+            f"Static site output directory must exist before serving: {output_dir}"
+        )
     console = _site_console(settings=settings)
     log = logger.bind(module="cli.site.serve", host=request.host, port=request.port)
     try:
@@ -309,11 +315,15 @@ def _serve_site_directory(
 
 def _site_console(*, settings: Any | None) -> Any:
     return cli._runtime_symbols()["Console"](
-        stderr=bool(getattr(settings, "log_json", False)) if settings is not None else False
+        stderr=bool(getattr(settings, "log_json", False))
+        if settings is not None
+        else False
     )
 
 
-def _cleanup_site_lease(lease: tuple[Any | None, str | None, Any | None, Any | None]) -> None:
+def _cleanup_site_lease(
+    lease: tuple[Any | None, str | None, Any | None, Any | None],
+) -> None:
     repository, owner_token, log, heartbeat_monitor = lease
     if (
         repository is not None

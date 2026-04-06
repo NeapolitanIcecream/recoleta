@@ -19,7 +19,10 @@ from recoleta.publish import (
 )
 from recoleta.publish.item_note_writer import ItemNoteSpec
 from recoleta.publish.idea_notes import resolve_ideas_note_path
-from recoleta.translation import localized_language_root, materialize_localized_languages
+from recoleta.translation import (
+    localized_language_root,
+    materialize_localized_languages,
+)
 from recoleta.trend_materialize import materialize_trend_note_payload
 from recoleta.trends import TrendPayload, is_empty_trend_payload
 
@@ -101,7 +104,9 @@ def _materialize_module() -> Any:
 
 
 def coerce_target_outputs_request(
-    *, request: MaterializeTargetOutputsRequest | None = None, legacy_kwargs: dict[str, Any]
+    *,
+    request: MaterializeTargetOutputsRequest | None = None,
+    legacy_kwargs: dict[str, Any],
 ) -> MaterializeTargetOutputsRequest:
     if request is not None:
         return request
@@ -146,7 +151,9 @@ def coerce_outputs_request(
         site_input_dir=legacy_kwargs.get("site_input_dir"),
         site_output_dir=legacy_kwargs.get("site_output_dir"),
         localization=legacy_kwargs.get("localization"),
-        item_export_scope=str(legacy_kwargs.get("item_export_scope", "linked") or "linked"),
+        item_export_scope=str(
+            legacy_kwargs.get("item_export_scope", "linked") or "linked"
+        ),
     )
 
 
@@ -173,13 +180,15 @@ def _build_item_note_spec(
     )
 
 
-def _build_materialize_context(*, request: MaterializeTargetOutputsRequest) -> _MaterializeContext:
+def _build_materialize_context(
+    *, request: MaterializeTargetOutputsRequest
+) -> _MaterializeContext:
     materialize_module = _materialize_module()
     output_dir = request.target_spec.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     materialize_module._reset_managed_output_dirs(output_dir)
-    obsidian_vault_path, obsidian_base_folder = materialize_module._resolved_obsidian_target(
-        target_spec=request.target_spec
+    obsidian_vault_path, obsidian_base_folder = (
+        materialize_module._resolved_obsidian_target(target_spec=request.target_spec)
     )
     result = materialize_module.MaterializeOutputResult(output_dir=output_dir)
     log = logger.bind(module="materialize.outputs", output_dir=str(output_dir))
@@ -212,7 +221,9 @@ def _localized_analysis_summary(*, ctx: _MaterializeContext, analysis: Any) -> s
     return str(getattr(analysis, "summary", "") or "")
 
 
-def _record_item_note_href(*, ctx: _MaterializeContext, item: Any, note_path: Path) -> None:
+def _record_item_note_href(
+    *, ctx: _MaterializeContext, item: Any, note_path: Path
+) -> None:
     canonical_url = str(getattr(item, "canonical_url", "") or "").strip()
     if canonical_url:
         ctx.item_note_href_by_url[canonical_url] = f"../Inbox/{note_path.name}"
@@ -220,7 +231,9 @@ def _record_item_note_href(*, ctx: _MaterializeContext, item: Any, note_path: Pa
 
 def _materialize_item_notes(*, ctx: _MaterializeContext) -> None:
     materialize_module = _materialize_module()
-    for item, analysis in materialize_module._materialize_item_pairs(repository=ctx.repository):
+    for item, analysis in materialize_module._materialize_item_pairs(
+        repository=ctx.repository
+    ):
         item_id = getattr(item, "id", None)
         if item_id is None:
             continue
@@ -259,7 +272,9 @@ def _materialize_obsidian_item_note(
         )
 
 
-def _load_trend_payload_for_output(*, ctx: _MaterializeContext, document: Any) -> tuple[TrendPayload, Any]:
+def _load_trend_payload_for_output(
+    *, ctx: _MaterializeContext, document: Any
+) -> tuple[TrendPayload, Any]:
     materialize_module = _materialize_module()
     doc_id = int(getattr(document, "id") or 0)
     payload = materialize_module._localized_output_payload(
@@ -270,10 +285,14 @@ def _load_trend_payload_for_output(*, ctx: _MaterializeContext, document: Any) -
     )
     if payload is not None:
         return TrendPayload.model_validate(payload), None
-    return materialize_module._load_trend_payload(repository=ctx.repository, document=document)
+    return materialize_module._load_trend_payload(
+        repository=ctx.repository, document=document
+    )
 
 
-def _trend_site_exclude(*, ctx: _MaterializeContext, payload: TrendPayload, trend_projection: Any) -> bool:
+def _trend_site_exclude(
+    *, ctx: _MaterializeContext, payload: TrendPayload, trend_projection: Any
+) -> bool:
     materialize_module = _materialize_module()
     trend_site_exclude = is_empty_trend_payload(payload)
     if trend_projection is None or trend_projection.pass_output_id is None:
@@ -283,11 +302,17 @@ def _trend_site_exclude(*, ctx: _MaterializeContext, payload: TrendPayload, tren
     )
     if source_pass_output is None:
         return trend_site_exclude
-    return materialize_module._trend_pass_output_has_empty_corpus(row=source_pass_output)
+    return materialize_module._trend_pass_output_has_empty_corpus(
+        row=source_pass_output
+    )
 
 
 def _materialize_trend_markdown_note(
-    *, ctx: _MaterializeContext, document: Any, payload: TrendPayload, trend_projection: Any
+    *,
+    ctx: _MaterializeContext,
+    document: Any,
+    payload: TrendPayload,
+    trend_projection: Any,
 ) -> tuple[Path, Any, bool]:
     doc_id = int(getattr(document, "id") or 0)
     trend_site_exclude = _trend_site_exclude(
@@ -317,15 +342,23 @@ def _materialize_trend_markdown_note(
         clusters=materialized.clusters,
         highlights=materialized.highlights,
         output_language=ctx.output_language,
-        pass_output_id=trend_projection.pass_output_id if trend_projection is not None else None,
+        pass_output_id=trend_projection.pass_output_id
+        if trend_projection is not None
+        else None,
         pass_kind=trend_projection.pass_kind if trend_projection is not None else None,
         site_exclude=trend_site_exclude,
         language_code=ctx.language_code,
     )
     ctx.result.trend_notes_total += 1
-    ctx.result.doc_ref_rewrites_total += materialized.rewrite_stats.doc_ref_occurrences_total
-    ctx.result.doc_ref_resolved_total += materialized.rewrite_stats.doc_ref_resolved_total
-    ctx.result.doc_ref_unresolved_total += materialized.rewrite_stats.doc_ref_unresolved_total
+    ctx.result.doc_ref_rewrites_total += (
+        materialized.rewrite_stats.doc_ref_occurrences_total
+    )
+    ctx.result.doc_ref_resolved_total += (
+        materialized.rewrite_stats.doc_ref_resolved_total
+    )
+    ctx.result.doc_ref_unresolved_total += (
+        materialized.rewrite_stats.doc_ref_unresolved_total
+    )
     ctx.result.canonical_link_rewrites_total += (
         materialized.rewrite_stats.canonical_link_rewrites_total
     )
@@ -361,8 +394,12 @@ def _materialize_obsidian_trend_note(
             clusters=materialized.clusters,
             highlights=materialized.highlights,
             output_language=ctx.output_language,
-            pass_output_id=trend_projection.pass_output_id if trend_projection is not None else None,
-            pass_kind=trend_projection.pass_kind if trend_projection is not None else None,
+            pass_output_id=trend_projection.pass_output_id
+            if trend_projection is not None
+            else None,
+            pass_kind=trend_projection.pass_kind
+            if trend_projection is not None
+            else None,
             site_exclude=trend_site_exclude,
             language_code=ctx.language_code,
         )
@@ -376,7 +413,9 @@ def _materialize_obsidian_trend_note(
         )
 
 
-def _materialize_trend_pdf(*, ctx: _MaterializeContext, document: Any, note_path: Path) -> None:
+def _materialize_trend_pdf(
+    *, ctx: _MaterializeContext, document: Any, note_path: Path
+) -> None:
     if not ctx.generate_pdf:
         return
     materialize_module = _materialize_module()
@@ -405,7 +444,9 @@ def _materialize_trend_pdf(*, ctx: _MaterializeContext, document: Any, note_path
         )
 
 
-def _materialize_trend_notes(*, ctx: _MaterializeContext, granularity: str | None) -> None:
+def _materialize_trend_notes(
+    *, ctx: _MaterializeContext, granularity: str | None
+) -> None:
     materialize_module = _materialize_module()
     trend_documents = materialize_module._materialize_trend_documents(
         repository=ctx.repository,
@@ -419,11 +460,13 @@ def _materialize_trend_notes(*, ctx: _MaterializeContext, granularity: str | Non
                 ctx=ctx,
                 document=document,
             )
-            note_path, materialized, trend_site_exclude = _materialize_trend_markdown_note(
-                ctx=ctx,
-                document=document,
-                payload=payload,
-                trend_projection=trend_projection,
+            note_path, materialized, trend_site_exclude = (
+                _materialize_trend_markdown_note(
+                    ctx=ctx,
+                    document=document,
+                    payload=payload,
+                    trend_projection=trend_projection,
+                )
             )
         except Exception as exc:  # noqa: BLE001
             ctx.result.trend_failures_total += 1
@@ -443,7 +486,9 @@ def _materialize_trend_notes(*, ctx: _MaterializeContext, granularity: str | Non
         _materialize_trend_pdf(ctx=ctx, document=document, note_path=note_path)
 
 
-def _ideas_note_context(*, ctx: _MaterializeContext, row: Any, payload: TrendIdeasPayload) -> dict[str, Any]:
+def _ideas_note_context(
+    *, ctx: _MaterializeContext, row: Any, payload: TrendIdeasPayload
+) -> dict[str, Any]:
     materialize_module = _materialize_module()
     upstream_pass_output_id = materialize_module._ideas_upstream_pass_output_id(row=row)
     upstream_pass_output = (
@@ -457,7 +502,9 @@ def _ideas_note_context(*, ctx: _MaterializeContext, row: Any, payload: TrendIde
     if (
         not ideas_empty_corpus
         and upstream_pass_output is not None
-        and materialize_module._trend_pass_output_has_empty_corpus(row=upstream_pass_output)
+        and materialize_module._trend_pass_output_has_empty_corpus(
+            row=upstream_pass_output
+        )
     ):
         ideas_empty_corpus = True
     return {
@@ -472,7 +519,11 @@ def _ideas_note_context(*, ctx: _MaterializeContext, row: Any, payload: TrendIde
 
 
 def _cleanup_empty_corpus_idea_outputs(
-    *, ctx: _MaterializeContext, row: Any, granularity_value: str, period_start: datetime
+    *,
+    ctx: _MaterializeContext,
+    row: Any,
+    granularity_value: str,
+    period_start: datetime,
 ) -> None:
     note_path = resolve_ideas_note_path(
         note_dir=ctx.output_dir / "Ideas",
@@ -531,7 +582,10 @@ def _materialize_obsidian_ideas_note(
     *,
     request: _ObsidianIdeasNoteRequest,
 ) -> None:
-    if request.ctx.obsidian_vault_path is None or request.ctx.obsidian_base_folder is None:
+    if (
+        request.ctx.obsidian_vault_path is None
+        or request.ctx.obsidian_base_folder is None
+    ):
         return
     pass_output_id = int(getattr(request.row, "id") or 0)
     try:
@@ -550,7 +604,9 @@ def _materialize_obsidian_ideas_note(
         )
 
 
-def _materialize_idea_notes(*, ctx: _MaterializeContext, granularity: str | None) -> None:
+def _materialize_idea_notes(
+    *, ctx: _MaterializeContext, granularity: str | None
+) -> None:
     materialize_module = _materialize_module()
     idea_pass_outputs = materialize_module._materialize_idea_pass_outputs(
         repository=ctx.repository,
@@ -560,10 +616,12 @@ def _materialize_idea_notes(*, ctx: _MaterializeContext, granularity: str | None
     for row in idea_pass_outputs:
         pass_output_id = int(getattr(row, "id") or 0)
         try:
-            localized_idea_payload = materialize_module._localized_idea_payload_for_pass_output(
-                repository=ctx.repository,
-                row=row,
-                language_code=ctx.language_code,
+            localized_idea_payload = (
+                materialize_module._localized_idea_payload_for_pass_output(
+                    repository=ctx.repository,
+                    row=row,
+                    language_code=ctx.language_code,
+                )
             )
             payload = (
                 TrendIdeasPayload.model_validate(localized_idea_payload)
@@ -572,7 +630,9 @@ def _materialize_idea_notes(*, ctx: _MaterializeContext, granularity: str | None
             )
             period_start = getattr(row, "period_start")
             period_end = getattr(row, "period_end")
-            if not isinstance(period_start, datetime) or not isinstance(period_end, datetime):
+            if not isinstance(period_start, datetime) or not isinstance(
+                period_end, datetime
+            ):
                 raise ValueError("ideas pass output is missing period bounds")
             idea_ctx = _ideas_note_context(ctx=ctx, row=row, payload=payload)
             if idea_ctx["ideas_empty_corpus"]:
@@ -858,7 +918,9 @@ def _materialize_localized_idea_notes(
         )
 
 
-def materialize_localized_outputs(*, request: MaterializeLocalizedOutputsRequest) -> None:
+def materialize_localized_outputs(
+    *, request: MaterializeLocalizedOutputsRequest
+) -> None:
     materialize_module = _materialize_module()
     output_dir = request.target_spec.output_dir.expanduser().resolve()
     languages = materialize_localized_languages(
@@ -867,9 +929,11 @@ def materialize_localized_outputs(*, request: MaterializeLocalizedOutputsRequest
     )
     if not languages:
         return
-    item_pairs, trend_documents, idea_documents = materialize_module._materialize_localized_sources(
-        repository=request.repository,
-        granularity=request.granularity,
+    item_pairs, trend_documents, idea_documents = (
+        materialize_module._materialize_localized_sources(
+            repository=request.repository,
+            granularity=request.granularity,
+        )
     )
     for language_code in languages:
         language_root = localized_language_root(
@@ -904,7 +968,9 @@ def materialize_localized_outputs(*, request: MaterializeLocalizedOutputsRequest
 
 def materialize_outputs(*, request: MaterializeOutputsRequest) -> Any:
     materialize_module = _materialize_module()
-    normalized_granularity = materialize_module._normalize_granularity(request.granularity)
+    normalized_granularity = materialize_module._normalize_granularity(
+        request.granularity
+    )
     canonical_language_code = materialize_module._canonical_language_code(
         localization=request.localization,
     )

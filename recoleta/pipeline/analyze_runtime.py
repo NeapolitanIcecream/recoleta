@@ -148,7 +148,9 @@ def _build_analyze_artifact_writer(*, service: Any, run_id: str, log: Any):
 
 
 def _load_analyze_items(request: AnalyzeLoadRequest) -> list[Any]:
-    candidate_limit = request.service._stage_candidate_limit(limit=request.effective_limit)
+    candidate_limit = request.service._stage_candidate_limit(
+        limit=request.effective_limit
+    )
     items = request.service._invoke_repository_method(
         "list_items_for_llm_analysis",
         limit=candidate_limit,
@@ -156,9 +158,11 @@ def _load_analyze_items(request: AnalyzeLoadRequest) -> list[Any]:
         period_start=request.period_start,
         period_end=request.period_end,
     )
-    items, candidate_counts, deferred_counts = request.service._rebalance_items_by_source(
-        items=list(items),
-        limit=request.effective_limit,
+    items, candidate_counts, deferred_counts = (
+        request.service._rebalance_items_by_source(
+            items=list(items),
+            limit=request.effective_limit,
+        )
     )
     request.service._record_stage_source_selection_metrics(
         run_id=request.run_id,
@@ -216,7 +220,9 @@ def _prepare_analyze_work(
                     "retryable": True,
                 },
             )
-        request.log.bind(item_id=item_id).warning("Analyze failed: missing stored content")
+        request.log.bind(item_id=item_id).warning(
+            "Analyze failed: missing stored content"
+        )
     return work_items, state_updates, missing_content_total
 
 

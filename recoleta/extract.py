@@ -374,7 +374,7 @@ def _extract_latex_text_files_from_tar(payload: bytes) -> list[tuple[str, str]]:
                 if decoded is None:
                     continue
                 extracted_files.append((file_name, decoded))
-    except (tarfile.TarError, OSError):
+    except tarfile.TarError, OSError:
         return []
     return extracted_files
 

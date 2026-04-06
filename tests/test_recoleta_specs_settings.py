@@ -556,7 +556,9 @@ def test_settings_rejects_invalid_daemon_schedule_shape(
 
     monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
 
-    with pytest.raises(ValueError, match="either interval_minutes or weekday/hour_utc/minute_utc"):
+    with pytest.raises(
+        ValueError, match="either interval_minutes or weekday/hour_utc/minute_utc"
+    ):
         Settings()  # pyright: ignore[reportCallIssue]
 
 

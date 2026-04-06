@@ -61,7 +61,11 @@ class SourcePullStateStoreMixin:
         normalized_source, normalized_scope_kind, normalized_scope_key = (
             _normalized_source_pull_state_request(normalized_request)
         )
-        if not normalized_source or not normalized_scope_kind or not normalized_scope_key:
+        if (
+            not normalized_source
+            or not normalized_scope_kind
+            or not normalized_scope_key
+        ):
             return
 
         with Session(self.engine) as session:

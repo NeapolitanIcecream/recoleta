@@ -40,7 +40,10 @@ def _inline_summary_sections(value: str) -> dict[str, str] | None:
         body = _clean_summary_section_value(str(match.group(2) or "").strip())
         if key in inline_sections and body:
             inline_sections[key] = body
-    if any(str(inline_sections.get(key) or "").strip() for key in ("problem", "approach", "results")):
+    if any(
+        str(inline_sections.get(key) or "").strip()
+        for key in ("problem", "approach", "results")
+    ):
         return inline_sections
     return None
 
@@ -156,12 +159,16 @@ def serialize_document(
         "item_id": item_id,
         "source": str(getattr(doc, "source") or ""),
         "canonical_url": str(getattr(doc, "canonical_url") or ""),
-        "published_at": published_at.isoformat() if isinstance(published_at, datetime) else None,
+        "published_at": published_at.isoformat()
+        if isinstance(published_at, datetime)
+        else None,
         "granularity": str(getattr(doc, "granularity") or ""),
         "period_start": period_start_value.isoformat()
         if isinstance(period_start_value, datetime)
         else None,
-        "period_end": period_end_value.isoformat() if isinstance(period_end_value, datetime) else None,
+        "period_end": period_end_value.isoformat()
+        if isinstance(period_end_value, datetime)
+        else None,
         "authors": decode_item_authors(repository=repository, item_id=item_id),
     }
 
@@ -193,10 +200,16 @@ def decode_item_authors(
     direct_authors = _normalized_author_names(raw_authors)
     if direct_authors:
         return direct_authors
-    decoded_authors = _decoded_author_names(repository=repository, raw_authors=raw_authors)
+    decoded_authors = _decoded_author_names(
+        repository=repository, raw_authors=raw_authors
+    )
     if decoded_authors:
         return decoded_authors
-    return [raw_authors.strip()] if isinstance(raw_authors, str) and raw_authors.strip() else []
+    return (
+        [raw_authors.strip()]
+        if isinstance(raw_authors, str) and raw_authors.strip()
+        else []
+    )
 
 
 def _normalized_item_id(value: int | None) -> int | None:
@@ -327,7 +340,9 @@ def read_doc_content_chunks(
         if str(getattr(chunk, "kind", "") or "").strip().lower() != "content":
             chunk_index += 1
             continue
-        text_value = truncate_text(str(getattr(chunk, "text", "") or ""), max_chars=text_max_chars)
+        text_value = truncate_text(
+            str(getattr(chunk, "text", "") or ""), max_chars=text_max_chars
+        )
         if not text_value:
             chunk_index += 1
             continue
@@ -368,7 +383,9 @@ def attach_doc_metadata(
 ) -> list[dict[str, Any]]:
     if not rows:
         return []
-    serialize = serializer or (lambda repo, doc: serialize_document(repository=repo, doc=doc))
+    serialize = serializer or (
+        lambda repo, doc: serialize_document(repository=repo, doc=doc)
+    )
     doc_cache: dict[int, dict[str, Any] | None] = {}
     out: list[dict[str, Any]] = []
     for row in rows:

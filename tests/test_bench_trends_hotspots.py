@@ -15,7 +15,9 @@ def _seed_indexable_repository(
     root: Path,
 ) -> tuple[Repository, datetime, datetime, list[int], dict[str, Any]]:
     repository = bench._build_repository(root=root)
-    period_start, period_end = day_period_bounds(datetime(2026, 3, 5, tzinfo=UTC).date())
+    period_start, period_end = day_period_bounds(
+        datetime(2026, 3, 5, tzinfo=UTC).date()
+    )
     bench._seed_analyzed_items(
         repository,
         period_start=period_start,
@@ -41,7 +43,9 @@ def _seed_indexable_repository(
     return repository, period_start, period_end, item_doc_ids, result
 
 
-def test_index_items_batched_materializes_summary_and_content_chunks(tmp_path: Path) -> None:
+def test_index_items_batched_materializes_summary_and_content_chunks(
+    tmp_path: Path,
+) -> None:
     repository, period_start, period_end, item_doc_ids, result = (
         _seed_indexable_repository(root=tmp_path)
     )
@@ -50,8 +54,12 @@ def test_index_items_batched_materializes_summary_and_content_chunks(tmp_path: P
     assert result["stats"]["docs_upserted"] == 3
     assert result["stats"]["chunks_upserted"] >= 6
     assert len(item_doc_ids) == 3
-    summary_chunk = repository.read_document_chunk(doc_id=item_doc_ids[0], chunk_index=0)
-    content_chunk = repository.read_document_chunk(doc_id=item_doc_ids[0], chunk_index=1)
+    summary_chunk = repository.read_document_chunk(
+        doc_id=item_doc_ids[0], chunk_index=0
+    )
+    content_chunk = repository.read_document_chunk(
+        doc_id=item_doc_ids[0], chunk_index=1
+    )
     assert summary_chunk is not None
     assert summary_chunk.kind == "summary"
     assert content_chunk is not None

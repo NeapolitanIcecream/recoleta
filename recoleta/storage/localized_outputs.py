@@ -43,8 +43,7 @@ class LocalizedOutputStoreMixin:
                     LocalizedOutput.source_kind == normalized_request.source_kind,
                     LocalizedOutput.source_record_id
                     == normalized_request.source_record_id,
-                    LocalizedOutput.language_code
-                    == normalized_request.language_code,
+                    LocalizedOutput.language_code == normalized_request.language_code,
                 )
             ).first()
             if existing is None:
@@ -159,7 +158,9 @@ def coerce_localized_output_request(
     )
 
 
-def _normalized_localized_output(request: LocalizedOutputUpsertRequest) -> LocalizedOutputUpsertRequest:
+def _normalized_localized_output(
+    request: LocalizedOutputUpsertRequest,
+) -> LocalizedOutputUpsertRequest:
     normalized_source_kind = str(request.source_kind or "").strip().lower()
     if not normalized_source_kind:
         raise ValueError("source_kind must not be empty")

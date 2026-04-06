@@ -50,8 +50,12 @@ def test_billing_summary_ignores_legacy_scope_metrics() -> None:
         _metric("pipeline.trends.scope.agents_lab.llm_output_tokens_total", 40),
         _metric("pipeline.trends.scope.agents_lab.estimated_cost_usd", 0.02, "usd"),
         _metric("pipeline.trends.scope.agents_lab.pass.ideas.llm_requests_total", 1),
-        _metric("pipeline.trends.scope.agents_lab.pass.ideas.llm_input_tokens_total", 80),
-        _metric("pipeline.trends.scope.agents_lab.pass.ideas.llm_output_tokens_total", 16),
+        _metric(
+            "pipeline.trends.scope.agents_lab.pass.ideas.llm_input_tokens_total", 80
+        ),
+        _metric(
+            "pipeline.trends.scope.agents_lab.pass.ideas.llm_output_tokens_total", 16
+        ),
         _metric(
             "pipeline.trends.scope.agents_lab.pass.ideas.estimated_cost_usd",
             0.008,

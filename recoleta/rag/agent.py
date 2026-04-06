@@ -301,7 +301,9 @@ def semantic_search_summaries_in_period(
     request: SummarySearchRequest | None = None,
     **legacy_kwargs: Any,
 ) -> Any:
-    from recoleta.rag.semantic_search import semantic_search_summaries_in_period as _impl
+    from recoleta.rag.semantic_search import (
+        semantic_search_summaries_in_period as _impl,
+    )
 
     return _impl(request=request, **legacy_kwargs)
 

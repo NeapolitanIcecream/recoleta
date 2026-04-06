@@ -86,7 +86,9 @@ def test_extract_pdf_text_uses_pymupdf4llm_even_when_text_layer_check_is_inconcl
 def test_extract_pdf_text_does_not_open_doc_when_pymupdf4llm_is_unavailable() -> None:
     class FakeDoc:
         def close(self) -> None:
-            raise AssertionError("doc.close should not be needed when doc was never opened")
+            raise AssertionError(
+                "doc.close should not be needed when doc was never opened"
+            )
 
     class FakePyMuPDF:
         open_called = False

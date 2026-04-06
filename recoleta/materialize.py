@@ -86,7 +86,9 @@ def _resolved_obsidian_target(
         if target_spec.obsidian_vault_path is not None
         else None
     )
-    return obsidian_vault_path, str(target_spec.obsidian_base_folder or "").strip() or None
+    return obsidian_vault_path, str(
+        target_spec.obsidian_base_folder or ""
+    ).strip() or None
 
 
 def _normalize_granularity(value: str | None) -> str | None:
@@ -192,7 +194,9 @@ def _localized_idea_topics(
         )
     except Exception:
         return []
-    return [str(topic).strip() for topic in trend_payload.topics or [] if str(topic).strip()]
+    return [
+        str(topic).strip() for topic in trend_payload.topics or [] if str(topic).strip()
+    ]
 
 
 def _localized_idea_payload_for_pass_output(
@@ -258,7 +262,9 @@ def _materialize_item_pairs(*, repository: Any) -> list[tuple[Any, Any]]:
         statement = (
             select(Item, Analysis)
             .join(Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id))
-            .where(cast(Any, Item.state).in_([ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED]))
+            .where(
+                cast(Any, Item.state).in_([ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED])
+            )
             .order_by(desc(cast(Any, event_at)), desc(cast(Any, Item.id)))
         )
         return list(session.exec(statement))
@@ -382,7 +388,9 @@ def _trend_pass_output_has_empty_corpus(*, row: Any) -> bool:
         if isinstance(debug, dict) and _truthy_flag(debug.get("empty_corpus")):
             return True
     try:
-        payload = TrendPayload.model_validate(json.loads(str(getattr(row, "payload_json", "") or "{}")))
+        payload = TrendPayload.model_validate(
+            json.loads(str(getattr(row, "payload_json", "") or "{}"))
+        )
     except Exception:
         return False
     return is_empty_trend_payload(payload)
@@ -449,7 +457,10 @@ def _materialize_outputs_for_target(
         request=request,
         legacy_kwargs=legacy_kwargs,
     )
-    return cast(MaterializeOutputResult, materialize_outputs_for_target(request=normalized_request))
+    return cast(
+        MaterializeOutputResult,
+        materialize_outputs_for_target(request=normalized_request),
+    )
 
 
 def materialize_outputs(
@@ -463,15 +474,15 @@ def materialize_outputs(
         request=request,
         legacy_kwargs=legacy_kwargs,
     )
-    return cast(MaterializeOutputsResult, materialize_outputs(request=normalized_request))
+    return cast(
+        MaterializeOutputsResult, materialize_outputs(request=normalized_request)
+    )
 
 
 def default_target_spec_for_settings(*, settings: Any) -> MaterializeTargetSpec:
     return MaterializeTargetSpec(
         output_dir=Path(settings.markdown_output_dir),
         obsidian_vault_path=getattr(settings, "obsidian_vault_path", None),
-        obsidian_base_folder=str(
-            getattr(settings, "obsidian_base_folder", "") or ""
-        )
+        obsidian_base_folder=str(getattr(settings, "obsidian_base_folder", "") or "")
         or None,
     )

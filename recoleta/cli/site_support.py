@@ -49,7 +49,10 @@ def default_language_code_from_settings(settings: Any) -> str | None:
     localization = getattr(settings, "localization", None)
     if localization is None:
         return None
-    return str(getattr(localization, "site_default_language_code", "") or "").strip() or None
+    return (
+        str(getattr(localization, "site_default_language_code", "") or "").strip()
+        or None
+    )
 
 
 def normalize_item_export_scope(item_export_scope: str) -> str:
@@ -57,9 +60,13 @@ def normalize_item_export_scope(item_export_scope: str) -> str:
 
 
 def resolve_site_command_paths(*, request: SitePathRequest) -> SiteCommandPaths:
-    resolved_default_language_code = str(request.default_language_code or "").strip() or None
+    resolved_default_language_code = (
+        str(request.default_language_code or "").strip() or None
+    )
     if resolved_default_language_code is None and request.settings is not None:
-        resolved_default_language_code = default_language_code_from_settings(request.settings)
+        resolved_default_language_code = default_language_code_from_settings(
+            request.settings
+        )
     return SiteCommandPaths(
         input_dir=(
             request.input_dir.expanduser().resolve()
@@ -194,7 +201,9 @@ def fleet_site_payload(*, context: FleetSitePayloadContext) -> dict[str, Any]:
     }
 
 
-def fleet_site_segments(*, manifest: Any, site_manifest: dict[str, Any], output_dir: Path) -> list[str]:
+def fleet_site_segments(
+    *, manifest: Any, site_manifest: dict[str, Any], output_dir: Path
+) -> list[str]:
     segments = [
         f"instances={len(manifest.instances)}",
         f"trends={site_manifest.get('trends_total', 0)}",

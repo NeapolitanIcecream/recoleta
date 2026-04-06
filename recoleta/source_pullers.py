@@ -155,7 +155,9 @@ def paper_info_to_draft(
         canonical_url=f"{base_url}/papers/{paper_id}",
         title=title,
         authors=_paper_authors(paper),
-        published_at=_paper_effective_published_at(paper=paper, window_date=window_date),
+        published_at=_paper_effective_published_at(
+            paper=paper, window_date=window_date
+        ),
         raw_metadata=_paper_raw_metadata(
             paper=paper,
             index_url=index_url,
@@ -293,9 +295,7 @@ class _HFDailyPuller:
             return f"{self.base_url}/papers"
         return f"{self.base_url}/papers/date/{requested_date}"
 
-    def _should_keep_draft(
-        self, draft: ItemDraft, requested_date: str | None
-    ) -> bool:
+    def _should_keep_draft(self, draft: ItemDraft, requested_date: str | None) -> bool:
         source_item_id = str(draft.source_item_id or "").strip()
         if not source_item_id or source_item_id in self.seen_ids:
             if source_item_id:
@@ -310,7 +310,9 @@ class _HFDailyPuller:
         _record_stats_published_at(self.stats, draft.published_at)
         return True
 
-    def _in_requested_window(self, draft: ItemDraft, requested_date: str | None) -> bool:
+    def _in_requested_window(
+        self, draft: ItemDraft, requested_date: str | None
+    ) -> bool:
         if self.window.period_start is None or self.window.period_end is None:
             return True
         if draft.published_at is None:
@@ -433,9 +435,7 @@ class _ArxivPuller:
             )
         )
 
-    def _should_keep_draft(
-        self, *, draft: ItemDraft, state: _ArxivQueryState
-    ) -> bool:
+    def _should_keep_draft(self, *, draft: ItemDraft, state: _ArxivQueryState) -> bool:
         entry_id = str(draft.canonical_url or "").strip()
         if not entry_id or entry_id in self.seen_entry_ids:
             if entry_id:
@@ -871,7 +871,9 @@ class _FeedPuller:
             )
         )
 
-    def _should_keep_draft(self, draft: ItemDraft, *, watermark: datetime | None) -> bool:
+    def _should_keep_draft(
+        self, draft: ItemDraft, *, watermark: datetime | None
+    ) -> bool:
         if not self._draft_in_feed_window(draft, watermark=watermark):
             return False
         draft_key = str(draft.source_item_id or "").strip() or draft.canonical_url_hash
@@ -974,7 +976,12 @@ class _FeedPuller:
         discovered_entries = cast(
             list[dict[str, Any]], getattr(discovered_parsed, "entries", []) or []
         )
-        return discovered_parsed, discovered_entries, discovered_response, discovered_state
+        return (
+            discovered_parsed,
+            discovered_entries,
+            discovered_response,
+            discovered_state,
+        )
 
     def _initial_feed_state(self, feed_url: str) -> _FeedState:
         snapshot = _lookup_snapshot(self.request.pull_state_lookup, "feed", feed_url)
@@ -1026,7 +1033,9 @@ def _feed_entry_draft(
         title=title,
         authors=_feed_authors(entry),
         published_at=published_at,
-        raw_metadata={key: value for key, value in raw_metadata.items() if value is not None},
+        raw_metadata={
+            key: value for key, value in raw_metadata.items() if value is not None
+        },
     )
 
 
@@ -1061,7 +1070,8 @@ class _HNPuller:
         self.total_cap = (
             max(1, int(request.max_total_items))
             if request.max_total_items is not None and int(request.max_total_items) > 0
-            else max(1, int(request.max_items_per_feed)) * max(1, len(request.feed_urls))
+            else max(1, int(request.max_items_per_feed))
+            * max(1, len(request.feed_urls))
         )
         self.seen_ids: set[str] = set()
 

@@ -141,7 +141,9 @@ def _print_publish_summary(*, settings: Any, result: Any, console: Any) -> None:
     publish_targets = list(getattr(settings, "publish_targets", []) or [])
     if "markdown" in publish_targets:
         console.print(f"[cyan]markdown output[/cyan] {settings.markdown_output_dir}")
-        console.print(f"[cyan]latest index[/cyan] {settings.markdown_output_dir / 'latest.md'}")
+        console.print(
+            f"[cyan]latest index[/cyan] {settings.markdown_output_dir / 'latest.md'}"
+        )
     if "obsidian" in publish_targets and settings.obsidian_vault_path is not None:
         console.print(
             f"[cyan]obsidian notes[/cyan] "

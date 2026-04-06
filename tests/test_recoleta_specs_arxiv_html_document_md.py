@@ -192,15 +192,11 @@ def test_enrich_arxiv_html_document_records_pandoc_warning_metrics(
     metrics = repository.list_metrics(run_id="run-html-md-warning-metrics")
     by_name = {metric.name: metric for metric in metrics}
     assert (
-        by_name[
-            "pipeline.enrich.arxiv.html_document.pandoc_warning_items_total"
-        ].value
+        by_name["pipeline.enrich.arxiv.html_document.pandoc_warning_items_total"].value
         == 1
     )
     assert (
-        by_name[
-            "pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum"
-        ].value
+        by_name["pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum"].value
         == 2
     )
     assert (
@@ -272,10 +268,7 @@ def test_enrich_arxiv_html_document_records_pandoc_failure_metric_without_failin
     metrics = repository.list_metrics(run_id="run-html-md-soft-failure")
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.enrich.failed_total"].value == 0
-    assert (
-        by_name["pipeline.enrich.arxiv.html_document.pandoc_failed_total"].value
-        == 1
-    )
+    assert by_name["pipeline.enrich.arxiv.html_document.pandoc_failed_total"].value == 1
 
 
 def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
@@ -330,8 +323,7 @@ def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
     by_name = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.enrich.failed_total"].value == 0
     assert (
-        by_name["pipeline.enrich.arxiv.html_document.fallback_to_pdf_total"].value
-        == 1
+        by_name["pipeline.enrich.arxiv.html_document.fallback_to_pdf_total"].value == 1
     )
     assert (
         by_name[
@@ -344,6 +336,8 @@ def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
         item = session.exec(select(Item).where(Item.source_item_id == arxiv_id)).first()
         assert item is not None
         assert item.id is not None
-        pdf = repository.get_latest_content(item_id=int(item.id), content_type="pdf_text")
+        pdf = repository.get_latest_content(
+            item_id=int(item.id), content_type="pdf_text"
+        )
         assert pdf is not None
         assert pdf.text == "pdf recovered"

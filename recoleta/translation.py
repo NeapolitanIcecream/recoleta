@@ -24,7 +24,9 @@ from recoleta.translation_candidates import (
     IncrementalCandidatesRequest,
     incremental_candidates as _candidate_incremental_candidates,
 )
-from recoleta.translation_context import build_candidate_context as _context_build_candidate_context
+from recoleta.translation_context import (
+    build_candidate_context as _context_build_candidate_context,
+)
 from recoleta.translation_llm import (
     TranslationLLMDeps,
     TranslationLLMRequest,
@@ -711,7 +713,11 @@ def _translate_candidate_into_language(
 
 
 def _normalized_translation_granularity(granularity: str | None) -> str | None:
-    return str(granularity or "").strip().lower() or None if granularity is not None else None
+    return (
+        str(granularity or "").strip().lower() or None
+        if granularity is not None
+        else None
+    )
 
 
 def _translation_localization(
@@ -733,7 +739,9 @@ def _resolved_translation_model(*, settings: Settings) -> str:
     return llm_model
 
 
-def _translation_targets(*, localization: LocalizationConfig) -> list[TranslationTarget]:
+def _translation_targets(
+    *, localization: LocalizationConfig
+) -> list[TranslationTarget]:
     return [
         TranslationTarget(code=target.code, llm_label=target.llm_label)
         for target in localization.targets
@@ -782,7 +790,9 @@ def _backfill_source_language_code(
     localization: LocalizationConfig,
 ) -> str:
     source_language_code = str(
-        legacy_source_language or localization.legacy_backfill_source_language_code or ""
+        legacy_source_language
+        or localization.legacy_backfill_source_language_code
+        or ""
     ).strip()
     if not source_language_code:
         raise ValueError(
@@ -884,7 +894,9 @@ def run_translation(
         require_targets=True,
         error_message="localization.targets must be configured for translation",
     )
-    normalized_granularity = _normalized_translation_granularity(normalized_request.granularity)
+    normalized_granularity = _normalized_translation_granularity(
+        normalized_request.granularity
+    )
     llm_model = _resolved_translation_model(settings=normalized_request.settings)
     source_language_code = str(localization.source_language_code).strip()
     return _runtime_run_translation_batch(
@@ -936,7 +948,9 @@ def run_translation_backfill(
         require_targets=False,
         error_message="localization must be configured for translation backfill",
     )
-    normalized_granularity = _normalized_translation_granularity(normalized_request.granularity)
+    normalized_granularity = _normalized_translation_granularity(
+        normalized_request.granularity
+    )
     llm_model = _resolved_translation_model(settings=normalized_request.settings)
     source_language_code = _backfill_source_language_code(
         legacy_source_language=normalized_request.legacy_source_language,

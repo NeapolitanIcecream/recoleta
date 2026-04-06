@@ -140,6 +140,7 @@ def load_runtime(
         console=console,
     )
 
+
 @contextmanager
 def managed_run_for_settings(
     *,
@@ -202,6 +203,7 @@ def load_billing_metrics(
             str(exc),
         )
         return []
+
 
 def emit_command_error(
     *,

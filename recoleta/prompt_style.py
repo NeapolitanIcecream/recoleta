@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-_READER_FACING_AI_TROPES_PROMPT = '''Write all reader-facing prose in a direct, concrete, human style.
+_READER_FACING_AI_TROPES_PROMPT = """Write all reader-facing prose in a direct, concrete, human style.
 
 Apply these rules in the requested output language. Do not follow only the English surface forms of the examples below. The constraint is about writing behavior, structure, and rhetorical habits, not only exact banned phrases.
 
@@ -82,7 +82,7 @@ Recoleta addendum:
 - Prefer named systems, named papers, metrics, user-visible effects, concrete examples, and explicit consequences.
 - Use headings only when they label a real section. Keep headings literal.
 - Keep structure honest: do not use stylistic scaffolding to hide weak evidence or weak prioritization.
-'''
+"""
 
 
 def reader_facing_ai_tropes_prompt() -> str:

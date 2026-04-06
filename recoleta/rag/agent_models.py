@@ -155,7 +155,9 @@ class RepresentativeBackfillRequest:
 
     def search_request(self, *, query: str, limit: int) -> SummarySearchRequest:
         normalized_doc_type = str(self.rep_source_doc_type or "").strip().lower()
-        doc_type = normalized_doc_type if normalized_doc_type in {"item", "trend"} else "item"
+        doc_type = (
+            normalized_doc_type if normalized_doc_type in {"item", "trend"} else "item"
+        )
         return SummarySearchRequest(
             window=SummaryCorpusWindow(
                 repository=self.repository,

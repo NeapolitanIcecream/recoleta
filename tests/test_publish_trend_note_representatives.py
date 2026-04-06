@@ -73,7 +73,9 @@ def test_write_markdown_trend_note_rejects_missing_required_keywords(
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = period_start + timedelta(days=1)
 
-    with pytest.raises(TypeError, match="missing required keyword-only argument: 'run_id'"):
+    with pytest.raises(
+        TypeError, match="missing required keyword-only argument: 'run_id'"
+    ):
         cast(Any, write_markdown_trend_note)(
             output_dir=tmp_path,
             trend_doc_id=1,
@@ -379,10 +381,12 @@ def test_publish_trend_note_deduplicates_history_window_title_after_link(
     text = note_path.read_text(encoding="utf-8")
     assert (
         "[机器人具身智能转向轻量适配、长时序增强与部署一致性 (2026-03-08)]"
-        "(day--2026-03-08--trend--69.md)"
-        in text
+        "(day--2026-03-08--trend--69.md)" in text
     )
-    assert "](day--2026-03-08--trend--69.md)《机器人具身智能转向轻量适配、长时序增强与部署一致性》" not in text
+    assert (
+        "](day--2026-03-08--trend--69.md)《机器人具身智能转向轻量适配、长时序增强与部署一致性》"
+        not in text
+    )
 
 
 def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_refs(
@@ -461,13 +465,18 @@ def test_publish_trend_note_emits_presentation_sidecar_with_rendered_history_ref
     assert sidecar["content"]["representative_sources"][0]["title"] == "CodeScout"
     assert sidecar["content"]["representative_sources"][0]["doc_id"] == 1
     assert sidecar["content"]["representative_sources"][0]["chunk_index"] == 0
-    assert sidecar["content"]["representative_sources"][0]["href"] == "https://example.com/codescout"
+    assert (
+        sidecar["content"]["representative_sources"][0]["href"]
+        == "https://example.com/codescout"
+    )
     assert sidecar["content"]["representative_sources"][0]["source_type"] == "paper"
     assert sidecar["content"]["representative_sources"][0]["confidence"] == "high"
     assert validate_presentation(sidecar) == []
 
 
-def test_publish_trend_note_sidecar_matches_sanitized_markdown_surface(tmp_path) -> None:
+def test_publish_trend_note_sidecar_matches_sanitized_markdown_surface(
+    tmp_path,
+) -> None:
     period_start = datetime(2026, 3, 12, tzinfo=UTC)
     period_end = period_start + timedelta(days=7)
 
@@ -581,7 +590,9 @@ def test_publish_trend_note_uses_note_href_for_counter_signal_evidence(
     assert "[Internal field note](../Inbox/2026-03-12--field-note.md)" in note_text
 
 
-def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tmp_path) -> None:
+def test_publish_trend_note_infers_sidecar_language_code_from_output_language(
+    tmp_path,
+) -> None:
     period_start = datetime(2026, 3, 12, tzinfo=UTC)
     period_end = period_start + timedelta(days=7)
 
@@ -610,10 +621,14 @@ def test_publish_trend_note_infers_sidecar_language_code_from_output_language(tm
     assert "## 概览" not in note_text
     assert sidecar["language_code"] == "zh-CN"
     assert sidecar["display_labels"]["overview"] == "Overview"
-    assert sidecar["display_labels"]["representative_sources"] == "Representative sources"
+    assert (
+        sidecar["display_labels"]["representative_sources"] == "Representative sources"
+    )
 
 
-def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_path) -> None:
+def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(
+    tmp_path,
+) -> None:
     period_start = datetime(2026, 3, 12, tzinfo=UTC)
     period_end = period_start + timedelta(days=7)
 
@@ -656,7 +671,9 @@ def test_publish_trend_note_renders_history_refs_inside_cluster_summaries(tmp_pa
     assert validate_presentation(sidecar) == []
 
 
-def test_publish_trend_note_sidecar_matches_markdown_representative_source_limits(tmp_path) -> None:
+def test_publish_trend_note_sidecar_matches_markdown_representative_source_limits(
+    tmp_path,
+) -> None:
     period_start = datetime(2026, 3, 12, tzinfo=UTC)
     period_end = period_start + timedelta(days=7)
 

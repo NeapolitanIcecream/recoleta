@@ -11,4 +11,6 @@ def test_translation_system_message_includes_shared_ai_tropes_prompt() -> None:
     assert "Avoid negative parallelism" in system_message
     assert "Avoid false suspense" in system_message
     assert "Avoid fractal summaries" in system_message
-    assert "When multiple target-language phrasings are equally faithful" in system_message
+    assert (
+        "When multiple target-language phrasings are equally faithful" in system_message
+    )

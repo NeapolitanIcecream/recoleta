@@ -51,9 +51,7 @@ def _projection_warning_payload(
         **spec.warning_context,
         "error_type": type(exc).__name__,
         "error": (
-            spec.sanitize_error(str(exc))
-            if callable(spec.sanitize_error)
-            else str(exc)
+            spec.sanitize_error(str(exc)) if callable(spec.sanitize_error) else str(exc)
         ),
     }
 

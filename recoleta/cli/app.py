@@ -70,9 +70,8 @@ def run_fleet_site_serve_command(**kwargs: Any) -> Any:
 
     return impl(**kwargs)
 
-app = typer.Typer(
-    help="Recoleta workflow-first CLI.", no_args_is_help=True
-)
+
+app = typer.Typer(help="Recoleta workflow-first CLI.", no_args_is_help=True)
 
 run_app = typer.Typer(help="Workflow entrypoints.", no_args_is_help=True)
 run_site_app = typer.Typer(help="Common site workflows.", no_args_is_help=True)
@@ -106,7 +105,9 @@ stage_app.add_typer(stage_site_app, name="site")
 stage_app.add_typer(stage_translate_app, name="translate")
 app.add_typer(stage_app, name="stage")
 
-admin_app = typer.Typer(help="Administrative maintenance commands.", no_args_is_help=True)
+admin_app = typer.Typer(
+    help="Administrative maintenance commands.", no_args_is_help=True
+)
 admin_db_app = typer.Typer(help="Administrative DB commands.", no_args_is_help=True)
 admin_app.add_typer(admin_db_app, name="db")
 app.add_typer(admin_app, name="admin")
@@ -185,7 +186,12 @@ def run_callback(
         help="Removed in CLI v2.",
     ),
 ) -> None:
-    if once or analyze_limit is not None or publish_limit is not None or anchor_date is not None:
+    if (
+        once
+        or analyze_limit is not None
+        or publish_limit is not None
+        or anchor_date is not None
+    ):
         _legacy_error(
             command="run --once",
             replacement="run now | run day --date <YYYY-MM-DD> | daemon start",
@@ -687,7 +693,9 @@ def fleet_site_serve(
         min=1,
         help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
     ),
-    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind the preview server to."),
+    host: str = typer.Option(
+        "127.0.0.1", "--host", help="Host interface to bind the preview server to."
+    ),
     port: int = typer.Option(
         8000,
         "--port",
@@ -804,7 +812,9 @@ def run_site_serve(
         min=1,
         help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
     ),
-    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind the preview server to."),
+    host: str = typer.Option(
+        "127.0.0.1", "--host", help="Host interface to bind the preview server to."
+    ),
     port: int = typer.Option(
         8000,
         "--port",
@@ -885,7 +895,9 @@ def inspect_health(
 
 @inspect_app.command("why-empty")
 def inspect_why_empty(
-    anchor_date: str = typer.Option(..., "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."),
+    anchor_date: str = typer.Option(
+        ..., "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."
+    ),
     granularity: str = typer.Option(
         "day",
         "--granularity",
@@ -966,7 +978,9 @@ def inspect_llm(
 
 @inspect_app.command("stats")
 def inspect_stats(
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
     db_path: Path | None = typer.Option(
         None,
         "--db-path",
@@ -989,10 +1003,18 @@ def inspect_stats(
 
 @inspect_runs_app.command("show")
 def inspect_runs_show(
-    run_id: str | None = typer.Option(None, "--run-id", help="Run id to inspect. Defaults to the most recent run."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
+    run_id: str | None = typer.Option(
+        None, "--run-id", help="Run id to inspect. Defaults to the most recent run."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
 ) -> None:
     """Inspect a single recorded run."""
     run_runs_show_command(
@@ -1005,10 +1027,18 @@ def inspect_runs_show(
 
 @inspect_runs_app.command("list")
 def inspect_runs_list(
-    limit: int = typer.Option(10, "--limit", min=1, help="Max number of recent runs to return."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
+    limit: int = typer.Option(
+        10, "--limit", min=1, help="Max number of recent runs to return."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
 ) -> None:
     """List recent runs."""
     run_runs_list_command(
@@ -1053,11 +1083,29 @@ def repair_outputs(
         "--granularity",
         help="Optionally rerender only day, week, or month trend notes.",
     ),
-    pdf: bool = typer.Option(False, "--pdf/--no-pdf", help="Regenerate trend PDFs from the rerendered markdown notes."),
-    site: bool = typer.Option(False, "--site/--no-site", help="Rebuild the static site after markdown outputs are materialized."),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
-    debug_pdf: bool = typer.Option(False, "--debug-pdf/--no-debug-pdf", help="Export PDF render debug bundles beside regenerated PDFs."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    pdf: bool = typer.Option(
+        False,
+        "--pdf/--no-pdf",
+        help="Regenerate trend PDFs from the rerendered markdown notes.",
+    ),
+    site: bool = typer.Option(
+        False,
+        "--site/--no-site",
+        help="Rebuild the static site after markdown outputs are materialized.",
+    ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
+    debug_pdf: bool = typer.Option(
+        False,
+        "--debug-pdf/--no-debug-pdf",
+        help="Export PDF render debug bundles beside regenerated PDFs.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Repair filesystem outputs from stored DB state."""
     run_materialize_outputs_command(
@@ -1098,7 +1146,9 @@ def stage_analyze(
         "--date",
         help="Target UTC day to analyze (YYYY-MM-DD or YYYYMMDD). Defaults to latest prepared backlog behavior.",
     ),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the analyze stage primitive."""
     run_analyze_command(limit=limit, anchor_date=anchor_date, json_output=json_output)
@@ -1106,13 +1156,17 @@ def stage_analyze(
 
 @stage_app.command("publish")
 def stage_publish(
-    limit: int = typer.Option(50, min=1, help="Max number of analyzed items published."),
+    limit: int = typer.Option(
+        50, min=1, help="Max number of analyzed items published."
+    ),
     anchor_date: str | None = typer.Option(
         None,
         "--date",
         help="Target UTC day to publish (YYYY-MM-DD or YYYYMMDD). Defaults to latest analyzed backlog behavior.",
     ),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the publish stage primitive."""
     run_publish_command(limit=limit, anchor_date=anchor_date, json_output=json_output)
@@ -1120,15 +1174,27 @@ def stage_publish(
 
 @stage_app.command("trends")
 def stage_trends(
-    granularity: str = typer.Option("day", "--granularity", help="Trend granularity. Allowed: day, week, month."),
+    granularity: str = typer.Option(
+        "day", "--granularity", help="Trend granularity. Allowed: day, week, month."
+    ),
     anchor_date: str | None = typer.Option(
         None,
         "--date",
         help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
     ),
-    model: str | None = typer.Option(None, "--model", help="Override LLM model for trend generation. Defaults to LLM_MODEL."),
-    debug_pdf: bool = typer.Option(False, "--debug-pdf/--no-debug-pdf", help="Export PDF render intermediates and page previews beside the trend PDF."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for trend generation. Defaults to LLM_MODEL.",
+    ),
+    debug_pdf: bool = typer.Option(
+        False,
+        "--debug-pdf/--no-debug-pdf",
+        help="Export PDF render intermediates and page previews beside the trend PDF.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the trends stage primitive."""
     run_trends_command(
@@ -1144,14 +1210,22 @@ def stage_trends(
 
 @stage_app.command("ideas")
 def stage_ideas(
-    granularity: str = typer.Option("day", "--granularity", help="Ideas granularity. Allowed: day, week, month."),
+    granularity: str = typer.Option(
+        "day", "--granularity", help="Ideas granularity. Allowed: day, week, month."
+    ),
     anchor_date: str | None = typer.Option(
         None,
         "--date",
         help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD). Defaults to today (UTC).",
     ),
-    model: str | None = typer.Option(None, "--model", help="Override LLM model for ideas generation. Defaults to LLM_MODEL."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for ideas generation. Defaults to LLM_MODEL.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the ideas stage primitive."""
     run_ideas_command(
@@ -1182,12 +1256,35 @@ def stage_translate_run(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea translations to day, week, or month windows."),
-    include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to translate: items, trends, ideas."),
-    limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
-    force: bool = typer.Option(False, "--force/--no-force", help="Rewrite localized outputs even when the source hash is unchanged."),
-    context_assist: str = typer.Option("direct", "--context-assist", help="Translation context mode: none, direct, or hybrid."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    granularity: str | None = typer.Option(
+        None,
+        "--granularity",
+        help="Optionally constrain trend and idea translations to day, week, or month windows.",
+    ),
+    include: str = typer.Option(
+        "items,trends,ideas",
+        "--include",
+        help="Comma-separated surfaces to translate: items, trends, ideas.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Optional cap on source records per included surface.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Rewrite localized outputs even when the source hash is unchanged.",
+    ),
+    context_assist: str = typer.Option(
+        "direct",
+        "--context-assist",
+        help="Translation context mode: none, direct, or hybrid.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the translation stage primitive."""
     run_translate_run_command(
@@ -1223,15 +1320,50 @@ def stage_translate_backfill(
         resolve_path=True,
         help="YAML/JSON config path used to resolve localization settings and the database path.",
     ),
-    granularity: str | None = typer.Option(None, "--granularity", help="Optionally constrain trend and idea backfill to day, week, or month windows."),
-    include: str = typer.Option("items,trends,ideas", "--include", help="Comma-separated surfaces to backfill: items, trends, ideas."),
-    limit: int | None = typer.Option(None, "--limit", min=1, help="Optional cap on source records per included surface."),
-    force: bool = typer.Option(False, "--force/--no-force", help="Rewrite localized outputs even when the source hash is unchanged."),
-    context_assist: str = typer.Option("direct", "--context-assist", help="Translation context mode: none, direct, or hybrid."),
-    legacy_source_language: str | None = typer.Option(None, "--legacy-source-language", help="Language code for historical canonical content."),
-    emit_mirror_targets: bool = typer.Option(False, "--emit-mirror-targets/--no-emit-mirror-targets", help="Also persist mirror variants for configured target languages."),
-    all_history: bool = typer.Option(False, "--all-history/--latest-only", help="Backfill the full historical corpus instead of only current windows."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    granularity: str | None = typer.Option(
+        None,
+        "--granularity",
+        help="Optionally constrain trend and idea backfill to day, week, or month windows.",
+    ),
+    include: str = typer.Option(
+        "items,trends,ideas",
+        "--include",
+        help="Comma-separated surfaces to backfill: items, trends, ideas.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Optional cap on source records per included surface.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Rewrite localized outputs even when the source hash is unchanged.",
+    ),
+    context_assist: str = typer.Option(
+        "direct",
+        "--context-assist",
+        help="Translation context mode: none, direct, or hybrid.",
+    ),
+    legacy_source_language: str | None = typer.Option(
+        None,
+        "--legacy-source-language",
+        help="Language code for historical canonical content.",
+    ),
+    emit_mirror_targets: bool = typer.Option(
+        False,
+        "--emit-mirror-targets/--no-emit-mirror-targets",
+        help="Also persist mirror variants for configured target languages.",
+    ),
+    all_history: bool = typer.Option(
+        False,
+        "--all-history/--latest-only",
+        help="Backfill the full historical corpus instead of only current windows.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the translation backfill primitive."""
     run_translate_backfill_command(
@@ -1252,12 +1384,42 @@ def stage_translate_backfill(
 
 @stage_site_app.command("build")
 def stage_site_build(
-    input_dir: Path | None = typer.Option(None, "--input-dir", file_okay=False, dir_okay=True, readable=True, resolve_path=True, help="Directory containing trend markdown notes and sibling idea briefs."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Destination directory for the exported static site."),
-    limit: int | None = typer.Option(None, min=1, help="Optionally export only the latest N trend notes and sibling idea briefs."),
-    default_language_code: str | None = typer.Option(None, "--default-language-code", help="Default language code for multilingual static site builds."),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Directory containing trend markdown notes and sibling idea briefs.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Destination directory for the exported static site.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally export only the latest N trend notes and sibling idea briefs.",
+    ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code for multilingual static site builds.",
+    ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the site build stage primitive."""
     run_site_build_command(
@@ -1273,12 +1435,42 @@ def stage_site_build(
 
 @stage_site_app.command("stage")
 def stage_site_stage(
-    input_dir: Path | None = typer.Option(None, "--input-dir", file_okay=False, dir_okay=True, readable=True, resolve_path=True, help="Directory containing trend markdown notes and sibling idea briefs."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Repo-local directory to mirror trend markdown notes and sibling idea briefs for deployment."),
-    limit: int | None = typer.Option(None, min=1, help="Optionally stage only the latest N trend notes and sibling idea briefs."),
-    default_language_code: str | None = typer.Option(None, "--default-language-code", help="Default language code metadata for multilingual staged content."),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Directory containing trend markdown notes and sibling idea briefs.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Repo-local directory to mirror trend markdown notes and sibling idea briefs for deployment.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally stage only the latest N trend notes and sibling idea briefs.",
+    ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code metadata for multilingual staged content.",
+    ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the site stage primitive."""
     run_site_stage_command(
@@ -1294,14 +1486,54 @@ def stage_site_stage(
 
 @stage_site_app.command("serve")
 def stage_site_serve(
-    input_dir: Path | None = typer.Option(None, "--input-dir", file_okay=False, dir_okay=True, readable=True, resolve_path=True, help="Directory containing trend markdown notes and sibling idea briefs when building before serving."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Directory containing the built static site."),
-    limit: int | None = typer.Option(None, min=1, help="Optionally build only the latest N trend notes and sibling idea briefs before serving."),
-    host: str = typer.Option("127.0.0.1", "--host", help="Host interface to bind the local preview server to."),
-    port: int = typer.Option(8000, "--port", min=0, max=65535, help="TCP port for the local preview server. Use 0 to auto-select."),
-    build: bool = typer.Option(True, "--build/--no-build", help="Build the static site before serving it."),
-    default_language_code: str | None = typer.Option(None, "--default-language-code", help="Default language code for multilingual builds performed before serving."),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Directory containing trend markdown notes and sibling idea briefs when building before serving.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Directory containing the built static site.",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        min=1,
+        help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Host interface to bind the local preview server to.",
+    ),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        min=0,
+        max=65535,
+        help="TCP port for the local preview server. Use 0 to auto-select.",
+    ),
+    build: bool = typer.Option(
+        True, "--build/--no-build", help="Build the static site before serving it."
+    ),
+    default_language_code: str | None = typer.Option(
+        None,
+        "--default-language-code",
+        help="Default language code for multilingual builds performed before serving.",
+    ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
 ) -> None:
     """Run the site serve primitive."""
     run_site_serve_command(
@@ -1320,15 +1552,61 @@ def stage_site_serve(
 
 @stage_app.command("materialize")
 def stage_materialize(
-    db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="SQLite database path."),
-    config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True, help="Optional YAML/JSON config path used to resolve the database and default output directories."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Markdown output root to rewrite for one standalone instance or one child instance."),
-    granularity: str | None = typer.Option(None, "--granularity", help="Optionally rerender only day, week, or month trend notes."),
-    pdf: bool = typer.Option(False, "--pdf/--no-pdf", help="Regenerate trend PDFs from the rerendered markdown notes."),
-    site: bool = typer.Option(False, "--site/--no-site", help="Rebuild the static site after markdown outputs are materialized."),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
-    debug_pdf: bool = typer.Option(False, "--debug-pdf/--no-debug-pdf", help="Export PDF render debug bundles beside regenerated PDFs."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="SQLite database path.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Optional YAML/JSON config path used to resolve the database and default output directories.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Markdown output root to rewrite for one standalone instance or one child instance.",
+    ),
+    granularity: str | None = typer.Option(
+        None,
+        "--granularity",
+        help="Optionally rerender only day, week, or month trend notes.",
+    ),
+    pdf: bool = typer.Option(
+        False,
+        "--pdf/--no-pdf",
+        help="Regenerate trend PDFs from the rerendered markdown notes.",
+    ),
+    site: bool = typer.Option(
+        False,
+        "--site/--no-site",
+        help="Rebuild the static site after markdown outputs are materialized.",
+    ),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
+    debug_pdf: bool = typer.Option(
+        False,
+        "--debug-pdf/--no-debug-pdf",
+        help="Export PDF render debug bundles beside regenerated PDFs.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     """Run the materialize primitive."""
     run_materialize_outputs_command(
@@ -1347,10 +1625,20 @@ def stage_materialize(
 
 @admin_app.command("gc")
 def admin_gc(
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-    prune_caches: bool = typer.Option(False, "--prune-caches", help="Also prune rebuildable caches."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would be deleted without mutating the workspace."),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
+    prune_caches: bool = typer.Option(
+        False, "--prune-caches", help="Also prune rebuildable caches."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report what would be deleted without mutating the workspace.",
+    ),
 ) -> None:
     """Prune expired debug material and operational history."""
     run_gc_command(
@@ -1363,8 +1651,12 @@ def admin_gc(
 
 @admin_app.command("vacuum")
 def admin_vacuum(
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
 ) -> None:
     """Run SQLite VACUUM on the configured database."""
     run_vacuum_command(db_path=db_path, config_path=config_path)
@@ -1372,9 +1664,21 @@ def admin_vacuum(
 
 @admin_app.command("backup")
 def admin_backup(
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True, help="Directory where timestamped backup bundles should be created."),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        help="Directory where timestamped backup bundles should be created.",
+    ),
 ) -> None:
     """Create a DB-scoped backup bundle."""
     run_backup_command(
@@ -1386,10 +1690,25 @@ def admin_backup(
 
 @admin_app.command("restore")
 def admin_restore(
-    bundle: Path = typer.Option(..., "--bundle", exists=True, file_okay=False, dir_okay=True, readable=True, resolve_path=True, help="Path to a backup bundle directory created by `recoleta admin backup`."),
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm replacing the target DB."),
+    bundle: Path = typer.Option(
+        ...,
+        "--bundle",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+        help="Path to a backup bundle directory created by `recoleta admin backup`.",
+    ),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Confirm replacing the target DB."
+    ),
 ) -> None:
     """Restore the SQLite DB from a backup bundle."""
     run_restore_command(
@@ -1402,9 +1721,15 @@ def admin_restore(
 
 @admin_db_app.command("clear")
 def admin_db_clear(
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm deletion without prompting."),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Confirm deletion without prompting."
+    ),
 ) -> None:
     """Delete the configured SQLite DB file for a clean slate."""
     run_db_clear_command(db_path=db_path, config_path=config_path, yes=yes)
@@ -1412,10 +1737,18 @@ def admin_db_clear(
 
 @admin_db_app.command("reset")
 def admin_db_reset(
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-    trends_only: bool = typer.Option(False, "--trends-only", help="Only reset trend-related documents/chunks."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm deletion without prompting."),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
+    trends_only: bool = typer.Option(
+        False, "--trends-only", help="Only reset trend-related documents/chunks."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Confirm deletion without prompting."
+    ),
 ) -> None:
     """Reset the SQLite DB (full reset) or only trend-related content."""
     run_db_reset_command(
@@ -1427,59 +1760,102 @@ def admin_db_reset(
 
 
 # Hidden legacy commands and groups that should fail cleanly.
-@app.command("trends-week", hidden=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+@app.command(
+    "trends-week",
+    hidden=True,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def legacy_trends_week(ctx: Context) -> None:  # noqa: ARG001
     _legacy_error(command="trends-week", replacement="run week --date <YYYY-MM-DD>")
 
-@materialize_app.command("outputs", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+
+@materialize_app.command(
+    "outputs",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def legacy_materialize_outputs(
     ctx: Context,  # noqa: ARG001
     json_output: bool = typer.Option(False, "--json", hidden=True),
 ) -> None:
-    _legacy_error(command="materialize outputs", replacement="repair outputs", json_output=json_output)
+    _legacy_error(
+        command="materialize outputs",
+        replacement="repair outputs",
+        json_output=json_output,
+    )
 
 
-@site_app.command("gh-deploy", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+@site_app.command(
+    "gh-deploy",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def legacy_site_gh_deploy(
     ctx: Context,  # noqa: ARG001
     json_output: bool = typer.Option(False, "--json", hidden=True),
 ) -> None:
-    _legacy_error(command="site gh-deploy", replacement="run deploy", json_output=json_output)
+    _legacy_error(
+        command="site gh-deploy", replacement="run deploy", json_output=json_output
+    )
 
 
 # Hidden legacy aliases that still map cleanly.
 @app.command(hidden=True)
 def ingest(
-    anchor_date: str | None = typer.Option(None, "--date", help="Target UTC day to prepare (YYYY-MM-DD or YYYYMMDD)."),
+    anchor_date: str | None = typer.Option(
+        None, "--date", help="Target UTC day to prepare (YYYY-MM-DD or YYYYMMDD)."
+    ),
 ) -> None:
     run_ingest_command(anchor_date=anchor_date)
 
 
 @app.command(hidden=True)
 def analyze(
-    limit: int | None = typer.Option(None, min=1, help="Max number of items analyzed in one run."),
-    anchor_date: str | None = typer.Option(None, "--date", help="Target UTC day to analyze (YYYY-MM-DD or YYYYMMDD)."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    limit: int | None = typer.Option(
+        None, min=1, help="Max number of items analyzed in one run."
+    ),
+    anchor_date: str | None = typer.Option(
+        None, "--date", help="Target UTC day to analyze (YYYY-MM-DD or YYYYMMDD)."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     run_analyze_command(limit=limit, anchor_date=anchor_date, json_output=json_output)
 
 
 @app.command(hidden=True)
 def publish(
-    limit: int = typer.Option(50, min=1, help="Max number of analyzed items published."),
-    anchor_date: str | None = typer.Option(None, "--date", help="Target UTC day to publish (YYYY-MM-DD or YYYYMMDD)."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    limit: int = typer.Option(
+        50, min=1, help="Max number of analyzed items published."
+    ),
+    anchor_date: str | None = typer.Option(
+        None, "--date", help="Target UTC day to publish (YYYY-MM-DD or YYYYMMDD)."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     run_publish_command(limit=limit, anchor_date=anchor_date, json_output=json_output)
 
 
 @app.command(hidden=True)
 def trends(
-    granularity: str = typer.Option("day", "--granularity", help="Trend granularity. Allowed: day, week, month."),
-    anchor_date: str | None = typer.Option(None, "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."),
-    model: str | None = typer.Option(None, "--model", help="Override LLM model for trend generation."),
-    debug_pdf: bool = typer.Option(False, "--debug-pdf/--no-debug-pdf", help="Export PDF render intermediates and previews."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    granularity: str = typer.Option(
+        "day", "--granularity", help="Trend granularity. Allowed: day, week, month."
+    ),
+    anchor_date: str | None = typer.Option(
+        None, "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="Override LLM model for trend generation."
+    ),
+    debug_pdf: bool = typer.Option(
+        False,
+        "--debug-pdf/--no-debug-pdf",
+        help="Export PDF render intermediates and previews.",
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     run_trends_command(
         granularity=granularity,
@@ -1494,10 +1870,18 @@ def trends(
 
 @app.command(hidden=True)
 def ideas(
-    granularity: str = typer.Option("day", "--granularity", help="Ideas granularity. Allowed: day, week, month."),
-    anchor_date: str | None = typer.Option(None, "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."),
-    model: str | None = typer.Option(None, "--model", help="Override LLM model for ideas generation."),
-    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+    granularity: str = typer.Option(
+        "day", "--granularity", help="Ideas granularity. Allowed: day, week, month."
+    ),
+    anchor_date: str | None = typer.Option(
+        None, "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="Override LLM model for ideas generation."
+    ),
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
 ) -> None:
     run_ideas_command(
         granularity=granularity,
@@ -1509,10 +1893,20 @@ def ideas(
 
 @app.command("gc", hidden=True)
 def legacy_gc(
-    db_path: Path | None = typer.Option(None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."),
-    config_path: Path | None = typer.Option(None, "--config", help="Path to config file used to resolve recoleta_db_path."),
-    prune_caches: bool = typer.Option(False, "--prune-caches", help="Also prune rebuildable caches."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Report what would be deleted without mutating the workspace."),
+    db_path: Path | None = typer.Option(
+        None, "--db-path", help="Path to the SQLite DB file. Overrides config/env."
+    ),
+    config_path: Path | None = typer.Option(
+        None, "--config", help="Path to config file used to resolve recoleta_db_path."
+    ),
+    prune_caches: bool = typer.Option(
+        False, "--prune-caches", help="Also prune rebuildable caches."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Report what would be deleted without mutating the workspace.",
+    ),
 ) -> None:
     run_gc_command(
         db_path=db_path,
@@ -1534,7 +1928,14 @@ def legacy_vacuum(
 def legacy_backup(
     db_path: Path | None = typer.Option(None, "--db-path"),
     config_path: Path | None = typer.Option(None, "--config"),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
 ) -> None:
     run_backup_command(
         db_path=db_path,
@@ -1545,7 +1946,15 @@ def legacy_backup(
 
 @app.command("restore", hidden=True)
 def legacy_restore(
-    bundle: Path = typer.Option(..., "--bundle", exists=True, file_okay=False, dir_okay=True, readable=True, resolve_path=True),
+    bundle: Path = typer.Option(
+        ...,
+        "--bundle",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+    ),
     db_path: Path | None = typer.Option(None, "--db-path"),
     config_path: Path | None = typer.Option(None, "--config"),
     yes: bool = typer.Option(False, "--yes", "-y"),
@@ -1573,11 +1982,29 @@ def legacy_stats(
 
 @site_app.command("build")
 def legacy_site_build(
-    input_dir: Path | None = typer.Option(None, "--input-dir", file_okay=False, dir_okay=True, readable=True, resolve_path=True),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
     limit: int | None = typer.Option(None, min=1),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     run_site_build_command(
@@ -1592,11 +2019,29 @@ def legacy_site_build(
 
 @site_app.command("stage")
 def legacy_site_stage(
-    input_dir: Path | None = typer.Option(None, "--input-dir", file_okay=False, dir_okay=True, readable=True, resolve_path=True),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, resolve_path=True, writable=True),
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        writable=True,
+    ),
     limit: int | None = typer.Option(None, min=1),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     run_site_stage_command(
@@ -1611,14 +2056,32 @@ def legacy_site_stage(
 
 @site_app.command("serve")
 def legacy_site_serve(
-    input_dir: Path | None = typer.Option(None, "--input-dir", file_okay=False, dir_okay=True, readable=True, resolve_path=True),
-    output_dir: Path | None = typer.Option(None, "--output-dir", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
+    input_dir: Path | None = typer.Option(
+        None,
+        "--input-dir",
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        resolve_path=True,
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
     limit: int | None = typer.Option(None, min=1),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8000, "--port", min=0, max=65535),
     build: bool = typer.Option(True, "--build/--no-build"),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
-    item_export_scope: str = typer.Option("linked", "--item-export-scope", help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export."),
+    item_export_scope: str = typer.Option(
+        "linked",
+        "--item-export-scope",
+        help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
+    ),
 ) -> None:
     run_site_serve_command(
         input_dir=input_dir,
@@ -1634,8 +2097,22 @@ def legacy_site_serve(
 
 @translate_app.command("run")
 def legacy_translate_run(
-    db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),
@@ -1657,15 +2134,31 @@ def legacy_translate_run(
 
 @translate_app.command("backfill")
 def legacy_translate_backfill(
-    db_path: Path | None = typer.Option(None, "--db-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
-    config_path: Path | None = typer.Option(None, "--config-path", file_okay=True, dir_okay=False, readable=True, resolve_path=True),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config-path",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+    ),
     granularity: str | None = typer.Option(None, "--granularity"),
     include: str = typer.Option("items,trends,ideas", "--include"),
     limit: int | None = typer.Option(None, "--limit", min=1),
     force: bool = typer.Option(False, "--force/--no-force"),
     context_assist: str = typer.Option("direct", "--context-assist"),
     legacy_source_language: str | None = typer.Option(None, "--legacy-source-language"),
-    emit_mirror_targets: bool = typer.Option(False, "--emit-mirror-targets/--no-emit-mirror-targets"),
+    emit_mirror_targets: bool = typer.Option(
+        False, "--emit-mirror-targets/--no-emit-mirror-targets"
+    ),
     all_history: bool = typer.Option(False, "--all-history/--latest-only"),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -1720,7 +2213,9 @@ def legacy_doctor(
     healthcheck: bool = typer.Option(False, "--healthcheck"),
     db_path: Path | None = typer.Option(None, "--db-path"),
     config_path: Path | None = typer.Option(None, "--config"),
-    max_success_age_minutes: int | None = typer.Option(None, "--max-success-age-minutes", min=1),
+    max_success_age_minutes: int | None = typer.Option(
+        None, "--max-success-age-minutes", min=1
+    ),
 ) -> None:
     if getattr(ctx, "invoked_subcommand", None) is not None:
         return
@@ -1813,8 +2308,12 @@ def legacy_rag_build_index(
     scalar: bool = typer.Option(True, "--scalar/--no-scalar"),
     vector_index_type: str = typer.Option("IVF_HNSW_SQ", "--vector-index-type"),
     vector_metric: str = typer.Option("cosine", "--vector-metric"),
-    vector_num_partitions: int | None = typer.Option(None, "--vector-num-partitions", min=1),
-    vector_num_sub_vectors: int | None = typer.Option(None, "--vector-num-sub-vectors", min=1),
+    vector_num_partitions: int | None = typer.Option(
+        None, "--vector-num-partitions", min=1
+    ),
+    vector_num_sub_vectors: int | None = typer.Option(
+        None, "--vector-num-sub-vectors", min=1
+    ),
     strict: bool = typer.Option(False, "--strict"),
 ) -> None:
     run_rag_build_index_command(

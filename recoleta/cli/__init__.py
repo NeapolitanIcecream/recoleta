@@ -151,7 +151,10 @@ def _update_run_context(repository: Any, *, run_id: str, **context: Any) -> None
     method = getattr(repository, "update_run_context", None)
     if not callable(method):
         return
-    kwargs = {"run_id": run_id, **{key: value for key, value in context.items() if value is not None}}
+    kwargs = {
+        "run_id": run_id,
+        **{key: value for key, value in context.items() if value is not None},
+    }
     if len(kwargs) <= 1:
         return
     try:
@@ -166,7 +169,9 @@ def _update_run_context(repository: Any, *, run_id: str, **context: Any) -> None
     supported_kwargs = (
         kwargs
         if accepts_var_kwargs
-        else {key: value for key, value in kwargs.items() if key in signature.parameters}
+        else {
+            key: value for key, value in kwargs.items() if key in signature.parameters
+        }
     )
     if len(supported_kwargs) <= 1:
         return
@@ -201,7 +206,9 @@ def _finish_run(
     supported_kwargs = (
         kwargs
         if accepts_var_kwargs
-        else {key: value for key, value in kwargs.items() if key in signature.parameters}
+        else {
+            key: value for key, value in kwargs.items() if key in signature.parameters
+        }
     )
     method(**supported_kwargs)
 
@@ -511,7 +518,9 @@ def _emit_json(payload: dict[str, Any]) -> None:
     typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
-def _metrics_payload(metrics: list[Any]) -> dict[str, dict[str, int | float | str | None]]:
+def _metrics_payload(
+    metrics: list[Any],
+) -> dict[str, dict[str, int | float | str | None]]:
     totals: dict[str, float] = {}
     units: dict[str, str | None] = {}
     for metric in metrics:

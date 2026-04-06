@@ -262,7 +262,9 @@ def _generate_ideas_payload(
         embedding_batch_max_inputs=request.context.service.settings.trends_embedding_batch_max_inputs,
         embedding_batch_max_chars=request.context.service.settings.trends_embedding_batch_max_chars,
         embedding_failure_mode=getattr(
-            request.context.service.settings, "trends_embedding_failure_mode", "continue"
+            request.context.service.settings,
+            "trends_embedding_failure_mode",
+            "continue",
         ),
         embedding_max_errors=int(
             getattr(request.context.service.settings, "trends_embedding_max_errors", 0)
@@ -280,7 +282,9 @@ def _generate_ideas_payload(
         metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas"),
         llm_connection=request.context.service._llm_connection,
     )
-    return normalize_trend_ideas_payload(payload), debug if isinstance(debug, dict) else {}
+    return normalize_trend_ideas_payload(payload), debug if isinstance(
+        debug, dict
+    ) else {}
 
 
 def _build_projection_specs(context: IdeasProjectionContext):
@@ -311,7 +315,9 @@ def _ideas_document_projection_spec(
         name="documents",
         enabled=True,
         metric_base="pipeline.trends.projection.ideas_documents",
-        log=context.context.log.bind(module="pipeline.trends.projection.ideas_documents"),
+        log=context.context.log.bind(
+            module="pipeline.trends.projection.ideas_documents"
+        ),
         failure_message=(
             "Ideas document projection failed pass_output_id={pass_output_id} "
             "error_type={error_type} error={error}"
@@ -341,7 +347,9 @@ def _ideas_markdown_projection_spec(
         name="markdown",
         enabled="markdown" in context.targets,
         metric_base="pipeline.trends.projection.ideas_markdown",
-        log=context.context.log.bind(module="pipeline.trends.projection.ideas_markdown"),
+        log=context.context.log.bind(
+            module="pipeline.trends.projection.ideas_markdown"
+        ),
         failure_message=(
             "Ideas markdown projection failed pass_output_id={pass_output_id} "
             "error_type={error_type} error={error}"
@@ -378,7 +386,9 @@ def _ideas_obsidian_projection_spec(
         enabled="obsidian" in context.targets
         and context.context.service.settings.obsidian_vault_path is not None,
         metric_base="pipeline.trends.projection.ideas_obsidian",
-        log=context.context.log.bind(module="pipeline.trends.projection.ideas_obsidian"),
+        log=context.context.log.bind(
+            module="pipeline.trends.projection.ideas_obsidian"
+        ),
         failure_message=(
             "Ideas obsidian projection failed pass_output_id={pass_output_id} "
             "error_type={error_type} error={error}"
@@ -499,7 +509,9 @@ def _record_ideas_debug_artifact(
         "payload": normalized_request.ideas_payload.model_dump(mode="json"),
         "debug": normalized_request.debug,
     }
-    record_debug_artifact = getattr(normalized_request.service, "_record_debug_artifact", None)
+    record_debug_artifact = getattr(
+        normalized_request.service, "_record_debug_artifact", None
+    )
     if callable(record_debug_artifact):
         try:
             record_debug_artifact(
@@ -651,7 +663,9 @@ def _build_ideas_stage_context(
 
 
 def _ideas_status(payload: TrendIdeasPayload) -> PassStatus:
-    return PassStatus.SUPPRESSED if not list(payload.ideas or []) else PassStatus.SUCCEEDED
+    return (
+        PassStatus.SUPPRESSED if not list(payload.ideas or []) else PassStatus.SUCCEEDED
+    )
 
 
 def _run_ideas_pass_definition(request: IdeasPassDefinitionRequest) -> Any:

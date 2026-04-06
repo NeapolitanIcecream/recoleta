@@ -140,15 +140,20 @@ def _run_once(
             result = service.analyze(run_id=run_id, limit=limit or items)
         wall_ms = int((time.perf_counter() - started) * 1000)
         metrics = {
-            metric.name: metric.value for metric in repository.list_metrics(run_id=run_id)
+            metric.name: metric.value
+            for metric in repository.list_metrics(run_id=run_id)
         }
-        observed_sql_queries_value = metrics.get("pipeline.analyze.db.sql_queries_total")
+        observed_sql_queries_value = metrics.get(
+            "pipeline.analyze.db.sql_queries_total"
+        )
         observed_sql_queries_total = (
             int(observed_sql_queries_value)
             if observed_sql_queries_value is not None
             else int(sql_diag.queries_total)
         )
-        observed_sql_commits_value = metrics.get("pipeline.analyze.db.sql_commits_total")
+        observed_sql_commits_value = metrics.get(
+            "pipeline.analyze.db.sql_commits_total"
+        )
         observed_sql_commits_total = (
             int(observed_sql_commits_value)
             if observed_sql_commits_value is not None

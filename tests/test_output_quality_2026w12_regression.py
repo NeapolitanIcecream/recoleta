@@ -17,9 +17,7 @@ from recoleta.storage import Repository
 from recoleta.trends import TrendPayload, persist_trend_payload
 from recoleta.types import AnalysisResult, ItemDraft
 
-FIXTURE_ROOT = (
-    Path(__file__).parent / "fixtures" / "output_quality" / "2026w12"
-)
+FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "output_quality" / "2026w12"
 SCOPE_LABELS = {
     "embodied_ai": "具身智能",
     "software_intelligence": "软件智能",
@@ -334,9 +332,11 @@ def test_materialize_outputs_replays_w12_output_quality_regressions(
 ) -> None:
     repository = Repository(db_path=tmp_path / f"{scope}.db")
     repository.init_schema()
-    trend_fixture, ideas_fixture, trend_doc_id, _idea_doc_id = _seed_scope_from_w12_fixtures(
-        repository=repository,
-        scope=scope,
+    trend_fixture, ideas_fixture, trend_doc_id, _idea_doc_id = (
+        _seed_scope_from_w12_fixtures(
+            repository=repository,
+            scope=scope,
+        )
     )
     output_dir = tmp_path / scope / "outputs"
 
@@ -363,12 +363,12 @@ def test_materialize_outputs_replays_w12_output_quality_regressions(
     idea_text = idea_note.read_text(encoding="utf-8")
     trend_sidecar = json.loads(trend_sidecar_path.read_text(encoding="utf-8"))
     idea_sidecar = json.loads(idea_sidecar_path.read_text(encoding="utf-8"))
-    trend_html = (
-        output_dir / "site" / "trends" / f"{trend_note.stem}.html"
-    ).read_text(encoding="utf-8")
-    idea_html = (
-        output_dir / "site" / "ideas" / f"{idea_note.stem}.html"
-    ).read_text(encoding="utf-8")
+    trend_html = (output_dir / "site" / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    idea_html = (output_dir / "site" / "ideas" / f"{idea_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
 
     assert trend_sidecar["presentation_schema_version"] == 2
     assert idea_sidecar["presentation_schema_version"] == 2
@@ -382,10 +382,12 @@ def test_materialize_outputs_replays_w12_output_quality_regressions(
     assert "raw enum" not in idea_text.lower()
 
     assert 1 <= len(trend_sidecar["content"]["ranked_shifts"]) <= 3
-    assert [shift["rank"] for shift in trend_sidecar["content"]["ranked_shifts"]] == list(
-        range(1, len(trend_sidecar["content"]["ranked_shifts"]) + 1)
-    )
-    assert [opportunity["tier"] for opportunity in idea_sidecar["content"]["opportunities"]] == [
+    assert [
+        shift["rank"] for shift in trend_sidecar["content"]["ranked_shifts"]
+    ] == list(range(1, len(trend_sidecar["content"]["ranked_shifts"]) + 1))
+    assert [
+        opportunity["tier"] for opportunity in idea_sidecar["content"]["opportunities"]
+    ] == [
         "best_bet",
         "alternate",
         "alternate",
@@ -395,7 +397,10 @@ def test_materialize_outputs_replays_w12_output_quality_regressions(
     assert "### Best bet:" in idea_text
     assert idea_text.count("\n### ") == 3
     assert "#### Evidence" in idea_text
-    assert "Shared semantic state layer for indoor robot and IoT coordination" not in idea_text
+    assert (
+        "Shared semantic state layer for indoor robot and IoT coordination"
+        not in idea_text
+    )
     assert "Bug-witness generation workflow for autonomous debugging" not in idea_text
 
     assert trend_html.count("detail-shift-card") == len(
@@ -414,9 +419,11 @@ def test_materialize_outputs_repair_w12_sidecars_and_localized_reprojections(
 ) -> None:
     repository = Repository(db_path=tmp_path / f"{scope}.db")
     repository.init_schema()
-    trend_fixture, ideas_fixture, trend_doc_id, idea_doc_id = _seed_scope_from_w12_fixtures(
-        repository=repository,
-        scope=scope,
+    trend_fixture, ideas_fixture, trend_doc_id, idea_doc_id = (
+        _seed_scope_from_w12_fixtures(
+            repository=repository,
+            scope=scope,
+        )
     )
     output_dir = tmp_path / scope / "outputs"
     localization = LocalizationConfig.model_validate(
@@ -481,11 +488,7 @@ def test_materialize_outputs_repair_w12_sidecars_and_localized_reprojections(
     assert "User/job:" not in idea_text
 
     zh_trend_html = (
-        output_dir
-        / "site"
-        / "zh-cn"
-        / "trends"
-        / f"{trend_note.stem}.html"
+        output_dir / "site" / "zh-cn" / "trends" / f"{trend_note.stem}.html"
     ).read_text(encoding="utf-8")
     zh_idea_html = (
         output_dir / "site" / "zh-cn" / "ideas" / f"{idea_note.stem}.html"
@@ -514,7 +517,9 @@ def test_materialize_outputs_repair_w12_sidecars_and_localized_reprojections(
 
     repaired_paths = [
         presentation_sidecar_path(
-            note_path=output_dir / "Trends" / f"week--2026-W12--trend--{trend_doc_id}.md"
+            note_path=output_dir
+            / "Trends"
+            / f"week--2026-W12--trend--{trend_doc_id}.md"
         ),
         presentation_sidecar_path(
             note_path=output_dir / "Ideas" / "week--2026-W12--ideas.md"

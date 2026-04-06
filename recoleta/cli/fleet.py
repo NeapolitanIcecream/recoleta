@@ -119,7 +119,9 @@ def run_fleet_site_build_command(**kwargs: Any) -> dict[str, Any]:
     command_name = str(kwargs.get("command_name", "fleet site build"))
     manifest_path = Path(kwargs["manifest_path"])
     manifest, input_dirs = _fleet_input_dirs(manifest_path)
-    resolved_output_dir = _fleet_site_output_dir(manifest.manifest_path, kwargs.get("output_dir"))
+    resolved_output_dir = _fleet_site_output_dir(
+        manifest.manifest_path, kwargs.get("output_dir")
+    )
     resolved_default_language_code = _fleet_default_language(
         manifest,
         kwargs.get("default_language_code"),
@@ -182,7 +184,9 @@ def run_fleet_site_serve_command(**kwargs: Any) -> None:
         command_name=str(kwargs.get("command_name", "fleet site serve")),
         build_command_name=str(kwargs.get("build_command_name", "fleet site build")),
     )
-    resolved_output_dir = _fleet_site_output_dir(request.manifest_path, request.output_dir)
+    resolved_output_dir = _fleet_site_output_dir(
+        request.manifest_path, request.output_dir
+    )
     if request.build:
         run_fleet_site_build_command(
             manifest_path=request.manifest_path,
@@ -316,7 +320,9 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
     return payload
 
 
-def _fleet_granularity_child_payload(*, request: FleetGranularityChildRequest) -> dict[str, Any]:
+def _fleet_granularity_child_payload(
+    *, request: FleetGranularityChildRequest
+) -> dict[str, Any]:
     child_payload = execute_granularity_workflow(
         workflow_name=request.workflow_name,
         command=f"{request.command} --instance {request.instance.name}",
@@ -394,10 +400,9 @@ def _translation_requested(
         return False
     if STEP_TRANSLATE in normalized_include:
         return True
-    return (
-        str(settings.workflows.deploy.translation or "").strip().lower() == "auto"
-        and bool(settings.localization_target_codes())
-    )
+    return str(
+        settings.workflows.deploy.translation or ""
+    ).strip().lower() == "auto" and bool(settings.localization_target_codes())
 
 
 def _deploy_fleet_site(*, context: FleetSiteDeployContext) -> dict[str, Any]:
@@ -427,7 +432,9 @@ def _deploy_fleet_site(*, context: FleetSiteDeployContext) -> dict[str, Any]:
         "force": context.force,
         "default_language_code": _fleet_default_language(context.manifest, None),
     }
-    normalized_item_export_scope = normalize_item_export_scope(context.item_export_scope)
+    normalized_item_export_scope = normalize_item_export_scope(
+        context.item_export_scope
+    )
     if normalized_item_export_scope != "linked":
         deploy_kwargs["item_export_scope"] = normalized_item_export_scope
     deploy_result = deploy_site(**deploy_kwargs)

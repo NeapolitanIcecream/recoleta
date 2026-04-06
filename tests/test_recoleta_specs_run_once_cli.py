@@ -290,7 +290,10 @@ def test_run_week_executes_recursive_day_and_week_synthesis_workflow(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (default_language_code, limit)
                 site_build_calls.append((str(input_dir), str(output_dir)))
                 manifest_path = Path(output_dir) / "manifest.json"
@@ -387,13 +390,17 @@ def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_bu
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.translation" and attr_name == "run_translation":
+
             def _failing_translate(**kwargs):  # type: ignore[no-untyped-def]
                 _ = kwargs
                 raise RuntimeError("provider timeout")
 
             return _failing_translate
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 site_build_calls.append(1)
                 manifest_path = Path(output_dir) / "manifest.json"
@@ -451,6 +458,7 @@ def test_run_day_allows_skipping_ingest_analyze_and_publish_for_downstream_repla
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.translation" and attr_name == "run_translation":
+
             def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
                 translation_calls.append(dict(kwargs))
                 return SimpleNamespace(
@@ -465,7 +473,10 @@ def test_run_day_allows_skipping_ingest_analyze_and_publish_for_downstream_repla
 
             return _fake_translate
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -528,7 +539,10 @@ def test_run_week_allows_skipping_recursive_day_steps_for_settled_week_replay(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -596,6 +610,7 @@ def test_run_day_passes_incremental_translation_window_to_workflow_step(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.translation" and attr_name == "run_translation":
+
             def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
                 translation_calls.append(dict(kwargs))
                 return SimpleNamespace(
@@ -610,7 +625,10 @@ def test_run_day_passes_incremental_translation_window_to_workflow_step(
 
             return _fake_translate
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -660,6 +678,7 @@ def test_run_day_keeps_default_scope_for_instance_first_workflows(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.translation" and attr_name == "run_translation":
+
             def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
                 translation_calls.append(dict(kwargs))
                 return SimpleNamespace(
@@ -674,7 +693,10 @@ def test_run_day_keeps_default_scope_for_instance_first_workflows(
 
             return _fake_translate
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -719,7 +741,10 @@ def test_run_month_executes_recursive_day_week_and_month_synthesis_workflow(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (default_language_code, limit)
                 site_build_calls.append((str(input_dir), str(output_dir)))
                 manifest_path = Path(output_dir) / "manifest.json"
@@ -835,7 +860,10 @@ def test_run_now_aliases_run_day_for_today_utc(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -901,7 +929,10 @@ def test_run_day_defaults_to_latest_complete_utc_day(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 manifest_path = Path(output_dir) / "manifest.json"
                 manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -951,6 +982,7 @@ def test_run_day_json_stdout_stays_machine_readable_when_steps_write_stdout(
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.translation" and attr_name == "run_translation":
+
             def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
                 _ = kwargs
                 print("TRANSLATION STDOUT NOISE")
@@ -966,7 +998,10 @@ def test_run_day_json_stdout_stays_machine_readable_when_steps_write_stdout(
 
             return _fake_translate
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 print("SITE BUILD STDOUT NOISE")
                 manifest_path = Path(output_dir) / "manifest.json"
@@ -1011,7 +1046,9 @@ def test_run_day_include_publish_executes_publish_when_delivery_mode_is_none(
     tmp_path: Path = configured_env
     fake_settings = _FakeSettings(
         tmp_path=tmp_path,
-        workflows=_FakeWorkflows(day=_FakePolicy(delivery_mode="none", site_build=False)),
+        workflows=_FakeWorkflows(
+            day=_FakePolicy(delivery_mode="none", site_build=False)
+        ),
     )
     fake_repo = _FakeRepo()
     fake_service = _FakeService()
@@ -1058,7 +1095,10 @@ def test_run_day_include_site_build_removes_reenabled_step_from_skipped_metadata
 
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 _ = (input_dir, default_language_code, limit)
                 site_build_calls.append(1)
                 manifest_path = Path(output_dir) / "manifest.json"

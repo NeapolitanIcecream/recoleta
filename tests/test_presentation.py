@@ -55,7 +55,9 @@ def _idea(
     )
 
 
-def test_validate_presentation_v1_allows_single_ranked_shift_when_evidence_is_thin() -> None:
+def test_validate_presentation_v1_allows_single_ranked_shift_when_evidence_is_thin() -> (
+    None
+):
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/day--2026-03-02--trend--7.md",
         title="Verification gets operational",
@@ -138,7 +140,9 @@ def test_validate_presentation_v2_rejects_empty_ranked_shifts() -> None:
     assert "trend ranked_shifts must contain at least 1 entry" in errors
 
 
-def test_validate_presentation_v1_rejects_duplicate_or_out_of_order_shift_ranks() -> None:
+def test_validate_presentation_v1_rejects_duplicate_or_out_of_order_shift_ranks() -> (
+    None
+):
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
         title="Week 10 roundup",
@@ -171,12 +175,13 @@ def test_validate_presentation_v1_rejects_duplicate_or_out_of_order_shift_ranks(
     errors = validate_presentation_v1(presentation)
 
     assert (
-        "trend ranked_shifts ranks must be consecutive integers starting at 1"
-        in errors
+        "trend ranked_shifts ranks must be consecutive integers starting at 1" in errors
     )
 
 
-def test_validate_presentation_v1_requires_complete_label_sets_and_required_fields() -> None:
+def test_validate_presentation_v1_requires_complete_label_sets_and_required_fields() -> (
+    None
+):
     presentation = build_idea_presentation_v1(
         source_markdown_path="Ideas/day--2026-03-02--ideas.md",
         title="Verification-first agent rollout",
@@ -203,7 +208,9 @@ def test_build_idea_presentation_v1_rejects_unexpected_keyword_arguments() -> No
 
 
 def test_build_idea_presentation_v2_rejects_missing_required_keywords() -> None:
-    with pytest.raises(TypeError, match="missing required keyword-only argument: 'ideas'"):
+    with pytest.raises(
+        TypeError, match="missing required keyword-only argument: 'ideas'"
+    ):
         cast(Any, build_idea_presentation_v2)(
             source_markdown_path="Ideas/day--2026-03-02--ideas.md",
             title="Verification-first agent rollout",
@@ -227,7 +234,9 @@ def test_write_presentation_sidecar_rejects_invalid_contracts(tmp_path: Path) ->
         )
 
 
-def test_validate_presentation_v1_rejects_idea_tiers_that_break_best_bet_ordering() -> None:
+def test_validate_presentation_v1_rejects_idea_tiers_that_break_best_bet_ordering() -> (
+    None
+):
     presentation = build_idea_presentation_v1(
         source_markdown_path="Ideas/day--2026-03-02--ideas.md",
         title="Verification-first agent rollout",
@@ -243,7 +252,9 @@ def test_validate_presentation_v1_rejects_idea_tiers_that_break_best_bet_orderin
     assert "idea opportunities after the first must be alternate" in errors
 
 
-def test_validate_presentation_v1_does_not_treat_synthesis_as_schema_label_leakage() -> None:
+def test_validate_presentation_v1_does_not_treat_synthesis_as_schema_label_leakage() -> (
+    None
+):
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
         title="Week 10 roundup",
@@ -265,20 +276,28 @@ def test_validate_presentation_v1_rejects_case_variants_of_placeholder_tokens() 
         history_window_refs=None,
         clusters=[],
     )
-    presentation["content"]["overview"] = "Compared with PREV_1 and Prev1, teams now gate prompt releases."
+    presentation["content"]["overview"] = (
+        "Compared with PREV_1 and Prev1, teams now gate prompt releases."
+    )
 
     errors = validate_presentation_v1(presentation)
 
-    assert "user-visible fields must not contain raw history placeholder tokens" in errors
+    assert (
+        "user-visible fields must not contain raw history placeholder tokens" in errors
+    )
 
 
-def test_build_trend_presentation_v1_preserves_unresolved_history_placeholders() -> None:
+def test_build_trend_presentation_v1_preserves_unresolved_history_placeholders() -> (
+    None
+):
     presentation = build_trend_presentation_v1(
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
         title="Week 10 roundup",
         overview_md="Compared with prev_2, teams now gate prompt releases.",
         evolution=None,
-        history_window_refs={"prev_1": {"title": "Earlier verification push", "label": "2026-W09"}},
+        history_window_refs={
+            "prev_1": {"title": "Earlier verification push", "label": "2026-W09"}
+        },
         clusters=[],
     )
 
@@ -338,8 +357,7 @@ def test_build_trend_presentation_v1_preserves_indented_markdown_lines() -> None
         source_markdown_path="Trends/week--2026-W10--trend--81.md",
         title="Week 10 roundup",
         overview_md=(
-            "- Parent item\n"
-            "  - Compared with prev_1, nested item now matters more.\n"
+            "- Parent item\n  - Compared with prev_1, nested item now matters more.\n"
         ),
         evolution=None,
         history_window_refs={
@@ -424,7 +442,9 @@ def test_build_presentation_v1_does_not_guess_english_language_code() -> None:
     assert idea_presentation["language_code"] is None
 
 
-def test_resolve_presentation_language_code_maps_common_output_language_labels() -> None:
+def test_resolve_presentation_language_code_maps_common_output_language_labels() -> (
+    None
+):
     assert (
         resolve_presentation_language_code(output_language="Chinese (Simplified)")
         == "zh-CN"
@@ -433,7 +453,9 @@ def test_resolve_presentation_language_code_maps_common_output_language_labels()
     assert resolve_presentation_language_code(output_language="zh_cn") == "zh-CN"
 
 
-def test_is_localized_output_path_requires_localized_language_layout(tmp_path: Path) -> None:
+def test_is_localized_output_path_requires_localized_language_layout(
+    tmp_path: Path,
+) -> None:
     canonical_under_localized_name = tmp_path / "Localized" / "project" / "outputs"
     localized_root = tmp_path / "outputs" / "Localized" / "zh-cn"
     localized_surface = localized_root / "Trends"

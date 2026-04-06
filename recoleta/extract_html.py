@@ -226,7 +226,9 @@ def _extract_reference_heading_blocks(main_container: Tag) -> tuple[list[str], i
 
 
 def _extract_reference_blocks(main_container: Tag) -> tuple[list[str], int]:
-    selector_blocks, selector_removed = _extract_reference_selector_blocks(main_container)
+    selector_blocks, selector_removed = _extract_reference_selector_blocks(
+        main_container
+    )
     heading_blocks, heading_removed = _extract_reference_heading_blocks(main_container)
     return selector_blocks + heading_blocks, selector_removed + heading_removed
 
@@ -260,7 +262,9 @@ def extract_html_document_cleaned_with_references_impl(
     simplify_stats = simplify_arxiv_html(main_container)
     cleaned_html = _normalize_html_fragment(str(main_container), limit=max_chars)
     references_html = (
-        _normalize_html_fragment("\n\n".join(references_blocks), limit=references_max_chars)
+        _normalize_html_fragment(
+            "\n\n".join(references_blocks), limit=references_max_chars
+        )
         if references_blocks
         else None
     )

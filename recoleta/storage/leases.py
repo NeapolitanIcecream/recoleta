@@ -86,7 +86,9 @@ class WorkspaceLeaseStoreMixin:
         now: datetime | None = None,
     ) -> WorkspaceLease:
         heartbeat_at = now or utc_now()
-        expires_at = heartbeat_at + timedelta(seconds=max(1, int(lease_timeout_seconds)))
+        expires_at = heartbeat_at + timedelta(
+            seconds=max(1, int(lease_timeout_seconds))
+        )
         statement = text(
             """
             UPDATE workspace_leases
@@ -182,7 +184,9 @@ class WorkspaceLeaseStoreMixin:
                     continue
                 item_state_counts[normalized_state] = int(count or 0)
 
-            oldest_unfinished_statement = select(func.min(cast(Any, Item.created_at))).where(
+            oldest_unfinished_statement = select(
+                func.min(cast(Any, Item.created_at))
+            ).where(
                 ~cast(Any, Item.state).in_([ITEM_STATE_PUBLISHED, ITEM_STATE_FAILED])
             )
             oldest_unfinished_at = session.exec(oldest_unfinished_statement).one()

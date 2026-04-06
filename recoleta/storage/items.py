@@ -18,7 +18,11 @@ from recoleta.models import (
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
 )
-from recoleta.storage import item_content_queries, item_content_writes, item_dedup_helpers
+from recoleta.storage import (
+    item_content_queries,
+    item_content_writes,
+    item_dedup_helpers,
+)
 from recoleta.types import ItemDraft, ItemStateUpdate, sha256_hex, utc_now
 
 

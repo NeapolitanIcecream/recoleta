@@ -8,7 +8,9 @@ from typing import Any
 from loguru import logger
 from pydantic_ai import Agent, RunContext
 
-from recoleta.llm_costs import estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens
+from recoleta.llm_costs import (
+    estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens,
+)
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.ports import TrendRepositoryPort
@@ -388,7 +390,9 @@ def generate_trend_ideas_payload(
         embedding_dimensions=resolved_request.embedding_dimensions,
         embedding_batch_max_inputs=resolved_request.embedding_batch_max_inputs,
         embedding_batch_max_chars=resolved_request.embedding_batch_max_chars,
-        embedding_failure_mode=str(resolved_request.embedding_failure_mode or "continue"),
+        embedding_failure_mode=str(
+            resolved_request.embedding_failure_mode or "continue"
+        ),
         embedding_max_errors=int(resolved_request.embedding_max_errors or 0),
         metric_namespace=resolved_request.metric_namespace,
         llm_connection=resolved_request.llm_connection,
@@ -429,7 +433,9 @@ def generate_trend_ideas_payload(
         "tool_calls_total": tool_calls_total,
         "tool_call_breakdown": tool_call_breakdown,
         "prompt_chars": len(prompt),
-        "trend_snapshot_pack_chars": len(str(resolved_request.trend_snapshot_pack_md or "")),
+        "trend_snapshot_pack_chars": len(
+            str(resolved_request.trend_snapshot_pack_md or "")
+        ),
         "include_debug": bool(resolved_request.include_debug),
     }
     log.info(

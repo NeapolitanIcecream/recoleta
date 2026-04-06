@@ -194,7 +194,9 @@ def _write_publish_notes(
                 canonical_url=request.item.canonical_url,
                 published_at=request.item.published_at,
                 authors=request.service.repository.decode_list(request.item.authors),
-                topics=request.service.repository.decode_list(request.analysis.topics_json),
+                topics=request.service.repository.decode_list(
+                    request.analysis.topics_json
+                ),
                 relevance_score=request.analysis.relevance_score,
                 run_id=request.run_id,
                 summary=request.analysis.summary,
@@ -276,7 +278,9 @@ def _record_publish_failure(request: PublishFailureRequest) -> None:
             status=DELIVERY_STATUS_FAILED,
             error=sanitized_error,
         )
-    request.log.bind(item_id=request.item.id).warning("Publish failed: {}", sanitized_error)
+    request.log.bind(item_id=request.item.id).warning(
+        "Publish failed: {}", sanitized_error
+    )
 
 
 def _publish_single_item(request: PublishItemRequest) -> list[Path]:
@@ -388,7 +392,9 @@ def execute_publish_stage(
         targets=targets,
     )
     context.destination_hash = destination_hash
-    effective_limit = min(limit, remaining_today) if remaining_today is not None else limit
+    effective_limit = (
+        min(limit, remaining_today) if remaining_today is not None else limit
+    )
     candidates, _ = _load_publish_candidates(
         service=service,
         run_id=run_id,
@@ -449,7 +455,9 @@ def _publish_candidate_loop(
         TimeElapsedColumn(),
         console=context.service._progress_console,
     ) as progress:
-        for item, analysis in progress.track(candidates, description="Publishing items"):
+        for item, analysis in progress.track(
+            candidates, description="Publishing items"
+        ):
             if item.id is None:
                 continue
             if _should_skip_publish_item(

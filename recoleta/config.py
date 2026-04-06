@@ -79,9 +79,7 @@ _DEPRECATED_SCHEDULER_INTERVAL_KEYS = (
     "ANALYZE_INTERVAL_MINUTES",
     "PUBLISH_INTERVAL_MINUTES",
 )
-_ENV_FILE_ASSIGNMENT_RE = re.compile(
-    r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*="
-)
+_ENV_FILE_ASSIGNMENT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
 _LANGUAGE_CODE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 
 
@@ -130,7 +128,11 @@ def _normalize_workflow_translate_include(
             f"{field_name} must include at least one value: items, trends, ideas"
         )
     unknown = sorted(
-        {token for token in normalized if token not in _ALLOWED_WORKFLOW_TRANSLATE_INCLUDE}
+        {
+            token
+            for token in normalized
+            if token not in _ALLOWED_WORKFLOW_TRANSLATE_INCLUDE
+        }
     )
     if unknown:
         raise ValueError(
@@ -142,7 +144,9 @@ def _normalize_workflow_translate_include(
 
 
 def _legacy_scheduler_interval_message(keys: list[str]) -> str:
-    normalized = list(dict.fromkeys(str(key).strip() for key in keys if str(key).strip()))
+    normalized = list(
+        dict.fromkeys(str(key).strip() for key in keys if str(key).strip())
+    )
     rendered = ", ".join(f"`{key}`" for key in normalized)
     return (
         "CLI v2 removed legacy scheduler interval settings: "
@@ -243,7 +247,9 @@ class LocalizationTargetConfig(BaseModel):
         if not normalized:
             raise ValueError("localization.targets.llm_label must not be empty")
         if "\n" in normalized or "\r" in normalized:
-            raise ValueError("localization.targets.llm_label must be a single-line value")
+            raise ValueError(
+                "localization.targets.llm_label must be a single-line value"
+            )
         if len(normalized) > 64:
             raise ValueError("localization.targets.llm_label must be <= 64 characters")
         return normalized
@@ -265,12 +271,16 @@ class LocalizationConfig(BaseModel):
     def _normalize_language_codes(cls, value: Any, info: Any) -> str | None:
         if value is None:
             return None
-        return _normalize_language_code(value, field_name=f"localization.{info.field_name}")
+        return _normalize_language_code(
+            value, field_name=f"localization.{info.field_name}"
+        )
 
     @model_validator(mode="after")
     def _validate_localization(self) -> "LocalizationConfig":
         target_codes = [target.code for target in self.targets]
-        duplicates = sorted({code for code in target_codes if target_codes.count(code) > 1})
+        duplicates = sorted(
+            {code for code in target_codes if target_codes.count(code) > 1}
+        )
         if duplicates:
             raise ValueError(
                 "localization.targets codes must be unique: " + ", ".join(duplicates)
@@ -424,14 +434,20 @@ class WorkflowPolicyOverrideConfig(BaseModel):
                 if self.recursive_lower_levels is None
                 else self.recursive_lower_levels
             ),
-            delivery_mode=default.delivery_mode if self.delivery_mode is None else self.delivery_mode,
-            translation=default.translation if self.translation is None else self.translation,
+            delivery_mode=default.delivery_mode
+            if self.delivery_mode is None
+            else self.delivery_mode,
+            translation=default.translation
+            if self.translation is None
+            else self.translation,
             translate_include=(
                 list(default.translate_include)
                 if self.translate_include is None
                 else list(self.translate_include)
             ),
-            site_build=default.site_build if self.site_build is None else self.site_build,
+            site_build=default.site_build
+            if self.site_build is None
+            else self.site_build,
             on_translate_failure=(
                 default.on_translate_failure
                 if self.on_translate_failure is None
@@ -442,9 +458,15 @@ class WorkflowPolicyOverrideConfig(BaseModel):
 
 class GranularityWorkflowConfig(BaseModel):
     default: WorkflowPolicyConfig = Field(default_factory=WorkflowPolicyConfig)
-    day: WorkflowPolicyOverrideConfig = Field(default_factory=WorkflowPolicyOverrideConfig)
-    week: WorkflowPolicyOverrideConfig = Field(default_factory=WorkflowPolicyOverrideConfig)
-    month: WorkflowPolicyOverrideConfig = Field(default_factory=WorkflowPolicyOverrideConfig)
+    day: WorkflowPolicyOverrideConfig = Field(
+        default_factory=WorkflowPolicyOverrideConfig
+    )
+    week: WorkflowPolicyOverrideConfig = Field(
+        default_factory=WorkflowPolicyOverrideConfig
+    )
+    month: WorkflowPolicyOverrideConfig = Field(
+        default_factory=WorkflowPolicyOverrideConfig
+    )
 
 
 class DeployWorkflowConfig(BaseModel):
@@ -519,7 +541,9 @@ class DaemonScheduleConfig(BaseModel):
     def _normalize_workflow(cls, value: Any) -> str:
         normalized = str(value or "").strip().lower()
         if normalized not in {"day", "week", "month", "deploy", "now"}:
-            raise ValueError("daemon.schedules.workflow must be one of: now, day, week, month, deploy")
+            raise ValueError(
+                "daemon.schedules.workflow must be one of: now, day, week, month, deploy"
+            )
         return normalized
 
     @field_validator("weekday", mode="before")
@@ -682,13 +706,17 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         if loaded is None:
             return {}
         if not isinstance(loaded, dict):
-            raise ValueError("Config file must contain a mapping/object at the top level")
+            raise ValueError(
+                "Config file must contain a mapping/object at the top level"
+            )
         return loaded
 
     def _reject_disallowed_config_keys(self, loaded: dict[str, Any]) -> None:
         deprecated_scheduler_keys = self._collect_deprecated_scheduler_keys(loaded)
         if deprecated_scheduler_keys:
-            raise ValueError(_legacy_scheduler_interval_message(deprecated_scheduler_keys))
+            raise ValueError(
+                _legacy_scheduler_interval_message(deprecated_scheduler_keys)
+            )
         unsupported_keys = self._collect_unsupported_top_level_keys(loaded)
         if unsupported_keys:
             raise ValueError(_unsupported_config_format_message(unsupported_keys))
@@ -699,7 +727,8 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         return [
             key
             for key in loaded
-            if isinstance(key, str) and key.upper() in _DEPRECATED_SCHEDULER_INTERVAL_KEYS
+            if isinstance(key, str)
+            and key.upper() in _DEPRECATED_SCHEDULER_INTERVAL_KEYS
         ]
 
     def _collect_unsupported_top_level_keys(self, loaded: dict[str, Any]) -> list[str]:
@@ -945,7 +974,9 @@ class Settings(BaseSettings):
     workflows: WorkflowsConfig = Field(
         default_factory=WorkflowsConfig, validation_alias="WORKFLOWS"
     )
-    daemon: DaemonConfig = Field(default_factory=DaemonConfig, validation_alias="DAEMON")
+    daemon: DaemonConfig = Field(
+        default_factory=DaemonConfig, validation_alias="DAEMON"
+    )
     legacy_ingest_interval_minutes: int | None = Field(
         default=None,
         validation_alias="INGEST_INTERVAL_MINUTES",

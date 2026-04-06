@@ -159,9 +159,7 @@ def build_summary_chunk_statement(
     include_document: bool,
 ) -> Any:
     statement = (
-        select(DocumentChunk, Document)
-        if include_document
-        else select(DocumentChunk)
+        select(DocumentChunk, Document) if include_document else select(DocumentChunk)
     )
     statement = statement.join(
         Document,
@@ -190,7 +188,9 @@ def build_summary_chunk_statement(
     raise ValueError("unsupported doc_type")
 
 
-def load_chunks_for_delete(*, session: Session, spec: ChunkDeleteSpec) -> list[DocumentChunk]:
+def load_chunks_for_delete(
+    *, session: Session, spec: ChunkDeleteSpec
+) -> list[DocumentChunk]:
     statement = select(DocumentChunk).where(DocumentChunk.doc_id == spec.doc_id)
     if spec.kind is not None:
         statement = statement.where(DocumentChunk.kind == spec.kind)
@@ -229,7 +229,9 @@ def delete_chunk_side_tables(*, engine: Any, chunk_ids: list[int]) -> None:
             )
 
 
-def build_chunk_search(request: ChunkSearchRequest) -> tuple[str, dict[str, Any]] | None:
+def build_chunk_search(
+    request: ChunkSearchRequest,
+) -> tuple[str, dict[str, Any]] | None:
     normalized_query = str(request.query or "").strip()
     if not normalized_query:
         return None

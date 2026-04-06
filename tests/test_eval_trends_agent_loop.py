@@ -39,7 +39,9 @@ def test_load_eval_windows_normalizes_topics(tmp_path: Path) -> None:
     assert windows[0].notes == "weekly baseline"
 
 
-def test_build_eval_manifest_includes_trends_commands_and_artifacts(tmp_path: Path) -> None:
+def test_build_eval_manifest_includes_trends_commands_and_artifacts(
+    tmp_path: Path,
+) -> None:
     windows = [
         harness.EvalWindow(
             window_id="day-agents",
@@ -103,7 +105,10 @@ def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
 
     assert "# trends agent eval manifest" in report
     assert "month-agents" in report
-    assert "uv run recoleta trends --granularity month --date 2026-03-12 --backfill" in report
+    assert (
+        "uv run recoleta trends --granularity month --date 2026-03-12 --backfill"
+        in report
+    )
 
 
 def test_render_eval_runbook_sh_includes_window_commands(tmp_path: Path) -> None:
@@ -126,13 +131,18 @@ def test_render_eval_runbook_sh_includes_window_commands(tmp_path: Path) -> None
 
     assert "#!/usr/bin/env bash" in runbook
     assert 'mkdir -p "' in runbook
-    assert 'uv run recoleta trends --granularity week --date 2026-03-05 --backfill' in runbook
+    assert (
+        "uv run recoleta trends --granularity week --date 2026-03-05 --backfill"
+        in runbook
+    )
     assert 'tee "' in runbook
 
 
 def test_summarize_run_metrics_extracts_tool_breakdown() -> None:
     metrics = [
-        SimpleNamespace(name="pipeline.trends.tool_calls_total", value=5.0, unit="count"),
+        SimpleNamespace(
+            name="pipeline.trends.tool_calls_total", value=5.0, unit="count"
+        ),
         SimpleNamespace(
             name="pipeline.trends.tool.search_hybrid.calls_total",
             value=2.0,
@@ -143,7 +153,9 @@ def test_summarize_run_metrics_extracts_tool_breakdown() -> None:
             value=3.0,
             unit="count",
         ),
-        SimpleNamespace(name="pipeline.trends.prompt_chars", value=1024.0, unit="chars"),
+        SimpleNamespace(
+            name="pipeline.trends.prompt_chars", value=1024.0, unit="chars"
+        ),
         SimpleNamespace(name="pipeline.trends.duration_ms", value=321.0, unit="ms"),
     ]
 
@@ -158,7 +170,9 @@ def test_summarize_run_metrics_extracts_tool_breakdown() -> None:
     assert summary["duration_ms"] == 321
 
 
-def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Path) -> None:
+def test_write_window_capture_artifacts_materializes_expected_files(
+    tmp_path: Path,
+) -> None:
     manifest = harness.build_eval_manifest(
         fixtures_path=tmp_path / "windows.json",
         out_dir=tmp_path / "bench-out",
@@ -203,16 +217,31 @@ def test_write_window_capture_artifacts_materializes_expected_files(tmp_path: Pa
     )
 
     artifact_dir = Path(window_manifest["artifact_dir"])
-    assert (artifact_dir / "report.md").read_text(encoding="utf-8").startswith("- grounded")
-    assert json.loads((artifact_dir / "payload.json").read_text(encoding="utf-8"))["title"] == "Weekly Trend"
+    assert (
+        (artifact_dir / "report.md")
+        .read_text(encoding="utf-8")
+        .startswith("- grounded")
+    )
+    assert (
+        json.loads((artifact_dir / "payload.json").read_text(encoding="utf-8"))["title"]
+        == "Weekly Trend"
+    )
     tool_trace_payload = json.loads(
         (artifact_dir / "tool-trace.json").read_text(encoding="utf-8")
     )
     assert tool_trace_payload["run_id"] == "run-week-baseline"
     assert tool_trace_payload["raw_tool_trace"]["status"] == "captured"
-    assert tool_trace_payload["raw_tool_trace"]["events"][0]["tool_name"] == "search_hybrid"
-    assert json.loads((artifact_dir / "rubric.json").read_text(encoding="utf-8"))["status"] == "pending_manual_review"
-    prompt_payload = json.loads((artifact_dir / "prompt.json").read_text(encoding="utf-8"))
+    assert (
+        tool_trace_payload["raw_tool_trace"]["events"][0]["tool_name"]
+        == "search_hybrid"
+    )
+    assert (
+        json.loads((artifact_dir / "rubric.json").read_text(encoding="utf-8"))["status"]
+        == "pending_manual_review"
+    )
+    prompt_payload = json.loads(
+        (artifact_dir / "prompt.json").read_text(encoding="utf-8")
+    )
     assert prompt_payload["status"] == "not_captured_yet"
     capture_summary = json.loads(
         (artifact_dir / "capture-summary.json").read_text(encoding="utf-8")
@@ -278,7 +307,9 @@ def test_capture_existing_trends_baseline_reuses_existing_docs(
     monkeypatch.setattr(
         cli,
         "_execute_stage",
-        lambda **kwargs: (_ for _ in ()).throw(AssertionError("pipeline should not run")),
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("pipeline should not run")
+        ),
     )
 
     summary = harness.capture_eval_baseline(
@@ -291,7 +322,9 @@ def test_capture_existing_trends_baseline_reuses_existing_docs(
     assert summary["capture_mode"] == "existing-trends"
     assert summary["runtime"]["mode"] == "existing_docs"
     artifact_dir = Path(manifest["windows"][0]["artifact_dir"])
-    tool_trace = json.loads((artifact_dir / "tool-trace.json").read_text(encoding="utf-8"))
+    tool_trace = json.loads(
+        (artifact_dir / "tool-trace.json").read_text(encoding="utf-8")
+    )
     assert tool_trace["trace_status"] == "unavailable_from_existing_doc"
     capture_summary = json.loads(
         (artifact_dir / "capture-summary.json").read_text(encoding="utf-8")
@@ -300,7 +333,9 @@ def test_capture_existing_trends_baseline_reuses_existing_docs(
     assert capture_summary["source_document"]["doc_id"] == 285
 
 
-def test_write_window_capture_failure_artifacts_records_error_context(tmp_path: Path) -> None:
+def test_write_window_capture_failure_artifacts_records_error_context(
+    tmp_path: Path,
+) -> None:
     manifest = harness.build_eval_manifest(
         fixtures_path=tmp_path / "windows.json",
         out_dir=tmp_path / "bench-out",
@@ -332,7 +367,12 @@ def test_write_window_capture_failure_artifacts_records_error_context(tmp_path: 
         (artifact_dir / "tool-trace.json").read_text(encoding="utf-8")
     )
     assert tool_trace_payload["status"] == "failed"
-    assert json.loads((artifact_dir / "payload.json").read_text(encoding="utf-8"))["status"] == "failed"
+    assert (
+        json.loads((artifact_dir / "payload.json").read_text(encoding="utf-8"))[
+            "status"
+        ]
+        == "failed"
+    )
 
 
 def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
@@ -487,7 +527,9 @@ def test_capture_eval_baseline_writes_window_and_aggregate_artifacts(
     assert tool_trace_payload["raw_tool_trace"]["status"] == "captured"
     assert tool_trace_payload["llm_debug"]["raw_tool_trace"]["events_total"] == 1
     baseline_summary = json.loads(
-        (Path(manifest["out_dir"]) / "baseline-summary.json").read_text(encoding="utf-8")
+        (Path(manifest["out_dir"]) / "baseline-summary.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert baseline_summary["windows"][0]["run_id"] == "run-week-baseline"
 

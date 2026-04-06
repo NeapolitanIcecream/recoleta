@@ -98,7 +98,13 @@ def test_init_schema_migrates_run_context_and_artifact_details_columns(
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])
 
     assert version == CURRENT_SCHEMA_VERSION
-    assert {"command", "scope", "granularity", "period_start", "period_end"} <= run_columns
+    assert {
+        "command",
+        "scope",
+        "granularity",
+        "period_start",
+        "period_end",
+    } <= run_columns
     assert "details_json" in artifact_columns
 
 
@@ -148,7 +154,9 @@ def test_init_schema_prunes_legacy_meta_rows_from_chunk_fts(tmp_path: Path) -> N
 
     with sqlite3.connect(repository.db_path) as conn:
         remaining = int(
-            conn.execute("SELECT COUNT(*) FROM chunk_fts WHERE kind = 'meta'").fetchone()[0]
+            conn.execute(
+                "SELECT COUNT(*) FROM chunk_fts WHERE kind = 'meta'"
+            ).fetchone()[0]
         )
 
     assert remaining == 0
@@ -368,11 +376,13 @@ def test_command_workspace_lease_monitor_renews_until_release(
     monkeypatch.setattr(recoleta.cli, "_WORKSPACE_LEASE_TIMEOUT_SECONDS", 2)
     monkeypatch.setattr(recoleta.cli, "_RUN_HEARTBEAT_INTERVAL_SECONDS", 1)
 
-    owner_token, log, heartbeat_monitor = recoleta.cli._acquire_workspace_lease_for_command(
-        repository=repository,
-        console=object(),
-        command="gc",
-        log_module="test.lease",
+    owner_token, log, heartbeat_monitor = (
+        recoleta.cli._acquire_workspace_lease_for_command(
+            repository=repository,
+            console=object(),
+            command="gc",
+            log_module="test.lease",
+        )
     )
 
     try:

@@ -318,9 +318,7 @@ def _execute_managed_workflow_loop(
 ) -> _WorkflowLoopOutcome:
     try:
         outcome = _workflow_loop_outcome(
-            execute_workflow_loop(
-                request=_workflow_loop_request(request)
-            )
+            execute_workflow_loop(request=_workflow_loop_request(request))
         )
         request.runtime.heartbeat_monitor.raise_if_failed()
         _finalize_managed_workflow_loop(request=request, outcome=outcome)
@@ -734,7 +732,9 @@ def execute_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
 
 def run_daemon_start_command() -> None:
     settings = cli._build_settings()
-    console = cli._runtime_symbols()["Console"](stderr=bool(getattr(settings, "log_json", False)))
+    console = cli._runtime_symbols()["Console"](
+        stderr=bool(getattr(settings, "log_json", False))
+    )
     scheduler = _build_scheduler()
     _register_daemon_schedules(scheduler=scheduler, settings=settings)
     console.print("[cyan]daemon started[/cyan]")

@@ -157,9 +157,7 @@ def _run_git(
 def _normalize_pages_config_mode(value: str) -> str:
     normalized = str(value or "").strip().lower() or "auto"
     if normalized not in _ALLOWED_PAGES_CONFIG_MODES:
-        raise ValueError(
-            "pages_config_mode must be one of: auto, always, never"
-        )
+        raise ValueError("pages_config_mode must be one of: auto, always, never")
     return normalized
 
 
@@ -246,7 +244,9 @@ def _git_config_value(*, repo_root: Path, key: str) -> str | None:
 
 def _deployment_identity(*, repo_root: Path) -> tuple[str, str]:
     name = _git_config_value(repo_root=repo_root, key="user.name") or "Recoleta"
-    email = _git_config_value(repo_root=repo_root, key="user.email") or "recoleta@localhost"
+    email = (
+        _git_config_value(repo_root=repo_root, key="user.email") or "recoleta@localhost"
+    )
     return name, email
 
 
@@ -401,9 +401,7 @@ def _publish_site_snapshot(
         push_args = ["push"]
         if force:
             push_args.append("--force")
-        push_args.extend(
-            [remote_info.name, f"HEAD:refs/heads/{branch}"]
-        )
+        push_args.extend([remote_info.name, f"HEAD:refs/heads/{branch}"])
         _run_git(push_args, cwd=deploy_root)
         commit_sha = _run_git(["rev-parse", "HEAD"], cwd=deploy_root).stdout.strip()
         return commit_sha, False
@@ -456,7 +454,11 @@ def _gh_api_configure_pages_source(
     remote_info: GitRemoteInfo,
     branch: str,
 ) -> PagesSourceConfigResult:
-    if remote_info.host is None or remote_info.owner is None or remote_info.repo is None:
+    if (
+        remote_info.host is None
+        or remote_info.owner is None
+        or remote_info.repo is None
+    ):
         return _pages_skip_result(detail="remote is not a GitHub repository")
 
     base_args = _gh_api_base_args(host=remote_info.host)
@@ -511,7 +513,9 @@ def _gh_pages_update_or_create(
         return None
     stderr = update.stderr.strip()
     if "404" not in stderr and "Not Found" not in stderr:
-        return _pages_failed_result(method="gh", detail=_pages_failure_detail(completed=update))
+        return _pages_failed_result(
+            method="gh", detail=_pages_failure_detail(completed=update)
+        )
     create = _run_command(
         [*base_args, "-X", "POST", endpoint, *payload_args],
         cwd=Path.cwd(),
@@ -519,7 +523,9 @@ def _gh_pages_update_or_create(
     )
     if create.returncode == 0:
         return None
-    return _pages_failed_result(method="gh", detail=_pages_failure_detail(completed=create))
+    return _pages_failed_result(
+        method="gh", detail=_pages_failure_detail(completed=create)
+    )
 
 
 def _gh_pages_site_url(*, base_args: list[str], endpoint: str) -> str | None:
@@ -554,14 +560,20 @@ def _http_api_configure_pages_source(
     token = _github_token()
     if token is None:
         return _pages_skip_result(detail="no GH_TOKEN or GITHUB_TOKEN was set")
-    if remote_info.host != "github.com" or remote_info.owner is None or remote_info.repo is None:
+    if (
+        remote_info.host != "github.com"
+        or remote_info.owner is None
+        or remote_info.repo is None
+    ):
         return _pages_skip_result(
             detail="token-based Pages auto-configuration currently supports github.com remotes only"
         )
 
     import httpx
 
-    endpoint = f"https://api.github.com/repos/{remote_info.owner}/{remote_info.repo}/pages"
+    endpoint = (
+        f"https://api.github.com/repos/{remote_info.owner}/{remote_info.repo}/pages"
+    )
     payload: dict[str, Any] = {"source": {"branch": branch, "path": "/"}}
     headers = {
         "Accept": "application/vnd.github+json",
@@ -574,7 +586,9 @@ def _http_api_configure_pages_source(
         if response.status_code == 404:
             response = client.post(endpoint, json=payload)
         if response.status_code not in {200, 201, 204}:
-            detail = response.text.strip() or f"GitHub API returned {response.status_code}"
+            detail = (
+                response.text.strip() or f"GitHub API returned {response.status_code}"
+            )
             return _pages_failed_result(method="token", detail=detail)
         info = client.get(endpoint)
         site_url: str | None = None
@@ -778,7 +792,9 @@ def _resolved_deploy_branch(*, branch: str) -> str:
 
 
 def _resolved_deploy_message(*, commit_message: str | None) -> str:
-    return (str(commit_message).strip() if commit_message is not None else "") or _DEFAULT_DEPLOY_MESSAGE
+    return (
+        str(commit_message).strip() if commit_message is not None else ""
+    ) or _DEFAULT_DEPLOY_MESSAGE
 
 
 def _site_export_kwargs(
@@ -789,7 +805,9 @@ def _site_export_kwargs(
     default_language_code: str | None,
     item_export_scope: str,
 ) -> dict[str, Any]:
-    normalized_item_export_scope = str(item_export_scope or "").strip().lower() or "linked"
+    normalized_item_export_scope = (
+        str(item_export_scope or "").strip().lower() or "linked"
+    )
     export_kwargs: dict[str, Any] = {
         "input_dir": input_dir,
         "output_dir": site_dir,

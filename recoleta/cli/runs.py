@@ -69,7 +69,9 @@ def _serialize_artifact(row: Any) -> dict[str, Any]:
 
 def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
     granularity_candidates = _pass_output_candidates(pass_outputs, "granularity")
-    period_starts = _pass_output_candidates(pass_outputs, "period_start", isoformat=True)
+    period_starts = _pass_output_candidates(
+        pass_outputs, "period_start", isoformat=True
+    )
     period_ends = _pass_output_candidates(pass_outputs, "period_end", isoformat=True)
     command = _string_attr(run, "command")
     operation_kind = _string_attr(run, "operation_kind")
@@ -78,7 +80,9 @@ def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
     period_start = cli._isoformat_or_none(getattr(run, "period_start", None))
     period_end = cli._isoformat_or_none(getattr(run, "period_end", None))
     target_granularity = _string_attr(run, "target_granularity")
-    target_period_start = cli._isoformat_or_none(getattr(run, "target_period_start", None))
+    target_period_start = cli._isoformat_or_none(
+        getattr(run, "target_period_start", None)
+    )
     target_period_end = cli._isoformat_or_none(getattr(run, "target_period_end", None))
     requested_steps = _parse_json_list(getattr(run, "requested_steps_json", None))
     executed_steps = _parse_json_list(getattr(run, "executed_steps_json", None))
@@ -93,11 +97,7 @@ def _derive_run_context(*, run: Any, pass_outputs: list[Any]) -> dict[str, Any]:
         "scope_candidates": scope_candidates,
         "granularity": (
             granularity
-            or (
-                granularity_candidates[0]
-                if len(granularity_candidates) == 1
-                else None
-            )
+            or (granularity_candidates[0] if len(granularity_candidates) == 1 else None)
         ),
         "granularity_candidates": granularity_candidates,
         "period_start": (
@@ -252,7 +252,9 @@ def _load_repository_or_exit(
     log = logger.bind(module=log_module, json=json_output)
 
     def _exit_with_error(message: str, *, code: int = 1) -> NoReturn:
-        log.warning("Run inspection failed db_path={} error={}", resolved_db_path, message)
+        log.warning(
+            "Run inspection failed db_path={} error={}", resolved_db_path, message
+        )
         if json_output:
             cli._emit_json({"status": "error", "error": message})
         else:

@@ -87,6 +87,7 @@ from recoleta.site_presentation import (
     render_idea_opportunity_card as _render_idea_opportunity_card_impl,
     render_presentation_source_list as _render_presentation_source_list_impl,
 )
+
 RECOLETA_REPO_URL = "https://github.com/NeapolitanIcecream/recoleta"
 RECOLETA_QUICKSTART_URL = f"{RECOLETA_REPO_URL}#recoleta-quickstart"
 
@@ -213,7 +214,10 @@ def _load_presentation_for_site(
         schema_version = int(payload.get("presentation_schema_version") or 0)
     except Exception:
         return None
-    if schema_version not in {PRESENTATION_SCHEMA_VERSION_V1, PRESENTATION_SCHEMA_VERSION}:
+    if schema_version not in {
+        PRESENTATION_SCHEMA_VERSION_V1,
+        PRESENTATION_SCHEMA_VERSION,
+    }:
         return None
     if str(payload.get("surface_kind") or "").strip().lower() != surface_kind:
         return None
@@ -402,6 +406,8 @@ def _reject_legacy_stream_layout(path: Path, *, context: str) -> None:
         raise ValueError(
             f"{context} no longer supports legacy Streams layouts: {legacy_streams_root}"
         )
+
+
 def _repo_cta_links() -> str:
     repo_href = html.escape(RECOLETA_REPO_URL, quote=True)
     quickstart_href = html.escape(RECOLETA_QUICKSTART_URL, quote=True)
@@ -451,7 +457,9 @@ def _display_site_instance(instance: str | None) -> str | None:
     if normalized == cleaned and not cleaned.islower():
         return cleaned
     tokens = [
-        token.upper() if token.lower() in _STREAM_DISPLAY_INITIALISMS else token.capitalize()
+        token.upper()
+        if token.lower() in _STREAM_DISPLAY_INITIALISMS
+        else token.capitalize()
         for token in normalized.split()
     ]
     return " ".join(tokens) if tokens else cleaned
@@ -599,9 +607,9 @@ def _record_latest_document(
     document: TrendSiteDocument | IdeaSiteDocument,
 ) -> None:
     existing = latest_by_slug.get(slug)
-    if existing is None or _rendered_document_sort_key(document) > _rendered_document_sort_key(
-        existing
-    ):
+    if existing is None or _rendered_document_sort_key(
+        document
+    ) > _rendered_document_sort_key(existing):
         latest_by_slug[slug] = document
 
 
@@ -698,7 +706,9 @@ def _infer_instance_name_from_site_root(path: Path) -> str | None:
 
 
 def _infer_instance_name_from_site_path(path: Path) -> str | None:
-    return _infer_instance_name_from_trends_dir(path) or _infer_instance_name_from_site_root(
+    return _infer_instance_name_from_trends_dir(
+        path
+    ) or _infer_instance_name_from_site_root(
         path.parent if path.name == "Trends" else path
     )
 
@@ -753,6 +763,7 @@ def _render_topic_link_pills(
         if pills
         else "<span class='meta-pill subdued'>No tracked topics</span>"
     )
+
 
 def _render_site_page(spec: SitePageShellInput) -> str:
     return _render_site_page_shell_impl(
@@ -1084,9 +1095,15 @@ def _render_detail_page(
 
     return _render_site_page(
         SitePageShellInput(
-            title=f"{document.title} · Recoleta Trends", page_path=document.page_path, output_dir=output_dir,
-            page_heading=document.title, page_subtitle="", body_class="page-detail",
-            active_nav="trends", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title=f"{document.title} · Recoleta Trends",
+            page_path=document.page_path,
+            output_dir=output_dir,
+            page_heading=document.title,
+            page_subtitle="",
+            body_class="page-detail",
+            active_nav="trends",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
 
@@ -1173,9 +1190,15 @@ def _render_item_page(
     )
     return _render_site_page(
         SitePageShellInput(
-            title=f"{document.title} · Recoleta", page_path=document.page_path, output_dir=output_dir,
-            page_heading=document.title, page_subtitle="", body_class="page-item",
-            active_nav="archive", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title=f"{document.title} · Recoleta",
+            page_path=document.page_path,
+            output_dir=output_dir,
+            page_heading=document.title,
+            page_subtitle="",
+            body_class="page-item",
+            active_nav="archive",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
 
@@ -1317,9 +1340,15 @@ def _render_idea_page(
     )
     return _render_site_page(
         SitePageShellInput(
-            title=f"{document.title} · Recoleta Ideas", page_path=document.page_path, output_dir=output_dir,
-            page_heading=document.title, page_subtitle="", body_class="page-idea",
-            active_nav="ideas", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title=f"{document.title} · Recoleta Ideas",
+            page_path=document.page_path,
+            output_dir=output_dir,
+            page_heading=document.title,
+            page_subtitle="",
+            body_class="page-idea",
+            active_nav="ideas",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
 
@@ -1345,14 +1374,20 @@ def _render_trends_index_page(
         "<h1 class='section-title page-section-title'>Trends</h1>"
         f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='trend'))}</span>"
         "</div>"
-        f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No trend briefs available yet.</div>'}</div>"
+        f"<div class='trend-grid'>{cards or '<div class="empty-card">No trend briefs available yet.</div>'}</div>"
         "</section>"
     )
     return _render_site_page(
         SitePageShellInput(
-            title="Trends · Recoleta Trends", page_path=page_path, output_dir=output_dir,
-            page_heading="Trends", page_subtitle="", body_class="page-trends",
-            active_nav="trends", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title="Trends · Recoleta Trends",
+            page_path=page_path,
+            output_dir=output_dir,
+            page_heading="Trends",
+            page_subtitle="",
+            body_class="page-trends",
+            active_nav="trends",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
 
@@ -1378,14 +1413,20 @@ def _render_ideas_index_page(
         "<h1 class='section-title page-section-title'>Ideas</h1>"
         f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='idea'))}</span>"
         "</div>"
-        f"<div class='trend-grid'>{cards or '<div class=\"empty-card\">No idea briefs available yet.</div>'}</div>"
+        f"<div class='trend-grid'>{cards or '<div class="empty-card">No idea briefs available yet.</div>'}</div>"
         "</section>"
     )
     return _render_site_page(
         SitePageShellInput(
-            title="Ideas · Recoleta Trends", page_path=page_path, output_dir=output_dir,
-            page_heading="Ideas", page_subtitle="", body_class="page-ideas",
-            active_nav="ideas", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title="Ideas · Recoleta Trends",
+            page_path=page_path,
+            output_dir=output_dir,
+            page_heading="Ideas",
+            page_subtitle="",
+            body_class="page-ideas",
+            active_nav="ideas",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
 
@@ -1482,9 +1523,15 @@ def _render_home_page(
 
     return _render_site_page(
         SitePageShellInput(
-            title="Recoleta Trends", page_path=page_path, output_dir=output_dir,
-            page_heading="Recoleta Trends", page_subtitle="", body_class="page-home",
-            active_nav="home", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title="Recoleta Trends",
+            page_path=page_path,
+            output_dir=output_dir,
+            page_heading="Recoleta Trends",
+            page_subtitle="",
+            body_class="page-home",
+            active_nav="home",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
 
@@ -1609,11 +1656,18 @@ def _render_topics_index_page(
 
     return _render_site_page(
         SitePageShellInput(
-            title="Topics · Recoleta Trends", page_path=page_path, output_dir=output_dir,
-            page_heading="Topics", page_subtitle="", body_class="page-topics",
-            active_nav="topics", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title="Topics · Recoleta Trends",
+            page_path=page_path,
+            output_dir=output_dir,
+            page_heading="Topics",
+            page_subtitle="",
+            body_class="page-topics",
+            active_nav="topics",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
+
 
 def _render_topic_page_collections(
     *,
@@ -1636,7 +1690,9 @@ def _render_topic_page_collections(
         )
         for document in request.idea_documents
     )
-    latest_token = _latest_collection_token([*request.documents, *request.idea_documents])
+    latest_token = _latest_collection_token(
+        [*request.documents, *request.idea_documents]
+    )
     return (
         f"{_render_collection_summary_section(summary_label='Topic summary', title=request.topic, trend_count=len(request.documents), idea_count=len(request.idea_documents), latest_token=latest_token)}"
         "<section class='split-layout paired-collection-layout'>"
@@ -1662,11 +1718,18 @@ def _render_topic_page(
     )
     return _render_site_page(
         SitePageShellInput(
-            title=f"{normalized_request.topic} · Recoleta Trends", page_path=page_path, output_dir=normalized_request.output_dir,
-            page_heading=normalized_request.topic, page_subtitle="", body_class="page-topic",
-            active_nav="topics", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title=f"{normalized_request.topic} · Recoleta Trends",
+            page_path=page_path,
+            output_dir=normalized_request.output_dir,
+            page_heading=normalized_request.topic,
+            page_subtitle="",
+            body_class="page-topic",
+            active_nav="topics",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
+
 
 def _render_archive_page(
     *, documents: list[TrendSiteDocument], output_dir: Path
@@ -1680,9 +1743,15 @@ def _render_archive_page(
     )
     return _render_site_page(
         SitePageShellInput(
-            title="Archive · Recoleta Trends", page_path=page_path, output_dir=output_dir,
-            page_heading="Archive", page_subtitle="", body_class="page-archive",
-            active_nav="archive", content_html=content_html, repo_url=RECOLETA_REPO_URL,
+            title="Archive · Recoleta Trends",
+            page_path=page_path,
+            output_dir=output_dir,
+            page_heading="Archive",
+            page_subtitle="",
+            body_class="page-archive",
+            active_nav="archive",
+            content_html=content_html,
+            repo_url=RECOLETA_REPO_URL,
         )
     )
 
@@ -3014,7 +3083,9 @@ def _resolve_site_source_key(
     if default_instance_key in available_source_keys:
         return default_instance_key
     matching_keys = [
-        source_key for source_key in available_source_keys if source_key[0] == target_path
+        source_key
+        for source_key in available_source_keys
+        if source_key[0] == target_path
     ]
     if len(matching_keys) == 1:
         return matching_keys[0]
@@ -3114,7 +3185,8 @@ def _load_idea_source_documents(
                         input_instance=input_info.instance,
                         frontmatter=frontmatter,
                     ),
-                    status=str(frontmatter.get("status") or "").strip().lower() or "unknown",
+                    status=str(frontmatter.get("status") or "").strip().lower()
+                    or "unknown",
                 )
             )
 
@@ -3446,18 +3518,26 @@ def _extract_idea_opportunity_meta_sections(
         if (value := _strip_labeled_value(text, labels=("Type", "Kind"))) is not None:
             pills.append(_idea_meta_pill("Type", value))
             continue
-        if (value := _strip_labeled_value(
-            text,
-            labels=("Horizon", "Time horizon"),
-        )) is not None:
+        if (
+            value := _strip_labeled_value(
+                text,
+                labels=("Horizon", "Time horizon"),
+            )
+        ) is not None:
             pills.append(_idea_meta_pill("Horizon", value))
             continue
-        if (value := _strip_labeled_value(text, labels=("Role", "User/job"))) is not None:
+        if (
+            value := _strip_labeled_value(text, labels=("Role", "User/job"))
+        ) is not None:
             role_html = _render_idea_role_block(value)
             continue
         if " ".join(text.split()).strip():
             return None
-    pills_html = f"<div class='idea-opportunity-meta-row'>{''.join(pills)}</div>" if pills else None
+    pills_html = (
+        f"<div class='idea-opportunity-meta-row'>{''.join(pills)}</div>"
+        if pills
+        else None
+    )
     if pills_html is None and role_html is None:
         return None
     return pills_html, role_html
@@ -3702,9 +3782,7 @@ def _trend_shift_cards(
             if str(ref).strip()
         ]
         history_html = (
-            "<div class='detail-shift-meta'>"
-            f"History: {', '.join(history_refs)}"
-            "</div>"
+            f"<div class='detail-shift-meta'>History: {', '.join(history_refs)}</div>"
             if history_refs
             else ""
         )
@@ -3753,7 +3831,11 @@ def _trend_counter_signal_section(
         ],
         labels=labels,
     )
-    if not title and summary_html == "<p>(none)</p>" and evidence_html == "<p>(none)</p>":
+    if (
+        not title
+        and summary_html == "<p>(none)</p>"
+        and evidence_html == "<p>(none)</p>"
+    ):
         return None
     parts: list[str] = []
     if title:
@@ -3761,7 +3843,9 @@ def _trend_counter_signal_section(
     if summary_html != "<p>(none)</p>":
         parts.append(f"<div class='prose'>{summary_html}</div>")
     if evidence_html != "<p>(none)</p>":
-        parts.append(_render_browser_section_label_html(labels["representative_sources"]))
+        parts.append(
+            _render_browser_section_label_html(labels["representative_sources"])
+        )
         parts.append(f"<div class='prose detail-source-list'>{evidence_html}</div>")
     return _render_browser_content_card_html(
         heading=labels["counter_signal"],
@@ -3942,7 +4026,9 @@ def _idea_opportunity_evidence_block(
     labels: dict[str, str],
 ) -> tuple[str | None, int]:
     evidence_entries = [
-        entry for entry in list(opportunity.get("evidence") or []) if isinstance(entry, dict)
+        entry
+        for entry in list(opportunity.get("evidence") or [])
+        if isinstance(entry, dict)
     ]
     if not evidence_entries:
         return None, 0
@@ -3957,7 +4043,9 @@ def _idea_opportunity_evidence_block(
         ]
         reason_list = reasons or ([reason] if reason else [])
         reason_html = (
-            "<ul>" + "".join(f"<li>{html.escape(item)}</li>" for item in reason_list) + "</ul>"
+            "<ul>"
+            + "".join(f"<li>{html.escape(item)}</li>" for item in reason_list)
+            + "</ul>"
             if reason_list
             else ""
         )
@@ -3995,7 +4083,9 @@ def _render_idea_opportunity_card_from_presentation(
     )
     if evidence_block is not None:
         blocks.append(evidence_block)
-    opportunity_title = f"{tier_label}: {str(opportunity.get('title') or 'Opportunity').strip()}"
+    opportunity_title = (
+        f"{tier_label}: {str(opportunity.get('title') or 'Opportunity').strip()}"
+    )
     return (
         "<article class='idea-opportunity-card'>"
         "<div class='idea-opportunity-head'>"
@@ -4013,7 +4103,11 @@ def _build_idea_body_from_presentation(
     presentation: dict[str, Any],
 ) -> IdeaBodyRenderResult:
     labels = _presentation_labels(surface_kind="idea", presentation=presentation)
-    content = presentation.get("content") if isinstance(presentation.get("content"), dict) else {}
+    content = (
+        presentation.get("content")
+        if isinstance(presentation.get("content"), dict)
+        else {}
+    )
     assert isinstance(content, dict)
     summary_html = _render_presentation_markdown_html(content.get("summary"))
     opportunities = [
@@ -4024,9 +4118,11 @@ def _build_idea_body_from_presentation(
     cards: list[str] = []
     evidence_count = 0
     for opportunity in opportunities:
-        card_html, opportunity_evidence_count = _render_idea_opportunity_card_from_presentation(
-            opportunity=opportunity,
-            labels=labels,
+        card_html, opportunity_evidence_count = (
+            _render_idea_opportunity_card_from_presentation(
+                opportunity=opportunity,
+                labels=labels,
+            )
         )
         cards.append(card_html)
         evidence_count += opportunity_evidence_count
@@ -4041,7 +4137,9 @@ def _build_idea_body_from_presentation(
     ]
     if cards:
         count_label = (
-            f"{len(cards)} opportunity" if len(cards) == 1 else f"{len(cards)} opportunities"
+            f"{len(cards)} opportunity"
+            if len(cards) == 1
+            else f"{len(cards)} opportunities"
         )
         rendered.append(
             "<section class='surface-card section-card idea-opportunities-section'>"
@@ -4113,7 +4211,9 @@ def _load_idea_site_documents(
         else:
             normalized_markdown = source_document.markdown_body.strip() or "# Ideas\n"
             rendered_html = markdown.render(normalized_markdown)
-            title, raw_body_html, excerpt = _extract_item_body_html(body_html=rendered_html)
+            title, raw_body_html, excerpt = _extract_item_body_html(
+                body_html=rendered_html
+            )
             idea_body = _build_idea_browser_body_html(body_html=raw_body_html)
         body_html = _rewrite_site_markdown_links(
             html_text=idea_body.body_html,
@@ -4331,10 +4431,13 @@ def _render_language_switcher_fragment(
     for language_slug, language_code in language_code_by_slug.items():
         target_relative_path = (
             current_page_relative_path
-            if current_page_relative_path in page_paths_by_language.get(language_slug, set())
+            if current_page_relative_path
+            in page_paths_by_language.get(language_slug, set())
             else "index.html"
         )
-        current_page_path = PurePosixPath(current_language_slug) / current_page_relative_path
+        current_page_path = (
+            PurePosixPath(current_language_slug) / current_page_relative_path
+        )
         target_page_path = PurePosixPath(language_slug) / target_relative_path
         anchor = switcher_soup.new_tag(
             "a",
@@ -4418,7 +4521,9 @@ def _apply_site_language_override_to_page(
         if nav_actions is not None:
             nav_actions["data-has-language-switcher"] = "true"
             utility_cluster = nav_actions.select_one(".nav-utility-cluster")
-            insertion_target = utility_cluster if utility_cluster is not None else nav_actions
+            insertion_target = (
+                utility_cluster if utility_cluster is not None else nav_actions
+            )
             if nav_actions.select_one(".language-switcher") is None:
                 insertion_target.insert(
                     0,
@@ -4477,7 +4582,10 @@ def _export_trend_static_site_single_language(
 ) -> Path:
     return _export_trend_static_site_single_language_impl(
         request=SingleLanguageSiteExportRequest(
-            input_dir=tuple(input_dir) if isinstance(input_dir, Sequence) and not isinstance(input_dir, (Path, TrendSiteInputSpec)) else input_dir,
+            input_dir=tuple(input_dir)
+            if isinstance(input_dir, Sequence)
+            and not isinstance(input_dir, (Path, TrendSiteInputSpec))
+            else input_dir,
             output_dir=output_dir,
             limit=limit,
             item_export_scope=item_export_scope,
@@ -4542,7 +4650,9 @@ def export_trend_static_site(
                 output_dir=resolved_output_dir,
                 language_code=str(language_code),
                 language_slug=language_slug,
-                page_paths_by_language={language_slug: _collect_site_html_files(resolved_output_dir)},
+                page_paths_by_language={
+                    language_slug: _collect_site_html_files(resolved_output_dir)
+                },
                 language_code_by_slug={language_slug: str(language_code)},
             )
         return manifest_path
@@ -4553,7 +4663,8 @@ def export_trend_static_site(
             "default_language_code is required when exporting a multilingual site"
         )
     if normalized_default_language_slug not in {
-        language_slug for _language_code, language_slug, _root_paths in valid_language_inputs
+        language_slug
+        for _language_code, language_slug, _root_paths in valid_language_inputs
     }:
         raise ValueError(
             "default_language_code must match one discovered language root"
@@ -4579,7 +4690,9 @@ def export_trend_static_site(
         manifest_by_language[language_slug] = json.loads(
             manifest_path.read_text(encoding="utf-8")
         )
-        page_paths_by_language[language_slug] = _collect_site_html_files(language_output_dir)
+        page_paths_by_language[language_slug] = _collect_site_html_files(
+            language_output_dir
+        )
         language_code_by_slug[language_slug] = str(language_code)
 
     for language_slug, language_code in language_code_by_slug.items():

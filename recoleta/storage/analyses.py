@@ -215,11 +215,7 @@ class AnalysisStoreMixin:
 
         item_ids = sorted({analysis.item_id for analysis in normalized})
         mirror_item_ids = sorted(
-            {
-                analysis.item_id
-                for analysis in normalized
-                if analysis.mirror_item_state
-            }
+            {analysis.item_id for analysis in normalized if analysis.mirror_item_state}
         )
         with Session(self.engine) as session:
             existing_by_key = _existing_analyses_by_item_id(
@@ -320,7 +316,9 @@ class AnalysisStoreMixin:
                     ),
                 )
             )
-            statement = statement.order_by(
-                desc(cast(Any, event_at)), desc(cast(Any, Item.id))
-            ).offset(normalized_offset).limit(normalized_limit)
+            statement = (
+                statement.order_by(desc(cast(Any, event_at)), desc(cast(Any, Item.id)))
+                .offset(normalized_offset)
+                .limit(normalized_limit)
+            )
             return list(session.exec(statement))

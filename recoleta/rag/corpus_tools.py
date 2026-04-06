@@ -44,9 +44,7 @@ class CorpusSpec:
     sources: list[CorpusSource] = field(default_factory=list)
 
     @classmethod
-    def from_rag_sources(
-        cls, rag_sources: list[dict[str, Any]] | None
-    ) -> "CorpusSpec":
+    def from_rag_sources(cls, rag_sources: list[dict[str, Any]] | None) -> "CorpusSpec":
         normalized: list[CorpusSource] = []
         seen: set[tuple[str, str | None]] = set()
         for source in rag_sources or []:

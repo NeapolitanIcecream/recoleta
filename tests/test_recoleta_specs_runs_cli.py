@@ -142,7 +142,15 @@ def test_runs_show_json_reports_run_context_and_failure_summary(
 
     result = runner.invoke(
         recoleta.cli.app,
-        ["runs", "show", "--db-path", str(db_path), "--run-id", "run-context", "--json"],
+        [
+            "runs",
+            "show",
+            "--db-path",
+            str(db_path),
+            "--run-id",
+            "run-context",
+            "--json",
+        ],
     )
 
     assert result.exit_code == 0
@@ -256,7 +264,12 @@ def test_inspect_runs_show_json_includes_workflow_metadata_fields(
     assert run_payload["executed_steps"] == run_payload["requested_steps"]
     assert run_payload["skipped_steps"] == ["translate"]
     assert run_payload["billing_by_step"]["trends:month"]["total_cost_usd"] == 0.12
-    assert run_payload["billing_by_step"]["trends:month"]["components"]["trends_llm"]["calls"] == 4
+    assert (
+        run_payload["billing_by_step"]["trends:month"]["components"]["trends_llm"][
+            "calls"
+        ]
+        == 4
+    )
     assert run_payload["terminal_state"] == "succeeded_partial"
 
 
@@ -376,7 +389,15 @@ def test_runs_show_json_errors_for_missing_run(tmp_path: Path) -> None:
 
     result = runner.invoke(
         recoleta.cli.app,
-        ["runs", "show", "--db-path", str(db_path), "--run-id", "run-missing", "--json"],
+        [
+            "runs",
+            "show",
+            "--db-path",
+            str(db_path),
+            "--run-id",
+            "run-missing",
+            "--json",
+        ],
     )
 
     assert result.exit_code == 1

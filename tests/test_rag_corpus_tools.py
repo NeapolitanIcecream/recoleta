@@ -23,9 +23,7 @@ def test_corpus_spec_resolves_only_allowed_sources() -> None:
         ("trend", "day")
     ]
     assert spec.resolve_sources(doc_type="trend", granularity="month") == []
-    assert spec.resolve_sources(doc_type="idea", granularity=None) == [
-        ("idea", "week")
-    ]
+    assert spec.resolve_sources(doc_type="idea", granularity=None) == [("idea", "week")]
 
 
 def test_search_text_excludes_meta_chunks_from_agent_visible_hits(

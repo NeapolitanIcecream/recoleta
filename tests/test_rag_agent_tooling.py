@@ -3,7 +3,12 @@ from __future__ import annotations
 import importlib
 from typing import Any, cast
 
-from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+)
 
 
 rag_agent = importlib.import_module("recoleta.rag.agent")
@@ -312,7 +317,9 @@ def test_get_doc_bundle_returns_summary_sections_and_content_chunks(
     bundle = result["bundle"]
     assert bundle["doc"]["title"] == "Agent Memory Loops"
     assert bundle["summary"]["text"].startswith("Summary: retrieval memory loops")
-    assert bundle["summary_sections"]["problem"] == "planners forget earlier observations."
+    assert (
+        bundle["summary_sections"]["problem"] == "planners forget earlier observations."
+    )
     assert bundle["content_chunks"]
     assert bundle["content_chunks"][0]["source_content_type"] == "html_maintext"
     assert "verifier loop checks tool results" in bundle["content_chunks"][0]["text"]
@@ -436,7 +443,9 @@ def test_extract_raw_tool_trace_captures_calls_and_returns() -> None:
                     tool_name="search_hybrid",
                     tool_call_id="call-1",
                     content={
-                        "hits": [{"doc_id": 42, "chunk_index": 0, "title": "Agent Memory"}],
+                        "hits": [
+                            {"doc_id": 42, "chunk_index": 0, "title": "Agent Memory"}
+                        ],
                         "returned": 1,
                     },
                 )

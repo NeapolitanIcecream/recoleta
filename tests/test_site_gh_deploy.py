@@ -85,13 +85,17 @@ def test_gh_deploy_creates_branch_snapshot_without_touching_main_worktree(
     assert result.commit_sha
 
     published = tmp_path / "published"
-    _run_git("clone", "--branch", "gh-pages", str(remote_repo), str(published), cwd=tmp_path)
+    _run_git(
+        "clone", "--branch", "gh-pages", str(remote_repo), str(published), cwd=tmp_path
+    )
     assert (published / "index.html").exists()
     assert (published / ".nojekyll").exists()
     assert (published / "CNAME").read_text(encoding="utf-8") == "research.example.com\n"
     assert (published / "trends" / f"{trend_note.stem}.html").exists()
     assert not (published / ".github").exists()
-    deployed_manifest = json.loads((published / "manifest.json").read_text(encoding="utf-8"))
+    deployed_manifest = json.loads(
+        (published / "manifest.json").read_text(encoding="utf-8")
+    )
     assert "generated_at" not in deployed_manifest
     assert "input_dir" not in deployed_manifest
     assert "output_dir" not in deployed_manifest
@@ -159,15 +163,21 @@ def test_gh_deploy_preserves_multilingual_manifest_metadata(tmp_path: Path) -> N
 
     assert result.skipped is False
     published = tmp_path / "published"
-    _run_git("clone", "--branch", "gh-pages", str(remote_repo), str(published), cwd=tmp_path)
-    deployed_manifest = json.loads((published / "manifest.json").read_text(encoding="utf-8"))
+    _run_git(
+        "clone", "--branch", "gh-pages", str(remote_repo), str(published), cwd=tmp_path
+    )
+    deployed_manifest = json.loads(
+        (published / "manifest.json").read_text(encoding="utf-8")
+    )
     assert deployed_manifest["languages"] == ["en", "zh-cn"]
     assert deployed_manifest["default_language_code"] == "en"
     assert deployed_manifest["language_codes"] == {"en": "en", "zh-cn": "zh-CN"}
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
-def test_gh_deploy_skips_push_when_multilingual_snapshot_is_unchanged(tmp_path: Path) -> None:
+def test_gh_deploy_skips_push_when_multilingual_snapshot_is_unchanged(
+    tmp_path: Path,
+) -> None:
     notes_root = tmp_path / "notes"
     write_markdown_trend_note(
         output_dir=notes_root,
@@ -221,7 +231,9 @@ def test_gh_deploy_skips_push_when_multilingual_snapshot_is_unchanged(tmp_path: 
         force=True,
         default_language_code="en",
     )
-    first_head = _run_git("ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path)
+    first_head = _run_git(
+        "ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path
+    )
 
     second_result = deploy_trend_static_site_to_github_pages(
         input_dir=notes_root,
@@ -232,7 +244,9 @@ def test_gh_deploy_skips_push_when_multilingual_snapshot_is_unchanged(tmp_path: 
         force=True,
         default_language_code="en",
     )
-    second_head = _run_git("ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path)
+    second_head = _run_git(
+        "ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path
+    )
 
     assert first_result.skipped is False
     assert second_result.skipped is True
@@ -280,7 +294,9 @@ def test_gh_deploy_skips_push_when_snapshot_is_unchanged(tmp_path: Path) -> None
         pages_config_mode="never",
         force=True,
     )
-    first_head = _run_git("ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path)
+    first_head = _run_git(
+        "ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path
+    )
 
     second_result = deploy_trend_static_site_to_github_pages(
         input_dir=notes_root / "Trends",
@@ -290,7 +306,9 @@ def test_gh_deploy_skips_push_when_snapshot_is_unchanged(tmp_path: Path) -> None
         pages_config_mode="never",
         force=True,
     )
-    second_head = _run_git("ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path)
+    second_head = _run_git(
+        "ls-remote", "--heads", str(remote_repo), "gh-pages", cwd=tmp_path
+    )
 
     assert first_result.skipped is False
     assert second_result.skipped is True
@@ -299,7 +317,9 @@ def test_gh_deploy_skips_push_when_snapshot_is_unchanged(tmp_path: Path) -> None
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
-def test_gh_deploy_uses_best_effort_tempdir_cleanup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gh_deploy_uses_best_effort_tempdir_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     notes_root = tmp_path / "notes"
     write_markdown_trend_note(
         output_dir=notes_root,
@@ -336,7 +356,9 @@ def test_gh_deploy_uses_best_effort_tempdir_cleanup(tmp_path: Path, monkeypatch:
         captured_cleanup_flags.append(bool(kwargs.get("ignore_cleanup_errors")))
         return real_temporary_directory(*args, **kwargs)
 
-    monkeypatch.setattr(site_deploy.tempfile, "TemporaryDirectory", _temporary_directory)
+    monkeypatch.setattr(
+        site_deploy.tempfile, "TemporaryDirectory", _temporary_directory
+    )
 
     result = deploy_trend_static_site_to_github_pages(
         input_dir=notes_root / "Trends",
@@ -382,8 +404,16 @@ def test_gh_deploy_prefers_push_url_when_remote_endpoints_diverge(
     (local_repo / "README.md").write_text("# repo\n", encoding="utf-8")
     _run_git("add", "README.md", cwd=local_repo)
     _run_git("commit", "-m", "init", cwd=local_repo)
-    _run_git("remote", "add", "origin", str(tmp_path / "fetch-remote-does-not-exist.git"), cwd=local_repo)
-    _run_git("remote", "set-url", "--push", "origin", str(push_remote_repo), cwd=local_repo)
+    _run_git(
+        "remote",
+        "add",
+        "origin",
+        str(tmp_path / "fetch-remote-does-not-exist.git"),
+        cwd=local_repo,
+    )
+    _run_git(
+        "remote", "set-url", "--push", "origin", str(push_remote_repo), cwd=local_repo
+    )
 
     result = deploy_trend_static_site_to_github_pages(
         input_dir=notes_root / "Trends",
@@ -418,7 +448,9 @@ def test_gh_deploy_forwards_explicit_item_export_scope(
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr(site_deploy, "_resolve_git_repo_root", lambda repo_root: repo_root)
+    monkeypatch.setattr(
+        site_deploy, "_resolve_git_repo_root", lambda repo_root: repo_root
+    )
     monkeypatch.setattr(
         site_deploy,
         "_resolve_git_remote",
@@ -514,7 +546,10 @@ class _FakeSettings:
     def localization_target_codes(self) -> list[str]:
         if self.localization is None:
             return []
-        return [str(getattr(target, "code", "") or "") for target in getattr(self.localization, "targets", [])]
+        return [
+            str(getattr(target, "code", "") or "")
+            for target in getattr(self.localization, "targets", [])
+        ]
 
 
 class _FakeRepo:
@@ -607,7 +642,9 @@ def test_run_deploy_cli_uses_default_paths_and_prints_summary(
         markdown_output_dir=tmp_path / "output",
         recoleta_db_path=tmp_path / "recoleta.db",
     )
-    fake_settings.localization = SimpleNamespace(targets=[], site_default_language_code="en")
+    fake_settings.localization = SimpleNamespace(
+        targets=[], site_default_language_code="en"
+    )
     fake_settings.workflows = SimpleNamespace(
         deploy=SimpleNamespace(
             translation="auto",
@@ -619,9 +656,13 @@ def test_run_deploy_cli_uses_default_paths_and_prints_summary(
     calls: dict[str, Any] = {}
 
     monkeypatch.chdir(tmp_path)
+
     def _override(module_name: str, attr_name: str | None):
         if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
-            def _fake_site_build(*, input_dir, output_dir, default_language_code=None, limit=None):  # type: ignore[no-untyped-def]
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
                 calls.setdefault("site_build", []).append(
                     (input_dir, output_dir, default_language_code, limit)
                 )
@@ -638,6 +679,7 @@ def test_run_deploy_cli_uses_default_paths_and_prints_summary(
             module_name == "recoleta.site_deploy"
             and attr_name == "deploy_trend_static_site_to_github_pages"
         ):
+
             def _fake_deploy(  # type: ignore[no-untyped-def]
                 *,
                 input_dir,
@@ -723,11 +765,13 @@ def test_run_deploy_cli_passes_repo_dir_and_pages_config(
             )
         ),
     )
+
     def _override(module_name: str, attr_name: str | None):
         if (
             module_name == "recoleta.site_deploy"
             and attr_name == "deploy_trend_static_site_to_github_pages"
         ):
+
             def _fake_deploy(  # type: ignore[no-untyped-def]
                 *,
                 input_dir,
@@ -816,11 +860,13 @@ def test_run_deploy_cli_emits_json_output(
             on_translate_failure="partial_success",
         )
     )
+
     def _override(module_name: str, attr_name: str | None):
         if (
             module_name == "recoleta.site_deploy"
             and attr_name == "deploy_trend_static_site_to_github_pages"
         ):
+
             def _fake_deploy(  # type: ignore[no-untyped-def]
                 *,
                 input_dir,
@@ -911,6 +957,7 @@ def test_run_deploy_cli_forwards_explicit_item_export_scope(
             module_name == "recoleta.site_deploy"
             and attr_name == "deploy_trend_static_site_to_github_pages"
         ):
+
             def _fake_deploy(  # type: ignore[no-untyped-def]
                 *,
                 input_dir,

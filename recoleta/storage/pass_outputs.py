@@ -32,10 +32,9 @@ class PassOutputStoreMixin:
         payload_json = _to_json(normalized_request.payload)
         diagnostics_json = _to_json(normalized_request.diagnostics)
         input_refs_json = _to_json(normalized_request.input_refs)
-        normalized_content_hash = (
-            str(normalized_request.content_hash or "").strip()
-            or sha256_hex(payload_json)
-        )
+        normalized_content_hash = str(
+            normalized_request.content_hash or ""
+        ).strip() or sha256_hex(payload_json)
 
         with Session(self.engine) as session:
             row = PassOutput(
@@ -152,7 +151,9 @@ def coerce_create_pass_output_request(
     )
 
 
-def _normalized_create_pass_output(request: CreatePassOutputRequest) -> CreatePassOutputRequest:
+def _normalized_create_pass_output(
+    request: CreatePassOutputRequest,
+) -> CreatePassOutputRequest:
     normalized_run_id = str(request.run_id or "").strip()
     if not normalized_run_id:
         raise ValueError("run_id must not be empty")

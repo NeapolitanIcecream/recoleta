@@ -243,7 +243,10 @@ def _scalar_index_stats(
     return {
         "built_total": built,
         "attempted_total": attempted,
-        "columns": [{"column": column, "index_type": index_type} for column, index_type in scalar_plan],
+        "columns": [
+            {"column": column, "index_type": index_type}
+            for column, index_type in scalar_plan
+        ],
     }
 
 

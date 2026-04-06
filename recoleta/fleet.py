@@ -85,7 +85,10 @@ def child_default_language_code(config_path: Path) -> str | None:
     localization = getattr(settings, "localization", None)
     if localization is None:
         return None
-    return str(getattr(localization, "site_default_language_code", "") or "").strip() or None
+    return (
+        str(getattr(localization, "site_default_language_code", "") or "").strip()
+        or None
+    )
 
 
 def _fleet_instance_slug(name: str) -> str:

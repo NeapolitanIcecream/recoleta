@@ -461,6 +461,11 @@ def test_trends_normalize_evolution_history_windows_to_available_prev_ids(
         str(getattr(metric, "name", "")): float(getattr(metric, "value", 0.0))
         for metric in repository.list_metrics(run_id="run-pipeline-history-normalize")
     }
-    assert metric_values["pipeline.trends.evolution.history_windows_normalized_total"] == 1.0
-    assert metric_values["pipeline.trends.evolution.history_windows_dropped_total"] == 2.0
+    assert (
+        metric_values["pipeline.trends.evolution.history_windows_normalized_total"]
+        == 1.0
+    )
+    assert (
+        metric_values["pipeline.trends.evolution.history_windows_dropped_total"] == 2.0
+    )
     assert metric_values["pipeline.trends.evolution.signals_dropped_total"] == 0.0

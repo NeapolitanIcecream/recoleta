@@ -407,7 +407,9 @@ def _capture_budget_summary() -> dict[str, int]:
     return dict(_DEFAULT_CAPTURE_BUDGET)
 
 
-def _build_prompt_capture_stub(*, run_id: str | None, doc_id: int | None) -> dict[str, Any]:
+def _build_prompt_capture_stub(
+    *, run_id: str | None, doc_id: int | None
+) -> dict[str, Any]:
     return {
         "status": "not_captured_yet",
         "run_id": run_id,
@@ -512,7 +514,9 @@ def write_window_capture_failure_artifacts(
             "tool_call_breakdown": {},
         },
     )
-    _json_dump(Path(artifacts["prompt"]), _build_prompt_capture_stub(run_id=None, doc_id=None))
+    _json_dump(
+        Path(artifacts["prompt"]), _build_prompt_capture_stub(run_id=None, doc_id=None)
+    )
     _json_dump(
         Path(artifacts["rubric"]),
         _build_rubric_stub(window_manifest=window_manifest, run_id=None, doc_id=None),
@@ -581,7 +585,9 @@ def _render_report_markdown(*, request: _TrendRenderRequest) -> str:
 
 
 def _load_debug_payload(*, artifact_dir: Path, run_id: str) -> dict[str, Any] | None:
-    candidate = artifact_dir / "debug-artifacts" / run_id / "no-item" / "llm-response.json"
+    candidate = (
+        artifact_dir / "debug-artifacts" / run_id / "no-item" / "llm-response.json"
+    )
     return _read_json(candidate)
 
 
@@ -630,7 +636,9 @@ def prepare_isolated_eval_runtime(*, out_dir: Path) -> dict[str, Any]:
     runtime_root.mkdir(parents=True, exist_ok=True)
 
     source_repository = cli._build_repository_for_db_path(db_path=source_db_path)
-    backup_result = source_repository.backup_database(output_dir=runtime_root / "db-backups")
+    backup_result = source_repository.backup_database(
+        output_dir=runtime_root / "db-backups"
+    )
 
     isolated_db_path = runtime_root / "recoleta-eval.db"
     type(source_repository).restore_database(
@@ -668,7 +676,9 @@ def _serialize_capture_source_document(document: Any) -> dict[str, Any]:
         "period_start": period_start.isoformat()
         if isinstance(period_start, datetime)
         else None,
-        "period_end": period_end.isoformat() if isinstance(period_end, datetime) else None,
+        "period_end": period_end.isoformat()
+        if isinstance(period_end, datetime)
+        else None,
     }
 
 
@@ -700,7 +710,8 @@ def _find_existing_trend_document(
     exact_matches = [
         document
         for document in documents
-        if _normalize_period_bound(getattr(document, "period_start", None)) == period_start
+        if _normalize_period_bound(getattr(document, "period_start", None))
+        == period_start
         and _normalize_period_bound(getattr(document, "period_end", None)) == period_end
     ]
     if not exact_matches:
@@ -1051,12 +1062,14 @@ def _capture_rerun_window(
             context=context,
             runtime_env_overrides=runtime_env_overrides,
         )
-        doc_id, payload_json, report_markdown, tool_trace = _build_rerun_window_artifacts(
-            context=context,
-            settings=settings,
-            repository=repository,
-            run_id=run_id,
-            result=result,
+        doc_id, payload_json, report_markdown, tool_trace = (
+            _build_rerun_window_artifacts(
+                context=context,
+                settings=settings,
+                repository=repository,
+                run_id=run_id,
+                result=result,
+            )
         )
         write_window_capture_artifacts(
             request=_WindowArtifactWriteRequest(
@@ -1098,7 +1111,9 @@ def capture_trends_rerun_baseline(*, request: _RerunCaptureRequest) -> dict[str,
         baseline_summary = _build_baseline_summary(
             capture_mode=request.capture_mode,
             runtime={
-                "mode": "isolated_copy" if request.isolate_runtime else "live_workspace",
+                "mode": "isolated_copy"
+                if request.isolate_runtime
+                else "live_workspace",
                 "status": "failed",
                 "error": {"type": type(exc).__name__, "message": str(exc)},
             },

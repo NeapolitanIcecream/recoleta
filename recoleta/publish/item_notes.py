@@ -9,7 +9,11 @@ from typing import Any
 import yaml
 from slugify import slugify
 
-from recoleta.publish.item_note_writer import ItemNoteSpec, render_item_note_lines, write_item_note
+from recoleta.publish.item_note_writer import (
+    ItemNoteSpec,
+    render_item_note_lines,
+    write_item_note,
+)
 
 __all__ = [
     "resolve_item_note_path",

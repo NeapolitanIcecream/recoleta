@@ -159,7 +159,9 @@ def _seed_item_trend_and_idea(
         doc_id=int(idea_doc.id),
         chunk_index=1,
         kind="meta",
-        text_value=json.dumps(ideas_payload.model_dump(mode="json"), ensure_ascii=False),
+        text_value=json.dumps(
+            ideas_payload.model_dump(mode="json"), ensure_ascii=False
+        ),
         source_content_type="trend_ideas_payload_json",
     )
     return analysis, int(trend_doc_id), int(idea_doc.id)
@@ -403,7 +405,9 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
 ) -> None:
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     with Session(repository.engine) as session:
         item_doc_chunk = session.exec(
             select(DocumentChunk).where(
@@ -519,7 +523,9 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     assert result.site_manifest_path is None
     localized_root = output_dir / "Localized" / "zh-cn"
     item_note = next((localized_root / "Inbox").glob("*.md"))
-    trend_note = localized_root / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    trend_note = (
+        localized_root / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    )
     idea_note = localized_root / "Ideas" / "day--2026-03-02--ideas.md"
     trend_sidecar_path = presentation_sidecar_path(note_path=trend_note)
     idea_sidecar_path = presentation_sidecar_path(note_path=idea_note)
@@ -550,7 +556,10 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     assert "- 时间范围: 现在" in idea_markdown
     assert "- 适用角色: 研究运营" in idea_markdown
     assert "**核心判断.** 引入发布闸门。" in idea_markdown
-    assert "**不成立条件.** 如果团队继续在没有正式发布闸道的情况下上线，这个判断会减弱。" in idea_markdown
+    assert (
+        "**不成立条件.** 如果团队继续在没有正式发布闸道的情况下上线，这个判断会减弱。"
+        in idea_markdown
+    )
     assert "**下一步验证.** 先做一个原型。" in idea_markdown
     assert "Prev_1" not in idea_markdown
     assert "Kind:" not in idea_markdown
@@ -573,7 +582,9 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
 ) -> None:
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     output_dir = tmp_path / "outputs"
 
     with Session(repository.engine) as session:
@@ -736,10 +747,14 @@ def test_materialize_outputs_prefers_source_language_overrides_in_canonical_root
 
     assert result.site_manifest_path is None
     root_item_note = next((output_dir / "Inbox").glob("*.md"))
-    root_trend_note = output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    root_trend_note = (
+        output_dir / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    )
     root_idea_note = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
     zh_root = output_dir / "Localized" / "zh-cn"
-    assert "Historical item summary in English" in root_item_note.read_text(encoding="utf-8")
+    assert "Historical item summary in English" in root_item_note.read_text(
+        encoding="utf-8"
+    )
     assert "Historical trend in English" in root_trend_note.read_text(encoding="utf-8")
     assert "Historical idea in English" in root_idea_note.read_text(encoding="utf-8")
     assert "中文历史趋势" in (
@@ -752,7 +767,9 @@ def test_candidate_context_prefers_trend_presentation_sidecar(
 ) -> None:
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     output_dir = tmp_path / "notes"
     with Session(repository.engine) as session:
         item_doc_chunk = session.exec(
@@ -822,7 +839,9 @@ def test_candidate_context_prefers_trend_presentation_sidecar(
         run_id=None,
     )
 
-    assert context["canonical_note"]["path"].endswith(str(note_path.relative_to(output_dir)))
+    assert context["canonical_note"]["path"].endswith(
+        str(note_path.relative_to(output_dir))
+    )
     assert context["presentation"]["surface_kind"] == "trend"
     assert context["presentation"]["content"]["representative_sources"][0]["title"] == (
         "Robotics reward model"
@@ -834,7 +853,9 @@ def test_candidate_context_prefers_idea_presentation_sidecar(
 ) -> None:
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    _analysis, _trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    _analysis, _trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     output_dir = tmp_path / "notes"
     with Session(repository.engine) as session:
         item_doc_chunk = session.exec(
@@ -902,14 +923,16 @@ def test_candidate_context_prefers_idea_presentation_sidecar(
         run_id=None,
     )
 
-    assert context["canonical_note"]["path"].endswith(str(note_path.relative_to(output_dir)))
+    assert context["canonical_note"]["path"].endswith(
+        str(note_path.relative_to(output_dir))
+    )
     assert context["presentation"]["surface_kind"] == "idea"
     assert context["presentation"]["content"]["opportunities"][0]["title"] == (
         "Prompt release gate"
     )
-    assert context["presentation"]["content"]["opportunities"][0]["anti_thesis"].startswith(
-        "This thesis weakens if teams keep shipping"
-    )
+    assert context["presentation"]["content"]["opportunities"][0][
+        "anti_thesis"
+    ].startswith("This thesis weakens if teams keep shipping")
     assert "evidence_docs" in context
 
 
@@ -918,7 +941,9 @@ def test_candidate_context_falls_back_to_markdown_when_sidecar_missing(
 ) -> None:
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     output_dir = tmp_path / "notes"
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
@@ -969,9 +994,10 @@ def test_candidate_context_falls_back_to_markdown_when_sidecar_missing(
 
     assert "presentation" not in context
     assert context["canonical_note"]["title"] == "Agent Systems"
-    assert "English canonical trend overview." in context["canonical_note"][
-        "markdown_excerpt"
-    ]
+    assert (
+        "English canonical trend overview."
+        in context["canonical_note"]["markdown_excerpt"]
+    )
 
 
 def test_candidate_context_falls_back_to_markdown_when_sidecar_schema_version_is_invalid_string(
@@ -980,7 +1006,9 @@ def test_candidate_context_falls_back_to_markdown_when_sidecar_schema_version_is
     """Regression: malformed canonical sidecars must not abort markdown fallback."""
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     output_dir = tmp_path / "notes"
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
@@ -1037,9 +1065,10 @@ def test_candidate_context_falls_back_to_markdown_when_sidecar_schema_version_is
 
     assert "presentation" not in context
     assert context["canonical_note"]["title"] == "Agent Systems"
-    assert "English canonical trend overview." in context["canonical_note"][
-        "markdown_excerpt"
-    ]
+    assert (
+        "English canonical trend overview."
+        in context["canonical_note"]["markdown_excerpt"]
+    )
 
 
 def test_export_trend_static_site_builds_language_trees_and_redirect_shell(
@@ -1093,16 +1122,16 @@ def test_export_trend_static_site_builds_language_trees_and_redirect_shell(
     assert "localStorage" in root_index
     assert "en/index.html" in root_index
 
-    en_detail = (
-        site_dir / "en" / "trends" / f"{trend_note.stem}.html"
-    ).read_text(encoding="utf-8")
-    zh_detail = (
-        site_dir / "zh-cn" / "trends" / f"{trend_note.stem}.html"
-    ).read_text(encoding="utf-8")
+    en_detail = (site_dir / "en" / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
+    zh_detail = (site_dir / "zh-cn" / "trends" / f"{trend_note.stem}.html").read_text(
+        encoding="utf-8"
+    )
     assert "<html lang='en'>" in en_detail
     assert "<html lang='zh-CN'>" in zh_detail
     assert "language-switcher" in en_detail
-    assert "data-has-language-switcher=\"true\"" in en_detail
+    assert 'data-has-language-switcher="true"' in en_detail
     assert "nav-utility-cluster" in en_detail
     assert "nav-link nav-link-external nav-link-repo" in en_detail
     assert ">Language<" in en_detail
@@ -1118,7 +1147,9 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
     runner = CliRunner()
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     config_path = tmp_path / "recoleta.yaml"
     output_dir = tmp_path / "outputs"
     config_path.write_text(
@@ -1148,6 +1179,31 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
         "translate_structured_payload",
         lambda **kwargs: (
             (
+                (
+                    kwargs["payload"]
+                    | (
+                        {"summary": "## Summary\n\n中文条目摘要。\n"}
+                        if kwargs["source_kind"] == "analysis"
+                        else {}
+                    )
+                    | (
+                        {"title": "智能体系统"}
+                        if kwargs["source_kind"] == "trend_synthesis"
+                        else {}
+                    )
+                    | (
+                        {"title": "运营切入点"}
+                        if kwargs["source_kind"] == "trend_ideas"
+                        else {}
+                    )
+                ),
+                {
+                    "usage": {"requests": 1, "input_tokens": 80, "output_tokens": 24},
+                    "estimated_cost_usd": 0.0016,
+                },
+            )
+            if kwargs.get("return_debug")
+            else (
                 kwargs["payload"]
                 | (
                     {"summary": "## Summary\n\n中文条目摘要。\n"}
@@ -1164,29 +1220,6 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
                     if kwargs["source_kind"] == "trend_ideas"
                     else {}
                 )
-            ),
-            {
-                "usage": {"requests": 1, "input_tokens": 80, "output_tokens": 24},
-                "estimated_cost_usd": 0.0016,
-            },
-        )
-        if kwargs.get("return_debug")
-        else (
-            kwargs["payload"]
-            | (
-                {"summary": "## Summary\n\n中文条目摘要。\n"}
-                if kwargs["source_kind"] == "analysis"
-                else {}
-            )
-            | (
-                {"title": "智能体系统"}
-                if kwargs["source_kind"] == "trend_synthesis"
-                else {}
-            )
-            | (
-                {"title": "运营切入点"}
-                if kwargs["source_kind"] == "trend_ideas"
-                else {}
             )
         ),
     )
@@ -1221,9 +1254,7 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
 
     with Session(repository.engine) as session:
         rows = list(
-            session.exec(
-                select(LocalizedOutput).order_by(LocalizedOutput.source_kind)
-            )
+            session.exec(select(LocalizedOutput).order_by(LocalizedOutput.source_kind))
         )
     assert [(row.source_kind, row.source_record_id) for row in rows] == [
         ("analysis", int(analysis.id or 0)),
@@ -1254,7 +1285,9 @@ def test_translate_run_cli_json_includes_run_id_and_billing(
     runner = CliRunner()
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    analysis, _trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    analysis, _trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     config_path = tmp_path / "recoleta-json.yaml"
     config_path.write_text(
         "\n".join(
@@ -1280,14 +1313,16 @@ def test_translate_run_cli_json_includes_run_id_and_billing(
         translation_module,
         "translate_structured_payload",
         lambda **kwargs: (
-            kwargs["payload"],
-            {
-                "usage": {"requests": 1, "input_tokens": 64, "output_tokens": 16},
-                "estimated_cost_usd": 0.0011,
-            },
-        )
-        if kwargs.get("return_debug")
-        else kwargs["payload"],
+            (
+                kwargs["payload"],
+                {
+                    "usage": {"requests": 1, "input_tokens": 64, "output_tokens": 16},
+                    "estimated_cost_usd": 0.0011,
+                },
+            )
+            if kwargs.get("return_debug")
+            else kwargs["payload"]
+        ),
     )
 
     result = runner.invoke(
@@ -1416,10 +1451,9 @@ def test_run_translation_incremental_limits_items_to_workflow_period(
     assert result.failed_total == 0
     assert result.translated_total == 1
     rows = repository.list_localized_outputs(language_code="zh-CN")
-    assert {
-        (row.source_kind, row.source_record_id)
-        for row in rows
-    } == {("analysis", int(current_analysis.id or 0))}
+    assert {(row.source_kind, row.source_record_id) for row in rows} == {
+        ("analysis", int(current_analysis.id or 0))
+    }
     assert int(older_analysis.id or 0) not in {
         int(row.source_record_id or 0) for row in rows if row.source_kind == "analysis"
     }
@@ -1605,7 +1639,9 @@ def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite
     """Regression: period-scoped translation must normalize SQLite-naive trend windows."""
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    _analysis, trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     settings = Settings.model_validate(
         {
             "recoleta_db_path": repository.db_path,
@@ -1644,10 +1680,9 @@ def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite
     assert result.failed_total == 0
     assert result.translated_total == 1
     rows = repository.list_localized_outputs(language_code="zh-CN")
-    assert {
-        (row.source_kind, row.source_record_id)
-        for row in rows
-    } == {("trend_synthesis", trend_doc_id)}
+    assert {(row.source_kind, row.source_record_id) for row in rows} == {
+        ("trend_synthesis", trend_doc_id)
+    }
 
 
 def test_run_translation_period_filter_includes_cross_boundary_week_windows_pr_23(
@@ -1718,10 +1753,9 @@ def test_run_translation_period_filter_includes_cross_boundary_week_windows_pr_2
     assert result.failed_total == 0
     assert result.translated_total == 1
     rows = repository.list_localized_outputs(language_code="zh-CN")
-    assert {
-        (row.source_kind, row.source_record_id)
-        for row in rows
-    } == {("trend_synthesis", int(trend_doc_id))}
+    assert {(row.source_kind, row.source_record_id) for row in rows} == {
+        ("trend_synthesis", int(trend_doc_id))
+    }
 
 
 def test_translate_run_hybrid_uses_search_service_without_auto_syncing_vectors(
@@ -1775,8 +1809,7 @@ def test_translate_run_hybrid_uses_search_service_without_auto_syncing_vectors(
         translation_module,
         "translate_structured_payload",
         lambda **kwargs: (
-            captured_contexts.append(dict(kwargs["context"] or {}))
-            or kwargs["payload"]
+            captured_contexts.append(dict(kwargs["context"] or {})) or kwargs["payload"]
         ),
     )
 
@@ -1848,14 +1881,16 @@ def test_translate_run_records_llm_and_context_metrics_when_run_id_is_present(
         translation_module,
         "translate_structured_payload",
         lambda **kwargs: (
-            kwargs["payload"],
-            {
-                "usage": {"requests": 1, "input_tokens": 72, "output_tokens": 18},
-                "estimated_cost_usd": 0.0013,
-            },
-        )
-        if kwargs.get("return_debug")
-        else kwargs["payload"],
+            (
+                kwargs["payload"],
+                {
+                    "usage": {"requests": 1, "input_tokens": 72, "output_tokens": 18},
+                    "estimated_cost_usd": 0.0013,
+                },
+            )
+            if kwargs.get("return_debug")
+            else kwargs["payload"]
+        ),
     )
 
     result = translation_module.run_translation(
@@ -1923,8 +1958,7 @@ def test_translate_run_hybrid_fails_open_when_search_service_raises(
         translation_module,
         "translate_structured_payload",
         lambda **kwargs: (
-            captured_contexts.append(dict(kwargs["context"] or {}))
-            or kwargs["payload"]
+            captured_contexts.append(dict(kwargs["context"] or {})) or kwargs["payload"]
         ),
     )
 
@@ -1955,7 +1989,9 @@ def test_translate_run_prefers_canonical_pass_outputs_for_trends_and_ideas(
 ) -> None:
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    _analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    _analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
 
@@ -2079,7 +2115,9 @@ def test_translate_backfill_cli_writes_translation_and_mirror_variants(
     runner = CliRunner()
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    analysis, trend_doc_id, idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
 
     repository.save_analysis(
         item_id=int(repository.get_item(item_id=1).id or 1),  # type: ignore[union-attr]
@@ -2153,7 +2191,9 @@ def test_translate_backfill_cli_writes_translation_and_mirror_variants(
                 "trend_ideas": "Historical idea in English",
             }.get(kwargs["source_kind"], payload.get("title"))
             if kwargs["source_kind"] == "analysis":
-                payload["summary"] = "## Summary\n\nHistorical item summary in English.\n"
+                payload["summary"] = (
+                    "## Summary\n\nHistorical item summary in English.\n"
+                )
         if kwargs.get("return_debug"):
             return (
                 payload,
@@ -2189,8 +2229,7 @@ def test_translate_backfill_cli_writes_translation_and_mirror_variants(
     with Session(repository.engine) as session:
         rows = list(session.exec(select(LocalizedOutput)))
     by_key = {
-        (row.source_kind, row.source_record_id, row.language_code): row
-        for row in rows
+        (row.source_kind, row.source_record_id, row.language_code): row for row in rows
     }
     assert ("analysis", int(analysis.id or 0), "en") in by_key
     assert ("analysis", int(analysis.id or 0), "zh-CN") in by_key
@@ -2199,7 +2238,9 @@ def test_translate_backfill_cli_writes_translation_and_mirror_variants(
     assert ("trend_ideas", idea_doc_id, "en") in by_key
     assert ("trend_ideas", idea_doc_id, "zh-CN") in by_key
     assert by_key[("analysis", int(analysis.id or 0), "zh-CN")].variant_role == "mirror"
-    assert by_key[("analysis", int(analysis.id or 0), "en")].variant_role == "translation"
+    assert (
+        by_key[("analysis", int(analysis.id or 0), "en")].variant_role == "translation"
+    )
     recent_run = repository.list_recent_runs(limit=1)[0]
     assert recent_run.command == "translate backfill"
 
@@ -2211,7 +2252,9 @@ def test_translate_backfill_cli_json_includes_run_id_and_billing(
     runner = CliRunner()
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
-    _analysis, _trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(repository=repository)
+    _analysis, _trend_doc_id, _idea_doc_id = _seed_item_trend_and_idea(
+        repository=repository
+    )
     config_path = tmp_path / "recoleta-backfill-json.yaml"
     config_path.write_text(
         "\n".join(
@@ -2238,14 +2281,16 @@ def test_translate_backfill_cli_json_includes_run_id_and_billing(
         translation_module,
         "translate_structured_payload",
         lambda **kwargs: (
-            kwargs["payload"],
-            {
-                "usage": {"requests": 1, "input_tokens": 88, "output_tokens": 22},
-                "estimated_cost_usd": 0.0019,
-            },
-        )
-        if kwargs.get("return_debug")
-        else kwargs["payload"],
+            (
+                kwargs["payload"],
+                {
+                    "usage": {"requests": 1, "input_tokens": 88, "output_tokens": 22},
+                    "estimated_cost_usd": 0.0019,
+                },
+            )
+            if kwargs.get("return_debug")
+            else kwargs["payload"]
+        ),
     )
 
     result = runner.invoke(
@@ -2513,8 +2558,7 @@ def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window
         language_code="en",
     )
     latest_only_keys = {
-        (row.source_kind, row.source_record_id)
-        for row in latest_only_rows
+        (row.source_kind, row.source_record_id) for row in latest_only_rows
     }
     assert latest_only_keys == {
         ("trend_synthesis", latest_trend_doc_id),
@@ -2532,10 +2576,7 @@ def test_translate_backfill_latest_only_limits_trends_and_ideas_to_latest_window
     history_rows = repository.list_localized_outputs(
         language_code="en",
     )
-    history_keys = {
-        (row.source_kind, row.source_record_id)
-        for row in history_rows
-    }
+    history_keys = {(row.source_kind, row.source_record_id) for row in history_rows}
     assert history_keys == {
         ("trend_synthesis", int(older_trend_doc_id)),
         ("trend_synthesis", latest_trend_doc_id),
@@ -2714,8 +2755,7 @@ def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outpu
     assert result.failed_total == 0
     with Session(repository.engine) as session:
         idea_doc = session.exec(
-            select(translation_module.Document)
-            .where(
+            select(translation_module.Document).where(
                 translation_module.Document.doc_type == "idea",
                 translation_module.Document.granularity == "day",
                 translation_module.Document.period_start == period_start,
@@ -2726,7 +2766,9 @@ def test_run_translation_backfill_creates_missing_idea_documents_from_pass_outpu
     rows = repository.list_localized_outputs(language_code="en")
     keys = {(row.source_kind, row.source_record_id) for row in rows}
     assert ("trend_ideas", int(idea_doc.id or 0)) in keys
-    meta_chunk = repository.read_document_chunk(doc_id=int(idea_doc.id or 0), chunk_index=2)
+    meta_chunk = repository.read_document_chunk(
+        doc_id=int(idea_doc.id or 0), chunk_index=2
+    )
     assert meta_chunk is not None
     assert meta_chunk.source_content_type == "trend_ideas_payload_json"
     assert int(row.id or 0) > 0

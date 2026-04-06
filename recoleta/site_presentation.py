@@ -93,11 +93,7 @@ def render_presentation_source_list(
         )
         meta_html = ""
         if meta_parts:
-            meta_html = (
-                "<div class='source-list-meta'>"
-                f"{' · '.join(meta_parts)}"
-                "</div>"
-            )
+            meta_html = f"<div class='source-list-meta'>{' · '.join(meta_parts)}</div>"
         items.append(
             "<li class='source-list-item'>"
             f"<div class='source-list-title'>{title_html}</div>"
@@ -112,9 +108,7 @@ def render_presentation_source_list(
 def _idea_evidence_block(*, evidence_nodes: list[str]) -> tuple[str, int]:
     evidence_soup = BeautifulSoup("".join(evidence_nodes), "html.parser")
     evidence_count = sum(
-        1
-        for item in evidence_soup.find_all("li")
-        if item.find_parent("li") is None
+        1 for item in evidence_soup.find_all("li") if item.find_parent("li") is None
     )
     evidence_html = "".join(evidence_nodes).strip() or "<p>(none)</p>"
     return (
@@ -126,7 +120,9 @@ def _idea_evidence_block(*, evidence_nodes: list[str]) -> tuple[str, int]:
     )
 
 
-def _collect_evidence_nodes(*, children: list[Any], start_index: int) -> tuple[list[str], int]:
+def _collect_evidence_nodes(
+    *, children: list[Any], start_index: int
+) -> tuple[list[str], int]:
     evidence_nodes: list[str] = []
     look_ahead = start_index + 1
     while look_ahead < len(children):
@@ -292,7 +288,11 @@ def build_item_browser_body_html(
     if len(summary_cards) != 1:
         return str(soup)
     raw_classes = summary_grid.get("class")
-    classes = [str(class_name) for class_name in raw_classes] if isinstance(raw_classes, list) else str(raw_classes or "").split()
+    classes = (
+        [str(class_name) for class_name in raw_classes]
+        if isinstance(raw_classes, list)
+        else str(raw_classes or "").split()
+    )
     if "summary-grid-single" not in classes:
         classes.append("summary-grid-single")
     summary_grid["class"] = " ".join(classes)
@@ -317,7 +317,11 @@ def _append_idea_opportunity_card(
 
 
 def _idea_opportunity_count_label(card_count: int) -> str:
-    return f"{card_count} opportunity" if card_count == 1 else f"{card_count} opportunities"
+    return (
+        f"{card_count} opportunity"
+        if card_count == 1
+        else f"{card_count} opportunities"
+    )
 
 
 def render_idea_opportunities_section(

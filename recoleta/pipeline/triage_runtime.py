@@ -62,7 +62,9 @@ class TriageFailureRequest:
     exc: Exception
 
 
-def _collect_triage_item_ids(*, items: list[Any]) -> tuple[list[Any], list[int], list[int], list[int]]:
+def _collect_triage_item_ids(
+    *, items: list[Any]
+) -> tuple[list[Any], list[int], list[int], list[int]]:
     candidates_items: list[Any] = []
     item_ids: list[int] = []
     pdf_item_ids: list[int] = []
@@ -194,7 +196,9 @@ def build_triage_candidates(
     if not candidates_items:
         return [], False, None
 
-    max_chars = int(getattr(service.settings, "triage_item_text_max_chars", 1200) or 1200)
+    max_chars = int(
+        getattr(service.settings, "triage_item_text_max_chars", 1200) or 1200
+    )
     fetch_result = _fetch_triage_content_maps(
         service=service,
         item_ids=item_ids,
@@ -262,7 +266,9 @@ def _record_triage_success_metrics(*, service: Any, run_id: str, stats: Any) -> 
         ("pipeline.triage.duration_ms", stats.duration_ms, "ms"),
     ]
     for name, value, unit in metric_rows:
-        service.repository.record_metric(run_id=run_id, name=name, value=value, unit=unit)
+        service.repository.record_metric(
+            run_id=run_id, name=name, value=value, unit=unit
+        )
     if stats.embedding_prompt_tokens_total is not None:
         service.repository.record_metric(
             run_id=run_id,
@@ -344,9 +350,11 @@ def execute_triage(request: TriageStageRequest) -> None:
         period_end=request.period_end,
     )
     write_and_record_artifact = _build_triage_artifact_writer(context)
-    triage_candidates, content_fetch_failed, content_fetch_error = _resolve_triage_candidates(
-        context=context,
-        triage_items=triage_items,
+    triage_candidates, content_fetch_failed, content_fetch_error = (
+        _resolve_triage_candidates(
+            context=context,
+            triage_items=triage_items,
+        )
     )
     if not triage_candidates:
         _record_empty_triage_metrics(service=context.service, run_id=context.run_id)
@@ -359,7 +367,11 @@ def execute_triage(request: TriageStageRequest) -> None:
         value=1 if content_fetch_failed else 0,
         unit="count",
     )
-    if content_fetch_failed and context.include_debug and content_fetch_error is not None:
+    if (
+        content_fetch_failed
+        and context.include_debug
+        and content_fetch_error is not None
+    ):
         write_and_record_artifact(
             item_id=None,
             kind="error_context",
@@ -380,12 +392,15 @@ def _triage_execution_context(
     limit: int,
     candidate_limit: int | None,
 ) -> TriageExecutionContext | None:
-    triage_enabled = bool(service.settings.triage_enabled) and bool(service.settings.topics)
+    triage_enabled = bool(service.settings.triage_enabled) and bool(
+        service.settings.topics
+    )
     if not triage_enabled:
         return None
     normalized_limit = service._resolve_analysis_limit(limit=limit)
     normalized_candidate_limit = (
-        candidate_limit or service._resolve_triage_candidate_limit(limit=normalized_limit)
+        candidate_limit
+        or service._resolve_triage_candidate_limit(limit=normalized_limit)
     )
     return TriageExecutionContext(
         service=service,
@@ -416,9 +431,11 @@ def _load_triage_items(
         period_start=period_start,
         period_end=period_end,
     )
-    items, candidate_counts, deferred_counts = context.service._rebalance_items_by_source(
-        items=list(items),
-        limit=context.normalized_candidate_limit,
+    items, candidate_counts, deferred_counts = (
+        context.service._rebalance_items_by_source(
+            items=list(items),
+            limit=context.normalized_candidate_limit,
+        )
     )
     context.service._record_stage_source_selection_metrics(
         run_id=context.run_id,
@@ -455,7 +472,9 @@ def _resolve_triage_candidates(
     context: TriageExecutionContext,
     triage_items: list[Any],
 ) -> tuple[list[TriageCandidate], bool, dict[str, Any] | None]:
-    triage_candidate_builder = getattr(context.service, "_build_triage_candidates", None)
+    triage_candidate_builder = getattr(
+        context.service, "_build_triage_candidates", None
+    )
     if callable(triage_candidate_builder):
         return cast(
             tuple[list[TriageCandidate], bool, dict[str, Any] | None],

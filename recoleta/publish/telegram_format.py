@@ -180,7 +180,9 @@ def build_telegram_message(*, title: str, summary: str, url: str) -> str:
     def _render(summary_text: str) -> str:
         safe_title = html.escape(title_raw)
         safe_summary = _format_telegram_markdownish_html(
-            "\n\n".join(part for part in [summary_text.strip(), link_md] if part).strip()
+            "\n\n".join(
+                part for part in [summary_text.strip(), link_md] if part
+            ).strip()
         )
         return "\n".join([f"<b>{safe_title}</b>", "", safe_summary]).strip()
 
@@ -219,4 +221,6 @@ def build_telegram_trend_document_caption(
             ]
         ).strip()
 
-    return _truncate_telegram_text(raw_text=overview_raw, max_chars=1024, render=_render)
+    return _truncate_telegram_text(
+        raw_text=overview_raw, max_chars=1024, render=_render
+    )

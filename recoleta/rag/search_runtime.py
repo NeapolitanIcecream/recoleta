@@ -153,7 +153,9 @@ def _should_raise_embedding_error(
     return failure_mode == "threshold" and max_errors > 0 and errors_total >= max_errors
 
 
-def _vector_rows(batch_rows: list[dict[str, Any]], vectors: list[list[float]]) -> list[VectorRow]:
+def _vector_rows(
+    batch_rows: list[dict[str, Any]], vectors: list[list[float]]
+) -> list[VectorRow]:
     out: list[VectorRow] = []
     for row, vector in zip(batch_rows, vectors, strict=True):
         out.append(
@@ -190,7 +192,9 @@ def _upsert_embedded_batch(
     _merge_embedding_debug(stats, embed_debug)
     if len(vectors) != len(batch):
         raise ValueError("embedding output size mismatch")
-    return request.window.vector_store.upsert_rows(rows=_vector_rows(batch_rows, vectors))
+    return request.window.vector_store.upsert_rows(
+        rows=_vector_rows(batch_rows, vectors)
+    )
 
 
 def _handle_embedding_batch_failure(
@@ -309,7 +313,9 @@ def _summary_corpus_cache_key(request: SummarySearchRequest) -> tuple[Any, ...]:
         window.period_start.isoformat(),
         window.period_end.isoformat(),
         str(request.embedding_model or "").strip(),
-        int(request.embedding_dimensions) if request.embedding_dimensions is not None else None,
+        int(request.embedding_dimensions)
+        if request.embedding_dimensions is not None
+        else None,
         int(request.max_batch_inputs),
         int(request.max_batch_chars),
         str(request.embedding_failure_mode or "").strip().lower(),
@@ -348,7 +354,9 @@ def _should_cache_summary_index_stats(stats: dict[str, Any]) -> bool:
     return int(stats.get("embedding_errors_total") or 0) <= 0
 
 
-def ensure_summary_vectors_for_period(request: SummaryVectorSyncRequest) -> dict[str, Any]:
+def ensure_summary_vectors_for_period(
+    request: SummaryVectorSyncRequest,
+) -> dict[str, Any]:
     started = time.perf_counter()
     log = logger.bind(
         module="rag.semantic_index",
@@ -371,8 +379,12 @@ def ensure_summary_vectors_for_period(request: SummaryVectorSyncRequest) -> dict
             duration_ms=_duration_ms(started),
         )
     chunk_ids = _candidate_chunk_ids(rows)
-    existing_hashes = request.window.vector_store.fetch_existing_hashes(chunk_ids=chunk_ids)
-    to_embed_rows, skipped_total = _rows_to_embed(rows=rows, existing_hashes=existing_hashes)
+    existing_hashes = request.window.vector_store.fetch_existing_hashes(
+        chunk_ids=chunk_ids
+    )
+    to_embed_rows, skipped_total = _rows_to_embed(
+        rows=rows, existing_hashes=existing_hashes
+    )
     base = _sync_stats(
         candidate_chunk_ids=chunk_ids,
         skipped_total=skipped_total,
@@ -402,7 +414,11 @@ def ensure_summary_vectors_for_period(request: SummaryVectorSyncRequest) -> dict
 
 
 def _candidate_chunk_ids_from_rows(rows: list[dict[str, Any]]) -> list[int]:
-    return [int(row.get("chunk_id") or 0) for row in rows if int(row.get("chunk_id") or 0) > 0]
+    return [
+        int(row.get("chunk_id") or 0)
+        for row in rows
+        if int(row.get("chunk_id") or 0) > 0
+    ]
 
 
 def _uncached_index_stats(request: SummarySearchRequest) -> dict[str, Any]:
@@ -426,7 +442,9 @@ def _uncached_index_stats(request: SummarySearchRequest) -> dict[str, Any]:
         "embedding_prompt_tokens_missing_total": 0,
         "embedding_cost_usd_total": 0.0,
         "embedding_cost_missing_total": 0,
-        "embedding_failure_mode": str(request.embedding_failure_mode or "").strip().lower()
+        "embedding_failure_mode": str(request.embedding_failure_mode or "")
+        .strip()
+        .lower()
         or "continue",
         "embedding_max_errors": int(request.embedding_max_errors or 0),
         "corpus_cache_hit": False,
@@ -544,9 +562,13 @@ def _rows_to_hits(rows: list[dict[str, Any]]) -> list[SemanticSearchHit]:
     return hits
 
 
-def _metric_totals(index_stats: dict[str, Any], query_debug: Any) -> dict[str, float | int | bool]:
+def _metric_totals(
+    index_stats: dict[str, Any], query_debug: Any
+) -> dict[str, float | int | bool]:
     prompt_tokens_total = int(index_stats.get("embedding_prompt_tokens_total") or 0)
-    prompt_tokens_missing_total = int(index_stats.get("embedding_prompt_tokens_missing_total") or 0)
+    prompt_tokens_missing_total = int(
+        index_stats.get("embedding_prompt_tokens_missing_total") or 0
+    )
     cost_usd_total = float(index_stats.get("embedding_cost_usd_total") or 0.0)
     cost_missing_total = int(index_stats.get("embedding_cost_missing_total") or 0)
     if isinstance(query_debug, dict):
@@ -655,7 +677,9 @@ def semantic_search_summaries_in_period(
         doc_type=request.window.doc_type,
     )
     started = time.perf_counter()
-    normalized_doc_type = str(request.window.doc_type or "").strip().lower() or "unknown"
+    normalized_doc_type = (
+        str(request.window.doc_type or "").strip().lower() or "unknown"
+    )
     normalized_query = str(request.query or "").strip()
     if not normalized_query:
         _record_search_duration_metric(
@@ -682,8 +706,13 @@ def semantic_search_summaries_in_period(
             duration_ms=_duration_ms(started),
         )
         return []
-    if not request.auto_sync_vectors and request.window.vector_store.try_open_table() is None:
-        log.info("Semantic search skipped: vector table missing and auto_sync_vectors=false")
+    if (
+        not request.auto_sync_vectors
+        and request.window.vector_store.try_open_table() is None
+    ):
+        log.info(
+            "Semantic search skipped: vector table missing and auto_sync_vectors=false"
+        )
         _record_search_duration_metric(
             request=request,
             normalized_doc_type=normalized_doc_type,
@@ -696,7 +725,13 @@ def semantic_search_summaries_in_period(
         where=_candidate_where_clause(request, candidate_chunk_ids=candidate_chunk_ids),
         limit=request.limit,
         metric="cosine",
-        select_columns=["chunk_id", "doc_id", "chunk_index", "text_preview", "_distance"],
+        select_columns=[
+            "chunk_id",
+            "doc_id",
+            "chunk_index",
+            "text_preview",
+            "_distance",
+        ],
     )
     hits = _rows_to_hits(rows)
     log.info(

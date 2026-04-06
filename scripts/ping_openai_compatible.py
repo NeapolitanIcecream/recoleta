@@ -89,7 +89,11 @@ def main() -> int:
         response = client.post(url, headers=headers, json=payload)
 
     content_type = response.headers.get("content-type", "")
-    print(json.dumps({"status_code": response.status_code, "url": url}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"status_code": response.status_code, "url": url}, ensure_ascii=False
+        )
+    )
 
     if "application/json" in content_type:
         try:

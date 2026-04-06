@@ -130,25 +130,25 @@ def test_build_settings_for_method_handles_disabled_source_blocks(
     base = cast(
         Any,
         SimpleNamespace(
-        model_dump=lambda mode="python": {
-            "recoleta_db_path": str(configured_env / "base.db"),
-            "triage_enabled": True,
-            "sources": {
-                "arxiv": {
-                    "enabled": True,
-                    "queries": ["cat:cs.AI"],
-                    "enrich_method": "html_document",
-                },
-                "hn": {
-                    "enabled": False,
-                    "rss_urls": ["https://news.ycombinator.com/rss"],
-                },
-                "rss": {
-                    "enabled": False,
-                    "feeds": [],
+            model_dump=lambda mode="python": {
+                "recoleta_db_path": str(configured_env / "base.db"),
+                "triage_enabled": True,
+                "sources": {
+                    "arxiv": {
+                        "enabled": True,
+                        "queries": ["cat:cs.AI"],
+                        "enrich_method": "html_document",
+                    },
+                    "hn": {
+                        "enabled": False,
+                        "rss_urls": ["https://news.ycombinator.com/rss"],
+                    },
+                    "rss": {
+                        "enabled": False,
+                        "feeds": [],
+                    },
                 },
             },
-        },
         ),
     )
 

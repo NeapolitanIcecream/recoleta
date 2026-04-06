@@ -109,7 +109,9 @@ def doc_summary_text(*, repository: Any, doc_id: int) -> str | None:
     return text or None
 
 
-def doc_bundle_for_translation(*, repository: Any, doc_id: int) -> dict[str, Any] | None:
+def doc_bundle_for_translation(
+    *, repository: Any, doc_id: int
+) -> dict[str, Any] | None:
     document = repository.get_document(doc_id=doc_id)
     if document is None:
         return None
@@ -444,7 +446,8 @@ def build_candidate_context(
                     settings=settings,
                     run_id=run_id,
                     item=item,
-                    summary_text=str(candidate.payload.get("summary") or "").strip() or None,
+                    summary_text=str(candidate.payload.get("summary") or "").strip()
+                    or None,
                     context_assist=context_assist,
                 )
             ),
@@ -556,7 +559,9 @@ def _hybrid_match_bundles(
             content_limit=1,
             content_chars=500,
         )
-        bundle = bundle_result.get("bundle") if isinstance(bundle_result, dict) else None
+        bundle = (
+            bundle_result.get("bundle") if isinstance(bundle_result, dict) else None
+        )
         if isinstance(bundle, dict):
             bundles.append(bundle)
         if len(bundles) >= bundle_limit:

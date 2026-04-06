@@ -146,11 +146,17 @@ class MaintenanceStoreMixin:
                 blockers.add("missing_analysis")
 
             eligible_item_state_present_total += 1
-            eligible_item_states[item_state] = eligible_item_states.get(item_state, 0) + 1
+            eligible_item_states[item_state] = (
+                eligible_item_states.get(item_state, 0) + 1
+            )
             if item_state not in selected_item_states:
                 blockers.add(f"item_state_{item_state}")
 
-            if analysis is not None and float(getattr(analysis, "relevance_score", 0.0) or 0.0) < min_relevance:
+            if (
+                analysis is not None
+                and float(getattr(analysis, "relevance_score", 0.0) or 0.0)
+                < min_relevance
+            ):
                 blockers.add("relevance_below_threshold")
 
             if blockers:
@@ -183,7 +189,9 @@ class MaintenanceStoreMixin:
             "item_states": dict(sorted(item_states.items())),
             "eligible_item_states": dict(sorted(eligible_item_states.items())),
             "exclusion_reasons": dict(
-                sorted(exclusion_reasons.items(), key=lambda entry: (-entry[1], entry[0]))
+                sorted(
+                    exclusion_reasons.items(), key=lambda entry: (-entry[1], entry[0])
+                )
             ),
             "excluded_samples": excluded_samples,
         }
@@ -292,7 +300,9 @@ class MaintenanceStoreMixin:
         fts_count_statement = text("SELECT COUNT(*) FROM chunk_fts")
         with self.engine.begin() as conn:
             document_chunks = int(conn.execute(chunk_count_statement).scalar() or 0)
-            chunk_embeddings = int(conn.execute(embedding_count_statement).scalar() or 0)
+            chunk_embeddings = int(
+                conn.execute(embedding_count_statement).scalar() or 0
+            )
             chunk_fts_rows = int(conn.execute(fts_count_statement).scalar() or 0)
             if not dry_run:
                 conn.execute(text("DELETE FROM chunk_embeddings"))

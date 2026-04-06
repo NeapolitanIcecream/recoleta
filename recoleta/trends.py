@@ -369,7 +369,9 @@ class TrendGenerationPlan:
             "item_top_k" if self.prev_level == "item" else "trend_overviews"
         )
         self.rag_sources = rag_sources_for_granularity(normalized)
-        self.peer_history_window_count = max(0, int(self.peer_history_window_count or 0))
+        self.peer_history_window_count = max(
+            0, int(self.peer_history_window_count or 0)
+        )
         self.peer_history_windows = peer_history_windows_for_period(
             granularity=normalized,
             period_start=self.period_start,
@@ -666,7 +668,9 @@ def build_history_pack_md(
         [
             (
                 "- available_window_ids="
-                + ", ".join(str(window_id) for window_id in stats["available_window_ids"])
+                + ", ".join(
+                    str(window_id) for window_id in stats["available_window_ids"]
+                )
                 if stats["available_window_ids"]
                 else "- available_window_ids=-"
             ),
@@ -721,7 +725,11 @@ def build_empty_trend_payload(
 
 
 def is_empty_trend_payload(payload: TrendPayload) -> bool:
-    if list(payload.topics or []) or list(payload.clusters or []) or list(payload.highlights or []):
+    if (
+        list(payload.topics or [])
+        or list(payload.clusters or [])
+        or list(payload.highlights or [])
+    ):
         return False
     title = str(payload.title or "").strip()
     overview = str(payload.overview_md or "").strip()

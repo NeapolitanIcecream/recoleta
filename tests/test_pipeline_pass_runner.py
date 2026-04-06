@@ -274,10 +274,10 @@ def test_run_pass_definition_skips_projection_by_default_when_persist_fails() ->
                 failure_message="unused",
                 reraise=False,
             ),
-            prepare_projection_state=lambda pass_output_id: prepared_ids.append(
-                pass_output_id
-            )
-            or {"pass_output_id": pass_output_id},
+            prepare_projection_state=lambda pass_output_id: (
+                prepared_ids.append(pass_output_id)
+                or {"pass_output_id": pass_output_id}
+            ),
             build_projection_specs=_build_markdown_projection,
         ),
     )

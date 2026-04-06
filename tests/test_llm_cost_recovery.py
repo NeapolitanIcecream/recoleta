@@ -51,7 +51,9 @@ def _litellm_like_response(
     }
 
 
-def _expected_cost_usd(*, model: str, prompt_tokens: int, completion_tokens: int) -> float:
+def _expected_cost_usd(
+    *, model: str, prompt_tokens: int, completion_tokens: int
+) -> float:
     prompt_cost, completion_cost_usd = cost_per_token(
         model=model,
         prompt_tokens=prompt_tokens,

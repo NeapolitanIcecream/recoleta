@@ -95,7 +95,9 @@ def test_notes_normalize_legacy_tldr_style_summary(tmp_path: Path) -> None:
     assert "TL;DR" not in md
 
 
-def test_telegram_message_renders_structured_sections_without_outer_summary_wrapper() -> None:
+def test_telegram_message_renders_structured_sections_without_outer_summary_wrapper() -> (
+    None
+):
     msg = build_telegram_message(
         title="T",
         summary=_STRUCTURED_SUMMARY,

@@ -144,7 +144,9 @@ def run_translate_backfill_command(**kwargs: Any) -> None:
 
 def _run_translate_command(*, request: TranslateCommandRequest) -> None:
     symbols = cli._runtime_symbols()
-    workspace_lease_lost_error = cast(type[BaseException], symbols["WorkspaceLeaseLostError"])
+    workspace_lease_lost_error = cast(
+        type[BaseException], symbols["WorkspaceLeaseLostError"]
+    )
     resolved_db_path, settings, repository, console = _load_settings_for_translate(
         db_path=request.db_path,
         config_path=request.config_path,
@@ -193,7 +195,9 @@ def _run_translate_command(*, request: TranslateCommandRequest) -> None:
         )
 
 
-def _execute_translate_session(*, context: TranslateSessionContext, session: Any) -> Any:
+def _execute_translate_session(
+    *, context: TranslateSessionContext, session: Any
+) -> Any:
     try:
         cli._update_run_context(
             context.repository,
@@ -265,7 +269,9 @@ def _handle_translate_lease_loss(
     raise cli.typer.Exit(code=1) from None
 
 
-def _handle_translate_exception(*, context: TranslateSessionContext, session: Any) -> NoReturn:
+def _handle_translate_exception(
+    *, context: TranslateSessionContext, session: Any
+) -> NoReturn:
     context.repository.finish_run(session.run_id, success=False)
     session.log.exception("{} failed", context.request.command_name.capitalize())
     raise
@@ -292,12 +298,18 @@ def _resolved_translate_json_fields(
     if "legacy_source_language" not in request.json_fields:
         return dict(request.json_fields)
     configured_language = str(
-        getattr(getattr(settings, "localization", None), "legacy_backfill_source_language_code", "")
+        getattr(
+            getattr(settings, "localization", None),
+            "legacy_backfill_source_language_code",
+            "",
+        )
         or ""
     ).strip()
     if not configured_language:
         return dict(request.json_fields)
-    requested_language = str(request.json_fields.get("legacy_source_language") or "").strip()
+    requested_language = str(
+        request.json_fields.get("legacy_source_language") or ""
+    ).strip()
     if requested_language:
         return dict(request.json_fields)
     return {
@@ -342,7 +354,9 @@ def _emit_translate_result(*, context: TranslateResultContext) -> None:
             run_id=context.run_id,
         )
         if context.raise_on_abort:
-            raise RuntimeError(str(context.result.abort_reason or "translation aborted"))
+            raise RuntimeError(
+                str(context.result.abort_reason or "translation aborted")
+            )
         return
     context.console.print(
         f"[green]{context.command_name} completed[/green] "

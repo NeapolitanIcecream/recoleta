@@ -15,11 +15,17 @@ def test_ideas_instructions_require_consensus_terminology_and_plain_language() -
         output_language="Chinese (Simplified)"
     )
 
-    assert "Do not invent new umbrella terms, branded labels, or slogan-like phrasing." in instructions
+    assert (
+        "Do not invent new umbrella terms, branded labels, or slogan-like phrasing."
+        in instructions
+    )
     assert "If a technical term does not have a stable translation" in instructions
     assert "prefer the original source-language term" in instructions
     assert "Prefer plain, literal wording" in instructions
-    assert "Do not translate paper titles, framework names, product names, or acronyms" in instructions
+    assert (
+        "Do not translate paper titles, framework names, product names, or acronyms"
+        in instructions
+    )
     assert "Idea titles should be factual descriptive noun phrases" in instructions
     assert "Emit 0 to 3 ideas total" in instructions
     assert "The first idea must be the clear best bet" in instructions
@@ -70,8 +76,14 @@ def test_ideas_prompt_payload_reinforces_readability_constraints() -> None:
         "the first one must be the clear best bet and any later ones must be explicit alternates."
         in " ".join(notes)
     )
-    assert "Each emitted idea should also name the clearest condition under which the thesis breaks." in notes
-    assert "Name the buyer trigger or operational pain directly instead of using generic platform language." in notes
+    assert (
+        "Each emitted idea should also name the clearest condition under which the thesis breaks."
+        in notes
+    )
+    assert (
+        "Name the buyer trigger or operational pain directly instead of using generic platform language."
+        in notes
+    )
 
 
 def test_normalize_trend_ideas_payload_caps_to_three_ranked_ideas() -> None:

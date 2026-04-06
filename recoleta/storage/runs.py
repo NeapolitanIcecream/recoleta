@@ -177,9 +177,7 @@ class RunStoreMixin:
             session.add(metric)
             self._commit(session)
 
-    def record_metrics_batch(
-        self, *, run_id: str, metrics: list[MetricPoint]
-    ) -> int:
+    def record_metrics_batch(self, *, run_id: str, metrics: list[MetricPoint]) -> int:
         normalized: list[Metric] = []
         for metric in metrics:
             name = str(metric.name or "").strip()
@@ -233,7 +231,11 @@ def _normalized_optional_text(value: str | None) -> str | None:
 
 
 def _normalized_json(value: Any) -> str | None:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True) if value is not None else None
+    return (
+        json.dumps(value, ensure_ascii=False, sort_keys=True)
+        if value is not None
+        else None
+    )
 
 
 def coerce_update_run_context_request(
@@ -261,7 +263,9 @@ def coerce_update_run_context_request(
     )
 
 
-def _run_context_updates(request: UpdateRunContextRequest) -> tuple[tuple[str, Any], ...]:
+def _run_context_updates(
+    request: UpdateRunContextRequest,
+) -> tuple[tuple[str, Any], ...]:
     return (
         ("command", _normalized_optional_text(request.command)),
         ("operation_kind", _normalized_optional_text(request.operation_kind)),

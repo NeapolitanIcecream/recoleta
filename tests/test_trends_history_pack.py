@@ -33,9 +33,7 @@ def test_week_plan_builds_previous_same_level_history_windows() -> None:
         "prev_3",
     ]
     assert plan.peer_history_windows[0].period_end == week_start
-    assert plan.peer_history_windows[0].period_start == datetime(
-        2026, 3, 2, tzinfo=UTC
-    )
+    assert plan.peer_history_windows[0].period_start == datetime(2026, 3, 2, tzinfo=UTC)
     assert plan.peer_history_windows[1].period_start == datetime(
         2026, 2, 23, tzinfo=UTC
     )

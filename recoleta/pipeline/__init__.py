@@ -33,7 +33,8 @@ class _PipelineModule(ModuleType):
 
     def __dir__(self) -> list[str]:
         return sorted(
-            set(super().__dir__()) | {name for name in dir(_service) if not name.startswith("_")}
+            set(super().__dir__())
+            | {name for name in dir(_service) if not name.startswith("_")}
         )
 
 

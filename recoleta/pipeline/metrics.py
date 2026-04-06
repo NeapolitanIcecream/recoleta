@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def metric_token(value: str, *, max_len: int = 48) -> str:
     lowered = value.lower().strip()
     if not lowered:

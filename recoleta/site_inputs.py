@@ -268,7 +268,9 @@ def _collect_stream_localized_candidates(
         return []
 
     candidates: list[tuple[Path, str]] = []
-    for child in sorted(path for path in stream_localized_root.iterdir() if path.is_dir()):
+    for child in sorted(
+        path for path in stream_localized_root.iterdir() if path.is_dir()
+    ):
         child_trends_dir = child / "Trends"
         candidates.append(
             (
@@ -398,7 +400,9 @@ def _collect_stream_language_roots(base_root: Path) -> list[tuple[Path, str]]:
             continue
         discovered.extend(
             (child, stream_root.name)
-            for child in sorted(path for path in stream_localized_root.iterdir() if path.is_dir())
+            for child in sorted(
+                path for path in stream_localized_root.iterdir() if path.is_dir()
+            )
         )
     return discovered
 
@@ -443,8 +447,10 @@ def _site_language_candidate_roots(
     deps: SiteLanguageDiscoveryDeps,
 ) -> list[tuple[Path, str | None]]:
     base_root = (
-        raw_input.path.parent if raw_input.path.name == "Trends" else raw_input.path
-    ).expanduser().resolve()
+        (raw_input.path.parent if raw_input.path.name == "Trends" else raw_input.path)
+        .expanduser()
+        .resolve()
+    )
     deps.reject_legacy_stream_layout(base_root, context="Trend site input")
     candidates = [(base_root, raw_input.instance)]
     candidates.extend(
@@ -477,7 +483,9 @@ def _add_site_language_root(
         return
     state.seen_roots.add((resolved_root, resolved_instance))
     language_code = deps.infer_site_language_code_from_root(resolved_root)
-    language_slug = deps.language_slug_from_code(language_code) if language_code is not None else ""
+    language_slug = (
+        deps.language_slug_from_code(language_code) if language_code is not None else ""
+    )
     input_spec = TrendSiteInputSpec(path=resolved_root, instance=resolved_instance)
     if language_code is None or not language_slug:
         state.discovered.append((language_code, language_slug, (input_spec,)))
@@ -552,7 +560,10 @@ def load_item_source_documents(
             if source_key in seen_source_keys:
                 continue
             seen_source_keys.add(source_key)
-            if allowed_source_keys is not None and source_key not in allowed_source_keys:
+            if (
+                allowed_source_keys is not None
+                and source_key not in allowed_source_keys
+            ):
                 continue
             source_documents.append(source_document)
 
@@ -673,9 +684,10 @@ def _trend_markdown_sections(
     markdown: MarkdownIt,
     deps: TrendSiteDocumentLoadDeps,
 ) -> tuple[str, list[Any], str, str | None]:
-    normalized_markdown = deps.normalize_obsidian_callouts_for_pdf(
-        source_document.markdown_body
-    ).strip() or "# Trend\n"
+    normalized_markdown = (
+        deps.normalize_obsidian_callouts_for_pdf(source_document.markdown_body).strip()
+        or "# Trend\n"
+    )
     body_html = markdown.render(normalized_markdown)
     markdown_title, sections = deps.extract_trend_pdf_sections(body_html=body_html)
     return (
@@ -713,8 +725,10 @@ def _trend_browser_body(
         str(content.get("title") or "").strip() if isinstance(content, dict) else "",
         fallback="Trend",
     )
-    rendered_body_html, excerpt, evolution_insight = deps.build_trend_body_from_presentation(
-        presentation=context.source_document.presentation,
+    rendered_body_html, excerpt, evolution_insight = (
+        deps.build_trend_body_from_presentation(
+            presentation=context.source_document.presentation,
+        )
     )
     evolution_compat_html = deps.render_markdown_evolution_compat_html(
         sections=context.sections
@@ -868,7 +882,8 @@ def _stage_surface_root(
 ) -> Path:
     language_slug = (
         str(getattr(source_input, "language_slug", None) or "").strip()
-        if source_input is not None and getattr(source_input, "is_localized_root", False)
+        if source_input is not None
+        and getattr(source_input, "is_localized_root", False)
         else ""
     )
     if instance:
@@ -901,7 +916,9 @@ def _stage_trend_documents(
 ) -> tuple[list[str], list[str]]:
     staged_markdown_files: list[str] = []
     staged_pdf_files: list[str] = []
-    has_instance_documents = any(bool(source_document.instance) for source_document in source_documents)
+    has_instance_documents = any(
+        bool(source_document.instance) for source_document in source_documents
+    )
     for source_document in source_documents:
         source_input = _matching_input_dir(
             input_dirs=input_dirs,
@@ -915,7 +932,9 @@ def _stage_trend_documents(
         )
         target_dir = (
             surface_root / "Trends"
-            if source_document.instance or has_instance_documents or surface_root != stage_root
+            if source_document.instance
+            or has_instance_documents
+            or surface_root != stage_root
             else resolved_output_dir
         )
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -998,7 +1017,9 @@ def stage_trend_site_source(
     request: TrendSiteSourceStageRequest,
     deps: TrendSiteSourceStageDeps,
 ) -> Path:
-    normalized_item_export_scope = deps.normalize_item_export_scope(request.item_export_scope)
+    normalized_item_export_scope = deps.normalize_item_export_scope(
+        request.item_export_scope
+    )
     resolved_input_roots = deps.coerce_site_input_specs(request.input_dir)
     resolved_input_dirs = deps.discover_trend_site_input_dirs(resolved_input_roots)
     resolved_output_dir = request.output_dir.expanduser().resolve()
@@ -1118,8 +1139,12 @@ def _stage_source_manifest(
         "input_dirs": [
             {
                 "path": str(input_info.path),
-                "ideas_path": str(input_info.ideas_path) if input_info.ideas_path is not None else None,
-                "inbox_path": str(input_info.inbox_path) if input_info.inbox_path is not None else None,
+                "ideas_path": str(input_info.ideas_path)
+                if input_info.ideas_path is not None
+                else None,
+                "inbox_path": str(input_info.inbox_path)
+                if input_info.inbox_path is not None
+                else None,
                 "instance": input_info.instance,
                 "language_code": input_info.language_code,
                 "language_slug": input_info.language_slug,

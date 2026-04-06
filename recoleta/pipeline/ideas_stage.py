@@ -4,7 +4,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Protocol
 
-from recoleta.pipeline.ideas_runtime import _record_ideas_debug_artifact, execute_ideas_stage
+from recoleta.pipeline.ideas_runtime import (
+    _record_ideas_debug_artifact,
+    execute_ideas_stage,
+)
 from recoleta.passes import TrendIdeasPayload
 from recoleta.ports import TrendStageRepositoryPort
 from recoleta.types import IdeasResult

@@ -24,7 +24,9 @@ def _int_or_zero(value: Any) -> int:
         return 0
 
 
-def _build_item_href(*, ctx: IdeasEvidenceContext, doc: Any) -> tuple[str | None, list[str], str | None]:
+def _build_item_href(
+    *, ctx: IdeasEvidenceContext, doc: Any
+) -> tuple[str | None, list[str], str | None]:
     item_id = _int_or_zero(getattr(doc, "item_id", None))
     if item_id <= 0:
         return None, [], None
@@ -48,7 +50,9 @@ def _build_item_href(*, ctx: IdeasEvidenceContext, doc: Any) -> tuple[str | None
     return href, authors, source
 
 
-def _build_trend_href(*, ctx: IdeasEvidenceContext, doc: Any, doc_id: int) -> str | None:
+def _build_trend_href(
+    *, ctx: IdeasEvidenceContext, doc: Any, doc_id: int
+) -> str | None:
     granularity = str(getattr(doc, "granularity", "") or "").strip().lower()
     period_start = getattr(doc, "period_start", None)
     if not granularity or not isinstance(period_start, datetime):
@@ -62,7 +66,9 @@ def _build_trend_href(*, ctx: IdeasEvidenceContext, doc: Any, doc_id: int) -> st
     )
 
 
-def _resolve_doc_details(*, ctx: IdeasEvidenceContext, doc_id: int) -> tuple[Any | None, str | None]:
+def _resolve_doc_details(
+    *, ctx: IdeasEvidenceContext, doc_id: int
+) -> tuple[Any | None, str | None]:
     if doc_id <= 0:
         return None, None
     doc = ctx.repository.get_document(doc_id=doc_id)
@@ -95,12 +101,16 @@ def format_evidence_ref(
     ref: Any,
     show_chunk_index: bool = False,
 ) -> str:
-    ctx = IdeasEvidenceContext(repository=repository, root_dir=root_dir, note_dir=note_dir)
+    ctx = IdeasEvidenceContext(
+        repository=repository, root_dir=root_dir, note_dir=note_dir
+    )
     doc_id = _int_or_zero(getattr(ref, "doc_id", None))
     if doc_id <= 0:
         return "Unknown evidence"
 
-    chunk_index = _int_or_zero(getattr(ref, "chunk_index", 0)) if show_chunk_index else 0
+    chunk_index = (
+        _int_or_zero(getattr(ref, "chunk_index", 0)) if show_chunk_index else 0
+    )
     suffix = f" (chunk {chunk_index})" if chunk_index > 0 else ""
     reason = str(getattr(ref, "reason", "") or "").strip()
     doc, title = _resolve_doc_details(ctx=ctx, doc_id=doc_id)
@@ -108,9 +118,13 @@ def format_evidence_ref(
         base = f"Document {doc_id}{suffix}"
         return f"{base}: {reason}" if reason else base
 
-    href, _authors, _source = _resolve_href_and_metadata(ctx=ctx, doc=doc, doc_id=doc_id)
+    href, _authors, _source = _resolve_href_and_metadata(
+        ctx=ctx, doc=doc, doc_id=doc_id
+    )
     rendered_title = title or f"Document {doc_id}"
-    rendered = f"[{rendered_title}]({href}){suffix}" if href else f"{rendered_title}{suffix}"
+    rendered = (
+        f"[{rendered_title}]({href}){suffix}" if href else f"{rendered_title}{suffix}"
+    )
     return f"{rendered}: {reason}" if reason else rendered
 
 
@@ -121,7 +135,9 @@ def enrich_evidence_ref(
     note_dir: Path,
     ref: Any,
 ) -> Any:
-    ctx = IdeasEvidenceContext(repository=repository, root_dir=root_dir, note_dir=note_dir)
+    ctx = IdeasEvidenceContext(
+        repository=repository, root_dir=root_dir, note_dir=note_dir
+    )
     doc_id = _int_or_zero(getattr(ref, "doc_id", None))
     chunk_index = _int_or_zero(getattr(ref, "chunk_index", 0))
     title = getattr(ref, "title", None)

@@ -9,9 +9,7 @@ from types import ModuleType
 
 
 def _load_refactor_audit_module() -> ModuleType:
-    script_path = (
-        Path(__file__).resolve().parents[1] / "scripts" / "refactor_audit.py"
-    )
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "refactor_audit.py"
     spec = importlib.util.spec_from_file_location("refactor_audit_script", script_path)
     if spec is None or spec.loader is None:
         raise AssertionError("Failed to load refactor_audit.py")
@@ -212,7 +210,10 @@ class Bar:
         config=CONFIG,
     )
 
-    assert [finding.symbol for finding in findings] == ["Foo::__init__", "Bar::__init__"]
+    assert [finding.symbol for finding in findings] == [
+        "Foo::__init__",
+        "Bar::__init__",
+    ]
     hotspots = audit.aggregate_hotspots(findings)
     assert len(hotspots) == 2
 

@@ -116,10 +116,14 @@ def latest_meta_chunk_for_doc(
     return session.exec(statement).first()
 
 
-def load_item_candidates(request: CandidateWindowRequest) -> list[tuple[Analysis, Item]]:
+def load_item_candidates(
+    request: CandidateWindowRequest,
+) -> list[tuple[Analysis, Item]]:
     normalized_limit = _normalized_limit(request.limit)
     with Session(request.repository.engine) as session:
-        event_at = func.coalesce(cast(Any, Item.published_at), cast(Any, Item.created_at))
+        event_at = func.coalesce(
+            cast(Any, Item.published_at), cast(Any, Item.created_at)
+        )
         statement = (
             select(Analysis, Item)
             .join(Item, cast(Any, Analysis.item_id) == cast(Any, Item.id))
@@ -223,7 +227,9 @@ def _latest_idea_pass_outputs(request: CandidateWindowRequest) -> list[PassOutpu
     unique_rows = _unique_windowed_rows(rows)
     filtered_rows = _filtered_pass_output_rows(unique_rows, request)
     normalized_limit = _normalized_limit(request.limit)
-    return filtered_rows if normalized_limit is None else filtered_rows[:normalized_limit]
+    return (
+        filtered_rows if normalized_limit is None else filtered_rows[:normalized_limit]
+    )
 
 
 def _ensure_idea_document_projection(
@@ -608,7 +614,9 @@ def _trend_translation_candidates(request: IncrementalCandidatesRequest) -> list
                 payload_model=TrendPayload,
                 canonical_language_code=request.source_language_code,
                 document_id=doc_id,
-                granularity=_normalized_granularity(getattr(document, "granularity", None)),
+                granularity=_normalized_granularity(
+                    getattr(document, "granularity", None)
+                ),
                 period_start=getattr(document, "period_start", None),
                 period_end=getattr(document, "period_end", None),
             )
@@ -630,7 +638,9 @@ def _idea_translation_candidates(request: IncrementalCandidatesRequest) -> list[
                 payload_model=TrendIdeasPayload,
                 canonical_language_code=request.source_language_code,
                 document_id=doc_id,
-                granularity=_normalized_granularity(getattr(document, "granularity", None)),
+                granularity=_normalized_granularity(
+                    getattr(document, "granularity", None)
+                ),
                 period_start=getattr(document, "period_start", None),
                 period_end=getattr(document, "period_end", None),
             )

@@ -27,7 +27,9 @@ def _print_ideas_result(
     console: Any,
     result: Any,
 ) -> None:
-    note_suffix = f" note_path={Path(result.note_path).as_posix()}" if result.note_path else ""
+    note_suffix = (
+        f" note_path={Path(result.note_path).as_posix()}" if result.note_path else ""
+    )
     console.print(
         "[green]ideas completed[/green] "
         f"status={result.status} pass_output_id={result.pass_output_id} "

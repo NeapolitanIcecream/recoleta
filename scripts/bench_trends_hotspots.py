@@ -236,9 +236,7 @@ def _seed_analyzed_items(
         item, _ = repository.upsert_item(draft)
         if item.id is None:
             raise RuntimeError("seeded item missing id")
-        repeated = (
-            f"{title}. Agents, memory, retrieval, ranking, benchmarks. " * 64
-        )
+        repeated = f"{title}. Agents, memory, retrieval, ranking, benchmarks. " * 64
         content = repeated[:dense_chars]
         repository.upsert_contents_texts(
             item_id=item.id,
@@ -895,7 +893,9 @@ def _run_semantic_cache_benchmark(
     repeats: int,
 ) -> dict[str, Any]:
     def _one_run(*, cached: bool) -> dict[str, Any]:
-        with tempfile.TemporaryDirectory(prefix="recoleta-bench-trends-cache-") as tmpdir:
+        with tempfile.TemporaryDirectory(
+            prefix="recoleta-bench-trends-cache-"
+        ) as tmpdir:
             root = Path(tmpdir)
             repository = _build_repository(root=root)
             period_start, period_end = day_period_bounds(datetime.now(tz=UTC).date())
@@ -1014,7 +1014,9 @@ def _run_index_batch_benchmark(
     repeats: int,
 ) -> dict[str, Any]:
     def _one_run(*, batched: bool) -> dict[str, Any]:
-        with tempfile.TemporaryDirectory(prefix="recoleta-bench-trends-index-") as tmpdir:
+        with tempfile.TemporaryDirectory(
+            prefix="recoleta-bench-trends-index-"
+        ) as tmpdir:
             root = Path(tmpdir)
             repository = _build_repository(root=root)
             period_start, period_end = day_period_bounds(datetime.now(tz=UTC).date())
@@ -1093,10 +1095,14 @@ def _run_rep_enforcement_benchmark(
     def _scenario_runs(scenario: str) -> list[dict[str, Any]]:
         runs: list[dict[str, Any]] = []
         for _ in range(max(1, repeats)):
-            with tempfile.TemporaryDirectory(prefix="recoleta-bench-trends-reps-") as tmpdir:
+            with tempfile.TemporaryDirectory(
+                prefix="recoleta-bench-trends-reps-"
+            ) as tmpdir:
                 root = Path(tmpdir)
                 repository = _build_repository(root=root)
-                period_start, period_end = day_period_bounds(datetime.now(tz=UTC).date())
+                period_start, period_end = day_period_bounds(
+                    datetime.now(tz=UTC).date()
+                )
                 _seed_analyzed_items(
                     repository,
                     period_start=period_start,

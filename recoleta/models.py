@@ -107,9 +107,7 @@ class Content(SQLModel, table=True):
 
 class Analysis(SQLModel, table=True):
     __tablename__ = "analyses"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
-    __table_args__ = (
-        UniqueConstraint("item_id", name="uq_analyses_item"),
-    )
+    __table_args__ = (UniqueConstraint("item_id", name="uq_analyses_item"),)
 
     id: int | None = Field(default=None, primary_key=True)
     item_id: int = Field(foreign_key="items.id", index=True)

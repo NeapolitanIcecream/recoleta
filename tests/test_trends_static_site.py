@@ -305,8 +305,7 @@ def test_export_trend_static_site_home_hero_prioritizes_browse_actions_over_repo
 
     assert hero_actions is not None
     assert [
-        link.get_text(" ", strip=True)
-        for link in hero_actions.select("a.action-link")
+        link.get_text(" ", strip=True) for link in hero_actions.select("a.action-link")
     ] == ["Browse trends", "Browse ideas", "5-minute quickstart"]
     quickstart_link = hero_actions.select_one("a.action-link-external")
     assert quickstart_link is not None
@@ -643,8 +642,7 @@ def test_export_trend_static_site_home_window_uses_idea_only_range(
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert (
         "<div class='meta-panel-label'>Window</div>"
-        "<div class='meta-panel-value'>2026-03-09 to 2026-03-09</div>"
-        in index_html
+        "<div class='meta-panel-value'>2026-03-09 to 2026-03-09</div>" in index_html
     )
     assert "<div class='meta-panel-value'>n/a</div>" not in index_html
 
@@ -747,12 +745,7 @@ def test_stage_trend_site_source_preserves_localized_roots_for_round_trip(
     assert manifest["default_language_code"] == "en"
     assert (staged_dir / trend_note.name).exists()
     assert (
-        tmp_path
-        / "site-content"
-        / "Localized"
-        / "zh-cn"
-        / "Trends"
-        / trend_note.name
+        tmp_path / "site-content" / "Localized" / "zh-cn" / "Trends" / trend_note.name
     ).exists()
 
     site_dir = tmp_path / "site"
@@ -915,12 +908,11 @@ def test_export_trend_static_site_preserves_explicit_instance_names_across_langu
         default_language_code="en",
     )
 
-    assert (site_dir / "en" / "trends" / f"embodied-ai--{embodied_en.stem}.html").exists()
     assert (
-        site_dir
-        / "en"
-        / "trends"
-        / f"software-intelligence--{software_en.stem}.html"
+        site_dir / "en" / "trends" / f"embodied-ai--{embodied_en.stem}.html"
+    ).exists()
+    assert (
+        site_dir / "en" / "trends" / f"software-intelligence--{software_en.stem}.html"
     ).exists()
     assert (
         site_dir / "zh-cn" / "trends" / f"embodied-ai--{embodied_en.stem}.html"
@@ -1330,9 +1322,7 @@ def test_export_trend_static_site_writes_idea_pages_and_rewrites_links(
     assert "Idea briefs" in index_html
     assert "Verification-first agent rollout" in index_html
 
-    trends_index_html = (site_dir / "trends" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    trends_index_html = (site_dir / "trends" / "index.html").read_text(encoding="utf-8")
     assert "Code agents close the loop" in trends_index_html
 
     ideas_index_html = (site_dir / "ideas" / "index.html").read_text(encoding="utf-8")
@@ -1597,9 +1587,7 @@ def test_export_trend_static_site_aggregates_idea_topics_into_home_and_topic_pag
     ideas_index_html = (site_dir / "ideas" / "index.html").read_text(encoding="utf-8")
     assert "topics/deployment.html" in ideas_index_html
 
-    topic_html = (site_dir / "topics" / "deployment.html").read_text(
-        encoding="utf-8"
-    )
+    topic_html = (site_dir / "topics" / "deployment.html").read_text(encoding="utf-8")
     assert "Verification-first agent rollout" in topic_html
     assert ">Topic summary<" in topic_html
     assert ">Trend briefs<" in topic_html
@@ -1967,7 +1955,9 @@ def test_export_trend_static_site_prefers_presentation_sidecar_for_idea_detail_p
     assert "This markdown summary should be ignored." not in detail_html
 
     soup = BeautifulSoup(detail_html, "html.parser")
-    evidence_lists = soup.select(".idea-opportunity-block-evidence .idea-evidence-list > ul")
+    evidence_lists = soup.select(
+        ".idea-opportunity-block-evidence .idea-evidence-list > ul"
+    )
     assert len(evidence_lists) == 1
     top_level_items = evidence_lists[0].find_all("li", recursive=False)
     assert len(top_level_items) == 2
@@ -2717,8 +2707,14 @@ def test_export_trend_static_site_uses_sidecar_even_when_markdown_contains_evolu
     assert "Verification-first trend" in detail_html
     assert "Markdown title should lose" not in detail_html
     assert "Canonical overview from the sidecar should win." in detail_html
-    assert "Markdown overview should be ignored in favor of the sidecar." not in detail_html
-    assert "Evolution summary should remain visible even when sidecar rendering wins." in detail_html
+    assert (
+        "Markdown overview should be ignored in favor of the sidecar."
+        not in detail_html
+    )
+    assert (
+        "Evolution summary should remain visible even when sidecar rendering wins."
+        in detail_html
+    )
     assert "Runtime verification gets explicit" in detail_html
     assert "Verification loops" in detail_html
     assert "CodeScout" in detail_html
@@ -3195,8 +3191,7 @@ def test_export_trend_static_site_keeps_duplicate_root_instances_separate(
         period_end=datetime(2026, 3, 19, tzinfo=UTC),
         run_id="run-shared-root-trend",
         overview_md=(
-            "## Overview\n\n"
-            f"See [Shared Root Item](../Inbox/{item_note.name}).\n"
+            f"## Overview\n\nSee [Shared Root Item](../Inbox/{item_note.name}).\n"
         ),
         topics=["agents"],
         clusters=[],
@@ -3296,8 +3291,7 @@ def test_export_trend_static_site_preserves_grouped_child_identities_under_expli
             period_end=period_end,
             run_id=f"run-{label.lower()}-trend",
             overview_md=(
-                "## Overview\n\n"
-                f"See [the grouped item](../Inbox/{item_note.name}).\n"
+                f"## Overview\n\nSee [the grouped item](../Inbox/{item_note.name}).\n"
             ),
             topics=["agents"],
             clusters=[],

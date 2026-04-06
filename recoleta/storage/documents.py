@@ -251,7 +251,9 @@ def _normalized_embedding_values(
         raise ValueError("text_hash must not be empty")
     if not isinstance(request.vector, list) or not request.vector:
         raise ValueError("vector must be a non-empty list")
-    normalized_dims = int(request.dimensions) if request.dimensions is not None else None
+    normalized_dims = (
+        int(request.dimensions) if request.dimensions is not None else None
+    )
     if normalized_dims is not None and normalized_dims <= 0:
         raise ValueError("dimensions must be positive")
     normalized_vector = [float(value) for value in request.vector]
@@ -528,7 +530,9 @@ class DocumentStoreMixin:
             request=request,
             legacy_kwargs=legacy_kwargs,
         )
-        normalized_granularity = str(normalized_request.granularity or "").strip().lower()
+        normalized_granularity = (
+            str(normalized_request.granularity or "").strip().lower()
+        )
         if normalized_granularity not in {"day", "week", "month"}:
             raise ValueError("unsupported granularity")
         normalized_doc_type = str(normalized_request.doc_type or "").strip().lower()
@@ -737,9 +741,7 @@ class DocumentStoreMixin:
         sql, params = search_spec
         with self.engine.begin() as conn:
             rows = conn.execute(text(sql), params).mappings().all()
-        return [
-            hit for row in rows if (hit := decode_search_hit_row(row)) is not None
-        ]
+        return [hit for row in rows if (hit := decode_search_hit_row(row)) is not None]
 
     def list_summary_chunks_in_period(
         self,
@@ -760,7 +762,9 @@ class DocumentStoreMixin:
         with Session(self.engine) as session:
             statement = (
                 select(DocumentChunk)
-                .join(Document, cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id))
+                .join(
+                    Document, cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id)
+                )
                 .where(
                     Document.doc_type == normalized_type,
                     DocumentChunk.kind == "summary",
@@ -815,18 +819,22 @@ class DocumentStoreMixin:
                 granularity=normalized_request.granularity,
                 include_document=True,
             )
-            statement = statement.order_by(desc(cast(Any, DocumentChunk.id))).offset(
-                normalized_offset
-            ).limit(normalized_limit)
+            statement = (
+                statement.order_by(desc(cast(Any, DocumentChunk.id)))
+                .offset(normalized_offset)
+                .limit(normalized_limit)
+            )
             rows = list(session.exec(statement))
         return [
             row
             for chunk, doc in rows
-            if (row := summary_chunk_index_row(
-                doc_type=normalized_type,
-                chunk=chunk,
-                document=doc,
-            ))
+            if (
+                row := summary_chunk_index_row(
+                    doc_type=normalized_type,
+                    chunk=chunk,
+                    document=doc,
+                )
+            )
             is not None
         ]
 

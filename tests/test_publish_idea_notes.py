@@ -116,9 +116,7 @@ def test_write_markdown_ideas_note_deduplicates_evidence_refs_by_document(
     )
 
     assert (
-        note_text.count(
-            f"[Grounded Agent Runtime for Long-Horizon Evaluation]({href})"
-        )
+        note_text.count(f"[Grounded Agent Runtime for Long-Horizon Evaluation]({href})")
         == 1
     )
     assert (
@@ -327,7 +325,10 @@ def test_write_markdown_ideas_note_emits_reader_facing_markdown_and_sidecar(
     )
     assert sidecar["content"]["opportunities"][0]["evidence"][0]["doc_id"] == 11
     assert sidecar["content"]["opportunities"][0]["evidence"][0]["chunk_index"] == 0
-    assert sidecar["content"]["opportunities"][0]["evidence"][0]["source_type"] == "unknown"
+    assert (
+        sidecar["content"]["opportunities"][0]["evidence"][0]["source_type"]
+        == "unknown"
+    )
     assert sidecar["content"]["opportunities"][0]["evidence"][0]["confidence"] == "low"
     assert validate_presentation(sidecar) == []
 

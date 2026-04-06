@@ -265,7 +265,8 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
     evidence_doc_id = _seed_item_document(
-        repository=repository, published_at=period_start + (period_end - period_start) / 2
+        repository=repository,
+        published_at=period_start + (period_end - period_start) / 2,
     )
     canonical_payload = TrendPayload.model_validate(
         {
@@ -395,7 +396,9 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
     assert result.pass_output_id is not None
     assert captured["trend_payload"] == canonical_payload
     assert "canonical overview only" in str(captured["trend_snapshot_pack_md"] or "")
-    assert "projected overview only" not in str(captured["trend_snapshot_pack_md"] or "")
+    assert "projected overview only" not in str(
+        captured["trend_snapshot_pack_md"] or ""
+    )
 
     markdown = result.note_path.read_text(encoding="utf-8")
     assert "Auditable long-horizon eval workbench" in markdown
@@ -510,7 +513,9 @@ def test_ideas_stage_persists_suppressed_pass_output_without_projection(
     assert result.pass_output_id is not None
     assert result.upstream_pass_output_id == upstream_pass_output_id
     assert result.note_path is None
-    assert not (settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md").exists()
+    assert not (
+        settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md"
+    ).exists()
 
     with Session(repository.engine) as session:
         row = session.exec(
@@ -572,7 +577,9 @@ def test_ideas_stage_skips_llm_when_upstream_trend_corpus_is_empty(
     def _must_not_call_agent(**_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("Ideas agent must not be called for empty upstream corpus")
 
-    monkeypatch.setattr(ideas_agent, "generate_trend_ideas_payload", _must_not_call_agent)
+    monkeypatch.setattr(
+        ideas_agent, "generate_trend_ideas_payload", _must_not_call_agent
+    )
 
     result = service.ideas(
         run_id="run-ideas-empty-upstream",
@@ -584,7 +591,9 @@ def test_ideas_stage_skips_llm_when_upstream_trend_corpus_is_empty(
     assert result.pass_output_id is not None
     assert result.upstream_pass_output_id == upstream_pass_output_id
     assert result.note_path is None
-    assert not (settings.markdown_output_dir / "Ideas" / "day--2026-03-13--ideas.md").exists()
+    assert not (
+        settings.markdown_output_dir / "Ideas" / "day--2026-03-13--ideas.md"
+    ).exists()
 
     with Session(repository.engine) as session:
         row = session.exec(
@@ -595,7 +604,9 @@ def test_ideas_stage_skips_llm_when_upstream_trend_corpus_is_empty(
         assert json.loads(row.payload_json)["ideas"] == []
         assert json.loads(row.diagnostics_json)["empty_corpus"] is True
 
-    metric_values = _metric_values(repository=repository, run_id="run-ideas-empty-upstream")
+    metric_values = _metric_values(
+        repository=repository, run_id="run-ideas-empty-upstream"
+    )
     assert metric_values["pipeline.trends.pass.ideas.suppressed_total"] == 1.0
     assert metric_values["pipeline.trends.pass.ideas.llm_requests_total"] == 0.0
     assert metric_values["pipeline.trends.pass.ideas.llm_input_tokens_total"] == 0.0
@@ -685,7 +696,9 @@ def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
     assert result.pass_output_id is not None
     assert result.upstream_pass_output_id == upstream_pass_output_id
     assert result.note_path is None
-    assert not (settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md").exists()
+    assert not (
+        settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md"
+    ).exists()
 
     with Session(repository.engine) as session:
         row = session.exec(
@@ -732,7 +745,8 @@ def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
     evidence_doc_id = _seed_item_document(
-        repository=repository, published_at=period_start + (period_end - period_start) / 2
+        repository=repository,
+        published_at=period_start + (period_end - period_start) / 2,
     )
     _persist_trend_synthesis_pass_output(
         repository=repository,
@@ -790,7 +804,9 @@ def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
 
     assert result.status == PassStatus.SUCCEEDED.value
     assert result.note_path is None
-    assert not (settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md").exists()
+    assert not (
+        settings.markdown_output_dir / "Ideas" / "day--2026-03-02--ideas.md"
+    ).exists()
 
     assert settings.obsidian_vault_path is not None
     obsidian_note = (
@@ -835,7 +851,8 @@ def test_ideas_stage_projects_searchable_idea_documents(
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
     evidence_doc_id = _seed_item_document(
-        repository=repository, published_at=period_start + (period_end - period_start) / 2
+        repository=repository,
+        published_at=period_start + (period_end - period_start) / 2,
     )
     _persist_trend_synthesis_pass_output(
         repository=repository,

@@ -132,17 +132,23 @@ def _source_entry(
     return sources_payload[normalized]
 
 
-def _apply_ingest_metric(*, ingest_payload: dict[str, Any], metric_key: str, metric_value: int) -> None:
+def _apply_ingest_metric(
+    *, ingest_payload: dict[str, Any], metric_key: str, metric_value: int
+) -> None:
     if metric_key in {"oldest_published_at_unix", "newest_published_at_unix"}:
         if metric_value > 0:
             payload_key = metric_key.removesuffix("_unix")
-            ingest_payload[payload_key] = datetime.fromtimestamp(metric_value, tz=UTC).isoformat()
+            ingest_payload[payload_key] = datetime.fromtimestamp(
+                metric_value, tz=UTC
+            ).isoformat()
         return
     if metric_key in ingest_payload:
         ingest_payload[metric_key] = metric_value
 
 
-def _apply_enrich_metric(*, enrich_payload: dict[str, Any], metric_key: str, metric_value: int) -> None:
+def _apply_enrich_metric(
+    *, enrich_payload: dict[str, Any], metric_key: str, metric_value: int
+) -> None:
     if metric_key.startswith("content_type.") and metric_key.endswith("_total"):
         content_type = metric_key[len("content_type.") : -len("_total")]
         if content_type:
@@ -309,7 +315,11 @@ def period_bounds_for_granularity(
     anchor_date: str,
     granularity: str,
 ) -> tuple[datetime, datetime]:
-    from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
+    from recoleta.trends import (
+        day_period_bounds,
+        month_period_bounds,
+        week_period_bounds,
+    )
 
     parsed_anchor = cli._parse_anchor_date_option(str(anchor_date or "").strip())
     normalized = str(granularity or "").strip().lower()
@@ -374,7 +384,8 @@ def build_llm_diagnostics_payload(
         "issues": issues,
         "model": model,
         "provider": _llm_provider_from_model(model),
-        "output_language": str(getattr(settings, "llm_output_language", "") or "") or None,
+        "output_language": str(getattr(settings, "llm_output_language", "") or "")
+        or None,
         "config_path": cli._path_or_none(getattr(settings, "config_path", None)),
         "connection": connection_payload,
         "ping": ping_payload or {"status": "skipped"},
@@ -418,8 +429,8 @@ def run_llm_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
         }
 
     usage = analyzer_module._extract_usage_dict(response)
-    prompt_tokens, completion_tokens, total_tokens = analyzer_module._extract_token_counts(
-        usage
+    prompt_tokens, completion_tokens, total_tokens = (
+        analyzer_module._extract_token_counts(usage)
     )
     cost_usd = analyzer_module._resolve_response_cost_usd(
         response=response,
@@ -435,7 +446,8 @@ def run_llm_ping(*, settings: Any, timeout_seconds: float) -> dict[str, Any]:
     return {
         "status": "ok",
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
-        "resolved_model": resolved_model or str(getattr(settings, "llm_model", "") or ""),
+        "resolved_model": resolved_model
+        or str(getattr(settings, "llm_model", "") or ""),
         "response_excerpt": analyzer_module._extract_content(response)[:200],
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
@@ -523,7 +535,9 @@ def load_gc_settings(
     return settings, "available"
 
 
-def _gc_chunk_cache_result(*, repository: Any, prune_caches: bool, dry_run: bool) -> Any | None:
+def _gc_chunk_cache_result(
+    *, repository: Any, prune_caches: bool, dry_run: bool
+) -> Any | None:
     if not prune_caches:
         return None
     return repository.clear_document_chunk_cache(dry_run=dry_run)
@@ -567,9 +581,15 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
                 dry_run=request.dry_run,
             ),
         ),
-        "document_chunks": int((chunk_cache_result.document_chunks if chunk_cache_result else 0)),
-        "chunk_embeddings": int((chunk_cache_result.chunk_embeddings if chunk_cache_result else 0)),
-        "chunk_fts_rows": int((chunk_cache_result.chunk_fts_rows if chunk_cache_result else 0)),
+        "document_chunks": int(
+            (chunk_cache_result.document_chunks if chunk_cache_result else 0)
+        ),
+        "chunk_embeddings": int(
+            (chunk_cache_result.chunk_embeddings if chunk_cache_result else 0)
+        ),
+        "chunk_fts_rows": int(
+            (chunk_cache_result.chunk_fts_rows if chunk_cache_result else 0)
+        ),
         "lancedb_tables_deleted": _gc_filesystem_count(
             enabled=request.prune_caches and request.settings is not None,
             handler=lambda: cli._prune_inactive_lancedb_tables(
@@ -647,7 +667,9 @@ def render_gc_summary(
     )
 
 
-def render_why_empty_output(*, console: Any, payload: dict[str, Any], command_name: str) -> None:
+def render_why_empty_output(
+    *, console: Any, payload: dict[str, Any], command_name: str
+) -> None:
     console.print(f"[green]{command_name}[/green]")
     console.print(
         f"scope={payload['scope']} granularity={payload['granularity']} "
@@ -696,7 +718,9 @@ def _lease_payload(*, repository: Any) -> tuple[str, dict[str, Any]]:
             "holder_run_id": lease.run_id,
             "holder_pid": lease.pid,
             "holder_hostname": lease.hostname,
-            "expires_at": lease.expires_at.isoformat() if lease.expires_at is not None else None,
+            "expires_at": lease.expires_at.isoformat()
+            if lease.expires_at is not None
+            else None,
         }
     )
     return "held", payload
@@ -710,7 +734,9 @@ def build_stats_payload(*, request: StatsPayloadRequest) -> dict[str, Any]:
     )
     lease_state, lease_payload = _lease_payload(repository=request.repository)
     oldest_unfinished_at = cli._normalize_utc_datetime(snapshot.oldest_unfinished_at)
-    latest_successful_run_at = cli._normalize_utc_datetime(snapshot.latest_successful_run_at)
+    latest_successful_run_at = cli._normalize_utc_datetime(
+        snapshot.latest_successful_run_at
+    )
     return {
         "status": "ok",
         "db_path": str(request.resolved_db_path),
@@ -728,7 +754,9 @@ def build_stats_payload(*, request: StatsPayloadRequest) -> dict[str, Any]:
         "stale_running_runs": int(snapshot.stale_running_runs),
         "latest_successful_run_id": snapshot.latest_successful_run_id,
         "latest_successful_run_at": (
-            latest_successful_run_at.isoformat() if latest_successful_run_at is not None else None
+            latest_successful_run_at.isoformat()
+            if latest_successful_run_at is not None
+            else None
         ),
         "latest_successful_run_age_seconds": _age_seconds(
             request.reference_now,
@@ -745,7 +773,9 @@ def build_stats_payload(*, request: StatsPayloadRequest) -> dict[str, Any]:
     }
 
 
-def render_stats_output(*, console: Any, payload: dict[str, Any], command_name: str) -> None:
+def render_stats_output(
+    *, console: Any, payload: dict[str, Any], command_name: str
+) -> None:
     console.print(f"[green]{command_name} ok[/green]")
     console.print(f"db={payload['db_path']}")
     console.print(
@@ -769,7 +799,9 @@ def render_stats_output(*, console: Any, payload: dict[str, Any], command_name: 
     console.print("latest_successful_run=" + _latest_successful_run_segment(payload))
     console.print(_lease_line(payload))
     if payload["workspace_bytes"]:
-        console.print("workspace_bytes=" + _workspace_bytes_line(payload["workspace_bytes"]))
+        console.print(
+            "workspace_bytes=" + _workspace_bytes_line(payload["workspace_bytes"])
+        )
     _render_source_diagnostics(console=console, payload=payload["source_diagnostics"])
 
 
@@ -845,9 +877,13 @@ def _path_status(*, settings: Any | None) -> str:
     artifacts_dir = getattr(settings, "artifacts_dir", None)
     if artifacts_dir is not None:
         paths_to_check.append(Path(artifacts_dir))
-    failed_paths = [path for path in paths_to_check if not cli._is_accessible_path(path)]
+    failed_paths = [
+        path for path in paths_to_check if not cli._is_accessible_path(path)
+    ]
     if failed_paths:
-        raise ValueError("path access failed: " + ", ".join(str(path) for path in failed_paths))
+        raise ValueError(
+            "path access failed: " + ", ".join(str(path) for path in failed_paths)
+        )
     return "ok"
 
 
@@ -882,7 +918,9 @@ def build_doctor_payload(
             stale_after_seconds=cli._WORKSPACE_LEASE_TIMEOUT_SECONDS,
             now=reference_now,
         )
-        latest_successful_run_at = cli._normalize_utc_datetime(snapshot.latest_successful_run_at)
+        latest_successful_run_at = cli._normalize_utc_datetime(
+            snapshot.latest_successful_run_at
+        )
         runs = repository.list_recent_runs(limit=1)
         if runs:
             latest_run = runs[0]
@@ -909,7 +947,9 @@ def validate_latest_success_age(
         return
     latest_successful_run_at = payload["latest_successful_run_at"]
     if latest_successful_run_at is None:
-        raise ValueError("latest successful run is too old: no successful runs recorded")
+        raise ValueError(
+            "latest successful run is too old: no successful runs recorded"
+        )
     age_seconds = _age_seconds(reference_now, latest_successful_run_at)
     threshold_seconds = int(max_success_age_minutes) * 60
     assert age_seconds is not None

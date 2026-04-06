@@ -20,7 +20,10 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "1 to 3 ranked shifts ordered by importance" in instructions
     assert "counter-signal" in instructions.lower()
     assert "at most three named systems, papers, or benchmarks" in instructions
-    assert "Keep raw prev_n tokens only in evolution.signals[].history_windows" in instructions
+    assert (
+        "Keep raw prev_n tokens only in evolution.signals[].history_windows"
+        in instructions
+    )
     assert "The goal is not to ban every phrase once." in instructions
     assert "Avoid negative parallelism" in instructions
     assert "Avoid false suspense" in instructions

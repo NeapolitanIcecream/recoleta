@@ -11,9 +11,7 @@ def _load_script_module():
     script_path = (
         Path(__file__).resolve().parents[1] / "scripts" / "ping_openai_embeddings.py"
     )
-    spec = importlib.util.spec_from_file_location(
-        "ping_openai_embeddings", script_path
-    )
+    spec = importlib.util.spec_from_file_location("ping_openai_embeddings", script_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

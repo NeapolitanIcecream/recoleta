@@ -606,7 +606,9 @@ def test_fleet_deploy_forwards_child_instance_input_specs_pr_23(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(fleet_cli_module, "run_translate_run_command", lambda **_: None)
-    monkeypatch.setattr(fleet_cli_module, "run_materialize_outputs_command", lambda **_: None)
+    monkeypatch.setattr(
+        fleet_cli_module, "run_materialize_outputs_command", lambda **_: None
+    )
 
     def _fake_deploy(**kwargs: object) -> SimpleNamespace:
         captured.update(kwargs)

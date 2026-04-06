@@ -6,7 +6,10 @@ from datetime import datetime
 from typing import Any
 
 from recoleta.passes.trend_ideas import TrendIdeasPayload
-from recoleta.provenance import build_projection_provenance, inject_projection_provenance
+from recoleta.provenance import (
+    build_projection_provenance,
+    inject_projection_provenance,
+)
 
 
 @dataclass(frozen=True, slots=True)

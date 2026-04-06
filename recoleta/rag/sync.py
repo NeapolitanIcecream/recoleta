@@ -77,6 +77,7 @@ def _empty_sync_totals() -> dict[str, float | int]:
         "embedding_cost_missing_total": 0,
     }
 
+
 def _accumulate_sync_totals(
     totals: dict[str, float | int],
     *,
@@ -96,9 +97,9 @@ def _accumulate_sync_totals(
         "embedding_cost_missing_total",
     ):
         totals[key] = int(totals.get(key) or 0) + int(stats.get(key) or 0)
-    totals["embedding_cost_usd_total"] = float(totals.get("embedding_cost_usd_total") or 0.0) + float(
-        stats.get("embedding_cost_usd_total") or 0.0
-    )
+    totals["embedding_cost_usd_total"] = float(
+        totals.get("embedding_cost_usd_total") or 0.0
+    ) + float(stats.get("embedding_cost_usd_total") or 0.0)
     return page_chunks
 
 
@@ -244,9 +245,9 @@ def sync_summary_vectors_in_period(
         ),
         "embedding_cost_usd_total": float(totals["embedding_cost_usd_total"]),
         "embedding_cost_missing_total": int(totals["embedding_cost_missing_total"]),
-        "embedding_failure_mode": str(
-            resolved_request.embedding_failure_mode or ""
-        ).strip().lower()
+        "embedding_failure_mode": str(resolved_request.embedding_failure_mode or "")
+        .strip()
+        .lower()
         or "continue",
         "embedding_max_errors": max(0, int(resolved_request.embedding_max_errors or 0)),
         "page_size": normalized_page,

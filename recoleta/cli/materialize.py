@@ -66,11 +66,13 @@ def run_materialize_outputs_command(**kwargs: Any) -> None:
             init_schema=True,
         ),
     )
-    owner_token, lease_log, heartbeat_monitor = cli._acquire_workspace_lease_for_command(
-        repository=runtime.repository,
-        console=runtime.console,
-        command=request.command_name,
-        log_module="cli.materialize.outputs",
+    owner_token, lease_log, heartbeat_monitor = (
+        cli._acquire_workspace_lease_for_command(
+            repository=runtime.repository,
+            console=runtime.console,
+            command=request.command_name,
+            log_module="cli.materialize.outputs",
+        )
     )
     try:
         result = _materialize_outputs(
@@ -110,10 +112,12 @@ def _materialize_outputs(*, request: MaterializeRunRequest) -> Any:
         "recoleta.materialize",
         attr_name="materialize_outputs",
     )
-    target_spec, site_input_dir, site_output_dir, output_language = _materialize_target_config(
-        settings=request.settings,
-        output_dir=request.output_dir,
-        site=request.site,
+    target_spec, site_input_dir, site_output_dir, output_language = (
+        _materialize_target_config(
+            settings=request.settings,
+            output_dir=request.output_dir,
+            site=request.site,
+        )
     )
     materialize_kwargs: dict[str, object] = {
         "repository": request.repository,
@@ -155,7 +159,9 @@ def _materialize_target_config(
         target_spec = materialize_target_spec_cls(
             output_dir=resolved_output_dir,
             obsidian_vault_path=(
-                getattr(settings, "obsidian_vault_path", None) if settings is not None else None
+                getattr(settings, "obsidian_vault_path", None)
+                if settings is not None
+                else None
             ),
             obsidian_base_folder=(
                 str(getattr(settings, "obsidian_base_folder", "") or "").strip() or None
@@ -189,7 +195,9 @@ def _emit_materialize_result(*, context: MaterializeResultContext) -> None:
                 "command": context.command_name,
                 "db_path": str(context.resolved_db_path),
                 "granularity": context.granularity,
-                "site_manifest_path": cli._path_or_none(context.result.site_manifest_path),
+                "site_manifest_path": cli._path_or_none(
+                    context.result.site_manifest_path
+                ),
                 "totals": {
                     "items": output.item_notes_total,
                     "trends": output.trend_notes_total,
@@ -240,4 +248,6 @@ def _emit_materialize_result(*, context: MaterializeResultContext) -> None:
         f"pdf_failures={output.trend_pdf_failures_total}"
     )
     if context.result.site_manifest_path is not None:
-        context.console.print(f"[cyan]site manifest[/cyan] {context.result.site_manifest_path}")
+        context.console.print(
+            f"[cyan]site manifest[/cyan] {context.result.site_manifest_path}"
+        )

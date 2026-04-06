@@ -9,6 +9,8 @@ from recoleta.pipeline.projections import ProjectionSpec, run_projection_target
 
 T = TypeVar("T")
 S = TypeVar("S")
+
+
 @dataclass(slots=True)
 class PassPersistSpec:
     envelope: PassOutputEnvelope
@@ -28,9 +30,9 @@ class PassPersistSpec:
 class PassDefinition(Generic[S]):
     persist: PassPersistSpec
     prepare_projection_state: Callable[[int | None], S] | None = None
-    build_projection_specs: Callable[
-        [int | None, S | None], Sequence[ProjectionSpec]
-    ] | None = None
+    build_projection_specs: (
+        Callable[[int | None, S | None], Sequence[ProjectionSpec]] | None
+    ) = None
     should_project: bool | Callable[[int | None, S | None], bool] = True
     allow_projection_without_pass_output: bool = False
 
@@ -108,9 +110,7 @@ def _pass_persist_warning_payload(
         "pass_kind": spec.envelope.pass_kind,
         "error_type": type(exc).__name__,
         "error": (
-            spec.sanitize_error(str(exc))
-            if callable(spec.sanitize_error)
-            else str(exc)
+            spec.sanitize_error(str(exc)) if callable(spec.sanitize_error) else str(exc)
         ),
     }
 
@@ -135,13 +135,19 @@ def run_pass_definition(
     )
 
     if callable(definition.should_project):
-        should_project = bool(definition.should_project(pass_output_id, projection_state))
+        should_project = bool(
+            definition.should_project(pass_output_id, projection_state)
+        )
     else:
         should_project = bool(definition.should_project)
     can_project = bool(
         pass_output_id is not None or definition.allow_projection_without_pass_output
     )
-    if not should_project or not can_project or not callable(definition.build_projection_specs):
+    if (
+        not should_project
+        or not can_project
+        or not callable(definition.build_projection_specs)
+    ):
         return PassExecutionResult(
             pass_output_id=pass_output_id,
             projection_state=projection_state,

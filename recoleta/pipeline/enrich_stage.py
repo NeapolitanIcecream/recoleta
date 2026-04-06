@@ -490,7 +490,9 @@ def ensure_pdf_content(
         request.diag["fetch_ms"] = request.diag.get("fetch_ms", 0) + int(
             (time.perf_counter() - fetch_started) * 1000
         )
-        request.diag["input_bytes"] = request.diag.get("input_bytes", 0) + len(pdf_bytes)
+        request.diag["input_bytes"] = request.diag.get("input_bytes", 0) + len(
+            pdf_bytes
+        )
 
     extract_started = time.perf_counter()
     pdf_diag: dict[str, Any] = {}
@@ -599,7 +601,9 @@ class _EnrichStats:
         source_bucket: dict[str, Any],
     ) -> None:
         if request.result.get("status") == "ok":
-            self._record_success_status(result=request.result, source_bucket=source_bucket)
+            self._record_success_status(
+                result=request.result, source_bucket=source_bucket
+            )
             return
         self._record_failed_status(request, source_bucket)
 
@@ -611,12 +615,14 @@ class _EnrichStats:
     ) -> None:
         if result.get("stored_new"):
             self.processed += 1
-            source_bucket["processed_total"] = int(
-                source_bucket.get("processed_total") or 0
-            ) + 1
+            source_bucket["processed_total"] = (
+                int(source_bucket.get("processed_total") or 0) + 1
+            )
             return
         self.skipped += 1
-        source_bucket["skipped_total"] = int(source_bucket.get("skipped_total") or 0) + 1
+        source_bucket["skipped_total"] = (
+            int(source_bucket.get("skipped_total") or 0) + 1
+        )
 
     def _record_failed_status(
         self,
@@ -788,22 +794,66 @@ class _EnrichStats:
 
     def _record_html_document_metrics(self, *, repository: Any, run_id: str) -> None:
         for metric_name, value, unit in (
-            ("pipeline.enrich.arxiv.html_document.items_total", self.html_document_items_total, "count"),
-            ("pipeline.enrich.arxiv.html_document.fetch_ms_sum", self.html_document_fetch_ms_sum, "ms"),
-            ("pipeline.enrich.arxiv.html_document.cleanup_ms_sum", self.html_document_cleanup_ms_sum, "ms"),
-            ("pipeline.enrich.arxiv.html_document.pandoc_ms_sum", self.html_document_pandoc_ms_sum, "ms"),
-            ("pipeline.enrich.arxiv.html_document.pandoc_failed_total", self.html_document_pandoc_failed_total, "count"),
-            ("pipeline.enrich.arxiv.html_document.pandoc_warning_items_total", self.html_document_pandoc_warning_items_total, "count"),
-            ("pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum", self.html_document_pandoc_warning_count_sum, "count"),
+            (
+                "pipeline.enrich.arxiv.html_document.items_total",
+                self.html_document_items_total,
+                "count",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.fetch_ms_sum",
+                self.html_document_fetch_ms_sum,
+                "ms",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.cleanup_ms_sum",
+                self.html_document_cleanup_ms_sum,
+                "ms",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.pandoc_ms_sum",
+                self.html_document_pandoc_ms_sum,
+                "ms",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.pandoc_failed_total",
+                self.html_document_pandoc_failed_total,
+                "count",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.pandoc_warning_items_total",
+                self.html_document_pandoc_warning_items_total,
+                "count",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum",
+                self.html_document_pandoc_warning_count_sum,
+                "count",
+            ),
             (
                 "pipeline.enrich.arxiv.html_document.pandoc_warning_tex_math_convert_failed_sum",
                 self.html_document_pandoc_warning_tex_math_convert_failed_sum,
                 "count",
             ),
-            ("pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum", self.html_document_pandoc_math_replaced_sum, "count"),
-            ("pipeline.enrich.arxiv.html_document.fallback_to_pdf_total", self.html_document_fallback_to_pdf_total, "count"),
-            ("pipeline.enrich.arxiv.html_document.db_read_ms_sum", self.html_document_db_read_ms_sum, "ms"),
-            ("pipeline.enrich.arxiv.html_document.db_write_ms_sum", self.html_document_db_write_ms_sum, "ms"),
+            (
+                "pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum",
+                self.html_document_pandoc_math_replaced_sum,
+                "count",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.fallback_to_pdf_total",
+                self.html_document_fallback_to_pdf_total,
+                "count",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.db_read_ms_sum",
+                self.html_document_db_read_ms_sum,
+                "ms",
+            ),
+            (
+                "pipeline.enrich.arxiv.html_document.db_write_ms_sum",
+                self.html_document_db_write_ms_sum,
+                "ms",
+            ),
         ):
             repository.record_metric(
                 run_id=run_id,
@@ -867,7 +917,9 @@ class _EnrichStats:
 
 
 class _EnrichStageRunner:
-    def __init__(self, *, service: EnrichStageService, request: EnrichStageRequest) -> None:
+    def __init__(
+        self, *, service: EnrichStageService, request: EnrichStageRequest
+    ) -> None:
         self.service = service
         self.request = request
         self.log = logger.bind(module="pipeline.enrich", run_id=request.run_id)
@@ -900,7 +952,9 @@ class _EnrichStageRunner:
             ) as progress:
                 task_id = progress.add_task("Enriching items", total=len(items))
                 if not self.enable_parallel:
-                    self._run_serial_items(items=items, progress=progress, task_id=task_id, stats=stats)
+                    self._run_serial_items(
+                        items=items, progress=progress, task_id=task_id, stats=stats
+                    )
                 else:
                     parallel_items, serial_items = self._partition_items(items)
                     self._run_serial_items(
@@ -1162,7 +1216,9 @@ class _EnrichStageRunner:
                 "elapsed_ms": 0,
             }
 
-    def _cancel_parallel_executor(self, *, executor: Any, futures: dict[Any, Any]) -> None:
+    def _cancel_parallel_executor(
+        self, *, executor: Any, futures: dict[Any, Any]
+    ) -> None:
         for future in futures:
             future.cancel()
         try:
@@ -1241,7 +1297,8 @@ class _ArxivHtmlDocumentContext:
         self.parallel_mode = (
             bool(service.settings.sources.arxiv.enrich_method == "html_document")
             and bool(service.settings.sources.arxiv.html_document_enable_parallel)
-            and int(service.settings.sources.arxiv.html_document_max_concurrency or 1) > 1
+            and int(service.settings.sources.arxiv.html_document_max_concurrency or 1)
+            > 1
         )
         self.sample_rate = float(
             service.settings.sources.arxiv.html_document_log_sample_rate or 0.0
@@ -1251,7 +1308,9 @@ class _ArxivHtmlDocumentContext:
     def existing_document_result(self) -> tuple[str | None, bool]:
         existing_document, existing_md, existing_refs = self._load_existing_content()
         if (
-            bool(self.service.settings.sources.arxiv.html_document_skip_cleanup_when_complete)
+            bool(
+                self.service.settings.sources.arxiv.html_document_skip_cleanup_when_complete
+            )
             and existing_document is not None
             and existing_md is not None
             and existing_refs is not None
@@ -1265,8 +1324,8 @@ class _ArxivHtmlDocumentContext:
         if existing_document is None:
             return None, False
 
-        cleaned_document, references_html, stats = (
-            self._clean_document(existing_document)
+        cleaned_document, references_html, stats = self._clean_document(
+            existing_document
         )
         pending_upserts: dict[str, str] = {}
         if cleaned_document is not None and cleaned_document != existing_document:
@@ -1301,9 +1360,9 @@ class _ArxivHtmlDocumentContext:
             self.request.diag["fetch_ms"] = self.request.diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000
             )
-            self.request.diag["input_bytes"] = self.request.diag.get("input_bytes", 0) + len(
-                html.encode("utf-8")
-            )
+            self.request.diag["input_bytes"] = self.request.diag.get(
+                "input_bytes", 0
+            ) + len(html.encode("utf-8"))
         return html
 
     def extract_new_document(self, *, html: str) -> tuple[str, dict[str, str]]:
@@ -1330,7 +1389,9 @@ class _ArxivHtmlDocumentContext:
         if not pending_upserts:
             return False
         db_write_started = time.perf_counter()
-        if bool(self.service.settings.sources.arxiv.html_document_use_batched_db_writes):
+        if bool(
+            self.service.settings.sources.arxiv.html_document_use_batched_db_writes
+        ):
             inserted = self.service.repository.upsert_contents_texts(
                 item_id=self.request.item_id,
                 texts_by_type=pending_upserts,
@@ -1345,9 +1406,9 @@ class _ArxivHtmlDocumentContext:
                 )
                 inserted += 1 if did_insert else 0
         if self.request.diag is not None:
-            self.request.diag["db_write_ms"] = self.request.diag.get("db_write_ms", 0) + int(
-                (time.perf_counter() - db_write_started) * 1000
-            )
+            self.request.diag["db_write_ms"] = self.request.diag.get(
+                "db_write_ms", 0
+            ) + int((time.perf_counter() - db_write_started) * 1000)
         return inserted > 0
 
     def _load_existing_content(self) -> tuple[str | None, str | None, str | None]:
@@ -1357,24 +1418,30 @@ class _ArxivHtmlDocumentContext:
             content_types=["html_document", "html_document_md", "html_references"],
         )
         if self.request.diag is not None:
-            self.request.diag["db_read_ms"] = self.request.diag.get("db_read_ms", 0) + int(
-                (time.perf_counter() - db_read_started) * 1000
-            )
+            self.request.diag["db_read_ms"] = self.request.diag.get(
+                "db_read_ms", 0
+            ) + int((time.perf_counter() - db_read_started) * 1000)
         return (
             existing.get("html_document"),
             existing.get("html_document_md"),
             existing.get("html_references"),
         )
 
-    def _clean_document(self, html: str) -> tuple[str | None, str | None, dict[str, Any]]:
+    def _clean_document(
+        self, html: str
+    ) -> tuple[str | None, str | None, dict[str, Any]]:
         cleanup_started = time.perf_counter()
         cleaned_document, references_html, stats = (
             _pipeline_extract_html_document_cleaned_with_references()(html)
         )
         cleanup_elapsed_ms = int((time.perf_counter() - cleanup_started) * 1000)
         if self.request.diag is not None:
-            self.request.diag["cleanup_ms"] = self.request.diag.get("cleanup_ms", 0) + cleanup_elapsed_ms
-            self.request.diag["extract_ms"] = self.request.diag.get("extract_ms", 0) + cleanup_elapsed_ms
+            self.request.diag["cleanup_ms"] = (
+                self.request.diag.get("cleanup_ms", 0) + cleanup_elapsed_ms
+            )
+            self.request.diag["extract_ms"] = (
+                self.request.diag.get("extract_ms", 0) + cleanup_elapsed_ms
+            )
         return cleaned_document, references_html, stats
 
     def _populate_markdown(
@@ -1389,19 +1456,21 @@ class _ArxivHtmlDocumentContext:
             diag=self.request.diag,
         )
         if self.request.diag is not None:
-            self.request.diag["pandoc_ms"] = self.request.diag.get("pandoc_ms", 0) + int(
-                elapsed_ms or 0
-            )
-            self.request.diag["extract_ms"] = self.request.diag.get("extract_ms", 0) + int(
-                elapsed_ms or 0
-            )
+            self.request.diag["pandoc_ms"] = self.request.diag.get(
+                "pandoc_ms", 0
+            ) + int(elapsed_ms or 0)
+            self.request.diag["extract_ms"] = self.request.diag.get(
+                "extract_ms", 0
+            ) + int(elapsed_ms or 0)
         if markdown is not None:
             message = (
                 "html_document_md created from existing html_document elapsed_ms={} chars_in={} chars_out={}"
                 if existing_document
                 else "html_document_md created elapsed_ms={} chars_in={} chars_out={}"
             )
-            self._log_info_or_debug(message, elapsed_ms, len(html_document), len(markdown))
+            self._log_info_or_debug(
+                message, elapsed_ms, len(html_document), len(markdown)
+            )
             return markdown
         self.service._log_html_document_md_conversion_skipped(
             log=self.request.log,

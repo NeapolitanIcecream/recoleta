@@ -84,12 +84,8 @@ def test_enrich_records_source_metrics_for_html_and_pdf_paths(
     assert by_name["pipeline.enrich.source.rss.content_type.html_maintext_total"] == 1
     assert by_name["pipeline.enrich.source.hn.content_type.html_maintext_total"] == 1
     assert (
-        by_name["pipeline.enrich.source.hf_daily.content_type.html_maintext_total"]
-        == 1
+        by_name["pipeline.enrich.source.hf_daily.content_type.html_maintext_total"] == 1
     )
-    assert (
-        by_name["pipeline.enrich.source.openreview.content_type.pdf_text_total"] == 1
-    )
+    assert by_name["pipeline.enrich.source.openreview.content_type.pdf_text_total"] == 1
     assert by_name["pipeline.enrich.source.rss.content_chars_sum"] > 0
     assert by_name["pipeline.enrich.source.openreview.content_chars_sum"] > 0
-

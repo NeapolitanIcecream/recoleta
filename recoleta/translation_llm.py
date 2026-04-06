@@ -35,9 +35,10 @@ class TranslationLLMRequest:
 class TranslationLLMDeps:
     completion_factory: Callable[[], Any] | None = None
     extract_usage_dict_fn: Callable[[object], dict[str, Any] | None] | None = None
-    extract_token_counts_fn: Callable[
-        [dict[str, Any] | None], tuple[int | None, int | None, int | None]
-    ] | None = None
+    extract_token_counts_fn: (
+        Callable[[dict[str, Any] | None], tuple[int | None, int | None, int | None]]
+        | None
+    ) = None
     extract_content_fn: Callable[[object], str] | None = None
     resolve_response_cost_usd_fn: Callable[..., float | None] | None = None
 
@@ -108,7 +109,9 @@ def _invoke_translation_completion(
     normalized_payload: dict[str, Any],
     deps: TranslationLLMDeps | None,
 ) -> Any:
-    completion = (deps.completion_factory if deps is not None else None) or _get_completion
+    completion = (
+        deps.completion_factory if deps is not None else None
+    ) or _get_completion
     connection = request.llm_connection or LLMConnectionConfig()
     return completion()(
         model=normalized_model,
@@ -126,8 +129,12 @@ def _translation_messages(
     request: TranslationLLMRequest,
     normalized_payload: dict[str, Any],
 ) -> list[dict[str, str]]:
-    source_label = str(request.source_language_label or request.source_language_code).strip()
-    target_label = str(request.target_language_label or request.target_language_code).strip()
+    source_label = str(
+        request.source_language_label or request.source_language_code
+    ).strip()
+    target_label = str(
+        request.target_language_label or request.target_language_code
+    ).strip()
     context_payload = request.context if isinstance(request.context, dict) else {}
     user_message = (
         f"Translate this {request.source_kind} payload from {source_label} to {target_label}.\n\n"
@@ -154,11 +161,15 @@ def _decode_translation_response(
     normalized_model: str,
     deps: TranslationLLMDeps | None,
 ) -> tuple[Any, dict[str, Any]]:
-    extract_usage_dict = (deps.extract_usage_dict_fn if deps is not None else None) or _extract_usage_dict
+    extract_usage_dict = (
+        deps.extract_usage_dict_fn if deps is not None else None
+    ) or _extract_usage_dict
     extract_token_counts = (
         deps.extract_token_counts_fn if deps is not None else None
     ) or _extract_token_counts
-    extract_content = (deps.extract_content_fn if deps is not None else None) or _extract_content
+    extract_content = (
+        deps.extract_content_fn if deps is not None else None
+    ) or _extract_content
     resolve_response_cost_usd = (
         deps.resolve_response_cost_usd_fn if deps is not None else None
     ) or _resolve_response_cost_usd
