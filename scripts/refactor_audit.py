@@ -194,6 +194,7 @@ class _DiffRegressionContext:
     baseline_items_by_id: dict[str, dict[str, Any]]
     kind: str
     summarize: Callable[[dict[str, Any]], dict[str, Any]]
+    new_item_is_regression: Callable[[dict[str, Any]], bool]
     regression_reasons: Callable[[dict[str, Any], dict[str, Any]], list[str]]
 
 
@@ -974,6 +975,7 @@ def build_baseline_diff(
     current_dead_code_candidates: list[dict[str, Any]],
     baseline_report: dict[str, Any] | None,
     scope_files: list[str],
+    config: AuditConfig,
 ) -> dict[str, Any]:
     scoped_files = set(scope_files)
     if baseline_report is None:
@@ -1002,7 +1004,15 @@ def build_baseline_diff(
             baseline_items_by_id=baseline_hotspots,
             kind="hotspot",
             summarize=summarize_hotspot,
-            regression_reasons=hotspot_regression_reasons,
+            new_item_is_regression=lambda item: hotspot_new_item_is_regression(
+                item,
+                config=config,
+            ),
+            regression_reasons=lambda previous, item: hotspot_regression_reasons(
+                previous,
+                item,
+                config=config,
+            ),
         ),
     )
     _collect_resolved_items(
@@ -1019,6 +1029,7 @@ def build_baseline_diff(
             baseline_items_by_id=baseline_dead_code,
             kind="dead_code",
             summarize=summarize_dead_code,
+            new_item_is_regression=lambda _item: True,
             regression_reasons=dead_code_regression_reasons,
         ),
     )
@@ -1073,15 +1084,16 @@ def _collect_item_regressions(
     for item_id, item in context.current_items_by_id.items():
         previous = context.baseline_items_by_id.get(item_id)
         if previous is None:
-            diff_items["new"].append(
-                {
-                    "kind": context.kind,
-                    "id": item_id,
-                    "file": item["file"],
-                    "symbol": item["symbol"],
-                    "after": context.summarize(item),
-                }
-            )
+            if context.new_item_is_regression(item):
+                diff_items["new"].append(
+                    {
+                        "kind": context.kind,
+                        "id": item_id,
+                        "file": item["file"],
+                        "symbol": item["symbol"],
+                        "after": context.summarize(item),
+                    }
+                )
             continue
         reasons = context.regression_reasons(previous, item)
         if reasons:
@@ -1144,8 +1156,18 @@ def summarize_dead_code(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def hotspot_new_item_is_regression(
+    item: dict[str, Any], *, config: AuditConfig
+) -> bool:
+    if item["classification"] != "monitor":
+        return True
+    if set(item.get("tools", [])) != {"lizard"}:
+        return True
+    return _hotspot_signal_reasons(item, config=config) != {"lizard.nloc"}
+
+
 def hotspot_regression_reasons(
-    previous: dict[str, Any], current: dict[str, Any]
+    previous: dict[str, Any], current: dict[str, Any], *, config: AuditConfig
 ) -> list[str]:
     reasons: list[str] = []
     if (
@@ -1163,14 +1185,73 @@ def hotspot_regression_reasons(
         ("lizard", "nloc"),
         ("lizard", "parameter_count"),
     ):
-        old_value = int(previous_metrics.get(tool_name, {}).get(metric_name, 0))
-        new_value = int(current_metrics.get(tool_name, {}).get(metric_name, 0))
-        if new_value > old_value:
+        old_rank = _hotspot_metric_severity_rank(
+            tool_name=tool_name,
+            metric_name=metric_name,
+            value=int(previous_metrics.get(tool_name, {}).get(metric_name, 0)),
+            config=config,
+        )
+        new_rank = _hotspot_metric_severity_rank(
+            tool_name=tool_name,
+            metric_name=metric_name,
+            value=int(current_metrics.get(tool_name, {}).get(metric_name, 0)),
+            config=config,
+        )
+        if new_rank > old_rank:
             reasons.append(f"{tool_name}.{metric_name}")
 
     if len(set(current.get("tools", []))) > len(set(previous.get("tools", []))):
         reasons.append("tool_overlap")
     return sorted(set(reasons))
+
+
+def _hotspot_signal_reasons(item: dict[str, Any], *, config: AuditConfig) -> set[str]:
+    reasons: set[str] = set()
+    metrics = item.get("metrics", {})
+    for tool_name, metric_name in (
+        ("ruff", "complexity"),
+        ("complexipy", "complexity"),
+        ("lizard", "ccn"),
+        ("lizard", "nloc"),
+        ("lizard", "parameter_count"),
+    ):
+        metric_values = metrics.get(tool_name, {})
+        rank = _hotspot_metric_severity_rank(
+            tool_name=tool_name,
+            metric_name=metric_name,
+            value=int(metric_values.get(metric_name, 0)),
+            config=config,
+        )
+        if rank > 0:
+            reasons.add(f"{tool_name}.{metric_name}")
+    return reasons
+
+
+def _hotspot_metric_severity_rank(
+    *,
+    tool_name: str,
+    metric_name: str,
+    value: int,
+    config: AuditConfig,
+) -> int:
+    if value <= 0:
+        return 0
+
+    if tool_name == "ruff":
+        severity = config.ruff.classify(value)
+    elif tool_name == "complexipy":
+        severity = config.complexipy.classify(value)
+    elif tool_name == "lizard":
+        band = getattr(config.lizard, metric_name)
+        severity = band.classify(value)
+    else:
+        raise ValueError(
+            f"Unsupported hotspot metric source: {tool_name}.{metric_name}"
+        )
+
+    if severity is None:
+        return 0
+    return SEVERITY_RANK[severity]
 
 
 def dead_code_regression_reasons(
@@ -1736,6 +1817,7 @@ def run_refactor_audit(
         current_dead_code_candidates=tool_run.dead_code_candidates,
         baseline_report=baseline_report,
         scope_files=scope_state.current_scope_files,
+        config=resolved_request.config,
     )
     repo_verdict = build_repo_verdict(hotspots=hotspots, baseline_diff=baseline_diff)
     report = _build_audit_report(

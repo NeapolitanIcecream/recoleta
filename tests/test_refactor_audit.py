@@ -297,6 +297,7 @@ def test_build_baseline_diff_marks_new_hotspots() -> None:
         current_dead_code_candidates=[],
         baseline_report={"hotspots": [], "dead_code_candidates": []},
         scope_files=["recoleta/example.py"],
+        config=CONFIG,
     )
 
     assert diff["new"][0]["kind"] == "hotspot"
@@ -336,10 +337,72 @@ def test_build_baseline_diff_marks_worsened_hotspots() -> None:
         current_dead_code_candidates=[],
         baseline_report=baseline_report,
         scope_files=["recoleta/example.py"],
+        config=CONFIG,
     )
 
     assert diff["worsened"][0]["kind"] == "hotspot"
     assert "classification" in diff["worsened"][0]["reasons"]
+
+
+def test_build_baseline_diff_ignores_same_band_lizard_nloc_growth() -> None:
+    baseline_report = {
+        "hotspots": [
+            {
+                "id": "recoleta/example.py::branchy",
+                "file": "recoleta/example.py",
+                "symbol": "branchy",
+                "classification": "monitor",
+                "tools": ["lizard"],
+                "metrics": {"lizard": {"ccn": 10, "nloc": 97, "parameter_count": 4}},
+            }
+        ],
+        "dead_code_candidates": [],
+    }
+    current_hotspots = [
+        {
+            "id": "recoleta/example.py::branchy",
+            "file": "recoleta/example.py",
+            "symbol": "branchy",
+            "classification": "monitor",
+            "tools": ["lizard"],
+            "metrics": {"lizard": {"ccn": 10, "nloc": 105, "parameter_count": 4}},
+        }
+    ]
+
+    diff = audit.build_baseline_diff(
+        current_hotspots=current_hotspots,
+        current_dead_code_candidates=[],
+        baseline_report=baseline_report,
+        scope_files=["recoleta/example.py"],
+        config=CONFIG,
+    )
+
+    assert diff["has_regressions"] is False
+    assert diff["worsened"] == []
+
+
+def test_build_baseline_diff_ignores_new_monitor_lizard_nloc_hotspot() -> None:
+    current_hotspots = [
+        {
+            "id": "recoleta/example.py::wrapped",
+            "file": "recoleta/example.py",
+            "symbol": "wrapped",
+            "classification": "monitor",
+            "tools": ["lizard"],
+            "metrics": {"lizard": {"ccn": 8, "nloc": 82, "parameter_count": 3}},
+        }
+    ]
+
+    diff = audit.build_baseline_diff(
+        current_hotspots=current_hotspots,
+        current_dead_code_candidates=[],
+        baseline_report={"hotspots": [], "dead_code_candidates": []},
+        scope_files=["recoleta/example.py"],
+        config=CONFIG,
+    )
+
+    assert diff["has_regressions"] is False
+    assert diff["new"] == []
 
 
 def test_build_baseline_diff_marks_resolved_hotspots() -> None:
@@ -362,6 +425,7 @@ def test_build_baseline_diff_marks_resolved_hotspots() -> None:
         current_dead_code_candidates=[],
         baseline_report=baseline_report,
         scope_files=["recoleta/example.py"],
+        config=CONFIG,
     )
 
     assert diff["resolved"][0]["kind"] == "hotspot"
