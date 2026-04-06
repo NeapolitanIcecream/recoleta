@@ -45,8 +45,19 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      - name: Refactor audit
+        run: uv run python scripts/refactor_audit.py --fail-on-regression
+
       - name: Test
         run: uv run pytest
+
+      - name: Upload refactor audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refactor-audit
+          path: output/refactor-audit/
+          if-no-files-found: ignore
 
   docker-runtime:
     runs-on: ubuntu-latest
