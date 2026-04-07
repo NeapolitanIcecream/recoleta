@@ -416,10 +416,10 @@ def _normalized_translation_content_list_text(parts: list[Any]) -> str | None:
 def _normalized_translation_content_part_text(part: Any) -> str | None:
     if not isinstance(part, dict):
         return None
+    if part.get("type") != "output_text":
+        return None
     text_value = part.get("text")
     if isinstance(text_value, str) and text_value:
         return text_value
-    if part.get("type") != "output_text":
-        return None
     normalized = str(text_value or "").strip()
     return normalized or None

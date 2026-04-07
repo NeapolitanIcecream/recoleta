@@ -182,3 +182,48 @@ def test_translate_structured_payload_classifies_content_filter_responses() -> N
     assert attempts["count"] == 3
     assert excinfo.value.reason == "content_filter"
     assert excinfo.value.finish_reason == "content_filter"
+
+
+def test_translate_structured_payload_ignores_non_output_text_parts() -> None:
+    translated, debug = translate_structured_payload_with_debug(
+        TranslationLLMRequest(
+            model="test/fake-model",
+            source_kind="trend_ideas",
+            payload=_ideas_payload(),
+            source_language_code="en",
+            target_language_code="zh-CN",
+            payload_model=TrendIdeasPayload,
+        ),
+        TranslationLLMDeps(
+            completion_factory=lambda: (
+                lambda **_: {
+                    "choices": [
+                        {
+                            "finish_reason": "stop",
+                            "message": {
+                                "content": [
+                                    {
+                                        "type": "reasoning",
+                                        "text": "internal reasoning that is not JSON",
+                                    },
+                                    {
+                                        "type": "output_text",
+                                        "text": json.dumps(_ideas_payload(), ensure_ascii=False),
+                                    },
+                                ]
+                            },
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "total_tokens": 15,
+                    },
+                }
+            ),
+            resolve_response_cost_usd_fn=lambda **_: 0.01,
+        ),
+    )
+
+    assert translated["title"] == "Ideas"
+    assert debug["usage"]["requests"] == 1
