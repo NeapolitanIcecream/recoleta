@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import time
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, Unpack, cast
 
@@ -79,7 +79,6 @@ class _TrendStageState:
     period_end: Any
     corpus_doc_type: str
     corpus_granularity: str | None
-    index_stats: dict[str, Any]
     model: str
 
 
@@ -162,6 +161,17 @@ class _TrendArtifactsRequest:
     evolution_suppressed_without_history: bool
     plan: trends.TrendGenerationPlan | None
     rep_stats: dict[str, int]
+
+
+@dataclass(slots=True, frozen=True)
+class _SourceEnsureResult:
+    token: str
+    doc_type: str
+    granularity: str | None
+    docs_total: int
+    already_ready: bool = False
+    materialized: bool = False
+    failed: bool = False
 
 
 class TrendStageService(Protocol):
@@ -340,11 +350,14 @@ class _TrendStageRunner:
         normalized_granularity = self._normalize_granularity()
         normalized_backfill_mode = self._normalize_backfill_mode()
         anchor = self.request.anchor_date or utc_now().date()
-        period_start, period_end, corpus_doc_type, corpus_granularity, index_stats = (
-            self._prepare_period_state(
-                normalized_granularity=normalized_granularity,
-                anchor=anchor,
-            )
+        (
+            period_start,
+            period_end,
+            corpus_doc_type,
+            corpus_granularity,
+        ) = self._prepare_period_state(
+            normalized_granularity=normalized_granularity,
+            anchor=anchor,
         )
         model = self.request.llm_model or self.service.settings.llm_model
         return _TrendStageState(
@@ -356,7 +369,6 @@ class _TrendStageRunner:
             period_end=period_end,
             corpus_doc_type=corpus_doc_type,
             corpus_granularity=corpus_granularity,
-            index_stats=index_stats,
             model=model,
         )
 
@@ -377,54 +389,56 @@ class _TrendStageRunner:
         *,
         normalized_granularity: str,
         anchor: date,
-    ) -> tuple[Any, Any, str, str | None, dict[str, Any]]:
+    ) -> tuple[Any, Any, str, str | None]:
         if normalized_granularity == "day":
             period_start, period_end = trends.day_period_bounds(anchor)
             corpus_doc_type = "item"
             corpus_granularity: str | None = None
-            index_required = True
         elif normalized_granularity == "week":
             period_start, period_end = trends.week_period_bounds(anchor)
             corpus_doc_type = "trend"
             corpus_granularity = "day"
-            index_required = False
         else:
             period_start, period_end = trends.month_period_bounds(anchor)
             corpus_doc_type = "trend"
             corpus_granularity = "week"
-            index_required = False
 
-        skipped = bool(self.request.reuse_existing_corpus)
+        prepare_skipped = bool(self.request.reuse_existing_corpus)
         self.record_metric(
             name="pipeline.trends.prepare.skipped_total",
-            value=1 if skipped else 0,
+            value=1 if prepare_skipped else 0,
             unit="count",
         )
-        self.record_metric(
-            name="pipeline.trends.index.skipped_total",
-            value=1 if skipped else 0,
-            unit="count",
-        )
-        if skipped:
-            index_stats = self._skipped_index_stats()
-        else:
+        if not prepare_skipped:
             self._prepare_period_backlog(
                 period_start=period_start,
                 period_end=period_end,
-            )
-            index_stats = self._index_items_for_period(
-                normalized_granularity=normalized_granularity,
-                period_start=period_start,
-                period_end=period_end,
-                required=index_required,
             )
         return (
             period_start,
             period_end,
             corpus_doc_type,
             corpus_granularity,
-            index_stats,
         )
+
+    def _period_has_corpus_documents(
+        self,
+        *,
+        doc_type: str,
+        granularity: str | None,
+        period_start: Any,
+        period_end: Any,
+    ) -> bool:
+        probe = cast(Any, self.service.repository).list_documents(
+            doc_type=doc_type,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            order_by="event_desc",
+            offset=0,
+            limit=1,
+        )
+        return bool(probe)
 
     def _prepare_period_backlog(self, *, period_start: Any, period_end: Any) -> None:
         self.service.prepare(
@@ -441,10 +455,8 @@ class _TrendStageRunner:
     def _index_items_for_period(
         self,
         *,
-        normalized_granularity: str,
         period_start: Any,
         period_end: Any,
-        required: bool,
     ) -> dict[str, Any]:
         try:
             stats = trends.index_items_as_documents(
@@ -468,27 +480,13 @@ class _TrendStageRunner:
             self._record_index_metrics(failed_stats, failed=True)
             self.log.warning(
                 "Trends index failed granularity={} period_start={} period_end={} error_type={} error={}",
-                normalized_granularity,
+                self.request.granularity,
                 period_start.isoformat(),
                 period_end.isoformat(),
                 type(exc).__name__,
                 self.service._sanitize_error_message(str(exc)),
             )
-            if required:
-                raise
-            return failed_stats
-        self._record_index_metrics(stats, failed=False)
-        return stats
-
-    def _skipped_index_stats(self) -> dict[str, Any]:
-        stats = {
-            "items_total": 0,
-            "docs_upserted": 0,
-            "docs_deleted": 0,
-            "chunks_upserted": 0,
-            "items_filtered_out": 0,
-            "duration_ms": 0,
-        }
+            raise
         self._record_index_metrics(stats, failed=False)
         return stats
 
@@ -510,6 +508,479 @@ class _TrendStageRunner:
             name="pipeline.trends.index.failed_total",
             value=1 if failed else 0,
             unit="count",
+        )
+
+    def _record_source_materialization_metric(
+        self,
+        *,
+        metric_name: str,
+        token: str,
+        value: float,
+    ) -> None:
+        self.record_metric(
+            name=(
+                "pipeline.trends.source_materialization."
+                f"{metric_name}.{metric_token(token, max_len=24)}"
+            ),
+            value=value,
+            unit="count",
+        )
+
+    def _source_token(self, *, doc_type: str, granularity: str | None) -> str:
+        normalized_doc_type = str(doc_type or "").strip().lower()
+        normalized_granularity = str(granularity or "").strip().lower()
+        if normalized_doc_type == "item":
+            return "item"
+        if normalized_doc_type == "trend" and normalized_granularity in {"day", "week"}:
+            return f"trend_{normalized_granularity}"
+        raise ValueError(
+            f"unsupported required source doc_type={normalized_doc_type} granularity={normalized_granularity or '-'}"
+        )
+
+    def _required_source_tokens(
+        self,
+        *,
+        state: _TrendStageState,
+        plan: trends.TrendGenerationPlan | None,
+    ) -> list[str]:
+        required = {
+            self._source_token(
+                doc_type=state.corpus_doc_type,
+                granularity=state.corpus_granularity,
+            ),
+            "item",
+        }
+        for source in list(getattr(plan, "rag_sources", []) or []):
+            doc_type = str(source.get("doc_type") or "").strip().lower()
+            granularity = source.get("granularity")
+            try:
+                required.add(
+                    self._source_token(
+                        doc_type=doc_type,
+                        granularity=str(granularity or "").strip().lower() or None,
+                    )
+                )
+            except ValueError:
+                continue
+        return [
+            token
+            for token in ("item", "trend_day", "trend_week")
+            if token in required
+        ]
+
+    def _ensure_required_sources(
+        self,
+        *,
+        state: _TrendStageState,
+        plan: trends.TrendGenerationPlan | None,
+    ) -> dict[str, _SourceEnsureResult]:
+        results: dict[str, _SourceEnsureResult] = {}
+        for token in self._required_source_tokens(state=state, plan=plan):
+            self._record_source_materialization_metric(
+                metric_name="checked_total",
+                token=token,
+                value=1,
+            )
+            result = self._ensure_source(token=token, state=state)
+            results[token] = result
+            if result.already_ready:
+                self._record_source_materialization_metric(
+                    metric_name="already_ready_total",
+                    token=token,
+                    value=1,
+                )
+            if result.materialized:
+                self._record_source_materialization_metric(
+                    metric_name="materialized_total",
+                    token=token,
+                    value=1,
+                )
+            if result.failed:
+                self._record_source_materialization_metric(
+                    metric_name="failed_total",
+                    token=token,
+                    value=1,
+                )
+                raise RuntimeError(f"required source materialization failed for {token}")
+            if token == "item":
+                self.record_metric(
+                    name="pipeline.trends.index.skipped_total",
+                    value=1 if result.already_ready else 0,
+                    unit="count",
+                )
+        return results
+
+    def _ensure_source(
+        self,
+        *,
+        token: str,
+        state: _TrendStageState,
+    ) -> _SourceEnsureResult:
+        try:
+            if token == "item":
+                return self._ensure_item_source(state=state)
+            if token == "trend_day":
+                return self._ensure_trend_source(granularity="day", state=state)
+            if token == "trend_week":
+                return self._ensure_trend_source(granularity="week", state=state)
+            raise ValueError(f"unsupported source token: {token}")
+        except Exception as exc:
+            self.log.warning(
+                "Required source materialization failed source={} error_type={} error={}",
+                token,
+                type(exc).__name__,
+                self.service._sanitize_error_message(str(exc)),
+            )
+            if token == "item":
+                return _SourceEnsureResult(
+                    token="item",
+                    doc_type="item",
+                    granularity=None,
+                    docs_total=0,
+                    failed=True,
+                )
+            granularity = token.removeprefix("trend_")
+            return _SourceEnsureResult(
+                token=token,
+                doc_type="trend",
+                granularity=granularity or None,
+                docs_total=0,
+                failed=True,
+            )
+
+    def _filtered_item_pairs(
+        self,
+        *,
+        period_start: Any,
+        period_end: Any,
+    ) -> list[tuple[Any, Any]]:
+        pairs = cast(Any, self.service.repository).list_analyzed_items_in_period(
+            period_start=period_start,
+            period_end=period_end,
+            limit=2000,
+        )
+        pairs, _filtered_out_total = trends._filter_pairs_by_min_relevance(
+            pairs,
+            min_relevance_score=float(
+                getattr(self.service.settings, "min_relevance_score", 0.0) or 0.0
+            ),
+        )
+        return list(pairs)
+
+    def _item_source_ready(
+        self,
+        *,
+        period_start: Any,
+        period_end: Any,
+    ) -> tuple[bool, int]:
+        pairs = self._filtered_item_pairs(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        expected_item_ids = {
+            int(getattr(item, "id") or 0)
+            for item, _analysis in pairs
+            if getattr(item, "id", None) is not None and int(getattr(item, "id") or 0) > 0
+        }
+        docs = cast(Any, self.service.repository).list_documents(
+            doc_type="item",
+            period_start=period_start,
+            period_end=period_end,
+            order_by="event_desc",
+            limit=max(500, len(expected_item_ids) * 2 + 50),
+        )
+        if not expected_item_ids:
+            return (not bool(docs), 0)
+        doc_ids_by_item_id = {
+            int(getattr(doc, "item_id") or 0): int(getattr(doc, "id") or 0)
+            for doc in docs
+            if getattr(doc, "item_id", None) is not None
+            and int(getattr(doc, "item_id") or 0) > 0
+            and getattr(doc, "id", None) is not None
+            and int(getattr(doc, "id") or 0) > 0
+        }
+        if set(doc_ids_by_item_id) != expected_item_ids:
+            return False, len(expected_item_ids)
+        summary_doc_ids = {
+            int(row.get("doc_id") or 0)
+            for row in cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
+                doc_type="item",
+                kind="summary",
+                period_start=period_start,
+                period_end=period_end,
+                limit=max(500, len(expected_item_ids) * 2 + 50),
+            )
+            if int(row.get("doc_id") or 0) > 0
+        }
+        meta_doc_ids = {
+            int(row.get("doc_id") or 0)
+            for row in cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
+                doc_type="item",
+                kind="meta",
+                period_start=period_start,
+                period_end=period_end,
+                limit=max(500, len(expected_item_ids) * 2 + 50),
+            )
+            if int(row.get("doc_id") or 0) > 0
+        }
+        required_doc_ids = set(doc_ids_by_item_id.values())
+        return (
+            required_doc_ids <= summary_doc_ids and required_doc_ids <= meta_doc_ids,
+            len(expected_item_ids),
+        )
+
+    def _ensure_item_source(self, *, state: _TrendStageState) -> _SourceEnsureResult:
+        ready, docs_total = self._item_source_ready(
+            period_start=state.period_start,
+            period_end=state.period_end,
+        )
+        if ready:
+            return _SourceEnsureResult(
+                token="item",
+                doc_type="item",
+                granularity=None,
+                docs_total=docs_total,
+                already_ready=True,
+            )
+        stats = self._index_items_for_period(
+            period_start=state.period_start,
+            period_end=state.period_end,
+        )
+        return _SourceEnsureResult(
+            token="item",
+            doc_type="item",
+            granularity=None,
+            docs_total=int(stats.get("docs_upserted") or 0),
+            materialized=True,
+        )
+
+    def _trend_source_windows(
+        self,
+        *,
+        granularity: str,
+        period_start: Any,
+        period_end: Any,
+    ) -> list[tuple[Any, Any]]:
+        windows: list[tuple[Any, Any]] = []
+        if granularity == "day":
+            current = period_start
+            while current < period_end:
+                windows.append((current, current + timedelta(days=1)))
+                current += timedelta(days=1)
+            return windows
+        current_start, current_end = trends.week_period_bounds(period_start.date())
+        while current_start < period_end:
+            windows.append((current_start, current_end))
+            current_start += timedelta(days=7)
+            current_end += timedelta(days=7)
+        return windows
+
+    def _normalized_period_key(self, *, period_start: Any, period_end: Any) -> tuple[Any, Any]:
+        return (
+            self._normalized_period_datetime(period_start),
+            self._normalized_period_datetime(period_end),
+        )
+
+    @staticmethod
+    def _normalized_period_datetime(value: Any) -> Any:
+        if not isinstance(value, datetime):
+            return value
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def _trend_docs_by_window(
+        self,
+        *,
+        granularity: str,
+        period_start: Any,
+        period_end: Any,
+    ) -> dict[tuple[Any, Any], Any]:
+        docs = cast(Any, self.service.repository).list_documents(
+            doc_type="trend",
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            order_by="event_asc",
+            limit=500,
+        )
+        docs_by_window: dict[tuple[Any, Any], Any] = {}
+        for doc in docs:
+            raw_start = getattr(doc, "period_start", None)
+            raw_end = getattr(doc, "period_end", None)
+            if raw_start is None or raw_end is None:
+                continue
+            docs_by_window[
+                self._normalized_period_key(
+                    period_start=raw_start,
+                    period_end=raw_end,
+                )
+            ] = doc
+        return docs_by_window
+
+    def _trend_doc_contract_ready(self, *, doc: Any) -> bool:
+        doc_id = int(getattr(doc, "id") or 0)
+        if doc_id <= 0:
+            return False
+        summary_chunk = cast(Any, self.service.repository).read_document_chunk(
+            doc_id=doc_id,
+            chunk_index=0,
+        )
+        if summary_chunk is None or not str(getattr(summary_chunk, "text", "") or "").strip():
+            return False
+        meta_chunk = cast(Any, self.service.repository).read_document_chunk(
+            doc_id=doc_id,
+            chunk_index=1,
+        )
+        if meta_chunk is None:
+            return False
+        try:
+            trends.TrendPayload.model_validate(
+                orjson.loads(str(getattr(meta_chunk, "text", "") or "{}"))
+            )
+        except Exception:
+            return False
+        return True
+
+    def _repair_trend_source_from_pass_output(
+        self,
+        *,
+        granularity: str,
+        period_start: Any,
+        period_end: Any,
+    ) -> bool:
+        row = cast(Any, self.service.repository).get_latest_pass_output(
+            pass_kind=TREND_SYNTHESIS_PASS_KIND,
+            status="succeeded",
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        if row is None or getattr(row, "id", None) is None:
+            return False
+        try:
+            payload = trends.TrendPayload.model_validate(
+                orjson.loads(str(getattr(row, "payload_json", "") or "{}"))
+            )
+        except Exception:
+            return False
+        trends.persist_trend_payload(
+            repository=cast(Any, self.service.repository),
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            payload=payload,
+            pass_output_id=int(getattr(row, "id") or 0),
+            pass_kind=TREND_SYNTHESIS_PASS_KIND,
+        )
+        return True
+
+    def _ensure_trend_source(
+        self,
+        *,
+        granularity: str,
+        state: _TrendStageState,
+    ) -> _SourceEnsureResult:
+        token = f"trend_{granularity}"
+        windows = self._trend_source_windows(
+            granularity=granularity,
+            period_start=state.period_start,
+            period_end=state.period_end,
+        )
+        docs_by_window = self._trend_docs_by_window(
+            granularity=granularity,
+            period_start=state.period_start,
+            period_end=state.period_end,
+        )
+        if not windows:
+            return _SourceEnsureResult(
+                token=token,
+                doc_type="trend",
+                granularity=granularity,
+                docs_total=0,
+                already_ready=True,
+            )
+        docs_total = 0
+        materialized = False
+        all_ready = True
+        for window_start, window_end in windows:
+            doc = docs_by_window.get(
+                self._normalized_period_key(
+                    period_start=window_start,
+                    period_end=window_end,
+                )
+            )
+            if doc is not None and self._trend_doc_contract_ready(doc=doc):
+                docs_total += 1
+                continue
+            all_ready = False
+            repaired = self._repair_trend_source_from_pass_output(
+                granularity=granularity,
+                period_start=window_start,
+                period_end=window_end,
+            )
+            if not repaired and doc is None:
+                self._run_nested_trends_stage(
+                    granularity=granularity,
+                    anchor_date=window_start.date(),
+                    model=state.model,
+                )
+                docs_by_window = self._trend_docs_by_window(
+                    granularity=granularity,
+                    period_start=state.period_start,
+                    period_end=state.period_end,
+                )
+                doc = docs_by_window.get(
+                    self._normalized_period_key(
+                        period_start=window_start,
+                        period_end=window_end,
+                    )
+                )
+                repaired = doc is not None and self._trend_doc_contract_ready(doc=doc)
+            if repaired:
+                materialized = True
+                docs_total += 1
+                continue
+            self.log.warning(
+                "Required trend source missing structured corpus granularity={} period_start={} period_end={}",
+                granularity,
+                window_start.isoformat(),
+                window_end.isoformat(),
+            )
+            return _SourceEnsureResult(
+                token=token,
+                doc_type="trend",
+                granularity=granularity,
+                docs_total=docs_total,
+                failed=True,
+            )
+        return _SourceEnsureResult(
+            token=token,
+            doc_type="trend",
+            granularity=granularity,
+            docs_total=docs_total,
+            already_ready=all_ready,
+            materialized=materialized and not all_ready,
+        )
+
+    def _run_nested_trends_stage(
+        self,
+        *,
+        granularity: str,
+        anchor_date: date,
+        model: str,
+    ) -> None:
+        run_trends_stage(
+            self.service,
+            request=TrendStageRequest(
+                run_id=self.request.run_id,
+                granularity=granularity,
+                anchor_date=anchor_date,
+                llm_model=model,
+                backfill=False,
+                backfill_mode="missing",
+                reuse_existing_corpus=self.request.reuse_existing_corpus,
+            ),
         )
 
     def _run_backfill_if_requested(self, state: _TrendStageState) -> None:
@@ -719,7 +1190,12 @@ class _TrendStageRunner:
         self,
         state: _TrendStageState,
     ) -> _TrendGenerationArtifacts:
-        corpus_docs_total = self._corpus_docs_total(state)
+        plan = self._build_generation_plan(state)
+        source_results = self._ensure_required_sources(state=state, plan=plan)
+        corpus_docs_total = self._corpus_docs_total(
+            state=state,
+            source_results=source_results,
+        )
         self.record_metric(
             name="pipeline.trends.corpus.docs_total",
             value=corpus_docs_total,
@@ -727,23 +1203,24 @@ class _TrendStageRunner:
         )
         if corpus_docs_total <= 0:
             return self._build_empty_generation(state, corpus_docs_total)
-        return self._build_non_empty_generation(state, corpus_docs_total)
-
-    def _corpus_docs_total(self, state: _TrendStageState) -> int:
-        if state.corpus_doc_type == "item" and not self.request.reuse_existing_corpus:
-            return int(state.index_stats.get("docs_upserted") or 0)
-        probe = cast(Any, self.service.repository).list_documents(
-            doc_type=state.corpus_doc_type,
-            granularity=state.corpus_granularity
-            if state.corpus_doc_type == "trend"
-            else None,
-            period_start=state.period_start,
-            period_end=state.period_end,
-            order_by="event_desc",
-            offset=0,
-            limit=1,
+        return self._build_non_empty_generation(
+            state,
+            corpus_docs_total,
+            plan=plan,
         )
-        return 1 if probe else 0
+
+    def _corpus_docs_total(
+        self,
+        *,
+        state: _TrendStageState,
+        source_results: dict[str, _SourceEnsureResult],
+    ) -> int:
+        primary_token = self._source_token(
+            doc_type=state.corpus_doc_type,
+            granularity=state.corpus_granularity,
+        )
+        report = source_results.get(primary_token)
+        return int(report.docs_total) if report is not None else 0
 
     def _build_empty_generation(
         self,
@@ -791,13 +1268,14 @@ class _TrendStageRunner:
         self,
         state: _TrendStageState,
         corpus_docs_total: int,
+        *,
+        plan: trends.TrendGenerationPlan | None,
     ) -> _TrendGenerationArtifacts:
         self.record_metric(
             name="pipeline.trends.corpus.empty",
             value=0.0,
             unit="bool",
         )
-        plan = self._build_generation_plan(state)
         (
             overview_pack_md,
             overview_pack_stats,

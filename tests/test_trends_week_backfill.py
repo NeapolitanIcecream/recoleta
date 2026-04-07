@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 
 from recoleta.pipeline import PipelineService
 from recoleta.trends import TrendPayload, week_period_bounds
+from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
@@ -136,6 +137,17 @@ def test_trends_week_backfill_emits_failure_metric_when_a_day_generation_fails(
             "highlights": ["weekly"],
         }
     )
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="backfill-day-fail-item",
+        canonical_url="https://example.com/backfill-day-fail-item",
+        title="Backfill Day Fail Item",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 2, 1, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="seed-week-backfill-fail", drafts=[draft], limit=10)
+    _ = service.analyze(run_id="seed-week-backfill-fail", limit=10)
 
     from recoleta.rag import agent as rag_agent
 
@@ -145,20 +157,18 @@ def test_trends_week_backfill_emits_failure_metric_when_a_day_generation_fails(
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
-    import recoleta.trends as trends_mod
+    import recoleta.pipeline.trends_stage as trends_stage_mod
 
-    original_index = trends_mod.index_items_as_documents
+    original_index = trends_stage_mod._TrendStageRunner._index_items_for_period
     state = {"raised": False}
 
-    def _fail_once(**kwargs):  # type: ignore[no-untyped-def]
-        period_start = kwargs["period_start"]
-        period_end = kwargs["period_end"]
+    def _fail_once(self, *, period_start, period_end):  # type: ignore[no-untyped-def]
         if not state["raised"] and (period_end - period_start).days <= 1:
             state["raised"] = True
             raise RuntimeError("simulated day index failure")
-        return original_index(**kwargs)
+        return original_index(self, period_start=period_start, period_end=period_end)
 
-    monkeypatch.setattr(trends_mod, "index_items_as_documents", _fail_once)
+    monkeypatch.setattr(trends_stage_mod._TrendStageRunner, "_index_items_for_period", _fail_once)
 
     _ = service.trends(
         run_id="run-week-backfill-fail-1",
@@ -174,11 +184,11 @@ def test_trends_week_backfill_emits_failure_metric_when_a_day_generation_fails(
     assert totals.get("pipeline.trends.backfill.failed_total", 0.0) == 1.0
 
 
-def test_trends_week_backfill_continues_when_initial_item_indexing_fails(
+def test_trends_week_backfill_fails_when_required_item_source_materialization_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Regression: week trends treat initial item indexing as best-effort."""
+    """Regression: week trends now require item corpus materialization before synthesis."""
 
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
@@ -209,6 +219,17 @@ def test_trends_week_backfill_continues_when_initial_item_indexing_fails(
             "highlights": ["weekly"],
         }
     )
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="week-index-fail-item",
+        canonical_url="https://example.com/week-index-fail-item",
+        title="Week Index Fail Item",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 2, 1, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="seed-week-index-fail", drafts=[draft], limit=10)
+    _ = service.analyze(run_id="seed-week-index-fail", limit=10)
 
     from recoleta.rag import agent as rag_agent
 
@@ -218,38 +239,39 @@ def test_trends_week_backfill_continues_when_initial_item_indexing_fails(
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
-    import recoleta.trends as trends_mod
+    import recoleta.pipeline.trends_stage as trends_stage_mod
 
-    original_index = trends_mod.index_items_as_documents
+    original_index = trends_stage_mod._TrendStageRunner._index_items_for_period
     state = {"raised": False}
 
-    def _fail_week_index_once(**kwargs):  # type: ignore[no-untyped-def]
-        period_start = kwargs["period_start"]
-        period_end = kwargs["period_end"]
+    def _fail_week_index_once(self, *, period_start, period_end):  # type: ignore[no-untyped-def]
         if not state["raised"] and (period_end - period_start).days > 1:
             state["raised"] = True
             raise RuntimeError("simulated week index failure")
-        return original_index(**kwargs)
+        return original_index(self, period_start=period_start, period_end=period_end)
 
-    monkeypatch.setattr(trends_mod, "index_items_as_documents", _fail_week_index_once)
-
-    result = service.trends(
-        run_id="run-week-index-fail-1",
-        granularity="week",
-        anchor_date=anchor,
-        llm_model="test/fake-model",
-        backfill=True,
-        backfill_mode="missing",
+    monkeypatch.setattr(
+        trends_stage_mod._TrendStageRunner,
+        "_index_items_for_period",
+        _fail_week_index_once,
     )
 
-    assert result.granularity == "week"
+    with pytest.raises(RuntimeError, match="required source materialization failed"):
+        _ = service.trends(
+            run_id="run-week-index-fail-1",
+            granularity="week",
+            anchor_date=anchor,
+            llm_model="test/fake-model",
+            backfill=False,
+            backfill_mode="missing",
+        )
 
     metrics = repository.list_metrics(run_id="run-week-index-fail-1")
     assert (
         sum(
             float(m.value)
             for m in metrics
-            if m.name == "pipeline.trends.index.failed_total"
+            if m.name == "pipeline.trends.source_materialization.failed_total.item"
         )
         == 1.0
     )
@@ -257,7 +279,7 @@ def test_trends_week_backfill_continues_when_initial_item_indexing_fails(
         sum(
             float(m.value)
             for m in metrics
-            if m.name == "pipeline.trends.backfill.failed_total"
+            if m.name == "pipeline.trends.index.failed_total"
         )
         == 0.0
     )

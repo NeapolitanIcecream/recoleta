@@ -52,12 +52,30 @@ class ChunkSearchRequest:
     limit: int
 
 
+@dataclass(frozen=True, slots=True)
+class PeriodChunkListSpec:
+    doc_type: str
+    kind: str
+    period_start: datetime
+    period_end: datetime
+    granularity: str | None
+    limit: int
+    offset: int
+
+
 def normalize_doc_type(doc_type: str) -> str:
     return str(doc_type or "").strip().lower()
 
 
 def normalize_granularity(granularity: str | None) -> str:
     return str(granularity or "").strip().lower()
+
+
+def normalize_chunk_kind(kind: str) -> str:
+    normalized = str(kind or "").strip().lower()
+    if normalized not in {"summary", "content", "meta"}:
+        raise ValueError("unsupported chunk kind")
+    return normalized
 
 
 def normalize_limit_offset(*, limit: int, offset: int = 0) -> tuple[int, int]:
@@ -150,9 +168,10 @@ def build_document_list_statement(
     raise ValueError("unsupported doc_type")
 
 
-def build_summary_chunk_statement(
+def build_period_chunk_statement(
     *,
     normalized_type: str,
+    normalized_kind: str,
     period_start: datetime,
     period_end: datetime,
     granularity: str | None,
@@ -166,7 +185,7 @@ def build_summary_chunk_statement(
         cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id),
     ).where(
         Document.doc_type == normalized_type,
-        DocumentChunk.kind == "summary",
+        DocumentChunk.kind == normalized_kind,
     )
     if normalized_type == "item":
         return statement.where(
@@ -186,6 +205,24 @@ def build_summary_chunk_statement(
             statement = statement.where(Document.granularity == normalized_granularity)
         return statement
     raise ValueError("unsupported doc_type")
+
+
+def build_summary_chunk_statement(
+    *,
+    normalized_type: str,
+    period_start: datetime,
+    period_end: datetime,
+    granularity: str | None,
+    include_document: bool,
+) -> Any:
+    return build_period_chunk_statement(
+        normalized_type=normalized_type,
+        normalized_kind="summary",
+        period_start=period_start,
+        period_end=period_end,
+        granularity=granularity,
+        include_document=include_document,
+    )
 
 
 def load_chunks_for_delete(
@@ -302,7 +339,7 @@ def decode_search_hit_row(row: Any) -> dict[str, Any] | None:
     }
 
 
-def summary_chunk_index_row(
+def chunk_index_row(
     *,
     doc_type: str,
     chunk: DocumentChunk,
@@ -325,6 +362,19 @@ def summary_chunk_index_row(
         "event_start_ts": timestamps[0],
         "event_end_ts": timestamps[1],
     }
+
+
+def summary_chunk_index_row(
+    *,
+    doc_type: str,
+    chunk: DocumentChunk,
+    document: Document,
+) -> dict[str, Any] | None:
+    return chunk_index_row(
+        doc_type=doc_type,
+        chunk=chunk,
+        document=document,
+    )
 
 
 def _item_document_statement(

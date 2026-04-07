@@ -400,6 +400,14 @@ def _target_rows_for_pairs(
             continue
         doc_id, content_rows, max_written_index, added_chunks = pair_rows
         target_rows[(doc_id, 0)] = _summary_target_row(doc_id=doc_id, analysis=analysis)
+        target_rows[(doc_id, request.trends_module._ITEM_META_CHUNK_INDEX)] = (
+            _meta_target_row(
+                trends_module=request.trends_module,
+                doc_id=doc_id,
+                item=item,
+                analysis=analysis,
+            )
+        )
         target_rows.update(content_rows)
         content_chunks_upserted += added_chunks
         content_cutoffs[doc_id] = max_written_index
@@ -419,6 +427,26 @@ def _summary_target_row(*, doc_id: int, analysis: Any) -> dict[str, Any]:
         "end_char": None,
         "text_hash": sha256_hex(summary_text),
         "source_content_type": "analysis_summary",
+    }
+
+
+def _meta_target_row(
+    *,
+    trends_module: Any,
+    doc_id: int,
+    item: Any,
+    analysis: Any,
+) -> dict[str, Any]:
+    meta_text = trends_module._item_meta_chunk_text(item=item, analysis=analysis)
+    return {
+        "doc_id": doc_id,
+        "chunk_index": trends_module._ITEM_META_CHUNK_INDEX,
+        "kind": "meta",
+        "text": meta_text,
+        "start_char": 0,
+        "end_char": None,
+        "text_hash": sha256_hex(meta_text),
+        "source_content_type": "analysis_meta_json",
     }
 
 
@@ -574,6 +602,7 @@ def _sync_chunk_indexes(
         for chunk in changed_chunks
         if (raw_chunk_id := getattr(chunk, "id", None)) is not None
         and int(raw_chunk_id) > 0
+        and str(getattr(chunk, "kind", "") or "").strip().lower() != "meta"
     ]
     if changed_fts_rows:
         conn.execute(
