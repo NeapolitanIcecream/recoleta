@@ -347,7 +347,7 @@ def _existing_chunks_by_key(
             session.exec(
                 select(DocumentChunk).where(
                     cast(Any, DocumentChunk.doc_id).in_(doc_ids),
-                    cast(Any, DocumentChunk.kind).in_(["summary", "content"]),
+                    cast(Any, DocumentChunk.kind).in_(["summary", "content", "meta"]),
                 )
             )
         )
