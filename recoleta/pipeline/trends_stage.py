@@ -531,18 +531,19 @@ class _TrendStageRunner:
             ),
             "item",
         }
-        for source in list(getattr(plan, "rag_sources", []) or []):
-            doc_type = str(source.get("doc_type") or "").strip().lower()
-            granularity = source.get("granularity")
-            try:
-                required.add(
-                    self._source_token(
-                        doc_type=doc_type,
-                        granularity=str(granularity or "").strip().lower() or None,
+        if bool(getattr(self.service.settings, "trends_self_similar_enabled", False)):
+            for source in list(getattr(plan, "rag_sources", []) or []):
+                doc_type = str(source.get("doc_type") or "").strip().lower()
+                granularity = source.get("granularity")
+                try:
+                    required.add(
+                        self._source_token(
+                            doc_type=doc_type,
+                            granularity=str(granularity or "").strip().lower() or None,
+                        )
                     )
-                )
-            except ValueError:
-                continue
+                except ValueError:
+                    continue
         return [
             token
             for token in ("item", "trend_day", "trend_week")

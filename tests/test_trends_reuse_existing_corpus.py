@@ -12,6 +12,7 @@ from recoleta.trends import (
     TrendPayload,
     day_period_bounds,
     index_items_as_documents,
+    month_period_bounds,
     persist_trend_payload,
     week_period_bounds,
 )
@@ -576,6 +577,114 @@ def test_week_trends_reuse_existing_corpus_repairs_missing_trend_meta_from_pass_
             "pipeline.trends.source_materialization.materialized_total.trend_day"
         ]
         == 1.0
+    )
+
+
+def test_month_trends_peer_history_only_does_not_require_trend_day_source(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: peer-history-only month runs should not ensure unused trend-day sources."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    monkeypatch.setenv("TRENDS_SELF_SIMILAR_ENABLED", "false")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_ENABLED", "true")
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=cast(Any, repository),
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    anchor = date(2026, 3, 18)
+    month_start, month_end = month_period_bounds(anchor)
+    cursor = month_start.date()
+    week_index = 0
+    while True:
+        week_start, week_end = week_period_bounds(cursor)
+        if week_start >= month_end:
+            break
+        _ = persist_trend_payload(
+            repository=repository,
+            granularity="week",
+            period_start=week_start,
+            period_end=week_end,
+            payload=TrendPayload(
+                title=f"Seed Week Trend {week_index}",
+                granularity="week",
+                period_start=week_start.isoformat(),
+                period_end=week_end.isoformat(),
+                overview_md=f"- week {week_index}",
+                topics=["agents"],
+                clusters=[],
+                highlights=["agents"],
+            ),
+        )
+        cursor = (week_start + timedelta(days=7)).date()
+        week_index += 1
+
+    monkeypatch.setattr(service, "prepare", _raise_if_called)
+    monkeypatch.setattr(service, "analyze", _raise_if_called)
+
+    from recoleta.rag import agent as rag_agent
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        return (
+            TrendPayload(
+                title="Month Trend",
+                granularity="month",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                overview_md="- peer-history only month corpus",
+                topics=["agents"],
+                clusters=[],
+                highlights=["agents"],
+            ),
+            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+        )
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-month-peer-history-only",
+        granularity="month",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+        reuse_existing_corpus=True,
+    )
+
+    assert result.doc_id > 0
+    day_docs = repository.list_documents(
+        doc_type="trend",
+        granularity="day",
+        period_start=month_start,
+        period_end=month_end,
+        order_by="event_asc",
+        limit=100,
+    )
+    assert day_docs == []
+
+    metric_values = {
+        str(getattr(metric, "name", "")): float(getattr(metric, "value", 0.0))
+        for metric in repository.list_metrics(run_id="run-month-peer-history-only")
+    }
+    assert (
+        metric_values[
+            "pipeline.trends.source_materialization.checked_total.trend_week"
+        ]
+        == 1.0
+    )
+    assert (
+        "pipeline.trends.source_materialization.checked_total.trend_day"
+        not in metric_values
     )
 
 
