@@ -591,45 +591,90 @@ def _sync_chunk_indexes(
 ) -> None:
     session.flush()
     conn = session.connection()
-    changed_fts_rows = [
-        {
-            "rowid": int(raw_chunk_id),
-            "text": str(getattr(chunk, "text")),
-            "doc_id": int(getattr(chunk, "doc_id")),
-            "chunk_index": int(getattr(chunk, "chunk_index")),
-            "kind": str(getattr(chunk, "kind")),
-        }
-        for chunk in changed_chunks
-        if (raw_chunk_id := getattr(chunk, "id", None)) is not None
-        and int(raw_chunk_id) > 0
-        and str(getattr(chunk, "kind", "") or "").strip().lower() != "meta"
-    ]
-    if changed_fts_rows:
-        conn.execute(
-            text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
-            [{"rowid": row["rowid"]} for row in changed_fts_rows],
+    changed_fts_rows = _changed_fts_rows(changed_chunks)
+    _replace_changed_chunk_fts_rows(conn=conn, changed_fts_rows=changed_fts_rows)
+    stale_ids = _stale_chunk_ids(stale_chunks)
+    _delete_stale_chunk_side_tables(conn=conn, stale_ids=stale_ids)
+    _delete_stale_chunks(session=session, stale_chunks=stale_chunks)
+
+
+def _changed_fts_rows(changed_chunks: list[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for chunk in changed_chunks:
+        raw_chunk_id = getattr(chunk, "id", None)
+        if raw_chunk_id is None:
+            continue
+        try:
+            chunk_id = int(raw_chunk_id)
+        except Exception:
+            continue
+        if chunk_id <= 0 or _chunk_is_meta(chunk):
+            continue
+        rows.append(
+            {
+                "rowid": chunk_id,
+                "text": str(getattr(chunk, "text")),
+                "doc_id": int(getattr(chunk, "doc_id")),
+                "chunk_index": int(getattr(chunk, "chunk_index")),
+                "kind": str(getattr(chunk, "kind")),
+            }
         )
-        conn.execute(
-            text(
-                "INSERT INTO chunk_fts(rowid, text, doc_id, chunk_index, kind) "
-                "VALUES(:rowid, :text, :doc_id, :chunk_index, :kind)"
-            ),
-            changed_fts_rows,
-        )
-    stale_ids = [
-        int(raw_chunk_id)
-        for raw_chunk_id in (getattr(chunk, "id", None) for chunk in stale_chunks)
-        if raw_chunk_id is not None and int(raw_chunk_id) > 0
-    ]
-    if stale_ids:
-        conn.execute(
-            text("DELETE FROM chunk_embeddings WHERE chunk_id = :chunk_id"),
-            [{"chunk_id": chunk_id} for chunk_id in stale_ids],
-        )
-        conn.execute(
-            text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
-            [{"rowid": chunk_id} for chunk_id in stale_ids],
-        )
+    return rows
+
+
+def _chunk_is_meta(chunk: Any) -> bool:
+    return str(getattr(chunk, "kind", "") or "").strip().lower() == "meta"
+
+
+def _replace_changed_chunk_fts_rows(
+    *,
+    conn: Any,
+    changed_fts_rows: list[dict[str, Any]],
+) -> None:
+    if not changed_fts_rows:
+        return
+    conn.execute(
+        text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
+        [{"rowid": row["rowid"]} for row in changed_fts_rows],
+    )
+    conn.execute(
+        text(
+            "INSERT INTO chunk_fts(rowid, text, doc_id, chunk_index, kind) "
+            "VALUES(:rowid, :text, :doc_id, :chunk_index, :kind)"
+        ),
+        changed_fts_rows,
+    )
+
+
+def _stale_chunk_ids(stale_chunks: list[Any]) -> list[int]:
+    stale_ids: list[int] = []
+    for chunk in stale_chunks:
+        raw_chunk_id = getattr(chunk, "id", None)
+        if raw_chunk_id is None:
+            continue
+        try:
+            chunk_id = int(raw_chunk_id)
+        except Exception:
+            continue
+        if chunk_id > 0:
+            stale_ids.append(chunk_id)
+    return stale_ids
+
+
+def _delete_stale_chunk_side_tables(*, conn: Any, stale_ids: list[int]) -> None:
+    if not stale_ids:
+        return
+    conn.execute(
+        text("DELETE FROM chunk_embeddings WHERE chunk_id = :chunk_id"),
+        [{"chunk_id": chunk_id} for chunk_id in stale_ids],
+    )
+    conn.execute(
+        text("DELETE FROM chunk_fts WHERE rowid = :rowid"),
+        [{"rowid": chunk_id} for chunk_id in stale_ids],
+    )
+
+
+def _delete_stale_chunks(*, session: Any, stale_chunks: list[Any]) -> None:
     for chunk in stale_chunks:
         session.delete(chunk)
 

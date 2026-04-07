@@ -578,6 +578,133 @@ def _selection_key_from_meta(payload: dict[str, Any], *, doc_id: int) -> tuple[s
     return ("doc_id", str(doc_id))
 
 
+def _item_candidate_limit(top_k: int) -> int:
+    return max(0, min(2000, max(50, top_k * 25)))
+
+
+def _item_summary_rows_by_doc_id(
+    summary_rows: list[dict[str, Any]],
+) -> dict[int, dict[str, Any]]:
+    rows_by_doc_id: dict[int, dict[str, Any]] = {}
+    for row in summary_rows:
+        try:
+            doc_id = int(row.get("doc_id") or 0)
+        except Exception:
+            continue
+        if doc_id > 0:
+            rows_by_doc_id[doc_id] = row
+    return rows_by_doc_id
+
+
+def _item_candidate_from_rows(
+    *,
+    row: dict[str, Any],
+    summary_row: dict[str, Any] | None,
+    min_relevance_score: float,
+) -> tuple[dict[str, Any] | None, bool]:
+    if summary_row is None:
+        return None, False
+    try:
+        doc_id = int(row.get("doc_id") or 0)
+    except Exception:
+        return None, False
+    if doc_id <= 0:
+        return None, False
+    payload = _item_meta_payload(row)
+    if payload is None:
+        return None, False
+    relevance_score = _meta_relevance_score(payload)
+    if relevance_score < min_relevance_score:
+        return None, True
+    return (
+        {
+            "doc_id": doc_id,
+            "meta": payload,
+            "summary_text": str(summary_row.get("text") or ""),
+            "relevance_score": relevance_score,
+            "novelty_score": _meta_novelty_score(payload),
+            "event_start_ts": float(row.get("event_start_ts") or 0.0),
+        },
+        False,
+    )
+
+
+def _item_candidates_and_filtered_total(
+    *,
+    meta_rows: list[dict[str, Any]],
+    summary_rows_by_doc_id: dict[int, dict[str, Any]],
+    min_relevance_score: float,
+) -> tuple[list[dict[str, Any]], int]:
+    candidates: list[dict[str, Any]] = []
+    filtered_out_total = 0
+    for row in meta_rows:
+        try:
+            doc_id = int(row.get("doc_id") or 0)
+        except Exception:
+            continue
+        candidate, filtered_out = _item_candidate_from_rows(
+            row=row,
+            summary_row=summary_rows_by_doc_id.get(doc_id),
+            min_relevance_score=min_relevance_score,
+        )
+        if filtered_out:
+            filtered_out_total += 1
+        if candidate is not None:
+            candidates.append(candidate)
+    return candidates, filtered_out_total
+
+
+def _sorted_item_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            -float(candidate["relevance_score"]),
+            -float(candidate["novelty_score"]),
+            -float(candidate["event_start_ts"]),
+            -int(candidate["doc_id"]),
+        ),
+    )
+
+
+def _select_item_candidates(
+    *,
+    sorted_candidates: list[dict[str, Any]],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    seen_selection_keys: set[tuple[str, str]] = set()
+    for candidate in sorted_candidates:
+        key = _selection_key_from_meta(candidate["meta"], doc_id=int(candidate["doc_id"]))
+        if key in seen_selection_keys:
+            continue
+        seen_selection_keys.add(key)
+        selected.append(candidate)
+        if len(selected) >= top_k:
+            break
+    return selected
+
+
+def _item_candidate_lines(
+    *,
+    rank: int,
+    candidate: dict[str, Any],
+    item_max_chars: int,
+) -> list[str]:
+    payload = candidate["meta"]
+    title = _sanitize_inline_text(str(payload.get("title") or "")) or "(untitled)"
+    url = _sanitize_inline_text(str(payload.get("canonical_url") or "")) or "-"
+    sections = extract_item_summary_sections(str(candidate["summary_text"] or ""))
+    return [
+        f"### item rank={rank}",
+        f"- title={title}",
+        f"- url={url}",
+        f"- summary={_summary_field_line(sections, field_name='summary', max_chars=item_max_chars)}",
+        f"- problem={_summary_field_line(sections, field_name='problem', max_chars=item_max_chars)}",
+        f"- approach={_summary_field_line(sections, field_name='approach', max_chars=item_max_chars)}",
+        f"- results={_summary_field_line(sections, field_name='results', max_chars=item_max_chars)}",
+    ]
+
+
 def _item_top_k_lines(
     *,
     request: BuildOverviewPackRequest,
@@ -587,9 +714,9 @@ def _item_top_k_lines(
 ) -> list[str]:
     top_k = max(0, int(request.item_overview_top_k))
     item_max_chars = max(0, int(request.item_overview_item_max_chars))
-    candidate_limit = max(0, min(2000, max(50, top_k * 25)))
     if top_k <= 0:
         return ["- items_total=0 | selected=0"]
+    candidate_limit = _item_candidate_limit(top_k)
     summary_rows = request.repository.list_document_chunk_index_rows_in_period(
         period_start=period_start,
         period_end=period_end,
@@ -604,76 +731,27 @@ def _item_top_k_lines(
         kind="meta",
         limit=candidate_limit,
     )
-    summary_rows_by_doc_id = {
-        int(row["doc_id"]): row for row in summary_rows if int(row.get("doc_id") or 0) > 0
-    }
-    candidates: list[dict[str, Any]] = []
-    filtered_out_total = 0
-    for row in meta_rows:
-        try:
-            doc_id = int(row.get("doc_id") or 0)
-        except Exception:
-            continue
-        if doc_id <= 0:
-            continue
-        summary_row = summary_rows_by_doc_id.get(doc_id)
-        if summary_row is None:
-            continue
-        payload = _item_meta_payload(row)
-        if payload is None:
-            continue
-        relevance_score = _meta_relevance_score(payload)
-        if relevance_score < float(request.min_relevance_score or 0.0):
-            filtered_out_total += 1
-            continue
-        candidates.append(
-            {
-                "doc_id": doc_id,
-                "meta": payload,
-                "summary_text": str(summary_row.get("text") or ""),
-                "relevance_score": relevance_score,
-                "novelty_score": _meta_novelty_score(payload),
-                "event_start_ts": float(row.get("event_start_ts") or 0.0),
-            }
-        )
-    stats["filtered_out_total"] = filtered_out_total
-    sorted_candidates = sorted(
-        candidates,
-        key=lambda candidate: (
-            -float(candidate["relevance_score"]),
-            -float(candidate["novelty_score"]),
-            -float(candidate["event_start_ts"]),
-            -int(candidate["doc_id"]),
-        ),
+    summary_rows_by_doc_id = _item_summary_rows_by_doc_id(summary_rows)
+    candidates, filtered_out_total = _item_candidates_and_filtered_total(
+        meta_rows=meta_rows,
+        summary_rows_by_doc_id=summary_rows_by_doc_id,
+        min_relevance_score=float(request.min_relevance_score or 0.0),
     )
-    selected: list[dict[str, Any]] = []
-    seen_selection_keys: set[tuple[str, str]] = set()
-    for candidate in sorted_candidates:
-        key = _selection_key_from_meta(candidate["meta"], doc_id=int(candidate["doc_id"]))
-        if key in seen_selection_keys:
-            continue
-        seen_selection_keys.add(key)
-        selected.append(candidate)
-        if len(selected) >= top_k:
-            break
+    stats["filtered_out_total"] = filtered_out_total
+    selected = _select_item_candidates(
+        sorted_candidates=_sorted_item_candidates(candidates),
+        top_k=top_k,
+    )
     lines = [
         f"- items_total={len(candidates)} | selected={len(selected)} | top_k={top_k}"
     ]
     for rank, candidate in enumerate(selected, start=1):
-        payload = candidate["meta"]
-        title = _sanitize_inline_text(str(payload.get("title") or "")) or "(untitled)"
-        url = _sanitize_inline_text(str(payload.get("canonical_url") or "")) or "-"
-        sections = extract_item_summary_sections(str(candidate["summary_text"] or ""))
         lines.extend(
-            [
-                f"### item rank={rank}",
-                f"- title={title}",
-                f"- url={url}",
-                f"- summary={_summary_field_line(sections, field_name='summary', max_chars=item_max_chars)}",
-                f"- problem={_summary_field_line(sections, field_name='problem', max_chars=item_max_chars)}",
-                f"- approach={_summary_field_line(sections, field_name='approach', max_chars=item_max_chars)}",
-                f"- results={_summary_field_line(sections, field_name='results', max_chars=item_max_chars)}",
-            ]
+            _item_candidate_lines(
+                rank=rank,
+                candidate=candidate,
+                item_max_chars=item_max_chars,
+            )
         )
     return lines
 

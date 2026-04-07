@@ -421,25 +421,6 @@ class _TrendStageRunner:
             corpus_granularity,
         )
 
-    def _period_has_corpus_documents(
-        self,
-        *,
-        doc_type: str,
-        granularity: str | None,
-        period_start: Any,
-        period_end: Any,
-    ) -> bool:
-        probe = cast(Any, self.service.repository).list_documents(
-            doc_type=doc_type,
-            granularity=granularity,
-            period_start=period_start,
-            period_end=period_end,
-            order_by="event_desc",
-            offset=0,
-            limit=1,
-        )
-        return bool(probe)
-
     def _prepare_period_backlog(self, *, period_start: Any, period_end: Any) -> None:
         self.service.prepare(
             run_id=self.request.run_id,
@@ -673,61 +654,136 @@ class _TrendStageRunner:
         period_start: Any,
         period_end: Any,
     ) -> tuple[bool, int]:
+        expected_item_ids = self._expected_item_ids_for_period(
+            period_start=period_start,
+            period_end=period_end,
+        )
+        docs = self._item_documents_for_period(
+            period_start=period_start,
+            period_end=period_end,
+            expected_total=len(expected_item_ids),
+        )
+        if not expected_item_ids:
+            return (not bool(docs), 0)
+        doc_ids_by_item_id = self._item_doc_ids_by_item_id(docs)
+        if set(doc_ids_by_item_id) != expected_item_ids:
+            return False, len(expected_item_ids)
+        required_doc_ids = set(doc_ids_by_item_id.values())
+        return (
+            self._item_chunk_kinds_ready(
+                required_doc_ids=required_doc_ids,
+                period_start=period_start,
+                period_end=period_end,
+                expected_total=len(expected_item_ids),
+            ),
+            len(expected_item_ids),
+        )
+
+    def _expected_item_ids_for_period(
+        self,
+        *,
+        period_start: Any,
+        period_end: Any,
+    ) -> set[int]:
         pairs = self._filtered_item_pairs(
             period_start=period_start,
             period_end=period_end,
         )
-        expected_item_ids = {
-            int(getattr(item, "id") or 0)
-            for item, _analysis in pairs
-            if getattr(item, "id", None) is not None and int(getattr(item, "id") or 0) > 0
-        }
-        docs = cast(Any, self.service.repository).list_documents(
+        item_ids: set[int] = set()
+        for item, _analysis in pairs:
+            raw_item_id = getattr(item, "id", None)
+            if raw_item_id is None:
+                continue
+            try:
+                item_id = int(raw_item_id)
+            except Exception:
+                continue
+            if item_id > 0:
+                item_ids.add(item_id)
+        return item_ids
+
+    def _item_documents_for_period(
+        self,
+        *,
+        period_start: Any,
+        period_end: Any,
+        expected_total: int,
+    ) -> list[Any]:
+        return cast(Any, self.service.repository).list_documents(
             doc_type="item",
             period_start=period_start,
             period_end=period_end,
             order_by="event_desc",
-            limit=max(500, len(expected_item_ids) * 2 + 50),
+            limit=self._item_source_probe_limit(expected_total),
         )
-        if not expected_item_ids:
-            return (not bool(docs), 0)
-        doc_ids_by_item_id = {
-            int(getattr(doc, "item_id") or 0): int(getattr(doc, "id") or 0)
-            for doc in docs
-            if getattr(doc, "item_id", None) is not None
-            and int(getattr(doc, "item_id") or 0) > 0
-            and getattr(doc, "id", None) is not None
-            and int(getattr(doc, "id") or 0) > 0
-        }
-        if set(doc_ids_by_item_id) != expected_item_ids:
-            return False, len(expected_item_ids)
-        summary_doc_ids = {
-            int(row.get("doc_id") or 0)
-            for row in cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
-                doc_type="item",
-                kind="summary",
-                period_start=period_start,
-                period_end=period_end,
-                limit=max(500, len(expected_item_ids) * 2 + 50),
-            )
-            if int(row.get("doc_id") or 0) > 0
-        }
-        meta_doc_ids = {
-            int(row.get("doc_id") or 0)
-            for row in cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
-                doc_type="item",
-                kind="meta",
-                period_start=period_start,
-                period_end=period_end,
-                limit=max(500, len(expected_item_ids) * 2 + 50),
-            )
-            if int(row.get("doc_id") or 0) > 0
-        }
-        required_doc_ids = set(doc_ids_by_item_id.values())
-        return (
-            required_doc_ids <= summary_doc_ids and required_doc_ids <= meta_doc_ids,
-            len(expected_item_ids),
+
+    def _item_source_probe_limit(self, expected_total: int) -> int:
+        return max(500, int(expected_total) * 2 + 50)
+
+    def _item_doc_ids_by_item_id(self, docs: list[Any]) -> dict[int, int]:
+        doc_ids_by_item_id: dict[int, int] = {}
+        for doc in docs:
+            raw_item_id = getattr(doc, "item_id", None)
+            raw_doc_id = getattr(doc, "id", None)
+            if raw_item_id is None or raw_doc_id is None:
+                continue
+            try:
+                item_id = int(raw_item_id)
+                doc_id = int(raw_doc_id)
+            except Exception:
+                continue
+            if item_id > 0 and doc_id > 0:
+                doc_ids_by_item_id[item_id] = doc_id
+        return doc_ids_by_item_id
+
+    def _item_chunk_kinds_ready(
+        self,
+        *,
+        required_doc_ids: set[int],
+        period_start: Any,
+        period_end: Any,
+        expected_total: int,
+    ) -> bool:
+        summary_doc_ids = self._item_chunk_doc_ids(
+            kind="summary",
+            period_start=period_start,
+            period_end=period_end,
+            expected_total=expected_total,
         )
+        if not required_doc_ids <= summary_doc_ids:
+            return False
+        meta_doc_ids = self._item_chunk_doc_ids(
+            kind="meta",
+            period_start=period_start,
+            period_end=period_end,
+            expected_total=expected_total,
+        )
+        return required_doc_ids <= meta_doc_ids
+
+    def _item_chunk_doc_ids(
+        self,
+        *,
+        kind: str,
+        period_start: Any,
+        period_end: Any,
+        expected_total: int,
+    ) -> set[int]:
+        rows = cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
+            doc_type="item",
+            kind=kind,
+            period_start=period_start,
+            period_end=period_end,
+            limit=self._item_source_probe_limit(expected_total),
+        )
+        doc_ids: set[int] = set()
+        for row in rows:
+            try:
+                doc_id = int(row.get("doc_id") or 0)
+            except Exception:
+                continue
+            if doc_id > 0:
+                doc_ids.add(doc_id)
+        return doc_ids
 
     def _ensure_item_source(self, *, state: _TrendStageState) -> _SourceEnsureResult:
         ready, docs_total = self._item_source_ready(

@@ -395,18 +395,31 @@ def _normalized_translation_content_text(raw_content: Any) -> str | None:
         normalized = raw_content.strip()
         return normalized or None
     if isinstance(raw_content, list):
-        parts: list[str] = []
-        for part in raw_content:
-            if isinstance(part, dict):
-                text = part.get("text")
-                if isinstance(text, str) and text:
-                    parts.append(text)
-                    continue
-                if part.get("type") == "output_text":
-                    candidate = str(part.get("text") or "").strip()
-                    if candidate:
-                        parts.append(candidate)
-        joined = "".join(parts).strip()
-        return joined or None
+        return _normalized_translation_content_list_text(raw_content)
     normalized = str(raw_content).strip()
+    return normalized or None
+
+
+def _normalized_translation_content_list_text(parts: list[Any]) -> str | None:
+    normalized_parts = [
+        normalized_part
+        for part in parts
+        if (normalized_part := _normalized_translation_content_part_text(part))
+        is not None
+    ]
+    if not normalized_parts:
+        return None
+    joined = "".join(normalized_parts).strip()
+    return joined or None
+
+
+def _normalized_translation_content_part_text(part: Any) -> str | None:
+    if not isinstance(part, dict):
+        return None
+    text_value = part.get("text")
+    if isinstance(text_value, str) and text_value:
+        return text_value
+    if part.get("type") != "output_text":
+        return None
+    normalized = str(text_value or "").strip()
     return normalized or None

@@ -11,6 +11,7 @@ from recoleta.models import ChunkEmbedding, Document, DocumentChunk, Item
 from recoleta.storage.document_query_helpers import (
     ChunkSearchRequest,
     ChunkUpsertRequest,
+    PeriodChunkStatementSpec,
     build_chunk_search,
     build_document_list_statement,
     build_period_chunk_statement,
@@ -842,12 +843,14 @@ class DocumentStoreMixin:
 
         with Session(self.engine) as session:
             statement = build_period_chunk_statement(
-                normalized_type=normalized_type,
-                normalized_kind=normalized_kind,
-                period_start=normalized_request.period_start,
-                period_end=normalized_request.period_end,
-                granularity=normalized_request.granularity,
-                include_document=False,
+                spec=PeriodChunkStatementSpec(
+                    normalized_type=normalized_type,
+                    normalized_kind=normalized_kind,
+                    period_start=normalized_request.period_start,
+                    period_end=normalized_request.period_end,
+                    granularity=normalized_request.granularity,
+                    include_document=False,
+                ),
             )
             statement = (
                 statement.order_by(desc(cast(Any, DocumentChunk.id)))
@@ -897,12 +900,14 @@ class DocumentStoreMixin:
 
         with Session(self.engine) as session:
             statement = build_period_chunk_statement(
-                normalized_type=normalized_type,
-                normalized_kind=normalized_kind,
-                period_start=normalized_request.period_start,
-                period_end=normalized_request.period_end,
-                granularity=normalized_request.granularity,
-                include_document=True,
+                spec=PeriodChunkStatementSpec(
+                    normalized_type=normalized_type,
+                    normalized_kind=normalized_kind,
+                    period_start=normalized_request.period_start,
+                    period_end=normalized_request.period_end,
+                    granularity=normalized_request.granularity,
+                    include_document=True,
+                ),
             )
             statement = (
                 statement.order_by(desc(cast(Any, DocumentChunk.id)))
