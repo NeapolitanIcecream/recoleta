@@ -374,11 +374,14 @@ def execute_workflow_loop(
                 and isinstance(step_payload, dict)
                 and int(step_payload.get("failed") or 0) > 0
             ):
-                terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL
+                step_status = "skipped"
+                if request.on_translate_failure == "partial_success":
+                    terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL
+                    step_status = "partial_failure"
                 step_results.append(
                     WorkflowStepResult(
                         step_id=invocation.step_id,
-                        status="partial_failure",
+                        status=step_status,
                         payload=step_payload,
                         error=(
                             "translation completed with failures "

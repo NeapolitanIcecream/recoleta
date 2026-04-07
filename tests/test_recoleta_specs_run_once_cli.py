@@ -602,6 +602,94 @@ def test_run_day_marks_terminal_state_partial_when_translate_reports_failed_outp
     assert fake_repo.finished == [("run-1", True, "succeeded_partial")]
 
 
+def test_run_day_keeps_terminal_state_clean_when_translate_failures_are_skipped(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(
+        tmp_path=tmp_path,
+        localization=_FakeLocalization(),
+        workflows=_FakeWorkflows(day=_FakePolicy(on_translate_failure="skip")),
+    )
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    site_build_calls: list[int] = []
+    materialize_calls: list[int] = []
+
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.translation" and attr_name == "run_translation":
+
+            def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
+                _ = kwargs
+                return SimpleNamespace(
+                    scanned_total=3,
+                    translated_total=2,
+                    mirrored_total=0,
+                    skipped_total=0,
+                    failed_total=1,
+                    aborted=False,
+                    abort_reason=None,
+                )
+
+            return _fake_translate
+        if (
+            module_name == "recoleta.translation"
+            and attr_name == "materialize_localized_projections"
+        ):
+
+            def _fake_materialize(**kwargs):  # type: ignore[no-untyped-def]
+                _ = kwargs
+                materialize_calls.append(1)
+
+            return _fake_materialize
+        if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
+                _ = (input_dir, default_language_code, limit)
+                site_build_calls.append(1)
+                manifest_path = Path(output_dir) / "manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
+                    encoding="utf-8",
+                )
+                return manifest_path
+
+            return _fake_site_build
+        return None
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert len(materialize_calls) == 1
+    assert len(site_build_calls) == 1
+    assert payload["terminal_state"] == "succeeded_clean"
+    assert "translate" in payload["executed_steps"]
+    translate_step = next(
+        step for step in payload["steps"] if step["step_id"] == "translate"
+    )
+    assert translate_step["status"] == "skipped"
+    assert translate_step["payload"]["failed"] == 1
+    assert "site-build" in payload["executed_steps"]
+    assert fake_repo.finished == [("run-1", True, "succeeded_clean")]
+
+
 def test_run_day_allows_skipping_ingest_analyze_and_publish_for_downstream_replay(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
