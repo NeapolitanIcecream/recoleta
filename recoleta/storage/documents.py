@@ -69,6 +69,7 @@ class SummaryChunkListRequest:
     doc_type: str
     period_start: datetime
     period_end: datetime
+    granularity: str | None = None
     limit: int = 500
     offset: int = 0
 
@@ -437,6 +438,7 @@ def coerce_summary_chunk_list_request(
         doc_type=legacy_kwargs["doc_type"],
         period_start=legacy_kwargs["period_start"],
         period_end=legacy_kwargs["period_end"],
+        granularity=legacy_kwargs.get("granularity"),
         limit=int(legacy_kwargs.get("limit", 500)),
         offset=int(legacy_kwargs.get("offset", 0)),
     )
@@ -818,6 +820,7 @@ class DocumentStoreMixin:
             kind="summary",
             period_start=normalized_request.period_start,
             period_end=normalized_request.period_end,
+            granularity=normalized_request.granularity,
             limit=normalized_request.limit,
             offset=normalized_request.offset,
         )

@@ -296,6 +296,7 @@ class RepositoryPort(Protocol):
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
+        granularity: str | None = None,
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]: ...
@@ -543,6 +544,7 @@ class TrendRepositoryPort(Protocol):
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
+        granularity: str | None = None,
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]: ...
