@@ -174,3 +174,15 @@ The refactor is covered by regression tests for:
 This refactor intentionally does not add a historical repair job.
 
 If we later decide to normalize old trend documents proactively, that work should be a separate migration or repair command built on top of the same source materialization contract, not another set of stage-level special cases.
+
+There is also one remaining translation/runtime follow-up from the same live-fleet validation cycle:
+
+- `recoleta translate run --json` still reports `"status": "ok"` whenever `aborted=false`, even if `failed_total > 0`.
+- Managed workflows now treat non-zero translation failures according to `on_translate_failure`, so fleet/runtime semantics are corrected there.
+- The standalone translate CLI should be aligned to the same contract in a follow-up change:
+  - either emit a non-`ok` status whenever `failed_total > 0`
+  - or add an explicit machine-readable terminal state that distinguishes `clean`, `partial_failure`, and `aborted`
+- That follow-up should preserve the new failure typing and observability added during this refactor:
+  - `pipeline.translate.failed_total`
+  - `pipeline.translate.failed_total.<reason>`
+  - structured `failure_reason` / `finish_reason` logging
