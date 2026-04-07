@@ -589,8 +589,16 @@ def test_run_day_marks_terminal_state_partial_when_translate_reports_failed_outp
     )
 
     assert result.exit_code == 0
+    payload = json.loads(result.stdout)
     assert len(materialize_calls) == 1
     assert len(site_build_calls) == 1
+    assert "translate" in payload["executed_steps"]
+    translate_step = next(
+        step for step in payload["steps"] if step["step_id"] == "translate"
+    )
+    assert translate_step["status"] == "partial_failure"
+    assert translate_step["payload"]["failed"] == 1
+    assert "site-build" in payload["executed_steps"]
     assert fake_repo.finished == [("run-1", True, "succeeded_partial")]
 
 

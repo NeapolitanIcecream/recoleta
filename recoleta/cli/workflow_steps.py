@@ -42,6 +42,7 @@ class TranslationStepRequest:
     period_end: datetime | None
     all_history: bool
     run_id: str
+    fail_on_failed_outputs: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +141,7 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
     )
     if abort_reason is not None:
         raise RuntimeError(abort_reason)
-    if totals["failed"] > 0:
+    if request.fail_on_failed_outputs and totals["failed"] > 0:
         raise RuntimeError(
             "translation completed with failures "
             f"failed={totals['failed']} translated={totals['translated']} "
@@ -322,6 +323,7 @@ def _execute_translate_step(
                 or context.target_period_end is not None
             ),
             run_id=context.run_id,
+            fail_on_failed_outputs=context.on_translate_failure == "fail",
         )
     )
 

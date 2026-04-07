@@ -369,6 +369,26 @@ def execute_workflow_loop(
             previous_snapshot = current_snapshot
             if invocation.step_id not in executed_steps:
                 executed_steps.append(invocation.step_id)
+            if (
+                invocation.step_id == STEP_TRANSLATE
+                and isinstance(step_payload, dict)
+                and int(step_payload.get("failed") or 0) > 0
+            ):
+                terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL
+                step_results.append(
+                    WorkflowStepResult(
+                        step_id=invocation.step_id,
+                        status="partial_failure",
+                        payload=step_payload,
+                        error=(
+                            "translation completed with failures "
+                            f"failed={int(step_payload.get('failed') or 0)} "
+                            f"translated={int(step_payload.get('translated') or 0)} "
+                            f"skipped={int(step_payload.get('skipped') or 0)}"
+                        ),
+                    )
+                )
+                continue
             step_results.append(
                 WorkflowStepResult(
                     step_id=invocation.step_id,
