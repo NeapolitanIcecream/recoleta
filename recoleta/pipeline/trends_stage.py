@@ -786,6 +786,18 @@ class _TrendStageRunner:
         return doc_ids
 
     def _ensure_item_source(self, *, state: _TrendStageState) -> _SourceEnsureResult:
+        if not self.request.reuse_existing_corpus:
+            stats = self._index_items_for_period(
+                period_start=state.period_start,
+                period_end=state.period_end,
+            )
+            return _SourceEnsureResult(
+                token="item",
+                doc_type="item",
+                granularity=None,
+                docs_total=int(stats.get("docs_upserted") or 0),
+                materialized=True,
+            )
         ready, docs_total = self._item_source_ready(
             period_start=state.period_start,
             period_end=state.period_end,
