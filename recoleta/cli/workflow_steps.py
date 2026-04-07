@@ -135,12 +135,12 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
         if bool(result.aborted):
             abort_reason = str(result.abort_reason or "translation aborted")
             break
+    if abort_reason is not None:
+        raise RuntimeError(abort_reason)
     materialize_localized_projections(
         repository=request.repository,
         settings=request.settings,
     )
-    if abort_reason is not None:
-        raise RuntimeError(abort_reason)
     if request.fail_on_failed_outputs and totals["failed"] > 0:
         raise RuntimeError(
             "translation completed with failures "
