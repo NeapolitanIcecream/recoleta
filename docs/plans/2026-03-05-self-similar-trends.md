@@ -1,5 +1,11 @@
 # Self-similar Trends Implementation Plan
 
+> Status note (2026-04-07): This is a historical implementation plan. Current
+> source-materialization semantics, `reuse_existing_corpus` behavior, docs-only
+> day overview assembly, and readiness metrics are defined in
+> [2026-04-07-self-similar-corpus-materialization-refactor-plan.md](./2026-04-07-self-similar-corpus-materialization-refactor-plan.md).
+> Read that plan first when checking current behavior.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make trend generation self-similar across day/week/month by pre-injecting previous-level overviews and enabling multi-level RAG, while enforcing paper-level citations and a stable Top-N must-read ranking.
@@ -314,4 +320,3 @@ Expected:
 ## References
 - Design: `docs/plans/2026-03-05-self-similar-trends-design.md`
 - ADR: `docs/adr/0024-self-similar-multi-level-trend-corpus.md`
-

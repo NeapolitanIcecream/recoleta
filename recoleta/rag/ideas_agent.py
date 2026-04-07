@@ -143,6 +143,12 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " concrete doc_id and chunk_index values grounded in the local corpus."
     )
     base += (
+        " kind must use one of these exact enum values:"
+        " new_build, revival, research_gap, tooling_wedge, workflow_shift."
+        " time_horizon must use one of these exact enum values:"
+        " now, near, frontier."
+    )
+    base += (
         " If the evidence is too weak for a high-confidence opportunity brief,"
         " return an empty ideas list and explain that briefly in summary_md instead of guessing."
     )
@@ -217,6 +223,8 @@ def _trend_ideas_prompt_notes() -> list[str]:
         "Each emitted idea should also name the clearest condition under which the thesis breaks.",
         "Name the buyer trigger or operational pain directly instead of using generic platform language.",
         "Use evidence_refs to point to the strongest supporting documents.",
+        "kind must use exactly one of: new_build, revival, research_gap, tooling_wedge, workflow_shift.",
+        "time_horizon must use exactly one of: now, near, frontier.",
         "Do not restate the trend summary as the final output.",
         "Do not coin new umbrella terms or marketing-style labels.",
         "If a technical term lacks a stable translation in the requested output language, keep the original term.",
@@ -238,6 +246,7 @@ def build_trend_ideas_agent(
         deps_type=IdeasAgentDeps,
         output_type=TrendIdeasPayload,
         instructions=_build_trend_ideas_instructions(output_language=output_language),
+        output_retries=4,
         defer_model_check=True,
     )
 

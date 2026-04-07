@@ -1,5 +1,12 @@
 # Self-similar Trend Generation (Multi-level Corpus + Overview Pre-injection)
 
+> Status note (2026-04-07): This design note remains useful for the original
+> self-similar direction, but parts of the implementation boundary have been
+> superseded. For current corpus materialization, `reuse_existing_corpus`
+> semantics, and docs-only overview behavior, use
+> [2026-04-07-self-similar-corpus-materialization-refactor-plan.md](./2026-04-07-self-similar-corpus-materialization-refactor-plan.md)
+> as the source of truth.
+
 Date: 2026-03-05  
 Status: Approved (design)
 
@@ -128,4 +135,3 @@ Ship behind config defaults that preserve current behavior unless enabled:
 - `TRENDS_OVERVIEW_PACK_MAX_CHARS=...`
 
 Once the regression test passes and real outputs are validated, flip the default to enabled.
-

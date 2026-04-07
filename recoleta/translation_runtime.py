@@ -134,6 +134,16 @@ class FailureLogRequest:
     field_name: str
 
 
+_PROVIDER_FAILURE_TYPES = {
+    "APIConnectionError",
+    "APIError",
+    "AuthenticationError",
+    "RateLimitError",
+    "ServiceUnavailableError",
+    "Timeout",
+}
+
+
 def translation_parallelism(task_total: int, *, default_parallelism: int) -> int:
     if task_total <= 1:
         return 1
@@ -568,6 +578,11 @@ def _handle_translation_failure(
     prefix: str = "translation failed",
 ) -> bool:
     context.result.failed_total += 1
+    failure_reason = _translation_failure_reason(exc)
+    _record_translation_failure_metrics(
+        context=context,
+        failure_reason=failure_reason,
+    )
     _log_failure(
         FailureLogRequest(
             log=context.log,
@@ -588,11 +603,16 @@ def _handle_translation_failure(
 
 
 def _log_failure(request: FailureLogRequest) -> None:
-    request.log.bind(
+    bound_log = request.log.bind(
         source_kind=request.candidate.source_kind,
         source_record_id=request.candidate.source_record_id,
         **{request.field_name: request.language_code},
-    ).warning(
+        failure_reason=_translation_failure_reason(request.exc),
+    )
+    finish_reason = _translation_finish_reason(request.exc)
+    if finish_reason is not None:
+        bound_log = bound_log.bind(finish_reason=finish_reason)
+    bound_log.warning(
         f"{request.prefix} error_type={{}} error={{}}",
         type(request.exc).__name__,
         str(request.exc),
@@ -617,6 +637,54 @@ def _has_up_to_date_localized_output(
         and str(getattr(existing, "source_hash", "") or "") == source_hash
         and not force
     )
+
+
+def _record_translation_failure_metrics(
+    *,
+    context: TranslationBatchContext,
+    failure_reason: str,
+) -> None:
+    run_id = str(context.run_id or "").strip()
+    if not run_id:
+        return
+    repository = context.repository
+    repository.record_metric(
+        run_id=run_id,
+        name="pipeline.translate.failed_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=run_id,
+        name=f"pipeline.translate.failed_total.{failure_reason}",
+        value=1,
+        unit="count",
+    )
+
+
+def _translation_failure_reason(exc: Exception) -> str:
+    candidate = str(getattr(exc, "reason", "") or "").strip().lower()
+    if candidate:
+        return _metric_suffix_token(candidate)
+    if type(exc).__name__ in _PROVIDER_FAILURE_TYPES:
+        return "provider_failure"
+    return "unexpected"
+
+
+def _translation_finish_reason(exc: Exception) -> str | None:
+    raw = str(getattr(exc, "finish_reason", "") or "").strip().lower()
+    return raw or None
+
+
+def _metric_suffix_token(value: str) -> str:
+    cleaned = [
+        char.lower() if char.isalnum() else "_"
+        for char in str(value or "").strip()
+    ]
+    normalized = "".join(cleaned).strip("_")
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    return normalized or "unexpected"
 
 
 def _split_translated_result(

@@ -101,6 +101,9 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
     run_translation = cli._import_symbol(
         "recoleta.translation", attr_name="run_translation"
     )
+    materialize_localized_projections = cli._import_symbol(
+        "recoleta.translation", attr_name="materialize_localized_projections"
+    )
     totals = {
         "scanned": 0,
         "translated": 0,
@@ -108,6 +111,7 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
         "skipped": 0,
         "failed": 0,
     }
+    abort_reason: str | None = None
     normalized_include = ",".join(request.include)
     for granularity in (
         request.granularities if request.granularities is not None else [None]
@@ -128,7 +132,20 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
         totals["skipped"] += int(result.skipped_total)
         totals["failed"] += int(result.failed_total)
         if bool(result.aborted):
-            raise RuntimeError(str(result.abort_reason or "translation aborted"))
+            abort_reason = str(result.abort_reason or "translation aborted")
+            break
+    materialize_localized_projections(
+        repository=request.repository,
+        settings=request.settings,
+    )
+    if abort_reason is not None:
+        raise RuntimeError(abort_reason)
+    if totals["failed"] > 0:
+        raise RuntimeError(
+            "translation completed with failures "
+            f"failed={totals['failed']} translated={totals['translated']} "
+            f"skipped={totals['skipped']}"
+        )
     return totals
 
 

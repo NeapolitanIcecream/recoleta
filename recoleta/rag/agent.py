@@ -168,6 +168,7 @@ def build_trend_agent(
         deps_type=TrendAgentDeps,
         output_type=TrendPayload,
         instructions=_build_trend_instructions(output_language=output_language),
+        output_retries=4,
         defer_model_check=True,
     )
 

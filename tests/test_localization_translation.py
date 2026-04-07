@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import io
 import json
 from pathlib import Path
 import threading
 from types import SimpleNamespace
 from typing import cast
 
+from loguru import logger as loguru_logger
 import pytest
 from sqlmodel import Session, select
 from typer.testing import CliRunner
@@ -26,6 +28,7 @@ from recoleta.rag.corpus_tools import SearchService
 from recoleta.site import export_trend_static_site
 from recoleta.storage import Repository
 from recoleta.trends import TrendPayload, persist_trend_payload
+from recoleta.translation_llm import TranslationLLMOutputError
 from recoleta.types import AnalysisResult, ItemDraft
 
 
@@ -1277,6 +1280,17 @@ def test_translate_run_cli_writes_incremental_localized_outputs_for_all_surfaces
         for metric_names in recent_metric_names
     )
 
+    localized_root = output_dir / "Localized" / "zh-cn"
+    item_note = next((localized_root / "Inbox").glob("*.md"))
+    trend_note = localized_root / "Trends" / f"day--2026-03-02--trend--{trend_doc_id}.md"
+    idea_note = localized_root / "Ideas" / "day--2026-03-02--ideas.md"
+    assert item_note.exists()
+    assert trend_note.exists()
+    assert idea_note.exists()
+    assert "中文条目摘要" in item_note.read_text(encoding="utf-8")
+    assert "智能体系统" in trend_note.read_text(encoding="utf-8")
+    assert "运营切入点" in idea_note.read_text(encoding="utf-8")
+
 
 def test_translate_run_cli_json_includes_run_id_and_billing(
     monkeypatch: pytest.MonkeyPatch,
@@ -1630,6 +1644,81 @@ def test_run_translation_stops_submitting_new_tasks_after_provider_failure_thres
     assert result.aborted is True
     assert result.failed_total == translation_module._PROVIDER_FAILURE_ABORT_THRESHOLD
     assert submitted_source_record_ids == [1, 2, 3, 4, 5, 6]
+
+
+def test_run_translation_records_failure_metrics_and_reason_for_output_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: translation output failures must emit machine-readable reason signals."""
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    settings = Settings.model_validate(
+        {
+            "recoleta_db_path": repository.db_path,
+            "llm_model": "openai/gpt-5.4",
+            "llm_output_language": "English",
+            "localization": {
+                "source_language_code": "en",
+                "targets": [
+                    {
+                        "code": "zh-CN",
+                        "llm_label": "Chinese (Simplified)",
+                    }
+                ],
+                "site_default_language_code": "en",
+            },
+        }
+    )
+    candidate = translation_module.TranslationCandidate(
+        source_kind="analysis",
+        source_record_id=1,
+        payload={"summary": "Security review summary."},
+        payload_model=None,
+        canonical_language_code="en",
+    )
+
+    monkeypatch.setattr(
+        translation_module,
+        "_incremental_candidates",
+        lambda **kwargs: [candidate],
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "translate_structured_payload",
+        lambda **kwargs: (_ for _ in ()).throw(
+            TranslationLLMOutputError(
+                "translation LLM response was content-filtered",
+                reason="content_filter",
+                finish_reason="content_filter",
+            )
+        ),
+    )
+
+    stream = io.StringIO()
+    sink_id = loguru_logger.add(stream, level="WARNING", serialize=True)
+    try:
+        result = translation_module.run_translation(
+            repository=repository,
+            settings=settings,
+            include="items",
+            force=True,
+            all_history=True,
+            run_id="run-translate",
+        )
+    finally:
+        loguru_logger.remove(sink_id)
+
+    assert result.aborted is False
+    assert result.failed_total == 1
+    metrics = {
+        metric.name: metric.value for metric in repository.list_metrics(run_id="run-translate")
+    }
+    assert metrics["pipeline.translate.failed_total"] == 1.0
+    assert metrics["pipeline.translate.failed_total.content_filter"] == 1.0
+    record_payload = json.loads(stream.getvalue().strip())
+    assert record_payload["record"]["extra"]["failure_reason"] == "content_filter"
+    assert record_payload["record"]["extra"]["finish_reason"] == "content_filter"
 
 
 def test_run_translation_period_window_handles_naive_trend_datetimes_from_sqlite(

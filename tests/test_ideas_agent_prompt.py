@@ -36,6 +36,10 @@ def test_ideas_instructions_require_consensus_terminology_and_plain_language() -
     assert "Avoid false suspense" in instructions
     assert "Avoid fractal summaries" in instructions
     assert "return an empty ideas list" in instructions
+    assert "kind must use one of these exact enum values" in instructions
+    assert "new_build, revival, research_gap, tooling_wedge, workflow_shift" in instructions
+    assert "time_horizon must use one of these exact enum values" in instructions
+    assert "now, near, frontier" in instructions
 
 
 def test_ideas_prompt_payload_reinforces_readability_constraints() -> None:
@@ -114,3 +118,42 @@ def test_normalize_trend_ideas_payload_caps_to_three_ranked_ideas() -> None:
     normalized = normalize_trend_ideas_payload(payload)
 
     assert [idea.title for idea in normalized.ideas] == ["Idea 1", "Idea 2", "Idea 3"]
+
+
+def test_trend_ideas_payload_normalizes_common_enum_aliases() -> None:
+    payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Ideas",
+            "granularity": "day",
+            "period_start": "2026-03-09T00:00:00+00:00",
+            "period_end": "2026-03-10T00:00:00+00:00",
+            "summary_md": "Summary",
+            "ideas": [
+                {
+                    "title": "Operator bootstrap copilot",
+                    "kind": "startup",
+                    "thesis": "Build the first focused product in this wedge.",
+                    "why_now": "Operators now have enough ground truth to automate setup.",
+                    "what_changed": "Grounded traces and eval loops became auditable.",
+                    "user_or_job": "Platform teams bootstrapping agent workflows.",
+                    "evidence_refs": [{"doc_id": 1, "chunk_index": 0}],
+                    "validation_next_step": "Run five design calls with platform owners.",
+                    "time_horizon": "near-term",
+                },
+                {
+                    "title": "Longer-horizon lab program",
+                    "kind": "product",
+                    "thesis": "Study the missing operational guardrails directly.",
+                    "why_now": "The evaluation debt is now visible enough to scope.",
+                    "what_changed": "Benchmarks are surfacing concrete failure patterns.",
+                    "user_or_job": "Applied research teams planning next-quarter work.",
+                    "evidence_refs": [{"doc_id": 2, "chunk_index": 0}],
+                    "validation_next_step": "Design one scoped benchmark extension.",
+                    "time_horizon": "mid-term",
+                },
+            ],
+        }
+    )
+
+    assert [idea.kind for idea in payload.ideas] == ["new_build", "new_build"]
+    assert [idea.time_horizon for idea in payload.ideas] == ["near", "near"]
