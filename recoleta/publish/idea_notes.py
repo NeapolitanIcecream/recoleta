@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 import yaml
 
 from recoleta.presentation import (
+    IdeaPresentationBuildRequest,
     build_idea_presentation_v2,
     idea_display_labels,
     presentation_sidecar_path,
@@ -263,17 +264,19 @@ def _write_ideas_note(*, write_input: _IdeasNoteWriteInput) -> Path:
         period_start=write_input.period_start,
     )
     presentation = build_idea_presentation_v2(
-        source_markdown_path=f"{write_input.note_dir.name}/{note_path.name}",
-        title=str(write_input.payload.title or "").strip(),
-        summary_md=str(write_input.payload.summary_md or "").strip(),
-        ideas=_presentation_ready_ideas(
-            repository=write_input.repository,
-            root_dir=write_input.root_dir,
-            note_dir=write_input.note_dir,
-            payload=write_input.payload,
+        request=IdeaPresentationBuildRequest(
+            source_markdown_path=f"{write_input.note_dir.name}/{note_path.name}",
+            title=str(write_input.payload.title or "").strip(),
+            summary_md=str(write_input.payload.summary_md or "").strip(),
+            ideas=_presentation_ready_ideas(
+                repository=write_input.repository,
+                root_dir=write_input.root_dir,
+                note_dir=write_input.note_dir,
+                payload=write_input.payload,
+            ),
+            language_code=resolved_language_code,
+            display_language_code=resolved_language_code,
         ),
-        language_code=resolved_language_code,
-        display_language_code=resolved_language_code,
     )
     labels = idea_display_labels(language_code=resolved_language_code)
     note_path.write_text(

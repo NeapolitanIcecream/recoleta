@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -41,6 +42,27 @@ _IDEA_DISPLAY_LABELS = {
     "ideas": "Ideas",
     "evidence": "Evidence",
 }
+_DISALLOWED_EVIDENCE_KEYS = ("source_type", "confidence")
+
+
+@dataclass(frozen=True, slots=True)
+class TrendPresentationBuildRequest:
+    source_markdown_path: str
+    title: str
+    overview_md: str
+    clusters: Sequence[Any] | None
+    language_code: str | None = None
+    display_language_code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IdeaPresentationBuildRequest:
+    source_markdown_path: str
+    title: str
+    summary_md: str
+    ideas: Sequence[Any]
+    language_code: str | None = None
+    display_language_code: str | None = None
 
 
 def _single_line(value: Any) -> str:
@@ -105,39 +127,76 @@ def _project_evidence_entry(raw_source: Any) -> dict[str, Any]:
     return entry
 
 
-def _project_evidence(raw_sources: Any) -> list[dict[str, Any]]:
+def _evidence_groups(raw_sources: Any) -> list[list[Any]]:
     if not isinstance(raw_sources, Sequence) or isinstance(raw_sources, (str, bytes)):
         return []
-    grouped: dict[int, list[Any]] = {}
-    ordered: list[tuple[str, Any]] = []
+    grouped_by_doc_id: dict[int, list[Any]] = {}
+    ordered_groups: list[list[Any]] = []
     for raw_source in raw_sources:
         doc_id = _int_or_none(_value_from(raw_source, "doc_id", None))
         if doc_id is None or doc_id <= 0:
-            ordered.append(("raw", raw_source))
+            ordered_groups.append([raw_source])
             continue
-        if doc_id not in grouped:
-            grouped[doc_id] = []
-            ordered.append(("doc", doc_id))
-        grouped[doc_id].append(raw_source)
+        refs = grouped_by_doc_id.get(doc_id)
+        if refs is None:
+            refs = []
+            grouped_by_doc_id[doc_id] = refs
+            ordered_groups.append(refs)
+        refs.append(raw_source)
+    return ordered_groups
 
-    projected: list[dict[str, Any]] = []
-    for kind, value in ordered:
-        if kind == "raw":
-            projected.append(_project_evidence_entry(value))
-            continue
-        refs = grouped.get(int(value), [])
-        if not refs:
-            continue
-        entry = _project_evidence_entry(refs[0])
-        reasons, reason = _normalize_reasons({"reasons": [
-            _value_from(ref, "reason", "") for ref in refs
-        ]})
-        if reasons:
-            entry["reasons"] = reasons
-        if reason:
-            entry["reason"] = reason
-        projected.append(entry)
-    return projected
+
+def _merged_evidence_reasons(refs: Sequence[Any]) -> tuple[list[str], str | None]:
+    return _normalize_reasons(
+        {"reasons": [_value_from(ref, "reason", "") for ref in refs]}
+    )
+
+
+def _project_evidence_group(refs: Sequence[Any]) -> dict[str, Any]:
+    entry = _project_evidence_entry(refs[0])
+    reasons, reason = _merged_evidence_reasons(refs)
+    if reasons:
+        entry["reasons"] = reasons
+    if reason:
+        entry["reason"] = reason
+    return entry
+
+
+def _project_evidence(raw_sources: Any) -> list[dict[str, Any]]:
+    return [
+        _project_evidence_group(refs)
+        for refs in _evidence_groups(raw_sources)
+        if refs
+    ]
+
+
+def _canonical_language_code(value: str) -> str:
+    normalized = value.lower()
+    if normalized == "zh-cn":
+        return "zh-CN"
+    if normalized == "zh-tw":
+        return "zh-TW"
+    return value
+
+
+def _normalized_language_code_candidate(value: Any) -> str | None:
+    normalized = _single_line(value)
+    if not normalized:
+        return None
+    normalized = normalized.replace("_", "-")
+    if not _LOCALIZED_LANGUAGE_SEGMENT_RE.match(normalized):
+        return None
+    return _canonical_language_code(normalized)
+
+
+def _language_code_from_output_language(output_language: Any) -> str | None:
+    normalized_output = _single_line(output_language).lower()
+    if not normalized_output:
+        return None
+    mapped = _LANGUAGE_LABEL_TO_CODE.get(normalized_output)
+    if mapped is not None:
+        return mapped
+    return _normalized_language_code_candidate(normalized_output)
 
 
 def resolve_presentation_language_code(
@@ -145,28 +204,9 @@ def resolve_presentation_language_code(
     language_code: str | None = None,
     output_language: str | None = None,
 ) -> str | None:
-    normalized = _single_line(language_code)
-    if normalized:
-        normalized = normalized.replace("_", "-")
-        if _LOCALIZED_LANGUAGE_SEGMENT_RE.match(normalized):
-            if normalized.lower() == "zh-cn":
-                return "zh-CN"
-            if normalized.lower() == "zh-tw":
-                return "zh-TW"
-            return normalized
-    normalized_output = _single_line(output_language).lower()
-    if not normalized_output:
-        return None
-    if normalized_output in _LANGUAGE_LABEL_TO_CODE:
-        return _LANGUAGE_LABEL_TO_CODE[normalized_output]
-    normalized_output = normalized_output.replace("_", "-")
-    if _LOCALIZED_LANGUAGE_SEGMENT_RE.match(normalized_output):
-        if normalized_output == "zh-cn":
-            return "zh-CN"
-        if normalized_output == "zh-tw":
-            return "zh-TW"
-        return normalized_output
-    return None
+    return _normalized_language_code_candidate(language_code) or (
+        _language_code_from_output_language(output_language)
+    )
 
 
 def trend_display_labels(*, language_code: str | None = None) -> dict[str, str]:
@@ -179,80 +219,86 @@ def idea_display_labels(*, language_code: str | None = None) -> dict[str, str]:
     return dict(_IDEA_DISPLAY_LABELS)
 
 
-def build_trend_presentation_v2(
+def _trend_clusters_content(clusters: Sequence[Any] | None) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": _single_line(_value_from(cluster, "title", "")),
+            "content": _normalize_markdown(_value_from(cluster, "content_md", "")),
+            "evidence": _project_evidence(_value_from(cluster, "evidence_refs", [])),
+        }
+        for cluster in list(clusters or [])
+    ]
+
+
+def _idea_blocks_content(ideas: Sequence[Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": _single_line(_value_from(idea, "title", "")),
+            "content": _normalize_markdown(_value_from(idea, "content_md", "")),
+            "evidence": _project_evidence(_value_from(idea, "evidence_refs", [])),
+        }
+        for idea in list(ideas or [])[:3]
+    ]
+
+
+def _build_presentation_shell(
     *,
+    surface_kind: str,
     source_markdown_path: str,
-    title: str,
-    overview_md: str,
-    clusters: Sequence[Any] | None,
-    language_code: str | None = None,
-    display_language_code: str | None = None,
+    language_code: str | None,
+    display_labels: dict[str, str],
+    content: dict[str, Any],
 ) -> dict[str, Any]:
-    resolved_language_code = resolve_presentation_language_code(
-        language_code=language_code
-    )
-    labels = trend_display_labels(language_code=display_language_code)
     return {
         "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
-        "surface_kind": "trend",
-        "language_code": resolved_language_code,
+        "surface_kind": surface_kind,
+        "language_code": language_code,
         "source_markdown_path": _single_line(source_markdown_path),
-        "display_labels": labels,
-        "content": {
-            "title": _single_line(title),
-            "overview": _normalize_markdown(overview_md),
-            "clusters": [
-                {
-                    "title": _single_line(_value_from(cluster, "title", "")),
-                    "content": _normalize_markdown(
-                        _value_from(cluster, "content_md", "")
-                    ),
-                    "evidence": _project_evidence(
-                        _value_from(cluster, "evidence_refs", [])
-                    ),
-                }
-                for cluster in list(clusters or [])
-            ],
-        },
+        "display_labels": display_labels,
+        "content": content,
     }
+
+
+def build_trend_presentation_v2(
+    *,
+    request: TrendPresentationBuildRequest,
+) -> dict[str, Any]:
+    resolved_language_code = resolve_presentation_language_code(
+        language_code=request.language_code
+    )
+    return _build_presentation_shell(
+        surface_kind="trend",
+        source_markdown_path=request.source_markdown_path,
+        language_code=resolved_language_code,
+        display_labels=trend_display_labels(
+            language_code=request.display_language_code
+        ),
+        content={
+            "title": _single_line(request.title),
+            "overview": _normalize_markdown(request.overview_md),
+            "clusters": _trend_clusters_content(request.clusters),
+        },
+    )
 
 
 def build_idea_presentation_v2(
     *,
-    source_markdown_path: str,
-    title: str,
-    summary_md: str,
-    ideas: list[Any],
-    language_code: str | None = None,
-    display_language_code: str | None = None,
+    request: IdeaPresentationBuildRequest,
 ) -> dict[str, Any]:
     resolved_language_code = resolve_presentation_language_code(
-        language_code=language_code
+        language_code=request.language_code
     )
-    labels = idea_display_labels(language_code=display_language_code)
-    return {
-        "presentation_schema_version": PRESENTATION_SCHEMA_VERSION,
-        "surface_kind": "idea",
-        "language_code": resolved_language_code,
-        "source_markdown_path": _single_line(source_markdown_path),
-        "display_labels": labels,
-        "content": {
-            "title": _single_line(title),
-            "summary": _normalize_markdown(summary_md),
-            "ideas": [
-                {
-                    "title": _single_line(_value_from(idea, "title", "")),
-                    "content": _normalize_markdown(
-                        _value_from(idea, "content_md", "")
-                    ),
-                    "evidence": _project_evidence(
-                        _value_from(idea, "evidence_refs", [])
-                    ),
-                }
-                for idea in list(ideas or [])[:3]
-            ],
+    return _build_presentation_shell(
+        surface_kind="idea",
+        source_markdown_path=request.source_markdown_path,
+        language_code=resolved_language_code,
+        display_labels=idea_display_labels(language_code=request.display_language_code),
+        content={
+            "title": _single_line(request.title),
+            "summary": _normalize_markdown(request.summary_md),
+            "ideas": _idea_blocks_content(request.ideas),
         },
-    }
+    )
 
 
 def presentation_sidecar_path(*, note_path: Path) -> Path:
@@ -272,6 +318,113 @@ def _validate_required_string(
     return normalized
 
 
+def _validate_optional_string(
+    value: Any,
+    *,
+    field_path: str,
+    errors: list[str],
+    allow_empty: bool = True,
+) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str) or (not allow_empty and not value.strip()):
+        expectation = "a string" if allow_empty else "a non-empty string"
+        errors.append(f"{field_path} must be {expectation}")
+
+
+def _validate_optional_int(
+    value: Any,
+    *,
+    field_path: str,
+    minimum: int,
+    errors: list[str],
+    expectation: str,
+) -> None:
+    if value is None:
+        return
+    if not isinstance(value, int) or value < minimum:
+        errors.append(f"{field_path} must be {expectation}")
+
+
+def _validate_optional_string_list(
+    value: Any,
+    *,
+    field_path: str,
+    errors: list[str],
+    require_non_empty: bool = False,
+) -> None:
+    if value is None:
+        return
+    if not isinstance(value, list):
+        errors.append(f"{field_path} must be a list of strings")
+        return
+    for entry in value:
+        if not isinstance(entry, str) or (require_non_empty and not entry.strip()):
+            errors.append(f"{field_path} must be a list of strings")
+            return
+
+
+def _validate_disallowed_evidence_keys(
+    entry: Mapping[str, Any],
+    *,
+    field_path: str,
+    errors: list[str],
+) -> None:
+    for key in _DISALLOWED_EVIDENCE_KEYS:
+        if key in entry:
+            errors.append(f"{field_path}.{key} is not allowed")
+
+
+def _validate_evidence_entry(
+    entry: Any,
+    *,
+    field_path: str,
+    errors: list[str],
+) -> None:
+    if not isinstance(entry, Mapping):
+        errors.append(f"{field_path} must be a mapping")
+        return
+    _validate_required_string(
+        entry.get("title"),
+        field_path=f"{field_path}.title",
+        errors=errors,
+    )
+    _validate_optional_string(entry.get("href"), field_path=f"{field_path}.href", errors=errors)
+    _validate_optional_string(entry.get("url"), field_path=f"{field_path}.url", errors=errors)
+    _validate_optional_int(
+        entry.get("doc_id"),
+        field_path=f"{field_path}.doc_id",
+        minimum=1,
+        errors=errors,
+        expectation="a positive integer",
+    )
+    _validate_optional_int(
+        entry.get("chunk_index"),
+        field_path=f"{field_path}.chunk_index",
+        minimum=0,
+        errors=errors,
+        expectation=">= 0",
+    )
+    _validate_optional_string_list(
+        entry.get("authors"),
+        field_path=f"{field_path}.authors",
+        errors=errors,
+    )
+    _validate_optional_string_list(
+        entry.get("reasons"),
+        field_path=f"{field_path}.reasons",
+        errors=errors,
+        require_non_empty=True,
+    )
+    _validate_optional_string(
+        entry.get("reason"),
+        field_path=f"{field_path}.reason",
+        errors=errors,
+        allow_empty=False,
+    )
+    _validate_disallowed_evidence_keys(entry, field_path=field_path, errors=errors)
+
+
 def _validate_evidence_entries(
     entries: Any, *, field_path: str, errors: list[str]
 ) -> None:
@@ -279,47 +432,11 @@ def _validate_evidence_entries(
         errors.append(f"{field_path} must be a list")
         return
     for index, entry in enumerate(entries):
-        if not isinstance(entry, Mapping):
-            errors.append(f"{field_path}[{index}] must be a mapping")
-            continue
-        _validate_required_string(
-            entry.get("title"),
-            field_path=f"{field_path}[{index}].title",
+        _validate_evidence_entry(
+            entry,
+            field_path=f"{field_path}[{index}]",
             errors=errors,
         )
-        href = entry.get("href")
-        url = entry.get("url")
-        if href is not None and not isinstance(href, str):
-            errors.append(f"{field_path}[{index}].href must be a string")
-        if url is not None and not isinstance(url, str):
-            errors.append(f"{field_path}[{index}].url must be a string")
-        doc_id = entry.get("doc_id")
-        if doc_id is not None:
-            if not isinstance(doc_id, int) or doc_id <= 0:
-                errors.append(f"{field_path}[{index}].doc_id must be a positive integer")
-        chunk_index = entry.get("chunk_index")
-        if chunk_index is not None:
-            if not isinstance(chunk_index, int) or chunk_index < 0:
-                errors.append(f"{field_path}[{index}].chunk_index must be >= 0")
-        authors = entry.get("authors")
-        if authors is not None and (
-            not isinstance(authors, list)
-            or any(not isinstance(author, str) for author in authors)
-        ):
-            errors.append(f"{field_path}[{index}].authors must be a list of strings")
-        reasons = entry.get("reasons")
-        if reasons is not None and (
-            not isinstance(reasons, list)
-            or any(not isinstance(reason, str) or not reason.strip() for reason in reasons)
-        ):
-            errors.append(f"{field_path}[{index}].reasons must be a list of strings")
-        reason = entry.get("reason")
-        if reason is not None and (not isinstance(reason, str) or not reason.strip()):
-            errors.append(f"{field_path}[{index}].reason must be a non-empty string")
-        if "source_type" in entry:
-            errors.append(f"{field_path}[{index}].source_type is not allowed")
-        if "confidence" in entry:
-            errors.append(f"{field_path}[{index}].confidence is not allowed")
 
 
 def _validate_display_labels(
@@ -451,7 +568,9 @@ def write_presentation_sidecar(*, note_path: Path, presentation: Mapping[str, An
 
 
 __all__ = [
+    "IdeaPresentationBuildRequest",
     "PRESENTATION_SCHEMA_VERSION",
+    "TrendPresentationBuildRequest",
     "build_idea_presentation_v2",
     "build_trend_presentation_v2",
     "idea_display_labels",

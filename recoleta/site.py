@@ -3378,19 +3378,6 @@ def _render_presentation_source_list(
     )
 
 
-def _render_presentation_source_entry(
-    *,
-    entry: dict[str, Any],
-    labels: dict[str, str],
-) -> str:
-    rendered_list = _render_presentation_source_list(entries=[entry], labels=labels)
-    if rendered_list.startswith("<ul"):
-        soup = BeautifulSoup(rendered_list, "html.parser")
-        first_item = soup.find("li")
-        return first_item.decode_contents() if first_item is not None else rendered_list
-    return rendered_list
-
-
 def _presentation_content(presentation: dict[str, Any]) -> dict[str, Any]:
     content = (
         presentation.get("content")

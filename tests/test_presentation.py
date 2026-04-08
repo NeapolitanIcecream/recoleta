@@ -7,7 +7,9 @@ from typing import Any, cast
 import pytest
 
 from recoleta.presentation import (
+    IdeaPresentationBuildRequest,
     PRESENTATION_SCHEMA_VERSION,
+    TrendPresentationBuildRequest,
     build_idea_presentation_v2,
     build_trend_presentation_v2,
     idea_display_labels,
@@ -40,26 +42,28 @@ def _idea(*, title: str, content_md: str = "Short idea note.") -> SimpleNamespac
 
 def test_build_trend_presentation_v2_projects_only_public_contract() -> None:
     presentation = build_trend_presentation_v2(
-        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
-        title="Verification gets operational",
-        overview_md="Teams are tightening release discipline.",
-        clusters=[
-            {
-                "title": "Release discipline",
-                "content_md": "Verification moved into the shipping path.",
-                "evidence_refs": [
-                    {
-                        "doc_id": 1,
-                        "chunk_index": 0,
-                        "title": "CodeScout",
-                        "href": "../Inbox/2026-03-02--codescout.md",
-                        "source_type": "paper",
-                        "confidence": "high",
-                        "reason": "The note ties verification to rollout control.",
-                    }
-                ],
-            }
-        ],
+        request=TrendPresentationBuildRequest(
+            source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+            title="Verification gets operational",
+            overview_md="Teams are tightening release discipline.",
+            clusters=[
+                {
+                    "title": "Release discipline",
+                    "content_md": "Verification moved into the shipping path.",
+                    "evidence_refs": [
+                        {
+                            "doc_id": 1,
+                            "chunk_index": 0,
+                            "title": "CodeScout",
+                            "href": "../Inbox/2026-03-02--codescout.md",
+                            "source_type": "paper",
+                            "confidence": "high",
+                            "reason": "The note ties verification to rollout control.",
+                        }
+                    ],
+                }
+            ],
+        ),
     )
 
     assert presentation["presentation_schema_version"] == PRESENTATION_SCHEMA_VERSION
@@ -82,15 +86,17 @@ def test_build_trend_presentation_v2_projects_only_public_contract() -> None:
 
 def test_build_idea_presentation_v2_caps_to_three_ideas() -> None:
     presentation = build_idea_presentation_v2(
-        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
-        title="Verification-first agent rollout",
-        summary_md="Release discipline now feels operational.",
-        ideas=[
-            _idea(title="Idea 1"),
-            _idea(title="Idea 2"),
-            _idea(title="Idea 3"),
-            _idea(title="Idea 4"),
-        ],
+        request=IdeaPresentationBuildRequest(
+            source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+            title="Verification-first agent rollout",
+            summary_md="Release discipline now feels operational.",
+            ideas=[
+                _idea(title="Idea 1"),
+                _idea(title="Idea 2"),
+                _idea(title="Idea 3"),
+                _idea(title="Idea 4"),
+            ],
+        ),
     )
 
     assert presentation["display_labels"] == {
@@ -107,10 +113,12 @@ def test_build_idea_presentation_v2_caps_to_three_ideas() -> None:
 
 def test_validate_presentation_rejects_removed_reader_facing_fields() -> None:
     presentation = build_idea_presentation_v2(
-        source_markdown_path="Ideas/day--2026-03-02--ideas.md",
-        title="Verification-first agent rollout",
-        summary_md="Release discipline now feels operational.",
-        ideas=[_idea(title="Prompt CI gate")],
+        request=IdeaPresentationBuildRequest(
+            source_markdown_path="Ideas/day--2026-03-02--ideas.md",
+            title="Verification-first agent rollout",
+            summary_md="Release discipline now feels operational.",
+            ideas=[_idea(title="Prompt CI gate")],
+        ),
     )
     presentation["display_labels"]["best_bet"] = "Best bet"
     presentation["content"]["ideas"][0]["evidence"][0]["source_type"] = "paper"
@@ -125,10 +133,12 @@ def test_validate_presentation_rejects_removed_reader_facing_fields() -> None:
 
 def test_write_presentation_sidecar_rejects_invalid_contracts(tmp_path: Path) -> None:
     presentation = build_trend_presentation_v2(
-        source_markdown_path="Trends/day--2026-03-02--trend--7.md",
-        title="Verification gets operational",
-        overview_md="Teams are tightening release discipline.",
-        clusters=[],
+        request=TrendPresentationBuildRequest(
+            source_markdown_path="Trends/day--2026-03-02--trend--7.md",
+            title="Verification gets operational",
+            overview_md="Teams are tightening release discipline.",
+            clusters=[],
+        ),
     )
     presentation["content"]["clusters"] = "bad"
 
@@ -142,22 +152,14 @@ def test_write_presentation_sidecar_rejects_invalid_contracts(tmp_path: Path) ->
 def test_build_presentation_v2_rejects_missing_required_keywords() -> None:
     with pytest.raises(
         TypeError,
-        match=r"missing 1 required keyword-only argument: 'overview_md'",
+        match=r"missing 1 required keyword-only argument: 'request'",
     ):
-        cast(Any, build_trend_presentation_v2)(
-            source_markdown_path="Trends/day--2026-03-02--trend--7.md",
-            title="Verification gets operational",
-            clusters=[],
-        )
+        cast(Any, build_trend_presentation_v2)()
 
     with pytest.raises(
-        TypeError, match=r"missing 1 required keyword-only argument: 'ideas'"
+        TypeError, match=r"missing 1 required keyword-only argument: 'request'"
     ):
-        cast(Any, build_idea_presentation_v2)(
-            source_markdown_path="Ideas/day--2026-03-02--ideas.md",
-            title="Verification-first agent rollout",
-            summary_md="Release discipline now feels operational.",
-        )
+        cast(Any, build_idea_presentation_v2)()
 
 
 def test_presentation_labels_stay_in_english_across_languages() -> None:

@@ -10,6 +10,7 @@ from typing import Any, NotRequired, Required, TypedDict, Unpack
 import yaml
 
 from recoleta.presentation import (
+    TrendPresentationBuildRequest,
     build_trend_presentation_v2,
     presentation_sidecar_path,
     resolve_presentation_language_code,
@@ -193,26 +194,36 @@ def _cluster_lines(
     cluster: dict[str, Any],
     labels: dict[str, str],
 ) -> list[str]:
-    title = _single_line(str(cluster.get("title") or ""), fallback="Cluster")
-    content = str(cluster.get("content") or "").strip() or "(empty)"
-    lines = ["", f"### {title}", content]
-    evidence = list(cluster.get("evidence") or [])
-    if evidence:
-        lines.extend(["", f"#### {labels['evidence']}"])
-        for entry in evidence:
-            if not isinstance(entry, dict):
-                continue
-            entry_title = _single_line(str(entry.get("title") or ""), fallback="Document")
-            href = _single_line(str(entry.get("href") or entry.get("url") or ""), fallback="")
-            reason = _single_line(str(entry.get("reason") or ""), fallback="")
-            if href:
-                line = f"- [{entry_title}]({href})"
-            else:
-                line = f"- {entry_title}"
-            if reason:
-                line += f": {reason}"
+    lines = [
+        "",
+        f"### {_single_line(str(cluster.get('title') or ''), fallback='Cluster')}",
+        str(cluster.get("content") or "").strip() or "(empty)",
+    ]
+    evidence_lines = _cluster_evidence_lines(cluster=cluster)
+    if evidence_lines:
+        lines.extend(["", f"#### {labels['evidence']}", *evidence_lines])
+    return lines
+
+
+def _cluster_evidence_lines(*, cluster: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for entry in list(cluster.get("evidence") or []):
+        line = _cluster_evidence_line(entry)
+        if line:
             lines.append(line)
     return lines
+
+
+def _cluster_evidence_line(entry: Any) -> str | None:
+    if not isinstance(entry, dict):
+        return None
+    entry_title = _single_line(str(entry.get("title") or ""), fallback="Document")
+    href = _single_line(str(entry.get("href") or entry.get("url") or ""), fallback="")
+    reason = _single_line(str(entry.get("reason") or ""), fallback="")
+    line = f"- [{entry_title}]({href})" if href else f"- {entry_title}"
+    if reason:
+        line += f": {reason}"
+    return line
 
 
 def _render_trend_note_lines(
@@ -329,12 +340,16 @@ def _write_trend_note(
         period_start=write_input.period_start,
     )
     presentation = build_trend_presentation_v2(
-        source_markdown_path=f"{write_input.note_dir.name}/{note_path.name}",
-        title=sanitize_trend_title(write_input.content["title"]),
-        overview_md=sanitize_trend_overview_markdown(write_input.content["overview_md"]),
-        clusters=_presentation_ready_clusters(write_input.content["clusters"]),
-        language_code=resolved_language_code,
-        display_language_code=resolved_language_code,
+        request=TrendPresentationBuildRequest(
+            source_markdown_path=f"{write_input.note_dir.name}/{note_path.name}",
+            title=sanitize_trend_title(write_input.content["title"]),
+            overview_md=sanitize_trend_overview_markdown(
+                write_input.content["overview_md"]
+            ),
+            clusters=_presentation_ready_clusters(write_input.content["clusters"]),
+            language_code=resolved_language_code,
+            display_language_code=resolved_language_code,
+        ),
     )
     note_path.write_text(
         "\n".join(
