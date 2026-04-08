@@ -2,12 +2,17 @@
 
 Date: 2026-04-08
 
-Status: research and design only, no implementation in this change
+Status: implemented on `codex/reader-facing-output-deformalization` and tracked in PR #40
 
 ## Purpose
 
-Record the current research findings on reader-facing output quality and the
-conclusions reached in the April 8 discussion.
+Record the research findings on reader-facing output quality, the conclusions
+reached in the April 8 discussion, and the implementation direction that was
+later applied.
+
+The findings section below is intentionally historical: it captures the
+pre-change state that motivated this work. The current implemented state is
+summarized separately below.
 
 This document supersedes my earlier rough proposal in one important way:
 `item docs` are **not** part of the planned structural change. The follow-up is
@@ -67,7 +72,7 @@ Concrete reader-facing artifacts inspected from those output trees:
 - `.../embodied_ai/outputs/Trends/day--2026-03-30--trend--8.md`
 - `.../embodied_ai/outputs/Ideas/day--2026-03-30--ideas.md`
 
-## Findings
+## Pre-change Findings
 
 ### 1. The main problem is not missing structure
 
@@ -361,11 +366,24 @@ The prompt should require a different formulation, not merely suggest one.
 This stricter anti-tropes rule should also be shared by `item docs`, even
 though their section structure stays unchanged.
 
-## Consequences for Implementation
+## Implemented State
 
-If this direction is implemented later, the change is not prompt-only.
+- `item docs` keep the same four-part reader-facing structure
+- `item docs` now share the stricter anti-tropes prompt discipline
+- reader-facing `trends` keep only `Overview` and `Clusters` as public blocks
+- each reader-facing trend cluster is a finished prose block with `title`,
+  `content`, and `evidence`
+- reader-facing `ideas` keep a short page summary plus ordered idea blocks
+- each reader-facing idea block is a finished prose block with `title`,
+  `content`, and `evidence`
+- removed worksheet labels no longer appear in the public presentation schema,
+  markdown notes, or site output
 
-The required change set would include at least:
+## Implemented Change Set
+
+This direction was not a prompt-only change.
+
+The implemented change set included at least:
 
 1. Prompt contract updates in `recoleta/rag/agent.py` and
    `recoleta/rag/ideas_agent.py`
@@ -380,7 +398,7 @@ The required change set would include at least:
 7. Regression-fixture and test updates so the suite stops requiring the
    removed public labels and sections
 
-## Non-Goals for the Follow-up
+## Non-Goals
 
 - Do not redesign `item docs` structure
 - Do not add a lint or retry enforcement layer

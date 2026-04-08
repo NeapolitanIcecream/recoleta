@@ -705,7 +705,6 @@ def _trend_browser_body(
             deps.rewrite_site_markdown_links(
                 html_text=deps.build_trend_browser_body_html(
                     sections=context.sections,
-                    allow_evolution_disclosure=True,
                 ),
                 source_markdown_path=context.source_document.markdown_path,
                 source_instance=context.source_document.instance,

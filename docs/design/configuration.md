@@ -184,16 +184,16 @@ Trend generation can augment prompts with semantic retrieval and bounded history
 - `TRENDS_EMBEDDING_BATCH_MAX_CHARS`: char budget per embedding batch (default `40000`)
 - `TRENDS_EMBEDDING_FAILURE_MODE`: `continue|fail_fast|threshold` (default `continue`)
 - `TRENDS_EMBEDDING_MAX_ERRORS`: required and `> 0` when `TRENDS_EMBEDDING_FAILURE_MODE=threshold`
-- `TRENDS_SELF_SIMILAR_ENABLED`: enable the overview-pack retrieval flow that ranks related docs and backfills cluster representatives
-- `TRENDS_RANKING_N`: number of ranked retrieval hits passed into representative selection (default `10`)
+- `TRENDS_SELF_SIMILAR_ENABLED`: enable the overview-pack retrieval flow that ranks related docs for trend analysis context
+- `TRENDS_RANKING_N`: number of ranked retrieval hits passed into the overview-pack prompt context (default `10`)
 - `TRENDS_OVERVIEW_PACK_MAX_CHARS`: char budget for the generated overview pack injected into the trend prompt (default `16000`)
 - `TRENDS_ITEM_OVERVIEW_TOP_K`: max analyzed items folded into day-trend overview packs (default `28`)
 - `TRENDS_ITEM_OVERVIEW_ITEM_MAX_CHARS`: per-item char budget when building day-trend overview packs (default `800`)
-- `TRENDS_REP_MIN_PER_CLUSTER`: minimum representatives preserved/backfilled per cluster (default `2`)
-- `TRENDS_PEER_HISTORY_ENABLED`: enable bounded prior-window context for trend evolution notes (default `true`)
+- `TRENDS_REP_MIN_PER_CLUSTER`: legacy evidence-floor setting retained for trend prompt assembly; reader-facing clusters now expose only prose plus `evidence` (default `2`)
+- `TRENDS_PEER_HISTORY_ENABLED`: enable bounded prior-window context for internal historical comparison during trend writing (default `true`)
 - `TRENDS_PEER_HISTORY_WINDOW_COUNT`: number of earlier peer windows to include (default `3`)
 - `TRENDS_PEER_HISTORY_MAX_CHARS`: char budget for the peer-history pack (default `12000`)
-- `TRENDS_EVOLUTION_MAX_SIGNALS`: max evolution signals kept after normalization (default `5`)
+- `TRENDS_EVOLUTION_MAX_SIGNALS`: max normalized historical-comparison signals kept before prompt injection (default `5`)
 
 Operational notes:
 

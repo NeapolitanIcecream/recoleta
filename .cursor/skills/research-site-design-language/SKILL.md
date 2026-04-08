@@ -26,7 +26,7 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Do not expose prompt-method labels such as `Best bet`, `Alternate`, `Thesis`, `Anti-thesis`, `Why now`, `What changed`, `Validation next step`, `Top shifts`, or `Counter-signal` as public section chrome unless product direction explicitly reinstates them.
 - Treat `Trends` and `Ideas` as peer collection surfaces: each should have its own index destination, parallel navigation affordance, and symmetric home-section labeling.
 - When `Trends` and `Ideas` appear side by side, keep the pair visually symmetric: equal-width columns, one stacked card column per side, and mirrored section chrome.
-- Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Keep `Evolution` as a secondary comparison surface rather than replacing the primary summary.
+- Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Historical comparison can sharpen that writing, but it should not reappear as a dedicated public `Evolution` surface.
 - On trend detail pages, keep the public reading surface centered on `Overview` plus supporting cluster blocks. If contradictory evidence matters, fold it into the finished prose of those remaining blocks instead of rendering a separate worksheet surface.
 - On `Ideas` detail pages, keep the page structure minimal: a summary block plus idea blocks. Each idea block should read like a short finished note with a title, prose body, and evidence, not a stack of explicit method fields.
 - For markdown-first `Ideas` detail flows, do not replace raw enum leakage with a different public worksheet. Hiding `User/job` while exposing `Role`, or hiding ranking enums while exposing `Best bet`, is still formalism if the reader sees the internal analysis template.
@@ -38,11 +38,9 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 
 ## Comparative Views
 
-- Treat `Evolution` as a first-class comparison surface, not generic prose.
-- Surface comparison signal counts early on index cards and detail heroes.
-- Render controlled comparison terms in English, including `Continuing`, `Emerging`, `Fading`, `Shifting`, `Polarizing`, and `History`.
-- Collapse long rationale behind progressive disclosure, especially for mobile layouts.
-- Keep PDF and HTML on the same card hierarchy and terminology, but expand rationale inline in PDF instead of carrying over interactive disclosure patterns.
+- Use historical comparison as internal analysis input or as supporting detail inside finished overview/cluster prose, not as a standalone reader-facing worksheet.
+- If historical deltas matter on cards or detail heroes, summarize them as direct narrative signal rather than emitting a separate comparison taxonomy block.
+- Keep PDF and HTML on the same simplified card hierarchy and terminology.
 
 ## Maintenance
 

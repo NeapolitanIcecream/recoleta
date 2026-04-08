@@ -210,9 +210,10 @@ Check these paths after the run:
   `.md` notes and adjacent `.presentation.json` sidecars
 
 Those sidecars are the structured projection contract for downstream output.
-Trend sidecars carry ranked shifts plus an optional counter-signal. Idea
-sidecars carry best-bet ordering, alternates, anti-thesis, and evidence
-metadata.
+Trend sidecars carry a finished `overview` plus `clusters`, and each cluster
+contains only `title`, `content`, and `evidence`. Idea sidecars carry a short
+page `summary` plus ordered idea blocks, and each idea block also contains only
+`title`, `content`, and `evidence`.
 
 Then open the [first output tour](./docs/guides/first-output-tour.md) to compare
 your local files with sample output.
@@ -385,11 +386,12 @@ Where outputs go:
 Current projection notes:
 
 - New trend and idea notes write the current presentation sidecar schema.
-- Trend sidecars include ranked shifts and an optional counter-signal block.
-- Idea sidecars include one best bet, up to two alternates, anti-thesis, and
-  evidence metadata.
+- Trend sidecars expose `title`, `overview`, and `clusters[]`, where each
+  cluster is a finished prose block with `title`, `content`, and `evidence`.
+- Idea sidecars expose `title`, `summary`, and `ideas[]`, where each idea is a
+  finished prose block with `title`, `content`, and `evidence`.
 - Site export and translation prefer sidecars first and fall back to markdown
-  when older artifacts do not have a usable sidecar.
+  when a sidecar is missing or invalid.
 
 For a migrated fleet, each child instance gets its own `MARKDOWN_OUTPUT_DIR`.
 The fleet manifest sits above those child output trees.

@@ -7,17 +7,7 @@ from typing import Any
 
 import yaml
 
-from recoleta.publish.trend_render_evolution import (
-    _evolution_change_label,
-    _evolution_change_tone,
-    _extract_evolution_section_data,
-    _extract_evolution_signal,
-    _strip_labeled_value,
-    render_browser_evolution_section_html,
-)
 from recoleta.publish.trend_render_models import (
-    TrendEvolutionSectionData,
-    TrendEvolutionSignal,
     TrendPdfSection,
 )
 from recoleta.publish.trend_render_sections import (
@@ -109,6 +99,19 @@ def _markdownish_plain_text(value: str) -> str:
     normalized = _MARKDOWN_STRIP_DECORATION_RE.sub(" ", normalized)
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
+
+
+def _strip_labeled_value(value: str, *, labels: tuple[str, ...]) -> str | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    for label in labels:
+        pattern = re.compile(rf"^\s*{re.escape(label)}\s*[:：]\s*(.+)$", re.IGNORECASE)
+        match = pattern.match(normalized)
+        if match is not None:
+            extracted = str(match.group(1) or "").strip()
+            return extracted or None
+    return None
 
 
 def _truncate_visible_text(value: str, *, chinese_output: bool) -> str:
@@ -337,29 +340,11 @@ def _build_trend_pdf_html(
     )
 
 
-def _render_browser_evolution_section_html(
-    *,
-    section: TrendPdfSection,
-    allow_disclosure: bool,
-) -> str:
-    return render_browser_evolution_section_html(
-        section=section,
-        allow_disclosure=allow_disclosure,
-        render_browser_content_card_html=_render_browser_content_card_html,
-        render_browser_section_label_html=_render_browser_section_label_html,
-    )
-
-
 def _build_trend_browser_body_html(
     *,
     sections: list[TrendPdfSection],
-    allow_evolution_disclosure: bool = True,
 ) -> str:
-    return build_trend_browser_body_html(
-        sections=sections,
-        allow_evolution_disclosure=allow_evolution_disclosure,
-        render_browser_evolution_section_html=_render_browser_evolution_section_html,
-    )
+    return build_trend_browser_body_html(sections=sections)
 
 
 def _build_trend_browser_pdf_html(
@@ -375,10 +360,7 @@ def _build_trend_browser_pdf_html(
         "</div>"
         for label, value in _trend_pdf_meta_rows(frontmatter)
     )
-    body_html = _build_trend_browser_body_html(
-        sections=sections,
-        allow_evolution_disclosure=False,
-    )
+    body_html = _build_trend_browser_body_html(sections=sections)
     return (
         "<!doctype html>"
         "<html lang='zh-CN'>"
@@ -410,19 +392,13 @@ def _build_trend_browser_pdf_html(
 
 
 __all__ = [
-    "TrendEvolutionSectionData",
-    "TrendEvolutionSignal",
     "TrendPdfSection",
     "_build_topic_grid",
     "_build_trend_browser_body_html",
     "_build_trend_browser_pdf_html",
     "_build_trend_pdf_html",
     "_decorate_trend_pdf_body_html",
-    "_evolution_change_label",
-    "_evolution_change_tone",
     "_extract_cluster_entries",
-    "_extract_evolution_section_data",
-    "_extract_evolution_signal",
     "_extract_topic_items",
     "_extract_trend_pdf_sections",
     "_is_primary_trend_section_heading",
@@ -430,7 +406,6 @@ __all__ = [
     "_normalize_section_heading",
     "_render_browser_clusters_section_html",
     "_render_browser_content_card_html",
-    "_render_browser_evolution_section_html",
     "_render_browser_section_label_html",
     "_render_browser_topics_section_html",
     "_render_cluster_grid_html",
