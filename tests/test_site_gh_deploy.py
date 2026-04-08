@@ -49,7 +49,6 @@ def test_gh_deploy_creates_branch_snapshot_without_touching_main_worktree(
         overview_md="## TL;DR\n\n- Agent workflows are getting productionized.\n",
         topics=["agents", "tooling"],
         clusters=[],
-        highlights=["Agent stacks are stabilizing."],
     )
     trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
 
@@ -119,7 +118,6 @@ def test_gh_deploy_preserves_multilingual_manifest_metadata(tmp_path: Path) -> N
         overview_md="## Overview\n\nEnglish note.\n",
         topics=["agents"],
         clusters=[],
-        highlights=[],
         language_code="en",
     )
     write_markdown_trend_note(
@@ -133,7 +131,6 @@ def test_gh_deploy_preserves_multilingual_manifest_metadata(tmp_path: Path) -> N
         overview_md="## Overview\n\n中文笔记。\n",
         topics=["agents"],
         clusters=[],
-        highlights=[],
         language_code="zh-CN",
     )
 
@@ -190,7 +187,6 @@ def test_gh_deploy_skips_push_when_multilingual_snapshot_is_unchanged(
         overview_md="## Overview\n\nEnglish note.\n",
         topics=["agents"],
         clusters=[],
-        highlights=[],
         language_code="en",
     )
     write_markdown_trend_note(
@@ -204,7 +200,6 @@ def test_gh_deploy_skips_push_when_multilingual_snapshot_is_unchanged(
         overview_md="## Overview\n\n中文笔记。\n",
         topics=["agents"],
         clusters=[],
-        highlights=[],
         language_code="zh-CN",
     )
 
@@ -268,7 +263,6 @@ def test_gh_deploy_skips_push_when_snapshot_is_unchanged(tmp_path: Path) -> None
         overview_md="## Overview\n\nEmbodied systems are becoming more modular.\n",
         topics=["robotics"],
         clusters=[],
-        highlights=["Embodied models are easier to steer."],
     )
     trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
 
@@ -332,7 +326,6 @@ def test_gh_deploy_uses_best_effort_tempdir_cleanup(
         overview_md="## Overview\n\nCleanup should not fail the deploy.\n",
         topics=["deploy"],
         clusters=[],
-        highlights=["Temporary checkout cleanup is best effort."],
     )
 
     remote_repo = tmp_path / "remote.git"
@@ -389,7 +382,6 @@ def test_gh_deploy_prefers_push_url_when_remote_endpoints_diverge(
         overview_md="## Overview\n\nDeployment should use the push remote.\n",
         topics=["git"],
         clusters=[],
-        highlights=["Push URLs may differ from fetch URLs."],
     )
     trend_note.with_suffix(".pdf").write_bytes(b"%PDF-1.7\n")
 

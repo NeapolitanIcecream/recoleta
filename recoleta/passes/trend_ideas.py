@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -12,63 +11,6 @@ from recoleta.trends import TrendPayload
 
 TREND_IDEAS_PASS_KIND = "trend_ideas"
 TREND_IDEAS_SCHEMA_VERSION = 1
-TREND_IDEA_KIND_VALUES = (
-    "new_build",
-    "revival",
-    "research_gap",
-    "tooling_wedge",
-    "workflow_shift",
-)
-TREND_IDEA_TIME_HORIZON_VALUES = ("now", "near", "frontier")
-
-
-def _normalize_trend_idea_token(value: Any) -> str:
-    normalized = str(value or "").strip().lower()
-    if not normalized:
-        return ""
-    normalized = normalized.replace("—", "-")
-    normalized = re.sub(r"[\s\-]+", "_", normalized)
-    return normalized.strip("_")
-
-
-_TREND_IDEA_KIND_ALIASES: dict[str, str] = {
-    value: value for value in TREND_IDEA_KIND_VALUES
-}
-_TREND_IDEA_KIND_ALIASES.update(
-    {
-        "startup": "new_build",
-        "product": "new_build",
-        "new": "new_build",
-        "greenfield": "new_build",
-        "from_scratch": "new_build",
-        "resurrection": "revival",
-        "comeback": "revival",
-        "gap": "research_gap",
-        "research": "research_gap",
-        "tooling": "tooling_wedge",
-        "wedge": "tooling_wedge",
-        "workflow": "workflow_shift",
-        "workflow_change": "workflow_shift",
-    }
-)
-
-_TREND_IDEA_TIME_HORIZON_ALIASES: dict[str, str] = {
-    value: value for value in TREND_IDEA_TIME_HORIZON_VALUES
-}
-_TREND_IDEA_TIME_HORIZON_ALIASES.update(
-    {
-        "immediate": "now",
-        "current": "now",
-        "short_term": "near",
-        "near_term": "near",
-        "mid_term": "near",
-        "medium_term": "near",
-        "long_term": "frontier",
-        "far_term": "frontier",
-    }
-)
-
-
 @dataclass(frozen=True, slots=True)
 class _TrendIdeasPassOutputRequest:
     run_id: str
@@ -133,57 +75,15 @@ class TrendIdeaEvidenceRef(BaseModel):
 
 class TrendIdea(BaseModel):
     title: str
-    kind: str
-    thesis: str
-    anti_thesis: str | None = None
-    why_now: str
-    what_changed: str
-    user_or_job: str
+    content_md: str
     evidence_refs: list[TrendIdeaEvidenceRef] = Field(default_factory=list)
-    validation_next_step: str
-    time_horizon: str
 
-    @field_validator(
-        "title",
-        "kind",
-        "thesis",
-        "why_now",
-        "what_changed",
-        "user_or_job",
-        "validation_next_step",
-        "time_horizon",
-    )
+    @field_validator("title", "content_md")
     @classmethod
     def _validate_required_text(cls, value: str) -> str:
         normalized = " ".join(str(value or "").split()).strip()
         if not normalized:
             raise ValueError("idea text fields must not be empty")
-        return normalized
-
-    @field_validator("anti_thesis")
-    @classmethod
-    def _validate_optional_text(cls, value: str | None) -> str | None:
-        normalized = " ".join(str(value or "").split()).strip()
-        return normalized or None
-
-    @field_validator("kind", mode="before")
-    @classmethod
-    def _validate_kind(cls, value: str) -> str:
-        normalized = _TREND_IDEA_KIND_ALIASES.get(_normalize_trend_idea_token(value), "")
-        if normalized not in TREND_IDEA_KIND_VALUES:
-            allowed = ", ".join(TREND_IDEA_KIND_VALUES)
-            raise ValueError(f"kind must be one of {allowed}")
-        return normalized
-
-    @field_validator("time_horizon", mode="before")
-    @classmethod
-    def _validate_time_horizon(cls, value: str) -> str:
-        normalized = _TREND_IDEA_TIME_HORIZON_ALIASES.get(
-            _normalize_trend_idea_token(value), ""
-        )
-        if normalized not in TREND_IDEA_TIME_HORIZON_VALUES:
-            allowed = ", ".join(TREND_IDEA_TIME_HORIZON_VALUES)
-            raise ValueError(f"time_horizon must be one of {allowed}")
         return normalized
 
 
@@ -267,12 +167,7 @@ def build_trend_snapshot_pack_md(
         trend_payload=trend_payload,
         upstream_pass_output_id=upstream_pass_output_id,
     )
-    lines.extend(_snapshot_pack_highlight_lines(highlights=trend_payload.highlights))
     lines.extend(_snapshot_pack_cluster_lines(clusters=trend_payload.clusters))
-    lines.extend(_snapshot_pack_evolution_lines(evolution=trend_payload.evolution))
-    lines.extend(
-        _snapshot_pack_counter_signal_lines(counter_signal=trend_payload.counter_signal)
-    )
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -306,15 +201,6 @@ def _snapshot_pack_header_lines(
     return lines
 
 
-def _snapshot_pack_highlight_lines(*, highlights: list[str] | None) -> list[str]:
-    rendered = [
-        f"- {normalized}"
-        for highlight in highlights or []
-        if (normalized := str(highlight or "").strip())
-    ]
-    return ["", "### Highlights", *rendered] if rendered else []
-
-
 def _snapshot_pack_cluster_lines(*, clusters: Any) -> list[str]:
     if not clusters:
         return []
@@ -326,71 +212,31 @@ def _snapshot_pack_cluster_lines(*, clusters: Any) -> list[str]:
 
 def _snapshot_pack_cluster_entry_lines(*, index: int, cluster: Any) -> list[str]:
     lines = [
-        f"#### cluster {index}: {str(getattr(cluster, 'name', '') or '').strip() or '(unnamed)'}"
+        f"#### cluster {index}: {str(getattr(cluster, 'title', '') or '').strip() or '(untitled)'}"
     ]
-    description = str(getattr(cluster, "description", "") or "").strip()
-    if description:
-        lines.append(description)
-    reps = _snapshot_pack_representative_chunk_lines(
-        representative_chunks=list(getattr(cluster, "representative_chunks", []) or [])
+    content_md = str(getattr(cluster, "content_md", "") or "").strip()
+    if content_md:
+        lines.append(content_md)
+    evidence = _snapshot_pack_evidence_ref_lines(
+        evidence_refs=list(getattr(cluster, "evidence_refs", []) or [])
     )
-    if reps:
-        lines.append("- representative_chunks")
-        lines.extend(reps)
+    if evidence:
+        lines.append("- evidence_refs")
+        lines.extend(evidence)
     return lines
 
 
-def _snapshot_pack_representative_chunk_lines(
-    *, representative_chunks: list[Any]
+def _snapshot_pack_evidence_ref_lines(
+    *, evidence_refs: list[Any]
 ) -> list[str]:
     lines: list[str] = []
-    for rep in representative_chunks:
+    for rep in evidence_refs:
         try:
             doc_id = int(getattr(rep, "doc_id"))
             chunk_index = int(getattr(rep, "chunk_index"))
         except Exception:
             continue
         lines.append(f"  - doc_id={doc_id} chunk_index={chunk_index}")
-    return lines
-
-
-def _snapshot_pack_evolution_lines(*, evolution: Any) -> list[str]:
-    if evolution is None:
-        return []
-    lines = ["", "### Evolution", str(evolution.summary_md or "").strip()]
-    for signal in evolution.signals or []:
-        lines.append("- " + " | ".join(_snapshot_pack_signal_parts(signal=signal)))
-    return lines
-
-
-def _snapshot_pack_signal_parts(*, signal: Any) -> list[str]:
-    parts = [
-        str(signal.theme or "").strip(),
-        str(signal.change_type.value).strip(),
-        str(signal.summary or "").strip(),
-    ]
-    if signal.history_windows:
-        parts.append(
-            "history_windows="
-            + ",".join(str(window).strip() for window in signal.history_windows)
-        )
-    return [part for part in parts if part]
-
-
-def _snapshot_pack_counter_signal_lines(*, counter_signal: Any) -> list[str]:
-    if counter_signal is None:
-        return []
-    lines = [
-        "",
-        "### Counter-signal",
-        f"- title={str(counter_signal.title or '').strip()}",
-        str(counter_signal.summary or "").strip(),
-    ]
-    for ref in counter_signal.evidence_refs or []:
-        lines.append(
-            "- evidence_ref "
-            f"doc_id={int(ref.doc_id)} chunk_index={int(ref.chunk_index)}"
-        )
     return lines
 
 
@@ -425,8 +271,6 @@ def build_trend_ideas_pass_output(
 __all__ = [
     "TREND_IDEAS_PASS_KIND",
     "TREND_IDEAS_SCHEMA_VERSION",
-    "TREND_IDEA_KIND_VALUES",
-    "TREND_IDEA_TIME_HORIZON_VALUES",
     "TrendIdea",
     "TrendIdeaEvidenceRef",
     "TrendIdeasPayload",

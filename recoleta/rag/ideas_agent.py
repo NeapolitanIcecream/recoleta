@@ -128,25 +128,15 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " Avoid generic advice such as 'build an AI platform' or 'make an assistant'."
-        " Each idea must identify a concrete user/job, what changed, and the next validation step."
-    )
-    base += (
-        " Each emitted idea should also include a short anti-thesis:"
-        " the clearest condition under which the thesis would stop being compelling."
+        " Each idea must identify a concrete user/job, what changed, and the next validation step during analysis."
     )
     base += (
         " Emit 0 to 3 ideas total, ordered by confidence and practical upside."
-        " The first idea must be the clear best bet; any remaining ideas must read as alternates rather than equal-weight peers."
+        " Use ordering to express priority; do not expose priority as tier labels."
     )
     base += (
         " Every emitted idea must include at least one evidence_refs entry with"
         " concrete doc_id and chunk_index values grounded in the local corpus."
-    )
-    base += (
-        " kind must use one of these exact enum values:"
-        " new_build, revival, research_gap, tooling_wedge, workflow_shift."
-        " time_horizon must use one of these exact enum values:"
-        " now, near, frontier."
     )
     base += (
         " If the evidence is too weak for a high-confidence opportunity brief,"
@@ -177,6 +167,16 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Do not hide the user/job behind generic platform language."
     )
     base += (
+        " Use internal reasoning to decide why now, what changed, who it helps,"
+        " what would falsify the idea, and what to test next."
+        " Do not expose those axes as separate reader-facing fields."
+    )
+    base += (
+        " Each idea must be a finished short note."
+        " Use ideas[].title for a literal idea label, ideas[].content_md for the prose body,"
+        " and ideas[].evidence_refs for grounded supporting references."
+    )
+    base += (
         " Start with search_hybrid for broad discovery, then use get_doc_bundle"
         " or read_chunk to confirm specific evidence before finalizing ideas."
     )
@@ -185,7 +185,7 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         return base
     return (
         f"{base}\n\nUse {output_language} for all natural-language fields"
-        " (title, summary_md, idea fields, evidence reason text). Keep JSON keys"
+        " (title, summary_md, ideas[].title, ideas[].content_md, evidence reason text). Keep JSON keys"
         " and enum values in English."
     )
 
@@ -218,19 +218,17 @@ def _trend_ideas_prompt_notes() -> list[str]:
     return [
         "Use tools to verify and sharpen candidate ideas against the active local corpus.",
         "Prefer 0-3 ideas; omit weak ideas instead of filling the list.",
-        "If any idea is emitted, the first one must be the clear best bet and any later ones must be explicit alternates.",
-        "Each idea must answer what to build or investigate, why now, what changed, and who it helps.",
-        "Each emitted idea should also name the clearest condition under which the thesis breaks.",
+        "Use idea ordering to express priority; do not emit best-bet or alternate labels.",
+        "Each idea must answer what to build or investigate, why now, what changed, and who it helps during analysis.",
         "Name the buyer trigger or operational pain directly instead of using generic platform language.",
         "Use evidence_refs to point to the strongest supporting documents.",
-        "kind must use exactly one of: new_build, revival, research_gap, tooling_wedge, workflow_shift.",
-        "time_horizon must use exactly one of: now, near, frontier.",
         "Do not restate the trend summary as the final output.",
         "Do not coin new umbrella terms or marketing-style labels.",
         "If a technical term lacks a stable translation in the requested output language, keep the original term.",
         "Prefer direct, readable phrasing over compressed jargon.",
         "Keep paper titles, framework names, product names, and acronyms in their original form unless a widely accepted translation exists.",
         "Idea titles should read like factual descriptive labels, not slogans, coined categories, or rhetorical questions.",
+        "Return finished short prose in ideas[].content_md instead of labeled method fields.",
     ]
 
 

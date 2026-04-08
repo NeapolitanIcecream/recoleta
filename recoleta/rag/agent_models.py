@@ -6,9 +6,7 @@ from typing import Any
 
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
-from recoleta.rag.search_models import SummarySearchRequest, SummaryCorpusWindow
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.trends import TrendPayload
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,50 +129,4 @@ class TrendGenerationRequest:
             ranking_n=self.ranking_n,
             rep_source_doc_type=self.rep_source_doc_type,
             evolution_max_signals=self.evolution_max_signals,
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class RepresentativeBackfillRequest:
-    payload: TrendPayload
-    repository: TrendRepositoryPort
-    vector_store: LanceVectorStore
-    run_id: str
-    period_start: datetime
-    period_end: datetime
-    embedding_model: str
-    embedding_dimensions: int | None
-    embedding_batch_max_inputs: int
-    embedding_batch_max_chars: int
-    rep_source_doc_type: str | None = None
-    embedding_failure_mode: str = "continue"
-    embedding_max_errors: int = 0
-    metric_namespace: str = "pipeline.trends"
-    llm_connection: LLMConnectionConfig | None = None
-    max_reps: int = 6
-
-    def search_request(self, *, query: str, limit: int) -> SummarySearchRequest:
-        normalized_doc_type = str(self.rep_source_doc_type or "").strip().lower()
-        doc_type = (
-            normalized_doc_type if normalized_doc_type in {"item", "trend"} else "item"
-        )
-        return SummarySearchRequest(
-            window=SummaryCorpusWindow(
-                repository=self.repository,
-                vector_store=self.vector_store,
-                run_id=self.run_id,
-                doc_type=doc_type,
-                period_start=self.period_start,
-                period_end=self.period_end,
-            ),
-            query=query,
-            embedding_model=self.embedding_model,
-            embedding_dimensions=self.embedding_dimensions,
-            max_batch_inputs=self.embedding_batch_max_inputs,
-            max_batch_chars=self.embedding_batch_max_chars,
-            embedding_failure_mode=self.embedding_failure_mode,
-            embedding_max_errors=self.embedding_max_errors,
-            limit=limit,
-            metric_namespace=self.metric_namespace,
-            llm_connection=self.llm_connection,
         )

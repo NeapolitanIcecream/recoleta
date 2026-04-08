@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 import json
 from pathlib import Path
 import re
@@ -12,10 +11,7 @@ from recoleta.publish.trend_render_shared import (
     clamp_trend_overview_markdown,
     sanitize_trend_title,
 )
-from recoleta.trends import (
-    TrendPayload,
-    peer_history_windows_for_period,
-)
+from recoleta.trends import TrendPayload
 
 
 @dataclass(slots=True)
@@ -31,11 +27,7 @@ class MaterializedTrendNotePayload:
     title: str
     overview_md: str
     topics: list[str]
-    evolution: dict[str, Any] | None
-    counter_signal: dict[str, Any] | None
-    history_window_refs: dict[str, dict[str, Any]]
     clusters: list[dict[str, Any]]
-    highlights: list[str]
     rewrite_stats: TrendNoteRewriteStats
 
 
@@ -52,9 +44,6 @@ _CHUNK_SUFFIX_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
-_HISTORY_WINDOW_ID_PATTERN = re.compile(r"\b(prev_\d+)\b", re.IGNORECASE)
-
-
 def _parse_authors(value: Any) -> list[str]:
     if value is None:
         return []
@@ -89,22 +78,6 @@ def _citation_label_from_title(raw_title: str) -> str:
     return normalized
 
 
-def _history_window_title_label(raw_title: str) -> str:
-    normalized = " ".join(str(raw_title or "").split()).strip()
-    if not normalized:
-        return ""
-    normalized = normalized.replace("[", "(").replace("]", ")")
-    for separator in (":", "："):
-        if separator in normalized:
-            prefix = normalized.split(separator, 1)[0].strip()
-            if 2 <= len(prefix) <= 40:
-                normalized = prefix
-                break
-    if len(normalized) > 48:
-        normalized = normalized[:48].rstrip() + "…"
-    return normalized
-
-
 def _split_markdown_link_target(target: str) -> tuple[str, str]:
     stripped = str(target or "").strip()
     if not stripped:
@@ -113,14 +86,6 @@ def _split_markdown_link_target(target: str) -> tuple[str, str]:
         return stripped, ""
     url, suffix = stripped.split(" ", 1)
     return url.strip(), suffix.strip()
-
-
-def _parse_period_start(value: Any) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(value))
-    except Exception:
-        return None
-
 
 def _parse_positive_unique_doc_ids(raw_numbers: str) -> list[int]:
     seen: set[int] = set()
@@ -139,13 +104,10 @@ class _TrendNoteMaterializer:
     payload: TrendPayload
     markdown_output_dir: Path
     output_language: str | None
-    language_code: str | None
     note_href_by_url: dict[str, str]
     stats: TrendNoteRewriteStats
     doc_cache: dict[int, Any | None]
     item_cache: dict[int, Any | None]
-    history_window_refs: dict[str, dict[str, Any]]
-    current_period_start: datetime | None
 
     def get_doc(self, doc_id_value: int) -> Any | None:
         if doc_id_value not in self.doc_cache:
@@ -160,28 +122,6 @@ class _TrendNoteMaterializer:
                 item_id=item_id_value
             )
         return self.item_cache[item_id_value]
-
-    def localized_trend_title_for_doc(self, doc_id_value: int) -> str | None:
-        normalized_language_code = str(self.language_code or "").strip()
-        if not normalized_language_code:
-            return None
-        localized_output = self.repository.get_localized_output(
-            source_kind="trend_synthesis",
-            source_record_id=doc_id_value,
-            language_code=normalized_language_code,
-        )
-        if localized_output is None:
-            return None
-        try:
-            localized_payload = json.loads(
-                str(getattr(localized_output, "payload_json", "") or "{}")
-            )
-        except Exception:
-            return None
-        if not isinstance(localized_payload, dict):
-            return None
-        localized_title = str(localized_payload.get("title") or "").strip()
-        return localized_title or None
 
     def item_note_href_for_doc(self, doc: Any) -> str | None:
         doc_type = str(getattr(doc, "doc_type", "") or "").strip().lower()
@@ -285,142 +225,6 @@ class _TrendNoteMaterializer:
     def rewrite_text(self, value: str) -> str:
         return self.rewrite_canonical_item_links(self.rewrite_doc_refs(value))
 
-    def collect_history_window_refs_from_text(self, value: str) -> None:
-        raw = str(value or "").strip()
-        if not raw:
-            return
-        seen_window_ids: set[str] = set()
-        for match in _HISTORY_WINDOW_ID_PATTERN.finditer(raw):
-            window_id = str(match.group(1) or "").strip().lower()
-            if not window_id or window_id in seen_window_ids:
-                continue
-            seen_window_ids.add(window_id)
-            self.history_window_ref(window_id)
-
-    def _history_window_index(self, normalized_window_id: str) -> int | None:
-        match = re.fullmatch(r"prev_(\d+)", normalized_window_id)
-        if match is None:
-            return None
-        return max(1, int(match.group(1)))
-
-    def _history_window_doc(self, *, index: int) -> tuple[Any | None, Any | None]:
-        period_start = self.current_period_start
-        if period_start is None:
-            return None, None
-        windows = peer_history_windows_for_period(
-            granularity=self.payload.granularity,
-            period_start=period_start,
-            window_count=index,
-        )
-        if len(windows) < index:
-            return None, None
-        window = windows[index - 1]
-        docs = self.repository.list_documents(
-            doc_type="trend",
-            granularity=self.payload.granularity,
-            period_start=window.period_start,
-            period_end=window.period_end,
-            order_by="event_desc",
-            limit=1,
-        )
-        return window, (docs[0] if docs else None)
-
-    def _build_history_window_ref(
-        self,
-        *,
-        window: Any,
-        doc: Any | None,
-    ) -> dict[str, Any]:
-        localized_title = (
-            self.localized_trend_title_for_doc(int(getattr(doc, "id") or 0))
-            if doc is not None
-            else None
-        )
-        return {
-            "window_id": window.window_id,
-            "label": window.label,
-            "title": (
-                _history_window_title_label(
-                    localized_title or str(getattr(doc, "title", "") or "")
-                )
-                if doc is not None
-                else ""
-            ),
-            "granularity": self.payload.granularity,
-            "period_start": window.period_start.isoformat(),
-            "trend_doc_id": int(getattr(doc, "id") or 0) if doc is not None else 0,
-        }
-
-    def history_window_ref(self, window_id: str) -> dict[str, Any] | None:
-        normalized_window_id = str(window_id or "").strip().lower()
-        if not normalized_window_id or self.current_period_start is None:
-            return None
-        if normalized_window_id in self.history_window_refs:
-            return self.history_window_refs[normalized_window_id]
-        index = self._history_window_index(normalized_window_id)
-        if index is None:
-            return None
-        window, doc = self._history_window_doc(index=index)
-        if window is None:
-            return None
-        ref = self._build_history_window_ref(window=window, doc=doc)
-        self.history_window_refs[normalized_window_id] = ref
-        return ref
-
-    def _normalized_history_windows(self, history_windows: Any) -> list[str]:
-        if not isinstance(history_windows, list):
-            return []
-        normalized = [
-            str(window).strip() for window in history_windows if str(window).strip()
-        ]
-        for window in normalized:
-            self.history_window_ref(window)
-        return normalized
-
-    def _materialize_evolution_signal(self, signal: Any) -> dict[str, Any] | None:
-        if not isinstance(signal, dict):
-            return None
-        normalized_signal = dict(signal)
-        normalized_signal["theme"] = self.rewrite_text(
-            str(normalized_signal.get("theme") or "").strip()
-        )
-        normalized_signal["summary"] = self.rewrite_text(
-            str(normalized_signal.get("summary") or "").strip()
-        )
-        self.collect_history_window_refs_from_text(
-            str(normalized_signal.get("summary") or "")
-        )
-        normalized_signal["history_windows"] = self._normalized_history_windows(
-            normalized_signal.get("history_windows") or []
-        )
-        return normalized_signal
-
-    def materialize_evolution(self) -> dict[str, Any] | None:
-        if self.payload.evolution is None:
-            return None
-        evolution_for_notes = self.payload.evolution.model_dump(mode="json")
-        evolution_for_notes["summary_md"] = clamp_trend_overview_markdown(
-            self.rewrite_text(str(evolution_for_notes.get("summary_md") or "")),
-            output_language=self.output_language,
-        )
-        self.collect_history_window_refs_from_text(
-            str(evolution_for_notes.get("summary_md") or "")
-        )
-        normalized_signals: list[dict[str, Any]] = []
-        for signal in evolution_for_notes.get("signals") or []:
-            normalized_signal = self._materialize_evolution_signal(signal)
-            if normalized_signal is None:
-                continue
-            normalized_signals.append(normalized_signal)
-        evolution_for_notes["signals"] = normalized_signals
-        return evolution_for_notes
-
-    def materialize_highlights(self) -> list[str]:
-        return [
-            self.rewrite_text(str(highlight))
-            for highlight in (list(self.payload.highlights) or [])
-        ]
-
     def _representative_authors_for_doc(self, doc: Any) -> list[str]:
         doc_type = str(getattr(doc, "doc_type", "") or "").strip().lower()
         if doc_type != "item":
@@ -479,49 +283,14 @@ class _TrendNoteMaterializer:
         return enriched
 
     def _materialize_cluster(self, cluster: Any) -> dict[str, Any]:
-        cluster_dict = cluster.model_dump(mode="json")
-        cluster_dict["name"] = self.rewrite_text(
-            str(cluster_dict.get("name") or "").strip()
+        cluster_dict = (
+            cluster.model_dump(mode="json")
+            if hasattr(cluster, "model_dump")
+            else dict(cluster)
         )
-        cluster_dict["description"] = self.rewrite_text(
-            str(cluster_dict.get("description") or "").strip()
-        )
-        reps = cluster_dict.get("representative_chunks") or []
-        enriched_reps: list[dict[str, Any]] = []
-        seen_rep_doc_ids: set[int] = set()
-        if isinstance(reps, list):
-            for rep in reps:
-                if not isinstance(rep, dict):
-                    continue
-                enriched = self._materialize_representative_chunk(
-                    rep,
-                    seen_rep_doc_ids=seen_rep_doc_ids,
-                )
-                if enriched is not None:
-                    enriched_reps.append(enriched)
-        cluster_dict["representative_chunks"] = enriched_reps
-        return cluster_dict
-
-    def materialize_clusters(self) -> list[dict[str, Any]]:
-        return [
-            self._materialize_cluster(cluster)
-            for cluster in self.payload.clusters or []
-        ]
-
-    def materialize_counter_signal(self) -> dict[str, Any] | None:
-        raw_counter_signal = getattr(self.payload, "counter_signal", None)
-        if raw_counter_signal is None:
-            return None
-        counter_signal = (
-            raw_counter_signal.model_dump(mode="json")
-            if hasattr(raw_counter_signal, "model_dump")
-            else dict(raw_counter_signal)
-        )
-        title = self.rewrite_text(str(counter_signal.get("title") or "").strip())
-        summary = self.rewrite_text(str(counter_signal.get("summary") or "").strip())
         evidence_entries: list[dict[str, Any]] = []
         seen_rep_doc_ids: set[int] = set()
-        for ref in list(counter_signal.get("evidence_refs") or []):
+        for ref in list(cluster_dict.get("evidence_refs") or []):
             if not isinstance(ref, dict):
                 continue
             enriched = self._materialize_representative_chunk(
@@ -532,16 +301,21 @@ class _TrendNoteMaterializer:
                 continue
             reason = str(ref.get("reason") or "").strip()
             if reason:
-                enriched["reason"] = reason
+                enriched["reason"] = self.rewrite_text(reason)
             evidence_entries.append(enriched)
-        if not title and not summary and not evidence_entries:
-            return None
         return {
-            "title": title,
-            "summary": summary,
-            "evidence": evidence_entries,
+            "title": self.rewrite_text(str(cluster_dict.get("title") or "").strip()),
+            "content_md": self.rewrite_text(
+                str(cluster_dict.get("content_md") or "").strip()
+            ),
+            "evidence_refs": evidence_entries,
         }
 
+    def materialize_clusters(self) -> list[dict[str, Any]]:
+        return [
+            self._materialize_cluster(cluster)
+            for cluster in self.payload.clusters or []
+        ]
 
 def materialize_trend_note_payload(
     *,
@@ -557,13 +331,10 @@ def materialize_trend_note_payload(
         payload=payload,
         markdown_output_dir=markdown_output_dir,
         output_language=output_language,
-        language_code=language_code,
         note_href_by_url=_normalized_note_href_by_url(item_note_href_by_url),
         stats=TrendNoteRewriteStats(),
         doc_cache={},
         item_cache={},
-        history_window_refs={},
-        current_period_start=_parse_period_start(payload.period_start),
     )
     title_for_notes = sanitize_trend_title(
         materializer.rewrite_text(str(payload.title)),
@@ -573,19 +344,13 @@ def materialize_trend_note_payload(
         materializer.rewrite_text(str(payload.overview_md)),
         output_language=output_language,
     )
-    evolution_for_notes = materializer.materialize_evolution()
-    highlights_for_notes = materializer.materialize_highlights()
     clusters_for_notes = materializer.materialize_clusters()
 
     return MaterializedTrendNotePayload(
         title=title_for_notes,
         overview_md=overview_md_for_notes,
         topics=list(payload.topics),
-        evolution=evolution_for_notes,
-        counter_signal=materializer.materialize_counter_signal(),
-        history_window_refs=materializer.history_window_refs,
         clusters=clusters_for_notes,
-        highlights=highlights_for_notes,
         rewrite_stats=materializer.stats,
     )
 

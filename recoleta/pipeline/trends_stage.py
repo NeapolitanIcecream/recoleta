@@ -1427,7 +1427,13 @@ class _TrendStageRunner:
         payload: Any,
         state: _TrendStageState,
     ) -> dict[str, int]:
-        rep_stats = self._enforce_representative_chunks(payload=payload, state=state)
+        _ = payload
+        _ = state
+        rep_stats = {
+            "dropped_non_item_total": 0,
+            "backfilled_total": 0,
+            "failed_clusters_total": 0,
+        }
         self._record_rep_metrics(rep_stats)
         return rep_stats
 
@@ -1507,11 +1513,9 @@ class _TrendStageRunner:
         if annotation.history_pack_stats is not None:
             debug["history_pack_stats"] = annotation.history_pack_stats
         debug["evolution"] = {
-            "present": annotation.payload.evolution is not None,
-            "signals_total": len(annotation.payload.evolution.signals or [])
-            if annotation.payload.evolution is not None
-            else 0,
-            "suppressed_without_history": annotation.evolution_suppressed_without_history,
+            "present": False,
+            "signals_total": 0,
+            "suppressed_without_history": False,
             "normalization": annotation.evolution_normalization_stats,
         }
 
@@ -1714,42 +1718,18 @@ class _TrendStageRunner:
         plan: trends.TrendGenerationPlan | None,
         history_pack_stats: dict[str, Any] | None,
     ) -> tuple[dict[str, int], bool]:
-        evolution_normalization_stats = {
+        _ = state
+        _ = payload
+        _ = plan
+        _ = history_pack_stats
+        return (
+            {
             "history_windows_normalized_total": 0,
             "history_windows_dropped_total": 0,
             "signals_dropped_total": 0,
-        }
-        if payload.evolution is not None and plan is not None:
-            available_window_ids = set()
-            if isinstance(history_pack_stats, dict):
-                available_window_ids = {
-                    str(window_id).strip()
-                    for window_id in (
-                        history_pack_stats.get("available_window_ids") or []
-                    )
-                    if str(window_id).strip()
-                }
-            payload.evolution, evolution_normalization_stats = (
-                trends.normalize_trend_evolution(
-                    payload.evolution,
-                    granularity=state.normalized_granularity,
-                    period_start=state.period_start,
-                    history_windows=list(
-                        getattr(plan, "peer_history_windows", []) or []
-                    ),
-                    available_window_ids=available_window_ids,
-                )
-            )
-        history_windows_available = (
-            int(history_pack_stats.get("available_windows") or 0)
-            if isinstance(history_pack_stats, dict)
-            else 0
+            },
+            False,
         )
-        evolution_suppressed_without_history = False
-        if payload.evolution is not None and history_windows_available <= 0:
-            payload.evolution = None
-            evolution_suppressed_without_history = True
-        return evolution_normalization_stats, evolution_suppressed_without_history
 
     def _record_debug_usage_metrics(self, debug: dict[str, Any]) -> None:
         usage = debug.get("usage")
@@ -1810,16 +1790,15 @@ class _TrendStageRunner:
         evolution_normalization_stats: dict[str, int],
         evolution_suppressed_without_history: bool,
     ) -> None:
+        _ = payload
         self.record_metric(
             name="pipeline.trends.evolution.emitted_total",
-            value=1 if payload.evolution is not None else 0,
+            value=0,
             unit="count",
         )
         self.record_metric(
             name="pipeline.trends.evolution.signals_total",
-            value=len(payload.evolution.signals or [])
-            if payload.evolution is not None
-            else 0,
+            value=0,
             unit="count",
         )
         self.record_metric(
@@ -1846,268 +1825,6 @@ class _TrendStageRunner:
                 value=float(evolution_normalization_stats.get(key, 0)),
                 unit="count",
             )
-
-    def _enforce_representative_chunks(
-        self,
-        *,
-        payload: Any,
-        state: _TrendStageState,
-    ) -> dict[str, int]:
-        rep_doc_type_cache: dict[int, str | None] = {}
-        max_reps = 6
-        totals = {
-            "dropped_non_item_total": 0,
-            "backfilled_total": 0,
-            "failed_clusters_total": 0,
-        }
-        for cluster in list(getattr(payload, "clusters", []) or []):
-            cleaned, dropped_total = self._clean_cluster_reps(
-                cluster=cluster,
-                rep_doc_type_cache=rep_doc_type_cache,
-                max_reps=max_reps,
-            )
-            totals["dropped_non_item_total"] += dropped_total
-            cluster.representative_chunks = cleaned
-            if cluster.representative_chunks:
-                continue
-            backfilled = self._backfill_item_reps_text(
-                cluster=cluster,
-                state=state,
-                limit=max_reps,
-            )
-            if not backfilled:
-                backfilled = self._backfill_item_reps_semantic(
-                    cluster=cluster,
-                    state=state,
-                    limit=max_reps,
-                )
-            if backfilled:
-                cluster.representative_chunks = backfilled[:max_reps]
-                totals["backfilled_total"] += 1
-            else:
-                cluster.representative_chunks = []
-                totals["failed_clusters_total"] += 1
-        return totals
-
-    def _clean_cluster_reps(
-        self,
-        *,
-        cluster: Any,
-        rep_doc_type_cache: dict[int, str | None],
-        max_reps: int,
-    ) -> tuple[list[Any], int]:
-        cleaned: list[Any] = []
-        dropped_non_item_total = 0
-        seen_rep_keys: set[tuple[int, int]] = set()
-        for rep in list(getattr(cluster, "representative_chunks", []) or []):
-            rep_key = self._rep_chunk_key(rep)
-            if rep_key is None:
-                continue
-            doc_id_int, _ = rep_key
-            doc_type = self._doc_type_for_doc_id(
-                doc_id_value=doc_id_int,
-                rep_doc_type_cache=rep_doc_type_cache,
-            )
-            if doc_type != "item":
-                dropped_non_item_total += 1
-                continue
-            if rep_key in seen_rep_keys:
-                continue
-            seen_rep_keys.add(rep_key)
-            cleaned.append(rep)
-        return cleaned[:max_reps], dropped_non_item_total
-
-    def _doc_type_for_doc_id(
-        self,
-        *,
-        doc_id_value: int,
-        rep_doc_type_cache: dict[int, str | None],
-    ) -> str | None:
-        normalized_doc_id = int(doc_id_value)
-        if normalized_doc_id <= 0:
-            return None
-        if normalized_doc_id not in rep_doc_type_cache:
-            doc = cast(Any, self.service.repository).get_document(
-                doc_id=normalized_doc_id
-            )
-            rep_doc_type_cache[normalized_doc_id] = (
-                str(getattr(doc, "doc_type", "") or "").strip().lower() or None
-                if doc is not None
-                else None
-            )
-        return rep_doc_type_cache.get(normalized_doc_id)
-
-    @staticmethod
-    def _cluster_queries(cluster: Any) -> list[str]:
-        name = str(getattr(cluster, "name", "") or "").strip()
-        desc = str(getattr(cluster, "description", "") or "").strip()
-        candidates = [" ".join([name, desc]).strip(), name, desc]
-        out: list[str] = []
-        seen: set[str] = set()
-        for candidate in candidates:
-            normalized = " ".join(str(candidate or "").split()).strip()
-            if not normalized or normalized in seen:
-                continue
-            seen.add(normalized)
-            out.append(normalized)
-        return out
-
-    def _backfill_item_reps_text(
-        self,
-        *,
-        cluster: Any,
-        state: _TrendStageState,
-        limit: int,
-    ) -> list[Any]:
-        reps: list[Any] = []
-        seen: set[tuple[int, int]] = set()
-        for query in self._cluster_queries(cluster):
-            rows = self._text_search_rows(query=query, state=state, limit=limit)
-            self._append_text_reps(rows=rows, reps=reps, seen=seen, limit=limit)
-            if len(reps) >= limit:
-                return reps
-        return reps
-
-    def _text_search_rows(
-        self,
-        *,
-        query: str,
-        state: _TrendStageState,
-        limit: int,
-    ) -> list[Any]:
-        try:
-            return cast(Any, self.service.repository).search_chunks_text(
-                query=query,
-                doc_type="item",
-                period_start=state.period_start,
-                period_end=state.period_end,
-                limit=limit,
-            )
-        except Exception:
-            return []
-
-    def _append_text_reps(
-        self,
-        *,
-        rows: list[Any],
-        reps: list[Any],
-        seen: set[tuple[int, int]],
-        limit: int,
-    ) -> None:
-        for row in rows or []:
-            rep = self._row_to_rep(row)
-            if rep is None:
-                continue
-            rep_key = self._rep_chunk_key(rep)
-            if rep_key is None or rep_key in seen:
-                continue
-            seen.add(rep_key)
-            reps.append(rep)
-            if len(reps) >= limit:
-                return
-
-    def _row_to_rep(self, row: Any) -> Any | None:
-        if not isinstance(row, dict):
-            return None
-        raw_doc_id = row.get("doc_id")
-        raw_chunk_index = row.get("chunk_index")
-        if raw_doc_id is None or raw_chunk_index is None:
-            return None
-        try:
-            doc_id_int = int(raw_doc_id)
-            chunk_index_int = int(raw_chunk_index)
-        except Exception:
-            return None
-        if doc_id_int <= 0 or chunk_index_int < 0:
-            return None
-        return trends.TrendCluster.RepresentativeChunk(
-            doc_id=doc_id_int,
-            chunk_index=chunk_index_int,
-            score=None,
-        )
-
-    def _backfill_item_reps_semantic(
-        self,
-        *,
-        cluster: Any,
-        state: _TrendStageState,
-        limit: int,
-    ) -> list[Any]:
-        queries = self._cluster_queries(cluster)
-        if not queries:
-            return []
-        try:
-            hits = trends.semantic_search_summaries_in_period(
-                repository=cast(Any, self.service.repository),
-                lancedb_dir=self.service.settings.rag_lancedb_dir,
-                run_id=self.request.run_id,
-                doc_type="item",
-                period_start=state.period_start,
-                period_end=state.period_end,
-                query=queries[0],
-                embedding_model=self.service.settings.trends_embedding_model,
-                embedding_dimensions=self.service.settings.trends_embedding_dimensions,
-                max_batch_inputs=self.service.settings.trends_embedding_batch_max_inputs,
-                max_batch_chars=self.service.settings.trends_embedding_batch_max_chars,
-                embedding_failure_mode=getattr(
-                    self.service.settings,
-                    "trends_embedding_failure_mode",
-                    "continue",
-                ),
-                embedding_max_errors=int(
-                    getattr(self.service.settings, "trends_embedding_max_errors", 0)
-                    or 0
-                ),
-                limit=limit,
-                metric_namespace=self.metric_namespace,
-                llm_connection=self.service._llm_connection,
-            )
-        except Exception:
-            return []
-        reps: list[Any] = []
-        seen: set[tuple[int, int]] = set()
-        for hit in hits or []:
-            try:
-                doc_id_int = int(getattr(hit, "doc_id"))
-                chunk_index_int = int(getattr(hit, "chunk_index"))
-            except Exception:
-                continue
-            if doc_id_int <= 0 or chunk_index_int < 0:
-                continue
-            key = (doc_id_int, chunk_index_int)
-            if key in seen:
-                continue
-            seen.add(key)
-            score_raw = getattr(hit, "score", None)
-            score_value: float | None
-            if score_raw is None:
-                score_value = None
-            else:
-                try:
-                    score_value = float(score_raw)
-                except Exception:
-                    score_value = None
-            reps.append(
-                trends.TrendCluster.RepresentativeChunk(
-                    doc_id=doc_id_int,
-                    chunk_index=chunk_index_int,
-                    score=round(score_value, 6) if score_value is not None else None,
-                )
-            )
-            if len(reps) >= limit:
-                break
-        return reps
-
-    @staticmethod
-    def _rep_chunk_key(rep: Any) -> tuple[int, int] | None:
-        try:
-            doc_id_int = int(getattr(rep, "doc_id"))
-            chunk_index_int = int(getattr(rep, "chunk_index"))
-        except Exception:
-            return None
-        if doc_id_int <= 0 or chunk_index_int < 0:
-            return None
-        return doc_id_int, chunk_index_int
 
     def _record_rep_metrics(self, rep_stats: dict[str, int]) -> None:
         for metric_name, key in (
@@ -2145,11 +1862,9 @@ class _TrendStageRunner:
             "overview_pack_stats": generation.overview_pack_stats,
             "history_pack_stats": generation.history_pack_stats,
             "evolution": {
-                "present": generation.payload.evolution is not None,
-                "signals_total": len(generation.payload.evolution.signals or [])
-                if generation.payload.evolution is not None
-                else 0,
-                "suppressed_without_history": generation.evolution_suppressed_without_history,
+                "present": False,
+                "signals_total": 0,
+                "suppressed_without_history": False,
                 "normalization": generation.evolution_normalization_stats or {},
             },
             "rep_enforcement": {
@@ -2795,11 +2510,7 @@ def _trend_markdown_projection_spec(
             run_id=context.request.run_id,
             overview_md=materialized.overview_md,
             topics=list(materialized.topics),
-            evolution=materialized.evolution,
-            history_window_refs=materialized.history_window_refs,
-            counter_signal=materialized.counter_signal,
             clusters=materialized.clusters,
-            highlights=materialized.highlights,
             output_language=service.settings.llm_output_language,
             pass_output_id=pass_output_id,
             pass_kind=TREND_SYNTHESIS_PASS_KIND,
@@ -2843,11 +2554,7 @@ def _trend_obsidian_projection_spec(
             run_id=context.request.run_id,
             overview_md=materialized.overview_md,
             topics=list(materialized.topics),
-            evolution=materialized.evolution,
-            history_window_refs=materialized.history_window_refs,
-            counter_signal=materialized.counter_signal,
             clusters=materialized.clusters,
-            highlights=materialized.highlights,
             output_language=service.settings.llm_output_language,
             pass_output_id=pass_output_id,
             pass_kind=TREND_SYNTHESIS_PASS_KIND,

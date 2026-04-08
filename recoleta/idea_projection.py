@@ -33,15 +33,7 @@ def render_idea_document_chunk_text(idea: Any) -> str:
     ]
     lines = [
         f"Title: {str(getattr(idea, 'title', '') or '').strip()}",
-        f"Kind: {str(getattr(idea, 'kind', '') or '').strip()}",
-        f"Time horizon: {str(getattr(idea, 'time_horizon', '') or '').strip()}",
-        f"User/job: {str(getattr(idea, 'user_or_job', '') or '').strip()}",
-        f"Thesis: {str(getattr(idea, 'thesis', '') or '').strip()}",
-        "Anti-thesis: " + str(getattr(idea, "anti_thesis", "") or "").strip(),
-        f"Why now: {str(getattr(idea, 'why_now', '') or '').strip()}",
-        f"What changed: {str(getattr(idea, 'what_changed', '') or '').strip()}",
-        "Validation next step: "
-        + str(getattr(idea, "validation_next_step", "") or "").strip(),
+        f"Content: {str(getattr(idea, 'content_md', '') or '').strip()}",
     ]
     if evidence_reasons:
         lines.append("Evidence: " + " | ".join(evidence_reasons))

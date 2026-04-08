@@ -28,7 +28,6 @@ class TrendSiteDocument:
     instance: str | None
     body_html: str
     excerpt: str
-    evolution_insight: str | None
     frontmatter: dict[str, Any]
 
 

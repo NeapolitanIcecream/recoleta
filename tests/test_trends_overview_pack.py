@@ -199,9 +199,9 @@ def test_overview_pack_week_prefers_structured_trend_payload_meta_chunks(
                 ),
                 "clusters": [
                     {
-                        "name": "Loop closing",
-                        "description": "Systems are getting more grounded.",
-                        "representative_chunks": [
+                        "title": "Loop closing",
+                        "content_md": "Systems are getting more grounded.",
+                        "evidence_refs": [
                             {"doc_id": int(item_doc.id), "chunk_index": 0}
                         ],
                     }

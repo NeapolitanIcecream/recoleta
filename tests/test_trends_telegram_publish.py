@@ -29,9 +29,9 @@ def test_render_trend_note_pdf_preserves_title_and_sections(tmp_path: Path) -> N
         topics=["agents", "tooling"],
         clusters=[
             {
-                "name": "Top must-read",
-                "description": "The strongest cluster of the week.",
-                "representative_chunks": [
+                "title": "Top must-read",
+                "content_md": "The strongest cluster of the week.",
+                "evidence_refs": [
                     {
                         "doc_id": 1,
                         "chunk_index": 0,
@@ -42,7 +42,6 @@ def test_render_trend_note_pdf_preserves_title_and_sections(tmp_path: Path) -> N
                 ],
             }
         ],
-        highlights=["Tool use is converging with long-context workflows."],
     )
 
     pdf_path = render_trend_note_pdf(markdown_path=note_path)
@@ -56,7 +55,7 @@ def test_render_trend_note_pdf_preserves_title_and_sections(tmp_path: Path) -> N
 
     assert "Agentic tooling shifts into evaluation loops" in text
     assert "Overview" in text
-    assert "Representative sources" in text
+    assert "Evidence" in text
 
 
 def test_render_trend_note_pdf_debug_bundle_exports_intermediate_files(
@@ -73,7 +72,6 @@ def test_render_trend_note_pdf_debug_bundle_exports_intermediate_files(
         overview_md="## Signal\n\n- A stronger emphasis on evaluation loops.\n",
         topics=["agents", "evaluation"],
         clusters=[],
-        highlights=["Teams are optimizing for system reliability, not just demos."],
     )
 
     debug_dir = tmp_path / "pdf-debug"
@@ -108,7 +106,6 @@ def test_render_trend_note_pdf_browser_renderer_uses_continuous_page(
         overview_md="A denser browser-based PDF renderer.",
         topics=["agents", "evaluation"],
         clusters=[],
-        highlights=["Browser PDF should support continuous height."],
     )
 
     calls: dict[str, object] = {}
@@ -205,7 +202,6 @@ def test_prepare_trend_pdf_browser_css_uses_raster_card_gradients(
         overview_md="Raster card gradients should stay visually stable in PDF viewers.",
         topics=["agents"],
         clusters=[],
-        highlights=["Card backgrounds should not show horizontal seams."],
     )
 
     inputs = publish_module._prepare_trend_pdf_render_inputs(
@@ -219,53 +215,6 @@ def test_prepare_trend_pdf_browser_css_uses_raster_card_gradients(
         "linear-gradient(180deg, rgba(235, 243, 253, 0.99),"
         " rgba(248, 251, 254, 0.99))" not in inputs.css
     )
-
-
-def test_prepare_trend_pdf_browser_renders_evolution_cards_without_disclosure(
-    tmp_path: Path,
-) -> None:
-    note_path = write_markdown_trend_note(
-        output_dir=tmp_path,
-        trend_doc_id=21,
-        title="Evolution cards for browser PDF",
-        granularity="day",
-        period_start=datetime(2026, 3, 9, tzinfo=UTC),
-        period_end=datetime(2026, 3, 10, tzinfo=UTC),
-        run_id="run-trend-pdf-evolution-browser",
-        overview_md="Browser PDF should preserve the site card language.\n",
-        topics=["agents"],
-        evolution={
-            "summary_md": "Historical comparisons should keep the same card hierarchy in PDF.",
-            "signals": [
-                {
-                    "theme": "Terminal-native workflows keep consolidating",
-                    "change_type": "continuing",
-                    "summary": (
-                        "This signal summary is intentionally long so the site renderer "
-                        "would normally consider progressive disclosure, but the browser "
-                        "PDF output should keep the same card language without any "
-                        "interactive disclosure affordance. The entire rationale should "
-                        "stay inline inside the card."
-                    ),
-                    "history_windows": [],
-                }
-            ],
-        },
-        clusters=[],
-        highlights=[],
-    )
-
-    inputs = publish_module._prepare_trend_pdf_render_inputs(
-        markdown_path=note_path,
-        backend="browser",
-        page_mode="continuous",
-    )
-
-    assert "evolution-section" in inputs.document_html
-    assert "evolution-card" in inputs.document_html
-    assert "details class='evolution-expand'" not in inputs.document_html
-    assert ".evolution-section" in inputs.css
-    assert ".evolution-card" in inputs.css
 
 
 def test_render_trend_note_pdf_auto_falls_back_to_story_renderer(
@@ -283,7 +232,6 @@ def test_render_trend_note_pdf_auto_falls_back_to_story_renderer(
         overview_md="Browser rendering fails, story renderer saves the day.",
         topics=["agents"],
         clusters=[],
-        highlights=[],
     )
 
     calls = {"story_total": 0}
@@ -369,7 +317,6 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
         ),
         topics=["agents"],
         clusters=[],
-        highlights=["Agent stacks are getting more production-shaped."],
     )
 
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
@@ -468,7 +415,6 @@ def test_trends_telegram_publish_respects_daily_delivery_cap(
         overview_md="The daily cap should block this PDF delivery.",
         topics=["agents"],
         clusters=[],
-        highlights=["No outbound Telegram delivery should be created."],
     )
 
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
@@ -543,7 +489,6 @@ def test_publish_counts_trend_delivery_toward_telegram_daily_cap(
         overview_md="The trend delivery should consume the only allowed send today.",
         topics=["agents"],
         clusters=[],
-        highlights=["Subsequent item publishing should be skipped."],
     )
 
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
@@ -613,7 +558,6 @@ def test_trends_telegram_publish_debug_pdf_exports_preview_bundle(
         overview_md="Debug mode should export render intermediates.",
         topics=["agents"],
         clusters=[],
-        highlights=["Preview artifacts help visual iteration."],
     )
 
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
@@ -690,7 +634,6 @@ def test_trends_telegram_publish_debug_pdf_failure_is_non_fatal(
         overview_md="Debug export failures must not block Telegram delivery.",
         topics=["agents"],
         clusters=[],
-        highlights=["The PDF still needs to go out."],
     )
 
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
@@ -768,7 +711,6 @@ def test_trends_telegram_publish_skips_duplicate_delivery_for_unchanged_period(
         overview_md="The period-level trend content is unchanged.",
         topics=["agents"],
         clusters=[],
-        highlights=["This list should not affect delivery dedupe."],
     )
 
     def _fake_generate(**_kwargs):  # type: ignore[no-untyped-def]
@@ -892,7 +834,6 @@ def test_trends_telegram_publish_uses_injected_sender_without_telegram_credentia
                 overview_md="Injected senders should be sufficient for trend delivery.",
                 topics=["agents"],
                 clusters=[],
-                highlights=["No explicit bot credentials should be required here."],
             ),
             {"tool_calls_total": 0},
         )
@@ -973,7 +914,6 @@ def test_trends_telegram_publish_records_failure_metric_when_document_send_fails
                 overview_md="A delivery failure should not discard the trend note.",
                 topics=["agents"],
                 clusters=[],
-                highlights=[],
             ),
             {"tool_calls_total": 0},
         )

@@ -15,6 +15,7 @@ from recoleta.llm_costs import extract_measured_cost_usd, resolve_cost_usd
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.observability import collect_environment_secrets, scrub_secrets
 from recoleta.item_summary import normalize_item_summary_markdown
+from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.types import AnalysisResult, AnalyzeDebug
 
 completion: Any | None = None
@@ -301,7 +302,10 @@ class LiteLLMAnalyzer:
         )
 
     def _build_system_message(self) -> str:
-        base_message = "You are a research signal analyst. Return strict JSON only."
+        base_message = (
+            "You are a research signal analyst. Return strict JSON only.\n\n"
+            f"{reader_facing_ai_tropes_prompt()}"
+        )
         if not self.output_language:
             return base_message
         return (

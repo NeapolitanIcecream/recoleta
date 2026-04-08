@@ -21,16 +21,17 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - First-contact promo cards should show the shape of the produced artifact with nested surfaces or grouped sub-sections, not just a flat stack of left-aligned copy and pills.
 - Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.
 - Favor dense, scannable structure over marketing-style flourish. Comparative content should read like an analysis surface, not a landing page.
+- Reader-facing research surfaces must present finished writing, not the model's internal worksheet. Analysis structure may guide generation, but the public page should show only the final prose and supporting evidence.
+- Keep reader-facing block shapes sparse. Prefer a small repeated primitive such as `title`, `content`, and `evidence` over field-by-field cards that expose internal methodology labels.
+- Do not expose prompt-method labels such as `Best bet`, `Alternate`, `Thesis`, `Anti-thesis`, `Why now`, `What changed`, `Validation next step`, `Top shifts`, or `Counter-signal` as public section chrome unless product direction explicitly reinstates them.
 - Treat `Trends` and `Ideas` as peer collection surfaces: each should have its own index destination, parallel navigation affordance, and symmetric home-section labeling.
 - When `Trends` and `Ideas` appear side by side, keep the pair visually symmetric: equal-width columns, one stacked card column per side, and mirrored section chrome.
 - Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Keep `Evolution` as a secondary comparison surface rather than replacing the primary summary.
-- On trend detail pages, render `Counter-signal` as its own surface when available; keep the label in English on the public site even when the body copy is localized.
-- On `Ideas` detail pages, keep `Summary` and `Opportunities` as separate surfaces; render each opportunity as its own readable card with English field labels instead of collapsing multiple ideas into one long prose block.
-- For markdown-first `Ideas` detail flows, use English reader-facing labels such as `Best bet`, `Alternate`, `Type`, `Horizon`, and `Role`; do not expose raw `User/job` labels or enum tokens in published copy.
-- On `Ideas` opportunity cards, render `Anti-thesis` as a first-class field block when it exists; keep the label in English on the public site while allowing the content itself to stay in the source language.
+- On trend detail pages, keep the public reading surface centered on `Overview` plus supporting cluster blocks. If contradictory evidence matters, fold it into the finished prose of those remaining blocks instead of rendering a separate worksheet surface.
+- On `Ideas` detail pages, keep the page structure minimal: a summary block plus idea blocks. Each idea block should read like a short finished note with a title, prose body, and evidence, not a stack of explicit method fields.
+- For markdown-first `Ideas` detail flows, do not replace raw enum leakage with a different public worksheet. Hiding `User/job` while exposing `Role`, or hiding ranking enums while exposing `Best bet`, is still formalism if the reader sees the internal analysis template.
 - On `Ideas` cards and detail heroes, omit empty topic rows entirely instead of rendering placeholder chrome for missing topics.
-- On `Ideas` opportunity cards, keep only short metadata in pills; render the longer user/role audience as a separate `Role` field block instead of a wrapping pill.
-- On `Ideas` opportunity cards, `Role` field copy must fully expand; do not clamp or truncate multi-line role/audience text.
+- On `Ideas` cards and detail heroes, keep metadata subordinate. If a metadata field is not directly useful to a reader deciding whether to open or trust the note, prefer removing it rather than inventing new pills or field blocks for it.
 - Topic and stream discovery surfaces should aggregate both trend briefs and idea briefs so idea-only topics/streams stay navigable and linked, rather than degrading into unlabeled plain text.
 - Topic and stream entity pages should lead with a summary surface for the entity itself, then render symmetric `Trend briefs` and `Idea briefs` collection panels below instead of pairing the entity name against only one collection.
 - If a stream label originates from a machine slug such as `embedded_ai` or `research-ops`, render it as a readable title in the UI chrome rather than exposing the raw slug.

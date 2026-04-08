@@ -56,7 +56,6 @@ def test_trends_stage_records_per_tool_metrics(
             overview_md="- grounded summary",
             topics=["agents"],
             clusters=[],
-            highlights=["agents"],
         )
         debug = {
             "usage": {},

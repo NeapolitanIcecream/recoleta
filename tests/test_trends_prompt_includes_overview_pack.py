@@ -35,26 +35,14 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
     ]
     assert prompt_payload.get("ranking_n") == 7
     assert prompt_payload.get("rep_source_doc_type") == "item"
-    assert prompt_payload.get("evolution_max_signals") == 4
-    assert prompt_payload.get("evolution_change_types") == [
-        "continuing",
-        "emerging",
-        "fading",
-        "shifting",
-        "polarizing",
-    ]
-    assert prompt_payload.get("evolution_requirements") == {
-        "avoid_generic_summary": True,
-        "prefer_concrete_titles": True,
-        "prefer_named_history_anchors": True,
-        "prefer_quantitative_details": True,
-        "render_history_window_mentions": True,
-        "use_fewer_signals_if_evidence_is_thin": True,
-    }
     notes = prompt_payload.get("notes") or []
     assert any(
-        "use the exact prev_n token" in str(note)
-        and "do not manually repeat" in str(note)
+        "use the exact prev_n token" in str(note).lower()
+        and "history_pack_md" in str(note)
+        for note in notes
+    )
+    assert any(
+        "use history_pack_md only as internal analysis context" in str(note).lower()
         for note in notes
     )
 

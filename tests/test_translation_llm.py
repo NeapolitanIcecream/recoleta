@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import pytest
 
@@ -23,14 +24,11 @@ def _ideas_payload() -> dict[str, object]:
         "ideas": [
             {
                 "title": "Auditable eval workbench",
-                "kind": "tooling_wedge",
-                "thesis": "Build an auditable evaluation workbench.",
-                "why_now": "Grounded traces are now cheap enough to keep.",
-                "what_changed": "Teams can inspect long-horizon runs directly.",
-                "user_or_job": "Evaluation teams debugging agent regressions.",
+                "content_md": (
+                    "Build an auditable evaluation workbench for teams debugging "
+                    "agent regressions now that grounded traces are cheap to keep."
+                ),
                 "evidence_refs": [{"doc_id": 1, "chunk_index": 0}],
-                "validation_next_step": "Pilot the workbench with one benchmark.",
-                "time_horizon": "now",
             }
         ],
     }
@@ -48,6 +46,9 @@ def test_translate_structured_payload_retries_after_invalid_json() -> None:
         attempts["count"] += 1
         return response
 
+    def _extract_raw(response: object) -> Any:
+        return cast(dict[str, Any], response)["raw"]
+
     translated, debug = translate_structured_payload_with_debug(
         TranslationLLMRequest(
             model="test/fake-model",
@@ -61,7 +62,7 @@ def test_translate_structured_payload_retries_after_invalid_json() -> None:
             completion_factory=lambda: _completion,
             extract_usage_dict_fn=lambda response: {"requests": 1, "cost": response},
             extract_token_counts_fn=lambda usage: (10, 5, 15),
-            extract_content_fn=lambda response: response["raw"],
+            extract_content_fn=_extract_raw,
             resolve_response_cost_usd_fn=lambda **_: 0.01,
         ),
     )
@@ -85,6 +86,9 @@ def test_translate_structured_payload_retries_after_schema_validation_error() ->
         attempts["count"] += 1
         return response
 
+    def _extract_raw(response: object) -> Any:
+        return cast(dict[str, Any], response)["raw"]
+
     translated, debug = translate_structured_payload_with_debug(
         TranslationLLMRequest(
             model="test/fake-model",
@@ -98,7 +102,7 @@ def test_translate_structured_payload_retries_after_schema_validation_error() ->
             completion_factory=lambda: _completion,
             extract_usage_dict_fn=lambda response: {"requests": 1, "cost": response},
             extract_token_counts_fn=lambda usage: (12, 6, 18),
-            extract_content_fn=lambda response: response["raw"],
+            extract_content_fn=_extract_raw,
             resolve_response_cost_usd_fn=lambda **_: 0.02,
         ),
     )
@@ -122,6 +126,9 @@ def test_translate_structured_payload_retries_after_missing_content() -> None:
         attempts["count"] += 1
         return response
 
+    def _extract_raw(response: object) -> Any:
+        return cast(dict[str, Any], response)["raw"]
+
     translated, debug = translate_structured_payload_with_debug(
         TranslationLLMRequest(
             model="test/fake-model",
@@ -135,7 +142,7 @@ def test_translate_structured_payload_retries_after_missing_content() -> None:
             completion_factory=lambda: _completion,
             extract_usage_dict_fn=lambda response: {"requests": 1, "cost": response},
             extract_token_counts_fn=lambda usage: (10, 5, 15),
-            extract_content_fn=lambda response: response["raw"],
+            extract_content_fn=_extract_raw,
             resolve_response_cost_usd_fn=lambda **_: 0.01,
         ),
     )

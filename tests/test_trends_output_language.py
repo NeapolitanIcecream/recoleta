@@ -15,17 +15,12 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "keep topics as concise English tags" in instructions
     assert "under 200 Chinese characters or 200 words" in instructions
     assert "do not add a Topics/主题 section inside overview_md" in instructions
-    assert "Tools only access the active target period" in instructions
+    assert "The public output should contain only overview_md and 1 to 4 cluster briefs" in instructions
+    assert "Each cluster must include at least one evidence_refs entry" in instructions
     assert "direct editorial judgment, not a topic inventory" in instructions
-    assert "1 to 3 ranked shifts ordered by importance" in instructions
-    assert "counter-signal" in instructions.lower()
     assert "at most three named systems, papers, or benchmarks" in instructions
-    assert (
-        "Keep raw prev_n tokens only in evolution.signals[].history_windows"
-        in instructions
-    )
-    assert "The goal is not to ban every phrase once." in instructions
-    assert "Avoid negative parallelism" in instructions
+    assert "Do not leave raw prev_n tokens in title, overview_md, or clusters[].content_md" in instructions
+    assert "Do not use negative parallelism" in instructions
     assert "Avoid false suspense" in instructions
     assert "Avoid fractal summaries" in instructions
 

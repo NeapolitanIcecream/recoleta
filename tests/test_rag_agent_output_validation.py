@@ -32,15 +32,13 @@ def test_trend_agent_validates_typed_output(
         "granularity": "day",
         "period_start": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
         "period_end": datetime(2026, 1, 2, tzinfo=UTC).isoformat(),
-        "overview_md": "- ok",
+        "overview_md": "Verification moved into the shipping path.",
         "topics": ["agents"],
         "clusters": [],
-        "highlights": ["agents"],
     }
 
     def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         _ = messages
-        assert info.output_tools
         tool_name = info.output_tools[0].name
         return ModelResponse(parts=[ToolCallPart(tool_name, payload)])
 
@@ -78,19 +76,16 @@ def test_trend_agent_retries_output_validation_twice_before_accepting_output(
         "granularity": "day",
         "period_start": datetime(2026, 1, 1, tzinfo=UTC).isoformat(),
         "period_end": datetime(2026, 1, 2, tzinfo=UTC).isoformat(),
-        "overview_md": "- ok",
+        "overview_md": "Verification moved into the shipping path.",
         "topics": ["agents"],
         "clusters": [],
-        "highlights": ["agents"],
     }
 
     def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         _ = messages
-        assert info.output_tools
-        tool_name = info.output_tools[0].name
         attempts["count"] += 1
         payload = {"granularity": "day"} if attempts["count"] < 3 else valid_payload
-        return ModelResponse(parts=[ToolCallPart(tool_name, payload)])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, payload)])
 
     deps = TrendAgentDeps(
         repository=repository,
@@ -132,25 +127,17 @@ def test_ideas_agent_retries_output_validation_twice_before_accepting_output(
         "ideas": [
             {
                 "title": "Auditable eval workbench",
-                "kind": "tooling_wedge",
-                "thesis": "Build an auditable evaluation workbench.",
-                "why_now": "Grounded traces are now cheap enough to keep.",
-                "what_changed": "Teams can inspect long-horizon runs directly.",
-                "user_or_job": "Evaluation teams debugging agent regressions.",
+                "content_md": "Build an auditable evaluation workbench for long runs.",
                 "evidence_refs": [{"doc_id": 1, "chunk_index": 0}],
-                "validation_next_step": "Pilot one benchmark workflow.",
-                "time_horizon": "now",
             }
         ],
     }
 
     def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         _ = messages
-        assert info.output_tools
-        tool_name = info.output_tools[0].name
         attempts["count"] += 1
         payload = {"granularity": "day"} if attempts["count"] < 3 else valid_payload
-        return ModelResponse(parts=[ToolCallPart(tool_name, payload)])
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, payload)])
 
     deps = IdeasAgentDeps(
         repository=repository,

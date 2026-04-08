@@ -74,7 +74,6 @@ def test_history_pack_week_includes_previous_windows_with_placeholders(
                 overview_md="Agent tooling keeps tightening the loop.",
                 topics=["agents"],
                 clusters=[],
-                highlights=[],
             ).model_dump(mode="json"),
             ensure_ascii=False,
         ),

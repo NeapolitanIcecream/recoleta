@@ -87,10 +87,11 @@ def test_analyzer_system_message_defaults_when_output_language_missing(
     )
 
     assert result.summary.startswith("## Summary")
-    assert (
-        captured_messages[0]["content"]
-        == "You are a research signal analyst. Return strict JSON only."
+    system_message = captured_messages[0]["content"]
+    assert system_message.startswith(
+        "You are a research signal analyst. Return strict JSON only."
     )
+    assert "Do not use negative parallelism" in system_message
 
 
 def test_analyzer_uses_model_default_temperature_gh_gpt52(

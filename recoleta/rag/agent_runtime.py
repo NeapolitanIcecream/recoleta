@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from threading import Event, Thread
-from typing import Any, Callable
+from typing import Any
 
 from loguru import logger
 
@@ -11,16 +11,11 @@ from recoleta.llm_costs import (
     estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens,
 )
 from recoleta.rag.agent_models import (
-    RepresentativeBackfillRequest,
     TrendGenerationRequest,
     TrendPromptRequest,
 )
 from recoleta.rag.search_helpers import truncate_text
-from recoleta.trends import (
-    TREND_EVOLUTION_CHANGE_TYPE_VALUES,
-    TrendCluster,
-    TrendPayload,
-)
+from recoleta.trends import TrendPayload
 
 _RAW_TOOL_TRACE_MAX_EVENTS = 64
 _RAW_TOOL_TRACE_MAX_ITEMS = 12
@@ -36,24 +31,15 @@ def _heartbeat_interval_seconds() -> float:
 
 def _prompt_notes() -> list[str]:
     return [
-        "Use tools to cite representative doc_id/chunk_index in clusters.",
+        "Use tools to ground clusters with concrete evidence_refs that cite doc_id and chunk_index.",
         "Optimize for readability: short sentences, minimal jargon pile-ups, no repetitive filler.",
         "Keep claims grounded in the local corpus.",
         "Keep the title specific and remove date/generic prefixes.",
         "Keep topics only in metadata, not in overview_md body sections.",
         "Tools only access the active target period; use history_pack_md for same-granularity historical context when present.",
-        "Leave evolution null unless history_pack_md provides usable prior-window evidence.",
-        (
-            "If evolution is present, evolution.signals[].change_type must be one of "
-            + ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
-            + "."
-        ),
-        "If evolution is present, evolution.signals[].history_windows must use only prev_n window_id values from history_pack_md and must not repeat the current period token.",
-        "Evolution must be evidence-dense: name concrete papers, benchmarks, or systems and include specific factual details or metrics whenever available.",
-        "When comparing against history, ground the delta in concrete historical titles, clusters, or representative systems from history_pack_md rather than generic phrases.",
-        "If you mention a historical window in prose, use the exact prev_n token so publishing can render it as a link, and do not manually repeat the linked historical title immediately next to that token.",
-        "If you cannot ground an evolution signal concretely, emit fewer signals instead of generic prose.",
-        "Do not repeat the overview inside evolution; explain the delta across windows.",
+        "Use history_pack_md only as internal analysis context; if it sharpens the brief, weave the delta into overview_md or clusters instead of emitting a dedicated history section.",
+        "If you mention a historical window in prose, use the exact prev_n token from history_pack_md so publishing can render it as a link.",
+        "If history evidence is weak, omit the comparison instead of writing generic change-over-time filler.",
     ]
 
 
@@ -78,8 +64,6 @@ def _prompt_payload_extras(
         normalized = str(request.rep_source_doc_type).strip().lower()
         if normalized:
             payload["rep_source_doc_type"] = normalized
-    if request.evolution_max_signals is not None:
-        payload["evolution_max_signals"] = int(request.evolution_max_signals)
     return payload
 
 
@@ -94,230 +78,8 @@ def build_trend_prompt_payload(request: TrendPromptRequest) -> dict[str, Any]:
             "granularity": request.corpus_granularity,
         },
         "notes": _prompt_notes(),
-        "evolution_change_types": list(TREND_EVOLUTION_CHANGE_TYPE_VALUES),
-        "evolution_requirements": {
-            "avoid_generic_summary": True,
-            "prefer_concrete_titles": True,
-            "prefer_named_history_anchors": True,
-            "prefer_quantitative_details": True,
-            "render_history_window_mentions": True,
-            "use_fewer_signals_if_evidence_is_thin": True,
-        },
     }
     return _prompt_payload_extras(request, payload)
-
-
-def _normalized_representative(
-    rep: Any,
-) -> TrendCluster.RepresentativeChunk | None:
-    try:
-        doc_id = int(getattr(rep, "doc_id"))
-        chunk_index = int(getattr(rep, "chunk_index"))
-    except Exception:
-        return None
-    if doc_id <= 0 or chunk_index < 0:
-        return None
-    score_raw = getattr(rep, "score", None)
-    try:
-        score = float(score_raw) if score_raw is not None else None
-    except Exception:
-        score = None
-    return TrendCluster.RepresentativeChunk(
-        doc_id=doc_id,
-        chunk_index=chunk_index,
-        score=round(score, 6) if score is not None else None,
-    )
-
-
-def _backfilled_chunks_from_doc_ids(
-    cluster: TrendCluster,
-    *,
-    max_reps: int,
-) -> list[TrendCluster.RepresentativeChunk]:
-    out: list[TrendCluster.RepresentativeChunk] = []
-    for raw_doc_id in list(getattr(cluster, "representative_doc_ids", []) or []):
-        try:
-            doc_id = int(raw_doc_id)
-        except Exception:
-            continue
-        if doc_id <= 0:
-            continue
-        out.append(
-            TrendCluster.RepresentativeChunk(doc_id=doc_id, chunk_index=0, score=None)
-        )
-        if len(out) >= max_reps:
-            break
-    return out
-
-
-def _cluster_search_query(cluster: TrendCluster) -> str:
-    return " ".join(
-        [
-            str(getattr(cluster, "name", "") or "").strip(),
-            str(getattr(cluster, "description", "") or "").strip(),
-        ]
-    ).strip()
-
-
-def _clean_representatives(
-    cluster: TrendCluster,
-    *,
-    max_reps: int,
-) -> tuple[list[TrendCluster.RepresentativeChunk], int]:
-    raw_reps = list(cluster.representative_chunks or [])
-    cleaned = [
-        normalized
-        for rep in raw_reps
-        if (normalized := _normalized_representative(rep)) is not None
-    ]
-    return cleaned[:max_reps], max(0, len(raw_reps) - len(cleaned))
-
-
-def _backfilled_chunks_from_search_rows(
-    rows: list[Any],
-    *,
-    max_reps: int,
-) -> list[TrendCluster.RepresentativeChunk]:
-    backfilled: list[TrendCluster.RepresentativeChunk] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        normalized = _normalized_representative(type("Row", (), row)())
-        if normalized is None:
-            continue
-        backfilled.append(normalized)
-        if len(backfilled) >= max_reps:
-            break
-    return backfilled
-
-
-def _backfilled_chunks(
-    *,
-    cluster: TrendCluster,
-    search: Callable[[str, int], list[dict[str, Any]]],
-    max_reps: int,
-) -> list[TrendCluster.RepresentativeChunk]:
-    query = _cluster_search_query(cluster)
-    if query:
-        try:
-            rows = search(query, max_reps) or []
-        except Exception as exc:
-            logger.warning(
-                "Representative search failed query={} error_type={} error={}",
-                query,
-                type(exc).__name__,
-                str(exc),
-            )
-            rows = []
-        backfilled = _backfilled_chunks_from_search_rows(
-            rows,
-            max_reps=max_reps,
-        )
-        if backfilled:
-            return backfilled
-    return _backfilled_chunks_from_doc_ids(cluster, max_reps=max_reps)
-
-
-def _apply_cluster_representatives(
-    cluster: TrendCluster,
-    *,
-    search: Callable[[str, int], list[dict[str, Any]]],
-    max_reps: int,
-) -> dict[str, int]:
-    cleaned, invalid_reps_dropped_total = _clean_representatives(
-        cluster,
-        max_reps=max_reps,
-    )
-    if cleaned:
-        cluster.representative_chunks = cleaned
-        return {
-            "clusters_backfilled_total": 0,
-            "invalid_reps_dropped_total": invalid_reps_dropped_total,
-            "reps_backfilled_total": 0,
-        }
-    backfilled = _backfilled_chunks(cluster=cluster, search=search, max_reps=max_reps)
-    cluster.representative_chunks = backfilled
-    return {
-        "clusters_backfilled_total": 1 if backfilled else 0,
-        "invalid_reps_dropped_total": invalid_reps_dropped_total,
-        "reps_backfilled_total": len(backfilled),
-    }
-
-
-def ensure_trend_cluster_representatives_with_search(
-    *,
-    payload: TrendPayload,
-    search: Callable[[str, int], list[dict[str, Any]]],
-    max_reps: int = 6,
-) -> dict[str, int]:
-    clusters_total = len(payload.clusters or [])
-    normalized_max_reps = max(0, int(max_reps or 0))
-    if normalized_max_reps <= 0 or not payload.clusters:
-        return {
-            "clusters_total": clusters_total,
-            "clusters_backfilled_total": 0,
-            "invalid_reps_dropped_total": 0,
-            "reps_backfilled_total": 0,
-        }
-    clusters_backfilled_total = 0
-    invalid_reps_dropped_total = 0
-    reps_backfilled_total = 0
-    for cluster in payload.clusters:
-        cluster_stats = _apply_cluster_representatives(
-            cluster,
-            search=search,
-            max_reps=normalized_max_reps,
-        )
-        clusters_backfilled_total += int(cluster_stats["clusters_backfilled_total"])
-        invalid_reps_dropped_total += int(cluster_stats["invalid_reps_dropped_total"])
-        reps_backfilled_total += int(cluster_stats["reps_backfilled_total"])
-    return {
-        "clusters_total": clusters_total,
-        "clusters_backfilled_total": clusters_backfilled_total,
-        "invalid_reps_dropped_total": invalid_reps_dropped_total,
-        "reps_backfilled_total": reps_backfilled_total,
-    }
-
-
-def ensure_trend_cluster_representatives(
-    request: RepresentativeBackfillRequest,
-) -> dict[str, int]:
-    from recoleta.rag import agent as rag_agent
-
-    return ensure_trend_cluster_representatives_with_search(
-        payload=request.payload,
-        search=lambda query, limit: [
-            {
-                "doc_id": hit.doc_id,
-                "chunk_index": hit.chunk_index,
-                "score": round(float(hit.score), 6),
-            }
-            for hit in rag_agent.semantic_search_summaries_in_period(
-                repository=request.repository,
-                vector_store=request.vector_store,
-                run_id=request.run_id,
-                doc_type=request.search_request(
-                    query=query, limit=limit
-                ).window.doc_type,
-                granularity=request.search_request(
-                    query=query, limit=limit
-                ).window.granularity,
-                period_start=request.period_start,
-                period_end=request.period_end,
-                query=query,
-                embedding_model=request.embedding_model,
-                embedding_dimensions=request.embedding_dimensions,
-                max_batch_inputs=request.embedding_batch_max_inputs,
-                max_batch_chars=request.embedding_batch_max_chars,
-                embedding_failure_mode=request.embedding_failure_mode,
-                embedding_max_errors=request.embedding_max_errors,
-                limit=limit,
-                metric_namespace=request.metric_namespace,
-                llm_connection=request.llm_connection,
-            )
-        ],
-        max_reps=request.max_reps,
-    )
 
 
 def _compact_mapping_value(value: dict[Any, Any], *, depth: int) -> dict[str, Any]:
@@ -643,29 +405,6 @@ def _run_agent_sync(
     return result, int((time.perf_counter() - agent_started) * 1000)
 
 
-def _record_backfill_metrics(
-    *,
-    request: TrendGenerationRequest,
-    rep_stats: dict[str, int],
-) -> None:
-    if not rep_stats.get("invalid_reps_dropped_total", 0) and not rep_stats.get(
-        "clusters_backfilled_total", 0
-    ):
-        return
-    request.repository.record_metric(
-        run_id=request.run_id,
-        name=f"{request.metric_namespace}.cluster_representatives_backfilled_total",
-        value=int(rep_stats.get("clusters_backfilled_total") or 0),
-        unit="count",
-    )
-    request.repository.record_metric(
-        run_id=request.run_id,
-        name=f"{request.metric_namespace}.cluster_representatives_invalid_dropped_total",
-        value=int(rep_stats.get("invalid_reps_dropped_total") or 0),
-        unit="count",
-    )
-
-
 def _trend_prompt(request: TrendGenerationRequest) -> tuple[str, int]:
     prompt = json.dumps(
         build_trend_prompt_payload(request.prompt_request()),
@@ -707,60 +446,6 @@ def _record_agent_run_metrics(
         value=0,
         unit="count",
     )
-
-
-def _representative_backfill_request(
-    request: TrendGenerationRequest,
-    *,
-    payload: TrendPayload,
-) -> RepresentativeBackfillRequest:
-    return RepresentativeBackfillRequest(
-        payload=payload,
-        repository=request.repository,
-        vector_store=request.vector_store,
-        run_id=request.run_id,
-        period_start=request.period_start,
-        period_end=request.period_end,
-        rep_source_doc_type=request.rep_source_doc_type,
-        embedding_model=request.embedding_model,
-        embedding_dimensions=request.embedding_dimensions,
-        embedding_batch_max_inputs=request.embedding_batch_max_inputs,
-        embedding_batch_max_chars=request.embedding_batch_max_chars,
-        embedding_failure_mode=request.embedding_failure_mode,
-        embedding_max_errors=request.embedding_max_errors,
-        metric_namespace=request.metric_namespace,
-        llm_connection=request.llm_connection,
-    )
-
-
-def _run_representative_backfill(
-    request: TrendGenerationRequest,
-    *,
-    payload: TrendPayload,
-    log: Any,
-) -> dict[str, int]:
-    from recoleta.rag import agent as rag_agent
-
-    rep_backfill_started = time.perf_counter()
-    rep_stats = rag_agent.ensure_trend_cluster_representatives(
-        request=_representative_backfill_request(request, payload=payload)
-    )
-    rep_backfill_duration_ms = int((time.perf_counter() - rep_backfill_started) * 1000)
-    _record_metric(
-        request,
-        name="rep_backfill.duration_ms",
-        value=rep_backfill_duration_ms,
-        unit="ms",
-    )
-    log.info(
-        "Trend representative backfill done granularity={} duration_ms={} clusters_backfilled_total={} invalid_reps_dropped_total={} reps_backfilled_total={}",
-        request.granularity,
-        rep_backfill_duration_ms,
-        int(rep_stats.get("clusters_backfilled_total") or 0),
-        int(rep_stats.get("invalid_reps_dropped_total") or 0),
-        int(rep_stats.get("reps_backfilled_total") or 0),
-    )
-    return rep_stats
 
 
 def _log_generation_done(
@@ -821,15 +506,6 @@ def generate_trend_payload(
     result, agent_duration_ms = _run_agent_sync(request, prompt=prompt, log=log)
     _record_agent_run_metrics(request, agent_duration_ms=agent_duration_ms)
     payload = result.output
-    rep_stats = _run_representative_backfill(request, payload=payload, log=log)
-    try:
-        _record_backfill_metrics(request=request, rep_stats=rep_stats)
-    except Exception as metric_exc:
-        log.warning(
-            "Trend representative metrics failed error_type={} error={}",
-            type(metric_exc).__name__,
-            str(metric_exc),
-        )
     debug = _generation_debug_payload(
         request=request, result=result, prompt_chars=prompt_chars
     )

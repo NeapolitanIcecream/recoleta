@@ -276,7 +276,7 @@ def normalize_trend_evolution_impl(
 
 
 def _cluster_name(cluster: dict[str, Any]) -> str:
-    return _sanitize_inline_text(str(cluster.get("name") or "").strip())
+    return _sanitize_inline_text(str(cluster.get("title") or "").strip())
 
 
 def _representative_link(*, repository: Any, rep: dict[str, Any]) -> str | None:
@@ -301,7 +301,7 @@ def _representative_links_for_cluster(
     repository: Any,
     cluster: dict[str, Any],
 ) -> list[str]:
-    reps = cluster.get("representative_chunks") or []
+    reps = cluster.get("evidence_refs") or []
     if not isinstance(reps, list):
         return []
     links: list[str] = []
