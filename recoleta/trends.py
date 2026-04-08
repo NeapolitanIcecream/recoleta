@@ -506,6 +506,61 @@ def _analysis_relevance_score(analysis: Any) -> float:
         return 0.0
 
 
+_ITEM_META_CHUNK_INDEX = 1_000_000
+
+
+def _analysis_novelty_score(analysis: Any) -> float | None:
+    raw = getattr(analysis, "novelty_score", None)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _item_authors_list(item: Any) -> list[str]:
+    raw_authors = getattr(item, "authors", None)
+    if isinstance(raw_authors, str):
+        try:
+            loaded = json.loads(raw_authors)
+        except Exception:
+            loaded = None
+        if isinstance(loaded, list):
+            return [str(value).strip() for value in loaded if str(value).strip()]
+    if isinstance(raw_authors, list):
+        return [str(value).strip() for value in raw_authors if str(value).strip()]
+    return []
+
+
+def _item_meta_payload(*, item: Any, analysis: Any) -> dict[str, Any]:
+    published_at = getattr(item, "published_at", None) or getattr(item, "created_at", None)
+    published_at_iso: str | None = None
+    if isinstance(published_at, datetime):
+        published_at_iso = (
+            published_at.replace(tzinfo=UTC).isoformat()
+            if published_at.tzinfo is None
+            else published_at.astimezone(UTC).isoformat()
+        )
+    return {
+        "item_id": int(getattr(item, "id") or 0),
+        "canonical_url": str(getattr(item, "canonical_url", "") or "").strip() or None,
+        "title": str(getattr(item, "title", "") or "").strip() or None,
+        "authors": _item_authors_list(item),
+        "published_at": published_at_iso,
+        "relevance_score": _analysis_relevance_score(analysis),
+        "novelty_score": _analysis_novelty_score(analysis),
+    }
+
+
+def _item_meta_chunk_text(*, item: Any, analysis: Any) -> str:
+    return json.dumps(
+        _item_meta_payload(item=item, analysis=analysis),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
 def _filter_pairs_by_min_relevance(
     pairs: list[tuple[Any, Any]],
     *,
@@ -826,6 +881,16 @@ def _index_items_as_documents_itemwise(
                 start_char=0,
                 end_char=None,
                 source_content_type="analysis_summary",
+            )
+            chunks_upserted += 1
+            repository.upsert_document_chunk(
+                doc_id=doc_id,
+                chunk_index=_ITEM_META_CHUNK_INDEX,
+                kind="meta",
+                text_value=_item_meta_chunk_text(item=item, analysis=analysis),
+                start_char=0,
+                end_char=None,
+                source_content_type="analysis_meta_json",
             )
             chunks_upserted += 1
 

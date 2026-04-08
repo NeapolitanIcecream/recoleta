@@ -10,6 +10,7 @@ from recoleta.trends import (
     TrendGenerationPlan,
     build_overview_pack_md,
     day_period_bounds,
+    index_items_as_documents,
     week_period_bounds,
 )
 from recoleta.trends_overview import BuildOverviewPackRequest
@@ -276,6 +277,12 @@ def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> 
 
     service.prepare(run_id="run-overview-pack-day", drafts=drafts, limit=10)
     _ = service.analyze(run_id="run-overview-pack-day", limit=10)
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-overview-pack-day",
+        period_start=day_start,
+        period_end=day_end,
+    )
 
     plan = TrendGenerationPlan(
         target_granularity="day", period_start=day_start, period_end=day_end
@@ -305,6 +312,63 @@ def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> 
             continue
         value = line.split("=", 1)[1].strip()
         assert len(value) <= 5
+
+
+def test_overview_pack_day_uses_materialized_item_docs_only(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ = configured_env
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    anchor = datetime(2026, 3, 5, tzinfo=UTC).date()
+    day_start, day_end = day_period_bounds(anchor)
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="overview-docs-only",
+        canonical_url="https://example.com/overview-docs-only",
+        title="Docs Only Overview Item",
+        authors=["Alice"],
+        published_at=day_start + timedelta(hours=1),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-overview-docs-only", drafts=[draft], limit=10)
+    _ = service.analyze(run_id="run-overview-docs-only", limit=10)
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-overview-docs-only",
+        period_start=day_start,
+        period_end=day_end,
+    )
+
+    def _raise_if_analyzed_pairs_requested(**_kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("day overview should not read analyses directly")
+
+    monkeypatch.setattr(
+        repository,
+        "list_analyzed_items_in_period",
+        _raise_if_analyzed_pairs_requested,
+    )
+
+    plan = TrendGenerationPlan(
+        target_granularity="day", period_start=day_start, period_end=day_end
+    )
+    md, stats = build_overview_pack_md(
+        repository,
+        plan,
+        overview_pack_max_chars=10_000,
+        item_overview_top_k=1,
+        item_overview_item_max_chars=200,
+    )
+
+    assert stats.get("truncated") is False
+    assert "title=Docs Only Overview Item" in md
 
 
 def test_overview_pack_day_item_top_k_deduplicates_duplicate_urls(
@@ -348,20 +412,30 @@ def test_overview_pack_day_item_top_k_deduplicates_duplicate_urls(
 
     service.prepare(run_id="run-overview-pack-day-dedup", drafts=drafts, limit=10)
     _ = service.analyze(run_id="run-overview-pack-day-dedup", limit=10)
-
-    pairs = repository.list_analyzed_items_in_period(
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-overview-pack-day-dedup",
+        period_start=day_start,
+        period_end=day_end,
+    )
+    meta_rows = repository.list_document_chunk_index_rows_in_period(
+        doc_type="item",
+        kind="meta",
         period_start=day_start,
         period_end=day_end,
         limit=10,
     )
-    assert len(pairs) == 2
+    assert len(meta_rows) == 2
 
-    def _duplicate_first_pair(**_kwargs):  # type: ignore[no-untyped-def]
-        return [pairs[0], pairs[0], pairs[1]]
+    original_list_rows = repository.list_document_chunk_index_rows_in_period
 
-    monkeypatch.setattr(
-        repository, "list_analyzed_items_in_period", _duplicate_first_pair
-    )
+    def _duplicate_meta_rows(**kwargs):  # type: ignore[no-untyped-def]
+        rows = original_list_rows(**kwargs)
+        if kwargs.get("kind") == "meta":
+            return [rows[0], rows[0], rows[1]]
+        return rows
+
+    monkeypatch.setattr(repository, "list_document_chunk_index_rows_in_period", _duplicate_meta_rows)
 
     plan = TrendGenerationPlan(
         target_granularity="day", period_start=day_start, period_end=day_end
@@ -405,6 +479,12 @@ def test_overview_pack_truncation_sets_stats_flag(configured_env) -> None:
     )
     service.prepare(run_id="run-overview-pack-trunc", drafts=[draft], limit=10)
     _ = service.analyze(run_id="run-overview-pack-trunc", limit=10)
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-overview-pack-trunc",
+        period_start=day_start,
+        period_end=day_end,
+    )
 
     plan = TrendGenerationPlan(
         target_granularity="day", period_start=day_start, period_end=day_end

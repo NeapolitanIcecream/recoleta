@@ -10,7 +10,6 @@ from loguru import logger
 from pydantic import BaseModel
 
 from recoleta.analyzer import (
-    _extract_content,
     _extract_token_counts,
     _extract_usage_dict,
     _get_completion,
@@ -471,11 +470,10 @@ def _build_translation_system_message() -> str:
 
 def _translation_llm_deps() -> TranslationLLMDeps:
     return TranslationLLMDeps(
-        _get_completion,
-        _extract_usage_dict,
-        _extract_token_counts,
-        _extract_content,
-        _resolve_response_cost_usd,
+        completion_factory=_get_completion,
+        extract_usage_dict_fn=_extract_usage_dict,
+        extract_token_counts_fn=_extract_token_counts,
+        resolve_response_cost_usd_fn=_resolve_response_cost_usd,
     )
 
 
@@ -1011,6 +1009,34 @@ def materialize_localized_languages(
 
 def localized_language_root(*, output_dir: Path, language_code: str) -> Path:
     return output_dir / "Localized" / language_slug(language_code)
+
+
+def materialize_localized_projections(*, repository: Any, settings: Settings) -> None:
+    if getattr(settings, "localization", None) is None:
+        return
+    if not getattr(getattr(settings, "localization", None), "targets", None):
+        return
+    if getattr(settings, "markdown_output_dir", None) is None:
+        return
+    localization = _translation_localization(
+        settings=settings,
+        require_targets=True,
+        error_message="localization.targets must be configured for translation",
+    )
+    from recoleta.materialize import (
+        _materialize_localized_outputs,
+        default_target_spec_for_settings,
+    )
+
+    # Localized roots are rebuilt as managed output trees. Rebuilding the full
+    # projection avoids dropping sibling granularity notes during partial
+    # translation runs such as `run day` or `translate run --granularity day`.
+    _materialize_localized_outputs(
+        repository=repository,
+        target_spec=default_target_spec_for_settings(settings=settings),
+        granularity=None,
+        localization=localization,
+    )
 
 
 _VULTURE_USED_TRANSLATION_APIS = (

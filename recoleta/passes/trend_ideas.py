@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -19,6 +20,53 @@ TREND_IDEA_KIND_VALUES = (
     "workflow_shift",
 )
 TREND_IDEA_TIME_HORIZON_VALUES = ("now", "near", "frontier")
+
+
+def _normalize_trend_idea_token(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return ""
+    normalized = normalized.replace("—", "-")
+    normalized = re.sub(r"[\s\-]+", "_", normalized)
+    return normalized.strip("_")
+
+
+_TREND_IDEA_KIND_ALIASES: dict[str, str] = {
+    value: value for value in TREND_IDEA_KIND_VALUES
+}
+_TREND_IDEA_KIND_ALIASES.update(
+    {
+        "startup": "new_build",
+        "product": "new_build",
+        "new": "new_build",
+        "greenfield": "new_build",
+        "from_scratch": "new_build",
+        "resurrection": "revival",
+        "comeback": "revival",
+        "gap": "research_gap",
+        "research": "research_gap",
+        "tooling": "tooling_wedge",
+        "wedge": "tooling_wedge",
+        "workflow": "workflow_shift",
+        "workflow_change": "workflow_shift",
+    }
+)
+
+_TREND_IDEA_TIME_HORIZON_ALIASES: dict[str, str] = {
+    value: value for value in TREND_IDEA_TIME_HORIZON_VALUES
+}
+_TREND_IDEA_TIME_HORIZON_ALIASES.update(
+    {
+        "immediate": "now",
+        "current": "now",
+        "short_term": "near",
+        "near_term": "near",
+        "mid_term": "near",
+        "medium_term": "near",
+        "long_term": "frontier",
+        "far_term": "frontier",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,19 +166,21 @@ class TrendIdea(BaseModel):
         normalized = " ".join(str(value or "").split()).strip()
         return normalized or None
 
-    @field_validator("kind")
+    @field_validator("kind", mode="before")
     @classmethod
     def _validate_kind(cls, value: str) -> str:
-        normalized = str(value or "").strip().lower()
+        normalized = _TREND_IDEA_KIND_ALIASES.get(_normalize_trend_idea_token(value), "")
         if normalized not in TREND_IDEA_KIND_VALUES:
             allowed = ", ".join(TREND_IDEA_KIND_VALUES)
             raise ValueError(f"kind must be one of {allowed}")
         return normalized
 
-    @field_validator("time_horizon")
+    @field_validator("time_horizon", mode="before")
     @classmethod
     def _validate_time_horizon(cls, value: str) -> str:
-        normalized = str(value or "").strip().lower()
+        normalized = _TREND_IDEA_TIME_HORIZON_ALIASES.get(
+            _normalize_trend_idea_token(value), ""
+        )
         if normalized not in TREND_IDEA_TIME_HORIZON_VALUES:
             allowed = ", ".join(TREND_IDEA_TIME_HORIZON_VALUES)
             raise ValueError(f"time_horizon must be one of {allowed}")

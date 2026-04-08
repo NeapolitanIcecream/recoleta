@@ -11,18 +11,20 @@ from recoleta.models import ChunkEmbedding, Document, DocumentChunk, Item
 from recoleta.storage.document_query_helpers import (
     ChunkSearchRequest,
     ChunkUpsertRequest,
+    PeriodChunkStatementSpec,
     build_chunk_search,
     build_document_list_statement,
-    build_summary_chunk_statement,
+    build_period_chunk_statement,
     collect_chunk_ids,
+    chunk_index_row,
     decode_search_hit_row,
     delete_chunk_side_tables,
     load_chunks_for_delete,
     normalize_chunk_delete,
+    normalize_chunk_kind,
     normalize_chunk_upsert,
     normalize_doc_type,
     normalize_limit_offset,
-    summary_chunk_index_row,
 )
 from recoleta.storage_common import _to_json
 from recoleta.types import utc_now
@@ -67,6 +69,7 @@ class SummaryChunkListRequest:
     doc_type: str
     period_start: datetime
     period_end: datetime
+    granularity: str | None = None
     limit: int = 500
     offset: int = 0
 
@@ -74,6 +77,28 @@ class SummaryChunkListRequest:
 @dataclass(frozen=True, slots=True)
 class SummaryChunkIndexListRequest:
     doc_type: str
+    period_start: datetime
+    period_end: datetime
+    granularity: str | None = None
+    limit: int = 500
+    offset: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentChunkListRequest:
+    doc_type: str
+    kind: str
+    period_start: datetime
+    period_end: datetime
+    granularity: str | None = None
+    limit: int = 500
+    offset: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentChunkIndexListRequest:
+    doc_type: str
+    kind: str
     period_start: datetime
     period_end: datetime
     granularity: str | None = None
@@ -413,6 +438,25 @@ def coerce_summary_chunk_list_request(
         doc_type=legacy_kwargs["doc_type"],
         period_start=legacy_kwargs["period_start"],
         period_end=legacy_kwargs["period_end"],
+        granularity=legacy_kwargs.get("granularity"),
+        limit=int(legacy_kwargs.get("limit", 500)),
+        offset=int(legacy_kwargs.get("offset", 0)),
+    )
+
+
+def coerce_document_chunk_list_request(
+    *,
+    request: DocumentChunkListRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> DocumentChunkListRequest:
+    if request is not None:
+        return request
+    return DocumentChunkListRequest(
+        doc_type=legacy_kwargs["doc_type"],
+        kind=legacy_kwargs["kind"],
+        granularity=legacy_kwargs.get("granularity"),
+        period_start=legacy_kwargs["period_start"],
+        period_end=legacy_kwargs["period_end"],
         limit=int(legacy_kwargs.get("limit", 500)),
         offset=int(legacy_kwargs.get("offset", 0)),
     )
@@ -427,6 +471,24 @@ def coerce_summary_chunk_index_request(
         return request
     return SummaryChunkIndexListRequest(
         doc_type=legacy_kwargs["doc_type"],
+        period_start=legacy_kwargs["period_start"],
+        period_end=legacy_kwargs["period_end"],
+        granularity=legacy_kwargs.get("granularity"),
+        limit=int(legacy_kwargs.get("limit", 500)),
+        offset=int(legacy_kwargs.get("offset", 0)),
+    )
+
+
+def coerce_document_chunk_index_request(
+    *,
+    request: DocumentChunkIndexListRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> DocumentChunkIndexListRequest:
+    if request is not None:
+        return request
+    return DocumentChunkIndexListRequest(
+        doc_type=legacy_kwargs["doc_type"],
+        kind=legacy_kwargs["kind"],
         period_start=legacy_kwargs["period_start"],
         period_end=legacy_kwargs["period_end"],
         granularity=legacy_kwargs.get("granularity"),
@@ -753,39 +815,46 @@ class DocumentStoreMixin:
             request=request,
             legacy_kwargs=legacy_kwargs,
         )
-        normalized_type = str(normalized_request.doc_type or "").strip().lower()
-        normalized_limit = max(0, int(normalized_request.limit))
-        normalized_offset = max(0, int(normalized_request.offset))
+        return self.list_document_chunks_in_period(
+            doc_type=normalized_request.doc_type,
+            kind="summary",
+            period_start=normalized_request.period_start,
+            period_end=normalized_request.period_end,
+            granularity=normalized_request.granularity,
+            limit=normalized_request.limit,
+            offset=normalized_request.offset,
+        )
+
+    def list_document_chunks_in_period(
+        self,
+        *,
+        request: DocumentChunkListRequest | None = None,
+        **legacy_kwargs: Any,
+    ) -> list[DocumentChunk]:
+        normalized_request = coerce_document_chunk_list_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
+        normalized_type = normalize_doc_type(normalized_request.doc_type)
+        normalized_kind = normalize_chunk_kind(normalized_request.kind)
+        normalized_limit, normalized_offset = normalize_limit_offset(
+            limit=normalized_request.limit,
+            offset=normalized_request.offset,
+        )
         if normalized_limit <= 0:
             return []
 
         with Session(self.engine) as session:
-            statement = (
-                select(DocumentChunk)
-                .join(
-                    Document, cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id)
-                )
-                .where(
-                    Document.doc_type == normalized_type,
-                    DocumentChunk.kind == "summary",
-                )
+            statement = build_period_chunk_statement(
+                spec=PeriodChunkStatementSpec(
+                    normalized_type=normalized_type,
+                    normalized_kind=normalized_kind,
+                    period_start=normalized_request.period_start,
+                    period_end=normalized_request.period_end,
+                    granularity=normalized_request.granularity,
+                    include_document=False,
+                ),
             )
-            if normalized_type == "item":
-                statement = statement.where(
-                    cast(Any, Document.published_at).is_not(None),
-                    cast(Any, Document.published_at) >= normalized_request.period_start,
-                    cast(Any, Document.published_at) < normalized_request.period_end,
-                )
-            elif normalized_type in {"trend", "idea"}:
-                statement = statement.where(
-                    cast(Any, Document.period_start).is_not(None),
-                    cast(Any, Document.period_end).is_not(None),
-                    cast(Any, Document.period_start) < normalized_request.period_end,
-                    cast(Any, Document.period_end) > normalized_request.period_start,
-                )
-            else:
-                raise ValueError("unsupported doc_type")
-
             statement = (
                 statement.order_by(desc(cast(Any, DocumentChunk.id)))
                 .offset(normalized_offset)
@@ -803,7 +872,28 @@ class DocumentStoreMixin:
             request=request,
             legacy_kwargs=legacy_kwargs,
         )
+        return self.list_document_chunk_index_rows_in_period(
+            doc_type=normalized_request.doc_type,
+            kind="summary",
+            granularity=normalized_request.granularity,
+            period_start=normalized_request.period_start,
+            period_end=normalized_request.period_end,
+            limit=normalized_request.limit,
+            offset=normalized_request.offset,
+        )
+
+    def list_document_chunk_index_rows_in_period(
+        self,
+        *,
+        request: DocumentChunkIndexListRequest | None = None,
+        **legacy_kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        normalized_request = coerce_document_chunk_index_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
         normalized_type = normalize_doc_type(normalized_request.doc_type)
+        normalized_kind = normalize_chunk_kind(normalized_request.kind)
         normalized_limit, normalized_offset = normalize_limit_offset(
             limit=normalized_request.limit,
             offset=normalized_request.offset,
@@ -812,12 +902,15 @@ class DocumentStoreMixin:
             return []
 
         with Session(self.engine) as session:
-            statement = build_summary_chunk_statement(
-                normalized_type=normalized_type,
-                period_start=normalized_request.period_start,
-                period_end=normalized_request.period_end,
-                granularity=normalized_request.granularity,
-                include_document=True,
+            statement = build_period_chunk_statement(
+                spec=PeriodChunkStatementSpec(
+                    normalized_type=normalized_type,
+                    normalized_kind=normalized_kind,
+                    period_start=normalized_request.period_start,
+                    period_end=normalized_request.period_end,
+                    granularity=normalized_request.granularity,
+                    include_document=True,
+                ),
             )
             statement = (
                 statement.order_by(desc(cast(Any, DocumentChunk.id)))
@@ -829,7 +922,7 @@ class DocumentStoreMixin:
             row
             for chunk, doc in rows
             if (
-                row := summary_chunk_index_row(
+                row := chunk_index_row(
                     doc_type=normalized_type,
                     chunk=chunk,
                     document=doc,

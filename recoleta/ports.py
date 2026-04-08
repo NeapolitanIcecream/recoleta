@@ -296,6 +296,19 @@ class RepositoryPort(Protocol):
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
+        granularity: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[DocumentChunk]: ...
+
+    def list_document_chunks_in_period(
+        self,
+        *,
+        doc_type: str,
+        kind: str,
+        period_start: datetime,
+        period_end: datetime,
+        granularity: str | None = None,
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]: ...
@@ -304,6 +317,18 @@ class RepositoryPort(Protocol):
         self,
         *,
         doc_type: str,
+        granularity: str | None = None,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
+    def list_document_chunk_index_rows_in_period(
+        self,
+        *,
+        doc_type: str,
+        kind: str,
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,
@@ -519,6 +544,19 @@ class TrendRepositoryPort(Protocol):
         doc_type: str,
         period_start: datetime,
         period_end: datetime,
+        granularity: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[DocumentChunk]: ...
+
+    def list_document_chunks_in_period(
+        self,
+        *,
+        doc_type: str,
+        kind: str,
+        period_start: datetime,
+        period_end: datetime,
+        granularity: str | None = None,
         limit: int = 500,
         offset: int = 0,
     ) -> list[DocumentChunk]: ...
@@ -527,6 +565,18 @@ class TrendRepositoryPort(Protocol):
         self,
         *,
         doc_type: str,
+        granularity: str | None = None,
+        period_start: datetime,
+        period_end: datetime,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
+    def list_document_chunk_index_rows_in_period(
+        self,
+        *,
+        doc_type: str,
+        kind: str,
         granularity: str | None = None,
         period_start: datetime,
         period_end: datetime,

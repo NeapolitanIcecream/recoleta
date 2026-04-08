@@ -116,6 +116,7 @@ def test_trends_week_published_markdown_locks_quality_signals(
 
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
         repo = kwargs["repository"]
+        granularity = str(kwargs.get("granularity") or "").strip().lower()
         pstart = kwargs["period_start"]
         pend = kwargs["period_end"]
         docs = repo.list_documents(
@@ -127,6 +128,23 @@ def test_trends_week_published_markdown_locks_quality_signals(
             offset=0,
             limit=10,
         )
+        if granularity == "day":
+            assert docs
+            return (
+                TrendPayload.model_validate(
+                    {
+                        "title": "Daily Trend",
+                        "granularity": "day",
+                        "period_start": pstart.isoformat(),
+                        "period_end": pend.isoformat(),
+                        "overview_md": "- daily",
+                        "topics": ["agents"],
+                        "clusters": [],
+                        "highlights": [],
+                    }
+                ),
+                {"tool_calls_total": 0},
+            )
         assert docs and len(docs) >= 3
         doc_ids = [int(getattr(d, "id")) for d in docs[:3]]
         payload = {

@@ -7,6 +7,8 @@ from recoleta.rag.corpus_tools import CorpusSpec
 from recoleta.rag.corpus_tools import SearchService
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.storage import Repository
+from recoleta.trends import day_period_bounds, index_items_as_documents
+from recoleta.types import AnalysisResult, ItemDraft
 
 
 def test_corpus_spec_resolves_only_allowed_sources() -> None:
@@ -94,6 +96,95 @@ def test_search_text_excludes_meta_chunks_from_agent_visible_hits(
     assert summary_hits["returned"] == 1
     assert summary_hits["hits"][0]["kind"] == "summary"
     assert service.read_chunk(doc_id=int(doc.id), chunk_index=1) == {"chunk": None}
+
+
+def test_item_meta_chunks_stay_stored_but_not_searchable(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+
+    anchor = datetime(2026, 3, 5, tzinfo=UTC).date()
+    day_start, day_end = day_period_bounds(anchor)
+    item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="item-meta-filter",
+            canonical_url="https://example.com/item-meta-filter",
+            title="Item Meta Filter",
+            authors=["Alice"],
+            published_at=day_start,
+            raw_metadata={"source": "test"},
+        )
+    )
+    assert item.id is not None
+    repository.save_analysis(
+        item_id=int(item.id),
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary="Planning loops stay grounded in retrieved summaries.",
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-item-meta-filter",
+        period_start=day_start,
+        period_end=day_end,
+    )
+
+    meta_chunks = repository.list_document_chunks_in_period(
+        doc_type="item",
+        kind="meta",
+        period_start=day_start,
+        period_end=day_end,
+        limit=10,
+    )
+    assert len(meta_chunks) == 1
+    meta_chunk = meta_chunks[0]
+    assert meta_chunk.id is not None
+
+    service = SearchService(
+        repository=repository,
+        vector_store=LanceVectorStore(
+            db_dir=tmp_path / "lancedb",
+            table_name="test_item_meta_filter",
+        ),
+        run_id="run-item-meta-filter",
+        period_start=day_start,
+        period_end=day_end,
+        corpus_spec=CorpusSpec.from_rag_sources([{"doc_type": "item", "granularity": None}]),
+        embedding_model="test/fake-embedding",
+        embedding_dimensions=None,
+        embedding_batch_max_inputs=8,
+        embedding_batch_max_chars=2000,
+    )
+
+    provenance_hits = service.search_text(
+        query="relevance_score",
+        doc_type="item",
+        limit=5,
+    )
+    assert provenance_hits["hits"] == []
+    assert service.read_chunk(
+        doc_id=int(getattr(meta_chunk, "doc_id")),
+        chunk_index=int(getattr(meta_chunk, "chunk_index")),
+    ) == {"chunk": None}
+
+    summary_rows = repository.list_summary_chunk_index_rows_in_period(
+        doc_type="item",
+        period_start=day_start,
+        period_end=day_end,
+        limit=10,
+    )
+    assert len(summary_rows) == 1
+    assert summary_rows[0]["kind"] == "summary"
+    assert summary_rows[0]["chunk_id"] != int(meta_chunk.id)
 
 
 def test_doc_id_helpers_respect_active_corpus_bounds(

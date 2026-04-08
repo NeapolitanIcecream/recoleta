@@ -70,6 +70,12 @@ class WorkflowPayloadContext:
     step_results: list[WorkflowStepResult]
 
 
+@dataclass(frozen=True, slots=True)
+class _HandledStepResult:
+    terminal_state: str
+    step_result: WorkflowStepResult
+
+
 def today_utc() -> date:
     override = _workflow_override("_today_utc", current=today_utc)
     if override is not None:
@@ -339,44 +345,129 @@ def execute_workflow_loop(
                     invocation, context=request.execution_context
                 )
             except Exception as exc:
-                if (
-                    invocation.step_id != STEP_TRANSLATE
-                    or request.on_translate_failure == "fail"
-                ):
-                    raise
-                if request.on_translate_failure == "partial_success":
-                    terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL
-                step_results.append(
-                    WorkflowStepResult(
-                        step_id=invocation.step_id,
-                        status=(
-                            "partial_failure"
-                            if request.on_translate_failure == "partial_success"
-                            else "skipped"
-                        ),
-                        error_type=type(exc).__name__,
-                        error=str(exc),
-                    )
+                handled = _handle_step_exception(
+                    invocation=invocation,
+                    request=request,
+                    terminal_state=terminal_state,
+                    exc=exc,
                 )
+                if handled is None:
+                    raise
+                terminal_state = handled.terminal_state
+                step_results.append(handled.step_result)
                 continue
             request.heartbeat_monitor.raise_if_failed()
-            current_snapshot = metric_snapshot(
-                request.repository.list_metrics(run_id=request.execution_context.run_id)
+            previous_snapshot = _update_step_billing_metrics(
+                request=request,
+                invocation=invocation,
+                billing_metrics_by_step=billing_metrics_by_step,
+                previous_snapshot=previous_snapshot,
             )
-            billing_metrics_by_step[invocation.step_id].extend(
-                metric_diff(previous_snapshot, current_snapshot)
+            _append_executed_step(executed_steps=executed_steps, step_id=invocation.step_id)
+            handled = _handle_translate_failed_payload(
+                invocation=invocation,
+                request=request,
+                terminal_state=terminal_state,
+                step_payload=step_payload,
             )
-            previous_snapshot = current_snapshot
-            if invocation.step_id not in executed_steps:
-                executed_steps.append(invocation.step_id)
-            step_results.append(
-                WorkflowStepResult(
-                    step_id=invocation.step_id,
-                    status="ok",
-                    payload=step_payload,
-                )
-            )
+            if handled is not None:
+                terminal_state = handled.terminal_state
+                step_results.append(handled.step_result)
+                continue
+            step_results.append(_ok_step_result(invocation=invocation, step_payload=step_payload))
     return executed_steps, billing_metrics_by_step, terminal_state, step_results
+
+
+def _handle_step_exception(
+    *,
+    invocation: WorkflowInvocation,
+    request: WorkflowLoopRequest,
+    terminal_state: str,
+    exc: Exception,
+) -> _HandledStepResult | None:
+    if invocation.step_id != STEP_TRANSLATE or request.on_translate_failure == "fail":
+        return None
+    next_terminal_state = (
+        RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL
+        if request.on_translate_failure == "partial_success"
+        else terminal_state
+    )
+    step_status = (
+        "partial_failure"
+        if request.on_translate_failure == "partial_success"
+        else "skipped"
+    )
+    return _HandledStepResult(
+        terminal_state=next_terminal_state,
+        step_result=WorkflowStepResult(
+            step_id=invocation.step_id,
+            status=step_status,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        ),
+    )
+
+
+def _update_step_billing_metrics(
+    *,
+    request: WorkflowLoopRequest,
+    invocation: WorkflowInvocation,
+    billing_metrics_by_step: dict[str, list[Any]],
+    previous_snapshot: dict[tuple[str, str | None], float],
+) -> dict[tuple[str, str | None], float]:
+    current_snapshot = metric_snapshot(
+        request.repository.list_metrics(run_id=request.execution_context.run_id)
+    )
+    billing_metrics_by_step[invocation.step_id].extend(
+        metric_diff(previous_snapshot, current_snapshot)
+    )
+    return current_snapshot
+
+
+def _append_executed_step(*, executed_steps: list[str], step_id: str) -> None:
+    if step_id not in executed_steps:
+        executed_steps.append(step_id)
+
+
+def _handle_translate_failed_payload(
+    *,
+    invocation: WorkflowInvocation,
+    request: WorkflowLoopRequest,
+    terminal_state: str,
+    step_payload: Any,
+) -> _HandledStepResult | None:
+    if invocation.step_id != STEP_TRANSLATE or not isinstance(step_payload, dict):
+        return None
+    failed_total = int(step_payload.get("failed") or 0)
+    if failed_total <= 0:
+        return None
+    next_terminal_state = terminal_state
+    step_status = "skipped"
+    if request.on_translate_failure == "partial_success":
+        next_terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_PARTIAL
+        step_status = "partial_failure"
+    return _HandledStepResult(
+        terminal_state=next_terminal_state,
+        step_result=WorkflowStepResult(
+            step_id=invocation.step_id,
+            status=step_status,
+            payload=step_payload,
+            error=(
+                "translation completed with failures "
+                f"failed={failed_total} "
+                f"translated={int(step_payload.get('translated') or 0)} "
+                f"skipped={int(step_payload.get('skipped') or 0)}"
+            ),
+        ),
+    )
+
+
+def _ok_step_result(*, invocation: WorkflowInvocation, step_payload: Any) -> WorkflowStepResult:
+    return WorkflowStepResult(
+        step_id=invocation.step_id,
+        status="ok",
+        payload=step_payload,
+    )
 
 
 def finalize_workflow_success(

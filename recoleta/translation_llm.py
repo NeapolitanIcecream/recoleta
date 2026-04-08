@@ -7,7 +7,6 @@ from typing import Any, Callable
 from pydantic import BaseModel, ValidationError
 
 from recoleta.analyzer import (
-    _extract_content,
     _extract_token_counts,
     _extract_usage_dict,
     _get_completion,
@@ -15,6 +14,21 @@ from recoleta.analyzer import (
 )
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.prompt_style import reader_facing_ai_tropes_prompt
+
+_TRANSLATION_LLM_MAX_ATTEMPTS = 3
+
+
+class TranslationLLMOutputError(ValueError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str,
+        finish_reason: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason = str(reason or "").strip().lower() or "unexpected"
+        self.finish_reason = str(finish_reason or "").strip().lower() or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +53,7 @@ class TranslationLLMDeps:
         Callable[[dict[str, Any] | None], tuple[int | None, int | None, int | None]]
         | None
     ) = None
-    extract_content_fn: Callable[[object], str] | None = None
+    extract_content_fn: Callable[[object], Any] | None = None
     resolve_response_cost_usd_fn: Callable[..., float | None] | None = None
 
 
@@ -84,22 +98,60 @@ def translate_structured_payload_with_debug(
         request.payload,
         payload_model=request.payload_model,
     )
-    response = _invoke_translation_completion(
-        request=request,
-        normalized_model=normalized_model,
-        normalized_payload=normalized_payload,
-        deps=deps,
-    )
-    decoded_payload, debug = _decode_translation_response(
-        response=response,
-        request=request,
-        normalized_model=normalized_model,
-        deps=deps,
-    )
-    return _validated_translated_payload(
-        decoded=decoded_payload,
-        payload_model=request.payload_model,
-    ), debug
+    aggregated_debug: dict[str, Any] = {}
+    retry_attempts: list[dict[str, Any]] = []
+    for attempt in range(1, _TRANSLATION_LLM_MAX_ATTEMPTS + 1):
+        response = _invoke_translation_completion(
+            request=request,
+            normalized_model=normalized_model,
+            normalized_payload=normalized_payload,
+            deps=deps,
+        )
+        raw_content, attempt_debug = _extract_translation_response_payload(
+            response=response,
+            normalized_model=normalized_model,
+            deps=deps,
+        )
+        _merge_translation_debug(aggregated=aggregated_debug, attempt=attempt_debug)
+        try:
+            decoded_payload = _decode_translation_content(
+                raw_content=raw_content,
+                finish_reason=(
+                    str(attempt_debug.get("finish_reason") or "").strip().lower()
+                    or None
+                ),
+            )
+            translated_payload = _validated_translated_payload(
+                decoded=decoded_payload,
+                payload_model=request.payload_model,
+                finish_reason=(
+                    str(attempt_debug.get("finish_reason") or "").strip().lower()
+                    or None
+                ),
+            )
+        except ValueError as exc:
+            if (
+                _is_retryable_translation_output_error(exc)
+                and attempt < _TRANSLATION_LLM_MAX_ATTEMPTS
+            ):
+                retry_attempts.append(
+                    {
+                        "attempt": attempt,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                        "reason": getattr(exc, "reason", None),
+                        "finish_reason": getattr(exc, "finish_reason", None),
+                    }
+                )
+                continue
+            raise
+        if retry_attempts:
+            aggregated_debug["retry"] = {
+                "attempts": retry_attempts,
+                "attempts_total": len(retry_attempts) + 1,
+            }
+        return translated_payload, aggregated_debug
+    raise RuntimeError("translation attempts exhausted unexpectedly")
 
 
 def _invoke_translation_completion(
@@ -154,10 +206,9 @@ def _translation_messages(
     ]
 
 
-def _decode_translation_response(
+def _extract_translation_response_payload(
     *,
     response: Any,
-    request: TranslationLLMRequest,
     normalized_model: str,
     deps: TranslationLLMDeps | None,
 ) -> tuple[Any, dict[str, Any]]:
@@ -169,7 +220,7 @@ def _decode_translation_response(
     ) or _extract_token_counts
     extract_content = (
         deps.extract_content_fn if deps is not None else None
-    ) or _extract_content
+    ) or _extract_translation_message_content
     resolve_response_cost_usd = (
         deps.resolve_response_cost_usd_fn if deps is not None else None
     ) or _resolve_response_cost_usd
@@ -182,11 +233,7 @@ def _decode_translation_response(
         completion_tokens=completion_tokens,
     )
     raw_content = extract_content(response)
-    try:
-        decoded = json.loads(raw_content)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"translation LLM returned invalid JSON: {exc.msg}") from exc
-    return decoded, {
+    return raw_content, {
         "usage": _debug_usage(
             usage=usage,
             prompt_tokens=prompt_tokens,
@@ -194,24 +241,102 @@ def _decode_translation_response(
             total_tokens=total_tokens,
         ),
         "estimated_cost_usd": cost_usd,
+        "finish_reason": _extract_translation_finish_reason(response),
     }
+
+
+def _decode_translation_content(
+    *,
+    raw_content: Any,
+    finish_reason: str | None,
+) -> Any:
+    normalized_finish_reason = str(finish_reason or "").strip().lower() or None
+    if normalized_finish_reason == "content_filter":
+        raise TranslationLLMOutputError(
+            "translation LLM response was content-filtered",
+            reason="content_filter",
+            finish_reason=normalized_finish_reason,
+        )
+    normalized_content = _normalized_translation_content_text(raw_content)
+    if not normalized_content:
+        raise TranslationLLMOutputError(
+            "translation LLM returned empty content",
+            reason="empty_content",
+            finish_reason=normalized_finish_reason,
+        )
+    try:
+        return json.loads(normalized_content)
+    except json.JSONDecodeError as exc:
+        raise TranslationLLMOutputError(
+            f"translation LLM returned invalid JSON: {exc.msg}",
+            reason="invalid_json",
+            finish_reason=normalized_finish_reason,
+        ) from exc
 
 
 def _validated_translated_payload(
     *,
     decoded: Any,
     payload_model: type[BaseModel] | None,
+    finish_reason: str | None,
 ) -> dict[str, Any]:
+    normalized_finish_reason = str(finish_reason or "").strip().lower() or None
     if payload_model is not None:
         try:
             return payload_model.model_validate(decoded).model_dump(mode="json")
         except ValidationError as exc:
-            raise ValueError(
-                f"translation LLM returned JSON with invalid schema: {type(exc).__name__}"
+            raise TranslationLLMOutputError(
+                f"translation LLM returned JSON with invalid schema: {type(exc).__name__}",
+                reason="invalid_schema",
+                finish_reason=normalized_finish_reason,
             ) from exc
     if not isinstance(decoded, dict):
-        raise ValueError("translation LLM returned a non-object JSON payload")
+        raise TranslationLLMOutputError(
+            "translation LLM returned a non-object JSON payload",
+            reason="non_object_json",
+            finish_reason=normalized_finish_reason,
+        )
     return decoded
+
+
+def _is_retryable_translation_output_error(exc: ValueError) -> bool:
+    if isinstance(exc, TranslationLLMOutputError):
+        return True
+    message = str(exc)
+    return message.startswith("translation LLM returned ")
+
+
+def _merge_translation_debug(
+    *, aggregated: dict[str, Any], attempt: dict[str, Any]
+) -> None:
+    usage = attempt.get("usage")
+    if isinstance(usage, dict):
+        aggregated_usage = aggregated.setdefault("usage", {})
+        if not isinstance(aggregated_usage, dict):
+            aggregated_usage = {}
+            aggregated["usage"] = aggregated_usage
+        for key in ("requests", "input_tokens", "output_tokens", "total_tokens"):
+            value = usage.get(key)
+            if isinstance(value, (int, float)):
+                aggregated_usage[key] = float(aggregated_usage.get(key) or 0) + float(
+                    value
+                )
+        cost = usage.get("cost")
+        if isinstance(cost, (int, float)):
+            aggregated_usage["cost"] = float(aggregated_usage.get("cost") or 0) + float(
+                cost
+            )
+        cost_details = usage.get("cost_details")
+        if isinstance(cost_details, dict):
+            aggregated_usage["cost_details"] = dict(cost_details)
+    estimated_cost_usd = attempt.get("estimated_cost_usd")
+    if isinstance(estimated_cost_usd, (int, float)):
+        aggregated["estimated_cost_usd"] = float(
+            aggregated.get("estimated_cost_usd") or 0.0
+        ) + float(estimated_cost_usd)
+    finish_reason = str(attempt.get("finish_reason") or "").strip().lower()
+    if finish_reason:
+        aggregated["finish_reason"] = finish_reason
 
 
 def _debug_usage(
@@ -235,3 +360,66 @@ def _debug_usage(
         if isinstance(cost_details, dict):
             debug_usage["cost_details"] = cost_details
     return debug_usage
+
+
+def _extract_translation_message_content(response: object) -> Any:
+    if isinstance(response, dict):
+        choices = response.get("choices") or []
+        if not choices:
+            return None
+        first_choice = choices[0] or {}
+        message = first_choice.get("message") or {}
+        if isinstance(message, dict):
+            return message.get("content")
+        return getattr(message, "content", None)
+    choices = getattr(response, "choices")
+    first_choice = choices[0]
+    return getattr(first_choice.message, "content", None)
+
+
+def _extract_translation_finish_reason(response: object) -> str | None:
+    if isinstance(response, dict):
+        choices = response.get("choices") or []
+        if not choices:
+            return None
+        return str((choices[0] or {}).get("finish_reason") or "").strip() or None
+    choices = getattr(response, "choices")
+    first_choice = choices[0]
+    return str(getattr(first_choice, "finish_reason", "") or "").strip() or None
+
+
+def _normalized_translation_content_text(raw_content: Any) -> str | None:
+    if raw_content is None:
+        return None
+    if isinstance(raw_content, str):
+        normalized = raw_content.strip()
+        return normalized or None
+    if isinstance(raw_content, list):
+        return _normalized_translation_content_list_text(raw_content)
+    normalized = str(raw_content).strip()
+    return normalized or None
+
+
+def _normalized_translation_content_list_text(parts: list[Any]) -> str | None:
+    normalized_parts = [
+        normalized_part
+        for part in parts
+        if (normalized_part := _normalized_translation_content_part_text(part))
+        is not None
+    ]
+    if not normalized_parts:
+        return None
+    joined = "".join(normalized_parts).strip()
+    return joined or None
+
+
+def _normalized_translation_content_part_text(part: Any) -> str | None:
+    if not isinstance(part, dict):
+        return None
+    if part.get("type") != "output_text":
+        return None
+    text_value = part.get("text")
+    if isinstance(text_value, str) and text_value:
+        return text_value
+    normalized = str(text_value or "").strip()
+    return normalized or None

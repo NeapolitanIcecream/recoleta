@@ -52,12 +52,29 @@ class ChunkSearchRequest:
     limit: int
 
 
+@dataclass(frozen=True, slots=True)
+class PeriodChunkStatementSpec:
+    normalized_type: str
+    normalized_kind: str
+    period_start: datetime
+    period_end: datetime
+    granularity: str | None
+    include_document: bool
+
+
 def normalize_doc_type(doc_type: str) -> str:
     return str(doc_type or "").strip().lower()
 
 
 def normalize_granularity(granularity: str | None) -> str:
     return str(granularity or "").strip().lower()
+
+
+def normalize_chunk_kind(kind: str) -> str:
+    normalized = str(kind or "").strip().lower()
+    if normalized not in {"summary", "content", "meta"}:
+        raise ValueError("unsupported chunk kind")
+    return normalized
 
 
 def normalize_limit_offset(*, limit: int, offset: int = 0) -> tuple[int, int]:
@@ -150,42 +167,77 @@ def build_document_list_statement(
     raise ValueError("unsupported doc_type")
 
 
-def build_summary_chunk_statement(
+def build_period_chunk_statement(
+    *,
+    spec: PeriodChunkStatementSpec,
+) -> Any:
+    statement = _base_period_chunk_statement(
+        normalized_type=spec.normalized_type,
+        normalized_kind=spec.normalized_kind,
+        include_document=spec.include_document,
+    )
+    if spec.normalized_type == "item":
+        return _item_period_chunk_statement(
+            statement=statement,
+            period_start=spec.period_start,
+            period_end=spec.period_end,
+        )
+    if spec.normalized_type in {"trend", "idea"}:
+        return _trend_like_period_chunk_statement(
+            statement=statement,
+            period_start=spec.period_start,
+            period_end=spec.period_end,
+            granularity=spec.granularity,
+        )
+    raise ValueError("unsupported doc_type")
+
+
+def _base_period_chunk_statement(
     *,
     normalized_type: str,
-    period_start: datetime,
-    period_end: datetime,
-    granularity: str | None,
+    normalized_kind: str,
     include_document: bool,
 ) -> Any:
-    statement = (
-        select(DocumentChunk, Document) if include_document else select(DocumentChunk)
-    )
-    statement = statement.join(
+    statement = select(DocumentChunk, Document) if include_document else select(DocumentChunk)
+    return statement.join(
         Document,
         cast(Any, Document.id) == cast(Any, DocumentChunk.doc_id),
     ).where(
         Document.doc_type == normalized_type,
-        DocumentChunk.kind == "summary",
+        DocumentChunk.kind == normalized_kind,
     )
-    if normalized_type == "item":
-        return statement.where(
-            cast(Any, Document.published_at).is_not(None),
-            cast(Any, Document.published_at) >= period_start,
-            cast(Any, Document.published_at) < period_end,
-        )
-    if normalized_type in {"trend", "idea"}:
-        statement = statement.where(
-            cast(Any, Document.period_start).is_not(None),
-            cast(Any, Document.period_end).is_not(None),
-            cast(Any, Document.period_start) < period_end,
-            cast(Any, Document.period_end) > period_start,
-        )
-        normalized_granularity = normalize_granularity(granularity)
-        if normalized_granularity:
-            statement = statement.where(Document.granularity == normalized_granularity)
+
+
+def _item_period_chunk_statement(
+    *,
+    statement: Any,
+    period_start: datetime,
+    period_end: datetime,
+) -> Any:
+    return statement.where(
+        cast(Any, Document.published_at).is_not(None),
+        cast(Any, Document.published_at) >= period_start,
+        cast(Any, Document.published_at) < period_end,
+    )
+
+
+def _trend_like_period_chunk_statement(
+    *,
+    statement: Any,
+    period_start: datetime,
+    period_end: datetime,
+    granularity: str | None,
+) -> Any:
+    statement = statement.where(
+        cast(Any, Document.period_start).is_not(None),
+        cast(Any, Document.period_end).is_not(None),
+        cast(Any, Document.period_start) < period_end,
+        cast(Any, Document.period_end) > period_start,
+    )
+    normalized_granularity = normalize_granularity(granularity)
+    if not normalized_granularity:
         return statement
-    raise ValueError("unsupported doc_type")
+    return statement.where(Document.granularity == normalized_granularity)
 
 
 def load_chunks_for_delete(
@@ -302,7 +354,7 @@ def decode_search_hit_row(row: Any) -> dict[str, Any] | None:
     }
 
 
-def summary_chunk_index_row(
+def chunk_index_row(
     *,
     doc_type: str,
     chunk: DocumentChunk,

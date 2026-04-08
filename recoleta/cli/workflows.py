@@ -415,6 +415,7 @@ def _granularity_workflow_context(
         target_granularity=plan.target_granularity,
         target_period_start=plan.target_period_start,
         target_period_end=plan.target_period_end,
+        on_translate_failure=str(policy.on_translate_failure or "fail"),
         translate_include=list(policy.translate_include),
         translate_granularities=translate_granularities,
         delivery_mode=policy.delivery_mode,
@@ -484,6 +485,10 @@ def _deploy_workflow_context(
             target_granularity=None,
             target_period_start=None,
             target_period_end=None,
+            on_translate_failure=str(
+                request.runtime.settings.workflows.deploy.on_translate_failure
+                or "fail"
+            ),
             translate_include=list(
                 request.runtime.settings.workflows.deploy.translate_include
             ),

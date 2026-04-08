@@ -394,6 +394,79 @@ def test_index_items_as_documents_excludes_low_relevance_items(
     assert [str(getattr(doc, "title") or "") for doc in docs] == ["High Signal Paper"]
 
 
+def test_index_items_as_documents_is_idempotent_for_item_meta_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    analyzer = FakeAnalyzer()
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="meta-idempotent-1",
+        canonical_url="https://example.com/meta-idempotent-1",
+        title="Meta Idempotence",
+        authors=["Alice"],
+        published_at=datetime(2026, 1, 1, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    item_id = int(item.id)
+    analysis, _ = analyzer.analyze(
+        title=str(item.title),
+        canonical_url=str(item.canonical_url),
+        user_topics=list(settings.topics),
+        include_debug=False,
+    )
+    _ = repository.save_analysis(item_id=item_id, result=analysis)
+
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-meta-idempotent-1",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="run-meta-idempotent-2",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+
+    with Session(repository.engine) as session:
+        doc = session.exec(
+            select(Document).where(
+                Document.doc_type == "item",
+                Document.item_id == item_id,
+            )
+        ).first()
+        assert doc is not None
+        assert doc.id is not None
+        meta_chunks = list(
+            session.exec(
+                select(DocumentChunk).where(
+                    DocumentChunk.doc_id == int(doc.id),
+                    DocumentChunk.kind == "meta",
+                )
+            )
+        )
+
+    assert len(meta_chunks) == 1
+
+
 def test_index_items_as_documents_prunes_stale_low_relevance_docs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

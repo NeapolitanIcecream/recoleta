@@ -216,6 +216,14 @@ def _execute_translate_session(
                 runner_kwargs=context.request.runner_kwargs,
             )
         )
+        if not bool(result.aborted):
+            cli._import_symbol(
+                "recoleta.translation",
+                attr_name="materialize_localized_projections",
+            )(
+                repository=context.repository,
+                settings=context.settings,
+            )
         session.heartbeat_monitor.raise_if_failed()
         context.repository.finish_run(session.run_id, success=not bool(result.aborted))
         return result

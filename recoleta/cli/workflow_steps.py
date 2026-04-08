@@ -42,6 +42,7 @@ class TranslationStepRequest:
     period_end: datetime | None
     all_history: bool
     run_id: str
+    fail_on_failed_outputs: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,9 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
     run_translation = cli._import_symbol(
         "recoleta.translation", attr_name="run_translation"
     )
+    materialize_localized_projections = cli._import_symbol(
+        "recoleta.translation", attr_name="materialize_localized_projections"
+    )
     totals = {
         "scanned": 0,
         "translated": 0,
@@ -108,6 +112,7 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
         "skipped": 0,
         "failed": 0,
     }
+    abort_reason: str | None = None
     normalized_include = ",".join(request.include)
     for granularity in (
         request.granularities if request.granularities is not None else [None]
@@ -128,7 +133,20 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
         totals["skipped"] += int(result.skipped_total)
         totals["failed"] += int(result.failed_total)
         if bool(result.aborted):
-            raise RuntimeError(str(result.abort_reason or "translation aborted"))
+            abort_reason = str(result.abort_reason or "translation aborted")
+            break
+    if abort_reason is not None:
+        raise RuntimeError(abort_reason)
+    materialize_localized_projections(
+        repository=request.repository,
+        settings=request.settings,
+    )
+    if request.fail_on_failed_outputs and totals["failed"] > 0:
+        raise RuntimeError(
+            "translation completed with failures "
+            f"failed={totals['failed']} translated={totals['translated']} "
+            f"skipped={totals['skipped']}"
+        )
     return totals
 
 
@@ -305,6 +323,7 @@ def _execute_translate_step(
                 or context.target_period_end is not None
             ),
             run_id=context.run_id,
+            fail_on_failed_outputs=context.on_translate_failure == "fail",
         )
     )
 

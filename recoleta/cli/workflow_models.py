@@ -88,6 +88,7 @@ class WorkflowExecutionContext:
     target_granularity: str | None
     target_period_start: datetime | None
     target_period_end: datetime | None
+    on_translate_failure: str
     translate_include: list[str]
     translate_granularities: list[str] | None
     delivery_mode: str | None
