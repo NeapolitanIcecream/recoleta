@@ -94,3 +94,25 @@ def test_normalize_trend_ideas_payload_caps_to_three_unique_grounded_ideas() -> 
 
     assert [idea.title for idea in normalized.ideas] == ["Idea 1", "Idea 2", "Idea 3"]
     assert [ref.doc_id for ref in normalized.ideas[0].evidence_refs] == [1]
+
+
+def test_trend_idea_content_md_preserves_markdown_structure() -> None:
+    content_md = "First paragraph.\n\n- Bullet one\n- Bullet two"
+    payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Ideas",
+            "granularity": "day",
+            "period_start": "2026-03-09T00:00:00+00:00",
+            "period_end": "2026-03-10T00:00:00+00:00",
+            "summary_md": "Summary",
+            "ideas": [
+                {
+                    "title": "Idea 1",
+                    "content_md": content_md,
+                    "evidence_refs": [{"doc_id": 1, "chunk_index": 0}],
+                }
+            ],
+        }
+    )
+
+    assert payload.ideas[0].content_md == content_md

@@ -78,10 +78,18 @@ class TrendIdea(BaseModel):
     content_md: str
     evidence_refs: list[TrendIdeaEvidenceRef] = Field(default_factory=list)
 
-    @field_validator("title", "content_md")
+    @field_validator("title")
     @classmethod
-    def _validate_required_text(cls, value: str) -> str:
+    def _validate_title(cls, value: str) -> str:
         normalized = " ".join(str(value or "").split()).strip()
+        if not normalized:
+            raise ValueError("idea text fields must not be empty")
+        return normalized
+
+    @field_validator("content_md")
+    @classmethod
+    def _validate_content_md(cls, value: str) -> str:
+        normalized = str(value or "").strip()
         if not normalized:
             raise ValueError("idea text fields must not be empty")
         return normalized
