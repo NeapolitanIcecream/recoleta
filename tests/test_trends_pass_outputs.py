@@ -21,6 +21,36 @@ def _metric_values(*, repository, run_id: str) -> dict[str, float]:
     }
 
 
+def _seed_item_document(
+    *,
+    repository,
+    published_at: datetime,
+    source_item_id: str,
+    title: str,
+) -> int:
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id=source_item_id,
+        canonical_url=f"https://example.com/{source_item_id}",
+        title=title,
+        authors=["Alice"],
+        published_at=published_at,
+        raw_metadata={"source": "test"},
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    doc = repository.upsert_document_for_item(item=item)
+    assert doc.id is not None
+    repository.upsert_document_chunk(
+        doc_id=int(doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value=f"Summary for {title}.",
+        source_content_type="analysis_summary",
+    )
+    return int(doc.id)
+
+
 def test_trends_persist_canonical_pass_output_before_projection_rewrites(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -134,6 +164,99 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
     assert "pass_kind: trend_synthesis" in markdown
     assert "See doc_id" not in markdown
     assert re.search(r"(?<![\w])doc_id\s*[:=#-]?\s*\d+", markdown) is None
+
+
+def test_trends_backfills_cluster_evidence_before_publishing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    published_at = datetime(2026, 3, 2, 1, 0, tzinfo=UTC)
+    evidence_doc_id = _seed_item_document(
+        repository=repository,
+        published_at=published_at,
+        source_item_id="trend-evidence-backfill-1",
+        title="Grounding Paper",
+    )
+
+    from recoleta.rag import agent as rag_agent
+    from recoleta.trends import TrendPayload
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        pstart = kwargs["period_start"]
+        pend = kwargs["period_end"]
+        payload = {
+            "title": "Daily Trend",
+            "granularity": "day",
+            "period_start": pstart.isoformat(),
+            "period_end": pend.isoformat(),
+            "overview_md": "Grounded trend overview.",
+            "topics": ["agents"],
+            "clusters": [
+                {
+                    "title": "Grounding",
+                    "content_md": "Grounding moved from demo copy to cited evidence.",
+                    "evidence_refs": [],
+                }
+            ],
+        }
+        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    def _fake_search_chunks_text(**kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["doc_type"] == "item"
+        return [{"doc_id": evidence_doc_id, "chunk_index": 0}]
+
+    monkeypatch.setattr(repository, "search_chunks_text", _fake_search_chunks_text)
+
+    result = service.trends(
+        run_id="run-trend-evidence-backfill",
+        granularity="day",
+        anchor_date=date(2026, 3, 2),
+        llm_model="test/fake-model",
+    )
+
+    assert result.doc_id > 0
+    assert result.pass_output_id is not None
+
+    with Session(repository.engine) as session:
+        pass_output = session.get(PassOutput, result.pass_output_id)
+        assert pass_output is not None
+        payload = json.loads(pass_output.payload_json)
+        cluster = payload["clusters"][0]
+        evidence_refs = cluster["evidence_refs"]
+        assert len(evidence_refs) == 1
+        assert evidence_refs[0]["doc_id"] == evidence_doc_id
+        assert evidence_refs[0]["chunk_index"] == 0
+
+        diagnostics = json.loads(pass_output.diagnostics_json or "{}")
+        rep_enforcement = diagnostics["rep_enforcement"]
+        assert rep_enforcement["backfilled_total"] == 1
+        assert rep_enforcement["failed_clusters_total"] == 0
+
+    trend_note = (
+        settings.markdown_output_dir
+        / "Trends"
+        / f"day--2026-03-02--trend--{result.doc_id}.md"
+    )
+    markdown = trend_note.read_text(encoding="utf-8")
+    assert "#### Evidence" in markdown
+    assert "[Grounding Paper](" in markdown
 
 
 def test_trends_records_metric_when_pass_output_persist_fails(

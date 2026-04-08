@@ -37,7 +37,7 @@ def test_trend_prompt_includes_overview_pack_ranking_and_rep_source_when_provide
     assert prompt_payload.get("rep_source_doc_type") == "item"
     notes = prompt_payload.get("notes") or []
     assert any(
-        "use the exact prev_n token" in str(note).lower()
+        "never copy raw prev_n tokens" in str(note).lower()
         and "history_pack_md" in str(note)
         for note in notes
     )

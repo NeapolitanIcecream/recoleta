@@ -38,7 +38,7 @@ def _prompt_notes() -> list[str]:
         "Keep topics only in metadata, not in overview_md body sections.",
         "Tools only access the active target period; use history_pack_md for same-granularity historical context when present.",
         "Use history_pack_md only as internal analysis context; if it sharpens the brief, weave the delta into overview_md or clusters instead of emitting a dedicated history section.",
-        "If you mention a historical window in prose, use the exact prev_n token from history_pack_md so publishing can render it as a link.",
+        "If you mention a historical window in prose, rewrite history_pack_md into natural language and never copy raw prev_n tokens into the output.",
         "If history evidence is weak, omit the comparison instead of writing generic change-over-time filler.",
     ]
 
