@@ -32,7 +32,6 @@ from recoleta.publish.trend_render_shared import (
     _extract_trend_pdf_sections,
     _render_browser_content_card_html,
     _render_browser_section_label_html,
-    _strip_labeled_value,
     _normalize_obsidian_callouts_for_pdf,
     _split_yaml_frontmatter_text,
     _trend_date_token,
@@ -79,8 +78,6 @@ from recoleta.site_presentation import (
     IdeaBrowserBodyDeps,
     build_idea_browser_body_html as _build_idea_browser_body_html_impl,
     build_item_browser_body_html as _build_item_browser_body_html_impl,
-    render_idea_opportunities_section as _render_idea_opportunities_section_impl,
-    render_idea_opportunity_card as _render_idea_opportunity_card_impl,
     render_presentation_source_list as _render_presentation_source_list_impl,
 )
 
@@ -3177,117 +3174,6 @@ def _idea_heading_matches(heading: str, *labels: str) -> bool:
     return any(label in normalized for label in labels)
 
 
-def _idea_meta_pill(label: str, value: str) -> str:
-    return (
-        "<span class='meta-pill idea-meta-pill'>"
-        f"<span class='idea-meta-pill-label'>{html.escape(label)}</span>"
-        f"<span class='idea-meta-pill-separator'>·</span>{html.escape(value)}"
-        "</span>"
-    )
-
-
-def _render_idea_role_block(value: str) -> str:
-    safe_value = html.escape(value)
-    return (
-        "<section class='idea-opportunity-block idea-opportunity-block-role'>"
-        "<div class='idea-opportunity-label'>Role</div>"
-        f"<div class='idea-opportunity-copy idea-opportunity-role-value' title='{html.escape(value, quote=True)}'>{safe_value}</div>"
-        "</section>"
-    )
-
-
-def _extract_idea_opportunity_meta_sections(
-    node: Tag,
-) -> tuple[str | None, str | None] | None:
-    if node.name not in {"ul", "ol"}:
-        return None
-    pills: list[str] = []
-    role_html: str | None = None
-    items = node.find_all("li", recursive=False)
-    if not items:
-        return None
-    for item in items:
-        text = item.get_text(" ", strip=True)
-        if (value := _strip_labeled_value(text, labels=("Type", "Kind"))) is not None:
-            pills.append(_idea_meta_pill("Type", value))
-            continue
-        if (
-            value := _strip_labeled_value(
-                text,
-                labels=("Horizon", "Time horizon"),
-            )
-        ) is not None:
-            pills.append(_idea_meta_pill("Horizon", value))
-            continue
-        if (
-            value := _strip_labeled_value(text, labels=("Role", "User/job"))
-        ) is not None:
-            role_html = _render_idea_role_block(value)
-            continue
-        if " ".join(text.split()).strip():
-            return None
-    pills_html = (
-        f"<div class='idea-opportunity-meta-row'>{''.join(pills)}</div>"
-        if pills
-        else None
-    )
-    if pills_html is None and role_html is None:
-        return None
-    return pills_html, role_html
-
-
-def _extract_idea_labeled_paragraph(node: Tag) -> tuple[str, str] | None:
-    if node.name != "p":
-        return None
-    label_by_key = {
-        "thesis": "Thesis",
-        "why now": "Why now",
-        "what changed": "What changed",
-        "validation next step": "Validation next step",
-    }
-    paragraph = BeautifulSoup(str(node), "html.parser").find("p")
-    if paragraph is None:
-        return None
-    strong = paragraph.find("strong", recursive=False)
-    if strong is None:
-        return None
-    raw_label = strong.get_text(" ", strip=True).rstrip(".:：").strip().lower()
-    label = label_by_key.get(raw_label)
-    if label is None:
-        return None
-    strong.extract()
-    inner_html = re.sub(
-        r"^\s*([.:：]|&nbsp;)+\s*",
-        "",
-        paragraph.decode_contents(),
-    ).strip()
-    if not inner_html:
-        return None
-    return label, inner_html
-
-
-def _render_idea_opportunity_card(*, title: str, inner_html: str) -> tuple[str, int]:
-    return _render_idea_opportunity_card_impl(
-        title=title,
-        inner_html=inner_html,
-        extract_meta_sections=_extract_idea_opportunity_meta_sections,
-        idea_heading_matches=_idea_heading_matches,
-        extract_labeled_paragraph=_extract_idea_labeled_paragraph,
-    )
-
-
-def _render_idea_opportunities_section(
-    *, heading: str, inner_html: str
-) -> tuple[str, int, int]:
-    return _render_idea_opportunities_section_impl(
-        heading=heading,
-        inner_html=inner_html,
-        render_idea_opportunity_card=_render_idea_opportunity_card,
-        render_browser_content_card_html=_render_browser_content_card_html,
-        render_browser_section_label_html=_render_browser_section_label_html,
-    )
-
-
 def _build_idea_browser_body_html(*, body_html: str) -> IdeaBodyRenderResult:
     return _build_idea_browser_body_html_impl(
         body_html=body_html,
@@ -3296,7 +3182,6 @@ def _build_idea_browser_body_html(*, body_html: str) -> IdeaBodyRenderResult:
             build_item_browser_body_html=_build_item_browser_body_html,
             idea_heading_matches=_idea_heading_matches,
             render_browser_content_card_html=_render_browser_content_card_html,
-            render_idea_opportunities_section=_render_idea_opportunities_section,
         ),
     )
 

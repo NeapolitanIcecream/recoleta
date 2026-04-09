@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 
+from recoleta.presentation import presentation_sidecar_path
 from recoleta.site import (
     RECOLETA_QUICKSTART_URL,
     RECOLETA_REPO_URL,
@@ -225,3 +226,138 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
     assert "align-self: start;" in site_css
     assert RECOLETA_REPO_URL in index_html
     assert RECOLETA_QUICKSTART_URL in index_html
+
+
+def test_export_trend_static_site_idea_markdown_fallback_uses_current_shape_only(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "notes"
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    evidence_doc_id = _seed_item_doc_with_authors(
+        repository=repository,
+        published_at=datetime(2026, 2, 25, 12, tzinfo=UTC),
+    )
+
+    _ = write_markdown_trend_note(
+        output_dir=output_dir,
+        trend_doc_id=71,
+        title="Agent systems",
+        granularity="day",
+        period_start=datetime(2026, 2, 25, tzinfo=UTC),
+        period_end=datetime(2026, 2, 26, tzinfo=UTC),
+        run_id="run-site-fallback-1",
+        overview_md="Agent workflows are getting more production-ready.",
+        topics=["agents", "tooling"],
+        clusters=[
+            {
+                "title": "Release discipline",
+                "content_md": "Verification moved into the shipping path.",
+                "evidence_refs": [
+                    {
+                        "doc_id": 1,
+                        "chunk_index": 0,
+                        "title": "CodeScout",
+                        "href": "../Inbox/2026-02-25--codescout.md",
+                        "reason": "The note grounds release discipline in the corpus.",
+                    }
+                ],
+            }
+        ],
+    )
+
+    idea_note = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=output_dir,
+        pass_output_id=9,
+        upstream_pass_output_id=7,
+        granularity="day",
+        period_start=datetime(2026, 2, 25, tzinfo=UTC),
+        period_end=datetime(2026, 2, 26, tzinfo=UTC),
+        run_id="run-site-fallback-ideas",
+        status="succeeded",
+        payload=TrendIdeasPayload.model_validate(
+            {
+                "title": "Operator wedges",
+                "granularity": "day",
+                "period_start": datetime(2026, 2, 25, tzinfo=UTC).isoformat(),
+                "period_end": datetime(2026, 2, 26, tzinfo=UTC).isoformat(),
+                "summary_md": "Structured release controls now feel overdue.",
+                "ideas": [
+                    {
+                        "title": "Prompt release gate",
+                        "content_md": "Add a release gate before prompt rollout.",
+                        "evidence_refs": [
+                            {
+                                "doc_id": evidence_doc_id,
+                                "chunk_index": 0,
+                                "reason": "The trend note ties verification to rollout control.",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        topics=["agents"],
+    )
+    idea_note.write_text(
+        "\n".join(
+            [
+                "---",
+                "kind: ideas",
+                "granularity: day",
+                "period_start: 2026-02-25T00:00:00+00:00",
+                "period_end: 2026-02-26T00:00:00+00:00",
+                "run_id: run-site-fallback-ideas",
+                "status: succeeded",
+                "topics:",
+                "- agents",
+                "---",
+                "",
+                "# Operator wedges",
+                "",
+                "## Summary",
+                "",
+                "Structured release controls now feel overdue.",
+                "",
+                "## Prompt release gate",
+                "",
+                "**Why now.** Verification failures are reaching production.",
+                "",
+                "**What changed.** Tooling can gate prompt releases.",
+                "",
+                "**Validation next step.** Run the gate on one release train.",
+                "",
+                "### Evidence",
+                "",
+                "- [Grounded runtime checks](../Inbox/idea-static-site-authors.md)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    presentation_sidecar_path(note_path=idea_note).unlink()
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(
+        input_dir=output_dir / "Trends",
+        output_dir=site_dir,
+    )
+
+    ideas_html = (site_dir / "ideas" / "day--2026-02-25--ideas.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Summary" in ideas_html
+    assert "Prompt release gate" in ideas_html
+    assert "Evidence" in ideas_html
+    assert "<div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>1</div>" in ideas_html
+    assert "<div class='meta-panel-label'>Evidence</div><div class='meta-panel-value'>1</div>" in ideas_html
+    assert "idea-opportunity-meta-row" not in ideas_html
+    assert "idea-opportunity-block" not in ideas_html
+    assert "<div class='idea-opportunity-label'>Why now</div>" not in ideas_html
+    assert "<div class='idea-opportunity-label'>What changed</div>" not in ideas_html
+    assert (
+        "<div class='idea-opportunity-label'>Validation next step</div>"
+        not in ideas_html
+    )
+    assert "Opportunities" not in ideas_html
