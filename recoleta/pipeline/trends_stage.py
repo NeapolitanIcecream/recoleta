@@ -897,19 +897,24 @@ class _TrendStageRunner:
         )
         if summary_chunk is None or not str(getattr(summary_chunk, "text", "") or "").strip():
             return False
+        return self._load_trend_doc_payload(doc=doc) is not None
+
+    def _load_trend_doc_payload(self, *, doc: Any) -> trends.TrendPayload | None:
+        doc_id = int(getattr(doc, "id") or 0)
+        if doc_id <= 0:
+            return None
         meta_chunk = cast(Any, self.service.repository).read_document_chunk(
             doc_id=doc_id,
             chunk_index=1,
         )
         if meta_chunk is None:
-            return False
+            return None
         try:
-            trends.TrendPayload.model_validate(
+            return trends.TrendPayload.model_validate(
                 orjson.loads(str(getattr(meta_chunk, "text", "") or "{}"))
             )
         except Exception:
-            return False
-        return True
+            return None
 
     def _repair_trend_source_from_pass_output(
         self,
@@ -1284,12 +1289,53 @@ class _TrendStageRunner:
         state: _TrendStageState,
         source_results: dict[str, _SourceEnsureResult],
     ) -> int:
+        if state.corpus_doc_type == "trend" and state.corpus_granularity in {
+            "day",
+            "week",
+        }:
+            return self._usable_trend_corpus_docs_total(
+                granularity=state.corpus_granularity,
+                period_start=state.period_start,
+                period_end=state.period_end,
+            )
         primary_token = self._source_token(
             doc_type=state.corpus_doc_type,
             granularity=state.corpus_granularity,
         )
         report = source_results.get(primary_token)
         return int(report.docs_total) if report is not None else 0
+
+    def _usable_trend_corpus_docs_total(
+        self,
+        *,
+        granularity: str,
+        period_start: Any,
+        period_end: Any,
+    ) -> int:
+        docs_by_window = self._trend_docs_by_window(
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        usable_docs_total = 0
+        for window_start, window_end in self._trend_source_windows(
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+        ):
+            doc = docs_by_window.get(
+                self._normalized_period_key(
+                    period_start=window_start,
+                    period_end=window_end,
+                )
+            )
+            if doc is None:
+                continue
+            payload = self._load_trend_doc_payload(doc=doc)
+            if payload is None or trends.is_empty_trend_payload(payload):
+                continue
+            usable_docs_total += 1
+        return usable_docs_total
 
     def _build_empty_generation(
         self,

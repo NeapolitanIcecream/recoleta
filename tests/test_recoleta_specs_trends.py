@@ -11,9 +11,12 @@ from sqlmodel import Session, select
 from recoleta.models import Document, DocumentChunk
 from recoleta.pipeline.service import PipelineService
 from recoleta.trends import (
+    TrendPayload,
     day_period_bounds,
     index_items_as_documents,
+    is_empty_trend_payload,
     semantic_search_summaries_in_period,
+    week_period_bounds,
 )
 from recoleta.types import (
     AnalyzeResult,
@@ -1637,3 +1640,83 @@ def test_trends_skips_llm_when_corpus_is_empty(
     with Session(repository.engine) as session:
         docs = list(session.exec(select(Document)))
         assert any(doc.doc_type == "trend" for doc in docs)
+
+
+def test_week_trends_treat_empty_daily_trends_as_empty_corpus(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: empty nested daily trend docs must not trigger weekly LLM synthesis."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    import recoleta.trends as trends_mod
+
+    def _must_not_call_agent(**kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("Weekly trend LLM must not run for empty nested corpus")
+
+    monkeypatch.setattr(trends_mod, "generate_trend_via_tools", _must_not_call_agent)
+
+    anchor = date(2026, 3, 5)
+    week_start, week_end = week_period_bounds(anchor)
+
+    result: TrendResult = service.trends(
+        run_id="run-trend-week-empty-nested",
+        granularity="week",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+    )
+
+    assert result.doc_id > 0
+
+    day_docs = repository.list_documents(
+        doc_type="trend",
+        granularity="day",
+        period_start=week_start,
+        period_end=week_end,
+        order_by="event_asc",
+        limit=20,
+    )
+    assert len(day_docs) == 7
+    for day_doc in day_docs:
+        assert day_doc.id is not None
+        meta_chunk = repository.read_document_chunk(
+            doc_id=int(day_doc.id),
+            chunk_index=1,
+        )
+        assert meta_chunk is not None
+        day_payload = TrendPayload.model_validate(
+            json.loads(str(getattr(meta_chunk, "text", "") or "{}"))
+        )
+        assert is_empty_trend_payload(day_payload)
+
+    week_pass_output = repository.get_latest_pass_output(
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        granularity="week",
+        period_start=week_start,
+        period_end=week_end,
+    )
+    assert week_pass_output is not None
+    week_payload = TrendPayload.model_validate(
+        json.loads(str(week_pass_output.payload_json or "{}"))
+    )
+    assert is_empty_trend_payload(week_payload)
+
+    metric_values = {
+        str(getattr(metric, "name", "")): float(getattr(metric, "value", 0.0))
+        for metric in repository.list_metrics(run_id="run-trend-week-empty-nested")
+    }
+    assert metric_values["pipeline.trends.corpus.empty"] == 1.0

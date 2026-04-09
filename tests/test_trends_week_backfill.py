@@ -32,6 +32,18 @@ def test_trends_week_backfill_generates_missing_daily_trends_and_writes_notes(
         telegram_sender=FakeTelegramSender(),
     )
 
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="week-backfill-item",
+        canonical_url="https://example.com/week-backfill-item",
+        title="Week Backfill Item",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 2, 1, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="seed-week-backfill", drafts=[draft], limit=10)
+    _ = service.analyze(run_id="seed-week-backfill", limit=10)
+
     anchor = date(2026, 3, 2)  # Monday
     week_start, week_end = week_period_bounds(anchor)
     week_payload = TrendPayload.model_validate(
@@ -49,11 +61,27 @@ def test_trends_week_backfill_generates_missing_daily_trends_and_writes_notes(
 
     from recoleta.rag import agent as rag_agent
 
-    calls = {"total": 0}
+    calls = {"day": 0, "week": 0}
 
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
-        calls["total"] += 1
-        return week_payload, {"tool_calls_total": 0}
+        granularity = str(kwargs["granularity"])
+        calls[granularity] += 1
+        if granularity == "week":
+            return week_payload, {"tool_calls_total": 0}
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        return (
+            TrendPayload(
+                title=f"Daily Trend {period_start.date().isoformat()}",
+                granularity="day",
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                overview_md="- daily",
+                topics=["day"],
+                clusters=[],
+            ),
+            {"tool_calls_total": 0},
+        )
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
@@ -65,7 +93,8 @@ def test_trends_week_backfill_generates_missing_daily_trends_and_writes_notes(
         backfill=True,
         backfill_mode="missing",
     )
-    assert calls["total"] == 1
+    assert calls["week"] == 1
+    assert calls["day"] == 1
 
     # Backfilled daily trends exist in the DB and were written as notes.
     day_docs = repository.list_documents(

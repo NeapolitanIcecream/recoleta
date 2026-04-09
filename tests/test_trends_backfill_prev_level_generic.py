@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from recoleta.pipeline import PipelineService
 from recoleta.trends import TrendPayload, month_period_bounds, week_period_bounds
+from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
@@ -31,6 +32,18 @@ def test_trends_month_backfill_generates_missing_weekly_trends(
         telegram_sender=FakeTelegramSender(),
     )
 
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="month-backfill-item",
+        canonical_url="https://example.com/month-backfill-item",
+        title="Month Backfill Item",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 18, 1, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="seed-month-backfill", drafts=[draft], limit=10)
+    _ = service.analyze(run_id="seed-month-backfill", limit=10)
+
     anchor = date(2026, 3, 18)  # In-month anchor.
     month_start, month_end = month_period_bounds(anchor)
     month_payload = TrendPayload.model_validate(
@@ -48,12 +61,27 @@ def test_trends_month_backfill_generates_missing_weekly_trends(
 
     from recoleta.rag import agent as rag_agent
 
-    calls = {"total": 0}
+    calls = {"day": 0, "week": 0, "month": 0}
 
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
-        _ = kwargs
-        calls["total"] += 1
-        return month_payload, {"tool_calls_total": 0}
+        granularity = str(kwargs["granularity"])
+        calls[granularity] += 1
+        if granularity == "month":
+            return month_payload, {"tool_calls_total": 0}
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        return (
+            TrendPayload(
+                title=f"{granularity.title()} Trend",
+                granularity=granularity,
+                period_start=period_start.isoformat(),
+                period_end=period_end.isoformat(),
+                overview_md=f"- {granularity}",
+                topics=[granularity],
+                clusters=[],
+            ),
+            {"tool_calls_total": 0},
+        )
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
@@ -65,7 +93,7 @@ def test_trends_month_backfill_generates_missing_weekly_trends(
         backfill=True,
         backfill_mode="missing",
     )
-    assert calls["total"] >= 1
+    assert calls["month"] >= 1
 
     expected_week_starts: list[date] = []
     cursor = month_start.date()
