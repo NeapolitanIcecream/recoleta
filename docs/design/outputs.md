@@ -43,7 +43,7 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Inbox/`: one note per published item
 - `Trends/`: canonical trend markdown notes plus adjacent
   `<stem>.presentation.json` sidecars
-- `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs plus
+- `Ideas/`: canonical idea markdown notes derived from `trend_ideas` pass outputs plus
   adjacent `<stem>.presentation.json` sidecars
 - `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading
   surfaces derived from canonical outputs; localized trend and idea notes also

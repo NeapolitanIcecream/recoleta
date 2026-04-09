@@ -22,7 +22,7 @@ open these paths first:
 - `MARKDOWN_OUTPUT_DIR/latest.md` or `./data/outputs/latest.md`: summary page
   for the latest run
 - `MARKDOWN_OUTPUT_DIR/Inbox/`: one Markdown note per published item
-- `MARKDOWN_OUTPUT_DIR/Trends/`: day-level trend briefs from the same workflow,
+- `MARKDOWN_OUTPUT_DIR/Trends/`: day-level trend notes from the same workflow,
   plus adjacent `.presentation.json` sidecars for canonical trend notes
 - `MARKDOWN_OUTPUT_DIR/site/index.html`: the rebuilt static site
 - `RECOLETA_DB_PATH`: the SQLite database that later workflows build from
@@ -74,7 +74,7 @@ Public example:
 
 ![Recoleta site home](../assets/sample-output-site-home.png)
 
-### Trend brief
+### Trend note
 
 If `run now` already created a day brief, open it. To rerender a specific day:
 
@@ -93,9 +93,9 @@ Public examples:
 - <https://neapolitanicecream.github.io/recoleta/en/trends/index.html>
 - <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
 
-![Recoleta trend brief](../assets/sample-output-trend-brief.png)
+![Recoleta trend note](../assets/sample-output-trend-brief.png)
 
-### Idea brief
+### Idea note
 
 If the workflow created ideas for that day, open them. To rerender a specific
 day:
@@ -115,7 +115,7 @@ Public examples:
 - <https://neapolitanicecream.github.io/recoleta/en/ideas/index.html>
 - <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
 
-![Recoleta idea brief](../assets/sample-output-idea-brief.png)
+![Recoleta idea note](../assets/sample-output-idea-brief.png)
 
 ## 4. Pick the closest preset example
 
@@ -124,7 +124,7 @@ Public examples:
 - Start from: [`presets/agents-radar.yaml`](../../presets/agents-radar.yaml)
 - Closest public example:
   <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
-- Expect: `latest.md`, `Inbox/`, trend briefs, idea briefs when evidence is
+- Expect: `latest.md`, `Inbox/`, trend notes, idea notes when evidence is
   strong enough, and the static site
 
 ### Robotics radar

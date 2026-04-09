@@ -33,7 +33,7 @@ Optional LLM behavior:
 
 - `RECOLETA_LLM_API_KEY`: Recoleta-scoped API key override for LiteLLM / PydanticAI calls (env-only).
 - `RECOLETA_LLM_BASE_URL`: Recoleta-scoped base URL override for OpenAI-compatible or OpenRouter endpoints.
-- `LLM_OUTPUT_LANGUAGE`: canonical language label for newly generated LLM output such as item summaries, trend briefs, and idea briefs.
+- `LLM_OUTPUT_LANGUAGE`: canonical language label for newly generated LLM output such as item summaries, trend notes, and idea notes.
   - JSON keys remain English.
   - `topics` remain concise English tags for downstream allow/deny filtering.
   - Empty value means unset.

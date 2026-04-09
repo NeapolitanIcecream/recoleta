@@ -531,7 +531,7 @@ def _format_collection_mix(
         parts.append(_count_label(idea_count, singular="idea"))
     if parts:
         return " · ".join(parts)
-    return _count_label(0, singular="brief", plural="briefs")
+    return _count_label(0, singular="entry", plural="entries")
 
 
 def _format_collection_meta(
@@ -1022,7 +1022,7 @@ def _render_detail_page(
         "</nav>"
         "<section class='detail-hero'>"
         "<div class='detail-hero-main'>"
-        f"<div class='hero-kicker'>Trend brief · {html.escape(document.period_token)}</div>"
+        f"<div class='hero-kicker'>Trends · {html.escape(document.period_token)}</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
         f"<p class='detail-dek'>{html.escape(hero_dek)}</p>"
         f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
@@ -1434,7 +1434,7 @@ def _render_home_page(
         "<h1 class='home-title'>Trends, ideas, and a public research site</h1>"
         "<p class='home-dek'>"
         "Turn arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS "
-        "into publishable research briefs that stay local first."
+        "into publishable research notes, trends, and ideas that stay local first."
         "</p>"
         "<div class='hero-actions'>"
         f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')}'>Browse trends</a>"
@@ -2298,10 +2298,12 @@ iframe {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  align-items: start;
 }
 .detail-content .idea-opportunity-card {
   display: grid;
   gap: 14px;
+  align-self: start;
   padding: 18px;
   border: 1px solid rgba(24, 52, 83, 0.10);
   border-radius: 18px;

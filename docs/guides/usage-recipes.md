@@ -85,8 +85,8 @@ What to know:
 
 ## Translate localized reading surfaces
 
-Use `run translate` after the canonical item summaries, trend briefs, or idea
-briefs already exist in SQLite:
+Use `run translate` after the canonical item summaries, trend notes, or idea
+notes already exist in SQLite:
 
 ```bash
 uv run recoleta run translate --include items,trends,ideas

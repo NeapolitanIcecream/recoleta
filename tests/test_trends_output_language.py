@@ -15,7 +15,7 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "keep topics as concise English tags" in instructions
     assert "under 200 Chinese characters or 200 words" in instructions
     assert "do not add a Topics/主题 section inside overview_md" in instructions
-    assert "The public output should contain only overview_md and 1 to 4 cluster briefs" in instructions
+    assert "The public output should contain only overview_md and 1 to 4 cluster blocks" in instructions
     assert "Each cluster must include at least one evidence_refs entry" in instructions
     assert "direct editorial judgment, not a topic inventory" in instructions
     assert "at most three named systems, papers, or benchmarks" in instructions

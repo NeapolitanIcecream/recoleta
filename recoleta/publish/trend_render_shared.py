@@ -295,7 +295,7 @@ def _trend_pdf_meta_rows(frontmatter: dict[str, Any]) -> list[tuple[str, str]]:
 
 def _trend_pdf_hero_dek(frontmatter: dict[str, Any]) -> str:
     granularity = str(frontmatter.get("granularity") or "").strip().lower() or "trend"
-    return f"{granularity.title()} trend brief with overview, must-read papers, and cluster notes."
+    return f"{granularity.title()} trends page with an overview, evidence-backed clusters, and linked notes."
 
 
 def _decorate_trend_pdf_body_html(*, body_html: str) -> tuple[str, str]:
@@ -325,7 +325,7 @@ def _build_trend_pdf_html(
         "<body>"
         "<div class='page-shell'>"
         "<div class='hero'>"
-        "<div class='hero-kicker'>Recoleta Trend Brief</div>"
+        "<div class='hero-kicker'>Recoleta Trends</div>"
         f"<div class='hero-title'>{html.escape(title)}</div>"
         f"<div class='hero-dek'>{html.escape(_trend_pdf_hero_dek(frontmatter))}</div>"
         f"<div class='hero-summary'>{html.escape(_trend_pdf_topics_summary(frontmatter))}</div>"
@@ -374,7 +374,7 @@ def _build_trend_browser_pdf_html(
         "<section class='hero'>"
         "<div class='hero-grid'>"
         "<div class='hero-main'>"
-        "<div class='hero-kicker'>Recoleta Trend Brief</div>"
+        "<div class='hero-kicker'>Recoleta Trends</div>"
         f"<h1 class='hero-title'>{html.escape(title)}</h1>"
         f"<p class='hero-dek'>{html.escape(_trend_pdf_hero_dek(frontmatter))}</p>"
         f"<div class='hero-summary'>{html.escape(_trend_pdf_topics_summary(frontmatter))}</div>"

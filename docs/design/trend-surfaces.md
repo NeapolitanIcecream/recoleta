@@ -82,7 +82,7 @@ This supports visual debugging without mutating the canonical markdown note and 
 
 ## Static site strategy
 
-The static site exporter consumes trend markdown notes and sibling idea briefs
+The static site exporter consumes trend markdown notes and sibling idea notes
 when present, then emits a standalone relative-link website. When localized
 markdown trees exist, it also aggregates peer language roots and exports a
 multilingual site.

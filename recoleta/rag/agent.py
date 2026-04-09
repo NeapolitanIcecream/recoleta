@@ -111,10 +111,10 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
     base += (
         " Use any history change, contradictory evidence, or representative examples as internal analysis tools, "
         "but do not expose them as separate reader-facing sections. "
-        "The public output should contain only overview_md and 1 to 4 cluster briefs."
+        "The public output should contain only overview_md and 1 to 4 cluster blocks."
     )
     base += (
-        " Each cluster brief must be a finished short note, not a worksheet. "
+        " Each cluster block must be a finished short note, not a worksheet. "
         "Use clusters[].title for a literal topic label, clusters[].content_md for the prose body, "
         "and clusters[].evidence_refs for grounded supporting references. "
         "Each cluster must include at least one evidence_refs entry with concrete doc_id and chunk_index values."

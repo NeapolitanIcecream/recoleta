@@ -183,6 +183,8 @@ def test_materialize_outputs_uses_new_reader_facing_contracts(tmp_path: Path) ->
 
     assert "Overview" in trend_html
     assert "Clusters" in trend_html
+    assert "Trend brief" not in trend_html
+    assert "Trends · 2026-W12" in trend_html
     assert "Top shifts" not in trend_html
     assert "Summary" in idea_html
     assert "Ideas" in idea_html

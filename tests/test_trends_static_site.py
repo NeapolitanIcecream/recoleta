@@ -192,11 +192,14 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
         encoding="utf-8"
     )
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    site_css = (site_dir / "assets" / "site.css").read_text(encoding="utf-8")
 
     assert manifest["trends_total"] == 1
     assert "Overview" in trend_html
     assert "Clusters" in trend_html
     assert "Evidence" in trend_html
+    assert "Trend brief" not in trend_html
+    assert "Trends · 2026-02-25" in trend_html
     assert "Top shifts" not in trend_html
     assert "Counter-signal" not in trend_html
     assert "Representative sources" not in trend_html
@@ -218,5 +221,7 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
     assert "Idea briefs" not in index_html
     assert "Trends" in index_html
     assert "Ideas" in index_html
+    assert "align-items: start;" in site_css
+    assert "align-self: start;" in site_css
     assert RECOLETA_REPO_URL in index_html
     assert RECOLETA_QUICKSTART_URL in index_html
