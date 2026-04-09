@@ -61,3 +61,32 @@ def test_get_rich_console_rebuilds_when_cached_stderr_is_closed(
     assert second_console is not first_console
     assert second_console.file is second_stream
     assert "hello" in second_stream.getvalue()
+
+
+def test_configured_rich_sink_rebuilds_console_after_stderr_changes(
+    monkeypatch,
+) -> None:
+    """Regression: configured rich sink must not keep a closed pytest capture stream."""
+
+    class _CapturingStderr(io.StringIO):
+        def isatty(self) -> bool:
+            return False
+
+    first_stream = _CapturingStderr()
+    second_stream = _CapturingStderr()
+    monkeypatch.setattr(sys, "stderr", first_stream)
+    monkeypatch.setattr(observability, "_RICH_CONSOLE", None)
+
+    configure_process_logging(level="INFO", log_json=False)
+    try:
+        first_stream.close()
+        monkeypatch.setattr(sys, "stderr", second_stream)
+        logger.bind(module="pipeline.trends", run_id="run-after-close").info(
+            "after-close log"
+        )
+
+        output = second_stream.getvalue()
+        assert "after-close log" in output
+        assert "Logging error" not in output
+    finally:
+        logger.remove()

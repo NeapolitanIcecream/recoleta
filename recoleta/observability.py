@@ -159,12 +159,10 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
         )
         return
 
-    console = get_rich_console()
-
     def rich_sink(message: object) -> None:
         message_text = str(message)
         renderable = Text.from_ansi(message_text)
-        console.print(renderable, end="")
+        get_rich_console().print(renderable, end="")
 
     logger.add(
         rich_sink,
@@ -175,7 +173,7 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
             "<cyan>{extra}</cyan> | "
             "<level>{message}</level>\n"
         ),
-        colorize=not console.no_color,
+        colorize=not get_rich_console().no_color,
         backtrace=False,
         diagnose=False,
     )

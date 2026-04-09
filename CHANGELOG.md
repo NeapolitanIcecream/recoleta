@@ -7,10 +7,16 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-09
+
 ### Added
 
+- Workflow-first CLI entrypoints under `run`, `fleet`, `daemon`, `inspect`,
+  `repair`, `stage`, and `admin`.
 - `recoleta fleet run day|week|month|deploy` and `recoleta fleet site build`
   for manual multi-instance orchestration from one fleet manifest.
+- `recoleta fleet site serve` for local aggregate-site preview from a fleet
+  manifest.
 - `recoleta inspect llm` for effective LLM config inspection and optional probe
   checks.
 - `recoleta inspect why-empty` for machine-readable empty-corpus diagnostics.
@@ -19,6 +25,8 @@ Versioning.
 - `--json` output for `stage analyze`, `stage publish`, `stage trends`,
   `stage ideas`, `repair outputs`, `run site build`, `stage site stage`, and
   `run deploy`.
+- Localized markdown output plus sibling presentation sidecars for translated
+  trend and idea notes.
 
 ### Changed
 
@@ -26,6 +34,10 @@ Versioning.
   manifest instead of shared `topic_streams`.
 - Config files, `.env`, or shell env containing `TOPIC_STREAMS` /
   `topic_streams` now fail fast.
+- `run now|day|week|month|deploy` now act as the default workflow-first
+  orchestration surface for end-to-end runs.
+- Site export and translation now prefer sibling `.presentation.json` sidecars
+  and fall back to markdown parsing only when needed.
 - Runs now persist minimal context such as command, scope, granularity, and
   period bounds.
 - Artifacts now persist lightweight structured failure summaries alongside
@@ -34,7 +46,8 @@ Versioning.
 ### Removed
 
 - `recoleta repair streams`.
-- In-tree `topic_streams` migration and recovery commands, including
+- Shared `TOPIC_STREAMS` / `topic_streams` runtime support and in-tree
+  migration or recovery commands, including
   `recoleta admin migrate topic-streams-to-instances`.
 
 ## [0.1.0] - 2026-03-16

@@ -1,6 +1,6 @@
 [project]
 name = "recoleta"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first AI research radar for ingesting, analyzing, and publishing research signals."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -97,7 +97,7 @@ review_candidate_min = 60
 high_confidence_candidate_min = 80
 
 [build-system]
-requires = ["uv_build>=0.10.4,<0.11.0"]
+requires = ["uv_build>=0.10.4,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

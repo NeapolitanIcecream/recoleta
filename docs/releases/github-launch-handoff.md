@@ -67,29 +67,29 @@ If you want categories later, start with:
 
 ## Release handoff
 
-For the first public baseline release:
+For the current release pass:
 
 - changelog source: [`CHANGELOG.md`](../../CHANGELOG.md)
-- release draft: [`docs/releases/v0.1.0-draft.md`](./v0.1.0-draft.md)
-- launch copy: [`docs/releases/v0.1.0-launch-kit.md`](./v0.1.0-launch-kit.md)
-- demo/script outlines: [`docs/releases/v0.1.0-content-pack.md`](./v0.1.0-content-pack.md)
+- release draft: [`docs/releases/v0.2.0-draft.md`](./v0.2.0-draft.md)
+- launch copy: [`docs/releases/v0.2.0-launch-kit.md`](./v0.2.0-launch-kit.md)
+- demo/script outlines: [`docs/releases/v0.2.0-content-pack.md`](./v0.2.0-content-pack.md)
 - first-run proof assets: [`docs/guides/first-output-tour.md`](../guides/first-output-tour.md)
 
 Suggested tag:
 
-- `v0.1.0`
+- `v0.2.0`
 
 Suggested release title:
 
-- `v0.1.0: local-first AI research radar baseline`
+- `v0.2.0: workflow-first runtime and instance-first fleet`
 
 ## Suggested checklist
 
 1. Confirm `README.md` links and badges are current.
-2. Confirm `CHANGELOG.md` and `docs/releases/v0.1.0-draft.md` match.
-3. Reuse `docs/releases/v0.1.0-launch-kit.md` for the release body or launch post.
+2. Confirm `CHANGELOG.md` and `docs/releases/v0.2.0-draft.md` match.
+3. Reuse `docs/releases/v0.2.0-launch-kit.md` for the release body or launch post.
 4. Upload the social preview PNG.
 5. Update the repo About section and website.
 6. Add the chosen GitHub topics.
 7. Enable Discussions.
-8. Publish the `v0.1.0` GitHub release.
+8. Publish the `v0.2.0` GitHub release.

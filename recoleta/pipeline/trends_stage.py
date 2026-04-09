@@ -1277,7 +1277,11 @@ class _TrendStageRunner:
             unit="count",
         )
         if corpus_docs_total <= 0:
-            return self._build_empty_generation(state, corpus_docs_total)
+            return self._build_empty_generation(
+                state,
+                corpus_docs_total,
+                plan=plan,
+            )
         return self._build_non_empty_generation(
             state,
             corpus_docs_total,
@@ -1388,7 +1392,10 @@ class _TrendStageRunner:
         self,
         state: _TrendStageState,
         corpus_docs_total: int,
+        *,
+        plan: trends.TrendGenerationPlan | None,
     ) -> _TrendGenerationArtifacts:
+        self._record_empty_generation_stage_metrics(state=state, plan=plan)
         self.log.info(
             "Trends corpus is empty; skipping LLM invocation granularity={} period_start={} period_end={}",
             state.normalized_granularity,
@@ -1424,6 +1431,54 @@ class _TrendStageRunner:
                 "history_windows_dropped_total": 0,
                 "signals_dropped_total": 0,
             },
+        )
+
+    def _record_empty_generation_stage_metrics(
+        self,
+        *,
+        state: _TrendStageState,
+        plan: trends.TrendGenerationPlan | None,
+    ) -> None:
+        overview_pack_enabled = bool(
+            plan is not None
+            and getattr(self.service.settings, "trends_self_similar_enabled", False)
+        )
+        history_pack_enabled = bool(
+            plan is not None
+            and getattr(self.service.settings, "trends_peer_history_enabled", False)
+        )
+        overview_pack_chars = 0
+        history_pack_chars = 0
+        self.log.info(
+            "Trends synthesis starting granularity={} corpus_doc_type={} corpus_docs_total={} overview_pack_chars={} history_pack_chars={}",
+            state.normalized_granularity,
+            state.corpus_doc_type,
+            0,
+            overview_pack_chars,
+            history_pack_chars,
+        )
+        if overview_pack_enabled:
+            self.record_metric(
+                name="pipeline.trends.overview_pack.duration_ms",
+                value=0.0,
+                unit="ms",
+            )
+        if history_pack_enabled:
+            self.record_metric(
+                name="pipeline.trends.history.pack.duration_ms",
+                value=0.0,
+                unit="ms",
+            )
+        self.record_metric(
+            name="pipeline.trends.generate.duration_ms",
+            value=0.0,
+            unit="ms",
+        )
+        self.log.info(
+            "Trends synthesis completed granularity={} duration_ms={} tool_calls_total={}",
+            state.normalized_granularity,
+            0,
+            0,
         )
 
     def _build_non_empty_generation(
