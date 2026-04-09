@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from pathlib import Path
+import re
 
 import pytest
-import re
 
 from recoleta.pipeline import PipelineService
 from recoleta.publish import write_obsidian_trend_note
@@ -13,65 +13,50 @@ from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
-def test_write_obsidian_trend_note_renders_clusters_as_headings_and_papers(
+def test_write_obsidian_trend_note_renders_clusters_and_evidence_blocks(
     tmp_path: Path,
 ) -> None:
     vault_path = tmp_path / "vault"
-    base_folder = "Recoleta"
-    period_start = datetime(2026, 3, 2, tzinfo=UTC)
-    period_end = datetime(2026, 3, 3, tzinfo=UTC)
     note_path = write_obsidian_trend_note(
         vault_path=vault_path,
-        base_folder=base_folder,
+        base_folder="Recoleta",
         trend_doc_id=17,
         title="T",
         granularity="day",
-        period_start=period_start,
-        period_end=period_end,
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
         run_id="run-1",
         overview_md="Overview",
-        topics=["VLA", "robotics"],
+        topics=["vla", "robotics"],
         clusters=[
             {
-                "name": "Cluster A",
-                "description": "Para 1.\n\nPara 2.",
-                "representative_chunks": [
+                "title": "Cluster A",
+                "content_md": "Para 1.\n\nPara 2.",
+                "evidence_refs": [
                     {
                         "doc_id": 1,
                         "chunk_index": 0,
                         "title": "Robometer: Scaling ...",
                         "url": "http://arxiv.org/abs/2603.02115v1",
-                        "authors": ["A", "B", "C", "D", "E", "F", "G"],
                     }
                 ],
             }
         ],
-        highlights=["H1", "H2", "H3", "H4"],
     )
 
-    expected = (
-        vault_path / base_folder / "Trends" / "day--2026-03-02--trend--17.md"
-    ).resolve()
-    assert note_path.resolve() == expected
     text = note_path.read_text(encoding="utf-8")
-    assert "aliases:" in text
-    assert "tags:" in text
     assert "## Clusters" in text
     assert "### Cluster A" in text
-    assert "#### Representative sources" in text
+    assert "#### Evidence" in text
     assert "- [Robometer: Scaling ...](http://arxiv.org/abs/2603.02115v1)" in text
-    assert " — A; B; C; D; E; F; …" in text
-    assert "TL;DR" not in text
+    assert "Representative sources" not in text
     assert "## Highlights" not in text
-    assert "doc_id=" not in text
 
 
-def test_trends_day_rewrites_doc_id_refs_and_enriches_representatives(
+def test_trends_day_rewrites_doc_id_refs_and_enriches_evidence_links(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Spec: published trend notes should not expose raw doc_id references."""
-
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
@@ -87,14 +72,13 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_representatives(
         telegram_sender=FakeTelegramSender(),
     )
 
-    published_at = datetime(2026, 3, 2, 1, 0, tzinfo=UTC)
     draft = ItemDraft.from_values(
         source="rss",
         source_item_id="trend-regression-1",
         canonical_url="https://example.com/robometer",
         title="Robometer: Scaling General-Purpose Robotic Reward Models via Trajectory Comparisons",
         authors=["Alice"],
-        published_at=published_at,
+        published_at=datetime(2026, 3, 2, 1, 0, tzinfo=UTC),
         raw_metadata={"source": "test"},
     )
     service.prepare(run_id="run-trend-regression", drafts=[draft], limit=10)
@@ -126,13 +110,17 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_representatives(
             "topics": ["vla"],
             "clusters": [
                 {
-                    "name": "C",
-                    "description": f"Ref doc_id:{doc_id}",
-                    "representative_doc_ids": [],
-                    "representative_chunks": [{"doc_id": doc_id, "chunk_index": 0}],
+                    "title": "Grounding",
+                    "content_md": f"Ref doc_id:{doc_id}",
+                    "evidence_refs": [
+                        {
+                            "doc_id": doc_id,
+                            "chunk_index": 0,
+                            "reason": f"Hit doc_id: {doc_id}",
+                        }
+                    ],
                 }
             ],
-            "highlights": [f"Hit doc_id: {doc_id}"],
         }
         return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
 
@@ -144,26 +132,23 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_representatives(
         anchor_date=date(2026, 3, 2),
         llm_model="test/fake-model",
     )
-    trends_dir = (settings.markdown_output_dir / "Trends").resolve()
-    matches = list(trends_dir.glob("day--2026-03-02--trend--*.md"))
+    matches = list((settings.markdown_output_dir / "Trends").glob("day--2026-03-02--trend--*.md"))
     assert len(matches) == 1
 
     md = matches[0].read_text(encoding="utf-8")
-    assert re.search(r"(?<![\\w])doc_id\\s*:", md) is None
+    assert re.search(r"(?<![\w])doc_id\s*[:=#-]?", md) is None
+    assert re.search(r"\bchunk(?:_index)?\b", md, flags=re.I) is None
     assert "../Inbox/" in md
     assert "https://example.com/robometer" not in md
     assert "[Robometer](" in md
-    assert "Robometer: Scaling General-Purpose Robotic Reward Models" in md
-    assert "— Alice" in md
+    assert "#### Evidence" in md
     assert result.doc_id > 0
 
 
-def test_trends_day_rewrites_doc_id_space_form_and_chunk_suffix(
+def test_trends_day_deduplicates_evidence_from_same_doc_across_chunks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Regression: published trend notes should rewrite `doc_id 84, chunk 0` style references."""
-
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
@@ -179,14 +164,13 @@ def test_trends_day_rewrites_doc_id_space_form_and_chunk_suffix(
         telegram_sender=FakeTelegramSender(),
     )
 
-    published_at = datetime(2026, 3, 9, 1, 0, tzinfo=UTC)
     draft = ItemDraft.from_values(
         source="rss",
         source_item_id="trend-regression-2",
-        canonical_url="https://example.com/agentic-testing",
-        title="Human-AI Collaboration for Scaling Agile Regression Testing",
+        canonical_url="https://example.com/deduped-paper",
+        title="Representative Paper Should Appear Once",
         authors=["Alice"],
-        published_at=published_at,
+        published_at=datetime(2026, 3, 9, 1, 0, tzinfo=UTC),
         raw_metadata={"source": "test"},
     )
     service.prepare(run_id="run-trend-regression-2", drafts=[draft], limit=10)
@@ -214,22 +198,18 @@ def test_trends_day_rewrites_doc_id_space_form_and_chunk_suffix(
             "granularity": "day",
             "period_start": pstart.isoformat(),
             "period_end": pend.isoformat(),
-            "overview_md": (
-                "## 日度概览\n\n"
-                f"工业测试论文（doc_id {doc_id}, chunk 0）最有代表性。\n\n"
-                "## Top-10 必读\n"
-                f"1. **doc_id {doc_id}** — 值得优先阅读。"
-            ),
-            "topics": ["agentic-ai"],
+            "overview_md": "- ok",
+            "topics": ["agents"],
             "clusters": [
                 {
-                    "name": "C",
-                    "description": f"Ref doc_id {doc_id}, chunk 0.",
-                    "representative_doc_ids": [],
-                    "representative_chunks": [{"doc_id": doc_id, "chunk_index": 0}],
+                    "title": "Evidence consolidation",
+                    "content_md": "Repeated evidence refs should collapse to one reader-facing citation.",
+                    "evidence_refs": [
+                        {"doc_id": doc_id, "chunk_index": 1, "reason": "First match."},
+                        {"doc_id": doc_id, "chunk_index": 2, "reason": "Second match."},
+                    ],
                 }
             ],
-            "highlights": [f"Hit doc_id {doc_id}, chunk 0"],
         }
         return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
 
@@ -241,199 +221,11 @@ def test_trends_day_rewrites_doc_id_space_form_and_chunk_suffix(
         anchor_date=date(2026, 3, 9),
         llm_model="test/fake-model",
     )
-    trends_dir = (settings.markdown_output_dir / "Trends").resolve()
-    matches = list(trends_dir.glob("day--2026-03-09--trend--*.md"))
-    assert len(matches) == 1
-
-    md = matches[0].read_text(encoding="utf-8")
-    assert re.search(r"\bdoc_id\b", md) is None
-    assert re.search(r"\bchunk(?:_index)?\b", md, flags=re.I) is None
-    assert "../Inbox/" in md
-    assert "https://example.com/agentic-testing" not in md
-    assert "[Human-AI Collaboration for Scaling Agile Regression Testing](" in md
-    assert "## Top-1 必读" in md
-    assert result.doc_id > 0
-
-
-def test_trends_day_deduplicates_representative_papers(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Regression: repeated representative chunks should render only once."""
-
-    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
-    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
-    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
-    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
-    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
-    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
-
-    settings, repository = _build_runtime()
-    service = PipelineService(
-        settings=settings,
-        repository=repository,
-        analyzer=FakeAnalyzer(),
-        telegram_sender=FakeTelegramSender(),
-    )
-
-    published_at = datetime(2026, 3, 9, 1, 0, tzinfo=UTC)
-    draft = ItemDraft.from_values(
-        source="rss",
-        source_item_id="trend-regression-3",
-        canonical_url="https://example.com/deduped-paper",
-        title="Representative Paper Should Appear Once",
-        authors=["Alice"],
-        published_at=published_at,
-        raw_metadata={"source": "test"},
-    )
-    service.prepare(run_id="run-trend-regression-3", drafts=[draft], limit=10)
-    service.analyze(run_id="run-trend-regression-3", limit=10)
-
-    from recoleta.rag import agent as rag_agent
-
-    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
-        repo = kwargs["repository"]
-        pstart = kwargs["period_start"]
-        pend = kwargs["period_end"]
-        docs = repo.list_documents(
-            doc_type="item",
-            period_start=pstart,
-            period_end=pend,
-            granularity=None,
-            order_by="event_desc",
-            offset=0,
-            limit=1,
-        )
-        assert docs and docs[0].id is not None
-        doc_id = int(docs[0].id)
-        payload = {
-            "title": "Daily Trend",
-            "granularity": "day",
-            "period_start": pstart.isoformat(),
-            "period_end": pend.isoformat(),
-            "overview_md": "- ok",
-            "topics": ["agents"],
-            "clusters": [
-                {
-                    "name": "C",
-                    "description": "Repeated representative refs.",
-                    "representative_doc_ids": [],
-                    "representative_chunks": [
-                        {"doc_id": doc_id, "chunk_index": 0},
-                        {"doc_id": doc_id, "chunk_index": 0},
-                    ],
-                }
-            ],
-            "highlights": [],
-        }
-        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
-
-    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
-
-    result = service.trends(
-        run_id="run-trend-regression-3",
-        granularity="day",
-        anchor_date=date(2026, 3, 9),
-        llm_model="test/fake-model",
-    )
-    trends_dir = (settings.markdown_output_dir / "Trends").resolve()
-    matches = list(trends_dir.glob("day--2026-03-09--trend--*.md"))
+    matches = list((settings.markdown_output_dir / "Trends").glob("day--2026-03-09--trend--*.md"))
     assert len(matches) == 1
 
     md = matches[0].read_text(encoding="utf-8")
     assert "../Inbox/" in md
     assert "https://example.com/deduped-paper" not in md
     assert md.count("[Representative Paper Should Appear Once](") == 1
-    assert result.doc_id > 0
-
-
-def test_trends_day_deduplicates_representatives_from_same_doc_across_chunks(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Regression: one item should not appear twice just because multiple chunks matched."""
-
-    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
-    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
-    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
-    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
-    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
-    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
-
-    settings, repository = _build_runtime()
-    service = PipelineService(
-        settings=settings,
-        repository=repository,
-        analyzer=FakeAnalyzer(),
-        telegram_sender=FakeTelegramSender(),
-    )
-
-    published_at = datetime(2026, 3, 9, 1, 0, tzinfo=UTC)
-    draft = ItemDraft.from_values(
-        source="rss",
-        source_item_id="trend-regression-4",
-        canonical_url="https://example.com/deduped-paper-across-chunks",
-        title="Representative Paper Should Appear Once Across Chunks",
-        authors=["Alice"],
-        published_at=published_at,
-        raw_metadata={"source": "test"},
-    )
-    service.prepare(run_id="run-trend-regression-4", drafts=[draft], limit=10)
-    service.analyze(run_id="run-trend-regression-4", limit=10)
-
-    from recoleta.rag import agent as rag_agent
-
-    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
-        repo = kwargs["repository"]
-        pstart = kwargs["period_start"]
-        pend = kwargs["period_end"]
-        docs = repo.list_documents(
-            doc_type="item",
-            period_start=pstart,
-            period_end=pend,
-            granularity=None,
-            order_by="event_desc",
-            offset=0,
-            limit=1,
-        )
-        assert docs and docs[0].id is not None
-        doc_id = int(docs[0].id)
-        payload = {
-            "title": "Daily Trend",
-            "granularity": "day",
-            "period_start": pstart.isoformat(),
-            "period_end": pend.isoformat(),
-            "overview_md": "- ok",
-            "topics": ["agents"],
-            "clusters": [
-                {
-                    "name": "C",
-                    "description": "Repeated representative refs from multiple chunks.",
-                    "representative_doc_ids": [],
-                    "representative_chunks": [
-                        {"doc_id": doc_id, "chunk_index": 1, "score": 0.96},
-                        {"doc_id": doc_id, "chunk_index": 2, "score": 0.93},
-                    ],
-                }
-            ],
-            "highlights": [],
-        }
-        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
-
-    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
-
-    result = service.trends(
-        run_id="run-trend-regression-4",
-        granularity="day",
-        anchor_date=date(2026, 3, 9),
-        llm_model="test/fake-model",
-    )
-    trends_dir = (settings.markdown_output_dir / "Trends").resolve()
-    matches = list(trends_dir.glob("day--2026-03-09--trend--*.md"))
-    assert len(matches) == 1
-
-    md = matches[0].read_text(encoding="utf-8")
-    assert "../Inbox/" in md
-    assert "https://example.com/deduped-paper-across-chunks" not in md
-    assert md.count("[Representative Paper Should Appear Once Across Chunks](") == 1
     assert result.doc_id > 0

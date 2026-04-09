@@ -24,6 +24,7 @@ from recoleta.rag import semantic_search as rag_semantic_search
 from recoleta.storage import Repository
 from recoleta.trends import (
     TrendCluster,
+    TrendEvidenceRef,
     TrendPayload,
     _chunk_text_segments,
     _filter_pairs_by_min_relevance,
@@ -444,7 +445,7 @@ def _chunk_fts_rows(chunk_rows: list[DocumentChunk]) -> list[dict[str, Any]]:
 
 def _append_text_backfill_rows(
     *,
-    representatives: list[TrendCluster.RepresentativeChunk],
+    representatives: list[TrendEvidenceRef],
     seen: set[tuple[int, int]],
     rows: list[dict[str, Any]],
     limit: int,
@@ -462,10 +463,9 @@ def _append_text_backfill_rows(
             continue
         seen.add(key)
         representatives.append(
-            TrendCluster.RepresentativeChunk(
+            TrendEvidenceRef(
                 doc_id=doc_id_int,
                 chunk_index=chunk_index_int,
-                score=None,
             )
         )
         if len(representatives) >= limit:
@@ -613,10 +613,9 @@ def _build_rep_payload(
     for idx in range(max(1, clusters)):
         if scenario == "pass_through":
             representatives = [
-                TrendCluster.RepresentativeChunk(
+                TrendEvidenceRef(
                     doc_id=item_doc_ids[(idx + offset) % len(item_doc_ids)],
                     chunk_index=0,
-                    score=0.95,
                 )
                 for offset in range(3)
             ]
@@ -624,10 +623,9 @@ def _build_rep_payload(
             description = f"retrieval cache cluster {idx}"
         else:
             representatives = [
-                TrendCluster.RepresentativeChunk(
+                TrendEvidenceRef(
                     doc_id=trend_doc_ids[(idx + offset) % len(trend_doc_ids)],
                     chunk_index=0,
-                    score=0.81,
                 )
                 for offset in range(2)
             ]
@@ -635,10 +633,9 @@ def _build_rep_payload(
             description = f"unmatched representative fallback {idx}"
         payload_clusters.append(
             TrendCluster(
-                name=name,
-                description=description,
-                representative_doc_ids=[],
-                representative_chunks=representatives,
+                title=name,
+                content_md=description,
+                evidence_refs=representatives,
             )
         )
     return TrendPayload(
@@ -649,7 +646,6 @@ def _build_rep_payload(
         overview_md="- Bench overview",
         topics=["agents"],
         clusters=payload_clusters,
-        highlights=[],
     )
 
 
@@ -678,12 +674,12 @@ def _cluster_queries(cluster: Any) -> list[str]:
     candidates = [
         " ".join(
             [
-                str(getattr(cluster, "name", "") or "").strip(),
-                str(getattr(cluster, "description", "") or "").strip(),
+                str(getattr(cluster, "title", "") or "").strip(),
+                str(getattr(cluster, "content_md", "") or "").strip(),
             ]
         ).strip(),
-        str(getattr(cluster, "name", "") or "").strip(),
-        str(getattr(cluster, "description", "") or "").strip(),
+        str(getattr(cluster, "title", "") or "").strip(),
+        str(getattr(cluster, "content_md", "") or "").strip(),
     ]
     queries: list[str] = []
     seen: set[str] = set()
@@ -702,8 +698,8 @@ def _text_backfill_representatives(
     cluster: Any,
     limit: int,
     stats: _RepresentativeEnforcementStats,
-) -> list[TrendCluster.RepresentativeChunk]:
-    representatives: list[TrendCluster.RepresentativeChunk] = []
+) -> list[TrendEvidenceRef]:
+    representatives: list[TrendEvidenceRef] = []
     seen: set[tuple[int, int]] = set()
     for query in _cluster_queries(cluster):
         stats.text_search_calls += 1
@@ -730,7 +726,7 @@ def _semantic_backfill_representatives(
     cluster: Any,
     limit: int,
     stats: _RepresentativeEnforcementStats,
-) -> list[TrendCluster.RepresentativeChunk]:
+) -> list[TrendEvidenceRef]:
     queries = _cluster_queries(cluster)
     if not queries:
         return []
@@ -751,7 +747,7 @@ def _semantic_backfill_representatives(
         metric_namespace=None,
         llm_connection=None,
     )
-    representatives: list[TrendCluster.RepresentativeChunk] = []
+    representatives: list[TrendEvidenceRef] = []
     seen: set[tuple[int, int]] = set()
     for hit in hits:
         key = (int(hit.doc_id), int(hit.chunk_index))
@@ -759,10 +755,9 @@ def _semantic_backfill_representatives(
             continue
         seen.add(key)
         representatives.append(
-            TrendCluster.RepresentativeChunk(
+            TrendEvidenceRef(
                 doc_id=key[0],
                 chunk_index=key[1],
-                score=round(float(hit.score), 6),
             )
         )
         if len(representatives) >= limit:
@@ -777,10 +772,10 @@ def _clean_cluster_representatives(
     cache: dict[int, str | None],
     stats: _RepresentativeEnforcementStats,
     max_reps: int,
-) -> list[TrendCluster.RepresentativeChunk]:
-    cleaned: list[TrendCluster.RepresentativeChunk] = []
+) -> list[TrendEvidenceRef]:
+    cleaned: list[TrendEvidenceRef] = []
     seen_rep_keys: set[tuple[int, int]] = set()
-    for representative in list(cluster.representative_chunks or []):
+    for representative in list(cluster.evidence_refs or []):
         try:
             rep_key = (
                 int(getattr(representative, "doc_id")),
@@ -816,14 +811,14 @@ def _enforce_cluster_representatives(
     stats: _RepresentativeEnforcementStats,
     max_reps: int,
 ) -> None:
-    cluster.representative_chunks = _clean_cluster_representatives(
+    cluster.evidence_refs = _clean_cluster_representatives(
         repository=context.repository,
         cluster=cluster,
         cache=cache,
         stats=stats,
         max_reps=max_reps,
     )
-    if cluster.representative_chunks:
+    if cluster.evidence_refs:
         return
     backfilled = _text_backfill_representatives(
         context=context,
@@ -839,10 +834,10 @@ def _enforce_cluster_representatives(
             stats=stats,
         )
     if backfilled:
-        cluster.representative_chunks = backfilled[:max_reps]
+        cluster.evidence_refs = backfilled[:max_reps]
         stats.backfilled_total += 1
         return
-    cluster.representative_chunks = []
+    cluster.evidence_refs = []
     stats.failed_clusters_total += 1
 
 

@@ -4,7 +4,6 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from enum import StrEnum
 from typing import Any, cast
 
 from pydantic import BaseModel, Field, field_validator
@@ -57,148 +56,7 @@ def semantic_search_summaries_in_period(
     )
 
 
-class TrendCluster(BaseModel):
-    name: str
-    description: str
-    representative_doc_ids: list[int] = Field(default_factory=list)
-
-    class RepresentativeChunk(BaseModel):
-        doc_id: int
-        chunk_index: int
-        score: float | None = None
-
-    representative_chunks: list[RepresentativeChunk] = Field(default_factory=list)
-
-
-class TrendEvolutionChangeType(StrEnum):
-    CONTINUING = "continuing"
-    EMERGING = "emerging"
-    FADING = "fading"
-    SHIFTING = "shifting"
-    POLARIZING = "polarizing"
-
-
-TREND_EVOLUTION_CHANGE_TYPE_VALUES = tuple(
-    change_type.value for change_type in TrendEvolutionChangeType
-)
-
-_TREND_EVOLUTION_CHANGE_TYPE_ALIASES: dict[str, TrendEvolutionChangeType] = {
-    change_type.value: change_type for change_type in TrendEvolutionChangeType
-}
-_TREND_EVOLUTION_CHANGE_TYPE_ALIASES.update(
-    {
-        "continue": TrendEvolutionChangeType.CONTINUING,
-        "continued": TrendEvolutionChangeType.CONTINUING,
-        "continuation": TrendEvolutionChangeType.CONTINUING,
-        "ongoing": TrendEvolutionChangeType.CONTINUING,
-        "persistent": TrendEvolutionChangeType.CONTINUING,
-        "persisting": TrendEvolutionChangeType.CONTINUING,
-        "stable": TrendEvolutionChangeType.CONTINUING,
-        "strengthening": TrendEvolutionChangeType.CONTINUING,
-        "sustained": TrendEvolutionChangeType.CONTINUING,
-        "sustaining": TrendEvolutionChangeType.CONTINUING,
-        "延续": TrendEvolutionChangeType.CONTINUING,
-        "持续": TrendEvolutionChangeType.CONTINUING,
-        "继续": TrendEvolutionChangeType.CONTINUING,
-        "emerge": TrendEvolutionChangeType.EMERGING,
-        "emerged": TrendEvolutionChangeType.EMERGING,
-        "emergent": TrendEvolutionChangeType.EMERGING,
-        "new": TrendEvolutionChangeType.EMERGING,
-        "newly_emerging": TrendEvolutionChangeType.EMERGING,
-        "rising": TrendEvolutionChangeType.EMERGING,
-        "appearing": TrendEvolutionChangeType.EMERGING,
-        "涌现": TrendEvolutionChangeType.EMERGING,
-        "新出现": TrendEvolutionChangeType.EMERGING,
-        "新兴": TrendEvolutionChangeType.EMERGING,
-        "faded": TrendEvolutionChangeType.FADING,
-        "declining": TrendEvolutionChangeType.FADING,
-        "cooling": TrendEvolutionChangeType.FADING,
-        "waning": TrendEvolutionChangeType.FADING,
-        "disappearing": TrendEvolutionChangeType.FADING,
-        "降温": TrendEvolutionChangeType.FADING,
-        "消退": TrendEvolutionChangeType.FADING,
-        "淡出": TrendEvolutionChangeType.FADING,
-        "shifted": TrendEvolutionChangeType.SHIFTING,
-        "shifting_focus": TrendEvolutionChangeType.SHIFTING,
-        "evolving": TrendEvolutionChangeType.SHIFTING,
-        "reframing": TrendEvolutionChangeType.SHIFTING,
-        "reframed": TrendEvolutionChangeType.SHIFTING,
-        "diversifying": TrendEvolutionChangeType.SHIFTING,
-        "转向": TrendEvolutionChangeType.SHIFTING,
-        "变化": TrendEvolutionChangeType.SHIFTING,
-        "迁移": TrendEvolutionChangeType.SHIFTING,
-        "polarized": TrendEvolutionChangeType.POLARIZING,
-        "polarising": TrendEvolutionChangeType.POLARIZING,
-        "polarizing_more": TrendEvolutionChangeType.POLARIZING,
-        "diverging": TrendEvolutionChangeType.POLARIZING,
-        "divergent": TrendEvolutionChangeType.POLARIZING,
-        "contested": TrendEvolutionChangeType.POLARIZING,
-        "debated": TrendEvolutionChangeType.POLARIZING,
-        "分化": TrendEvolutionChangeType.POLARIZING,
-        "分歧": TrendEvolutionChangeType.POLARIZING,
-        "两极化": TrendEvolutionChangeType.POLARIZING,
-    }
-)
-
-
-def _normalize_evolution_token(value: Any) -> str:
-    normalized = str(value or "").strip().lower()
-    if not normalized:
-        return ""
-    normalized = normalized.replace("—", "-")
-    normalized = re.sub(r"[\s\-]+", "_", normalized)
-    return normalized.strip("_")
-
-
-def normalize_trend_evolution_change_type(
-    value: Any,
-) -> TrendEvolutionChangeType | None:
-    if isinstance(value, TrendEvolutionChangeType):
-        return value
-    normalized = _normalize_evolution_token(value)
-    if not normalized:
-        return None
-    return _TREND_EVOLUTION_CHANGE_TYPE_ALIASES.get(normalized)
-
-
-class TrendEvolutionSignal(BaseModel):
-    theme: str
-    change_type: TrendEvolutionChangeType
-    summary: str
-    history_windows: list[str] = Field(default_factory=list)
-
-    @field_validator("change_type", mode="before")
-    @classmethod
-    def _normalize_change_type(cls, value: Any) -> TrendEvolutionChangeType:
-        normalized = normalize_trend_evolution_change_type(value)
-        if normalized is None:
-            allowed = ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
-            raise ValueError(f"change_type must be one of {allowed}")
-        return normalized
-
-    @field_validator("history_windows", mode="before")
-    @classmethod
-    def _normalize_history_windows(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        raw_values = value if isinstance(value, list) else [value]
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for raw in raw_values:
-            candidate = " ".join(str(raw or "").split()).strip()
-            if not candidate or candidate in seen:
-                continue
-            seen.add(candidate)
-            normalized.append(candidate)
-        return normalized
-
-
-class TrendEvolutionSection(BaseModel):
-    summary_md: str
-    signals: list[TrendEvolutionSignal] = Field(default_factory=list)
-
-
-class TrendCounterSignalEvidenceRef(BaseModel):
+class TrendEvidenceRef(BaseModel):
     doc_id: int
     chunk_index: int = 0
     reason: str | None = None
@@ -221,22 +79,22 @@ class TrendCounterSignalEvidenceRef(BaseModel):
 
     @field_validator("reason")
     @classmethod
-    def _validate_optional_reason(cls, value: str | None) -> str | None:
+    def _validate_reason(cls, value: str | None) -> str | None:
         normalized = " ".join(str(value or "").split()).strip()
         return normalized or None
 
 
-class TrendCounterSignal(BaseModel):
+class TrendCluster(BaseModel):
     title: str
-    summary: str
-    evidence_refs: list[TrendCounterSignalEvidenceRef] = Field(default_factory=list)
+    content_md: str
+    evidence_refs: list[TrendEvidenceRef] = Field(default_factory=list)
 
-    @field_validator("title", "summary")
+    @field_validator("title", "content_md")
     @classmethod
     def _validate_required_text(cls, value: str) -> str:
-        normalized = " ".join(str(value or "").split()).strip()
+        normalized = str(value or "").strip()
         if not normalized:
-            raise ValueError("counter signal text fields must not be empty")
+            raise ValueError("trend cluster text fields must not be empty")
         return normalized
 
 
@@ -248,9 +106,14 @@ class TrendPayload(BaseModel):
     overview_md: str
     topics: list[str] = Field(default_factory=list)
     clusters: list[TrendCluster] = Field(default_factory=list)
-    highlights: list[str] = Field(default_factory=list)
-    evolution: TrendEvolutionSection | None = None
-    counter_signal: TrendCounterSignal | None = None
+
+    @field_validator("title", "granularity", "period_start", "period_end", "overview_md")
+    @classmethod
+    def _validate_required_text(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("trend payload text fields must not be empty")
+        return normalized
 
 
 def prev_level_for_granularity(granularity: str) -> str:
@@ -377,57 +240,6 @@ class TrendGenerationPlan:
             period_start=self.period_start,
             window_count=self.peer_history_window_count,
         )
-
-
-_HISTORY_WINDOW_ID_RE = re.compile(r"\bprev_\d+\b", flags=re.IGNORECASE)
-_HISTORY_WINDOW_TRIM_CHARS = " \t\r\n()[]{}<>.,;:!?\"'`，；：。！？"
-
-
-def _normalize_history_window_alias(value: Any) -> str:
-    return " ".join(str(value or "").split()).strip().lower()
-
-
-def _trim_history_window_candidate(value: Any) -> str:
-    return str(value or "").strip(_HISTORY_WINDOW_TRIM_CHARS)
-
-
-def _split_history_window_candidates(raw_values: list[str]) -> list[str]:
-    candidates: list[str] = []
-    for raw in raw_values:
-        normalized = " ".join(str(raw or "").split()).strip()
-        if not normalized:
-            continue
-        parts = re.split(r"[,/|;，；]+", normalized)
-        if len(parts) == 1:
-            candidates.append(normalized)
-            continue
-        for part in parts:
-            candidate = part.strip()
-            if candidate:
-                candidates.append(candidate)
-    return candidates
-
-
-def normalize_trend_evolution(
-    evolution: TrendEvolutionSection | None,
-    *,
-    granularity: str,
-    period_start: datetime,
-    history_windows: list[TrendPeerHistoryWindow] | None,
-    available_window_ids: set[str] | None = None,
-) -> tuple[TrendEvolutionSection | None, dict[str, int]]:
-    from recoleta.trends_overview import normalize_trend_evolution_impl
-
-    return cast(
-        tuple[TrendEvolutionSection | None, dict[str, int]],
-        normalize_trend_evolution_impl(
-            evolution,
-            granularity=granularity,
-            period_start=period_start,
-            history_windows=history_windows,
-            available_window_ids=available_window_ids,
-        ),
-    )
 
 
 def _to_utc_datetime(value: datetime) -> datetime:
@@ -775,16 +587,11 @@ def build_empty_trend_payload(
         overview_md=overview_md,
         topics=[],
         clusters=[],
-        highlights=[],
     )
 
 
 def is_empty_trend_payload(payload: TrendPayload) -> bool:
-    if (
-        list(payload.topics or [])
-        or list(payload.clusters or [])
-        or list(payload.highlights or [])
-    ):
+    if list(payload.topics or []) or list(payload.clusters or []):
         return False
     title = str(payload.title or "").strip()
     overview = str(payload.overview_md or "").strip()

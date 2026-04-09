@@ -312,7 +312,7 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `Inbox/` (one note per item, Markdown + YAML frontmatter)
 - `Trends/` (canonical trend markdown notes, adjacent
   `<stem>.presentation.json` sidecars, and derived trend PDFs)
-- `Ideas/` (idea briefs derived from canonical `trend_ideas` pass outputs plus
+- `Ideas/` (idea markdown notes derived from canonical `trend_ideas` pass outputs plus
   adjacent `<stem>.presentation.json` sidecars)
 - `Localized/<language>/Inbox|Trends|Ideas/` (translated or mirrored projections derived from canonical outputs)
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)

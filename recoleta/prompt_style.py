@@ -4,7 +4,7 @@ _READER_FACING_AI_TROPES_PROMPT = """Write all reader-facing prose in a direct, 
 
 Apply these rules in the requested output language. Do not follow only the English surface forms of the examples below. The constraint is about writing behavior, structure, and rhetorical habits, not only exact banned phrases.
 
-The goal is not to ban every phrase once. The goal is to avoid clusters of patterns that make the writing sound templated, theatrical, padded, condescending, or generically AI-written. One isolated instance may be acceptable. Repetition is the problem.
+These are hard requirements for the final prose. Do not treat them as optional style suggestions. If a sentence wants to fall back to a templated rhetorical move, rewrite the sentence instead.
 
 Word choice:
 
@@ -15,7 +15,7 @@ Word choice:
 
 Sentence structure:
 
-- Avoid negative parallelism such as "It's not X. It's Y.", "The question isn't X. The question is Y.", "not because X, but because Y", and similar reveal-style reframes.
+- Do not use negative parallelism such as "It's not X. It's Y.", "The question isn't X. The question is Y.", "not because X, but because Y", "不是 X，而是 Y", "并不是 X，而是 Y", or similar reveal-style reframes.
 - Avoid countdown reveal formulas such as "Not X. Not Y. Just Z."
 - Avoid self-posed rhetorical questions such as "The result?", "The worst part?", "The scary part?"
 - Avoid repeated sentence openings in nearby sentences.
@@ -73,7 +73,7 @@ Silent self-check before returning:
 - Did I state the claim directly?
 - Did I repeat the same point in different wording?
 - Did I use a rhetorical frame where a plain sentence would be better?
-- Did I add fake intensity, filler transitions, invented labels, or dramatic reversals?
+- Did I add fake intensity, filler transitions, invented labels, dramatic reversals, or a "not X but Y" reframe?
 - Does this read like a grounded writer making a specific point, rather than a model performing clarity?
 
 Recoleta addendum:

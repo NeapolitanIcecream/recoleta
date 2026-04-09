@@ -691,7 +691,7 @@ def fleet_site_serve(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
+        help="Optionally build only the latest N trend notes and sibling idea notes before serving.",
     ),
     host: str = typer.Option(
         "127.0.0.1", "--host", help="Host interface to bind the preview server to."
@@ -743,7 +743,7 @@ def run_site_build(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes and sibling idea briefs.",
+        help="Directory containing trend markdown notes and sibling idea notes.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -757,7 +757,7 @@ def run_site_build(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally export only the latest N trend notes and sibling idea briefs.",
+        help="Optionally export only the latest N trend notes and sibling idea notes.",
     ),
     default_language_code: str | None = typer.Option(
         None,
@@ -796,7 +796,7 @@ def run_site_serve(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes and sibling idea briefs when building before serving.",
+        help="Directory containing trend markdown notes and sibling idea notes when building before serving.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -810,7 +810,7 @@ def run_site_serve(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
+        help="Optionally build only the latest N trend notes and sibling idea notes before serving.",
     ),
     host: str = typer.Option(
         "127.0.0.1", "--host", help="Host interface to bind the preview server to."
@@ -1391,7 +1391,7 @@ def stage_site_build(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes and sibling idea briefs.",
+        help="Directory containing trend markdown notes and sibling idea notes.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -1405,7 +1405,7 @@ def stage_site_build(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally export only the latest N trend notes and sibling idea briefs.",
+        help="Optionally export only the latest N trend notes and sibling idea notes.",
     ),
     default_language_code: str | None = typer.Option(
         None,
@@ -1442,7 +1442,7 @@ def stage_site_stage(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes and sibling idea briefs.",
+        help="Directory containing trend markdown notes and sibling idea notes.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -1451,12 +1451,12 @@ def stage_site_stage(
         dir_okay=True,
         writable=True,
         resolve_path=True,
-        help="Repo-local directory to mirror trend markdown notes and sibling idea briefs for deployment.",
+        help="Repo-local directory to mirror trend markdown notes and sibling idea notes for deployment.",
     ),
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally stage only the latest N trend notes and sibling idea briefs.",
+        help="Optionally stage only the latest N trend notes and sibling idea notes.",
     ),
     default_language_code: str | None = typer.Option(
         None,
@@ -1493,7 +1493,7 @@ def stage_site_serve(
         dir_okay=True,
         readable=True,
         resolve_path=True,
-        help="Directory containing trend markdown notes and sibling idea briefs when building before serving.",
+        help="Directory containing trend markdown notes and sibling idea notes when building before serving.",
     ),
     output_dir: Path | None = typer.Option(
         None,
@@ -1507,7 +1507,7 @@ def stage_site_serve(
     limit: int | None = typer.Option(
         None,
         min=1,
-        help="Optionally build only the latest N trend notes and sibling idea briefs before serving.",
+        help="Optionally build only the latest N trend notes and sibling idea notes before serving.",
     ),
     host: str = typer.Option(
         "127.0.0.1",

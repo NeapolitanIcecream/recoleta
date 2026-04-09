@@ -101,8 +101,8 @@
     ],
     "period_end": "2026-03-23T00:00:00+00:00",
     "period_start": "2026-03-16T00:00:00+00:00",
-    "summary_md": "The strongest why-now opportunities this week are not new code generators. They are infrastructure around coding agents: harder evaluation, executable guardrails, and runtime control for long-running workflows.\n\nThe evidence is strongest for four concrete wedges:\n1. repository-grounded evaluation for real codebase exploration and latent-bug exposure,\n2. deterministic policy enforcement in the tool path,\n3. runtime operations for durable multi-worker agent jobs, and\n4. witness-first debugging workflows that generate bug-exposing tests before patching.\n\nI excluded weaker ideas around broad multi-agent orchestration unless they tied to a specific job and new evidence. The selected ideas are grounded in documents that show either a measurable delta this week or a concrete operational pattern that appears newly practical.",
-    "title": "Why-now ideas for coding agents moving into evaluation, orchestration, and guardrails"
+    "summary_md": "The retained directions cluster around infrastructure for coding agents: evaluation, policy enforcement, runtime operations, and witness-first debugging. The common thread is support machinery around the agent loop, not another general code generator.",
+    "title": "Operational infrastructure around coding agents"
   },
   "source_documents": [
     {

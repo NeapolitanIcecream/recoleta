@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import re
-from typing import Callable
 
 from bs4 import BeautifulSoup, Tag
 from slugify import slugify
@@ -453,22 +452,12 @@ def _render_browser_summary_cards(
 def _render_browser_section(
     *,
     section: TrendPdfSection,
-    render_browser_evolution_section_html: Callable[..., str],
-    allow_evolution_disclosure: bool,
 ) -> tuple[str | None, bool]:
     if _section_matches(section.heading, "overview"):
         return (
             _render_browser_content_card_html(
                 heading=section.heading,
                 inner_html=section.inner_html,
-            ),
-            True,
-        )
-    if _section_matches(section.heading, "evolution"):
-        return (
-            render_browser_evolution_section_html(
-                section=section,
-                allow_disclosure=allow_evolution_disclosure,
             ),
             True,
         )
@@ -491,8 +480,6 @@ def _render_browser_section(
 def build_trend_browser_body_html(
     *,
     sections: list[TrendPdfSection],
-    render_browser_evolution_section_html: Callable[..., str],
-    allow_evolution_disclosure: bool = True,
 ) -> str:
     rendered: list[str] = []
     summary_cards, used = _render_browser_summary_cards(sections)
@@ -506,8 +493,6 @@ def build_trend_browser_body_html(
             continue
         section_html, handled = _render_browser_section(
             section=section,
-            render_browser_evolution_section_html=render_browser_evolution_section_html,
-            allow_evolution_disclosure=allow_evolution_disclosure,
         )
         if handled:
             used.add(section.slug)

@@ -336,11 +336,7 @@ def _materialize_trend_markdown_note(
         run_id="materialize-outputs",
         overview_md=materialized.overview_md,
         topics=list(materialized.topics),
-        evolution=materialized.evolution,
-        history_window_refs=materialized.history_window_refs,
-        counter_signal=materialized.counter_signal,
         clusters=materialized.clusters,
-        highlights=materialized.highlights,
         output_language=ctx.output_language,
         pass_output_id=trend_projection.pass_output_id
         if trend_projection is not None
@@ -388,11 +384,7 @@ def _materialize_obsidian_trend_note(
             run_id="materialize-outputs",
             overview_md=materialized.overview_md,
             topics=list(materialized.topics),
-            evolution=materialized.evolution,
-            history_window_refs=materialized.history_window_refs,
-            counter_signal=materialized.counter_signal,
             clusters=materialized.clusters,
-            highlights=materialized.highlights,
             output_language=ctx.output_language,
             pass_output_id=trend_projection.pass_output_id
             if trend_projection is not None
@@ -854,11 +846,7 @@ def _write_localized_trend_note(
         run_id="materialize-outputs",
         overview_md=materialized.overview_md,
         topics=list(materialized.topics),
-        evolution=materialized.evolution,
-        history_window_refs=materialized.history_window_refs,
-        counter_signal=materialized.counter_signal,
         clusters=materialized.clusters,
-        highlights=materialized.highlights,
         output_language=request.language_code,
         site_exclude=request.trend_site_exclude,
         language_code=request.language_code,

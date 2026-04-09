@@ -13,7 +13,6 @@ from recoleta.config import Settings
 from recoleta.models import Document, Item
 from recoleta.presentation import (
     PRESENTATION_SCHEMA_VERSION,
-    PRESENTATION_SCHEMA_VERSION_V1,
     presentation_sidecar_path,
     validate_presentation,
 )
@@ -271,7 +270,12 @@ def trend_translation_context(request: TrendContextRequest) -> dict[str, Any]:
                     query=hybrid_query(
                         request.payload.get("title"),
                         request.payload.get("topics"),
-                        list(request.payload.get("highlights") or [])[:2],
+                        [
+                            str(cluster.get("title") or "").strip()
+                            for cluster in list(request.payload.get("clusters") or [])[:2]
+                            if isinstance(cluster, dict)
+                            and str(cluster.get("title") or "").strip()
+                        ],
                     ),
                 )
             )
@@ -365,10 +369,7 @@ def canonical_note_presentation_context(
         )
     except Exception:
         schema_version = 0
-    if not isinstance(payload, dict) or schema_version not in {
-        PRESENTATION_SCHEMA_VERSION_V1,
-        PRESENTATION_SCHEMA_VERSION,
-    }:
+    if not isinstance(payload, dict) or schema_version != PRESENTATION_SCHEMA_VERSION:
         return None
     if validate_presentation(payload):
         return None
@@ -602,7 +603,7 @@ def _trend_representative_doc_ids(payload: dict[str, Any]) -> list[int]:
     for cluster in list(payload.get("clusters") or [])[:3]:
         if not isinstance(cluster, dict):
             continue
-        for ref in list(cluster.get("representative_chunks") or [])[:4]:
+        for ref in list(cluster.get("evidence_refs") or [])[:4]:
             doc_id = _doc_id_from_ref(ref)
             if doc_id > 0:
                 doc_ids.append(doc_id)

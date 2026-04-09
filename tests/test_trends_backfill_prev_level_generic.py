@@ -125,7 +125,6 @@ def test_trends_month_source_ensure_generates_required_lower_level_trends_withou
                 overview_md=f"- {granularity}",
                 topics=[granularity],
                 clusters=[],
-                highlights=[granularity],
             ),
             {"tool_calls_total": 0},
         )

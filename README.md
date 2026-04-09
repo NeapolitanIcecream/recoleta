@@ -9,7 +9,7 @@
 
 Recoleta watches arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and
 RSS from one local workspace. It keeps state in SQLite, writes Markdown first,
-and can turn the same corpus into trend briefs, idea briefs, PDFs, and a static
+and can turn the same corpus into trend notes, idea notes, PDFs, and a static
 site.
 
 **Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Fleet development runbook](./docs/guides/fleet-development-runbook.md) · [Preset gallery](./presets/README.md) · [CLI v2 migration](./docs/guides/cli-v2-migration.md)
@@ -60,7 +60,7 @@ Multi-instance deployments now use one child config per instance plus a
 - Pre-rank items semantically before the LLM when backlog pressure matters.
 - Publish to local Markdown by default, with optional Obsidian and Telegram
   delivery.
-- Build trend briefs, idea briefs, PDFs, and a static site from stored local
+- Build trend notes, idea notes, PDFs, and a static site from stored local
   state.
 - Write adjacent structured sidecars for trend and idea notes so repair,
   localization, and site export can rebuild from stored state instead of
@@ -210,9 +210,10 @@ Check these paths after the run:
   `.md` notes and adjacent `.presentation.json` sidecars
 
 Those sidecars are the structured projection contract for downstream output.
-Trend sidecars carry ranked shifts plus an optional counter-signal. Idea
-sidecars carry best-bet ordering, alternates, anti-thesis, and evidence
-metadata.
+Trend sidecars carry a finished `overview` plus `clusters`, and each cluster
+contains only `title`, `content`, and `evidence`. Idea sidecars carry a short
+page `summary` plus ordered idea blocks, and each idea block also contains only
+`title`, `content`, and `evidence`.
 
 Then open the [first output tour](./docs/guides/first-output-tour.md) to compare
 your local files with sample output.
@@ -367,9 +368,9 @@ Where outputs go:
 
 - Local Markdown: `MARKDOWN_OUTPUT_DIR/latest.md` and
   `MARKDOWN_OUTPUT_DIR/Inbox/`
-- Trend briefs: `MARKDOWN_OUTPUT_DIR/Trends/` with canonical `.md` notes plus
+- Trend notes: `MARKDOWN_OUTPUT_DIR/Trends/` with canonical `.md` notes plus
   adjacent `.presentation.json` sidecars
-- Idea briefs: `MARKDOWN_OUTPUT_DIR/Ideas/` with canonical `.md` notes plus
+- Idea notes: `MARKDOWN_OUTPUT_DIR/Ideas/` with canonical `.md` notes plus
   adjacent `.presentation.json` sidecars
 - Localized Markdown: `MARKDOWN_OUTPUT_DIR/Localized/<language>/Inbox/`,
   `Trends/`, and `Ideas/` when `localization` is configured. Localized trend
@@ -385,11 +386,12 @@ Where outputs go:
 Current projection notes:
 
 - New trend and idea notes write the current presentation sidecar schema.
-- Trend sidecars include ranked shifts and an optional counter-signal block.
-- Idea sidecars include one best bet, up to two alternates, anti-thesis, and
-  evidence metadata.
+- Trend sidecars expose `title`, `overview`, and `clusters[]`, where each
+  cluster is a finished prose block with `title`, `content`, and `evidence`.
+- Idea sidecars expose `title`, `summary`, and `ideas[]`, where each idea is a
+  finished prose block with `title`, `content`, and `evidence`.
 - Site export and translation prefer sidecars first and fall back to markdown
-  when older artifacts do not have a usable sidecar.
+  when a sidecar is missing or invalid.
 
 For a migrated fleet, each child instance gets its own `MARKDOWN_OUTPUT_DIR`.
 The fleet manifest sits above those child output trees.

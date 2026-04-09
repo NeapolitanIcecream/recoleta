@@ -27,6 +27,7 @@ from recoleta.passes import (
     TREND_SYNTHESIS_PASS_KIND,
     TrendIdeasPayload,
     build_empty_trend_ideas_payload,
+    build_suppressed_trend_ideas_payload,
     build_trend_ideas_pass_output,
     build_trend_snapshot_pack_md,
     normalize_trend_ideas_payload,
@@ -218,42 +219,80 @@ def _generate_ideas_payload(
     request: IdeasGenerationRequest,
 ) -> tuple[TrendIdeasPayload, dict[str, Any]]:
     if request.upstream_empty_corpus:
-        request.context.record_metric(
-            name="pipeline.trends.pass.ideas.upstream_empty_corpus_total",
-            value=1,
-            unit="count",
-        )
-        return (
-            build_empty_trend_ideas_payload(
-                granularity=request.context.normalized_granularity,
-                period_start=request.context.period_start,
-                period_end=request.context.period_end,
-                output_language=request.context.service.settings.llm_output_language,
-            ),
-            {
-                "empty_corpus": True,
-                "usage": {"requests": 0, "input_tokens": 0, "output_tokens": 0},
-                "tool_calls_total": 0,
-                "tool_call_breakdown": {},
-                "estimated_cost_usd": 0.0,
-            },
-        )
+        return _empty_corpus_ideas_result(request=request)
 
+    model = _ideas_llm_model(request=request)
+    normalized_payload, normalized_debug, output_language = _primary_ideas_payload(
+        request=request,
+        model=model,
+    )
+    if not list(normalized_payload.ideas or []):
+        return _suppressed_ideas_result(
+            request=request,
+            output_language=output_language,
+            normalized_debug=normalized_debug,
+        )
+    return _finalize_ideas_bundle_title(
+        request=request,
+        model=model,
+        normalized_payload=normalized_payload,
+        normalized_debug=normalized_debug,
+        output_language=output_language,
+    )
+
+
+def _empty_corpus_ideas_result(
+    *, request: IdeasGenerationRequest
+) -> tuple[TrendIdeasPayload, dict[str, Any]]:
+    request.context.record_metric(
+        name="pipeline.trends.pass.ideas.upstream_empty_corpus_total",
+        value=1,
+        unit="count",
+    )
+    return (
+        build_empty_trend_ideas_payload(
+            granularity=request.context.normalized_granularity,
+            period_start=request.context.period_start,
+            period_end=request.context.period_end,
+            output_language=request.context.service.settings.llm_output_language,
+        ),
+        {
+            "empty_corpus": True,
+            "usage": {"requests": 0, "input_tokens": 0, "output_tokens": 0},
+            "tool_calls_total": 0,
+            "tool_call_breakdown": {},
+            "estimated_cost_usd": 0.0,
+        },
+    )
+
+
+def _ideas_llm_model(*, request: IdeasGenerationRequest) -> str:
     model = str(
         request.context.llm_model or request.context.service.settings.llm_model or ""
     ).strip()
     if not model:
         raise ValueError("llm_model must not be empty")
-    store = LanceVectorStore(
+    return model
+
+
+def _ideas_vector_store(*, request: IdeasGenerationRequest) -> LanceVectorStore:
+    return LanceVectorStore(
         db_dir=Path(request.context.service.settings.rag_lancedb_dir),
         table_name=embedding_table_name(
             embedding_model=request.context.service.settings.trends_embedding_model,
             embedding_dimensions=request.context.service.settings.trends_embedding_dimensions,
         ),
     )
+
+
+def _primary_ideas_payload(
+    *,
+    request: IdeasGenerationRequest,
+    model: str,
+) -> tuple[TrendIdeasPayload, dict[str, Any], str | None]:
     payload, debug = ideas_agent.generate_trend_ideas_payload(
         repository=cast(Any, request.context.service.repository),
-        vector_store=store,
+        vector_store=_ideas_vector_store(request=request),
         run_id=request.context.run_id,
         llm_model=model,
         output_language=request.context.service.settings.llm_output_language,
@@ -282,9 +321,146 @@ def _generate_ideas_payload(
         metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas"),
         llm_connection=request.context.service._llm_connection,
     )
-    return normalize_trend_ideas_payload(payload), debug if isinstance(
-        debug, dict
-    ) else {}
+    return (
+        normalize_trend_ideas_payload(payload),
+        debug if isinstance(debug, dict) else {},
+        request.context.service.settings.llm_output_language,
+    )
+
+
+def _suppressed_ideas_result(
+    *,
+    request: IdeasGenerationRequest,
+    output_language: str | None,
+    normalized_debug: dict[str, Any],
+) -> tuple[TrendIdeasPayload, dict[str, Any]]:
+    return (
+        build_suppressed_trend_ideas_payload(
+            granularity=request.context.normalized_granularity,
+            period_start=request.context.period_start,
+            period_end=request.context.period_end,
+            output_language=output_language,
+        ),
+        normalized_debug,
+    )
+
+
+def _bundle_title_candidate_ideas(
+    *, normalized_payload: TrendIdeasPayload
+) -> list[dict[str, str]]:
+    return [
+        {
+            "title": str(idea.title or "").strip(),
+            "content_md": str(idea.content_md or "").strip(),
+        }
+        for idea in list(normalized_payload.ideas or [])
+    ]
+
+
+def _bundle_title_fallback_debug(
+    *,
+    request: IdeasGenerationRequest,
+    title: str,
+    exc: Exception,
+) -> dict[str, Any]:
+    sanitized_error = request.context.service._sanitize_error_message(str(exc))
+    request.context.record_metric(
+        name="pipeline.trends.pass.ideas.bundle_title_failed_total",
+        value=1,
+        unit="count",
+    )
+    request.context.log.warning(
+        "Ideas bundle title generation failed; using primary payload title "
+        "run_id={} granularity={} period_start={} error_type={} error={}",
+        request.context.run_id,
+        request.context.normalized_granularity,
+        request.context.period_start.isoformat(),
+        type(exc).__name__,
+        sanitized_error,
+    )
+    return {
+        "fallback_used": True,
+        "fallback_title": title,
+        "error_type": type(exc).__name__,
+        "error": sanitized_error,
+    }
+
+
+def _finalize_ideas_bundle_title(
+    *,
+    request: IdeasGenerationRequest,
+    model: str,
+    normalized_payload: TrendIdeasPayload,
+    normalized_debug: dict[str, Any],
+    output_language: str | None,
+) -> tuple[TrendIdeasPayload, dict[str, Any]]:
+    title = str(normalized_payload.title or "").strip()
+    title_debug: dict[str, Any] = {}
+    try:
+        title, title_debug = ideas_agent.generate_trend_ideas_bundle_title(
+            llm_model=model,
+            summary_md=normalized_payload.summary_md,
+            ideas=_bundle_title_candidate_ideas(normalized_payload=normalized_payload),
+            output_language=output_language,
+            llm_connection=request.context.service._llm_connection,
+        )
+    except Exception as exc:
+        title_debug = _bundle_title_fallback_debug(
+            request=request,
+            title=title,
+            exc=exc,
+        )
+    return (
+        normalized_payload.model_copy(update={"title": title}),
+        _merge_ideas_debug(base=normalized_debug, extra=title_debug),
+    )
+
+
+def _merge_usage_dicts(
+    *,
+    base: dict[str, Any] | None,
+    extra: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for key in ("requests", "input_tokens", "output_tokens"):
+        total = 0.0
+        found = False
+        for source in (base or {}, extra or {}):
+            value = source.get(key)
+            if isinstance(value, (int, float)):
+                total += float(value)
+                found = True
+        if found:
+            merged[key] = int(total) if total.is_integer() else total
+    return merged
+
+
+def _merge_ideas_debug(
+    *,
+    base: dict[str, Any],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(base)
+    merged["usage"] = _merge_usage_dicts(
+        base=base.get("usage") if isinstance(base.get("usage"), dict) else None,
+        extra=extra.get("usage") if isinstance(extra.get("usage"), dict) else None,
+    )
+    base_cost = base.get("estimated_cost_usd")
+    extra_cost = extra.get("estimated_cost_usd")
+    if isinstance(base_cost, (int, float)) or isinstance(extra_cost, (int, float)):
+        merged["estimated_cost_usd"] = float(base_cost or 0.0) + float(
+            extra_cost or 0.0
+        )
+    base_prompt_chars = base.get("prompt_chars")
+    extra_prompt_chars = extra.get("prompt_chars")
+    if isinstance(base_prompt_chars, (int, float)) or isinstance(
+        extra_prompt_chars, (int, float)
+    ):
+        merged["prompt_chars"] = int(base_prompt_chars or 0) + int(
+            extra_prompt_chars or 0
+        )
+    merged["bundle_title"] = extra
+    return merged
 
 
 def _build_projection_specs(context: IdeasProjectionContext):

@@ -64,7 +64,6 @@ def test_generate_trend_payload_emits_heartbeat_and_duration_metrics(
         overview_md="- observed",
         topics=["agents"],
         clusters=[],
-        highlights=["observed"],
     )
 
     class _FakeAgent:
@@ -75,16 +74,6 @@ def test_generate_trend_payload_emits_heartbeat_and_duration_metrics(
 
     monkeypatch.setattr(rag_agent, "_TREND_AGENT_HEARTBEAT_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(rag_agent, "build_trend_agent", lambda **_: _FakeAgent())
-    monkeypatch.setattr(
-        rag_agent,
-        "ensure_trend_cluster_representatives",
-        lambda **_: {
-            "clusters_total": 0,
-            "clusters_backfilled_total": 0,
-            "invalid_reps_dropped_total": 0,
-            "reps_backfilled_total": 0,
-        },
-    )
 
     stream = io.StringIO()
     sink_id = loguru_logger.add(stream, level="INFO")
@@ -113,7 +102,6 @@ def test_generate_trend_payload_emits_heartbeat_and_duration_metrics(
     metrics = _metric_values(repository)
     assert metrics["pipeline.trends.agent_run_sync.duration_ms"] > 0.0
     assert metrics["pipeline.trends.agent_run_sync.failed_total"] == 0.0
-    assert metrics["pipeline.trends.rep_backfill.duration_ms"] >= 0.0
 
     output = stream.getvalue()
     assert "Trend generation started" in output
@@ -273,7 +261,6 @@ def test_week_trends_emit_backfill_progress_logs_and_stage_duration_metrics(
                 overview_md="- weekly",
                 topics=["week"],
                 clusters=[],
-                highlights=["weekly"],
             ),
             {
                 "usage": {"requests": 1, "input_tokens": 10, "output_tokens": 5},

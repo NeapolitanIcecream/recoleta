@@ -24,6 +24,26 @@ def _int_or_zero(value: Any) -> int:
         return 0
 
 
+def _decode_authors(*, repository: Any, raw_value: Any) -> list[str]:
+    if isinstance(raw_value, str):
+        decoder = getattr(repository, "decode_list", None)
+        if callable(decoder):
+            decoded = decoder(raw_value)
+            if isinstance(decoded, list):
+                return [
+                    str(author).strip()
+                    for author in decoded
+                    if str(author).strip()
+                ]
+        stripped = str(raw_value).strip()
+        return [stripped] if stripped else []
+    return [
+        str(author).strip()
+        for author in list(raw_value or [])
+        if str(author).strip()
+    ]
+
+
 def _build_item_href(
     *, ctx: IdeasEvidenceContext, doc: Any
 ) -> tuple[str | None, list[str], str | None]:
@@ -41,11 +61,10 @@ def _build_item_href(
         canonical_url=str(getattr(item, "canonical_url", "") or ""),
         published_at=getattr(item, "published_at", None),
     )
-    authors = [
-        str(author).strip()
-        for author in list(getattr(item, "authors", []) or [])
-        if str(author).strip()
-    ]
+    authors = _decode_authors(
+        repository=ctx.repository,
+        raw_value=getattr(item, "authors", []),
+    )
     source = str(getattr(item, "source", "") or "").strip() or None
     return href, authors, source
 
@@ -142,7 +161,10 @@ def enrich_evidence_ref(
     chunk_index = _int_or_zero(getattr(ref, "chunk_index", 0))
     title = getattr(ref, "title", None)
     href = getattr(ref, "href", None)
-    authors = list(getattr(ref, "authors", []) or [])
+    authors = _decode_authors(
+        repository=ctx.repository,
+        raw_value=getattr(ref, "authors", []),
+    )
     source = getattr(ref, "source", None)
 
     doc, resolved_title = _resolve_doc_details(ctx=ctx, doc_id=doc_id)

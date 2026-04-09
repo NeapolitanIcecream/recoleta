@@ -91,7 +91,7 @@ class _FakeService:
                 "granularity": str(granularity),
                 "period_start": datetime(2026, 3, 2, tzinfo=UTC),
                 "period_end": datetime(2026, 3, 3, tzinfo=UTC),
-                "title": "Why now ideas",
+                "title": "Verification-first agent rollout",
                 "status": "succeeded",
                 "note_path": Path("/tmp/recoleta/Ideas/day--2026-03-02--ideas.md"),
             },

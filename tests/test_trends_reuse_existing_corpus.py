@@ -86,7 +86,6 @@ def test_day_trends_reuse_existing_corpus_skips_prepare_and_analyze(
                 overview_md="- reused day corpus",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         )
@@ -184,7 +183,6 @@ def test_day_trends_reuse_existing_corpus_indexes_missing_item_documents(
                 overview_md="- rebuilt missing item docs",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         )
@@ -310,7 +308,6 @@ def test_day_trends_non_reuse_reindexes_existing_item_documents(
                 overview_md="- refreshed existing item docs",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         )
@@ -376,7 +373,6 @@ def test_week_trends_reuse_existing_corpus_skips_prepare_and_analyze(
             overview_md="- daily",
             topics=["agents"],
             clusters=[],
-            highlights=[],
         ),
     )
 
@@ -397,7 +393,6 @@ def test_week_trends_reuse_existing_corpus_skips_prepare_and_analyze(
                 overview_md="- reused week corpus",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         )
@@ -478,7 +473,6 @@ def test_week_trends_reuse_existing_corpus_repairs_missing_trend_meta_from_pass_
             overview_md=f"- daily {offset}",
             topics=["agents"],
             clusters=[],
-            highlights=[],
         )
         if offset == 0:
             doc = repository.upsert_document_for_trend(
@@ -532,7 +526,6 @@ def test_week_trends_reuse_existing_corpus_repairs_missing_trend_meta_from_pass_
                 overview_md="- repaired week corpus",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         )
@@ -623,7 +616,6 @@ def test_month_trends_peer_history_only_does_not_require_trend_day_source(
                 overview_md=f"- week {week_index}",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
         )
         cursor = (week_start + timedelta(days=7)).date()
@@ -646,7 +638,6 @@ def test_month_trends_peer_history_only_does_not_require_trend_day_source(
                 overview_md="- peer-history only month corpus",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         )
@@ -719,7 +710,6 @@ def test_week_trends_reuse_existing_corpus_fails_when_required_trend_meta_cannot
             overview_md=f"- daily {offset}",
             topics=["agents"],
             clusters=[],
-            highlights=[],
         )
         if offset == 0:
             doc = repository.upsert_document_for_trend(
@@ -764,7 +754,6 @@ def test_week_trends_reuse_existing_corpus_fails_when_required_trend_meta_cannot
                 overview_md="- should not be reached",
                 topics=["agents"],
                 clusters=[],
-                highlights=["agents"],
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         )

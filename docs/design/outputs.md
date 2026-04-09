@@ -43,7 +43,7 @@ Under `MARKDOWN_OUTPUT_DIR`:
 - `Inbox/`: one note per published item
 - `Trends/`: canonical trend markdown notes plus adjacent
   `<stem>.presentation.json` sidecars
-- `Ideas/`: idea briefs derived from canonical `trend_ideas` pass outputs plus
+- `Ideas/`: canonical idea markdown notes derived from `trend_ideas` pass outputs plus
   adjacent `<stem>.presentation.json` sidecars
 - `Localized/<language>/Inbox|Trends|Ideas/`: translated or mirrored reading
   surfaces derived from canonical outputs; localized trend and idea notes also
@@ -72,17 +72,18 @@ Trend notes are the canonical source for all downstream trend surfaces:
 - canonical trend markdown notes also emit adjacent `*.presentation.json`
   sidecars as a structured presentation contract for downstream adoption
 - newly generated trend and idea sidecars write the current presentation schema
-  and keep reader compatibility with older sidecars
-- current trend sidecars can carry ranked shifts plus an optional
-  `counter_signal`
+  only; invalid or stale sidecars fall back to markdown parsing instead of
+  keeping old reader-facing contracts alive
+- current trend sidecars carry `title`, `overview`, and `clusters[]`; each
+  cluster contains only `title`, `content`, and `evidence`
 
 Idea notes follow the same projection contract:
 
 - `markdown` and `obsidian` idea notes are derived from canonical `trend_ideas` pass outputs
 - canonical idea markdown notes also emit adjacent `*.presentation.json`
   sidecars in the same directory
-- current idea sidecars carry best-bet ordering, alternates, optional
-  `anti_thesis`, and evidence metadata
+- current idea sidecars carry `title`, `summary`, and ordered `ideas[]`; each
+  idea contains only `title`, `content`, and `evidence`
 - searchable `doc_type=idea` documents are also derived projections, not canonical pass state
 - idea note frontmatter and idea document meta chunks carry `pass_output_id` plus the upstream `trend_synthesis` pointer
 - those provenance-bearing document `meta` chunks are system-only metadata: they are preserved for repair/audit, but excluded from agent-visible FTS/hybrid retrieval
@@ -175,7 +176,7 @@ Important behavior:
 - `recoleta stage site stage` remains useful for custom CI pipelines and
   non-GitHub static hosts when you want an explicit repo-local snapshot.
 - trend and idea detail pages prefer sibling `*.presentation.json` sidecars and
-  fall back to markdown parsing so older Phase 1 artifacts remain buildable.
+  fall back to markdown parsing when a sidecar is missing or invalid.
 - Historical note: the older shared-stream runtime aggregated stream-local
   `Trends/` trees and exposed a `Streams` navigation surface. The current
   instance-first runtime keeps one canonical output tree per child instance and

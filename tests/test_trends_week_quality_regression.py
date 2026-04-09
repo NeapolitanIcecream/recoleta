@@ -4,7 +4,6 @@ import json
 import re
 import socket
 from datetime import date, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -20,21 +19,16 @@ from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
-def test_trends_week_published_markdown_locks_quality_signals(
+def test_trends_week_published_markdown_locks_reader_facing_quality(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    tmp_path,
 ) -> None:
-    """Regression: weekly trend notes should include must-read + reps + hide raw doc_id refs."""
+    """Regression: weekly trend notes should show prose clusters plus evidence, without old worksheet sections."""
 
-    # Guard against accidental network calls in this regression test.
     def _no_network(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("network disabled")
 
-    monkeypatch.setattr(
-        socket,
-        "create_connection",
-        _no_network,
-    )
+    monkeypatch.setattr(socket, "create_connection", _no_network)
     monkeypatch.setattr(socket.socket, "connect", _no_network, raising=True)
     monkeypatch.setattr(socket.socket, "connect_ex", _no_network, raising=True)
 
@@ -57,7 +51,6 @@ def test_trends_week_published_markdown_locks_quality_signals(
     anchor = date(2026, 3, 5)
     week_start, week_end = week_period_bounds(anchor)
 
-    # Ensure weekly corpus isn't empty (weekly trends read daily trend docs by default).
     day_start, day_end = day_period_bounds(week_start.date())
     _ = persist_trend_payload(
         repository=repository,
@@ -72,11 +65,9 @@ def test_trends_week_published_markdown_locks_quality_signals(
             overview_md="- daily",
             topics=["agents"],
             clusters=[],
-            highlights=[],
         ),
     )
 
-    # Create multiple analyzed items in the weekly window and index them as item documents.
     titles = [
         "Robometer: Scaling reward models via trajectory comparisons",
         "Diffusion Policy: A unified view of planning and control",
@@ -84,22 +75,20 @@ def test_trends_week_published_markdown_locks_quality_signals(
         "RAG Systems: Retrieval and grounding for long-context LLMs",
     ]
     for idx, paper_title in enumerate(titles, start=1):
-        paper_url = f"https://example.com/paper-{idx}"
-        published_at = week_start + timedelta(days=idx)
         draft = ItemDraft.from_values(
             source="rss",
             source_item_id=f"paper-{idx}",
-            canonical_url=paper_url,
+            canonical_url=f"https://example.com/paper-{idx}",
             title=paper_title,
             authors=["Alice", "Bob"],
-            published_at=published_at,
+            published_at=week_start + timedelta(days=idx),
             raw_metadata={"source": "test"},
         )
         item, _ = repository.upsert_item(draft)
         assert item.id is not None
         analysis, _ = service.analyzer.analyze(
             title=paper_title,
-            canonical_url=paper_url,
+            canonical_url=f"https://example.com/paper-{idx}",
             user_topics=["agents"],
             include_debug=False,
         )
@@ -129,7 +118,6 @@ def test_trends_week_published_markdown_locks_quality_signals(
             limit=10,
         )
         if granularity == "day":
-            assert docs
             return (
                 TrendPayload.model_validate(
                     {
@@ -140,7 +128,6 @@ def test_trends_week_published_markdown_locks_quality_signals(
                         "overview_md": "- daily",
                         "topics": ["agents"],
                         "clusters": [],
-                        "highlights": [],
                     }
                 ),
                 {"tool_calls_total": 0},
@@ -148,23 +135,25 @@ def test_trends_week_published_markdown_locks_quality_signals(
         assert docs and len(docs) >= 3
         doc_ids = [int(getattr(d, "id")) for d in docs[:3]]
         payload = {
-            "title": f"Weekly Trend doc_id={doc_ids[0]}, chunk: 0",
+            "title": "Weekly execution loops are tightening",
             "granularity": "week",
             "period_start": pstart.isoformat(),
             "period_end": pend.isoformat(),
-            "overview_md": f"See doc_id: {doc_ids[0]}, chunk: 0.",
+            "overview_md": f"See doc_id: {doc_ids[0]}, chunk 0 for the clearest anchor.",
             "topics": ["agents"],
             "clusters": [
                 {
-                    "name": f"Top-10 must-read doc_id={doc_ids[1]}, chunk_index: 0",
-                    "description": f"Curated from doc_id={doc_ids[1]}, chunk_index: 0.",
-                    "representative_doc_ids": [],
-                    "representative_chunks": [
-                        {"doc_id": doc_id, "chunk_index": 0} for doc_id in doc_ids
+                    "title": "Verification becomes operating practice",
+                    "content_md": (
+                        f"Teams are treating doc_id {doc_ids[1]}, chunk 0 as a "
+                        "sign that evaluation is moving into the main workflow."
+                    ),
+                    "evidence_refs": [
+                        {"doc_id": doc_id, "chunk_index": 0}
+                        for doc_id in doc_ids
                     ],
                 }
             ],
-            "highlights": [f"Must read doc_id: {doc_ids[2]}"],
         }
         return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
 
@@ -177,30 +166,15 @@ def test_trends_week_published_markdown_locks_quality_signals(
         llm_model="test/fake-model",
     )
 
-    trends_dir = (settings.markdown_output_dir / "Trends").resolve()
-    matches = sorted(trends_dir.glob(f"week--*--trend--{result.doc_id}.md"))
+    matches = sorted((settings.markdown_output_dir / "Trends").glob(f"week--*--trend--{result.doc_id}.md"))
     assert len(matches) == 1
-    note_path = matches[0]
-    md = note_path.read_text(encoding="utf-8")
+    md = matches[0].read_text(encoding="utf-8")
 
-    # Ensure internal doc references do not leak into published notes.
     assert re.search(r"\bdoc_id\b", md) is None
-    assert re.search(r"\bdoc\b\s*[:=#-]?\s*\d+\b", md, flags=re.I) is None
-    assert re.search(r"\bchunk(?:_index)?\s*[:=]\s*\d+\b", md, flags=re.I) is None
-    assert re.search(r"\b\d+\s*[,;，；]?\s*chunk(?:_index)?\b", md, flags=re.I) is None
-    assert (
-        re.search(r"^#{2,6}\s+Top-\d+\s+must-?read\b", md, flags=re.M | re.I)
-        is not None
-    )
-    title_match = re.search(r"^#\s+(.+)$", md, flags=re.M)
-    assert title_match is not None
-    title_line = title_match.group(1)
-    assert "Weekly Trend" not in title_line
-    assert "doc_id" not in title_line
-    assert "chunk" not in title_line
-    assert "[" not in title_line
-    assert "]" not in title_line
-    assert re.search(r"^#{2,6}\s+Representative\b", md, flags=re.M | re.I) is not None
-    item_link_total = len(re.findall(r"\[[^\]]+\]\(\.\./Inbox/[^)]+\.md\)", md))
-    assert item_link_total >= 3
+    assert re.search(r"\bchunk(?:_index)?\s*[:=]?\s*\d+\b", md, flags=re.I) is None
+    assert "## Clusters" in md
+    assert "#### Evidence" in md
+    assert "Representative sources" not in md
+    assert re.search(r"^#{2,6}\s+Top-\d+\s+must-?read\b", md, flags=re.M | re.I) is None
+    assert len(re.findall(r"\[[^\]]+\]\(\.\./Inbox/[^)]+\.md\)", md)) >= 3
     assert "https://example.com/paper-" not in md

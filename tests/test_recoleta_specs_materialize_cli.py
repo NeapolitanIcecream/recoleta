@@ -27,6 +27,47 @@ from recoleta.trends import (
 from recoleta.types import AnalysisResult, ItemDraft
 
 
+def _build_trend_payload(
+    *,
+    period_start: datetime,
+    period_end: datetime,
+    overview_md: str,
+    topics: list[str] | None = None,
+    clusters: list[dict[str, object]] | None = None,
+) -> TrendPayload:
+    return TrendPayload.model_validate(
+        {
+            "title": "Agent Systems",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": overview_md,
+            "topics": topics or ["agents", "robotics"],
+            "clusters": clusters or [],
+        }
+    )
+
+
+def _build_ideas_payload(
+    *,
+    period_start: datetime,
+    period_end: datetime,
+    title: str = "Verification-first agent rollout",
+    summary_md: str = "Use a prompt release gate before shipping changes.",
+    ideas: list[dict[str, object]] | None = None,
+) -> TrendIdeasPayload:
+    return TrendIdeasPayload.model_validate(
+        {
+            "title": title,
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "summary_md": summary_md,
+            "ideas": ideas or [],
+        }
+    )
+
+
 def _seed_materialize_fixture(
     *,
     repository: Repository,
@@ -62,34 +103,27 @@ def _seed_materialize_fixture(
     item_doc = repository.upsert_document_for_item(item=persisted_item)
     assert item_doc.id is not None
 
-    payload = TrendPayload.model_validate(
-        {
-            "title": "Agent Systems",
-            "granularity": "day",
-            "period_start": datetime(2026, 3, 2, tzinfo=UTC).isoformat(),
-            "period_end": datetime(2026, 3, 3, tzinfo=UTC).isoformat(),
-            "overview_md": (
-                "## Overview\n\n"
-                "Start with "
-                "[Robometer](https://example.com/robometer).\n"
-            ),
-            "topics": ["agents", "robotics"],
-            "clusters": [
-                {
-                    "name": "Reward models",
-                    "description": (
-                        "Follow [Robometer](https://example.com/robometer)."
-                    ),
-                    "representative_chunks": [
-                        {
-                            "doc_id": item_doc.id,
-                            "chunk_index": 0,
-                        }
-                    ],
-                }
-            ],
-            "highlights": [],
-        }
+    payload = _build_trend_payload(
+        period_start=datetime(2026, 3, 2, tzinfo=UTC),
+        period_end=datetime(2026, 3, 3, tzinfo=UTC),
+        overview_md=(
+            "## Overview\n\n"
+            "Start with "
+            "[Robometer](https://example.com/robometer).\n"
+        ),
+        clusters=[
+            {
+                "title": "Reward models",
+                "content_md": "Follow [Robometer](https://example.com/robometer).",
+                "evidence_refs": [
+                    {
+                        "doc_id": item_doc.id,
+                        "chunk_index": 0,
+                        "reason": "The paper anchors the reward-model example.",
+                    }
+                ],
+            }
+        ],
     )
     trend_doc_id = persist_trend_payload(
         repository=repository,
@@ -154,9 +188,10 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     assert (
         f"## Overview\nStart with [Robometer](../Inbox/{item_note_path.name})."
     ) in trend_markdown
+    assert "### Reward models" in trend_markdown
     assert f"[Robometer](../Inbox/{item_note_path.name})" in trend_markdown
     assert "https://example.com/robometer" not in trend_markdown
-    assert "#### Representative sources" in trend_markdown
+    assert "#### Evidence" in trend_markdown
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in trend_markdown
     assert f"(../Inbox/{item_note_path.name})" in trend_markdown
     assert trend_sidecar["source_markdown_path"] == f"Trends/{trend_note_path.name}"
@@ -559,17 +594,10 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
         ).one()
     assert item_doc.id is not None
 
-    trend_payload = TrendPayload.model_validate(
-        {
-            "title": "Agent Systems",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
-            "topics": ["agents", "robotics"],
-            "clusters": [],
-            "highlights": [],
-        }
+    trend_payload = _build_trend_payload(
+        period_start=period_start,
+        period_end=period_end,
+        overview_md="## Overview\n\nAgent workflows are getting more production-ready.\n",
     )
     trend_pass_output = repository.create_pass_output(
         run_id="run-materialize-trend-pass",
@@ -582,38 +610,31 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
     )
     assert trend_pass_output.id is not None
 
-    ideas_payload = TrendIdeasPayload.model_validate(
-        {
-            "title": "Verification-first agent rollout",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "summary_md": "Use a prompt release gate before shipping changes.",
-            "ideas": [
-                {
-                    "title": "Prompt CI gate",
-                    "kind": "tooling_wedge",
-                    "thesis": "Ship a prompt release gate before production rollout.",
-                    "why_now": "Prompt changes now behave like deployable releases.",
-                    "what_changed": "Agent teams now manage prompt/tool changes continuously.",
-                    "user_or_job": "Platform engineers shipping agent changes.",
-                    "evidence_refs": [
-                        {
-                            "doc_id": trend_doc_id,
-                            "chunk_index": 0,
-                            "reason": "Trend note captures the operational shift.",
-                        },
-                        {
-                            "doc_id": item_doc.id,
-                            "chunk_index": 0,
-                            "reason": "Item note anchors the paper-level evidence.",
-                        },
-                    ],
-                    "validation_next_step": "Replay 20 prompt changes through the gate.",
-                    "time_horizon": "now",
-                }
-            ],
-        }
+    ideas_payload = _build_ideas_payload(
+        period_start=period_start,
+        period_end=period_end,
+        ideas=[
+            {
+                "title": "Prompt CI gate",
+                "content_md": (
+                    "Ship a prompt release gate before production rollout. Prompt "
+                    "changes now behave like deployable releases, so platform "
+                    "engineers need a tighter verification path."
+                ),
+                "evidence_refs": [
+                    {
+                        "doc_id": trend_doc_id,
+                        "chunk_index": 0,
+                        "reason": "Trend note captures the operational shift.",
+                    },
+                    {
+                        "doc_id": item_doc.id,
+                        "chunk_index": 0,
+                        "reason": "Item note anchors the paper-level evidence.",
+                    },
+                ],
+            }
+        ],
     )
     repository.create_pass_output(
         run_id="run-materialize-ideas-pass",
@@ -662,11 +683,9 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
     assert "Kind:" not in idea_markdown
     assert "Time horizon:" not in idea_markdown
     assert "User/job:" not in idea_markdown
-    assert "- Type: Tooling wedge" in idea_markdown
-    assert "- Horizon: Now" in idea_markdown
-    assert "- Role: Platform engineers shipping agent changes." in idea_markdown
+    assert "Ship a prompt release gate before production rollout." in idea_markdown
     assert idea_sidecar["source_markdown_path"] == f"Ideas/{idea_note_path.name}"
-    assert idea_sidecar["content"]["opportunities"][0]["tier"] == "best_bet"
+    assert idea_sidecar["content"]["ideas"][0]["title"] == "Prompt CI gate"
     assert validate_presentation(idea_sidecar) == []
 
     idea_html = (
@@ -702,17 +721,10 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
         source_content_type="analysis_body",
     )
 
-    trend_payload = TrendPayload.model_validate(
-        {
-            "title": "Agent Systems",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
-            "topics": ["agents", "robotics"],
-            "clusters": [],
-            "highlights": [],
-        }
+    trend_payload = _build_trend_payload(
+        period_start=period_start,
+        period_end=period_end,
+        overview_md="## Overview\n\nAgent workflows are getting more production-ready.\n",
     )
     trend_pass_output = repository.create_pass_output(
         run_id="run-materialize-trend-pass-dedup",
@@ -725,38 +737,30 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
     )
     assert trend_pass_output.id is not None
 
-    ideas_payload = TrendIdeasPayload.model_validate(
-        {
-            "title": "Verification-first agent rollout",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "summary_md": "Use a prompt release gate before shipping changes.",
-            "ideas": [
-                {
-                    "title": "Prompt CI gate",
-                    "kind": "tooling_wedge",
-                    "thesis": "Ship a prompt release gate before production rollout.",
-                    "why_now": "Prompt changes now behave like deployable releases.",
-                    "what_changed": "Agent teams now manage prompt/tool changes continuously.",
-                    "user_or_job": "Platform engineers shipping agent changes.",
-                    "evidence_refs": [
-                        {
-                            "doc_id": item_doc.id,
-                            "chunk_index": 0,
-                            "reason": "The summary chunk anchors the paper-level evidence.",
-                        },
-                        {
-                            "doc_id": item_doc.id,
-                            "chunk_index": 1,
-                            "reason": "The body chunk shows the verifier loop details.",
-                        },
-                    ],
-                    "validation_next_step": "Replay 20 prompt changes through the gate.",
-                    "time_horizon": "now",
-                }
-            ],
-        }
+    ideas_payload = _build_ideas_payload(
+        period_start=period_start,
+        period_end=period_end,
+        ideas=[
+            {
+                "title": "Prompt CI gate",
+                "content_md": (
+                    "Ship a prompt release gate before production rollout, with "
+                    "verifier loops that can inspect long traces."
+                ),
+                "evidence_refs": [
+                    {
+                        "doc_id": item_doc.id,
+                        "chunk_index": 0,
+                        "reason": "The summary chunk anchors the paper-level evidence.",
+                    },
+                    {
+                        "doc_id": item_doc.id,
+                        "chunk_index": 1,
+                        "reason": "The body chunk shows the verifier loop details.",
+                    },
+                ],
+            }
+        ],
     )
     repository.create_pass_output(
         run_id="run-materialize-ideas-pass-dedup",
@@ -788,34 +792,24 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
     item_note_path = output_dir / "Inbox" / placeholder_item_note_path.name
     idea_note_path = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
     idea_markdown = idea_note_path.read_text(encoding="utf-8")
-    item_link = (
-        f"[Robometer: Scaling General-Purpose Robotic Reward Models]"
-        f"(../Inbox/{item_note_path.name})"
-    )
-    assert idea_markdown.count(item_link) == 1
-    assert (
-        f"- {item_link}\n"
-        "  - The summary chunk anchors the paper-level evidence.\n"
-        "  - The body chunk shows the verifier loop details."
-    ) in idea_markdown
+    item_link = f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})"
+    assert idea_markdown.count(item_link) == 2
+    assert f"- {item_link}: The summary chunk anchors the paper-level evidence." in idea_markdown
+    assert f"- {item_link}: The body chunk shows the verifier loop details." in idea_markdown
     assert "The summary chunk anchors the paper-level evidence." in idea_markdown
     assert "The body chunk shows the verifier loop details." in idea_markdown
-    assert "; The body chunk shows the verifier loop details." not in idea_markdown
     assert "(chunk 1)" not in idea_markdown
 
     idea_html = (
         output_dir / "site" / "ideas" / "day--2026-03-02--ideas.html"
     ).read_text(encoding="utf-8")
     soup = BeautifulSoup(idea_html, "html.parser")
-    meta_panels = {
-        label.get_text(" ", strip=True): value.get_text(" ", strip=True)
-        for panel in soup.select(".meta-panel")
-        for label in [panel.select_one(".meta-panel-label")]
-        for value in [panel.select_one(".meta-panel-value")]
-        if label is not None and value is not None
-    }
+    evidence_headings = [
+        heading.get_text(" ", strip=True)
+        for heading in soup.select("h2, h3, h4, h5, h6")
+    ]
     assert idea_html.count(f"../items/{item_note_path.stem}.html") == 1
-    assert meta_panels.get("Evidence") == "1"
+    assert "Evidence" in evidence_headings
     assert "(chunk 1)" not in idea_html
 
 
@@ -837,17 +831,10 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
         ).one()
     assert item_doc.id is not None
 
-    trend_payload = TrendPayload.model_validate(
-        {
-            "title": "Agent Systems",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
-            "topics": ["agents", "robotics"],
-            "clusters": [],
-            "highlights": [],
-        }
+    trend_payload = _build_trend_payload(
+        period_start=period_start,
+        period_end=period_end,
+        overview_md="## Overview\n\nAgent workflows are getting more production-ready.\n",
     )
     trend_pass_output = repository.create_pass_output(
         run_id="run-materialize-trend-pass-obsidian",
@@ -860,38 +847,31 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
     )
     assert trend_pass_output.id is not None
 
-    ideas_payload = TrendIdeasPayload.model_validate(
-        {
-            "title": "Verification-first agent rollout",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "summary_md": "Use a prompt release gate before shipping changes.",
-            "ideas": [
-                {
-                    "title": "Prompt CI gate",
-                    "kind": "tooling_wedge",
-                    "thesis": "Ship a prompt release gate before production rollout.",
-                    "why_now": "Prompt changes now behave like deployable releases.",
-                    "what_changed": "Agent teams now manage prompt/tool changes continuously.",
-                    "user_or_job": "Platform engineers shipping agent changes.",
-                    "evidence_refs": [
-                        {
-                            "doc_id": trend_doc_id,
-                            "chunk_index": 0,
-                            "reason": "Trend note captures the operational shift.",
-                        },
-                        {
-                            "doc_id": item_doc.id,
-                            "chunk_index": 0,
-                            "reason": "Item note anchors the paper-level evidence.",
-                        },
-                    ],
-                    "validation_next_step": "Replay 20 prompt changes through the gate.",
-                    "time_horizon": "now",
-                }
-            ],
-        }
+    ideas_payload = _build_ideas_payload(
+        period_start=period_start,
+        period_end=period_end,
+        ideas=[
+            {
+                "title": "Prompt CI gate",
+                "content_md": (
+                    "Ship a prompt release gate before production rollout. Prompt "
+                    "changes now behave like deployable releases, so platform "
+                    "engineers need a tighter verification path."
+                ),
+                "evidence_refs": [
+                    {
+                        "doc_id": trend_doc_id,
+                        "chunk_index": 0,
+                        "reason": "Trend note captures the operational shift.",
+                    },
+                    {
+                        "doc_id": item_doc.id,
+                        "chunk_index": 0,
+                        "reason": "Item note anchors the paper-level evidence.",
+                    },
+                ],
+            }
+        ],
     )
     repository.create_pass_output(
         run_id="run-materialize-ideas-pass-obsidian",
@@ -959,17 +939,10 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
 
-    trend_payload = TrendPayload.model_validate(
-        {
-            "title": "Agent Systems",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
-            "topics": ["agents", "robotics"],
-            "clusters": [],
-            "highlights": [],
-        }
+    trend_payload = _build_trend_payload(
+        period_start=period_start,
+        period_end=period_end,
+        overview_md="## Overview\n\nAgent workflows are getting more production-ready.\n",
     )
     trend_pass_output = repository.create_pass_output(
         run_id="run-materialize-trend-pass-latest-window",
@@ -982,27 +955,18 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
     )
     assert trend_pass_output.id is not None
 
-    older_payload = TrendIdeasPayload.model_validate(
-        {
-            "title": "Older succeeded ideas",
-            "granularity": "day",
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "summary_md": "An older ideas run emitted one opportunity.",
-            "ideas": [
-                {
-                    "title": "Stale idea that should disappear",
-                    "kind": "tooling_wedge",
-                    "thesis": "This should not survive materialization.",
-                    "why_now": "It came from an older pass output.",
-                    "what_changed": "Nothing relevant anymore.",
-                    "user_or_job": "Nobody after suppression.",
-                    "evidence_refs": [],
-                    "validation_next_step": "Do not run this.",
-                    "time_horizon": "now",
-                }
-            ],
-        }
+    older_payload = _build_ideas_payload(
+        period_start=period_start,
+        period_end=period_end,
+        title="Older succeeded ideas",
+        summary_md="An older ideas run retained one concrete direction.",
+        ideas=[
+            {
+                "title": "Stale idea that should disappear",
+                "content_md": "This should not survive materialization.",
+                "evidence_refs": [],
+            }
+        ],
     )
     repository.create_pass_output(
         run_id="run-materialize-ideas-pass-older-success",
@@ -1030,7 +994,7 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
             "granularity": "day",
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
-            "summary_md": "Evidence is too thin for a durable opportunity brief.",
+            "summary_md": "No ideas were retained for this period.",
             "ideas": [],
         }
     )
@@ -1065,7 +1029,7 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
     assert result.output.ideas_outputs_total == 1
     assert "status: suppressed" in note_text
     assert "# Latest suppressed ideas" in note_text
-    assert "Evidence is too thin for a durable opportunity brief." in note_text
+    assert "No ideas were retained for this period." in note_text
     assert "Stale idea that should disappear" not in note_text
 
 
@@ -1270,17 +1234,10 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
         granularity="day",
         period_start=period_start,
         period_end=period_end,
-        payload=TrendPayload.model_validate(
-            {
-                "title": "Agent Systems",
-                "granularity": "day",
-                "period_start": period_start.isoformat(),
-                "period_end": period_end.isoformat(),
-                "overview_md": "## Overview\n\nAgent workflows are getting more production-ready.\n",
-                "topics": ["agents", "robotics"],
-                "clusters": [],
-                "highlights": [],
-            }
+        payload=_build_trend_payload(
+            period_start=period_start,
+            period_end=period_end,
+            overview_md="## Overview\n\nAgent workflows are getting more production-ready.\n",
         ).model_dump(mode="json"),
     )
     assert trend_pass_output.id is not None
@@ -1291,38 +1248,31 @@ def test_materialize_outputs_cli_reports_obsidian_repairs_when_settings_are_avai
         granularity="day",
         period_start=period_start,
         period_end=period_end,
-        payload=TrendIdeasPayload.model_validate(
-            {
-                "title": "Verification-first agent rollout",
-                "granularity": "day",
-                "period_start": period_start.isoformat(),
-                "period_end": period_end.isoformat(),
-                "summary_md": "Use a prompt release gate before shipping changes.",
-                "ideas": [
-                    {
-                        "title": "Prompt CI gate",
-                        "kind": "tooling_wedge",
-                        "thesis": "Ship a prompt release gate before production rollout.",
-                        "why_now": "Prompt changes now behave like deployable releases.",
-                        "what_changed": "Agent teams now manage prompt/tool changes continuously.",
-                        "user_or_job": "Platform engineers shipping agent changes.",
-                        "evidence_refs": [
-                            {
-                                "doc_id": trend_doc_id,
-                                "chunk_index": 0,
-                                "reason": "Trend note captures the operational shift.",
-                            },
-                            {
-                                "doc_id": item_doc.id,
-                                "chunk_index": 0,
-                                "reason": "Item note anchors the paper-level evidence.",
-                            },
-                        ],
-                        "validation_next_step": "Replay 20 prompt changes through the gate.",
-                        "time_horizon": "now",
-                    }
-                ],
-            }
+        payload=_build_ideas_payload(
+            period_start=period_start,
+            period_end=period_end,
+            ideas=[
+                {
+                    "title": "Prompt CI gate",
+                    "content_md": (
+                        "Ship a prompt release gate before production rollout. Prompt "
+                        "changes now behave like deployable releases, so platform "
+                        "engineers need a tighter verification path."
+                    ),
+                    "evidence_refs": [
+                        {
+                            "doc_id": trend_doc_id,
+                            "chunk_index": 0,
+                            "reason": "Trend note captures the operational shift.",
+                        },
+                        {
+                            "doc_id": item_doc.id,
+                            "chunk_index": 0,
+                            "reason": "Item note anchors the paper-level evidence.",
+                        },
+                    ],
+                }
+            ],
         ).model_dump(mode="json"),
         input_refs=[
             PassInputRef(

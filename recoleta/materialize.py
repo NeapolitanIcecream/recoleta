@@ -326,7 +326,6 @@ def _load_trend_payload(
             overview_md=overview_md,
             topics=[],
             clusters=[],
-            highlights=[],
         ),
         None,
     )

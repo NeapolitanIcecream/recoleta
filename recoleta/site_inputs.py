@@ -76,10 +76,7 @@ class TrendSiteDocumentLoadDeps:
     extract_trend_pdf_sections: Callable[..., tuple[str, list[Any]]]
     sanitize_trend_title: Callable[..., str]
     section_excerpt: Callable[[list[Any]], str]
-    extract_trend_evolution_insight: Callable[[list[Any]], str | None]
-    build_trend_body_from_presentation: Callable[..., tuple[str, str, str | None]]
-    render_markdown_evolution_compat_html: Callable[..., str]
-    merge_markdown_evolution_compat_html: Callable[..., str]
+    build_trend_body_from_presentation: Callable[..., tuple[str, str]]
     rewrite_site_markdown_links: Callable[..., str]
     build_trend_browser_body_html: Callable[..., str]
     trend_date_token: Callable[..., str]
@@ -106,7 +103,6 @@ class TrendBrowserBodyContext:
     sections: list[Any]
     markdown_title: str
     markdown_excerpt: str
-    markdown_evolution_insight: str | None
     page_path: Path
     linked_page_by_source_key: dict[SiteSourceKey, Path]
 
@@ -683,7 +679,7 @@ def _trend_markdown_sections(
     source_document: TrendSiteSourceDocument,
     markdown: MarkdownIt,
     deps: TrendSiteDocumentLoadDeps,
-) -> tuple[str, list[Any], str, str | None]:
+) -> tuple[str, list[Any], str]:
     normalized_markdown = (
         deps.normalize_obsidian_callouts_for_pdf(source_document.markdown_body).strip()
         or "# Trend\n"
@@ -694,7 +690,6 @@ def _trend_markdown_sections(
         deps.sanitize_trend_title(markdown_title, fallback="Trend"),
         sections,
         deps.section_excerpt(sections),
-        deps.extract_trend_evolution_insight(sections),
     )
 
 
@@ -702,16 +697,14 @@ def _trend_browser_body(
     *,
     context: TrendBrowserBodyContext,
     deps: TrendSiteDocumentLoadDeps,
-) -> tuple[str, str, str | None, str]:
+) -> tuple[str, str, str]:
     if context.source_document.presentation is None:
         return (
             context.markdown_title,
             context.markdown_excerpt,
-            context.markdown_evolution_insight,
             deps.rewrite_site_markdown_links(
                 html_text=deps.build_trend_browser_body_html(
                     sections=context.sections,
-                    allow_evolution_disclosure=True,
                 ),
                 source_markdown_path=context.source_document.markdown_path,
                 source_instance=context.source_document.instance,
@@ -725,24 +718,14 @@ def _trend_browser_body(
         str(content.get("title") or "").strip() if isinstance(content, dict) else "",
         fallback="Trend",
     )
-    rendered_body_html, excerpt, evolution_insight = (
+    rendered_body_html, excerpt = (
         deps.build_trend_body_from_presentation(
             presentation=context.source_document.presentation,
         )
     )
-    evolution_compat_html = deps.render_markdown_evolution_compat_html(
-        sections=context.sections
-    )
-    if evolution_compat_html:
-        rendered_body_html = deps.merge_markdown_evolution_compat_html(
-            rendered_body_html=rendered_body_html,
-            evolution_compat_html=evolution_compat_html,
-        )
-        evolution_insight = context.markdown_evolution_insight or evolution_insight
     return (
         title,
         excerpt,
-        evolution_insight,
         deps.rewrite_site_markdown_links(
             html_text=rendered_body_html,
             source_markdown_path=context.source_document.markdown_path,
@@ -798,7 +781,7 @@ def load_trend_site_documents(
     linked_page_by_source_key.update(trend_pages_by_source_key)
 
     for source_document in source_documents:
-        markdown_title, sections, markdown_excerpt, markdown_evolution_insight = (
+        markdown_title, sections, markdown_excerpt = (
             _trend_markdown_sections(
                 source_document=source_document,
                 markdown=markdown,
@@ -810,13 +793,12 @@ def load_trend_site_documents(
             instance=source_document.instance,
         )
         page_path = trend_pages_by_source_key[source_key]
-        title, excerpt, evolution_insight, browser_body_html = _trend_browser_body(
+        title, excerpt, browser_body_html = _trend_browser_body(
             context=TrendBrowserBodyContext(
                 source_document=source_document,
                 sections=sections,
                 markdown_title=markdown_title,
                 markdown_excerpt=markdown_excerpt,
-                markdown_evolution_insight=markdown_evolution_insight,
                 page_path=page_path,
                 linked_page_by_source_key=linked_page_by_source_key,
             ),
@@ -851,7 +833,6 @@ def load_trend_site_documents(
                 instance=source_document.instance,
                 body_html=browser_body_html,
                 excerpt=excerpt,
-                evolution_insight=evolution_insight,
                 frontmatter=source_document.frontmatter,
             )
         )

@@ -10,7 +10,6 @@ from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.ports import TrendRepositoryPort
 from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.rag.agent_models import (
-    RepresentativeBackfillRequest,
     TrendGenerationRequest,
     TrendPromptRequest,
 )
@@ -22,7 +21,7 @@ from recoleta.rag.corpus_tools import (
 )
 from recoleta.rag.search_models import SummarySearchRequest
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.trends import TREND_EVOLUTION_CHANGE_TYPE_VALUES, TrendPayload
+from recoleta.trends import TrendPayload
 
 
 @dataclass(slots=True)
@@ -82,61 +81,50 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Do not force a Top-N must-read section; that workflow is legacy and should only appear if the prompt explicitly requires it."
     )
     base += (
-        " Tools only access the active target period. "
-        "If historical same-granularity context is provided, it comes through history_pack_md in the prompt rather than tool calls. "
-        "If no usable history is provided, leave evolution as null instead of guessing."
-    )
-    change_types = ", ".join(TREND_EVOLUTION_CHANGE_TYPE_VALUES)
-    base += (
-        " If you emit evolution.signals[].change_type, it must use one of these English enum values: "
-        f"{change_types}. "
-        "If you emit evolution.signals[].history_windows, cite only prev_n window_id values from history_pack_md sections that are not marked missing. "
-        "Do not emit raw dates, ISO week/month tokens, or the current period token there."
-    )
-    base += (
-        " Treat evolution as an evidence-first section rather than a generic summary. "
-        "Each signal should name at least one concrete paper, benchmark, or system and include a specific factual detail or metric whenever the corpus provides one. "
-        "When comparing against history, anchor the contrast to a named historical title, cluster, or representative system from history_pack_md instead of saying only that 'previous windows emphasized X'. "
-        "If you mention a history window in prose, refer to it with the exact prev_n token so the renderer can convert it into a link. "
-        "Use tools to inspect current-window evidence before writing evolution, and prefer fewer signals over vague ones. "
-        "Do not simply restate the overview; focus on what persisted, appeared, faded, or changed across windows."
-    )
-    base += (
-        " If the corpus contains a meaningful contradictory signal, emit counter_signal"
-        " as a reader-facing counter-signal with a short title, summary, and evidence_refs grounded in the local corpus."
-        " Leave counter_signal as null when no concrete countervailing evidence is present."
-    )
-    base += (
         " Write the title as a direct editorial judgment, not a topic inventory. "
-        "Treat evolution.signals as 1 to 3 ranked shifts ordered by importance when evidence is sufficient; emit fewer rather than padding weak shifts. "
-        "Keep the opening overview short, lead with the week-level judgment, and avoid opening with a flat list of systems or papers. "
+        "Keep the opening overview short, lead with the period-level judgment, and avoid opening with a flat list of systems or papers. "
         "Limit the opening overview to at most three named systems, papers, or benchmarks. "
-        "Keep raw prev_n tokens only in evolution.signals[].history_windows; do not leave them unresolved in title, overview_md, clusters, or highlights."
+        "Do not leave raw prev_n tokens in title, overview_md, or clusters[].content_md."
     )
     base += (
         " In overview_md, write body content only: do not add an extra Overview/总览 heading because the publisher adds it. "
         "The opening overview prose must stay under 200 Chinese characters or 200 words before any later sub-sections. "
         "Keep topics only in the topics field; do not add a Topics/主题 section inside overview_md. "
         "Make the title direct and specific to the content; do not prepend dates or generic labels such as Daily Trend/研究趋势日报/每日趋势. "
-        "Inside any optional ranked reading list, do not append 'representative snippet' / '代表片段' text after a title or link."
+        "Do not append explanatory field labels inside prose."
     )
     base += (
         " Prioritize readability over compression: use short sentences, avoid long multi-clause lines, "
         "and avoid stacking many technical terms in a single sentence. "
         "Introduce acronyms once with a brief explanation in the output language, then reuse them. "
-        "Avoid repetitive phrasing across overview, clusters, and highlights; each section should add new value."
+        "Avoid repetitive phrasing across overview and clusters; each section should add new value."
     )
     base += (
-        " For clusters[].representative_chunks, either omit the entry or provide an object "
-        "with required integer fields doc_id and chunk_index, and optional float score. "
-        "Never output null for doc_id/chunk_index."
+        " State the current emphasis directly."
+        " Do not narrate the period as a move, turn, push, or shift away from an"
+        " older framing."
+        " Do not frame change as 'from X to Y', 'less about X and more about Y',"
+        " 'not X but Y', 'shifting from', 'turns from', 'rather than',"
+        " 'instead of', 'away from X and toward Y', 'the result does not say X; it says Y',"
+        " or similar contrast formulas."
+    )
+    base += (
+        " Use any history change, contradictory evidence, or representative examples as internal analysis tools, "
+        "but do not expose them as separate reader-facing sections. "
+        "The public output should contain only overview_md and 1 to 4 cluster blocks."
+    )
+    base += (
+        " Each cluster block must be a finished short note, not a worksheet. "
+        "Use clusters[].title for a literal topic label, clusters[].content_md for the prose body, "
+        "and clusters[].evidence_refs for grounded supporting references. "
+        "Each cluster must include at least one evidence_refs entry with concrete doc_id and chunk_index values."
     )
     base = f"{base}\n\n{reader_facing_ai_tropes_prompt()}"
     if not output_language:
         return base
     return (
         f"{base}\n\nUse {output_language} for all natural language fields "
-        "(title, overview_md, clusters[].name, clusters[].description, highlights). "
+        "(title, overview_md, clusters[].title, clusters[].content_md). "
         "Keep all JSON keys in English and keep topics as concise English tags."
     )
 
@@ -309,28 +297,6 @@ def semantic_search_summaries_in_period(
     return _impl(request=request, **legacy_kwargs)
 
 
-def ensure_trend_cluster_representatives(
-    *,
-    request: RepresentativeBackfillRequest | None = None,
-    **legacy_kwargs: Any,
-) -> dict[str, int]:
-    from recoleta.rag.agent_runtime import (
-        ensure_trend_cluster_representatives as _impl,
-    )
-    from recoleta.rag.agent_runtime import (
-        ensure_trend_cluster_representatives_with_search as _compat_impl,
-    )
-
-    if request is not None:
-        return _impl(request)
-    raw_max_reps = legacy_kwargs.get("max_reps")
-    return _compat_impl(
-        payload=legacy_kwargs["payload"],
-        search=legacy_kwargs["search"],
-        max_reps=6 if raw_max_reps is None else int(raw_max_reps),
-    )
-
-
 def build_trend_prompt_payload(
     *,
     request: TrendPromptRequest | None = None,
@@ -352,13 +318,11 @@ def generate_trend_payload(
 
 
 __all__ = [
-    "RepresentativeBackfillRequest",
     "TrendAgentDeps",
     "TrendGenerationRequest",
     "TrendPromptRequest",
     "build_trend_agent",
     "build_trend_prompt_payload",
-    "ensure_trend_cluster_representatives",
     "generate_trend_payload",
     "resolve_rag_query_sources",
     "semantic_search_summaries_in_period",

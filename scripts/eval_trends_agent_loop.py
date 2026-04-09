@@ -575,10 +575,7 @@ def _render_report_markdown(*, request: _TrendRenderRequest) -> str:
         run_id=request.run_id,
         overview_md=materialized.overview_md,
         topics=materialized.topics,
-        evolution=materialized.evolution,
-        history_window_refs=materialized.history_window_refs,
         clusters=materialized.clusters,
-        highlights=materialized.highlights,
         output_language=request.output_language,
     )
     return note_path.read_text(encoding="utf-8")
