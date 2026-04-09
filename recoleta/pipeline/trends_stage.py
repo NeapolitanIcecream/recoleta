@@ -1269,6 +1269,7 @@ class _TrendStageRunner:
         corpus_docs_total = self._corpus_docs_total(
             state=state,
             source_results=source_results,
+            plan=plan,
         )
         self.record_metric(
             name="pipeline.trends.corpus.docs_total",
@@ -1288,15 +1289,23 @@ class _TrendStageRunner:
         *,
         state: _TrendStageState,
         source_results: dict[str, _SourceEnsureResult],
+        plan: trends.TrendGenerationPlan | None,
     ) -> int:
         if state.corpus_doc_type == "trend" and state.corpus_granularity in {
             "day",
             "week",
         }:
-            return self._usable_trend_corpus_docs_total(
+            usable_docs_total = self._usable_trend_corpus_docs_total(
                 granularity=state.corpus_granularity,
                 period_start=state.period_start,
                 period_end=state.period_end,
+            )
+            if usable_docs_total > 0:
+                return usable_docs_total
+            return self._supplemental_rag_source_docs_total(
+                state=state,
+                source_results=source_results,
+                plan=plan,
             )
         primary_token = self._source_token(
             doc_type=state.corpus_doc_type,
@@ -1304,6 +1313,44 @@ class _TrendStageRunner:
         )
         report = source_results.get(primary_token)
         return int(report.docs_total) if report is not None else 0
+
+    def _supplemental_rag_source_docs_total(
+        self,
+        *,
+        state: _TrendStageState,
+        source_results: dict[str, _SourceEnsureResult],
+        plan: trends.TrendGenerationPlan | None,
+    ) -> int:
+        if plan is None or not bool(
+            getattr(self.service.settings, "trends_self_similar_enabled", False)
+        ):
+            return 0
+        primary_token = self._source_token(
+            doc_type=state.corpus_doc_type,
+            granularity=state.corpus_granularity,
+        )
+        docs_total = 0
+        seen_tokens: set[str] = set()
+        for source in list(getattr(plan, "rag_sources", []) or []):
+            doc_type = str(source.get("doc_type") or "").strip().lower()
+            granularity = str(source.get("granularity") or "").strip().lower() or None
+            try:
+                token = self._source_token(doc_type=doc_type, granularity=granularity)
+            except ValueError:
+                continue
+            if token == primary_token or token in seen_tokens:
+                continue
+            seen_tokens.add(token)
+            if token == "item":
+                report = source_results.get(token)
+                docs_total += int(report.docs_total) if report is not None else 0
+                continue
+            docs_total += self._usable_trend_corpus_docs_total(
+                granularity=token.removeprefix("trend_"),
+                period_start=state.period_start,
+                period_end=state.period_end,
+            )
+        return docs_total
 
     def _usable_trend_corpus_docs_total(
         self,

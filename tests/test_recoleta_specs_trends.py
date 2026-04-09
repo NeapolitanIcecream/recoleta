@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import io
 import json
 from pathlib import Path
@@ -12,9 +12,11 @@ from recoleta.models import Document, DocumentChunk
 from recoleta.pipeline.service import PipelineService
 from recoleta.trends import (
     TrendPayload,
+    build_empty_trend_payload,
     day_period_bounds,
     index_items_as_documents,
     is_empty_trend_payload,
+    persist_trend_payload,
     semantic_search_summaries_in_period,
     week_period_bounds,
 )
@@ -1720,3 +1722,127 @@ def test_week_trends_treat_empty_daily_trends_as_empty_corpus(
         for metric in repository.list_metrics(run_id="run-trend-week-empty-nested")
     }
     assert metric_values["pipeline.trends.corpus.empty"] == 1.0
+
+
+def test_week_trends_rerun_when_items_arrive_after_empty_daily_trends(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Regression: weekly reruns should not stay empty when self-similar item sources exist."""
+
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    monkeypatch.setenv("TRENDS_SELF_SIMILAR_ENABLED", "true")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_ENABLED", "false")
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    anchor = date(2026, 3, 5)
+    week_start, week_end = week_period_bounds(anchor)
+    for offset in range(7):
+        day_start, day_end = day_period_bounds((week_start + timedelta(days=offset)).date())
+        payload = build_empty_trend_payload(
+            granularity="day",
+            period_start=day_start,
+            period_end=day_end,
+            output_language=None,
+        )
+        _ = persist_trend_payload(
+            repository=repository,
+            granularity="day",
+            period_start=day_start,
+            period_end=day_end,
+            payload=payload,
+        )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="late-week-item",
+        canonical_url="https://example.com/late-week-item",
+        title="Late Week Item",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 1, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    item, _inserted = repository.upsert_item(draft)
+    assert item.id is not None
+    _ = repository.save_analysis(
+        item_id=int(item.id),
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary="## Summary\n\nLate item summary.",
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.5,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+
+    import recoleta.trends as trends_mod
+
+    calls = {"total": 0}
+
+    def _fake_generate_trend_via_tools(**kwargs):  # type: ignore[no-untyped-def]
+        calls["total"] += 1
+        assert kwargs.get("rag_sources") == [
+            {"doc_type": "item", "granularity": None},
+            {"doc_type": "trend", "granularity": "day"},
+        ]
+        return (
+            TrendPayload(
+                title="Weekly Trend",
+                granularity="week",
+                period_start=week_start.isoformat(),
+                period_end=week_end.isoformat(),
+                overview_md="- weekly synthesis uses late item corpus",
+                topics=["agents"],
+                clusters=[],
+            ),
+            {"tool_calls_total": 0},
+        )
+
+    monkeypatch.setattr(
+        trends_mod, "generate_trend_via_tools", _fake_generate_trend_via_tools
+    )
+
+    result: TrendResult = service.trends(
+        run_id="run-trend-week-rerun-after-empty-days",
+        granularity="week",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+    )
+
+    assert result.doc_id > 0
+    assert calls["total"] == 1
+
+    week_pass_output = repository.get_latest_pass_output(
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        granularity="week",
+        period_start=week_start,
+        period_end=week_end,
+    )
+    assert week_pass_output is not None
+    week_payload = TrendPayload.model_validate(
+        json.loads(str(week_pass_output.payload_json or "{}"))
+    )
+    assert not is_empty_trend_payload(week_payload)
+
+    metric_values = {
+        str(getattr(metric, "name", "")): float(getattr(metric, "value", 0.0))
+        for metric in repository.list_metrics(
+            run_id="run-trend-week-rerun-after-empty-days"
+        )
+    }
+    assert metric_values["pipeline.trends.corpus.empty"] == 0.0
