@@ -112,6 +112,33 @@ def test_write_markdown_ideas_note_skips_sidecar_when_status_is_not_succeeded(
     assert not presentation_sidecar_path(note_path=note_path).exists()
 
 
+def test_write_markdown_ideas_note_uses_resolved_language_code_in_frontmatter(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+
+    note_path = write_markdown_ideas_note(
+        repository=repository,
+        output_dir=tmp_path / "notes",
+        pass_output_id=7,
+        upstream_pass_output_id=3,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        run_id="run-ideas-language-code",
+        status="succeeded",
+        payload=_payload(period_start, period_end),
+        output_language="Chinese (Simplified)",
+    )
+
+    text = note_path.read_text(encoding="utf-8")
+
+    assert "language_code: zh-CN" in text
+
+
 def test_write_markdown_ideas_note_rejects_unexpected_keyword_arguments(
     tmp_path: Path,
 ) -> None:

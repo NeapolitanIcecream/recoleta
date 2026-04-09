@@ -421,6 +421,82 @@ def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
     ]
 
 
+def test_ideas_stage_falls_back_to_primary_title_when_bundle_title_generation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "English")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    evidence_doc_id = _seed_item_document(
+        repository=repository,
+        published_at=period_start + (period_end - period_start) / 2,
+    )
+    _persist_trend_synthesis_pass_output(
+        repository=repository,
+        run_id="run-trend-upstream-title-fallback",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=_trend_payload(
+            period_start=period_start,
+            period_end=period_end,
+            evidence_doc_id=evidence_doc_id,
+        ),
+    )
+
+    from recoleta.rag import ideas_agent
+
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_payload",
+        lambda **_kwargs: (
+            _ideas_payload(
+                period_start=period_start,
+                period_end=period_end,
+                evidence_doc_id=evidence_doc_id,
+            ),
+            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+        ),
+    )
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_bundle_title",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("title model timeout")),
+    )
+
+    result = service.ideas(
+        run_id="run-ideas-title-fallback",
+        granularity="day",
+        anchor_date=date(2026, 3, 2),
+        llm_model="test/fake-model",
+    )
+
+    assert result.status == PassStatus.SUCCEEDED.value
+    assert result.title == "Unnormalized title that should be replaced"
+    assert result.note_path is not None
+    assert result.note_path.exists()
+
+    metric_values = _metric_values(
+        repository=repository, run_id="run-ideas-title-fallback"
+    )
+    assert metric_values["pipeline.trends.pass.ideas.bundle_title_failed_total"] == 1.0
+
+
 def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

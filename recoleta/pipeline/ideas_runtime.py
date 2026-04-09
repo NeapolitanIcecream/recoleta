@@ -296,19 +296,44 @@ def _generate_ideas_payload(
             ),
             normalized_debug,
         )
-    title, title_debug = ideas_agent.generate_trend_ideas_bundle_title(
-        llm_model=model,
-        summary_md=normalized_payload.summary_md,
-        ideas=[
-            {
-                "title": str(idea.title or "").strip(),
-                "content_md": str(idea.content_md or "").strip(),
-            }
-            for idea in list(normalized_payload.ideas or [])
-        ],
-        output_language=output_language,
-        llm_connection=request.context.service._llm_connection,
-    )
+    title = str(normalized_payload.title or "").strip()
+    title_debug: dict[str, Any] = {}
+    try:
+        title, title_debug = ideas_agent.generate_trend_ideas_bundle_title(
+            llm_model=model,
+            summary_md=normalized_payload.summary_md,
+            ideas=[
+                {
+                    "title": str(idea.title or "").strip(),
+                    "content_md": str(idea.content_md or "").strip(),
+                }
+                for idea in list(normalized_payload.ideas or [])
+            ],
+            output_language=output_language,
+            llm_connection=request.context.service._llm_connection,
+        )
+    except Exception as exc:
+        sanitized_error = request.context.service._sanitize_error_message(str(exc))
+        request.context.record_metric(
+            name="pipeline.trends.pass.ideas.bundle_title_failed_total",
+            value=1,
+            unit="count",
+        )
+        request.context.log.warning(
+            "Ideas bundle title generation failed; using primary payload title "
+            "run_id={} granularity={} period_start={} error_type={} error={}",
+            request.context.run_id,
+            request.context.normalized_granularity,
+            request.context.period_start.isoformat(),
+            type(exc).__name__,
+            sanitized_error,
+        )
+        title_debug = {
+            "fallback_used": True,
+            "fallback_title": title,
+            "error_type": type(exc).__name__,
+            "error": sanitized_error,
+        }
     return (
         normalized_payload.model_copy(update={"title": title}),
         _merge_ideas_debug(base=normalized_debug, extra=title_debug),

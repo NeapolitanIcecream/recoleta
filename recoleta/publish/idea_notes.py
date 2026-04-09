@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -254,21 +254,26 @@ def _write_ideas_note(*, write_input: _IdeasNoteWriteInput) -> Path:
         language_code=write_input.language_code,
         output_language=write_input.output_language,
     )
+    resolved_write_input = (
+        write_input
+        if resolved_language_code == write_input.language_code
+        else replace(write_input, language_code=resolved_language_code)
+    )
     note_path = resolve_ideas_note_path(
-        note_dir=write_input.note_dir,
-        granularity=write_input.granularity,
-        period_start=write_input.period_start,
+        note_dir=resolved_write_input.note_dir,
+        granularity=resolved_write_input.granularity,
+        period_start=resolved_write_input.period_start,
     )
     presentation = build_idea_presentation_v2(
         request=IdeaPresentationBuildRequest(
-            source_markdown_path=f"{write_input.note_dir.name}/{note_path.name}",
-            title=str(write_input.payload.title or "").strip(),
-            summary_md=str(write_input.payload.summary_md or "").strip(),
+            source_markdown_path=f"{resolved_write_input.note_dir.name}/{note_path.name}",
+            title=str(resolved_write_input.payload.title or "").strip(),
+            summary_md=str(resolved_write_input.payload.summary_md or "").strip(),
             ideas=_presentation_ready_ideas(
-                repository=write_input.repository,
-                root_dir=write_input.root_dir,
-                note_dir=write_input.note_dir,
-                payload=write_input.payload,
+                repository=resolved_write_input.repository,
+                root_dir=resolved_write_input.root_dir,
+                note_dir=resolved_write_input.note_dir,
+                payload=resolved_write_input.payload,
             ),
             language_code=resolved_language_code,
             display_language_code=resolved_language_code,
@@ -278,7 +283,7 @@ def _write_ideas_note(*, write_input: _IdeasNoteWriteInput) -> Path:
     note_path.write_text(
         "\n".join(
             _render_ideas_note_lines(
-                write_input=write_input,
+                write_input=resolved_write_input,
                 presentation=presentation,
                 labels=labels,
             )
@@ -287,9 +292,9 @@ def _write_ideas_note(*, write_input: _IdeasNoteWriteInput) -> Path:
         encoding="utf-8",
     )
     should_emit_sidecar = (
-        write_input.emit_presentation_sidecar
-        and str(write_input.status or "").strip().lower() == "succeeded"
-        and bool(list(write_input.payload.ideas or []))
+        resolved_write_input.emit_presentation_sidecar
+        and str(resolved_write_input.status or "").strip().lower() == "succeeded"
+        and bool(list(resolved_write_input.payload.ideas or []))
     )
     if should_emit_sidecar:
         try:
@@ -298,7 +303,7 @@ def _write_ideas_note(*, write_input: _IdeasNoteWriteInput) -> Path:
             note_path.unlink(missing_ok=True)
             presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
             raise
-    elif write_input.emit_presentation_sidecar:
+    elif resolved_write_input.emit_presentation_sidecar:
         presentation_sidecar_path(note_path=note_path).unlink(missing_ok=True)
     return note_path
 
