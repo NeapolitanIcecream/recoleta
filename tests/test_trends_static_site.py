@@ -13,6 +13,54 @@ from recoleta.site import (
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish import write_markdown_ideas_note, write_markdown_trend_note
 from recoleta.storage import Repository
+from recoleta.types import AnalysisResult, ItemDraft
+
+
+def _seed_item_doc_with_authors(*, repository: Repository, published_at: datetime) -> int:
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="idea-static-site-authors",
+        canonical_url="https://example.com/idea-static-site-authors",
+        title="Grounded runtime checks",
+        authors=["Peng Wang", "Hao Wang"],
+        published_at=published_at,
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    repository.save_analysis(
+        item_id=int(item.id),
+        result=AnalysisResult(
+            model="test/fake-model",
+            provider="test",
+            summary=(
+                "## Summary\n\n"
+                "Grounded runtime checks make long-horizon work auditable.\n\n"
+                "## Problem\n\n"
+                "Teams lack visible checkpoints for agent execution.\n\n"
+                "## Approach\n\n"
+                "Runtime traces and verifier loops are logged explicitly.\n\n"
+                "## Results\n\n"
+                "This makes failures easier to inspect before rollout.\n"
+            ),
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    persisted_item = repository.get_item(item_id=int(item.id))
+    assert persisted_item is not None
+    doc = repository.upsert_document_for_item(item=persisted_item)
+    assert doc.id is not None
+    repository.upsert_document_chunk(
+        doc_id=int(doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="Grounded runtime checks move verification into the shipping path.",
+        source_content_type="analysis_summary",
+    )
+    return int(doc.id)
 
 
 def test_item_action_label_uses_known_source_hosts() -> None:
@@ -62,6 +110,10 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
     output_dir = tmp_path / "notes"
     repository = Repository(db_path=tmp_path / "recoleta.db")
     repository.init_schema()
+    evidence_doc_id = _seed_item_doc_with_authors(
+        repository=repository,
+        published_at=datetime(2026, 2, 25, 12, tzinfo=UTC),
+    )
 
     trend_note = write_markdown_trend_note(
         output_dir=output_dir,
@@ -114,7 +166,7 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
                         "content_md": "Add a release gate before prompt rollout.",
                         "evidence_refs": [
                             {
-                                "doc_id": 1,
+                                "doc_id": evidence_doc_id,
                                 "chunk_index": 0,
                                 "reason": "The trend note ties verification to rollout control.",
                             }
@@ -151,9 +203,20 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
     assert "Summary" in ideas_html
     assert "Ideas" in ideas_html
     assert "Prompt release gate" in ideas_html
+    assert "Idea brief" not in ideas_html
+    assert "Opportunities" not in ideas_html
+    assert "Idea notes from the trend snapshot" not in ideas_html
+    assert "Evidence-grounded idea notes" not in ideas_html
+    assert "Peng Wang" in ideas_html
+    assert "Hao Wang" in ideas_html
+    assert "[, &quot;" not in ideas_html
     assert "Best bet" not in ideas_html
     assert "Alternate" not in ideas_html
     assert "Anti-thesis" not in ideas_html
     assert "Agent systems" in index_html
+    assert "Trend briefs" not in index_html
+    assert "Idea briefs" not in index_html
+    assert "Trends" in index_html
+    assert "Ideas" in index_html
     assert RECOLETA_REPO_URL in index_html
     assert RECOLETA_QUICKSTART_URL in index_html

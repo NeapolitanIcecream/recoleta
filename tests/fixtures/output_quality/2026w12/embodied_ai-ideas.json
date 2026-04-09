@@ -101,8 +101,8 @@
     ],
     "period_end": "2026-03-23T00:00:00+00:00",
     "period_start": "2026-03-16T00:00:00+00:00",
-    "summary_md": "I found four evidence-grounded why-now opportunities from the snapshot and verified them against the local corpus. The strongest openings are deployment layers and workflow changes that have become newly credible because this week's papers made specific bottlenecks more tractable: force-aware contact control, dynamics-only sim-to-real adaptation, inference-time latency optimization, and shared semantic state across robots plus IoT. I excluded weaker directions where the evidence was still too benchmark-oriented or lacked a clear product wedge.",
-    "title": "Why-now ideas from Robot VLAs Turn Practical with Contact-Rich Control, Simulation-First Training, and Faster Execution"
+    "summary_md": "This set centers on deployment layers that make robot systems easier to run in contact-rich, latency-sensitive, and sensor-rich environments. The retained directions focus on force-aware control, sim-to-real adaptation, execution latency, and shared state across robots and ambient sensors.",
+    "title": "Operational control layers for practical robot deployment"
   },
   "source_documents": [
     {

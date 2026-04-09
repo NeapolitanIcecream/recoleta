@@ -100,6 +100,15 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Avoid repetitive phrasing across overview and clusters; each section should add new value."
     )
     base += (
+        " State the current emphasis directly."
+        " Do not narrate the period as a move, turn, push, or shift away from an"
+        " older framing."
+        " Do not frame change as 'from X to Y', 'less about X and more about Y',"
+        " 'not X but Y', 'shifting from', 'turns from', 'rather than',"
+        " 'instead of', 'away from X and toward Y', 'the result does not say X; it says Y',"
+        " or similar contrast formulas."
+    )
+    base += (
         " Use any history change, contradictory evidence, or representative examples as internal analysis tools, "
         "but do not expose them as separate reader-facing sections. "
         "The public output should contain only overview_md and 1 to 4 cluster briefs."

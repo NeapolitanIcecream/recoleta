@@ -26,14 +26,16 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - Do not expose prompt-method labels such as `Best bet`, `Alternate`, `Thesis`, `Anti-thesis`, `Why now`, `What changed`, `Validation next step`, `Top shifts`, or `Counter-signal` as public section chrome unless product direction explicitly reinstates them.
 - Treat `Trends` and `Ideas` as peer collection surfaces: each should have its own index destination, parallel navigation affordance, and symmetric home-section labeling.
 - When `Trends` and `Ideas` appear side by side, keep the pair visually symmetric: equal-width columns, one stacked card column per side, and mirrored section chrome.
+- Use `Trends` and `Ideas` as the canonical peer collection labels on shared discovery surfaces. Do not keep legacy `Trend briefs` / `Idea briefs` chrome once the simplified reader-facing contract is in place.
 - Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Historical comparison can sharpen that writing, but it should not reappear as a dedicated public `Evolution` surface.
 - On trend detail pages, keep the public reading surface centered on `Overview` plus supporting cluster blocks. If contradictory evidence matters, fold it into the finished prose of those remaining blocks instead of rendering a separate worksheet surface.
 - On `Ideas` detail pages, keep the page structure minimal: a summary block plus idea blocks. Each idea block should read like a short finished note with a title, prose body, and evidence, not a stack of explicit method fields.
+- On `Ideas` cards and detail pages, avoid legacy collection framing such as `Idea brief` or `Opportunities`. Use neutral chrome like `Ideas`, plain count strings, and supporting `Evidence`.
 - For markdown-first `Ideas` detail flows, do not replace raw enum leakage with a different public worksheet. Hiding `User/job` while exposing `Role`, or hiding ranking enums while exposing `Best bet`, is still formalism if the reader sees the internal analysis template.
 - On `Ideas` cards and detail heroes, omit empty topic rows entirely instead of rendering placeholder chrome for missing topics.
 - On `Ideas` cards and detail heroes, keep metadata subordinate. If a metadata field is not directly useful to a reader deciding whether to open or trust the note, prefer removing it rather than inventing new pills or field blocks for it.
-- Topic and stream discovery surfaces should aggregate both trend briefs and idea briefs so idea-only topics/streams stay navigable and linked, rather than degrading into unlabeled plain text.
-- Topic and stream entity pages should lead with a summary surface for the entity itself, then render symmetric `Trend briefs` and `Idea briefs` collection panels below instead of pairing the entity name against only one collection.
+- Topic and stream discovery surfaces should aggregate both trends and ideas so idea-only topics/streams stay navigable and linked, rather than degrading into unlabeled plain text.
+- Topic and stream entity pages should lead with a summary surface for the entity itself, then render symmetric `Trends` and `Ideas` collection panels below instead of pairing the entity name against only one collection.
 - If a stream label originates from a machine slug such as `embedded_ai` or `research-ops`, render it as a readable title in the UI chrome rather than exposing the raw slug.
 
 ## Comparative Views

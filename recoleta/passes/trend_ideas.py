@@ -11,6 +11,8 @@ from recoleta.trends import TrendPayload
 
 TREND_IDEAS_PASS_KIND = "trend_ideas"
 TREND_IDEAS_SCHEMA_VERSION = 1
+
+
 @dataclass(frozen=True, slots=True)
 class _TrendIdeasPassOutputRequest:
     run_id: str
@@ -112,6 +114,27 @@ class TrendIdeasPayload(BaseModel):
         return normalized
 
 
+def _no_ideas_title(*, output_language: str | None) -> str:
+    if _is_chinese_output_language(output_language):
+        return "本期暂无想法"
+    return "No ideas for this period"
+
+
+def _no_ideas_summary(
+    *,
+    output_language: str | None,
+    reason: str,
+) -> str:
+    normalized_reason = str(reason or "").strip().lower()
+    if _is_chinese_output_language(output_language):
+        if normalized_reason == "empty_corpus":
+            return "该周期没有可用文档。"
+        return "本期没有保留想法。"
+    if normalized_reason == "empty_corpus":
+        return "No documents are available for this period."
+    return "No ideas were retained for this period."
+
+
 def build_empty_trend_ideas_payload(
     *,
     granularity: str,
@@ -120,18 +143,36 @@ def build_empty_trend_ideas_payload(
     output_language: str | None = None,
 ) -> TrendIdeasPayload:
     normalized_granularity = str(granularity or "").strip().lower() or "day"
-    if _is_chinese_output_language(output_language):
-        title = "本期暂无可发布研究趋势"
-        summary_md = "该周期没有可用文档，因此不输出机会想法。"
-    else:
-        title = "No publishable ideas for this period"
-        summary_md = "No documents are available for this period, so no opportunity ideas are emitted."
     return TrendIdeasPayload(
-        title=title,
+        title=_no_ideas_title(output_language=output_language),
         granularity=normalized_granularity,
         period_start=period_start.isoformat(),
         period_end=period_end.isoformat(),
-        summary_md=summary_md,
+        summary_md=_no_ideas_summary(
+            output_language=output_language,
+            reason="empty_corpus",
+        ),
+        ideas=[],
+    )
+
+
+def build_suppressed_trend_ideas_payload(
+    *,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+    output_language: str | None = None,
+) -> TrendIdeasPayload:
+    normalized_granularity = str(granularity or "").strip().lower() or "day"
+    return TrendIdeasPayload(
+        title=_no_ideas_title(output_language=output_language),
+        granularity=normalized_granularity,
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        summary_md=_no_ideas_summary(
+            output_language=output_language,
+            reason="suppressed",
+        ),
         ideas=[],
     )
 
@@ -283,6 +324,7 @@ __all__ = [
     "TrendIdeaEvidenceRef",
     "TrendIdeasPayload",
     "build_empty_trend_ideas_payload",
+    "build_suppressed_trend_ideas_payload",
     "build_trend_ideas_pass_output",
     "build_trend_snapshot_pack_md",
     "normalize_trend_ideas_payload",

@@ -62,7 +62,7 @@ def _seed_trend_and_ideas(repository: Repository) -> tuple[int, int]:
 
     ideas_payload = TrendIdeasPayload.model_validate(
         {
-            "title": "Why now ideas",
+            "title": "Verification-first agent rollout",
             "granularity": "week",
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
@@ -106,7 +106,7 @@ def _seed_trend_and_ideas(repository: Repository) -> tuple[int, int]:
         granularity="week",
         period_start=period_start,
         period_end=period_end,
-        title="Why now ideas",
+        title="Verification-first agent rollout",
     )
     assert idea_doc.id is not None
     repository.upsert_document_chunk(
@@ -168,6 +168,10 @@ def test_materialize_outputs_uses_new_reader_facing_contracts(tmp_path: Path) ->
     assert "Representative sources" not in trend_text
     assert "## Summary" in idea_text
     assert "## Prompt release gate" in idea_text
+    assert "Idea brief" not in idea_html
+    assert "Opportunities" not in idea_html
+    assert "Idea notes from the trend snapshot" not in idea_html
+    assert "Evidence-grounded idea notes" not in idea_html
     assert "Best bet" not in idea_text
     assert "Alternate" not in idea_text
     assert "Anti-thesis" not in idea_text

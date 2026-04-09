@@ -125,8 +125,11 @@ def _project_target_href(raw_source: Any) -> tuple[str | None, str | None]:
 
 
 def _project_authors(raw_source: Any) -> list[str]:
+    raw_authors = _value_from(raw_source, "authors", [])
+    if isinstance(raw_authors, str):
+        raw_authors = [raw_authors]
     authors: list[str] = []
-    for author in list(_value_from(raw_source, "authors", []) or []):
+    for author in list(raw_authors or []):
         normalized = _single_line(author)
         if normalized:
             authors.append(normalized)

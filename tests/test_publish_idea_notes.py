@@ -16,7 +16,7 @@ from recoleta.storage import Repository
 def _payload(period_start: datetime, period_end: datetime) -> TrendIdeasPayload:
     return TrendIdeasPayload.model_validate(
         {
-            "title": "Why now ideas",
+            "title": "Verification-first agent rollout",
             "granularity": "day",
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
@@ -65,10 +65,16 @@ def test_write_markdown_ideas_note_renders_new_public_contract(tmp_path: Path) -
         presentation_sidecar_path(note_path=note_path).read_text(encoding="utf-8")
     )
 
-    assert "# Why now ideas" in text
+    assert "# Verification-first agent rollout" in text
     assert "## Summary" in text
     assert "## Prompt release gate" in text
     assert "### Evidence" in text
+    assert (
+        "- Document 1: The trend note ties verification to rollout control."
+    ) in text
+    assert (
+        "- Document 1: The trend note ties verification to rollout control.:"
+    ) not in text
     assert "Best bet" not in text
     assert "Alternate" not in text
     assert "Anti-thesis" not in text

@@ -317,11 +317,7 @@ def _append_idea_opportunity_card(
 
 
 def _idea_opportunity_count_label(card_count: int) -> str:
-    return (
-        f"{card_count} opportunity"
-        if card_count == 1
-        else f"{card_count} opportunities"
-    )
+    return f"{card_count} idea" if card_count == 1 else f"{card_count} ideas"
 
 
 def render_idea_opportunities_section(
@@ -346,7 +342,7 @@ def render_idea_opportunities_section(
                 current_nodes=current_nodes,
                 render_idea_opportunity_card=render_idea_opportunity_card,
             )
-            current_title = node.get_text(" ", strip=True) or "Opportunity"
+            current_title = node.get_text(" ", strip=True) or "Idea"
             current_nodes = []
             continue
         if current_title is None:

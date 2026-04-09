@@ -141,7 +141,7 @@ def _ideas_payload(
 ) -> TrendIdeasPayload:
     return TrendIdeasPayload.model_validate(
         {
-            "title": "Why now ideas",
+            "title": "Unnormalized title that should be replaced",
             "granularity": "day",
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
@@ -254,6 +254,18 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         ),
     )
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_bundle_title",
+        lambda **_kwargs: (
+            "Verification-first agent rollout",
+            {
+                "usage": {"requests": 1, "input_tokens": 8, "output_tokens": 4},
+                "estimated_cost_usd": 0.0,
+                "prompt_chars": 64,
+            },
+        ),
+    )
 
     result = service.ideas(
         run_id="run-ideas-stage",
@@ -274,7 +286,7 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
             encoding="utf-8"
         )
     )
-    assert "# Why now ideas" in markdown
+    assert "# Verification-first agent rollout" in markdown
     assert "## Summary" in markdown
     assert "## Auditable long-horizon eval workbench" in markdown
     assert "Best bet" not in markdown
@@ -285,6 +297,128 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
             select(PassOutput).where(PassOutput.id == result.pass_output_id)
         ).one()
         assert row.status == PassStatus.SUCCEEDED.value
+
+
+def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "English")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    evidence_doc_id = _seed_item_document(
+        repository=repository,
+        published_at=period_start + (period_end - period_start) / 2,
+    )
+    _persist_trend_synthesis_pass_output(
+        repository=repository,
+        run_id="run-trend-upstream-normalize",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=_trend_payload(
+            period_start=period_start,
+            period_end=period_end,
+            evidence_doc_id=evidence_doc_id,
+        ),
+    )
+
+    from recoleta.rag import ideas_agent
+
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_payload",
+        lambda **_kwargs: (
+            TrendIdeasPayload.model_validate(
+                {
+                    "title": "Should be replaced",
+                    "granularity": "day",
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "summary_md": "Release controls now travel with runtime checks.",
+                    "ideas": [
+                        {
+                            "title": "Prompt release gate",
+                            "content_md": "Add a release gate before prompt rollout.",
+                            "evidence_refs": [
+                                {
+                                    "doc_id": evidence_doc_id,
+                                    "chunk_index": 0,
+                                    "reason": "Shows grounded runtime traces for evaluation.",
+                                }
+                            ],
+                        },
+                        {
+                            "title": "Prompt release gate",
+                            "content_md": "Duplicate title should be dropped before title generation.",
+                            "evidence_refs": [
+                                {
+                                    "doc_id": evidence_doc_id,
+                                    "chunk_index": 1,
+                                    "reason": "Duplicate idea should be removed.",
+                                }
+                            ],
+                        },
+                        {
+                            "title": "Ungrounded idea",
+                            "content_md": "This should be dropped because it has no evidence.",
+                            "evidence_refs": [],
+                        },
+                    ],
+                }
+            ),
+            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_bundle_title(**kwargs: object) -> tuple[str, dict[str, object]]:
+        captured["summary_md"] = kwargs["summary_md"]
+        captured["ideas"] = kwargs["ideas"]
+        return (
+            "Verification-first agent rollout",
+            {
+                "usage": {"requests": 1, "input_tokens": 12, "output_tokens": 3},
+                "estimated_cost_usd": 0.0,
+                "prompt_chars": 72,
+            },
+        )
+
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_bundle_title",
+        _fake_bundle_title,
+    )
+
+    result = service.ideas(
+        run_id="run-ideas-normalize-title",
+        granularity="day",
+        anchor_date=date(2026, 3, 2),
+        llm_model="test/fake-model",
+    )
+
+    assert result.title == "Verification-first agent rollout"
+    assert captured["summary_md"] == "Release controls now travel with runtime checks."
+    assert captured["ideas"] == [
+        {
+            "title": "Prompt release gate",
+            "content_md": "Add a release gate before prompt rollout.",
+        }
+    ]
 
 
 def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
@@ -340,6 +474,13 @@ def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         ),
     )
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_bundle_title",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("bundle title generation should be skipped for empty ideas")
+        ),
+    )
 
     result = service.ideas(
         run_id="run-ideas-ungrounded",
@@ -352,6 +493,14 @@ def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
     assert result.pass_output_id is not None
     assert result.upstream_pass_output_id == upstream_pass_output_id
     assert result.note_path is None
+
+    with Session(repository.engine) as session:
+        row = session.exec(
+            select(PassOutput).where(PassOutput.id == result.pass_output_id)
+        ).one()
+        payload = TrendIdeasPayload.model_validate(json.loads(str(row.payload_json)))
+        assert payload.title == "本期暂无想法"
+        assert payload.summary_md == "本期没有保留想法。"
 
 
 def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
@@ -408,6 +557,18 @@ def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
         ),
     )
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_bundle_title",
+        lambda **_kwargs: (
+            "Verification-first agent rollout",
+            {
+                "usage": {"requests": 1, "input_tokens": 8, "output_tokens": 4},
+                "estimated_cost_usd": 0.0,
+                "prompt_chars": 64,
+            },
+        ),
+    )
 
     result = service.ideas(
         run_id="run-ideas-obsidian",
@@ -430,4 +591,6 @@ def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
         / "day--2026-03-02--ideas.md"
     )
     assert obsidian_note.exists()
-    assert "# Why now ideas" in obsidian_note.read_text(encoding="utf-8")
+    assert "# Verification-first agent rollout" in obsidian_note.read_text(
+        encoding="utf-8"
+    )

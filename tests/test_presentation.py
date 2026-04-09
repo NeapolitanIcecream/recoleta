@@ -130,7 +130,6 @@ def test_validate_presentation_rejects_removed_reader_facing_fields() -> None:
     assert "idea content.ideas[0].evidence[0].source_type is not allowed" in errors
     assert "idea content.ideas[0].evidence[0].confidence is not allowed" in errors
 
-
 def test_write_presentation_sidecar_rejects_invalid_contracts(tmp_path: Path) -> None:
     presentation = build_trend_presentation_v2(
         request=TrendPresentationBuildRequest(

@@ -883,8 +883,8 @@ def _render_collection_summary_section(
         f"<span class='meta-date'>{html.escape(_format_collection_mix(trend_count=trend_count, idea_count=idea_count))}</span>"
         "</div>"
         "<div class='summary-stats'>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Trend briefs</div><div class='meta-panel-value'>{trend_count}</div></div>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Idea briefs</div><div class='meta-panel-value'>{idea_count}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Trends</div><div class='meta-panel-value'>{trend_count}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>{idea_count}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Latest</div><div class='meta-panel-value'>{html.escape(latest_token)}</div></div>"
         "</div>"
         "</section>"
@@ -1182,7 +1182,7 @@ def _render_idea_card(
     insight_parts: list[str] = []
     if document.opportunity_count:
         insight_parts.append(
-            f"{document.opportunity_count} opportunit{'ies' if document.opportunity_count != 1 else 'y'}"
+            f"{document.opportunity_count} idea{'s' if document.opportunity_count != 1 else ''}"
         )
     if document.evidence_count:
         insight_parts.append(
@@ -1190,7 +1190,6 @@ def _render_idea_card(
         )
     insight_html = (
         "<div class='trend-insight-row'>"
-        "<span class='trend-insight-badge'>Opportunities</span>"
         f"<span class='trend-insight-copy'>{html.escape(' · '.join(insight_parts))}</span>"
         "</div>"
         if insight_parts
@@ -1245,7 +1244,7 @@ def _render_idea_page(
     meta_rows = [
         ("Window", document.period_token),
         ("Granularity", document.granularity.title()),
-        ("Opportunities", str(document.opportunity_count or 0)),
+        ("Ideas", str(document.opportunity_count or 0)),
         ("Evidence", str(document.evidence_count or 0)),
         ("Status", (document.status or "Unknown").title()),
     ]
@@ -1268,9 +1267,9 @@ def _render_idea_page(
         "</nav>"
         "<section class='detail-hero'>"
         "<div class='detail-hero-main'>"
-        f"<div class='hero-kicker'>Idea brief · {html.escape(document.period_token)}</div>"
+        f"<div class='hero-kicker'>Ideas · {html.escape(document.period_token)}</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
-        f"<p class='detail-dek'>{html.escape(document.excerpt or 'Evidence-grounded opportunity brief derived from a trend window.')}</p>"
+        f"<p class='detail-dek'>{html.escape(document.excerpt or 'Collected ideas from this window.')}</p>"
         f"{topic_links_html}"
         "<div class='card-actions detail-actions'>"
         f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"
@@ -1319,7 +1318,7 @@ def _render_trends_index_page(
         "<h1 class='section-title page-section-title'>Trends</h1>"
         f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='trend'))}</span>"
         "</div>"
-        f"<div class='trend-grid'>{cards or '<div class="empty-card">No trend briefs available yet.</div>'}</div>"
+        f"<div class='trend-grid'>{cards or '<div class="empty-card">No trends available yet.</div>'}</div>"
         "</section>"
     )
     return _render_site_page(
@@ -1358,7 +1357,7 @@ def _render_ideas_index_page(
         "<h1 class='section-title page-section-title'>Ideas</h1>"
         f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='idea'))}</span>"
         "</div>"
-        f"<div class='trend-grid'>{cards or '<div class="empty-card">No idea briefs available yet.</div>'}</div>"
+        f"<div class='trend-grid'>{cards or '<div class="empty-card">No ideas available yet.</div>'}</div>"
         "</section>"
     )
     return _render_site_page(
@@ -1432,7 +1431,7 @@ def _render_home_page(
         "<section class='home-hero-card'>"
         "<div class='home-hero-copy'>"
         "<div class='hero-kicker'>Local-first AI research radar</div>"
-        "<h1 class='home-title'>Trend briefs, idea briefs, and a public research site</h1>"
+        "<h1 class='home-title'>Trends, ideas, and a public research site</h1>"
         "<p class='home-dek'>"
         "Turn arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS "
         "into publishable research briefs that stay local first."
@@ -1451,8 +1450,8 @@ def _render_home_page(
         "</div>"
         "</section>"
         "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trend briefs', count_text=_count_label(len(documents), singular='trend'), cards_html=latest_cards, empty_copy='No trend briefs available yet.', action_label='Browse trends', action_href=_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')))}"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Idea briefs', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=latest_idea_cards, empty_copy='No idea briefs available yet.', action_label='Browse ideas', action_href=_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trends', count_text=_count_label(len(documents), singular='trend'), cards_html=latest_cards, empty_copy='No trends available yet.', action_label='Browse trends', action_href=_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Ideas', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=latest_idea_cards, empty_copy='No ideas available yet.', action_label='Browse ideas', action_href=_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')))}"
         "</section>"
         "<section class='home-section split-layout'>"
         "<div>"
@@ -1641,8 +1640,8 @@ def _render_topic_page_collections(
     return (
         f"{_render_collection_summary_section(summary_label='Topic summary', title=request.topic, trend_count=len(request.documents), idea_count=len(request.idea_documents), latest_token=latest_token)}"
         "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trend briefs', count_text=_count_label(len(request.documents), singular='trend'), cards_html=cards, empty_copy='No trend briefs available yet.'))}"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Idea briefs', count_text=_count_label(len(request.idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No idea briefs available yet.'))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trends', count_text=_count_label(len(request.documents), singular='trend'), cards_html=cards, empty_copy='No trends available yet.'))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Ideas', count_text=_count_label(len(request.idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No ideas available yet.'))}"
         "</section>"
     )
 

@@ -27,6 +27,7 @@ from recoleta.passes import (
     TREND_SYNTHESIS_PASS_KIND,
     TrendIdeasPayload,
     build_empty_trend_ideas_payload,
+    build_suppressed_trend_ideas_payload,
     build_trend_ideas_pass_output,
     build_trend_snapshot_pack_md,
     normalize_trend_ideas_payload,
@@ -282,9 +283,83 @@ def _generate_ideas_payload(
         metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas"),
         llm_connection=request.context.service._llm_connection,
     )
-    return normalize_trend_ideas_payload(payload), debug if isinstance(
-        debug, dict
-    ) else {}
+    normalized_payload = normalize_trend_ideas_payload(payload)
+    normalized_debug = debug if isinstance(debug, dict) else {}
+    output_language = request.context.service.settings.llm_output_language
+    if not list(normalized_payload.ideas or []):
+        return (
+            build_suppressed_trend_ideas_payload(
+                granularity=request.context.normalized_granularity,
+                period_start=request.context.period_start,
+                period_end=request.context.period_end,
+                output_language=output_language,
+            ),
+            normalized_debug,
+        )
+    title, title_debug = ideas_agent.generate_trend_ideas_bundle_title(
+        llm_model=model,
+        summary_md=normalized_payload.summary_md,
+        ideas=[
+            {
+                "title": str(idea.title or "").strip(),
+                "content_md": str(idea.content_md or "").strip(),
+            }
+            for idea in list(normalized_payload.ideas or [])
+        ],
+        output_language=output_language,
+        llm_connection=request.context.service._llm_connection,
+    )
+    return (
+        normalized_payload.model_copy(update={"title": title}),
+        _merge_ideas_debug(base=normalized_debug, extra=title_debug),
+    )
+
+
+def _merge_usage_dicts(
+    *,
+    base: dict[str, Any] | None,
+    extra: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for key in ("requests", "input_tokens", "output_tokens"):
+        total = 0.0
+        found = False
+        for source in (base or {}, extra or {}):
+            value = source.get(key)
+            if isinstance(value, (int, float)):
+                total += float(value)
+                found = True
+        if found:
+            merged[key] = int(total) if total.is_integer() else total
+    return merged
+
+
+def _merge_ideas_debug(
+    *,
+    base: dict[str, Any],
+    extra: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(base)
+    merged["usage"] = _merge_usage_dicts(
+        base=base.get("usage") if isinstance(base.get("usage"), dict) else None,
+        extra=extra.get("usage") if isinstance(extra.get("usage"), dict) else None,
+    )
+    base_cost = base.get("estimated_cost_usd")
+    extra_cost = extra.get("estimated_cost_usd")
+    if isinstance(base_cost, (int, float)) or isinstance(extra_cost, (int, float)):
+        merged["estimated_cost_usd"] = float(base_cost or 0.0) + float(
+            extra_cost or 0.0
+        )
+    base_prompt_chars = base.get("prompt_chars")
+    extra_prompt_chars = extra.get("prompt_chars")
+    if isinstance(base_prompt_chars, (int, float)) or isinstance(
+        extra_prompt_chars, (int, float)
+    ):
+        merged["prompt_chars"] = int(base_prompt_chars or 0) + int(
+            extra_prompt_chars or 0
+        )
+    merged["bundle_title"] = extra
+    return merged
 
 
 def _build_projection_specs(context: IdeasProjectionContext):

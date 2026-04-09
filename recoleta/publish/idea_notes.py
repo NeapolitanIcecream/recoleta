@@ -144,11 +144,7 @@ def _render_evidence_lines(
             ref=ref,
             show_chunk_index=False,
         )
-        reason = " ".join(str(getattr(ref, "reason", "") or "").split()).strip()
-        if reason:
-            lines.append(f"- {rendered}: {reason}")
-        else:
-            lines.append(f"- {rendered}")
+        lines.append(f"- {rendered}")
     return lines
 
 

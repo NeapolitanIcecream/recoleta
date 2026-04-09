@@ -959,7 +959,7 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
         period_start=period_start,
         period_end=period_end,
         title="Older succeeded ideas",
-        summary_md="An older ideas run emitted one opportunity.",
+        summary_md="An older ideas run retained one concrete direction.",
         ideas=[
             {
                 "title": "Stale idea that should disappear",
@@ -994,7 +994,7 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
             "granularity": "day",
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
-            "summary_md": "Evidence is too thin for a durable opportunity brief.",
+            "summary_md": "No ideas were retained for this period.",
             "ideas": [],
         }
     )
@@ -1029,7 +1029,7 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
     assert result.output.ideas_outputs_total == 1
     assert "status: suppressed" in note_text
     assert "# Latest suppressed ideas" in note_text
-    assert "Evidence is too thin for a durable opportunity brief." in note_text
+    assert "No ideas were retained for this period." in note_text
     assert "Stale idea that should disappear" not in note_text
 
 

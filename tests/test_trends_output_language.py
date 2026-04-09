@@ -20,6 +20,9 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "direct editorial judgment, not a topic inventory" in instructions
     assert "at most three named systems, papers, or benchmarks" in instructions
     assert "Do not leave raw prev_n tokens in title, overview_md, or clusters[].content_md" in instructions
+    assert "Do not frame change as 'from X to Y'" in instructions
+    assert "Do not narrate the period as a move, turn, push, or shift away from an older framing." in instructions
+    assert "'the result does not say X; it says Y'" in instructions
     assert "Do not use negative parallelism" in instructions
     assert "Avoid false suspense" in instructions
     assert "Avoid fractal summaries" in instructions
