@@ -7,6 +7,8 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-10
+
 ### Added
 
 - Manual trend email preview/send via `recoleta run email preview|send` and
@@ -15,6 +17,9 @@ Versioning.
   manual trend email delivery.
 - Private site email link-map companion artifacts to support site-first link
   resolution for manual trend email batches.
+- Batch-oriented manual email send safety checks: public trend page
+  reachability, recipient deduplication, and mixed resend protection unless
+  `--force-batch`.
 
 ## [0.2.0] - 2026-04-09
 

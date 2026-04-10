@@ -535,11 +535,11 @@ workflows, and admin commands, see
 ### Release docs
 
 - [`CHANGELOG.md`](CHANGELOG.md) - user-visible changes by release
-- [`docs/releases/v0.2.0-draft.md`](docs/releases/v0.2.0-draft.md) - public
+- [`docs/releases/v0.2.1-draft.md`](docs/releases/v0.2.1-draft.md) - public
   release notes draft
-- [`docs/releases/v0.2.0-launch-kit.md`](docs/releases/v0.2.0-launch-kit.md) -
+- [`docs/releases/v0.2.1-launch-kit.md`](docs/releases/v0.2.1-launch-kit.md) -
   reusable launch copy
-- [`docs/releases/v0.2.0-content-pack.md`](docs/releases/v0.2.0-content-pack.md) -
+- [`docs/releases/v0.2.1-content-pack.md`](docs/releases/v0.2.1-content-pack.md) -
   longer demo and launch material
 
 ### Design reference
