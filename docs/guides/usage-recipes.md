@@ -191,22 +191,29 @@ Use these commands after the relevant trend note, sibling
 
 ```bash
 uv run recoleta run email preview
+uv run recoleta run email preview --granularity week --granularity month
 uv run recoleta run email preview --date 2026-03-02
 uv run recoleta run email send
-uv run recoleta run email send --date 2026-03-02 --force-batch
+uv run recoleta run email send --date 2026-03-02 --granularity week --force-batch
 uv run recoleta fleet run email preview --manifest /path/to/fleet.yaml --instance agents-radar
 uv run recoleta fleet run email send --manifest /path/to/fleet.yaml --instance agents-radar
+uv run recoleta fleet run email send --manifest /path/to/fleet.yaml --instance agents-radar --granularity week --force-batch
 uv run recoleta fleet run email send --manifest /path/to/fleet.yaml --instance agents-radar --site-output-dir /path/to/fleet-site
 ```
 
 What to know:
 
-- `run email preview` reads the selected trend markdown note plus its sibling
-  presentation sidecar, resolves site-first links through the private email
-  link-map artifact, and writes `body.html`, `body.txt`, and `manifest.json`
-  under `MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...`.
-- `run email send` re-renders from the same canonical inputs and writes a send
-  bundle under `MARKDOWN_OUTPUT_DIR/.recoleta-email/sends/...`.
+- `email.granularities` defines the default selected set. Repeat
+  `--granularity` to filter that set while preserving config order.
+- `run email preview` renders every effective selected bundle in memory first.
+  If any selected bundle cannot be resolved or rendered, the command fails and
+  writes no preview artifacts.
+- on preview success, Recoleta writes one batch root under
+  `MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...` with a
+  `batch-manifest.json` at the root and one child directory per bundle
+  containing `body.html`, `body.txt`, and `manifest.json`.
+- `run email send` re-renders the same canonical inputs into one send batch
+  root under `MARKDOWN_OUTPUT_DIR/.recoleta-email/sends/...`.
 - both commands require the private site email link-map artifact written by the
   last site build. With the default site output path this artifact is
   `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.
@@ -216,10 +223,14 @@ What to know:
 - `run email send` also requires `email:` config plus
   `RECOLETA_RESEND_API_KEY`. It refuses to send unless the primary trend page
   under `email.public_site_url` is publicly reachable.
-- send semantics are batch-oriented. If part of the configured recipient list
-  already has the current content hash and part does not, the normal send path
-  fails with a mixed batch state error. Use `--force-batch` only when you want
-  a deliberate full resend.
+- send preflight resolves every effective selected bundle before any provider
+  calls start, then checks reachability and mixed-batch state only for bundles
+  that would actually send.
+- send execution is sequential. If one bundle fails at the provider, later
+  bundles in the selected set stay `not_attempted`.
+- `--force-batch` applies only to the effective selected set. To retry one
+  blocked bundle without resending others, pass both `--granularity <value>`
+  and `--force-batch`.
 - fleet email commands target exactly one child instance at a time. `--instance`
   accepts either the child instance name or its slug.
 

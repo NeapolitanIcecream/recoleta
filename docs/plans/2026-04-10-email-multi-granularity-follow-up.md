@@ -2,17 +2,19 @@
 
 Date: 2026-04-10
 
-Status: proposed clean-break follow-up to the shipped `v1` manual trend email surface
+Status: implemented clean-break replacement for the original single-granularity
+`v1` manual trend email surface
 
 ## Purpose
 
-Record the recommended design for extending manual trend email selection from
-one configured granularity to an ordered set of supported granularities.
+Record the shipped clean-break design that replaced manual trend email
+selection from one configured granularity with an ordered set of supported
+granularities.
 
-This note is intentionally a follow-up to
+This note remains a follow-up to
 `docs/plans/2026-04-09-manual-email-delivery-notes.md`.
 
-That earlier note remains the source of truth for the currently shipped `v1`
+That earlier note now serves as the historical record for the original `v1`
 behavior:
 
 - one configured trend granularity
@@ -20,11 +22,13 @@ behavior:
 - one rendered email batch
 - one send attempt across the configured recipient set
 
-This document describes the next step only.
+This document is the current source of truth for the batch-first manual email
+surface in the repository.
 
-## Current Implementation Constraint
+## Historical Starting Point
 
-The current repository hard-codes a single-granularity selection path:
+Before the clean-break cut, the repository hard-coded a
+single-granularity selection path:
 
 - `EmailConfig` accepts one `EMAIL.granularity` value.
 - trend email selection computes one target period for one granularity.
@@ -39,10 +43,9 @@ Relevant code paths:
 - `recoleta/cli/fleet.py`
 - `recoleta/storage/deliveries.py`
 
-The current persistence model is still compatible with a multi-granularity
-follow-up because `trend_deliveries` are already keyed by `doc_id`, `channel`,
-and `destination`. Distinct trend docs for `day`, `week`, and `month` do not
-collide.
+The persistence model was already compatible with this cut because
+`trend_deliveries` are keyed by `doc_id`, `channel`, and `destination`.
+Distinct trend docs for `day`, `week`, and `month` do not collide.
 
 ## Goals
 
@@ -87,7 +90,7 @@ new subject, layout, and resend semantics.
 
 ## Configuration Design
 
-### Proposed schema
+### Shipped schema
 
 Use a plural field as the only supported configuration shape:
 
@@ -105,15 +108,14 @@ email:
 ### Validation rules
 
 - `EMAIL.granularities` is required.
-- `EMAIL.granularity` should be removed in this follow-up rather than kept as an
-  alias.
+- `EMAIL.granularity` is rejected rather than kept as an alias.
 - preserve declared order
 - deduplicate repeated entries during validation
 - only allow `day`, `week`, and `month`
 - reject an empty resolved list after normalization
 
-This follow-up should not spend design or implementation effort on dual-field
-compatibility because the email surface has not started real operator use yet.
+This cut intentionally avoids dual-field compatibility because the email
+surface had not started real operator use yet.
 
 ## Selection Semantics
 
@@ -575,12 +577,12 @@ Likely touch points:
 - `tests/test_trend_email_delivery.py`
 - `tests/test_recoleta_specs_settings.py`
 
-## Recommended Delivery Plan
+## Implemented Delivery Cut
 
-This follow-up should land as one cohesive public-contract cut rather than as a
+This change landed as one cohesive public-contract cut rather than as a
 preview-only intermediate state.
 
-Core cut:
+Shipped cut:
 
 - replace config parsing with `granularities`
 - refactor bundle building around an explicit granularity parameter
@@ -591,7 +593,7 @@ Core cut:
 - update fleet command surfaces in the same change
 - update tests, docs, and help text in the same change
 
-Optional polish after the core cut:
+Optional follow-on polish:
 
 - refine console summaries and manifest ergonomics
 - add operator-focused examples for retry and force flows

@@ -622,14 +622,13 @@ the current `v1` manual trend email surface in the repository.
 
 ## Follow-up Design
 
-The current note remains the source of truth for the shipped `v1` behavior.
+The current note remains the source of truth for the original `v1` behavior
+only.
 
-A follow-up design for extending `email.granularity` into ordered multi-
-granularity selection is captured separately in:
+The implemented clean-break replacement for that surface is captured in:
 
 - `docs/plans/2026-04-10-email-multi-granularity-follow-up.md`
 
-That follow-up intentionally keeps the current `v1` constraint of one email per
-selected trend document and recommends fan-out across multiple configured
-granularities rather than a combined digest email. It also assumes a clean
-break because this email surface has not yet entered real operator use.
+That note keeps the `v1` constraint of one email per selected trend document,
+switches config to `EMAIL.granularities`, and uses fan-out across multiple
+configured granularities rather than a combined digest email.

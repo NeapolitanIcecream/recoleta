@@ -262,7 +262,9 @@ markdown_output_dir: "~/.local/share/recoleta/outputs"
 #   from_name: "Recoleta"
 #   to:
 #     - "you@example.com"
-#   granularity: "week"
+#   granularities:
+#     - "week"
+#     - "month"
 #   language_code: "en"
 #   max_clusters: 3
 #   max_evidence_per_cluster: 2
@@ -476,12 +478,14 @@ uv run recoleta run site build
 uv run recoleta run site serve
 uv run recoleta run deploy --branch gh-pages --pages-config auto
 
-# preview or send one manual trend email batch
+# preview or send manual trend email batches
 uv run recoleta run email preview
+uv run recoleta run email preview --granularity week --granularity month
 uv run recoleta run email send
-uv run recoleta run email send --date 2026-03-02 --force-batch
+uv run recoleta run email send --date 2026-03-02 --granularity week --force-batch
 uv run recoleta fleet run email preview --manifest ./fleet/fleet.yaml --instance agents-radar
 uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance agents-radar
+uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance agents-radar --granularity week --force-batch
 # pass --site-output-dir if the aggregate fleet site was built into a custom location
 uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance agents-radar --site-output-dir ./output/fleet-site
 
@@ -506,8 +510,16 @@ Repair and backfill notes:
   those notes.
 - `recoleta run email preview` and `recoleta run email send` depend on the
   private site email link-map artifact written by the last site build.
+- `recoleta run email preview` renders the effective selected
+  `email.granularities` batch and writes one batch root with per-bundle child
+  directories. If any selected bundle cannot be resolved or rendered, it fails
+  without writing preview artifacts.
 - `recoleta run email send` also requires `RECOLETA_RESEND_API_KEY` and a
   publicly reachable primary trend page under `email.public_site_url`.
+- `recoleta run email send` preflights every effective selected bundle before
+  any provider calls start, then sends sequentially in config order.
+- `--force-batch` applies only to the effective selected granularity set. Retry
+  one blocked bundle with `--granularity <value> --force-batch`.
 
 For fleet operator recipes, daemon schedules, translation backfills, repair
 workflows, and admin commands, see
