@@ -110,6 +110,7 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
                 "command_name": "fleet run email preview",
                 "manifest_path": Path("/tmp/fleet.yaml").resolve(),
                 "instance": "beta",
+                "granularities": [],
             },
         ),
         (
@@ -129,6 +130,28 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             {
                 "command_name": "fleet run email preview",
                 "site_output_dir": Path("/tmp/site").resolve(),
+                "granularities": [],
+            },
+        ),
+        (
+            [
+                "fleet",
+                "run",
+                "email",
+                "preview",
+                "--manifest",
+                "/tmp/fleet.yaml",
+                "--instance",
+                "beta",
+                "--granularity",
+                "week",
+                "--granularity",
+                "day",
+            ],
+            "run_fleet_email_preview_command",
+            {
+                "command_name": "fleet run email preview",
+                "granularities": ["week", "day"],
             },
         ),
         (
@@ -138,6 +161,7 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
                 "command_name": "fleet run email send",
                 "manifest_path": Path("/tmp/fleet.yaml").resolve(),
                 "instance": "beta",
+                "granularities": [],
             },
         ),
         (
@@ -157,6 +181,28 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             {
                 "command_name": "fleet run email send",
                 "site_output_dir": Path("/tmp/site").resolve(),
+                "granularities": [],
+            },
+        ),
+        (
+            [
+                "fleet",
+                "run",
+                "email",
+                "send",
+                "--manifest",
+                "/tmp/fleet.yaml",
+                "--instance",
+                "beta",
+                "--granularity",
+                "week",
+                "--granularity",
+                "month",
+            ],
+            "run_fleet_email_send_command",
+            {
+                "command_name": "fleet run email send",
+                "granularities": ["week", "month"],
             },
         ),
         (
@@ -180,12 +226,38 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
         (
             ["run", "email", "preview"],
             "run_email_preview_command",
-            {"command_name": "run email preview"},
+            {"command_name": "run email preview", "granularities": []},
+        ),
+        (
+            [
+                "run",
+                "email",
+                "preview",
+                "--granularity",
+                "week",
+                "--granularity",
+                "day",
+            ],
+            "run_email_preview_command",
+            {"command_name": "run email preview", "granularities": ["week", "day"]},
         ),
         (
             ["run", "email", "send"],
             "run_email_send_command",
-            {"command_name": "run email send"},
+            {"command_name": "run email send", "granularities": []},
+        ),
+        (
+            [
+                "run",
+                "email",
+                "send",
+                "--granularity",
+                "week",
+                "--granularity",
+                "month",
+            ],
+            "run_email_send_command",
+            {"command_name": "run email send", "granularities": ["week", "month"]},
         ),
         (
             ["stage", "translate", "run"],

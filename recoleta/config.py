@@ -597,13 +597,22 @@ class EmailConfig(BaseModel):
     from_email: str
     from_name: str | None = "Recoleta"
     to: list[str]
-    granularity: str
+    granularities: list[str]
     language_code: str | None = None
     max_clusters: int = Field(default=3, ge=1)
     max_evidence_per_cluster: int = Field(default=2, ge=1)
     subject_prefix: str | None = "[Recoleta]"
 
-    @field_validator("to", mode="before")
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_granularity(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "granularity" in value:
+            raise ValueError(
+                "EMAIL.granularity is no longer supported; use EMAIL.granularities"
+            )
+        return value
+
+    @field_validator("to", "granularities", mode="before")
     @classmethod
     def _parse_to(cls, value: Any) -> Any:
         if value is None:
@@ -650,13 +659,24 @@ class EmailConfig(BaseModel):
             raise ValueError("EMAIL.to supports at most 100 recipients per batch")
         return recipients
 
-    @field_validator("granularity", mode="before")
+    @field_validator("granularities", mode="after")
     @classmethod
-    def _normalize_granularity(cls, value: Any) -> str:
-        normalized = str(value or "").strip().lower()
-        if normalized not in {"day", "week", "month"}:
-            raise ValueError("EMAIL.granularity must be one of: day, week, month")
-        return normalized
+    def _normalize_granularities(cls, value: list[Any]) -> list[str]:
+        granularities: list[str] = []
+        seen: set[str] = set()
+        for item in list(value or []):
+            normalized = str(item or "").strip().lower()
+            if not normalized or normalized in seen:
+                continue
+            if normalized not in {"day", "week", "month"}:
+                raise ValueError(
+                    "EMAIL.granularities must contain only: day, week, month"
+                )
+            seen.add(normalized)
+            granularities.append(normalized)
+        if not granularities:
+            raise ValueError("EMAIL.granularities must contain at least one value")
+        return granularities
 
     @model_validator(mode="after")
     def _validate_required_fields(self) -> "EmailConfig":

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 import hashlib
 import html
@@ -38,10 +38,12 @@ from recoleta.site_email_links import (
 
 EMAIL_RENDERER_VERSION = "trend-email-v1"
 RESEND_BATCH_MAX_RECIPIENTS = 100
+_ALLOWED_EMAIL_GRANULARITIES = {"day", "week", "month"}
 
 
 @dataclass(frozen=True, slots=True)
-class TrendEmailPreviewResult:
+class TrendEmailPreviewEntryResult:
+    granularity: str
     preview_dir: Path
     manifest_path: Path
     html_path: Path
@@ -49,14 +51,23 @@ class TrendEmailPreviewResult:
     content_hash: str
     primary_page_url: str
     subject: str
-    instance: str | None
     trend_doc_id: int
     period_token: str
 
 
 @dataclass(frozen=True, slots=True)
-class TrendEmailSendResult:
+class TrendEmailPreviewBatchResult:
     status: str
+    preview_root_dir: Path
+    batch_manifest_path: Path
+    instance: str | None
+    results: list[TrendEmailPreviewEntryResult]
+
+
+@dataclass(frozen=True, slots=True)
+class TrendEmailSendEntryResult:
+    status: str
+    granularity: str
     send_dir: Path
     manifest_path: Path
     html_path: Path
@@ -64,9 +75,18 @@ class TrendEmailSendResult:
     content_hash: str
     primary_page_url: str
     subject: str
-    instance: str | None
     trend_doc_id: int
     period_token: str
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TrendEmailSendBatchResult:
+    status: str
+    send_root_dir: Path
+    batch_manifest_path: Path
+    instance: str | None
+    results: list[TrendEmailSendEntryResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +96,7 @@ class TrendEmailSendRequest:
     url_checker: Callable[[str], bool] | None = None
     anchor_date: date | None = None
     force_batch: bool = False
+    granularities: list[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +151,15 @@ class _TrendEmailBundle:
     content_hash: str
 
 
+@dataclass(slots=True)
+class _PreparedSendBundle:
+    bundle: _TrendEmailBundle
+    current_failed: dict[str, bool]
+    status: str
+    error: str | None = None
+    outcomes: list[dict[str, Any]] = field(default_factory=list)
+
+
 def _normalized_email_config(settings: Settings) -> Any:
     email = settings.email
     if email is None:
@@ -158,9 +188,7 @@ def _normalized_language_filter(settings: Settings) -> tuple[str | None, bool]:
 def _load_trend_email_links(*, site_output_dir: Path) -> dict[str, Any]:
     artifact_path = email_links_artifact_path(site_output_dir=site_output_dir)
     if not artifact_path.exists():
-        raise RuntimeError(
-            f"email link-map artifact not found: {artifact_path}"
-        )
+        raise RuntimeError(f"email link-map artifact not found: {artifact_path}")
     return load_email_links_artifact(artifact_path=artifact_path)
 
 
@@ -186,18 +214,25 @@ def _site_input_root(settings: Settings) -> Path:
 
 
 def _presentation_content_map(presentation: dict[str, Any]) -> dict[str, Any]:
-    content = presentation.get("content") if isinstance(presentation.get("content"), dict) else {}
+    content = (
+        presentation.get("content")
+        if isinstance(presentation.get("content"), dict)
+        else {}
+    )
     assert isinstance(content, dict)
     return content
 
 
 def _source_document_presentation_language(source_document: Any) -> str | None:
-    return str(
-        source_document.presentation.get("language_code")
-        or source_document.frontmatter.get("language_code")
-        or source_document.frontmatter.get("lang")
-        or ""
-    ).strip() or None
+    return (
+        str(
+            source_document.presentation.get("language_code")
+            or source_document.frontmatter.get("language_code")
+            or source_document.frontmatter.get("lang")
+            or ""
+        ).strip()
+        or None
+    )
 
 
 def _matches_language_filter(
@@ -280,19 +315,54 @@ def _candidate_from_source_document(
     )
 
 
+def _normalize_requested_granularity(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in _ALLOWED_EMAIL_GRANULARITIES:
+        raise ValueError("--granularity must be one of: day, week, month")
+    return normalized
+
+
+def _resolved_email_granularities(
+    *,
+    settings: Settings,
+    selected_granularities: list[str] | tuple[str, ...] | None,
+) -> list[str]:
+    email = _normalized_email_config(settings)
+    configured = list(email.granularities)
+    if not selected_granularities:
+        return configured
+
+    requested: list[str] = []
+    seen: set[str] = set()
+    for value in selected_granularities:
+        normalized = _normalize_requested_granularity(value)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        requested.append(normalized)
+    missing = [value for value in requested if value not in configured]
+    if missing:
+        missing_display = ", ".join(missing)
+        raise ValueError(
+            "requested --granularity values are not configured in "
+            f"EMAIL.granularities: {missing_display}"
+        )
+    return [value for value in configured if value in seen]
+
+
 def _select_trend_candidate(
     *,
     settings: Settings,
     anchor_date: date | None,
+    granularity: str,
 ) -> _TrendEmailCandidate:
-    email = _normalized_email_config(settings)
     language_filter, language_filter_is_explicit = _normalized_language_filter(settings)
     input_dirs = _discover_trend_site_input_dirs(
         [TrendSiteInputSpec(path=_site_input_root(settings))]
     )
     source_documents = _load_trend_source_documents(input_dirs=input_dirs)
     target_period_start = (
-        _period_start_for_anchor(granularity=email.granularity, anchor_date=anchor_date)
+        _period_start_for_anchor(granularity=granularity, anchor_date=anchor_date)
         if anchor_date is not None
         else None
     )
@@ -302,7 +372,7 @@ def _select_trend_candidate(
         if (
             candidate := _candidate_from_source_document(
                 source_document=source_document,
-                granularity=email.granularity,
+                granularity=granularity,
                 language_filter=language_filter,
                 language_filter_is_explicit=language_filter_is_explicit,
                 target_period_start=target_period_start,
@@ -311,7 +381,9 @@ def _select_trend_candidate(
         is not None
     ]
     if not candidates:
-        raise RuntimeError("no matching trend email candidate found")
+        raise RuntimeError(
+            f"no matching trend email candidate found for granularity={granularity}"
+        )
     candidates.sort(
         key=lambda candidate: (
             candidate.period_start,
@@ -572,7 +644,9 @@ def _render_html_email(*, bundle: _TrendEmailBundle, settings: Settings) -> str:
     trends_index_relative_path = "trends/index.html"
     primary_parts = Path(bundle.primary_relative_path).parts
     if len(primary_parts) >= 2 and primary_parts[1] == "trends":
-        trends_index_relative_path = str(Path(primary_parts[0]) / "trends" / "index.html")
+        trends_index_relative_path = str(
+            Path(primary_parts[0]) / "trends" / "index.html"
+        )
     meta_html = "".join(
         (
             "<tr>"
@@ -791,9 +865,14 @@ def _build_email_bundle(
     settings: Settings,
     site_output_dir: Path,
     anchor_date: date | None,
+    granularity: str,
 ) -> _TrendEmailBundle:
     links_artifact = _load_trend_email_links(site_output_dir=site_output_dir)
-    candidate = _select_trend_candidate(settings=settings, anchor_date=anchor_date)
+    candidate = _select_trend_candidate(
+        settings=settings,
+        anchor_date=anchor_date,
+        granularity=granularity,
+    )
     primary_relative_path, primary_page_url = _primary_trend_page(
         settings=settings,
         links_artifact=links_artifact,
@@ -821,66 +900,61 @@ def _build_email_bundle(
     return _bundle_with_hash(
         settings=settings,
         bundle=_TrendEmailBundle(
-        trend_doc_id=candidate.trend_doc_id,
-        instance=candidate.instance,
-        granularity=candidate.granularity,
-        period_start=candidate.period_start,
-        period_end=candidate.period_end,
-        period_token=candidate.period_token,
-        language_code=candidate.language_code,
-        title=candidate.title,
-        overview_html=overview_html,
-        overview_text=overview_text,
-        topics=candidate.topics,
-        topic_links=topic_links,
-        clusters=_render_clusters(
-            settings=settings,
-            links_artifact=links_artifact,
-            candidate=candidate,
-            content=content,
+            trend_doc_id=candidate.trend_doc_id,
+            instance=candidate.instance,
+            granularity=candidate.granularity,
+            period_start=candidate.period_start,
+            period_end=candidate.period_end,
+            period_token=candidate.period_token,
+            language_code=candidate.language_code,
+            title=candidate.title,
+            overview_html=overview_html,
+            overview_text=overview_text,
+            topics=candidate.topics,
+            topic_links=topic_links,
+            clusters=_render_clusters(
+                settings=settings,
+                links_artifact=links_artifact,
+                candidate=candidate,
+                content=content,
+            ),
+            primary_relative_path=primary_relative_path,
+            primary_page_url=primary_page_url,
+            source_markdown_path=candidate.markdown_path,
+            subject=subject,
+            content_hash="",
         ),
-        primary_relative_path=primary_relative_path,
-        primary_page_url=primary_page_url,
-        source_markdown_path=candidate.markdown_path,
-        subject=subject,
-        content_hash="",
-        ),
     )
 
 
-def _preview_dir_for_bundle(
-    *,
-    settings: Settings,
-    bundle: _TrendEmailBundle,
-    output_dir: Path | None,
-) -> Path:
-    if output_dir is not None:
-        return output_dir.expanduser().resolve()
-    return (
-        Path(settings.markdown_output_dir).expanduser().resolve()
-        / ".recoleta-email"
-        / "previews"
-        / f"{bundle.granularity}--{bundle.period_token}--trend--{bundle.trend_doc_id}"
-    )
-
-
-def _send_dir_for_bundle(*, settings: Settings, bundle: _TrendEmailBundle) -> Path:
-    token = _unique_invocation_token()
-    return (
-        Path(settings.markdown_output_dir).expanduser().resolve()
-        / ".recoleta-email"
-        / "sends"
-        / (
-            f"{token}--{bundle.granularity}"
-            f"--{bundle.period_token}--trend--{bundle.trend_doc_id}"
-        )
-    )
+def _bundle_artifact_dir_name(bundle: _TrendEmailBundle) -> str:
+    return f"{bundle.granularity}--{bundle.period_token}--trend--{bundle.trend_doc_id}"
 
 
 def _unique_invocation_token() -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     nonce = uuid4().hex[:8]
     return f"{timestamp}-{nonce}"
+
+
+def _preview_root_dir(*, settings: Settings, output_dir: Path | None) -> Path:
+    if output_dir is not None:
+        return output_dir.expanduser().resolve()
+    return (
+        Path(settings.markdown_output_dir).expanduser().resolve()
+        / ".recoleta-email"
+        / "previews"
+        / _unique_invocation_token()
+    )
+
+
+def _send_root_dir(*, settings: Settings) -> Path:
+    return (
+        Path(settings.markdown_output_dir).expanduser().resolve()
+        / ".recoleta-email"
+        / "sends"
+        / _unique_invocation_token()
+    )
 
 
 def _write_email_artifacts(
@@ -890,6 +964,8 @@ def _write_email_artifacts(
     settings: Settings,
     provider_outcomes: list[dict[str, Any]] | None,
     kind: str,
+    entry_status: str | None,
+    error: str | None = None,
 ) -> tuple[Path, Path, Path]:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     html_path = artifact_dir / "body.html"
@@ -899,22 +975,26 @@ def _write_email_artifacts(
     text_body = _render_text_email(bundle)
     html_path.write_text(html_body, encoding="utf-8")
     text_path.write_text(text_body, encoding="utf-8")
+    manifest_payload: dict[str, Any] = {
+        "kind": kind,
+        "renderer_version": EMAIL_RENDERER_VERSION,
+        "entry_status": entry_status,
+        "trend_doc_id": bundle.trend_doc_id,
+        "instance": bundle.instance,
+        "granularity": bundle.granularity,
+        "period_token": bundle.period_token,
+        "primary_page_url": bundle.primary_page_url,
+        "content_hash": bundle.content_hash,
+        "subject": bundle.subject,
+        "source_markdown_path": str(bundle.source_markdown_path),
+        "recipients": list(_normalized_email_config(settings).to),
+        "provider_outcomes": provider_outcomes or [],
+    }
+    if error is not None:
+        manifest_payload["error"] = error
     manifest_path.write_text(
         json.dumps(
-            {
-                "kind": kind,
-                "renderer_version": EMAIL_RENDERER_VERSION,
-                "trend_doc_id": bundle.trend_doc_id,
-                "instance": bundle.instance,
-                "granularity": bundle.granularity,
-                "period_token": bundle.period_token,
-                "primary_page_url": bundle.primary_page_url,
-                "content_hash": bundle.content_hash,
-                "subject": bundle.subject,
-                "source_markdown_path": str(bundle.source_markdown_path),
-                "recipients": list(_normalized_email_config(settings).to),
-                "provider_outcomes": provider_outcomes or [],
-            },
+            manifest_payload,
             ensure_ascii=False,
             indent=2,
             sort_keys=True,
@@ -925,41 +1005,120 @@ def _write_email_artifacts(
     return html_path, text_path, manifest_path
 
 
+def _write_batch_manifest(*, root_dir: Path, payload: dict[str, Any]) -> Path:
+    root_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = root_dir / "batch-manifest.json"
+    manifest_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def _preview_entry_payload(entry: TrendEmailPreviewEntryResult) -> dict[str, Any]:
+    return {
+        "granularity": entry.granularity,
+        "preview_dir": str(entry.preview_dir),
+        "manifest_path": str(entry.manifest_path),
+        "html_path": str(entry.html_path),
+        "text_path": str(entry.text_path),
+        "primary_page_url": entry.primary_page_url,
+        "content_hash": entry.content_hash,
+        "subject": entry.subject,
+        "trend_doc_id": entry.trend_doc_id,
+        "period_token": entry.period_token,
+    }
+
+
+def _send_entry_payload(entry: TrendEmailSendEntryResult) -> dict[str, Any]:
+    payload = {
+        "status": entry.status,
+        "granularity": entry.granularity,
+        "send_dir": str(entry.send_dir),
+        "manifest_path": str(entry.manifest_path),
+        "html_path": str(entry.html_path),
+        "text_path": str(entry.text_path),
+        "primary_page_url": entry.primary_page_url,
+        "content_hash": entry.content_hash,
+        "subject": entry.subject,
+        "trend_doc_id": entry.trend_doc_id,
+        "period_token": entry.period_token,
+    }
+    if entry.error is not None:
+        payload["error"] = entry.error
+    return payload
+
+
+def _instance_for_bundles(bundles: list[_TrendEmailBundle]) -> str | None:
+    if not bundles:
+        return None
+    return bundles[0].instance
+
+
 def build_trend_email_preview(
     *,
     settings: Settings,
     site_output_dir: Path,
     anchor_date: date | None = None,
     output_dir: Path | None = None,
-) -> TrendEmailPreviewResult:
-    bundle = _build_email_bundle(
+    granularities: list[str] | tuple[str, ...] | None = None,
+) -> TrendEmailPreviewBatchResult:
+    selected_granularities = _resolved_email_granularities(
         settings=settings,
-        site_output_dir=site_output_dir.expanduser().resolve(),
-        anchor_date=anchor_date,
+        selected_granularities=granularities,
     )
-    preview_dir = _preview_dir_for_bundle(
-        settings=settings,
-        bundle=bundle,
-        output_dir=output_dir,
+    bundles = [
+        _build_email_bundle(
+            settings=settings,
+            site_output_dir=site_output_dir.expanduser().resolve(),
+            anchor_date=anchor_date,
+            granularity=granularity,
+        )
+        for granularity in selected_granularities
+    ]
+
+    preview_root_dir = _preview_root_dir(settings=settings, output_dir=output_dir)
+    results: list[TrendEmailPreviewEntryResult] = []
+    for bundle in bundles:
+        preview_dir = preview_root_dir / _bundle_artifact_dir_name(bundle)
+        html_path, text_path, manifest_path = _write_email_artifacts(
+            artifact_dir=preview_dir,
+            bundle=bundle,
+            settings=settings,
+            provider_outcomes=None,
+            kind="preview",
+            entry_status="succeeded",
+        )
+        results.append(
+            TrendEmailPreviewEntryResult(
+                granularity=bundle.granularity,
+                preview_dir=preview_dir,
+                manifest_path=manifest_path,
+                html_path=html_path,
+                text_path=text_path,
+                content_hash=bundle.content_hash,
+                primary_page_url=bundle.primary_page_url,
+                subject=bundle.subject,
+                trend_doc_id=bundle.trend_doc_id,
+                period_token=bundle.period_token,
+            )
+        )
+    batch_manifest_path = _write_batch_manifest(
+        root_dir=preview_root_dir,
+        payload={
+            "kind": "preview-batch",
+            "renderer_version": EMAIL_RENDERER_VERSION,
+            "status": "succeeded",
+            "instance": _instance_for_bundles(bundles),
+            "results": [_preview_entry_payload(entry) for entry in results],
+        },
     )
-    html_path, text_path, manifest_path = _write_email_artifacts(
-        artifact_dir=preview_dir,
-        bundle=bundle,
-        settings=settings,
-        provider_outcomes=None,
-        kind="preview",
-    )
-    return TrendEmailPreviewResult(
-        preview_dir=preview_dir,
-        manifest_path=manifest_path,
-        html_path=html_path,
-        text_path=text_path,
-        content_hash=bundle.content_hash,
-        primary_page_url=bundle.primary_page_url,
-        subject=bundle.subject,
-        instance=bundle.instance,
-        trend_doc_id=bundle.trend_doc_id,
-        period_token=bundle.period_token,
+    return TrendEmailPreviewBatchResult(
+        status="succeeded",
+        preview_root_dir=preview_root_dir,
+        batch_manifest_path=batch_manifest_path,
+        instance=_instance_for_bundles(bundles),
+        results=results,
     )
 
 
@@ -1010,34 +1169,6 @@ def _delivery_status_maps(
     return current_sent, current_failed
 
 
-def _skipped_send_result(
-    *,
-    settings: Settings,
-    bundle: _TrendEmailBundle,
-) -> TrendEmailSendResult:
-    send_dir = _send_dir_for_bundle(settings=settings, bundle=bundle)
-    html_path, text_path, manifest_path = _write_email_artifacts(
-        artifact_dir=send_dir,
-        bundle=bundle,
-        settings=settings,
-        provider_outcomes=[],
-        kind="send-skipped",
-    )
-    return TrendEmailSendResult(
-        status="skipped",
-        send_dir=send_dir,
-        manifest_path=manifest_path,
-        html_path=html_path,
-        text_path=text_path,
-        content_hash=bundle.content_hash,
-        primary_page_url=bundle.primary_page_url,
-        subject=bundle.subject,
-        instance=bundle.instance,
-        trend_doc_id=bundle.trend_doc_id,
-        period_token=bundle.period_token,
-    )
-
-
 def _email_batch_payloads(
     *,
     settings: Settings,
@@ -1045,9 +1176,7 @@ def _email_batch_payloads(
     destinations: list[str],
 ) -> list[dict[str, object]]:
     if len(destinations) > RESEND_BATCH_MAX_RECIPIENTS:
-        raise ValueError(
-            "EMAIL.to supports at most 100 recipients per Resend batch"
-        )
+        raise ValueError("EMAIL.to supports at most 100 recipients per Resend batch")
     html_body = _render_html_email(bundle=bundle, settings=settings)
     text_body = _render_text_email(bundle)
     return [
@@ -1081,7 +1210,7 @@ def _idempotency_key_for_send(
     )
     if force_batch:
         return f"{key}:force:{_unique_invocation_token()}"
-    if all(current_failed.values()):
+    if current_failed and all(current_failed.values()):
         return f"{key}:retry:{_unique_invocation_token()}"
     return key
 
@@ -1141,51 +1270,14 @@ def _resolved_email_sender(*, settings: Settings, sender: Any | None) -> Any:
     return ResendBatchSender(api_key=settings.resend_api_key.get_secret_value())
 
 
-def _sent_send_result(
-    *,
-    settings: Settings,
-    bundle: _TrendEmailBundle,
-    outcomes: list[dict[str, Any]],
-) -> TrendEmailSendResult:
-    send_dir = _send_dir_for_bundle(settings=settings, bundle=bundle)
-    html_path, text_path, manifest_path = _write_email_artifacts(
-        artifact_dir=send_dir,
-        bundle=bundle,
-        settings=settings,
-        provider_outcomes=outcomes,
-        kind="send",
-    )
-    status = (
-        "failed"
-        if any(str(outcome.get("error") or "").strip() for outcome in outcomes)
-        else "sent"
-    )
-    return TrendEmailSendResult(
-        status=status,
-        send_dir=send_dir,
-        manifest_path=manifest_path,
-        html_path=html_path,
-        text_path=text_path,
-        content_hash=bundle.content_hash,
-        primary_page_url=bundle.primary_page_url,
-        subject=bundle.subject,
-        instance=bundle.instance,
-        trend_doc_id=bundle.trend_doc_id,
-        period_token=bundle.period_token,
-    )
-
-
-def send_trend_email(
+def _preflight_send_bundle(
     *,
     settings: Settings,
     repository: Any,
-    request: TrendEmailSendRequest,
-) -> TrendEmailSendResult:
-    bundle = _build_email_bundle(
-        settings=settings,
-        site_output_dir=request.site_output_dir.expanduser().resolve(),
-        anchor_date=request.anchor_date,
-    )
+    bundle: _TrendEmailBundle,
+    force_batch: bool,
+    url_checker: Callable[[str], bool] | None,
+) -> _PreparedSendBundle:
     email = _normalized_email_config(settings)
     existing_rows = repository.list_trend_deliveries(
         doc_id=bundle.trend_doc_id,
@@ -1197,37 +1289,207 @@ def send_trend_email(
         destinations=list(email.to),
         content_hash=bundle.content_hash,
     )
-    if _batch_send_action(
-        current_sent=current_sent,
-        force_batch=request.force_batch,
-    ) == "skip":
-        return _skipped_send_result(settings=settings, bundle=bundle)
-    _ensure_reachable_public_page(bundle=bundle, url_checker=request.url_checker)
-    emails = _email_batch_payloads(
-        settings=settings,
-        bundle=bundle,
-        destinations=list(email.to),
-    )
-    outcomes = _resolved_email_sender(
-        settings=settings,
-        sender=request.sender,
-    ).send_batch(
-        emails=emails,
-        idempotency_key=_idempotency_key_for_send(
+    try:
+        action = _batch_send_action(
+            current_sent=current_sent,
+            force_batch=force_batch,
+        )
+    except RuntimeError as exc:
+        return _PreparedSendBundle(
+            bundle=bundle,
+            current_failed=current_failed,
+            status="preflight_failed",
+            error=str(exc),
+        )
+    if action == "skip":
+        return _PreparedSendBundle(
+            bundle=bundle,
+            current_failed=current_failed,
+            status="skipped",
+        )
+    try:
+        _email_batch_payloads(
+            settings=settings,
             bundle=bundle,
             destinations=list(email.to),
+        )
+        _ensure_reachable_public_page(bundle=bundle, url_checker=url_checker)
+    except Exception as exc:  # noqa: BLE001
+        return _PreparedSendBundle(
+            bundle=bundle,
             current_failed=current_failed,
-            force_batch=request.force_batch,
-        ),
-    )
-    _persist_send_outcomes(
-        repository=repository,
-        doc_id=bundle.trend_doc_id,
-        content_hash=bundle.content_hash,
-        outcomes=outcomes,
-    )
-    return _sent_send_result(
-        settings=settings,
+            status="preflight_failed",
+            error=str(exc),
+        )
+    return _PreparedSendBundle(
         bundle=bundle,
-        outcomes=outcomes,
+        current_failed=current_failed,
+        status="ready_to_send",
+    )
+
+
+def _send_error_from_outcomes(outcomes: list[dict[str, Any]]) -> str:
+    for outcome in outcomes:
+        error = str(outcome.get("error") or "").strip()
+        if error:
+            return error
+    return "provider send failed"
+
+
+def _write_send_entry_results(
+    *,
+    root_dir: Path,
+    settings: Settings,
+    prepared_bundles: list[_PreparedSendBundle],
+) -> list[TrendEmailSendEntryResult]:
+    results: list[TrendEmailSendEntryResult] = []
+    for prepared in prepared_bundles:
+        entry_dir = root_dir / _bundle_artifact_dir_name(prepared.bundle)
+        html_path, text_path, manifest_path = _write_email_artifacts(
+            artifact_dir=entry_dir,
+            bundle=prepared.bundle,
+            settings=settings,
+            provider_outcomes=prepared.outcomes,
+            kind="send",
+            entry_status=prepared.status,
+            error=prepared.error,
+        )
+        results.append(
+            TrendEmailSendEntryResult(
+                status=prepared.status,
+                granularity=prepared.bundle.granularity,
+                send_dir=entry_dir,
+                manifest_path=manifest_path,
+                html_path=html_path,
+                text_path=text_path,
+                content_hash=prepared.bundle.content_hash,
+                primary_page_url=prepared.bundle.primary_page_url,
+                subject=prepared.bundle.subject,
+                trend_doc_id=prepared.bundle.trend_doc_id,
+                period_token=prepared.bundle.period_token,
+                error=prepared.error,
+            )
+        )
+    return results
+
+
+def send_trend_email(
+    *,
+    settings: Settings,
+    repository: Any,
+    request: TrendEmailSendRequest,
+) -> TrendEmailSendBatchResult:
+    selected_granularities = _resolved_email_granularities(
+        settings=settings,
+        selected_granularities=request.granularities,
+    )
+    bundles = [
+        _build_email_bundle(
+            settings=settings,
+            site_output_dir=request.site_output_dir.expanduser().resolve(),
+            anchor_date=request.anchor_date,
+            granularity=granularity,
+        )
+        for granularity in selected_granularities
+    ]
+    prepared_bundles = [
+        _preflight_send_bundle(
+            settings=settings,
+            repository=repository,
+            bundle=bundle,
+            force_batch=request.force_batch,
+            url_checker=request.url_checker,
+        )
+        for bundle in bundles
+    ]
+
+    send_root_dir = _send_root_dir(settings=settings)
+    if any(prepared.status == "preflight_failed" for prepared in prepared_bundles):
+        results = _write_send_entry_results(
+            root_dir=send_root_dir,
+            settings=settings,
+            prepared_bundles=prepared_bundles,
+        )
+        batch_manifest_path = _write_batch_manifest(
+            root_dir=send_root_dir,
+            payload={
+                "kind": "send-batch",
+                "renderer_version": EMAIL_RENDERER_VERSION,
+                "status": "preflight_failed",
+                "instance": _instance_for_bundles(bundles),
+                "results": [_send_entry_payload(entry) for entry in results],
+            },
+        )
+        return TrendEmailSendBatchResult(
+            status="preflight_failed",
+            send_root_dir=send_root_dir,
+            batch_manifest_path=batch_manifest_path,
+            instance=_instance_for_bundles(bundles),
+            results=results,
+        )
+
+    sender = None
+    if any(prepared.status == "ready_to_send" for prepared in prepared_bundles):
+        sender = _resolved_email_sender(settings=settings, sender=request.sender)
+    email = _normalized_email_config(settings)
+    send_failed = False
+    for index, prepared in enumerate(prepared_bundles):
+        if prepared.status == "skipped":
+            continue
+        if prepared.status != "ready_to_send":
+            continue
+        assert sender is not None
+        emails = _email_batch_payloads(
+            settings=settings,
+            bundle=prepared.bundle,
+            destinations=list(email.to),
+        )
+        outcomes = sender.send_batch(
+            emails=emails,
+            idempotency_key=_idempotency_key_for_send(
+                bundle=prepared.bundle,
+                destinations=list(email.to),
+                current_failed=prepared.current_failed,
+                force_batch=request.force_batch,
+            ),
+        )
+        prepared.outcomes = outcomes
+        _persist_send_outcomes(
+            repository=repository,
+            doc_id=prepared.bundle.trend_doc_id,
+            content_hash=prepared.bundle.content_hash,
+            outcomes=outcomes,
+        )
+        if any(str(outcome.get("error") or "").strip() for outcome in outcomes):
+            prepared.status = "send_failed"
+            prepared.error = _send_error_from_outcomes(outcomes)
+            for later in prepared_bundles[index + 1 :]:
+                if later.status == "ready_to_send":
+                    later.status = "not_attempted"
+            send_failed = True
+            break
+        prepared.status = "sent"
+
+    results = _write_send_entry_results(
+        root_dir=send_root_dir,
+        settings=settings,
+        prepared_bundles=prepared_bundles,
+    )
+    batch_status = "send_failed" if send_failed else "succeeded"
+    batch_manifest_path = _write_batch_manifest(
+        root_dir=send_root_dir,
+        payload={
+            "kind": "send-batch",
+            "renderer_version": EMAIL_RENDERER_VERSION,
+            "status": batch_status,
+            "instance": _instance_for_bundles(bundles),
+            "results": [_send_entry_payload(entry) for entry in results],
+        },
+    )
+    return TrendEmailSendBatchResult(
+        status=batch_status,
+        send_root_dir=send_root_dir,
+        batch_manifest_path=batch_manifest_path,
+        instance=_instance_for_bundles(bundles),
+        results=results,
     )

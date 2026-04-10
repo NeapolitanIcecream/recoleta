@@ -264,6 +264,7 @@ def run_fleet_email_preview_command(**kwargs: Any) -> dict[str, Any]:
             ),
             anchor_date=parsed_anchor,
             output_dir=kwargs.get("output_dir"),
+            granularities=kwargs.get("granularities"),
         )
     except Exception as exc:  # noqa: BLE001
         emit_command_error(
@@ -283,8 +284,8 @@ def run_fleet_email_preview_command(**kwargs: Any) -> dict[str, Any]:
         return payload
     console.print(
         f"[green]{command_name} completed[/green] "
-        f"instance={resolved_instance.name} trend={result.trend_doc_id} "
-        f"period={result.period_token} output={result.preview_dir}"
+        f"instance={resolved_instance.name} bundles={len(result.results)} "
+        f"output={result.preview_root_dir}"
     )
     return payload
 
@@ -318,6 +319,7 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
                 ),
                 anchor_date=parsed_anchor,
                 force_batch=bool(kwargs.get("force_batch", False)),
+                granularities=kwargs.get("granularities"),
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -333,27 +335,26 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
         result=result,
         instance_name=resolved_instance.name,
     )
-    if result.status == "failed":
-        emit_command_error(
-            command_name=command_name,
-            message=(
-                "provider send failed "
-                f"instance={resolved_instance.name} trend={result.trend_doc_id} "
-                f"period={result.period_token} output={result.send_dir}"
-            ),
-            console=console,
-            json_output=json_output,
-            exit_code=1,
-        )
     if json_output:
         cli._emit_json(payload)
+        if result.status in {"preflight_failed", "send_failed"}:
+            raise cli.typer.Exit(code=1)
         return payload
-    color = "yellow" if result.status == "skipped" else "green"
+    all_skipped = bool(result.results) and all(
+        entry.status == "skipped" for entry in result.results
+    )
+    color = (
+        "red"
+        if result.status in {"preflight_failed", "send_failed"}
+        else ("yellow" if all_skipped else "green")
+    )
     console.print(
         f"[{color}]{command_name} {result.status}[/{color}] "
-        f"instance={resolved_instance.name} trend={result.trend_doc_id} "
-        f"period={result.period_token} output={result.send_dir}"
+        f"instance={resolved_instance.name} bundles={len(result.results)} "
+        f"output={result.send_root_dir}"
     )
+    if result.status in {"preflight_failed", "send_failed"}:
+        raise cli.typer.Exit(code=1)
     return payload
 
 
