@@ -258,7 +258,10 @@ def run_fleet_email_preview_command(**kwargs: Any) -> dict[str, Any]:
         settings = load_child_settings(resolved_instance.config_path)
         result = build_trend_email_preview(
             settings=settings,
-            site_output_dir=_fleet_site_output_dir(manifest.manifest_path, None),
+            site_output_dir=_fleet_site_output_dir(
+                manifest.manifest_path,
+                kwargs.get("site_output_dir"),
+            ),
             anchor_date=parsed_anchor,
             output_dir=kwargs.get("output_dir"),
         )
@@ -309,7 +312,10 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
             settings=settings,
             repository=repository,
             request=TrendEmailSendRequest(
-                site_output_dir=_fleet_site_output_dir(manifest.manifest_path, None),
+                site_output_dir=_fleet_site_output_dir(
+                    manifest.manifest_path,
+                    kwargs.get("site_output_dir"),
+                ),
                 anchor_date=parsed_anchor,
                 force_batch=bool(kwargs.get("force_batch", False)),
             ),

@@ -482,6 +482,8 @@ uv run recoleta run email send
 uv run recoleta run email send --date 2026-03-02 --force-batch
 uv run recoleta fleet run email preview --manifest ./fleet/fleet.yaml --instance agents-radar
 uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance agents-radar
+# pass --site-output-dir if the aggregate fleet site was built into a custom location
+uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance agents-radar --site-output-dir ./output/fleet-site
 
 # inspect or repair a workspace
 uv run recoleta inspect health --healthcheck --max-success-age-minutes 180

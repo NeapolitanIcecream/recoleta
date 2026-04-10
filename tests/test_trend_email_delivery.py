@@ -642,6 +642,54 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
     assert ":retry:" in str(sender.calls[3]["idempotency_key"])
 
 
+def test_send_trend_email_changes_non_force_idempotency_key_when_recipient_batch_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        recipients=["alice@example.com", "bob@example.com"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    sender = FakeResendBatchSender()
+
+    first = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
+    )
+    assert first.status == "sent"
+
+    assert settings.email is not None
+    settings.email.to = ["carol@example.com", "dave@example.com"]
+
+    second = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
+    )
+
+    assert second.status == "sent"
+    assert len(sender.calls) == 2
+    assert sender.calls[0]["idempotency_key"] != sender.calls[1]["idempotency_key"]
+    assert ":force:" not in str(sender.calls[1]["idempotency_key"])
+    assert ":retry:" not in str(sender.calls[1]["idempotency_key"])
+
+
 def test_send_trend_email_returns_failed_when_any_recipient_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1035,6 +1083,71 @@ def test_run_fleet_email_send_command_initializes_repository_schema(
     )
 
     assert repository.initialized is True
+
+
+def test_run_fleet_email_send_command_uses_explicit_site_output_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sent_result = SimpleNamespace(
+        status="sent",
+        send_dir=tmp_path / "send",
+        manifest_path=tmp_path / "send" / "manifest.json",
+        html_path=tmp_path / "send" / "body.html",
+        text_path=tmp_path / "send" / "body.txt",
+        primary_page_url="https://public.example/recoleta/trends/example",
+        content_hash="hash-123",
+        subject="[Recoleta][Beta] Day trends · 2026-02-25",
+        instance="Beta",
+        trend_doc_id=123,
+        period_token="2026-02-25",
+    )
+    resolved_instance = SimpleNamespace(name="Beta", config_path=tmp_path / "beta.yaml")
+    manifest = SimpleNamespace(manifest_path=tmp_path / "fleet.yaml")
+    settings = SimpleNamespace(recoleta_db_path=tmp_path / "beta.db")
+    repository = SimpleNamespace(init_schema=lambda: None)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(cli_fleet_module, "load_fleet_manifest", lambda _path: manifest)
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "_resolve_fleet_instance",
+        lambda manifest, value: resolved_instance,
+    )
+    monkeypatch.setattr(cli_fleet_module, "load_child_settings", lambda _path: settings)
+    monkeypatch.setattr(cli_fleet_module, "Repository", lambda db_path: repository)
+
+    def _fake_fleet_site_output_dir(manifest_path: Path, output_dir: Path | None) -> Path:
+        captured["site_output_dir_arg"] = output_dir
+        return Path(output_dir or tmp_path / "site")
+
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "_fleet_site_output_dir",
+        _fake_fleet_site_output_dir,
+    )
+
+    def _fake_send_trend_email(**kwargs: object) -> object:
+        captured["request_site_output_dir"] = getattr(
+            kwargs["request"], "site_output_dir"
+        )
+        return sent_result
+
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "send_trend_email",
+        _fake_send_trend_email,
+    )
+
+    explicit_site_dir = tmp_path / "custom-site"
+    cli_fleet_module.run_fleet_email_send_command(
+        manifest_path=tmp_path / "fleet.yaml",
+        instance="beta",
+        site_output_dir=explicit_site_dir,
+    )
+
+    assert captured["site_output_dir_arg"] == explicit_site_dir
+    assert captured["request_site_output_dir"] == explicit_site_dir
 
 
 def test_fleet_run_email_preview_uses_selected_child_instance(

@@ -1062,13 +1062,23 @@ def _email_batch_payloads(
     ]
 
 
+def _recipient_batch_fingerprint(destinations: list[str]) -> str:
+    payload = json.dumps(destinations, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def _idempotency_key_for_send(
     *,
     bundle: _TrendEmailBundle,
+    destinations: list[str],
     current_failed: dict[str, bool],
     force_batch: bool,
 ) -> str:
-    key = f"trend-email:{bundle.trend_doc_id}:{bundle.content_hash}"
+    recipients_token = _recipient_batch_fingerprint(destinations)
+    key = (
+        f"trend-email:{bundle.trend_doc_id}:{bundle.content_hash}:"
+        f"recipients:{recipients_token}"
+    )
     if force_batch:
         return f"{key}:force:{_unique_invocation_token()}"
     if all(current_failed.values()):
@@ -1205,6 +1215,7 @@ def send_trend_email(
         emails=emails,
         idempotency_key=_idempotency_key_for_send(
             bundle=bundle,
+            destinations=list(email.to),
             current_failed=current_failed,
             force_batch=request.force_batch,
         ),

@@ -196,6 +196,7 @@ uv run recoleta run email send
 uv run recoleta run email send --date 2026-03-02 --force-batch
 uv run recoleta fleet run email preview --manifest /path/to/fleet.yaml --instance agents-radar
 uv run recoleta fleet run email send --manifest /path/to/fleet.yaml --instance agents-radar
+uv run recoleta fleet run email send --manifest /path/to/fleet.yaml --instance agents-radar --site-output-dir /path/to/fleet-site
 ```
 
 What to know:
@@ -209,6 +210,9 @@ What to know:
 - both commands require the private site email link-map artifact written by the
   last site build. With the default site output path this artifact is
   `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.
+- `fleet run email preview|send` accepts `--site-output-dir` when the
+  aggregate fleet site was built into a non-default location via
+  `fleet site build --output-dir ...`.
 - `run email send` also requires `email:` config plus
   `RECOLETA_RESEND_API_KEY`. It refuses to send unless the primary trend page
   under `email.public_site_url` is publicly reachable.

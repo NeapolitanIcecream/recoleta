@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from click import Context
+import click
+from click import Context, get_current_context
 import json
 from pathlib import Path
 from typing import Annotated, Any
@@ -194,6 +195,36 @@ _FLEET_EMAIL_OUTPUT_DIR_OPTION = Annotated[
         help="Optional directory for preview artifacts. Defaults to the child instance preview path.",
     ),
 ]
+
+def _fleet_email_site_output_dir_value() -> Path | None:
+    extra_args = list(get_current_context().args)
+    if not extra_args:
+        return None
+    resolved: Path | None = None
+    index = 0
+    while index < len(extra_args):
+        token = extra_args[index]
+        if token == "--site-output-dir":
+            if index + 1 >= len(extra_args):
+                raise click.BadParameter(
+                    "Option '--site-output-dir' requires a directory value.",
+                    param_hint="--site-output-dir",
+                )
+            resolved = Path(extra_args[index + 1]).expanduser().resolve()
+            index += 2
+            continue
+        if token.startswith("--site-output-dir="):
+            raw_value = token.partition("=")[2]
+            if not raw_value:
+                raise click.BadParameter(
+                    "Option '--site-output-dir' requires a directory value.",
+                    param_hint="--site-output-dir",
+                )
+            resolved = Path(raw_value).expanduser().resolve()
+            index += 1
+            continue
+        raise click.NoSuchOption(token)
+    return resolved
 _FLEET_EMAIL_MANIFEST_OPTION = Annotated[
     Path,
     typer.Option(
@@ -681,7 +712,10 @@ def run_email_send(
     )
 
 
-@fleet_run_email_app.command("preview")
+@fleet_run_email_app.command(
+    "preview",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def fleet_run_email_preview(
     manifest_path: _FLEET_EMAIL_MANIFEST_OPTION,
     instance: _FLEET_EMAIL_INSTANCE_OPTION,
@@ -694,13 +728,17 @@ def fleet_run_email_preview(
         manifest_path=manifest_path,
         instance=instance,
         anchor_date=anchor_date,
+        site_output_dir=_fleet_email_site_output_dir_value(),
         output_dir=output_dir,
         json_output=json_output,
         command_name="fleet run email preview",
     )
 
 
-@fleet_run_email_app.command("send")
+@fleet_run_email_app.command(
+    "send",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def fleet_run_email_send(
     manifest_path: _FLEET_EMAIL_MANIFEST_OPTION,
     instance: _FLEET_EMAIL_INSTANCE_OPTION,
@@ -713,6 +751,7 @@ def fleet_run_email_send(
         manifest_path=manifest_path,
         instance=instance,
         anchor_date=anchor_date,
+        site_output_dir=_fleet_email_site_output_dir_value(),
         force_batch=force_batch,
         json_output=json_output,
         command_name="fleet run email send",

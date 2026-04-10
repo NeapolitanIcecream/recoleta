@@ -612,6 +612,8 @@ The repository now ships this narrow slice:
 7. Dedupe-only send state on top of `TrendDelivery`.
 8. Batch-oriented resend rules with explicit mixed-state refusal.
 9. Site-first CTA and evidence link resolution.
+10. `fleet run email preview|send` support `--site-output-dir` when the
+    aggregate fleet site was built into a custom location.
 
 This is still intentionally narrow, but it is no longer only a proposal. It is
 the current `v1` manual trend email surface in the repository.
