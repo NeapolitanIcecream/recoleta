@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TypedDict
+from unittest.mock import ANY
 
 import pytest
 from typer.testing import CliRunner
@@ -386,6 +387,7 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
     preview = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    retry_sender = FakeResendBatchSender()
 
     assert settings.email is not None
     for destination in settings.email.to:
@@ -403,10 +405,19 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
         settings=settings,
         repository=repository,
         site_output_dir=site_dir,
-        sender=FakeResendBatchSender(),
+        sender=retry_sender,
         url_checker=lambda _url: True,
     )
     assert retry_result.status == "sent"
+    assert retry_sender.calls == [
+        {
+            "emails": ANY,
+            "idempotency_key": ANY,
+        }
+    ]
+    assert retry_sender.calls[0]["idempotency_key"] != (
+        f"trend-email:{trend_doc_id}:{preview.content_hash}"
+    )
 
     repository.upsert_trend_delivery(
         doc_id=trend_doc_id,
@@ -515,6 +526,35 @@ def test_run_email_send_command_exits_non_zero_when_batch_fails(
         cli_email_module.run_email_send_command()
 
     assert exc.value.exit_code == 1
+
+
+def test_settings_email_recipients_are_deduplicated(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv(
+        "EMAIL",
+        json.dumps(
+            {
+                "public_site_url": "https://example.com/recoleta",
+                "from_email": "updates@example.com",
+                "to": [
+                    " alice@example.com ",
+                    "bob@example.com",
+                    "alice@example.com",
+                    "bob@example.com ",
+                ],
+                "granularity": "week",
+            }
+        ),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.email is not None
+    assert settings.email.to == ["alice@example.com", "bob@example.com"]
 
 
 def test_run_fleet_email_send_command_exits_non_zero_when_batch_fails(

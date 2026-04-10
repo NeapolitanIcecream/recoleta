@@ -896,6 +896,14 @@ def send_trend_email(
         )
         for destination in email.to
     }
+    current_failed = {
+        destination: bool(
+            destination in row_by_destination
+            and row_by_destination[destination].status == DELIVERY_STATUS_FAILED
+            and row_by_destination[destination].content_hash == bundle.content_hash
+        )
+        for destination in email.to
+    }
     if all(current_sent.values()) and not force_batch:
         send_dir = _send_dir_for_bundle(settings=settings, bundle=bundle)
         html_path, text_path, manifest_path = _write_email_artifacts(
@@ -942,6 +950,10 @@ def send_trend_email(
     if force_batch:
         idempotency_key = (
             f"{idempotency_key}:force:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+        )
+    elif all(current_failed.values()):
+        idempotency_key = (
+            f"{idempotency_key}:retry:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
         )
     outcomes = resolved_sender.send_batch(
         emails=emails,

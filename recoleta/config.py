@@ -636,7 +636,14 @@ class EmailConfig(BaseModel):
     @field_validator("to", mode="after")
     @classmethod
     def _normalize_recipients(cls, value: list[Any]) -> list[str]:
-        recipients = [str(item).strip() for item in list(value or []) if str(item).strip()]
+        recipients: list[str] = []
+        seen: set[str] = set()
+        for item in list(value or []):
+            normalized = str(item).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            recipients.append(normalized)
         if not recipients:
             raise ValueError("EMAIL.to must contain at least one recipient")
         return recipients
