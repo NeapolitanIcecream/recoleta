@@ -320,6 +320,18 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
         result=result,
         instance_name=resolved_instance.name,
     )
+    if result.status == "failed":
+        emit_command_error(
+            command_name=command_name,
+            message=(
+                "provider send failed "
+                f"instance={resolved_instance.name} trend={result.trend_doc_id} "
+                f"period={result.period_token} output={result.send_dir}"
+            ),
+            console=console,
+            json_output=json_output,
+            exit_code=1,
+        )
     if json_output:
         cli._emit_json(payload)
         return payload

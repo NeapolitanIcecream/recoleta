@@ -969,8 +969,8 @@ def send_trend_email(
         provider_outcomes=outcomes,
         kind="send",
     )
-    all_failed = all(str(outcome.get("error") or "").strip() for outcome in outcomes)
-    status = "failed" if outcomes and all_failed else "sent"
+    has_any_error = any(str(outcome.get("error") or "").strip() for outcome in outcomes)
+    status = "failed" if has_any_error else "sent"
     return TrendEmailSendResult(
         status=status,
         send_dir=send_dir,

@@ -160,6 +160,18 @@ def run_email_send_command(**kwargs: Any) -> dict[str, Any]:
             exit_code=1,
         )
     payload = _send_payload(command_name=command_name, result=result)
+    if result.status == "failed":
+        emit_command_error(
+            command_name=command_name,
+            message=(
+                "provider send failed "
+                f"trend={result.trend_doc_id} period={result.period_token} "
+                f"output={result.send_dir}"
+            ),
+            console=runtime.console,
+            json_output=json_output,
+            exit_code=1,
+        )
     if json_output:
         cli._emit_json(payload)
         return payload

@@ -4,12 +4,15 @@ from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TypedDict
 
 import pytest
 from typer.testing import CliRunner
 
 import recoleta.cli
+import recoleta.cli.email as cli_email_module
+import recoleta.cli.fleet as cli_fleet_module
 from recoleta.config import Settings
 from recoleta.models import (
     DELIVERY_CHANNEL_EMAIL,
@@ -51,6 +54,28 @@ class FakeResendBatchSender:
                 "error": None,
             }
             for idx, email in enumerate(emails)
+        ]
+
+
+class PartialFailureResendBatchSender:
+    def send_batch(
+        self,
+        *,
+        emails: list[dict[str, object]],
+        idempotency_key: str,
+    ) -> list[dict[str, str | None]]:
+        assert idempotency_key
+        return [
+            {
+                "destination": str(emails[0]["to"]),
+                "message_id": "msg-0",
+                "error": None,
+            },
+            {
+                "destination": str(emails[1]["to"]),
+                "message_id": None,
+                "error": "provider failed",
+            },
         ]
 
 
@@ -420,6 +445,129 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
         force_batch=True,
     )
     assert forced.status == "sent"
+
+
+def test_send_trend_email_returns_failed_when_any_recipient_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    trend_doc_id = int(fixture["trend_doc_id"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        site_output_dir=site_dir,
+        sender=PartialFailureResendBatchSender(),
+        url_checker=lambda _url: True,
+    )
+
+    assert result.status == "failed"
+    rows = repository.list_trend_deliveries(
+        doc_id=trend_doc_id,
+        channel=DELIVERY_CHANNEL_EMAIL,
+    )
+    assert len(rows) == 2
+    assert {row.status for row in rows} == {DELIVERY_STATUS_SENT, DELIVERY_STATUS_FAILED}
+
+
+def test_run_email_send_command_exits_non_zero_when_batch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime = SimpleNamespace(
+        settings=object(),
+        repository=object(),
+        console=SimpleNamespace(print=lambda *args, **kwargs: None),
+    )
+    failed_result = SimpleNamespace(
+        status="failed",
+        send_dir=tmp_path / "send",
+        manifest_path=tmp_path / "send" / "manifest.json",
+        html_path=tmp_path / "send" / "body.html",
+        text_path=tmp_path / "send" / "body.txt",
+        primary_page_url="https://public.example/recoleta/trends/example",
+        content_hash="hash-123",
+        subject="[Recoleta] Day trends · 2026-02-25",
+        instance="default",
+        trend_doc_id=123,
+        period_token="2026-02-25",
+    )
+
+    monkeypatch.setattr(cli_email_module, "load_runtime", lambda request: runtime)
+    monkeypatch.setattr(
+        cli_email_module,
+        "site_output_dir_from_settings",
+        lambda _settings: tmp_path / "site",
+    )
+    monkeypatch.setattr(
+        cli_email_module,
+        "send_trend_email",
+        lambda **kwargs: failed_result,
+    )
+
+    with pytest.raises(recoleta.cli.typer.Exit) as exc:
+        cli_email_module.run_email_send_command()
+
+    assert exc.value.exit_code == 1
+
+
+def test_run_fleet_email_send_command_exits_non_zero_when_batch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    failed_result = SimpleNamespace(
+        status="failed",
+        send_dir=tmp_path / "send",
+        manifest_path=tmp_path / "send" / "manifest.json",
+        html_path=tmp_path / "send" / "body.html",
+        text_path=tmp_path / "send" / "body.txt",
+        primary_page_url="https://public.example/recoleta/trends/example",
+        content_hash="hash-123",
+        subject="[Recoleta][Beta] Day trends · 2026-02-25",
+        instance="Beta",
+        trend_doc_id=123,
+        period_token="2026-02-25",
+    )
+    resolved_instance = SimpleNamespace(name="Beta", config_path=tmp_path / "beta.yaml")
+    manifest = SimpleNamespace(manifest_path=tmp_path / "fleet.yaml")
+    settings = SimpleNamespace(recoleta_db_path=tmp_path / "beta.db")
+
+    monkeypatch.setattr(cli_fleet_module, "load_fleet_manifest", lambda _path: manifest)
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "_resolve_fleet_instance",
+        lambda manifest, value: resolved_instance,
+    )
+    monkeypatch.setattr(cli_fleet_module, "load_child_settings", lambda _path: settings)
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "Repository",
+        lambda db_path: SimpleNamespace(db_path=db_path),
+    )
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "_fleet_site_output_dir",
+        lambda manifest_path, _output_dir: tmp_path / "site",
+    )
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "send_trend_email",
+        lambda **kwargs: failed_result,
+    )
+
+    with pytest.raises(recoleta.cli.typer.Exit) as exc:
+        cli_fleet_module.run_fleet_email_send_command(
+            manifest_path=tmp_path / "fleet.yaml",
+            instance="beta",
+        )
+
+    assert exc.value.exit_code == 1
 
 
 def test_fleet_run_email_preview_uses_selected_child_instance(
