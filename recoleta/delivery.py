@@ -246,14 +246,16 @@ class ResendBatchSender:
                 target_index = normalized_index
             error_by_index[target_index] = _normalize_resend_error_message(raw_error)
         outcomes: list[dict[str, str | None]] = []
+        success_index = 0
         for index, email in enumerate(prepared_emails):
             message_id: str | None = None
             error: str | None = None
             if index in error_by_index:
                 error = error_by_index[index]
-            elif index < len(response_data):
+            elif success_index < len(response_data):
                 raw_id = None
-                result = response_data[index]
+                result = response_data[success_index]
+                success_index += 1
                 if isinstance(result, dict):
                     raw_id = result.get("id") or result.get("Id")
                 else:
