@@ -6,6 +6,34 @@ import recoleta.delivery as delivery_module
 from recoleta.delivery import ResendBatchSender
 
 
+def test_resend_batch_sender_requests_permissive_batch_validation(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    response = SimpleNamespace(data=[{"id": "msg-0"}], errors=[])
+
+    class _FakeBatch:
+        @staticmethod
+        def send(emails: object, options: object) -> object:
+            captured["emails"] = emails
+            captured["options"] = options
+            return response
+
+    fake_resend = SimpleNamespace(api_key=None, Batch=_FakeBatch)
+    monkeypatch.setattr(delivery_module, "resend", fake_resend)
+
+    sender = ResendBatchSender(api_key="re_test_secret")
+    sender.send_batch(
+        emails=[{"to": "alice@example.com"}],
+        idempotency_key="trend-email:test",
+    )
+
+    assert captured["options"] == {
+        "idempotency_key": "trend-email:test",
+        "batch_validation": "permissive",
+    }
+
+
 def test_resend_batch_sender_maps_sparse_errors_by_reported_index(
     monkeypatch,
 ) -> None:

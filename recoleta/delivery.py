@@ -280,6 +280,7 @@ class ResendBatchSender:
                         Any,
                         {
                             "idempotency_key": str(idempotency_key),
+                            "batch_validation": "permissive",
                         },
                     ),
                 )
