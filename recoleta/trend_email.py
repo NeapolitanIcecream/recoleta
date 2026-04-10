@@ -425,7 +425,7 @@ def _canonical_bundle_payload(bundle: _TrendEmailBundle, *, settings: Settings) 
         "language_code": bundle.language_code,
         "instance": bundle.instance,
         "title": bundle.title,
-        "overview": bundle.overview_text,
+        "overview_html": bundle.overview_html,
         "topics": bundle.topics,
         "topic_links": bundle.topic_links,
         "primary_page_url": bundle.primary_page_url,
@@ -434,7 +434,7 @@ def _canonical_bundle_payload(bundle: _TrendEmailBundle, *, settings: Settings) 
         "clusters": [
             {
                 "title": cluster.title,
-                "content": cluster.content_text,
+                "content_html": cluster.content_html,
                 "evidence": [
                     {
                         "title": entry.title,
@@ -884,12 +884,6 @@ def send_trend_email(
         site_output_dir=site_output_dir.expanduser().resolve(),
         anchor_date=anchor_date,
     )
-    check_url = url_checker or _default_url_checker
-    if not check_url(bundle.primary_page_url):
-        raise RuntimeError(
-            f"public trend page is not reachable: {bundle.primary_page_url}"
-        )
-
     email = _normalized_email_config(settings)
     existing_rows = repository.list_trend_deliveries(
         doc_id=bundle.trend_doc_id,
@@ -937,6 +931,11 @@ def send_trend_email(
         )
     if any(current_sent.values()) and not all(current_sent.values()) and not force_batch:
         raise RuntimeError("mixed_batch_state")
+    check_url = url_checker or _default_url_checker
+    if not check_url(bundle.primary_page_url):
+        raise RuntimeError(
+            f"public trend page is not reachable: {bundle.primary_page_url}"
+        )
 
     resolved_sender = sender
     if resolved_sender is None:

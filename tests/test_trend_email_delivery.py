@@ -376,6 +376,41 @@ def test_send_trend_email_skips_duplicate_batch_for_unchanged_content(
     assert {row.status for row in rows} == {DELIVERY_STATUS_SENT}
 
 
+def test_send_trend_email_skips_without_requiring_public_url_reachability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    trend_doc_id = int(fixture["trend_doc_id"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    preview = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+
+    assert settings.email is not None
+    for destination in settings.email.to:
+        repository.upsert_trend_delivery(
+            doc_id=trend_doc_id,
+            channel=DELIVERY_CHANNEL_EMAIL,
+            destination=destination,
+            content_hash=preview.content_hash,
+            message_id=f"msg-{destination}",
+            status=DELIVERY_STATUS_SENT,
+            error=None,
+        )
+
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        site_output_dir=site_dir,
+        url_checker=lambda _url: False,
+    )
+
+    assert result.status == "skipped"
+
+
 def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -631,6 +666,40 @@ def test_preview_content_hash_is_stable_across_workspace_paths(
     )
 
     assert preview_one.content_hash == preview_two.content_hash
+
+
+def test_preview_content_hash_changes_when_rewritten_internal_link_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    item_note_path = Path(fixture["item_note_path"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    preview_one = build_trend_email_preview(
+        settings=settings,
+        site_output_dir=site_dir,
+    )
+
+    artifact_path = email_links_artifact_path(site_output_dir=site_dir)
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    payload["pages_by_source_markdown"][str(item_note_path.resolve())] = (
+        "items/alternate-grounded-runtime-checks/index.html"
+    )
+    artifact_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    preview_two = build_trend_email_preview(
+        settings=settings,
+        site_output_dir=site_dir,
+    )
+
+    assert preview_one.content_hash != preview_two.content_hash
 
 
 def test_send_dir_for_bundle_is_unique_even_with_same_timestamp(
