@@ -203,11 +203,21 @@ _FLEET_EMAIL_OUTPUT_DIR_OPTION = Annotated[
     ),
 ]
 
-def _fleet_email_site_output_dir_value() -> Path | None:
+
+class _FleetEmailExtraOptions:
+    def __init__(
+        self, *, site_output_dir: Path | None = None, json_output: bool = False
+    ) -> None:
+        self.site_output_dir = site_output_dir
+        self.json_output = json_output
+
+
+def _fleet_email_extra_options() -> _FleetEmailExtraOptions:
     extra_args = list(get_current_context().args)
     if not extra_args:
-        return None
+        return _FleetEmailExtraOptions()
     resolved: Path | None = None
+    json_output = False
     index = 0
     while index < len(extra_args):
         token = extra_args[index]
@@ -230,8 +240,14 @@ def _fleet_email_site_output_dir_value() -> Path | None:
             resolved = Path(raw_value).expanduser().resolve()
             index += 1
             continue
+        if token == "--json":
+            json_output = True
+            index += 1
+            continue
         raise click.NoSuchOption(token)
-    return resolved
+    return _FleetEmailExtraOptions(site_output_dir=resolved, json_output=json_output)
+
+
 _FLEET_EMAIL_MANIFEST_OPTION = Annotated[
     Path,
     typer.Option(
@@ -733,17 +749,17 @@ def fleet_run_email_preview(
     anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
     granularities: _EMAIL_GRANULARITIES_OPTION = None,
     output_dir: _FLEET_EMAIL_OUTPUT_DIR_OPTION = None,
-    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
 ) -> None:
     """Render manual trend email preview batches for one child instance."""
+    extra_options = _fleet_email_extra_options()
     run_fleet_email_preview_command(
         manifest_path=manifest_path,
         instance=instance,
         anchor_date=anchor_date,
         granularities=granularities or [],
-        site_output_dir=_fleet_email_site_output_dir_value(),
+        site_output_dir=extra_options.site_output_dir,
         output_dir=output_dir,
-        json_output=json_output,
+        json_output=extra_options.json_output,
         command_name="fleet run email preview",
     )
 
@@ -758,17 +774,17 @@ def fleet_run_email_send(
     anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
     granularities: _EMAIL_GRANULARITIES_OPTION = None,
     force_batch: _EMAIL_FORCE_BATCH_OPTION = False,
-    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
 ) -> None:
     """Send manual trend email batches for one child instance."""
+    extra_options = _fleet_email_extra_options()
     run_fleet_email_send_command(
         manifest_path=manifest_path,
         instance=instance,
         anchor_date=anchor_date,
         granularities=granularities or [],
-        site_output_dir=_fleet_email_site_output_dir_value(),
+        site_output_dir=extra_options.site_output_dir,
         force_batch=force_batch,
-        json_output=json_output,
+        json_output=extra_options.json_output,
         command_name="fleet run email send",
     )
 

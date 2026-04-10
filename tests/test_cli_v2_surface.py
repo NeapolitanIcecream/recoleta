@@ -155,6 +155,25 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             },
         ),
         (
+            [
+                "fleet",
+                "run",
+                "email",
+                "preview",
+                "--manifest",
+                "/tmp/fleet.yaml",
+                "--instance",
+                "beta",
+                "--json",
+            ],
+            "run_fleet_email_preview_command",
+            {
+                "command_name": "fleet run email preview",
+                "json_output": True,
+                "granularities": [],
+            },
+        ),
+        (
             ["fleet", "run", "email", "send", "--manifest", "/tmp/fleet.yaml", "--instance", "beta"],
             "run_fleet_email_send_command",
             {
@@ -203,6 +222,25 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             {
                 "command_name": "fleet run email send",
                 "granularities": ["week", "month"],
+            },
+        ),
+        (
+            [
+                "fleet",
+                "run",
+                "email",
+                "send",
+                "--manifest",
+                "/tmp/fleet.yaml",
+                "--instance",
+                "beta",
+                "--json",
+            ],
+            "run_fleet_email_send_command",
+            {
+                "command_name": "fleet run email send",
+                "json_output": True,
+                "granularities": [],
             },
         ),
         (

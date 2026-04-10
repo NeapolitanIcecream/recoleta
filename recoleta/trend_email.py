@@ -161,6 +161,24 @@ class _PreparedSendBundle:
     outcomes: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass(frozen=True, slots=True)
+class _SendPreflightContext:
+    settings: Settings
+    repository: Any
+    destinations: list[str]
+    force_batch: bool
+    url_checker: Callable[[str], bool] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _EmailArtifactWriteRequest:
+    settings: Settings
+    kind: str
+    entry_status: str | None
+    provider_outcomes: list[dict[str, Any]] | None
+    error: str | None = None
+
+
 def _normalized_email_config(settings: Settings) -> Any:
     email = settings.email
     if email is None:
@@ -962,24 +980,20 @@ def _write_email_artifacts(
     *,
     artifact_dir: Path,
     bundle: _TrendEmailBundle,
-    settings: Settings,
-    provider_outcomes: list[dict[str, Any]] | None,
-    kind: str,
-    entry_status: str | None,
-    error: str | None = None,
+    request: _EmailArtifactWriteRequest,
 ) -> tuple[Path, Path, Path]:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     html_path = artifact_dir / "body.html"
     text_path = artifact_dir / "body.txt"
     manifest_path = artifact_dir / "manifest.json"
-    html_body = _render_html_email(bundle=bundle, settings=settings)
+    html_body = _render_html_email(bundle=bundle, settings=request.settings)
     text_body = _render_text_email(bundle)
     html_path.write_text(html_body, encoding="utf-8")
     text_path.write_text(text_body, encoding="utf-8")
     manifest_payload: dict[str, Any] = {
-        "kind": kind,
+        "kind": request.kind,
         "renderer_version": EMAIL_RENDERER_VERSION,
-        "entry_status": entry_status,
+        "entry_status": request.entry_status,
         "trend_doc_id": bundle.trend_doc_id,
         "instance": bundle.instance,
         "granularity": bundle.granularity,
@@ -988,11 +1002,11 @@ def _write_email_artifacts(
         "content_hash": bundle.content_hash,
         "subject": bundle.subject,
         "source_markdown_path": str(bundle.source_markdown_path),
-        "recipients": list(_normalized_email_config(settings).to),
-        "provider_outcomes": provider_outcomes or [],
+        "recipients": list(_normalized_email_config(request.settings).to),
+        "provider_outcomes": request.provider_outcomes or [],
     }
-    if error is not None:
-        manifest_payload["error"] = error
+    if request.error is not None:
+        manifest_payload["error"] = request.error
     manifest_path.write_text(
         json.dumps(
             manifest_payload,
@@ -1091,10 +1105,12 @@ def build_trend_email_preview(
         html_path, text_path, manifest_path = _write_email_artifacts(
             artifact_dir=preview_dir,
             bundle=bundle,
-            settings=settings,
-            provider_outcomes=None,
-            kind="preview",
-            entry_status="succeeded",
+            request=_EmailArtifactWriteRequest(
+                settings=settings,
+                kind="preview",
+                entry_status="succeeded",
+                provider_outcomes=None,
+            ),
         )
         results.append(
             TrendEmailPreviewEntryResult(
@@ -1279,27 +1295,23 @@ def _resolved_email_sender(*, settings: Settings, sender: Any | None) -> Any:
 
 def _preflight_send_bundle(
     *,
-    settings: Settings,
-    repository: Any,
+    context: _SendPreflightContext,
     bundle: _TrendEmailBundle,
-    force_batch: bool,
-    url_checker: Callable[[str], bool] | None,
 ) -> _PreparedSendBundle:
-    email = _normalized_email_config(settings)
-    existing_rows = repository.list_trend_deliveries(
+    existing_rows = context.repository.list_trend_deliveries(
         doc_id=bundle.trend_doc_id,
         channel=DELIVERY_CHANNEL_EMAIL,
-        destinations=list(email.to),
+        destinations=context.destinations,
     )
     current_sent, current_failed = _delivery_status_maps(
         existing_rows=existing_rows,
-        destinations=list(email.to),
+        destinations=context.destinations,
         content_hash=bundle.content_hash,
     )
     try:
         action = _batch_send_action(
             current_sent=current_sent,
-            force_batch=force_batch,
+            force_batch=context.force_batch,
         )
     except RuntimeError as exc:
         return _PreparedSendBundle(
@@ -1318,11 +1330,11 @@ def _preflight_send_bundle(
         )
     try:
         _email_batch_payloads(
-            settings=settings,
+            settings=context.settings,
             bundle=bundle,
-            destinations=list(email.to),
+            destinations=context.destinations,
         )
-        _ensure_reachable_public_page(bundle=bundle, url_checker=url_checker)
+        _ensure_reachable_public_page(bundle=bundle, url_checker=context.url_checker)
     except Exception as exc:  # noqa: BLE001
         return _PreparedSendBundle(
             granularity=bundle.granularity,
@@ -1341,14 +1353,13 @@ def _preflight_send_bundle(
 
 def _resolve_send_bundle(
     *,
-    settings: Settings,
-    repository: Any,
+    context: _SendPreflightContext,
     request: TrendEmailSendRequest,
     granularity: str,
 ) -> _PreparedSendBundle:
     try:
         bundle = _build_email_bundle(
-            settings=settings,
+            settings=context.settings,
             site_output_dir=request.site_output_dir.expanduser().resolve(),
             anchor_date=request.anchor_date,
             granularity=granularity,
@@ -1361,11 +1372,8 @@ def _resolve_send_bundle(
             error=str(exc),
         )
     return _preflight_send_bundle(
-        settings=settings,
-        repository=repository,
+        context=context,
         bundle=bundle,
-        force_batch=request.force_batch,
-        url_checker=request.url_checker,
     )
 
 
@@ -1407,11 +1415,13 @@ def _write_send_entry_results(
         html_path, text_path, manifest_path = _write_email_artifacts(
             artifact_dir=entry_dir,
             bundle=prepared.bundle,
-            settings=settings,
-            provider_outcomes=prepared.outcomes,
-            kind="send",
-            entry_status=prepared.status,
-            error=prepared.error,
+            request=_EmailArtifactWriteRequest(
+                settings=settings,
+                kind="send",
+                entry_status=prepared.status,
+                provider_outcomes=prepared.outcomes,
+                error=prepared.error,
+            ),
         )
         results.append(
             TrendEmailSendEntryResult(
@@ -1432,64 +1442,50 @@ def _write_send_entry_results(
     return results
 
 
-def send_trend_email(
+def _send_batch_result(
+    *,
+    status: str,
+    settings: Settings,
+    send_root_dir: Path,
+    bundles: list[_TrendEmailBundle],
+    prepared_bundles: list[_PreparedSendBundle],
+) -> TrendEmailSendBatchResult:
+    results = _write_send_entry_results(
+        root_dir=send_root_dir,
+        settings=settings,
+        prepared_bundles=prepared_bundles,
+    )
+    batch_manifest_path = _write_batch_manifest(
+        root_dir=send_root_dir,
+        payload={
+            "kind": "send-batch",
+            "renderer_version": EMAIL_RENDERER_VERSION,
+            "status": status,
+            "instance": _instance_for_bundles(bundles),
+            "results": [_send_entry_payload(entry) for entry in results],
+        },
+    )
+    return TrendEmailSendBatchResult(
+        status=status,
+        send_root_dir=send_root_dir,
+        batch_manifest_path=batch_manifest_path,
+        instance=_instance_for_bundles(bundles),
+        results=results,
+    )
+
+
+def _execute_send_batch(
     *,
     settings: Settings,
     repository: Any,
     request: TrendEmailSendRequest,
-) -> TrendEmailSendBatchResult:
-    selected_granularities = _resolved_email_granularities(
-        settings=settings,
-        selected_granularities=request.granularities,
-    )
-    prepared_bundles = [
-        _resolve_send_bundle(
-            settings=settings,
-            repository=repository,
-            request=request,
-            granularity=granularity,
-        )
-        for granularity in selected_granularities
-    ]
-    bundles = [
-        prepared.bundle
-        for prepared in prepared_bundles
-        if prepared.bundle is not None
-    ]
-
-    send_root_dir = _send_root_dir(settings=settings)
-    if any(prepared.status == "preflight_failed" for prepared in prepared_bundles):
-        results = _write_send_entry_results(
-            root_dir=send_root_dir,
-            settings=settings,
-            prepared_bundles=prepared_bundles,
-        )
-        batch_manifest_path = _write_batch_manifest(
-            root_dir=send_root_dir,
-            payload={
-                "kind": "send-batch",
-                "renderer_version": EMAIL_RENDERER_VERSION,
-                "status": "preflight_failed",
-                "instance": _instance_for_bundles(bundles),
-                "results": [_send_entry_payload(entry) for entry in results],
-            },
-        )
-        return TrendEmailSendBatchResult(
-            status="preflight_failed",
-            send_root_dir=send_root_dir,
-            batch_manifest_path=batch_manifest_path,
-            instance=_instance_for_bundles(bundles),
-            results=results,
-        )
-
+    prepared_bundles: list[_PreparedSendBundle],
+) -> bool:
     sender = None
     if any(prepared.status == "ready_to_send" for prepared in prepared_bundles):
         sender = _resolved_email_sender(settings=settings, sender=request.sender)
     email = _normalized_email_config(settings)
-    send_failed = False
     for index, prepared in enumerate(prepared_bundles):
-        if prepared.status == "skipped":
-            continue
         if prepared.status != "ready_to_send":
             continue
         assert prepared.bundle is not None
@@ -1521,30 +1517,62 @@ def send_trend_email(
             for later in prepared_bundles[index + 1 :]:
                 if later.status == "ready_to_send":
                     later.status = "not_attempted"
-            send_failed = True
-            break
+            return True
         prepared.status = "sent"
+    return False
 
-    results = _write_send_entry_results(
-        root_dir=send_root_dir,
+
+def send_trend_email(
+    *,
+    settings: Settings,
+    repository: Any,
+    request: TrendEmailSendRequest,
+) -> TrendEmailSendBatchResult:
+    selected_granularities = _resolved_email_granularities(
         settings=settings,
+        selected_granularities=request.granularities,
+    )
+    email = _normalized_email_config(settings)
+    context = _SendPreflightContext(
+        settings=settings,
+        repository=repository,
+        destinations=list(email.to),
+        force_batch=request.force_batch,
+        url_checker=request.url_checker,
+    )
+    prepared_bundles = [
+        _resolve_send_bundle(
+            context=context,
+            request=request,
+            granularity=granularity,
+        )
+        for granularity in selected_granularities
+    ]
+    bundles = [
+        prepared.bundle
+        for prepared in prepared_bundles
+        if prepared.bundle is not None
+    ]
+
+    send_root_dir = _send_root_dir(settings=settings)
+    if any(prepared.status == "preflight_failed" for prepared in prepared_bundles):
+        return _send_batch_result(
+            status="preflight_failed",
+            settings=settings,
+            send_root_dir=send_root_dir,
+            bundles=bundles,
+            prepared_bundles=prepared_bundles,
+        )
+    send_failed = _execute_send_batch(
+        settings=settings,
+        repository=repository,
+        request=request,
         prepared_bundles=prepared_bundles,
     )
-    batch_status = "send_failed" if send_failed else "succeeded"
-    batch_manifest_path = _write_batch_manifest(
-        root_dir=send_root_dir,
-        payload={
-            "kind": "send-batch",
-            "renderer_version": EMAIL_RENDERER_VERSION,
-            "status": batch_status,
-            "instance": _instance_for_bundles(bundles),
-            "results": [_send_entry_payload(entry) for entry in results],
-        },
-    )
-    return TrendEmailSendBatchResult(
-        status=batch_status,
+    return _send_batch_result(
+        status="send_failed" if send_failed else "succeeded",
+        settings=settings,
         send_root_dir=send_root_dir,
-        batch_manifest_path=batch_manifest_path,
-        instance=_instance_for_bundles(bundles),
-        results=results,
+        bundles=bundles,
+        prepared_bundles=prepared_bundles,
     )
