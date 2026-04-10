@@ -246,6 +246,9 @@ class PipelineService:
         llm_api_key = getattr(settings, "llm_api_key", None)
         if llm_api_key is not None:
             scrub_candidates.append(llm_api_key.get_secret_value())
+        resend_api_key = getattr(settings, "resend_api_key", None)
+        if resend_api_key is not None:
+            scrub_candidates.append(resend_api_key.get_secret_value())
         scrub_candidates.extend(collect_environment_secrets())
         self._scrub_secrets = tuple(dict.fromkeys(scrub_candidates))
         self._llm_connection = llm_connection_from_settings(settings)

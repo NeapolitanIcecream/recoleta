@@ -464,6 +464,66 @@ def test_settings_rejects_recoleta_llm_api_key_in_config_file(
         Settings()  # pyright: ignore[reportCallIssue]
 
 
+def test_settings_rejects_recoleta_resend_api_key_in_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                'RECOLETA_RESEND_API_KEY: "do-not-allow"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    with pytest.raises(
+        ValueError, match="Secrets must come from environment variables only"
+    ):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_loads_email_config_and_scrubs_resend_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv(
+        "EMAIL",
+        json.dumps(
+            {
+                "public_site_url": "https://example.com/recoleta",
+                "from_email": "updates@example.com",
+                "to": ["alice@example.com", "bob@example.com"],
+                "granularity": "week",
+                "max_clusters": 4,
+                "max_evidence_per_cluster": 3,
+            }
+        ),
+    )
+    monkeypatch.setenv("RECOLETA_RESEND_API_KEY", "re_test_secret")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.email is not None
+    assert settings.email.public_site_url == "https://example.com/recoleta"
+    assert settings.email.from_name == "Recoleta"
+    assert settings.email.from_email == "updates@example.com"
+    assert settings.email.to == ["alice@example.com", "bob@example.com"]
+    assert settings.email.granularity == "week"
+    assert settings.email.max_clusters == 4
+    assert settings.email.max_evidence_per_cluster == 3
+    assert settings.resend_api_key is not None
+    assert settings.resend_api_key.get_secret_value() == "re_test_secret"
+    assert settings.safe_model_dump()["resend_api_key"] == "***"
+    assert "re_test_secret" not in settings.safe_fingerprint()
+
+
 def test_settings_requires_artifacts_dir_when_debug_artifacts_enabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

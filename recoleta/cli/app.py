@@ -71,18 +71,51 @@ def run_fleet_site_serve_command(**kwargs: Any) -> Any:
     return impl(**kwargs)
 
 
+def run_email_preview_command(**kwargs: Any) -> Any:
+    from recoleta.cli.email import run_email_preview_command as impl
+
+    return impl(**kwargs)
+
+
+def run_email_send_command(**kwargs: Any) -> Any:
+    from recoleta.cli.email import run_email_send_command as impl
+
+    return impl(**kwargs)
+
+
+def run_fleet_email_preview_command(**kwargs: Any) -> Any:
+    from recoleta.cli.fleet import run_fleet_email_preview_command as impl
+
+    return impl(**kwargs)
+
+
+def run_fleet_email_send_command(**kwargs: Any) -> Any:
+    from recoleta.cli.fleet import run_fleet_email_send_command as impl
+
+    return impl(**kwargs)
+
+
 app = typer.Typer(help="Recoleta workflow-first CLI.", no_args_is_help=True)
 
 run_app = typer.Typer(help="Workflow entrypoints.", no_args_is_help=True)
 run_site_app = typer.Typer(help="Common site workflows.", no_args_is_help=True)
+run_email_app = typer.Typer(
+    help="Manual trend email workflows.", no_args_is_help=True
+)
 run_app.add_typer(run_site_app, name="site")
+run_app.add_typer(run_email_app, name="email")
 app.add_typer(run_app, name="run")
 
 fleet_app = typer.Typer(help="Fleet orchestration workflows.", no_args_is_help=True)
 fleet_run_app = typer.Typer(help="Fleet workflow entrypoints.", no_args_is_help=True)
 fleet_site_app = typer.Typer(help="Fleet site workflows.", no_args_is_help=True)
+fleet_run_email_app = typer.Typer(
+    help="Fleet manual trend email workflows.",
+    no_args_is_help=True,
+)
 fleet_app.add_typer(fleet_run_app, name="run")
 fleet_app.add_typer(fleet_site_app, name="site")
+fleet_run_app.add_typer(fleet_run_email_app, name="email")
 app.add_typer(fleet_app, name="fleet")
 
 daemon_app = typer.Typer(help="Background workflow scheduling.", no_args_is_help=True)
@@ -557,6 +590,138 @@ def fleet_run_deploy(
         force=force,
         item_export_scope=item_export_scope,
         json_output=json_output,
+    )
+
+
+@run_email_app.command("preview")
+def run_email_preview(
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC date (YYYY-MM-DD or YYYYMMDD). Uses the matching day/week/month window for EMAIL.granularity.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Optional directory for preview artifacts. Defaults to MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Render a manual trend email preview from the latest matching trend note."""
+    run_email_preview_command(
+        anchor_date=anchor_date,
+        output_dir=output_dir,
+        json_output=json_output,
+        command_name="run email preview",
+    )
+
+
+@run_email_app.command("send")
+def run_email_send(
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC date (YYYY-MM-DD or YYYYMMDD). Uses the matching day/week/month window for EMAIL.granularity.",
+    ),
+    force_batch: bool = typer.Option(
+        False,
+        "--force-batch",
+        help="Force a full resend even when the current content hash was already sent or the batch is in a mixed state.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Send the manual trend email batch via Resend."""
+    run_email_send_command(
+        anchor_date=anchor_date,
+        force_batch=force_batch,
+        json_output=json_output,
+        command_name="run email send",
+    )
+
+
+@fleet_run_email_app.command("preview")
+def fleet_run_email_preview(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    instance: str = typer.Option(
+        ...,
+        "--instance",
+        help="Child instance name or public slug to preview.",
+    ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC date (YYYY-MM-DD or YYYYMMDD). Uses the matching day/week/month window for EMAIL.granularity.",
+    ),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Optional directory for preview artifacts. Defaults to the child instance preview path.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Render a manual trend email preview for one child instance."""
+    run_fleet_email_preview_command(
+        manifest_path=manifest_path,
+        instance=instance,
+        anchor_date=anchor_date,
+        output_dir=output_dir,
+        json_output=json_output,
+        command_name="fleet run email preview",
+    )
+
+
+@fleet_run_email_app.command("send")
+def fleet_run_email_send(
+    manifest_path: Path = typer.Option(
+        ...,
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+    instance: str = typer.Option(
+        ...,
+        "--instance",
+        help="Child instance name or public slug to send.",
+    ),
+    anchor_date: str | None = typer.Option(
+        None,
+        "--date",
+        help="Target UTC date (YYYY-MM-DD or YYYYMMDD). Uses the matching day/week/month window for EMAIL.granularity.",
+    ),
+    force_batch: bool = typer.Option(
+        False,
+        "--force-batch",
+        help="Force a full resend even when the current content hash was already sent or the batch is in a mixed state.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Send the manual trend email batch for one child instance."""
+    run_fleet_email_send_command(
+        manifest_path=manifest_path,
+        instance=instance,
+        anchor_date=anchor_date,
+        force_batch=force_batch,
+        json_output=json_output,
+        command_name="fleet run email send",
     )
 
 

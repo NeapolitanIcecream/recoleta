@@ -189,6 +189,24 @@ class DeliveryStoreMixin:
             )
             return session.exec(statement).first() is not None
 
+    def list_trend_deliveries(
+        self,
+        *,
+        doc_id: int,
+        channel: str,
+        destinations: list[str] | None = None,
+    ) -> list[TrendDelivery]:
+        with Session(self.engine) as session:
+            statement = select(TrendDelivery).where(
+                TrendDelivery.doc_id == doc_id,
+                TrendDelivery.channel == channel,
+            )
+            if destinations:
+                statement = statement.where(
+                    cast(Any, TrendDelivery.destination).in_(list(destinations))
+                )
+            return list(session.exec(statement).all())
+
     def upsert_trend_delivery(
         self,
         request: _TrendDeliveryUpsertRequest | None = None,

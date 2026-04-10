@@ -5,6 +5,12 @@ from pathlib import Path
 from typing import Any
 
 import recoleta.cli as cli
+from recoleta.cli.command_support import emit_command_error
+from recoleta.cli.email import (
+    _parse_anchor_or_exit,
+    _preview_payload,
+    _send_payload,
+)
 from recoleta.cli.materialize import run_materialize_outputs_command
 from recoleta.cli.site_support import (
     FleetSitePayloadContext,
@@ -24,11 +30,14 @@ from recoleta.cli.workflows import (
     execute_granularity_workflow,
 )
 from recoleta.fleet import (
+    _fleet_instance_slug,
     child_default_language_code,
     child_site_input_dir,
     load_child_settings,
     load_fleet_manifest,
 )
+from recoleta.storage import Repository
+from recoleta.trend_email import build_trend_email_preview, send_trend_email
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +122,17 @@ def _fleet_site_output_dir(manifest_path: Path, output_dir: Path | None) -> Path
         output_dir=output_dir,
         load_fleet_manifest=load_fleet_manifest,
     )
+
+
+def _resolve_fleet_instance(*, manifest: Any, value: str) -> Any:
+    normalized = str(value or "").strip()
+    if not normalized:
+        raise ValueError("--instance is required")
+    normalized_slug = _fleet_instance_slug(normalized)
+    for instance in manifest.instances:
+        if instance.name == normalized or _fleet_instance_slug(instance.name) == normalized_slug:
+            return instance
+    raise ValueError(f"unknown fleet instance: {normalized}")
 
 
 def run_fleet_site_build_command(**kwargs: Any) -> dict[str, Any]:
@@ -213,6 +233,103 @@ def run_fleet_site_serve_command(**kwargs: Any) -> None:
         command_name=request.command_name,
         build_command_name=request.build_command_name,
     )
+
+
+def run_fleet_email_preview_command(**kwargs: Any) -> dict[str, Any]:
+    json_output = bool(kwargs.get("json_output", False))
+    command_name = str(kwargs.get("command_name", "fleet run email preview"))
+    console = cli._runtime_symbols()["Console"]()
+    parsed_anchor = _parse_anchor_or_exit(
+        anchor_date=kwargs.get("anchor_date"),
+        command_name=command_name,
+        console=console,
+        json_output=json_output,
+    )
+    try:
+        manifest = load_fleet_manifest(Path(kwargs["manifest_path"]))
+        resolved_instance = _resolve_fleet_instance(
+            manifest=manifest,
+            value=str(kwargs.get("instance") or ""),
+        )
+        settings = load_child_settings(resolved_instance.config_path)
+        result = build_trend_email_preview(
+            settings=settings,
+            site_output_dir=_fleet_site_output_dir(manifest.manifest_path, None),
+            anchor_date=parsed_anchor,
+            output_dir=kwargs.get("output_dir"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        emit_command_error(
+            command_name=command_name,
+            message=str(exc),
+            console=console,
+            json_output=json_output,
+            exit_code=1,
+        )
+    payload = _preview_payload(
+        command_name=command_name,
+        result=result,
+        instance_name=resolved_instance.name,
+    )
+    if json_output:
+        cli._emit_json(payload)
+        return payload
+    console.print(
+        f"[green]{command_name} completed[/green] "
+        f"instance={resolved_instance.name} trend={result.trend_doc_id} "
+        f"period={result.period_token} output={result.preview_dir}"
+    )
+    return payload
+
+
+def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
+    json_output = bool(kwargs.get("json_output", False))
+    command_name = str(kwargs.get("command_name", "fleet run email send"))
+    console = cli._runtime_symbols()["Console"]()
+    parsed_anchor = _parse_anchor_or_exit(
+        anchor_date=kwargs.get("anchor_date"),
+        command_name=command_name,
+        console=console,
+        json_output=json_output,
+    )
+    try:
+        manifest = load_fleet_manifest(Path(kwargs["manifest_path"]))
+        resolved_instance = _resolve_fleet_instance(
+            manifest=manifest,
+            value=str(kwargs.get("instance") or ""),
+        )
+        settings = load_child_settings(resolved_instance.config_path)
+        repository = Repository(db_path=Path(settings.recoleta_db_path))
+        result = send_trend_email(
+            settings=settings,
+            repository=repository,
+            site_output_dir=_fleet_site_output_dir(manifest.manifest_path, None),
+            anchor_date=parsed_anchor,
+            force_batch=bool(kwargs.get("force_batch", False)),
+        )
+    except Exception as exc:  # noqa: BLE001
+        emit_command_error(
+            command_name=command_name,
+            message=str(exc),
+            console=console,
+            json_output=json_output,
+            exit_code=1,
+        )
+    payload = _send_payload(
+        command_name=command_name,
+        result=result,
+        instance_name=resolved_instance.name,
+    )
+    if json_output:
+        cli._emit_json(payload)
+        return payload
+    color = "yellow" if result.status == "skipped" else "green"
+    console.print(
+        f"[{color}]{command_name} {result.status}[/{color}] "
+        f"instance={resolved_instance.name} trend={result.trend_doc_id} "
+        f"period={result.period_token} output={result.send_dir}"
+    )
+    return payload
 
 
 def execute_fleet_granularity_workflow(

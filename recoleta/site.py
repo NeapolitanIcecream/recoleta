@@ -67,6 +67,10 @@ from recoleta.site_models import (
     TrendSiteInputSpec,
     TrendSiteSourceDocument,
 )
+from recoleta.site_email_links import (
+    load_email_links_artifact,
+    write_email_links_artifact,
+)
 from recoleta.site_pages import (
     SingleLanguageSiteExportDeps,
     SingleLanguageSiteExportRequest,
@@ -3981,6 +3985,42 @@ def export_trend_static_site(
     aggregate_manifest["language_codes"] = language_code_by_slug
     aggregate_manifest["default_language_code"] = normalized_default_language_slug
     aggregate_manifest["output_dir"] = str(resolved_output_dir)
+
+    pages_by_source_markdown: dict[str, str | Path] = {}
+    topic_pages_by_slug: dict[str, str | Path] = {}
+    topic_pages_by_language: dict[str, dict[str, str | Path]] = {}
+    for language_slug in sorted(language_code_by_slug):
+        child_artifact_path = resolved_output_dir / f".{language_slug}-email-links.json"
+        child_links = load_email_links_artifact(
+            artifact_path=child_artifact_path
+        )
+        child_pages = child_links.get("pages_by_source_markdown") or {}
+        if isinstance(child_pages, dict):
+            pages_by_source_markdown.update(
+                {
+                    str(source_markdown): f"{language_slug}/{str(relative_path).lstrip('./')}"
+                    for source_markdown, relative_path in child_pages.items()
+                }
+            )
+        child_topic_pages = child_links.get("topic_pages_by_slug") or {}
+        if isinstance(child_topic_pages, dict):
+            namespaced_topic_pages: dict[str, str | Path] = {
+                str(slug): f"{language_slug}/{str(relative_path).lstrip('./')}"
+                for slug, relative_path in child_topic_pages.items()
+            }
+            topic_pages_by_language[language_slug] = namespaced_topic_pages
+            if language_slug == normalized_default_language_slug:
+                topic_pages_by_slug.update(namespaced_topic_pages)
+        try:
+            child_artifact_path.unlink()
+        except FileNotFoundError:
+            pass
+    write_email_links_artifact(
+        site_output_dir=resolved_output_dir,
+        pages_by_source_markdown=pages_by_source_markdown,
+        topic_pages_by_slug=topic_pages_by_slug,
+        topic_pages_by_language=topic_pages_by_language,
+    )
 
     manifest_path = resolved_output_dir / "manifest.json"
     manifest_path.write_text(
