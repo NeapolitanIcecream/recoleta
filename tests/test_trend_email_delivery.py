@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 import recoleta.cli
 import recoleta.cli.email as cli_email_module
 import recoleta.cli.fleet as cli_fleet_module
+import recoleta.trend_email as trend_email_module
 from recoleta.config import Settings
 from recoleta.models import (
     DELIVERY_CHANNEL_EMAIL,
@@ -485,6 +486,73 @@ def test_send_trend_email_returns_failed_when_any_recipient_fails(
     )
     assert len(rows) == 2
     assert {row.status for row in rows} == {DELIVERY_STATUS_SENT, DELIVERY_STATUS_FAILED}
+
+
+def test_preview_content_hash_is_stable_across_workspace_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture_one = _write_email_fixture(tmp_path=tmp_path / "one")
+    fixture_two = _write_email_fixture(tmp_path=tmp_path / "two")
+
+    output_dir_one = Path(fixture_one["output_dir"])
+    output_dir_two = Path(fixture_two["output_dir"])
+
+    settings_one = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path / "one",
+        output_dir=output_dir_one,
+    )
+    site_dir_one = tmp_path / "site-one"
+    export_trend_static_site(input_dir=output_dir_one, output_dir=site_dir_one)
+    preview_one = build_trend_email_preview(
+        settings=settings_one,
+        site_output_dir=site_dir_one,
+    )
+
+    settings_two = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path / "two",
+        output_dir=output_dir_two,
+    )
+    site_dir_two = tmp_path / "site-two"
+    export_trend_static_site(input_dir=output_dir_two, output_dir=site_dir_two)
+    preview_two = build_trend_email_preview(
+        settings=settings_two,
+        site_output_dir=site_dir_two,
+    )
+
+    assert preview_one.content_hash == preview_two.content_hash
+
+
+def test_send_dir_for_bundle_is_unique_even_with_same_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    bundle = trend_email_module._build_email_bundle(
+        settings=settings,
+        site_output_dir=site_dir,
+        anchor_date=None,
+    )
+    frozen_now = datetime(2026, 4, 10, 4, 25, 6, tzinfo=UTC)
+
+    class _FrozenDateTime:
+        @classmethod
+        def now(cls, tz: object | None = None) -> datetime:
+            assert tz is not None
+            return frozen_now
+
+    monkeypatch.setattr(trend_email_module, "datetime", _FrozenDateTime)
+
+    first = trend_email_module._send_dir_for_bundle(settings=settings, bundle=bundle)
+    second = trend_email_module._send_dir_for_bundle(settings=settings, bundle=bundle)
+
+    assert first != second
 
 
 def test_run_email_send_command_exits_non_zero_when_batch_fails(

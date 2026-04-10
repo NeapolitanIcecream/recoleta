@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from bs4 import BeautifulSoup
 from markdown_it import MarkdownIt
@@ -428,7 +429,6 @@ def _canonical_bundle_payload(bundle: _TrendEmailBundle, *, settings: Settings) 
         "topics": bundle.topics,
         "topic_links": bundle.topic_links,
         "primary_page_url": bundle.primary_page_url,
-        "source_markdown_path": str(bundle.source_markdown_path),
         "max_clusters": int(email.max_clusters),
         "max_evidence_per_cluster": int(email.max_evidence_per_cluster),
         "clusters": [
@@ -750,12 +750,16 @@ def _preview_dir_for_bundle(
 
 
 def _send_dir_for_bundle(*, settings: Settings, bundle: _TrendEmailBundle) -> Path:
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    nonce = uuid4().hex[:8]
     return (
         Path(settings.markdown_output_dir).expanduser().resolve()
         / ".recoleta-email"
         / "sends"
-        / f"{timestamp}--{bundle.granularity}--{bundle.period_token}--trend--{bundle.trend_doc_id}"
+        / (
+            f"{timestamp}-{nonce}--{bundle.granularity}"
+            f"--{bundle.period_token}--trend--{bundle.trend_doc_id}"
+        )
     )
 
 
