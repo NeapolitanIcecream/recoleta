@@ -341,8 +341,13 @@ def _fake_send_batch_result(
     entry_status: str,
     instance: str = "default",
     error: str | None = None,
+    with_artifacts: bool = True,
 ) -> object:
-    send_dir = tmp_path / "send" / "day--2026-02-25--trend--123"
+    send_dir = (
+        tmp_path / "send" / "day--2026-02-25--trend--123"
+        if with_artifacts
+        else None
+    )
     return SimpleNamespace(
         status=status,
         send_root_dir=tmp_path / "send",
@@ -353,14 +358,18 @@ def _fake_send_batch_result(
                 status=entry_status,
                 granularity="day",
                 send_dir=send_dir,
-                manifest_path=send_dir / "manifest.json",
-                html_path=send_dir / "body.html",
-                text_path=send_dir / "body.txt",
-                primary_page_url="https://public.example/recoleta/trends/example",
-                content_hash="hash-123",
-                subject="[Recoleta] Day trends · 2026-02-25",
-                trend_doc_id=123,
-                period_token="2026-02-25",
+                manifest_path=send_dir / "manifest.json" if send_dir else None,
+                html_path=send_dir / "body.html" if send_dir else None,
+                text_path=send_dir / "body.txt" if send_dir else None,
+                primary_page_url=(
+                    "https://public.example/recoleta/trends/example"
+                    if with_artifacts
+                    else None
+                ),
+                content_hash="hash-123" if with_artifacts else None,
+                subject="[Recoleta] Day trends · 2026-02-25" if with_artifacts else None,
+                trend_doc_id=123 if with_artifacts else None,
+                period_token="2026-02-25" if with_artifacts else None,
                 error=error,
             )
         ],
@@ -586,6 +595,52 @@ def test_send_trend_email_preflight_failure_keeps_ready_entries_and_skips_provid
     assert _send_entry(result, "week").status == "preflight_failed"
     assert _send_entry(result, "month").status == "ready_to_send"
     assert sender.calls == []
+
+
+def test_send_trend_email_converts_bundle_build_failures_into_preflight_failed_results(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("day",))
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["day", "week"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    sender = FakeResendBatchSender()
+
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
+    )
+
+    assert result.status == "preflight_failed"
+    assert [entry.granularity for entry in result.results] == ["day", "week"]
+    ready = _send_entry(result, "day")
+    assert ready.status == "ready_to_send"
+    assert ready.send_dir is not None and ready.send_dir.exists()
+    blocked = _send_entry(result, "week")
+    assert blocked.status == "preflight_failed"
+    assert blocked.error == "no matching trend email candidate found for granularity=week"
+    assert blocked.send_dir is None
+    assert blocked.manifest_path is None
+    assert blocked.html_path is None
+    assert blocked.text_path is None
+    assert sender.calls == []
+    batch_manifest = json.loads(result.batch_manifest_path.read_text(encoding="utf-8"))
+    assert batch_manifest["status"] == "preflight_failed"
+    assert batch_manifest["results"][1]["granularity"] == "week"
+    assert batch_manifest["results"][1]["send_dir"] is None
 
 
 def test_send_trend_email_skips_duplicate_batch_for_unchanged_content(
@@ -1300,6 +1355,7 @@ def test_run_email_send_command_json_emits_batch_payload_and_non_zero_exit_on_pr
         status="preflight_failed",
         entry_status="preflight_failed",
         error="mixed_batch_state",
+        with_artifacts=False,
     )
     captured_payload: dict[str, object] = {}
 
@@ -1328,6 +1384,10 @@ def test_run_email_send_command_json_emits_batch_payload_and_non_zero_exit_on_pr
     assert "send_root_dir" in captured_payload
     assert "batch_manifest_path" in captured_payload
     assert captured_payload["results"][0]["status"] == "preflight_failed"
+    assert captured_payload["results"][0]["send_dir"] is None
+    assert captured_payload["results"][0]["manifest_path"] is None
+    assert captured_payload["results"][0]["html_path"] is None
+    assert captured_payload["results"][0]["text_path"] is None
 
 
 def test_run_email_preview_command_passes_selected_granularities(

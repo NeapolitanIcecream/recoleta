@@ -68,15 +68,15 @@ class TrendEmailPreviewBatchResult:
 class TrendEmailSendEntryResult:
     status: str
     granularity: str
-    send_dir: Path
-    manifest_path: Path
-    html_path: Path
-    text_path: Path
-    content_hash: str
-    primary_page_url: str
-    subject: str
-    trend_doc_id: int
-    period_token: str
+    send_dir: Path | None
+    manifest_path: Path | None
+    html_path: Path | None
+    text_path: Path | None
+    content_hash: str | None
+    primary_page_url: str | None
+    subject: str | None
+    trend_doc_id: int | None
+    period_token: str | None
     error: str | None = None
 
 
@@ -153,9 +153,10 @@ class _TrendEmailBundle:
 
 @dataclass(slots=True)
 class _PreparedSendBundle:
-    bundle: _TrendEmailBundle
-    current_failed: dict[str, bool]
+    granularity: str
+    bundle: _TrendEmailBundle | None
     status: str
+    current_failed: dict[str, bool] = field(default_factory=dict)
     error: str | None = None
     outcomes: list[dict[str, Any]] = field(default_factory=list)
 
@@ -1034,10 +1035,10 @@ def _send_entry_payload(entry: TrendEmailSendEntryResult) -> dict[str, Any]:
     payload = {
         "status": entry.status,
         "granularity": entry.granularity,
-        "send_dir": str(entry.send_dir),
-        "manifest_path": str(entry.manifest_path),
-        "html_path": str(entry.html_path),
-        "text_path": str(entry.text_path),
+        "send_dir": _optional_path_payload(entry.send_dir),
+        "manifest_path": _optional_path_payload(entry.manifest_path),
+        "html_path": _optional_path_payload(entry.html_path),
+        "text_path": _optional_path_payload(entry.text_path),
         "primary_page_url": entry.primary_page_url,
         "content_hash": entry.content_hash,
         "subject": entry.subject,
@@ -1053,6 +1054,12 @@ def _instance_for_bundles(bundles: list[_TrendEmailBundle]) -> str | None:
     if not bundles:
         return None
     return bundles[0].instance
+
+
+def _optional_path_payload(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    return str(path)
 
 
 def build_trend_email_preview(
@@ -1296,16 +1303,18 @@ def _preflight_send_bundle(
         )
     except RuntimeError as exc:
         return _PreparedSendBundle(
+            granularity=bundle.granularity,
             bundle=bundle,
-            current_failed=current_failed,
             status="preflight_failed",
+            current_failed=current_failed,
             error=str(exc),
         )
     if action == "skip":
         return _PreparedSendBundle(
+            granularity=bundle.granularity,
             bundle=bundle,
-            current_failed=current_failed,
             status="skipped",
+            current_failed=current_failed,
         )
     try:
         _email_batch_payloads(
@@ -1316,15 +1325,47 @@ def _preflight_send_bundle(
         _ensure_reachable_public_page(bundle=bundle, url_checker=url_checker)
     except Exception as exc:  # noqa: BLE001
         return _PreparedSendBundle(
+            granularity=bundle.granularity,
             bundle=bundle,
-            current_failed=current_failed,
             status="preflight_failed",
+            current_failed=current_failed,
             error=str(exc),
         )
     return _PreparedSendBundle(
+        granularity=bundle.granularity,
         bundle=bundle,
-        current_failed=current_failed,
         status="ready_to_send",
+        current_failed=current_failed,
+    )
+
+
+def _resolve_send_bundle(
+    *,
+    settings: Settings,
+    repository: Any,
+    request: TrendEmailSendRequest,
+    granularity: str,
+) -> _PreparedSendBundle:
+    try:
+        bundle = _build_email_bundle(
+            settings=settings,
+            site_output_dir=request.site_output_dir.expanduser().resolve(),
+            anchor_date=request.anchor_date,
+            granularity=granularity,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _PreparedSendBundle(
+            granularity=granularity,
+            bundle=None,
+            status="preflight_failed",
+            error=str(exc),
+        )
+    return _preflight_send_bundle(
+        settings=settings,
+        repository=repository,
+        bundle=bundle,
+        force_batch=request.force_batch,
+        url_checker=request.url_checker,
     )
 
 
@@ -1344,6 +1385,24 @@ def _write_send_entry_results(
 ) -> list[TrendEmailSendEntryResult]:
     results: list[TrendEmailSendEntryResult] = []
     for prepared in prepared_bundles:
+        if prepared.bundle is None:
+            results.append(
+                TrendEmailSendEntryResult(
+                    status=prepared.status,
+                    granularity=prepared.granularity,
+                    send_dir=None,
+                    manifest_path=None,
+                    html_path=None,
+                    text_path=None,
+                    content_hash=None,
+                    primary_page_url=None,
+                    subject=None,
+                    trend_doc_id=None,
+                    period_token=None,
+                    error=prepared.error,
+                )
+            )
+            continue
         entry_dir = root_dir / _bundle_artifact_dir_name(prepared.bundle)
         html_path, text_path, manifest_path = _write_email_artifacts(
             artifact_dir=entry_dir,
@@ -1383,24 +1442,19 @@ def send_trend_email(
         settings=settings,
         selected_granularities=request.granularities,
     )
-    bundles = [
-        _build_email_bundle(
+    prepared_bundles = [
+        _resolve_send_bundle(
             settings=settings,
-            site_output_dir=request.site_output_dir.expanduser().resolve(),
-            anchor_date=request.anchor_date,
+            repository=repository,
+            request=request,
             granularity=granularity,
         )
         for granularity in selected_granularities
     ]
-    prepared_bundles = [
-        _preflight_send_bundle(
-            settings=settings,
-            repository=repository,
-            bundle=bundle,
-            force_batch=request.force_batch,
-            url_checker=request.url_checker,
-        )
-        for bundle in bundles
+    bundles = [
+        prepared.bundle
+        for prepared in prepared_bundles
+        if prepared.bundle is not None
     ]
 
     send_root_dir = _send_root_dir(settings=settings)
@@ -1438,6 +1492,7 @@ def send_trend_email(
             continue
         if prepared.status != "ready_to_send":
             continue
+        assert prepared.bundle is not None
         assert sender is not None
         emails = _email_batch_payloads(
             settings=settings,

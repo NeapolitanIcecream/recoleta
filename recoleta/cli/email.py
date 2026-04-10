@@ -68,6 +68,12 @@ def _preview_payload(
     }
 
 
+def _path_payload(path: object) -> str | None:
+    if path is None:
+        return None
+    return str(path)
+
+
 def _send_payload(
     *,
     command_name: str,
@@ -84,10 +90,10 @@ def _send_payload(
             {
                 "status": entry.status,
                 "granularity": entry.granularity,
-                "send_dir": str(entry.send_dir),
-                "manifest_path": str(entry.manifest_path),
-                "html_path": str(entry.html_path),
-                "text_path": str(entry.text_path),
+                "send_dir": _path_payload(entry.send_dir),
+                "manifest_path": _path_payload(entry.manifest_path),
+                "html_path": _path_payload(entry.html_path),
+                "text_path": _path_payload(entry.text_path),
                 "primary_page_url": entry.primary_page_url,
                 "content_hash": entry.content_hash,
                 "subject": entry.subject,
