@@ -8,7 +8,14 @@ import re
 from typing import Any
 
 from platformdirs import user_data_dir
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -585,6 +592,81 @@ class DaemonConfig(BaseModel):
     schedules: list[DaemonScheduleConfig] = Field(default_factory=list)
 
 
+class EmailConfig(BaseModel):
+    public_site_url: str
+    from_email: str
+    from_name: str | None = "Recoleta"
+    to: list[str]
+    granularity: str
+    language_code: str | None = None
+    max_clusters: int = Field(default=3, ge=1)
+    max_evidence_per_cluster: int = Field(default=2, ge=1)
+    subject_prefix: str | None = "[Recoleta]"
+
+    @field_validator("to", mode="before")
+    @classmethod
+    def _parse_to(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, str):
+            return _parse_str_list(value)
+        return value
+
+    @field_validator(
+        "public_site_url",
+        "from_email",
+        "from_name",
+        "language_code",
+        "subject_prefix",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_single_line_fields(cls, value: Any, info: ValidationInfo) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError(f"{info.field_name} must be a single-line value")
+        if info.field_name == "public_site_url":
+            return normalized.rstrip("/")
+        return normalized
+
+    @field_validator("to", mode="after")
+    @classmethod
+    def _normalize_recipients(cls, value: list[Any]) -> list[str]:
+        recipients: list[str] = []
+        seen: set[str] = set()
+        for item in list(value or []):
+            normalized = str(item).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            recipients.append(normalized)
+        if not recipients:
+            raise ValueError("EMAIL.to must contain at least one recipient")
+        if len(recipients) > 100:
+            raise ValueError("EMAIL.to supports at most 100 recipients per batch")
+        return recipients
+
+    @field_validator("granularity", mode="before")
+    @classmethod
+    def _normalize_granularity(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized not in {"day", "week", "month"}:
+            raise ValueError("EMAIL.granularity must be one of: day, week, month")
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_required_fields(self) -> "EmailConfig":
+        if not self.public_site_url:
+            raise ValueError("EMAIL.public_site_url is required")
+        if not self.from_email:
+            raise ValueError("EMAIL.from_email is required")
+        return self
+
+
 class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
     _KEY_MAP: dict[str, str] = {
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
@@ -644,14 +726,17 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "LOCALIZATION": "localization",
         "WORKFLOWS": "workflows",
         "DAEMON": "daemon",
+        "EMAIL": "email",
     }
     _FORBIDDEN_TOP_LEVEL_KEYS = {
         "TELEGRAM_BOT_TOKEN",
         "TELEGRAM_CHAT_ID",
         "RECOLETA_LLM_API_KEY",
+        "RECOLETA_RESEND_API_KEY",
         "telegram_bot_token",
         "telegram_chat_id",
         "llm_api_key",
+        "resend_api_key",
     }
     _UNSUPPORTED_TOP_LEVEL_KEYS = set(_UNSUPPORTED_TOPIC_STREAM_FILE_KEYS)
 
@@ -757,7 +842,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
 
     @staticmethod
     def _reject_mapped_secret_key(*, raw_key: str, mapped_key: str) -> None:
-        if mapped_key in {"telegram_bot_token", "telegram_chat_id"}:
+        if mapped_key in {"telegram_bot_token", "telegram_chat_id", "resend_api_key"}:
             raise ValueError(
                 f"Secrets must come from environment variables only: {raw_key}"
             )
@@ -977,6 +1062,7 @@ class Settings(BaseSettings):
     daemon: DaemonConfig = Field(
         default_factory=DaemonConfig, validation_alias="DAEMON"
     )
+    email: EmailConfig | None = Field(default=None, validation_alias="EMAIL")
     legacy_ingest_interval_minutes: int | None = Field(
         default=None,
         validation_alias="INGEST_INTERVAL_MINUTES",
@@ -997,6 +1083,9 @@ class Settings(BaseSettings):
     )
     llm_api_key: SecretStr | None = Field(
         default=None, validation_alias="RECOLETA_LLM_API_KEY"
+    )
+    resend_api_key: SecretStr | None = Field(
+        default=None, validation_alias="RECOLETA_RESEND_API_KEY"
     )
     llm_base_url: str | None = Field(
         default=None, validation_alias="RECOLETA_LLM_BASE_URL"
@@ -1269,6 +1358,18 @@ class Settings(BaseSettings):
             return loaded
         return value
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _parse_email_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            loaded = _parse_json_or_yaml(value)
+            if not isinstance(loaded, dict):
+                raise ValueError("EMAIL must be a JSON/YAML object")
+            return loaded
+        return value
+
     @field_validator(
         "legacy_ingest_interval_minutes",
         "legacy_analyze_interval_minutes",
@@ -1324,6 +1425,23 @@ class Settings(BaseSettings):
             raise ValueError("RECOLETA_LLM_API_KEY must be a single-line value")
         if len(normalized) > 4096:
             raise ValueError("RECOLETA_LLM_API_KEY must be <= 4096 characters")
+        return normalized
+
+    @field_validator("resend_api_key", mode="before")
+    @classmethod
+    def _normalize_resend_api_key(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, SecretStr):
+            normalized = value.get_secret_value().strip()
+        else:
+            normalized = str(value).strip()
+        if not normalized:
+            return None
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("RECOLETA_RESEND_API_KEY must be a single-line value")
+        if len(normalized) > 4096:
+            raise ValueError("RECOLETA_RESEND_API_KEY must be <= 4096 characters")
         return normalized
 
     @field_validator("llm_base_url", mode="before")
@@ -1600,11 +1718,16 @@ class Settings(BaseSettings):
             return []
         return [target.code for target in self.localization.targets]
 
-    def safe_fingerprint(self) -> str:
+    def safe_model_dump(self) -> dict[str, Any]:
         payload = self.model_dump(mode="json")
         payload["llm_api_key"] = "***"
         payload["telegram_bot_token"] = "***"
         payload["telegram_chat_id"] = "***"
+        payload["resend_api_key"] = "***"
+        return payload
+
+    def safe_fingerprint(self) -> str:
+        payload = self.safe_model_dump()
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 

@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from loguru import logger
 
+from recoleta.site_email_links import write_email_links_artifact
 from recoleta.site_models import (
     IdeaSiteDocument,
     IdeaSiteSourceDocument,
@@ -535,6 +536,23 @@ def export_trend_static_site_single_language(
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+    )
+    write_email_links_artifact(
+        site_output_dir=artifacts.resolved_output_dir,
+        pages_by_source_markdown={
+            str(document.markdown_path.resolve()): str(
+                document.page_path.relative_to(artifacts.resolved_output_dir)
+            )
+            for document in [
+                *artifacts.documents,
+                *artifacts.item_documents,
+                *artifacts.idea_documents,
+            ]
+        },
+        topic_pages_by_slug={
+            slug: str(path.relative_to(artifacts.resolved_output_dir))
+            for slug, path in artifacts.topic_pages.items()
+        },
     )
     logger.bind(
         module="site.build",

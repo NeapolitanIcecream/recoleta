@@ -16,8 +16,9 @@ Recoleta is a CLI-first application with a small set of commands:
 - `recoleta run now|day|week|month`: workflow-first entry points that
   orchestrate ingest, analyze, publish, downstream trends/ideas, translation,
   and site build according to workflow policy.
-- `recoleta run translate`, `recoleta run site build|serve`, and
-  `recoleta run deploy`: derived workflows from stored state.
+- `recoleta run translate`, `recoleta run site build|serve`, `recoleta run
+  email preview|send`, and `recoleta run deploy`: derived workflows from
+  stored state.
 - `recoleta repair outputs`: rebuild Markdown/PDF/site artifacts from stored DB
   state without rerunning ingest/analyze.
 - `recoleta daemon start`: run configured workflow schedules locally.
@@ -52,7 +53,9 @@ Current module layout:
 - `recoleta/storage.py`: convenience re-export of the storage facade and shared types
 - `recoleta/publish/`: Markdown/Obsidian note writers plus Telegram-facing trend note and PDF rendering helpers
 - `recoleta/site.py` and `recoleta/site_deploy.py`: static site export and GitHub Pages branch deployment
-- `recoleta/delivery.py`: Telegram sender
+- `recoleta/site_email_links.py`: private site companion artifact for manual email link resolution
+- `recoleta/trend_email.py`: manual trend email candidate selection, rendering, link resolution, and send workflow
+- `recoleta/delivery.py`: Telegram sender plus Resend batch sender
 - `recoleta/observability.py`: logging setup, debug artifacts, and metrics helpers
 
 ## Pipeline stages
@@ -170,6 +173,12 @@ Responsibilities:
 - For trends, persist a canonical markdown note first, then derive the Telegram PDF from that note.
 - For trend Telegram delivery, prefer the browser PDF renderer and fall back to the Story renderer when necessary.
 - Record delivery results and message IDs for idempotency.
+
+Non-goal:
+
+- manual trend email is not part of Stage 6 publish. It is an explicit
+  operator-triggered derived workflow that runs later from stored markdown,
+  sidecars, site link-map artifacts, and delivery state.
 
 Operational guidance:
 - Keep the trend markdown note as the canonical source for downstream surfaces.

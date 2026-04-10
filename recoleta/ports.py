@@ -144,6 +144,14 @@ class RepositoryPort(Protocol):
         self, *, doc_id: int, channel: str, destination: str, content_hash: str
     ) -> bool: ...
 
+    def list_trend_deliveries(
+        self,
+        *,
+        doc_id: int,
+        channel: str,
+        destinations: list[str] | None = None,
+    ) -> list[TrendDelivery]: ...
+
     def upsert_trend_delivery(
         self,
         *,
@@ -639,6 +647,14 @@ class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
     def has_sent_trend_delivery(
         self, *, doc_id: int, channel: str, destination: str, content_hash: str
     ) -> bool: ...
+
+    def list_trend_deliveries(
+        self,
+        *,
+        doc_id: int,
+        channel: str,
+        destinations: list[str] | None = None,
+    ) -> list[TrendDelivery]: ...
 
     def upsert_trend_delivery(
         self,

@@ -9,8 +9,8 @@
 
 Recoleta watches arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and
 RSS from one local workspace. It keeps state in SQLite, writes Markdown first,
-and can turn the same corpus into trend notes, idea notes, PDFs, and a static
-site.
+and can turn the same corpus into trend notes, idea notes, PDFs, a static
+site, and manual trend email batches.
 
 **Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Fleet development runbook](./docs/guides/fleet-development-runbook.md) · [Preset gallery](./presets/README.md) · [CLI v2 migration](./docs/guides/cli-v2-migration.md)
 
@@ -37,7 +37,8 @@ site.
 
 Recoleta is local-first by design. The database is the durable record of what
 was ingested, analyzed, and published. Markdown notes, PDFs, Telegram messages,
-and site pages are rebuildable outputs on top of that state.
+email preview/send artifacts, and site pages are rebuildable outputs on top of
+that state.
 
 One workspace can run a single instance. A migrated deployment can also run a
 fleet manifest that points at several isolated child instances. Each child keeps
@@ -59,7 +60,8 @@ Multi-instance deployments now use one child config per instance plus a
 - Run several isolated child instances from one fleet manifest.
 - Pre-rank items semantically before the LLM when backlog pressure matters.
 - Publish to local Markdown by default, with optional Obsidian and Telegram
-  delivery.
+  delivery, then preview or send manual trend email batches from stored trend
+  output.
 - Build trend notes, idea notes, PDFs, and a static site from stored local
   state.
 - Write adjacent structured sidecars for trend and idea notes so repair,
@@ -80,6 +82,8 @@ Multi-instance deployments now use one child config per instance plus a
 - Optional integrations:
   - Obsidian vault for direct note writing
   - Telegram bot token and chat ID for chat delivery
+  - Resend account, verified sender domain, and API key for manual trend email
+    send
   - Chromium-compatible browser for browser-rendered trend PDFs
 
 ### Install from source
@@ -243,11 +247,26 @@ llm_model: "openai/gpt-5.4"
 
 # Publish targets (default: ["markdown"])
 # Allowed: markdown, obsidian, telegram
+# Manual trend email is configured separately under `email:`.
 publish_targets:
   - markdown
 
 # Local Markdown output directory
 markdown_output_dir: "~/.local/share/recoleta/outputs"
+
+# Optional: manual trend email preview/send via Resend.
+# This does not change publish_targets.
+# email:
+#   public_site_url: "https://example.github.io/recoleta"
+#   from_email: "recoleta@example.com"
+#   from_name: "Recoleta"
+#   to:
+#     - "you@example.com"
+#   granularity: "week"
+#   language_code: "en"
+#   max_clusters: 3
+#   max_evidence_per_cluster: 2
+#   subject_prefix: "[Recoleta]"
 
 # Optional: canonical language for newly generated summaries, trends, and ideas.
 # JSON keys stay in English and topics remain English tags.
@@ -298,6 +317,9 @@ RECOLETA_LLM_API_KEY="sk-replace-me"
 # Optional: Telegram publishing
 # TELEGRAM_BOT_TOKEN="123456789:replace-me"
 # TELEGRAM_CHAT_ID="@replace_me"
+
+# Optional: manual trend email send via Resend
+# RECOLETA_RESEND_API_KEY="re_replace_me"
 ENV
 ```
 
@@ -380,6 +402,10 @@ Where outputs go:
   `/<language>/...` roots and a root redirect page that remembers the browser's
   last language choice. Trend and idea detail pages prefer sibling
   `.presentation.json` sidecars and fall back to markdown parsing when needed.
+- Manual trend email artifacts: `MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/`
+  and `MARKDOWN_OUTPUT_DIR/.recoleta-email/sends/`
+- Private site email link map used by `run email`: by default
+  `MARKDOWN_OUTPUT_DIR/.site-email-links.json`
 - Obsidian notes: `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER/Inbox/`
 - Telegram: sent to `TELEGRAM_CHAT_ID`
 
@@ -450,6 +476,15 @@ uv run recoleta run site build
 uv run recoleta run site serve
 uv run recoleta run deploy --branch gh-pages --pages-config auto
 
+# preview or send one manual trend email batch
+uv run recoleta run email preview
+uv run recoleta run email send
+uv run recoleta run email send --date 2026-03-02 --force-batch
+uv run recoleta fleet run email preview --manifest ./fleet/fleet.yaml --instance agents-radar
+uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance agents-radar
+# pass --site-output-dir if the aggregate fleet site was built into a custom location
+uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance agents-radar --site-output-dir ./output/fleet-site
+
 # inspect or repair a workspace
 uv run recoleta inspect health --healthcheck --max-success-age-minutes 180
 uv run recoleta inspect stats --json
@@ -469,6 +504,10 @@ Repair and backfill notes:
 - `recoleta stage translate backfill` regenerates localized trend/idea
   projections from stored canonical state and rewrites localized sidecars for
   those notes.
+- `recoleta run email preview` and `recoleta run email send` depend on the
+  private site email link-map artifact written by the last site build.
+- `recoleta run email send` also requires `RECOLETA_RESEND_API_KEY` and a
+  publicly reachable primary trend page under `email.public_site_url`.
 
 For fleet operator recipes, daemon schedules, translation backfills, repair
 workflows, and admin commands, see

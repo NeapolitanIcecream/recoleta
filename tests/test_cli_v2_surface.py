@@ -104,6 +104,62 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             },
         ),
         (
+            ["fleet", "run", "email", "preview", "--manifest", "/tmp/fleet.yaml", "--instance", "beta"],
+            "run_fleet_email_preview_command",
+            {
+                "command_name": "fleet run email preview",
+                "manifest_path": Path("/tmp/fleet.yaml").resolve(),
+                "instance": "beta",
+            },
+        ),
+        (
+            [
+                "fleet",
+                "run",
+                "email",
+                "preview",
+                "--manifest",
+                "/tmp/fleet.yaml",
+                "--instance",
+                "beta",
+                "--site-output-dir",
+                "/tmp/site",
+            ],
+            "run_fleet_email_preview_command",
+            {
+                "command_name": "fleet run email preview",
+                "site_output_dir": Path("/tmp/site").resolve(),
+            },
+        ),
+        (
+            ["fleet", "run", "email", "send", "--manifest", "/tmp/fleet.yaml", "--instance", "beta"],
+            "run_fleet_email_send_command",
+            {
+                "command_name": "fleet run email send",
+                "manifest_path": Path("/tmp/fleet.yaml").resolve(),
+                "instance": "beta",
+            },
+        ),
+        (
+            [
+                "fleet",
+                "run",
+                "email",
+                "send",
+                "--manifest",
+                "/tmp/fleet.yaml",
+                "--instance",
+                "beta",
+                "--site-output-dir",
+                "/tmp/site",
+            ],
+            "run_fleet_email_send_command",
+            {
+                "command_name": "fleet run email send",
+                "site_output_dir": Path("/tmp/site").resolve(),
+            },
+        ),
+        (
             ["fleet", "site", "serve", "--manifest", "/tmp/fleet.yaml"],
             "run_fleet_site_serve_command",
             {
@@ -120,6 +176,16 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             ["run", "translate"],
             "run_translate_run_command",
             {"command_name": "run translate"},
+        ),
+        (
+            ["run", "email", "preview"],
+            "run_email_preview_command",
+            {"command_name": "run email preview"},
+        ),
+        (
+            ["run", "email", "send"],
+            "run_email_send_command",
+            {"command_name": "run email send"},
         ),
         (
             ["stage", "translate", "run"],

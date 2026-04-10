@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from click import Context
+import click
+from click import Context, get_current_context
 import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
@@ -71,18 +72,51 @@ def run_fleet_site_serve_command(**kwargs: Any) -> Any:
     return impl(**kwargs)
 
 
+def run_email_preview_command(**kwargs: Any) -> Any:
+    from recoleta.cli.email import run_email_preview_command as impl
+
+    return impl(**kwargs)
+
+
+def run_email_send_command(**kwargs: Any) -> Any:
+    from recoleta.cli.email import run_email_send_command as impl
+
+    return impl(**kwargs)
+
+
+def run_fleet_email_preview_command(**kwargs: Any) -> Any:
+    from recoleta.cli.fleet import run_fleet_email_preview_command as impl
+
+    return impl(**kwargs)
+
+
+def run_fleet_email_send_command(**kwargs: Any) -> Any:
+    from recoleta.cli.fleet import run_fleet_email_send_command as impl
+
+    return impl(**kwargs)
+
+
 app = typer.Typer(help="Recoleta workflow-first CLI.", no_args_is_help=True)
 
 run_app = typer.Typer(help="Workflow entrypoints.", no_args_is_help=True)
 run_site_app = typer.Typer(help="Common site workflows.", no_args_is_help=True)
+run_email_app = typer.Typer(
+    help="Manual trend email workflows.", no_args_is_help=True
+)
 run_app.add_typer(run_site_app, name="site")
+run_app.add_typer(run_email_app, name="email")
 app.add_typer(run_app, name="run")
 
 fleet_app = typer.Typer(help="Fleet orchestration workflows.", no_args_is_help=True)
 fleet_run_app = typer.Typer(help="Fleet workflow entrypoints.", no_args_is_help=True)
 fleet_site_app = typer.Typer(help="Fleet site workflows.", no_args_is_help=True)
+fleet_run_email_app = typer.Typer(
+    help="Fleet manual trend email workflows.",
+    no_args_is_help=True,
+)
 fleet_app.add_typer(fleet_run_app, name="run")
 fleet_app.add_typer(fleet_site_app, name="site")
+fleet_run_app.add_typer(fleet_run_email_app, name="email")
 app.add_typer(fleet_app, name="fleet")
 
 daemon_app = typer.Typer(help="Background workflow scheduling.", no_args_is_help=True)
@@ -133,6 +167,94 @@ app.add_typer(materialize_app, name="materialize", hidden=True)
 app.add_typer(runs_app, name="runs", hidden=True)
 app.add_typer(doctor_app, name="doctor", hidden=True)
 app.add_typer(translate_app, name="translate", hidden=True)
+
+_EMAIL_ANCHOR_DATE_OPTION = Annotated[
+    str | None,
+    typer.Option(
+        "--date",
+        help="Target UTC date (YYYY-MM-DD or YYYYMMDD). Uses the matching day/week/month window for EMAIL.granularity.",
+    ),
+]
+_EMAIL_OUTPUT_DIR_OPTION = Annotated[
+    Path | None,
+    typer.Option(
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Optional directory for preview artifacts. Defaults to MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...",
+    ),
+]
+_FLEET_EMAIL_OUTPUT_DIR_OPTION = Annotated[
+    Path | None,
+    typer.Option(
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Optional directory for preview artifacts. Defaults to the child instance preview path.",
+    ),
+]
+
+def _fleet_email_site_output_dir_value() -> Path | None:
+    extra_args = list(get_current_context().args)
+    if not extra_args:
+        return None
+    resolved: Path | None = None
+    index = 0
+    while index < len(extra_args):
+        token = extra_args[index]
+        if token == "--site-output-dir":
+            if index + 1 >= len(extra_args):
+                raise click.BadParameter(
+                    "Option '--site-output-dir' requires a directory value.",
+                    param_hint="--site-output-dir",
+                )
+            resolved = Path(extra_args[index + 1]).expanduser().resolve()
+            index += 2
+            continue
+        if token.startswith("--site-output-dir="):
+            raw_value = token.partition("=")[2]
+            if not raw_value:
+                raise click.BadParameter(
+                    "Option '--site-output-dir' requires a directory value.",
+                    param_hint="--site-output-dir",
+                )
+            resolved = Path(raw_value).expanduser().resolve()
+            index += 1
+            continue
+        raise click.NoSuchOption(token)
+    return resolved
+_FLEET_EMAIL_MANIFEST_OPTION = Annotated[
+    Path,
+    typer.Option(
+        "--manifest",
+        envvar="RECOLETA_FLEET_MANIFEST",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Fleet manifest that references child instance configs.",
+    ),
+]
+_FLEET_EMAIL_INSTANCE_OPTION = Annotated[
+    str,
+    typer.Option(
+        "--instance",
+        help="Child instance name or public slug.",
+    ),
+]
+_EMAIL_FORCE_BATCH_OPTION = Annotated[
+    bool,
+    typer.Option(
+        "--force-batch",
+        help="Force a full resend even when the current content hash was already sent or the batch is in a mixed state.",
+    ),
+]
+_EMAIL_JSON_OUTPUT_OPTION = Annotated[
+    bool,
+    typer.Option("--json", help="Emit machine-readable JSON output."),
+]
 
 
 def _legacy_error(
@@ -557,6 +679,82 @@ def fleet_run_deploy(
         force=force,
         item_export_scope=item_export_scope,
         json_output=json_output,
+    )
+
+
+@run_email_app.command("preview")
+def run_email_preview(
+    anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    output_dir: _EMAIL_OUTPUT_DIR_OPTION = None,
+    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
+) -> None:
+    """Render a manual trend email preview from the latest matching trend note."""
+    run_email_preview_command(
+        anchor_date=anchor_date,
+        output_dir=output_dir,
+        json_output=json_output,
+        command_name="run email preview",
+    )
+
+
+@run_email_app.command("send")
+def run_email_send(
+    anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    force_batch: _EMAIL_FORCE_BATCH_OPTION = False,
+    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
+) -> None:
+    """Send the manual trend email batch via Resend."""
+    run_email_send_command(
+        anchor_date=anchor_date,
+        force_batch=force_batch,
+        json_output=json_output,
+        command_name="run email send",
+    )
+
+
+@fleet_run_email_app.command(
+    "preview",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def fleet_run_email_preview(
+    manifest_path: _FLEET_EMAIL_MANIFEST_OPTION,
+    instance: _FLEET_EMAIL_INSTANCE_OPTION,
+    anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    output_dir: _FLEET_EMAIL_OUTPUT_DIR_OPTION = None,
+    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
+) -> None:
+    """Render a manual trend email preview for one child instance."""
+    run_fleet_email_preview_command(
+        manifest_path=manifest_path,
+        instance=instance,
+        anchor_date=anchor_date,
+        site_output_dir=_fleet_email_site_output_dir_value(),
+        output_dir=output_dir,
+        json_output=json_output,
+        command_name="fleet run email preview",
+    )
+
+
+@fleet_run_email_app.command(
+    "send",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def fleet_run_email_send(
+    manifest_path: _FLEET_EMAIL_MANIFEST_OPTION,
+    instance: _FLEET_EMAIL_INSTANCE_OPTION,
+    anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    force_batch: _EMAIL_FORCE_BATCH_OPTION = False,
+    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
+) -> None:
+    """Send the manual trend email batch for one child instance."""
+    run_fleet_email_send_command(
+        manifest_path=manifest_path,
+        instance=instance,
+        anchor_date=anchor_date,
+        site_output_dir=_fleet_email_site_output_dir_value(),
+        force_batch=force_batch,
+        json_output=json_output,
+        command_name="fleet run email send",
     )
 
 
@@ -2336,6 +2534,8 @@ _VULTURE_USED_COMMANDS = (
     fleet_run_week,
     fleet_run_month,
     fleet_run_deploy,
+    fleet_run_email_preview,
+    fleet_run_email_send,
     fleet_site_build,
     fleet_site_serve,
     daemon_start,
@@ -2347,4 +2547,6 @@ _VULTURE_USED_COMMANDS = (
     admin_db_reset,
     ingest,
     analyze,
+    run_email_preview,
+    run_email_send,
 )

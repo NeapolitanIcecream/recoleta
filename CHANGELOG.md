@@ -7,6 +7,15 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Manual trend email preview/send via `recoleta run email preview|send` and
+  `recoleta fleet run email preview|send`.
+- `EMAIL` config plus env-only `RECOLETA_RESEND_API_KEY` for Resend-backed
+  manual trend email delivery.
+- Private site email link-map companion artifacts to support site-first link
+  resolution for manual trend email batches.
+
 ## [0.2.0] - 2026-04-09
 
 ### Added

@@ -21,6 +21,13 @@ Allowed values:
 - `obsidian`: write notes under `OBSIDIAN_VAULT_PATH/OBSIDIAN_BASE_FOLDER`
 - `telegram`: send curated messages via Telegram Bot API
 
+Manual trend email is intentionally separate from `PUBLISH_TARGETS`:
+
+- `recoleta run email preview`: render one selected trend email batch without
+  sending
+- `recoleta run email send`: re-render, verify public site reachability, and
+  send one recipient batch via Resend
+
 ## Required settings by target
 
 - `markdown`:
@@ -49,6 +56,9 @@ Under `MARKDOWN_OUTPUT_DIR`:
   surfaces derived from canonical outputs; localized trend and idea notes also
   emit adjacent `<stem>.presentation.json` sidecars
 - `site/`: optional derived static site output from `recoleta run site build`
+- `.recoleta-email/previews|sends/`: manual trend email preview/send artifacts
+- `.site-email-links.json`: private link-map companion artifact emitted by the
+  default site build for manual email link resolution
 
 Historical note:
 
@@ -61,6 +71,8 @@ Item notes contain YAML frontmatter and sections such as `Summary` and `Links`.
 Trend notes are the canonical source for all downstream trend surfaces:
 
 - Telegram trend PDFs render from `MARKDOWN_OUTPUT_DIR/Trends/*.md`
+- manual trend email preview/send consumes the canonical trend markdown note
+  plus sibling `*.presentation.json` sidecar and site email link-map artifact
 - `recoleta run site build` discovers sibling trend and idea sidecars first for
   detail-page rendering and falls back to markdown parsing when sidecars are
   missing or invalid
@@ -167,6 +179,11 @@ Important behavior:
   filesystem/site repair on purpose.
 - All commands that rebuild site output treat their output directories as managed artifacts and clear stale files before writing.
 - When `--input-dir` and `--output-dir` are passed explicitly, they do not require a full Recoleta runtime config. This is intentional so CI and GitHub Pages can build from a staged content snapshot.
+- site build also writes a private email link-map companion artifact beside the
+  site root. For the default output path `MARKDOWN_OUTPUT_DIR/site`, the
+  artifact path is `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.
+- the email link-map artifact is not part of the public site manifest because
+  it exists only for operator-side manual email workflows.
 - When multilingual content exists, the exporter emits one site subtree per language, for example `/en/...` and `/zh-cn/...`, plus a root `index.html` redirect page.
 - The root redirect prefers the browser's remembered language and then falls back to the configured default language.
 - Every page renders a language switcher that stores the chosen language in the browser and routes to the peer page when available.
@@ -199,6 +216,12 @@ After `recoleta run site serve` / `recoleta run site build` /
 
 - exported trend/topic counts
 - output directory path
+
+After `recoleta run email preview` / `recoleta run email send`, the CLI prints:
+
+- the selected trend id and period token
+- the preview/send status
+- the generated artifact directory path
 
 After `recoleta repair outputs`, the CLI prints:
 

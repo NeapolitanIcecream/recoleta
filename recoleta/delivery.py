@@ -4,18 +4,35 @@ import asyncio
 from collections.abc import Callable
 from datetime import timedelta
 from threading import Thread
+from typing import Any, cast
 
 from telegram import Bot, InputFile
 from telegram.constants import ParseMode
 from telegram.error import NetworkError, RetryAfter, TimedOut
 from tenacity import (
     AsyncRetrying,
+    Retrying,
     RetryCallState,
+    retry_if_exception,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential_jitter,
 )
 from tenacity.wait import wait_base
+
+try:
+    import resend
+    from resend.exceptions import ResendError as _ImportedResendError
+except Exception:  # noqa: BLE001
+    resend = None
+
+    class _FallbackResendError(Exception):
+        code: int | None = None
+        error_type: str | None = None
+
+    _RESEND_ERROR_TYPE: type[BaseException] = _FallbackResendError
+else:
+    _RESEND_ERROR_TYPE = _ImportedResendError
 
 
 def _run_blocking_in_thread(fn: Callable[[], str]) -> str:
@@ -140,4 +157,140 @@ class TelegramSender:
                     caption=caption,
                 )
             )
+        )
+
+
+def _is_retryable_resend_error(exc: BaseException) -> bool:
+    if not isinstance(exc, _RESEND_ERROR_TYPE):
+        return False
+    try:
+        code = int(getattr(exc, "code", 0) or 0)
+    except Exception:
+        code = 0
+    error_type = str(getattr(exc, "error_type", "") or "").strip()
+    return code == 429 or code >= 500 or error_type == "HttpClientError"
+
+
+def _normalize_resend_error_message(error: Any) -> str:
+    if isinstance(error, dict):
+        for key in ("message", "error", "name"):
+            normalized = str(error.get(key) or "").strip()
+            if normalized:
+                return normalized
+        return str(error)
+    normalized = str(error or "").strip()
+    return normalized or "unknown resend error"
+
+
+def _resend_error_by_index(response_errors: list[Any]) -> dict[int, str]:
+    error_by_index: dict[int, str] = {}
+    for position, raw_error in enumerate(response_errors):
+        if not raw_error:
+            continue
+        raw_index: Any | None = None
+        if isinstance(raw_error, dict):
+            raw_index = raw_error.get("index")
+        else:
+            raw_index = getattr(raw_error, "index", None)
+        target_index = position
+        if raw_index is None:
+            normalized_index = None
+        else:
+            try:
+                normalized_index = int(raw_index)
+            except (TypeError, ValueError):
+                normalized_index = None
+        if normalized_index is not None and normalized_index >= 0:
+            target_index = normalized_index
+        error_by_index[target_index] = _normalize_resend_error_message(raw_error)
+    return error_by_index
+
+
+def _resend_message_id(result: Any) -> str | None:
+    raw_id = None
+    if isinstance(result, dict):
+        raw_id = result.get("id") or result.get("Id")
+    else:
+        raw_id = getattr(result, "id", None)
+    normalized_id = str(raw_id or "").strip()
+    return normalized_id or None
+
+
+def _build_resend_batch_outcomes(
+    *,
+    prepared_emails: list[dict[str, object]],
+    response_data: list[Any],
+    error_by_index: dict[int, str],
+) -> list[dict[str, str | None]]:
+    outcomes: list[dict[str, str | None]] = []
+    success_index = 0
+    for index, email in enumerate(prepared_emails):
+        message_id: str | None = None
+        error = error_by_index.get(index)
+        if error is None:
+            if success_index >= len(response_data):
+                error = "missing provider batch result"
+            else:
+                message_id = _resend_message_id(response_data[success_index])
+                success_index += 1
+                if message_id is None:
+                    error = "missing provider message id"
+        outcomes.append(
+            {
+                "destination": str(email.get("to") or "").strip() or None,
+                "message_id": message_id,
+                "error": error,
+            }
+        )
+    return outcomes
+
+
+class ResendBatchSender:
+    def __init__(self, *, api_key: str) -> None:
+        self.api_key = str(api_key or "").strip()
+        if not self.api_key:
+            raise ValueError("Resend API key is required")
+
+    def _retrying(self) -> Retrying:
+        return Retrying(
+            retry=retry_if_exception(_is_retryable_resend_error),
+            stop=stop_after_attempt(4),
+            wait=wait_exponential_jitter(initial=0.5, max=8.0),
+            reraise=True,
+        )
+
+    def send_batch(
+        self,
+        *,
+        emails: list[dict[str, object]],
+        idempotency_key: str,
+    ) -> list[dict[str, str | None]]:
+        if resend is None:
+            raise RuntimeError(
+                "Resend transport requires the 'resend' package to be installed"
+            )
+        resend.api_key = self.api_key
+        prepared_emails = [dict(email) for email in emails]
+        response: Any | None = None
+        for attempt in self._retrying():
+            with attempt:
+                response = resend.Batch.send(
+                    cast(Any, prepared_emails),
+                    cast(
+                        Any,
+                        {
+                            "idempotency_key": str(idempotency_key),
+                            "batch_validation": "permissive",
+                        },
+                    ),
+                )
+        if response is None:
+            raise RuntimeError("Resend batch send returned no response")
+
+        response_data = list(getattr(response, "data", None) or [])
+        response_errors = list(getattr(response, "errors", None) or [])
+        return _build_resend_batch_outcomes(
+            prepared_emails=prepared_emails,
+            response_data=response_data,
+            error_by_index=_resend_error_by_index(response_errors),
         )
