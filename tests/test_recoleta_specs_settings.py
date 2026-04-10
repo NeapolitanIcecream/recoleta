@@ -163,7 +163,7 @@ def test_settings_rejects_email_recipient_lists_over_resend_batch_limit(
                 "public_site_url": "https://example.com/recoleta",
                 "from_email": "updates@example.com",
                 "to": [f"user-{idx}@example.com" for idx in range(101)],
-                "granularity": "week",
+                "granularities": ["week"],
             }
         ),
     )
@@ -521,7 +521,7 @@ def test_settings_loads_email_config_and_scrubs_resend_secret(
                 "public_site_url": "https://example.com/recoleta",
                 "from_email": "updates@example.com",
                 "to": ["alice@example.com", "bob@example.com"],
-                "granularity": "week",
+                "granularities": ["week", "day", "week"],
                 "max_clusters": 4,
                 "max_evidence_per_cluster": 3,
             }
@@ -536,13 +536,71 @@ def test_settings_loads_email_config_and_scrubs_resend_secret(
     assert settings.email.from_name == "Recoleta"
     assert settings.email.from_email == "updates@example.com"
     assert settings.email.to == ["alice@example.com", "bob@example.com"]
-    assert settings.email.granularity == "week"
+    assert settings.email.granularities == ["week", "day"]
     assert settings.email.max_clusters == 4
     assert settings.email.max_evidence_per_cluster == 3
     assert settings.resend_api_key is not None
     assert settings.resend_api_key.get_secret_value() == "re_test_secret"
     assert settings.safe_model_dump()["resend_api_key"] == "***"
     assert "re_test_secret" not in settings.safe_fingerprint()
+
+
+def test_settings_rejects_legacy_email_granularity_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv(
+        "EMAIL",
+        json.dumps(
+            {
+                "public_site_url": "https://example.com/recoleta",
+                "from_email": "updates@example.com",
+                "to": ["alice@example.com"],
+                "granularity": "week",
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="EMAIL.granularity is no longer supported"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_invalid_or_empty_email_granularities(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    monkeypatch.setenv(
+        "EMAIL",
+        json.dumps(
+            {
+                "public_site_url": "https://example.com/recoleta",
+                "from_email": "updates@example.com",
+                "to": ["alice@example.com"],
+                "granularities": [],
+            }
+        ),
+    )
+    with pytest.raises(ValueError, match="EMAIL.granularities must contain at least one"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+    monkeypatch.setenv(
+        "EMAIL",
+        json.dumps(
+            {
+                "public_site_url": "https://example.com/recoleta",
+                "from_email": "updates@example.com",
+                "to": ["alice@example.com"],
+                "granularities": ["week", "quarter"],
+            }
+        ),
+    )
+    with pytest.raises(ValueError, match="EMAIL.granularities must contain only"):
+        Settings()  # pyright: ignore[reportCallIssue]
 
 
 def test_settings_requires_artifacts_dir_when_debug_artifacts_enabled(

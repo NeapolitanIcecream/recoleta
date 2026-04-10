@@ -285,7 +285,7 @@ paths or silently downgrading to source links.
 The landed implementation uses a dedicated email config section rather than
 folding email into `publish_targets`.
 
-Implemented shape:
+Current shape:
 
 ```yaml
 email:
@@ -294,7 +294,9 @@ email:
   from_name: "Recoleta"
   to:
     - "operator@example.com"
-  granularity: "week"
+  granularities:
+    - "day"
+    - "week"
   language_code: "en"
   max_clusters: 3
   max_evidence_per_cluster: 2
@@ -617,3 +619,16 @@ The repository now ships this narrow slice:
 
 This is still intentionally narrow, but it is no longer only a proposal. It is
 the current `v1` manual trend email surface in the repository.
+
+## Follow-up Design
+
+The current note remains the source of truth for the original `v1` behavior
+only.
+
+The implemented clean-break replacement for that surface is captured in:
+
+- `docs/plans/2026-04-10-email-multi-granularity-follow-up.md`
+
+That note keeps the `v1` constraint of one email per selected trend document,
+switches config to `EMAIL.granularities`, and uses fan-out across multiple
+configured granularities rather than a combined digest email.

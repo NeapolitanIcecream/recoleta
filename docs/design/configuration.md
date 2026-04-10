@@ -48,12 +48,14 @@ Manual trend email is configured separately from `PUBLISH_TARGETS`. It is not a
 publish target and it is not part of `run publish`.
 
 - `EMAIL.public_site_url`: required absolute base URL for the already deployed
-  public site. `run email send` refuses to run unless the selected trend detail
-  page resolves under this base URL and is publicly reachable.
+  public site. `run email send` refuses to send any selected granularity unless
+  every send-target trend detail page resolves under this base URL and is
+  publicly reachable.
 - `EMAIL.from_email`: required sender address.
 - `EMAIL.from_name`: optional sender display name (default `Recoleta`).
 - `EMAIL.to`: required list of recipients.
-- `EMAIL.granularity`: required selection window, one of `day|week|month`.
+- `EMAIL.granularities`: required ordered list of selection windows,
+  containing one or more of `day|week|month`.
 - `EMAIL.language_code`: optional language filter for multilingual output; when
   unset, `run email` uses the current settings' default site language.
 - `EMAIL.max_clusters`: max rendered trend clusters per email (default `3`).
@@ -63,17 +65,25 @@ publish target and it is not part of `run publish`.
 
 Operational notes:
 
-- `recoleta run email preview` reads canonical trend markdown plus sibling
-  `*.presentation.json` sidecars and writes preview artifacts under
-  `MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...`.
-- `recoleta run email send` re-renders from the same inputs, writes send
-  artifacts under `MARKDOWN_OUTPUT_DIR/.recoleta-email/sends/...`, sends via
-  Resend, and persists dedupe-oriented state in `trend_deliveries`.
+- `recoleta run email preview` is batch-first. It reads canonical trend
+  markdown plus sibling `*.presentation.json` sidecars, renders every selected
+  granularity in memory first, and writes one preview root under
+  `MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...` only if the full selected
+  set succeeds.
+- `recoleta run email send` is batch-first. It re-renders from the same
+  inputs, performs full preflight across the effective selected set, writes one
+  send root under `MARKDOWN_OUTPUT_DIR/.recoleta-email/sends/...`, sends via
+  Resend only after preflight passes, and persists dedupe-oriented state in
+  `trend_deliveries`.
 - Both commands require the private site email link-map artifact written by the
   last site build. With the default site output path, that artifact is
   `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.
-- `run email send` is batch-oriented. Mixed partially sent recipient state is
-  rejected unless the operator passes `--force-batch`.
+- `run email preview` and `run email send` accept repeatable `--granularity`
+  selectors. The effective batch always preserves the configured
+  `EMAIL.granularities` order after filtering.
+- `run email send` rejects mixed partially sent recipient state unless the
+  operator passes `--force-batch`. `--force-batch` applies only to the selected
+  granularity set.
 
 Example:
 
@@ -84,7 +94,9 @@ email:
   from_name: "Recoleta"
   to:
     - "you@example.com"
-  granularity: "week"
+  granularities:
+    - "day"
+    - "week"
   language_code: "en"
   max_clusters: 3
   max_evidence_per_cluster: 2

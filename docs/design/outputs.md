@@ -23,10 +23,11 @@ Allowed values:
 
 Manual trend email is intentionally separate from `PUBLISH_TARGETS`:
 
-- `recoleta run email preview`: render one selected trend email batch without
-  sending
-- `recoleta run email send`: re-render, verify public site reachability, and
-  send one recipient batch via Resend
+- `recoleta run email preview`: render the effective selected granularity batch
+  without sending
+- `recoleta run email send`: re-render the effective selected granularity
+  batch, preflight every bundle that would send, and then send sequentially via
+  Resend
 
 ## Required settings by target
 
@@ -56,7 +57,8 @@ Under `MARKDOWN_OUTPUT_DIR`:
   surfaces derived from canonical outputs; localized trend and idea notes also
   emit adjacent `<stem>.presentation.json` sidecars
 - `site/`: optional derived static site output from `recoleta run site build`
-- `.recoleta-email/previews|sends/`: manual trend email preview/send artifacts
+- `.recoleta-email/previews|sends/`: manual trend email batch roots with one
+  `batch-manifest.json` plus one child directory per rendered bundle
 - `.site-email-links.json`: private link-map companion artifact emitted by the
   default site build for manual email link resolution
 
@@ -71,8 +73,9 @@ Item notes contain YAML frontmatter and sections such as `Summary` and `Links`.
 Trend notes are the canonical source for all downstream trend surfaces:
 
 - Telegram trend PDFs render from `MARKDOWN_OUTPUT_DIR/Trends/*.md`
-- manual trend email preview/send consumes the canonical trend markdown note
-  plus sibling `*.presentation.json` sidecar and site email link-map artifact
+- manual trend email preview/send consumes the selected canonical trend
+  markdown notes plus sibling `*.presentation.json` sidecars and the private
+  site email link-map artifact
 - `recoleta run site build` discovers sibling trend and idea sidecars first for
   detail-page rendering and falls back to markdown parsing when sidecars are
   missing or invalid
@@ -219,9 +222,16 @@ After `recoleta run site serve` / `recoleta run site build` /
 
 After `recoleta run email preview` / `recoleta run email send`, the CLI prints:
 
-- the selected trend id and period token
 - the preview/send status
-- the generated artifact directory path
+- the rendered bundle count
+- the generated batch root directory path
+
+In JSON mode, both commands emit batch-first payloads:
+
+- `preview_root_dir` or `send_root_dir`
+- `batch_manifest_path`
+- `results[]`, where each entry carries its own granularity, artifact paths,
+  primary page URL, content hash, subject, trend doc id, and period token
 
 After `recoleta repair outputs`, the CLI prints:
 

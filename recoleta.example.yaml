@@ -42,7 +42,9 @@ publish_targets:
 #   from_name: "Recoleta"
 #   to:
 #     - "you@example.com"
-#   granularity: "week"
+#   granularities:
+#     - "day"
+#     - "week"
 #   language_code: "en"
 #   max_clusters: 3
 #   max_evidence_per_cluster: 2

@@ -45,19 +45,33 @@ def _preview_payload(
     instance_name: str | None = None,
 ) -> dict[str, Any]:
     return {
-        "status": "ok",
+        "status": result.status,
         "command": command_name,
         "instance": instance_name or result.instance,
-        "preview_dir": str(result.preview_dir),
-        "manifest_path": str(result.manifest_path),
-        "html_path": str(result.html_path),
-        "text_path": str(result.text_path),
-        "primary_page_url": result.primary_page_url,
-        "content_hash": result.content_hash,
-        "subject": result.subject,
-        "trend_doc_id": result.trend_doc_id,
-        "period_token": result.period_token,
+        "preview_root_dir": str(result.preview_root_dir),
+        "batch_manifest_path": str(result.batch_manifest_path),
+        "results": [
+            {
+                "granularity": entry.granularity,
+                "preview_dir": str(entry.preview_dir),
+                "manifest_path": str(entry.manifest_path),
+                "html_path": str(entry.html_path),
+                "text_path": str(entry.text_path),
+                "primary_page_url": entry.primary_page_url,
+                "content_hash": entry.content_hash,
+                "subject": entry.subject,
+                "trend_doc_id": entry.trend_doc_id,
+                "period_token": entry.period_token,
+            }
+            for entry in result.results
+        ],
     }
+
+
+def _path_payload(path: object) -> str | None:
+    if path is None:
+        return None
+    return str(path)
 
 
 def _send_payload(
@@ -70,15 +84,25 @@ def _send_payload(
         "status": result.status,
         "command": command_name,
         "instance": instance_name or result.instance,
-        "send_dir": str(result.send_dir),
-        "manifest_path": str(result.manifest_path),
-        "html_path": str(result.html_path),
-        "text_path": str(result.text_path),
-        "primary_page_url": result.primary_page_url,
-        "content_hash": result.content_hash,
-        "subject": result.subject,
-        "trend_doc_id": result.trend_doc_id,
-        "period_token": result.period_token,
+        "send_root_dir": str(result.send_root_dir),
+        "batch_manifest_path": str(result.batch_manifest_path),
+        "results": [
+            {
+                "status": entry.status,
+                "granularity": entry.granularity,
+                "send_dir": _path_payload(entry.send_dir),
+                "manifest_path": _path_payload(entry.manifest_path),
+                "html_path": _path_payload(entry.html_path),
+                "text_path": _path_payload(entry.text_path),
+                "primary_page_url": entry.primary_page_url,
+                "content_hash": entry.content_hash,
+                "subject": entry.subject,
+                "trend_doc_id": entry.trend_doc_id,
+                "period_token": entry.period_token,
+                **({"error": entry.error} if entry.error is not None else {}),
+            }
+            for entry in result.results
+        ],
     }
 
 
@@ -107,6 +131,7 @@ def run_email_preview_command(**kwargs: Any) -> dict[str, Any]:
             site_output_dir=site_output_dir_from_settings(runtime.settings),
             anchor_date=parsed_anchor,
             output_dir=kwargs.get("output_dir"),
+            granularities=kwargs.get("granularities"),
         )
     except Exception as exc:  # noqa: BLE001
         emit_command_error(
@@ -122,8 +147,7 @@ def run_email_preview_command(**kwargs: Any) -> dict[str, Any]:
         return payload
     runtime.console.print(
         f"[green]{command_name} completed[/green] "
-        f"trend={result.trend_doc_id} period={result.period_token} "
-        f"output={result.preview_dir}"
+        f"bundles={len(result.results)} output={result.preview_root_dir}"
     )
     return payload
 
@@ -155,6 +179,7 @@ def run_email_send_command(**kwargs: Any) -> dict[str, Any]:
                 site_output_dir=site_output_dir_from_settings(runtime.settings),
                 anchor_date=parsed_anchor,
                 force_batch=bool(kwargs.get("force_batch", False)),
+                granularities=kwargs.get("granularities"),
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -166,25 +191,23 @@ def run_email_send_command(**kwargs: Any) -> dict[str, Any]:
             exit_code=1,
         )
     payload = _send_payload(command_name=command_name, result=result)
-    if result.status == "failed":
-        emit_command_error(
-            command_name=command_name,
-            message=(
-                "provider send failed "
-                f"trend={result.trend_doc_id} period={result.period_token} "
-                f"output={result.send_dir}"
-            ),
-            console=runtime.console,
-            json_output=json_output,
-            exit_code=1,
-        )
     if json_output:
         cli._emit_json(payload)
+        if result.status in {"preflight_failed", "send_failed"}:
+            raise cli.typer.Exit(code=1)
         return payload
-    color = "yellow" if result.status == "skipped" else "green"
+    all_skipped = bool(result.results) and all(
+        entry.status == "skipped" for entry in result.results
+    )
+    color = (
+        "red"
+        if result.status in {"preflight_failed", "send_failed"}
+        else ("yellow" if all_skipped else "green")
+    )
     runtime.console.print(
         f"[{color}]{command_name} {result.status}[/{color}] "
-        f"trend={result.trend_doc_id} period={result.period_token} "
-        f"output={result.send_dir}"
+        f"bundles={len(result.results)} output={result.send_root_dir}"
     )
+    if result.status in {"preflight_failed", "send_failed"}:
+        raise cli.typer.Exit(code=1)
     return payload

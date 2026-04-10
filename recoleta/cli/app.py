@@ -172,7 +172,14 @@ _EMAIL_ANCHOR_DATE_OPTION = Annotated[
     str | None,
     typer.Option(
         "--date",
-        help="Target UTC date (YYYY-MM-DD or YYYYMMDD). Uses the matching day/week/month window for EMAIL.granularity.",
+        help="Target UTC date (YYYY-MM-DD or YYYYMMDD). Anchors every selected granularity to its matching day/week/month window.",
+    ),
+]
+_EMAIL_GRANULARITIES_OPTION = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--granularity",
+        help="Optionally limit the batch to one or more configured granularities. Repeat the flag to select multiple values.",
     ),
 ]
 _EMAIL_OUTPUT_DIR_OPTION = Annotated[
@@ -182,7 +189,7 @@ _EMAIL_OUTPUT_DIR_OPTION = Annotated[
         file_okay=False,
         dir_okay=True,
         resolve_path=True,
-        help="Optional directory for preview artifacts. Defaults to MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...",
+        help="Optional root directory for preview batch artifacts. Defaults to MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...",
     ),
 ]
 _FLEET_EMAIL_OUTPUT_DIR_OPTION = Annotated[
@@ -192,15 +199,25 @@ _FLEET_EMAIL_OUTPUT_DIR_OPTION = Annotated[
         file_okay=False,
         dir_okay=True,
         resolve_path=True,
-        help="Optional directory for preview artifacts. Defaults to the child instance preview path.",
+        help="Optional root directory for preview batch artifacts. Defaults to the child instance preview path.",
     ),
 ]
 
-def _fleet_email_site_output_dir_value() -> Path | None:
+
+class _FleetEmailExtraOptions:
+    def __init__(
+        self, *, site_output_dir: Path | None = None, json_output: bool = False
+    ) -> None:
+        self.site_output_dir = site_output_dir
+        self.json_output = json_output
+
+
+def _fleet_email_extra_options() -> _FleetEmailExtraOptions:
     extra_args = list(get_current_context().args)
     if not extra_args:
-        return None
+        return _FleetEmailExtraOptions()
     resolved: Path | None = None
+    json_output = False
     index = 0
     while index < len(extra_args):
         token = extra_args[index]
@@ -223,8 +240,14 @@ def _fleet_email_site_output_dir_value() -> Path | None:
             resolved = Path(raw_value).expanduser().resolve()
             index += 1
             continue
+        if token == "--json":
+            json_output = True
+            index += 1
+            continue
         raise click.NoSuchOption(token)
-    return resolved
+    return _FleetEmailExtraOptions(site_output_dir=resolved, json_output=json_output)
+
+
 _FLEET_EMAIL_MANIFEST_OPTION = Annotated[
     Path,
     typer.Option(
@@ -248,7 +271,7 @@ _EMAIL_FORCE_BATCH_OPTION = Annotated[
     bool,
     typer.Option(
         "--force-batch",
-        help="Force a full resend even when the current content hash was already sent or the batch is in a mixed state.",
+        help="Force a resend for the effective selected granularity set even when the current content hash was already sent or the batch is in a mixed state.",
     ),
 ]
 _EMAIL_JSON_OUTPUT_OPTION = Annotated[
@@ -685,12 +708,14 @@ def fleet_run_deploy(
 @run_email_app.command("preview")
 def run_email_preview(
     anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    granularities: _EMAIL_GRANULARITIES_OPTION = None,
     output_dir: _EMAIL_OUTPUT_DIR_OPTION = None,
     json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
 ) -> None:
-    """Render a manual trend email preview from the latest matching trend note."""
+    """Render manual trend email preview batches from the latest matching trend notes."""
     run_email_preview_command(
         anchor_date=anchor_date,
+        granularities=granularities or [],
         output_dir=output_dir,
         json_output=json_output,
         command_name="run email preview",
@@ -700,12 +725,14 @@ def run_email_preview(
 @run_email_app.command("send")
 def run_email_send(
     anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    granularities: _EMAIL_GRANULARITIES_OPTION = None,
     force_batch: _EMAIL_FORCE_BATCH_OPTION = False,
     json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
 ) -> None:
-    """Send the manual trend email batch via Resend."""
+    """Send manual trend email batches via Resend."""
     run_email_send_command(
         anchor_date=anchor_date,
+        granularities=granularities or [],
         force_batch=force_batch,
         json_output=json_output,
         command_name="run email send",
@@ -720,17 +747,19 @@ def fleet_run_email_preview(
     manifest_path: _FLEET_EMAIL_MANIFEST_OPTION,
     instance: _FLEET_EMAIL_INSTANCE_OPTION,
     anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    granularities: _EMAIL_GRANULARITIES_OPTION = None,
     output_dir: _FLEET_EMAIL_OUTPUT_DIR_OPTION = None,
-    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
 ) -> None:
-    """Render a manual trend email preview for one child instance."""
+    """Render manual trend email preview batches for one child instance."""
+    extra_options = _fleet_email_extra_options()
     run_fleet_email_preview_command(
         manifest_path=manifest_path,
         instance=instance,
         anchor_date=anchor_date,
-        site_output_dir=_fleet_email_site_output_dir_value(),
+        granularities=granularities or [],
+        site_output_dir=extra_options.site_output_dir,
         output_dir=output_dir,
-        json_output=json_output,
+        json_output=extra_options.json_output,
         command_name="fleet run email preview",
     )
 
@@ -743,17 +772,19 @@ def fleet_run_email_send(
     manifest_path: _FLEET_EMAIL_MANIFEST_OPTION,
     instance: _FLEET_EMAIL_INSTANCE_OPTION,
     anchor_date: _EMAIL_ANCHOR_DATE_OPTION = None,
+    granularities: _EMAIL_GRANULARITIES_OPTION = None,
     force_batch: _EMAIL_FORCE_BATCH_OPTION = False,
-    json_output: _EMAIL_JSON_OUTPUT_OPTION = False,
 ) -> None:
-    """Send the manual trend email batch for one child instance."""
+    """Send manual trend email batches for one child instance."""
+    extra_options = _fleet_email_extra_options()
     run_fleet_email_send_command(
         manifest_path=manifest_path,
         instance=instance,
         anchor_date=anchor_date,
-        site_output_dir=_fleet_email_site_output_dir_value(),
+        granularities=granularities or [],
+        site_output_dir=extra_options.site_output_dir,
         force_batch=force_batch,
-        json_output=json_output,
+        json_output=extra_options.json_output,
         command_name="fleet run email send",
     )
 

@@ -85,8 +85,8 @@ class PartialFailureResendBatchSender:
 class EmailFixture(TypedDict):
     output_dir: Path
     repository: Repository
-    trend_doc_id: int
-    trend_note_path: Path
+    trend_doc_ids: dict[str, int]
+    trend_note_paths: dict[str, Path]
     item_note_path: Path
 
 
@@ -97,6 +97,7 @@ def _send_request(
     url_checker: Callable[[str], bool] | None = None,
     anchor_date: date | None = None,
     force_batch: bool = False,
+    granularities: list[str] | None = None,
 ) -> TrendEmailSendRequest:
     return TrendEmailSendRequest(
         site_output_dir=site_output_dir,
@@ -104,6 +105,7 @@ def _send_request(
         url_checker=url_checker,
         anchor_date=anchor_date,
         force_batch=force_batch,
+        granularities=granularities,
     )
 
 
@@ -113,6 +115,7 @@ def _set_email_env(
     tmp_path: Path,
     output_dir: Path,
     recipients: list[str] | None = None,
+    granularities: list[str] | None = None,
 ) -> Settings:
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
@@ -125,7 +128,7 @@ def _set_email_env(
                 "public_site_url": "https://public.example/recoleta",
                 "from_email": "updates@example.com",
                 "to": recipients or ["alice@example.com", "bob@example.com"],
-                "granularity": "day",
+                "granularities": granularities or ["day"],
             }
         ),
     )
@@ -177,6 +180,7 @@ def _write_email_fixture(
     *,
     tmp_path: Path,
     instance: str | None = None,
+    granularities: tuple[str, ...] = ("day",),
 ) -> EmailFixture:
     output_dir = tmp_path / "notes"
     repository = Repository(db_path=tmp_path / "recoleta.db")
@@ -203,65 +207,179 @@ def _write_email_fixture(
     )
     relative_item_href = os.path.relpath(item_note_path, start=output_dir / "Trends")
 
-    trend_doc = repository.upsert_document_for_trend(
-        granularity="day",
-        period_start=datetime(2026, 2, 25, tzinfo=UTC),
-        period_end=datetime(2026, 2, 26, tzinfo=UTC),
-        title="Agent systems",
-    )
-    assert trend_doc.id is not None
-    trend_note_path = write_markdown_trend_note(
-        output_dir=output_dir,
-        trend_doc_id=int(trend_doc.id),
-        title="Agent systems",
-        granularity="day",
-        period_start=datetime(2026, 2, 25, tzinfo=UTC),
-        period_end=datetime(2026, 2, 26, tzinfo=UTC),
-        run_id="run-trend-email",
-        overview_md=(
-            "Agent workflows are getting more production-ready with "
-            f"[grounded notes]({relative_item_href})."
+    trend_doc_ids: dict[str, int] = {}
+    trend_note_paths: dict[str, Path] = {}
+    period_specs = {
+        "day": (
+            datetime(2026, 2, 25, tzinfo=UTC),
+            datetime(2026, 2, 26, tzinfo=UTC),
+            "Agent systems day",
         ),
-        topics=["agents", "tooling"],
-        clusters=[
-            {
-                "title": "Release discipline",
-                "content_md": (
-                    "Verification moved into the shipping path with "
-                    f"[linked evidence]({relative_item_href})."
-                ),
-                "evidence_refs": [
-                    {
-                        "doc_id": item_doc_id,
-                        "chunk_index": 0,
-                        "title": "Grounded runtime checks",
-                        "href": relative_item_href,
-                        "url": "https://example.com/trend-email-item",
-                        "reason": "The note grounds release discipline in the corpus.",
-                    }
-                ],
-            }
-        ],
-    )
-    if instance is not None:
-        raw = trend_note_path.read_text(encoding="utf-8")
-        trend_note_path.write_text(
-            raw.replace("run_id: run-trend-email", f"run_id: run-trend-email\ninstance: {instance}"),
-            encoding="utf-8",
+        "week": (
+            datetime(2026, 2, 23, tzinfo=UTC),
+            datetime(2026, 3, 2, tzinfo=UTC),
+            "Agent systems week",
+        ),
+        "month": (
+            datetime(2026, 2, 1, tzinfo=UTC),
+            datetime(2026, 3, 1, tzinfo=UTC),
+            "Agent systems month",
+        ),
+    }
+    for granularity in granularities:
+        period_start, period_end, title = period_specs[granularity]
+        trend_doc = repository.upsert_document_for_trend(
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            title=title,
         )
+        assert trend_doc.id is not None
+        trend_note_path = write_markdown_trend_note(
+            output_dir=output_dir,
+            trend_doc_id=int(trend_doc.id),
+            title=title,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            run_id="run-trend-email",
+            overview_md=(
+                "Agent workflows are getting more production-ready with "
+                f"[grounded notes]({relative_item_href})."
+            ),
+            topics=["agents", "tooling"],
+            clusters=[
+                {
+                    "title": "Release discipline",
+                    "content_md": (
+                        "Verification moved into the shipping path with "
+                        f"[linked evidence]({relative_item_href})."
+                    ),
+                    "evidence_refs": [
+                        {
+                            "doc_id": item_doc_id,
+                            "chunk_index": 0,
+                            "title": "Grounded runtime checks",
+                            "href": relative_item_href,
+                            "url": "https://example.com/trend-email-item",
+                            "reason": "The note grounds release discipline in the corpus.",
+                        }
+                    ],
+                }
+            ],
+        )
+        if instance is not None:
+            raw = trend_note_path.read_text(encoding="utf-8")
+            trend_note_path.write_text(
+                raw.replace(
+                    "run_id: run-trend-email",
+                    f"run_id: run-trend-email\ninstance: {instance}",
+                ),
+                encoding="utf-8",
+            )
+        trend_doc_ids[granularity] = int(trend_doc.id)
+        trend_note_paths[granularity] = trend_note_path
     return {
         "output_dir": output_dir,
         "repository": repository,
-        "trend_doc_id": int(trend_doc.id),
-        "trend_note_path": trend_note_path,
+        "trend_doc_ids": trend_doc_ids,
+        "trend_note_paths": trend_note_paths,
         "item_note_path": item_note_path,
     }
+
+
+def _preview_entry(result: object, granularity: str | None = None) -> object:
+    results = list(getattr(result, "results"))
+    if granularity is None:
+        assert len(results) == 1
+        return results[0]
+    for entry in results:
+        if getattr(entry, "granularity") == granularity:
+            return entry
+    raise AssertionError(f"missing preview entry for granularity={granularity}")
+
+
+def _send_entry(result: object, granularity: str | None = None) -> object:
+    results = list(getattr(result, "results"))
+    if granularity is None:
+        assert len(results) == 1
+        return results[0]
+    for entry in results:
+        if getattr(entry, "granularity") == granularity:
+            return entry
+    raise AssertionError(f"missing send entry for granularity={granularity}")
+
+
+def _fake_preview_batch_result(*, tmp_path: Path, instance: str = "default") -> object:
+    preview_dir = tmp_path / "preview" / "day--2026-02-25--trend--123"
+    return SimpleNamespace(
+        status="succeeded",
+        preview_root_dir=tmp_path / "preview",
+        batch_manifest_path=tmp_path / "preview" / "batch-manifest.json",
+        instance=instance,
+        results=[
+            SimpleNamespace(
+                granularity="day",
+                preview_dir=preview_dir,
+                manifest_path=preview_dir / "manifest.json",
+                html_path=preview_dir / "body.html",
+                text_path=preview_dir / "body.txt",
+                primary_page_url="https://public.example/recoleta/trends/example",
+                content_hash="hash-123",
+                subject="[Recoleta] Day trends · 2026-02-25",
+                trend_doc_id=123,
+                period_token="2026-02-25",
+            )
+        ],
+    )
+
+
+def _fake_send_batch_result(
+    *,
+    tmp_path: Path,
+    status: str,
+    entry_status: str,
+    instance: str = "default",
+    error: str | None = None,
+    with_artifacts: bool = True,
+) -> object:
+    send_dir = (
+        tmp_path / "send" / "day--2026-02-25--trend--123"
+        if with_artifacts
+        else None
+    )
+    return SimpleNamespace(
+        status=status,
+        send_root_dir=tmp_path / "send",
+        batch_manifest_path=tmp_path / "send" / "batch-manifest.json",
+        instance=instance,
+        results=[
+            SimpleNamespace(
+                status=entry_status,
+                granularity="day",
+                send_dir=send_dir,
+                manifest_path=send_dir / "manifest.json" if send_dir else None,
+                html_path=send_dir / "body.html" if send_dir else None,
+                text_path=send_dir / "body.txt" if send_dir else None,
+                primary_page_url=(
+                    "https://public.example/recoleta/trends/example"
+                    if with_artifacts
+                    else None
+                ),
+                content_hash="hash-123" if with_artifacts else None,
+                subject="[Recoleta] Day trends · 2026-02-25" if with_artifacts else None,
+                trend_doc_id=123 if with_artifacts else None,
+                period_token="2026-02-25" if with_artifacts else None,
+                error=error,
+            )
+        ],
+    )
 
 
 def test_export_trend_static_site_writes_email_link_map_artifact(tmp_path: Path) -> None:
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = fixture["output_dir"]
-    trend_note_path = fixture["trend_note_path"]
+    trend_note_path = fixture["trend_note_paths"]["day"]
     item_note_path = fixture["item_note_path"]
     assert isinstance(output_dir, Path)
     assert isinstance(trend_note_path, Path)
@@ -302,8 +420,8 @@ def test_export_trend_static_site_aggregate_instance_build_writes_email_link_map
 
     artifact_path = email_links_artifact_path(site_output_dir=site_dir)
     payload = load_email_links_artifact(artifact_path=artifact_path)
-    alpha_trend = Path(alpha_fixture["trend_note_path"])
-    beta_trend = Path(beta_fixture["trend_note_path"])
+    alpha_trend = Path(alpha_fixture["trend_note_paths"]["day"])
+    beta_trend = Path(beta_fixture["trend_note_paths"]["day"])
     assert "alpha--" in payload["pages_by_source_markdown"][str(alpha_trend.resolve())]
     assert "beta--" in payload["pages_by_source_markdown"][str(beta_trend.resolve())]
 
@@ -319,21 +437,103 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
 
     result = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    entry = _preview_entry(result)
 
-    assert result.preview_dir.exists()
-    assert result.manifest_path.exists()
-    html_body = result.html_path.read_text(encoding="utf-8")
-    text_body = result.text_path.read_text(encoding="utf-8")
+    assert result.preview_root_dir.exists()
+    assert result.batch_manifest_path.exists()
+    assert entry.preview_dir.exists()
+    assert entry.manifest_path.exists()
+    html_body = entry.html_path.read_text(encoding="utf-8")
+    text_body = entry.text_path.read_text(encoding="utf-8")
     assert "https://public.example/recoleta/trends/" in html_body
     assert "https://public.example/recoleta/items/" in html_body
     assert "Open on site" in html_body
     assert "Agent systems" in text_body
-    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["content_hash"] == result.content_hash
-    assert manifest["primary_page_url"] == result.primary_page_url
+    manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["content_hash"] == entry.content_hash
+    assert manifest["primary_page_url"] == entry.primary_page_url
 
 
-def test_send_trend_email_blocks_when_primary_page_is_not_publicly_reachable(
+def test_build_trend_email_preview_writes_multi_granularity_batch_in_config_order(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("day", "week"))
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["day", "week"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+
+    assert result.status == "succeeded"
+    assert [entry.granularity for entry in result.results] == ["day", "week"]
+    assert result.preview_root_dir.exists()
+    assert result.batch_manifest_path.exists()
+    batch_manifest = json.loads(result.batch_manifest_path.read_text(encoding="utf-8"))
+    assert batch_manifest["status"] == "succeeded"
+    assert len(batch_manifest["results"]) == 2
+
+
+def test_build_trend_email_preview_is_all_or_nothing_on_multi_granularity_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("day",))
+    output_dir = Path(fixture["output_dir"])
+    preview_root = tmp_path / "preview-root"
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["day", "week"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    with pytest.raises(RuntimeError, match="granularity=week"):
+        build_trend_email_preview(
+            settings=settings,
+            site_output_dir=site_dir,
+            output_dir=preview_root,
+        )
+
+    assert not preview_root.exists()
+
+
+def test_build_trend_email_preview_filters_selected_granularities_in_config_order(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        granularities=("day", "week", "month"),
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["week", "day", "month"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = build_trend_email_preview(
+        settings=settings,
+        site_output_dir=site_dir,
+        granularities=["month", "week"],
+    )
+
+    assert [entry.granularity for entry in result.results] == ["week", "month"]
+
+
+def test_send_trend_email_marks_preflight_failed_when_primary_page_is_not_publicly_reachable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -345,16 +545,102 @@ def test_send_trend_email_blocks_when_primary_page_is_not_publicly_reachable(
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
 
-    with pytest.raises(RuntimeError, match="public trend page is not reachable"):
-        send_trend_email(
-            settings=settings,
-            repository=repository,
-            request=_send_request(
-                site_output_dir=site_dir,
-                sender=FakeResendBatchSender(),
-                url_checker=lambda _url: False,
-            ),
-        )
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=FakeResendBatchSender(),
+            url_checker=lambda _url: False,
+        ),
+    )
+
+    assert result.status == "preflight_failed"
+    entry = _send_entry(result)
+    assert entry.status == "preflight_failed"
+    assert "public trend page is not reachable" in str(entry.error)
+
+
+def test_send_trend_email_preflight_failure_keeps_ready_entries_and_skips_provider_calls(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("week", "month"))
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["week", "month"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    preview = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    blocked_url = _preview_entry(preview, "week").primary_page_url
+    sender = FakeResendBatchSender()
+
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda url: url != blocked_url,
+        ),
+    )
+
+    assert result.status == "preflight_failed"
+    assert [entry.granularity for entry in result.results] == ["week", "month"]
+    assert _send_entry(result, "week").status == "preflight_failed"
+    assert _send_entry(result, "month").status == "ready_to_send"
+    assert sender.calls == []
+
+
+def test_send_trend_email_converts_bundle_build_failures_into_preflight_failed_results(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("day",))
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["day", "week"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    sender = FakeResendBatchSender()
+
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
+    )
+
+    assert result.status == "preflight_failed"
+    assert [entry.granularity for entry in result.results] == ["day", "week"]
+    ready = _send_entry(result, "day")
+    assert ready.status == "ready_to_send"
+    assert ready.send_dir is not None and ready.send_dir.exists()
+    blocked = _send_entry(result, "week")
+    assert blocked.status == "preflight_failed"
+    assert blocked.error == "no matching trend email candidate found for granularity=week"
+    assert blocked.send_dir is None
+    assert blocked.manifest_path is None
+    assert blocked.html_path is None
+    assert blocked.text_path is None
+    assert sender.calls == []
+    batch_manifest = json.loads(result.batch_manifest_path.read_text(encoding="utf-8"))
+    assert batch_manifest["status"] == "preflight_failed"
+    assert batch_manifest["results"][1]["granularity"] == "week"
+    assert batch_manifest["results"][1]["send_dir"] is None
 
 
 def test_send_trend_email_skips_duplicate_batch_for_unchanged_content(
@@ -364,7 +650,7 @@ def test_send_trend_email_skips_duplicate_batch_for_unchanged_content(
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
     repository = fixture["repository"]
-    trend_doc_id = int(fixture["trend_doc_id"])
+    trend_doc_id = int(fixture["trend_doc_ids"]["day"])
     settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
@@ -389,8 +675,10 @@ def test_send_trend_email_skips_duplicate_batch_for_unchanged_content(
         ),
     )
 
-    assert first.status == "sent"
-    assert second.status == "skipped"
+    assert first.status == "succeeded"
+    assert _send_entry(first).status == "sent"
+    assert second.status == "succeeded"
+    assert _send_entry(second).status == "skipped"
     assert len(sender.calls) == 1
     rows = repository.list_trend_deliveries(
         doc_id=trend_doc_id,
@@ -407,11 +695,12 @@ def test_send_trend_email_skips_without_requiring_public_url_reachability(
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
     repository = fixture["repository"]
-    trend_doc_id = int(fixture["trend_doc_id"])
+    trend_doc_id = int(fixture["trend_doc_ids"]["day"])
     settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
     preview = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    preview_entry = _preview_entry(preview)
 
     assert settings.email is not None
     for destination in settings.email.to:
@@ -419,7 +708,7 @@ def test_send_trend_email_skips_without_requiring_public_url_reachability(
             doc_id=trend_doc_id,
             channel=DELIVERY_CHANNEL_EMAIL,
             destination=destination,
-            content_hash=preview.content_hash,
+            content_hash=preview_entry.content_hash,
             message_id=f"msg-{destination}",
             status=DELIVERY_STATUS_SENT,
             error=None,
@@ -434,7 +723,8 @@ def test_send_trend_email_skips_without_requiring_public_url_reachability(
         ),
     )
 
-    assert result.status == "skipped"
+    assert result.status == "succeeded"
+    assert _send_entry(result).status == "skipped"
 
 
 def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_state(
@@ -444,11 +734,12 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
     repository = fixture["repository"]
-    trend_doc_id = int(fixture["trend_doc_id"])
+    trend_doc_id = int(fixture["trend_doc_ids"]["day"])
     settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
     preview = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    preview_entry = _preview_entry(preview)
     retry_sender = FakeResendBatchSender()
 
     assert settings.email is not None
@@ -457,7 +748,7 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
             doc_id=trend_doc_id,
             channel=DELIVERY_CHANNEL_EMAIL,
             destination=destination,
-            content_hash=preview.content_hash,
+            content_hash=preview_entry.content_hash,
             message_id=None,
             status=DELIVERY_STATUS_FAILED,
             error="provider failed",
@@ -472,7 +763,8 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
             url_checker=lambda _url: True,
         ),
     )
-    assert retry_result.status == "sent"
+    assert retry_result.status == "succeeded"
+    assert _send_entry(retry_result).status == "sent"
     assert retry_sender.calls == [
         {
             "emails": ANY,
@@ -480,14 +772,14 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
         }
     ]
     assert retry_sender.calls[0]["idempotency_key"] != (
-        f"trend-email:{trend_doc_id}:{preview.content_hash}"
+        f"trend-email:{trend_doc_id}:{preview_entry.content_hash}"
     )
 
     repository.upsert_trend_delivery(
         doc_id=trend_doc_id,
         channel=DELIVERY_CHANNEL_EMAIL,
         destination=settings.email.to[0],
-        content_hash=preview.content_hash,
+        content_hash=preview_entry.content_hash,
         message_id="msg-existing",
         status=DELIVERY_STATUS_SENT,
         error=None,
@@ -502,16 +794,18 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
         error="old failure",
     )
 
-    with pytest.raises(RuntimeError, match="mixed_batch_state"):
-        send_trend_email(
-            settings=settings,
-            repository=repository,
-            request=_send_request(
-                site_output_dir=site_dir,
-                sender=FakeResendBatchSender(),
-                url_checker=lambda _url: True,
-            ),
-        )
+    blocked = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=FakeResendBatchSender(),
+            url_checker=lambda _url: True,
+        ),
+    )
+    assert blocked.status == "preflight_failed"
+    assert _send_entry(blocked).status == "preflight_failed"
+    assert _send_entry(blocked).error == "mixed_batch_state"
 
     forced = send_trend_email(
         settings=settings,
@@ -523,7 +817,8 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
             force_batch=True,
         ),
     )
-    assert forced.status == "sent"
+    assert forced.status == "succeeded"
+    assert _send_entry(forced).status == "sent"
 
 
 def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
@@ -533,11 +828,12 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
     repository = fixture["repository"]
-    trend_doc_id = int(fixture["trend_doc_id"])
+    trend_doc_id = int(fixture["trend_doc_ids"]["day"])
     settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
     preview = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    preview_entry = _preview_entry(preview)
     sender = FakeResendBatchSender()
     frozen_now = datetime(2026, 4, 10, 4, 55, 0, tzinfo=UTC)
 
@@ -588,8 +884,10 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
         ),
     )
 
-    assert first_force.status == "sent"
-    assert second_force.status == "sent"
+    assert first_force.status == "succeeded"
+    assert _send_entry(first_force).status == "sent"
+    assert second_force.status == "succeeded"
+    assert _send_entry(second_force).status == "sent"
     assert sender.calls[0]["idempotency_key"] != sender.calls[1]["idempotency_key"]
     assert ":force:" in str(sender.calls[0]["idempotency_key"])
     assert ":force:" in str(sender.calls[1]["idempotency_key"])
@@ -600,7 +898,7 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
             doc_id=trend_doc_id,
             channel=DELIVERY_CHANNEL_EMAIL,
             destination=destination,
-            content_hash=preview.content_hash,
+            content_hash=preview_entry.content_hash,
             message_id=None,
             status=DELIVERY_STATUS_FAILED,
             error="provider failed",
@@ -620,7 +918,7 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
             doc_id=trend_doc_id,
             channel=DELIVERY_CHANNEL_EMAIL,
             destination=destination,
-            content_hash=preview.content_hash,
+            content_hash=preview_entry.content_hash,
             message_id=None,
             status=DELIVERY_STATUS_FAILED,
             error="provider failed",
@@ -635,8 +933,10 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
         ),
     )
 
-    assert first_retry.status == "sent"
-    assert second_retry.status == "sent"
+    assert first_retry.status == "succeeded"
+    assert _send_entry(first_retry).status == "sent"
+    assert second_retry.status == "succeeded"
+    assert _send_entry(second_retry).status == "sent"
     assert sender.calls[2]["idempotency_key"] != sender.calls[3]["idempotency_key"]
     assert ":retry:" in str(sender.calls[2]["idempotency_key"])
     assert ":retry:" in str(sender.calls[3]["idempotency_key"])
@@ -668,7 +968,8 @@ def test_send_trend_email_changes_non_force_idempotency_key_when_recipient_batch
             url_checker=lambda _url: True,
         ),
     )
-    assert first.status == "sent"
+    assert first.status == "succeeded"
+    assert _send_entry(first).status == "sent"
 
     assert settings.email is not None
     settings.email.to = ["carol@example.com", "dave@example.com"]
@@ -683,7 +984,8 @@ def test_send_trend_email_changes_non_force_idempotency_key_when_recipient_batch
         ),
     )
 
-    assert second.status == "sent"
+    assert second.status == "succeeded"
+    assert _send_entry(second).status == "sent"
     assert len(sender.calls) == 2
     assert sender.calls[0]["idempotency_key"] != sender.calls[1]["idempotency_key"]
     assert ":force:" not in str(sender.calls[1]["idempotency_key"])
@@ -697,7 +999,7 @@ def test_send_trend_email_returns_failed_when_any_recipient_fails(
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
     repository = fixture["repository"]
-    trend_doc_id = int(fixture["trend_doc_id"])
+    trend_doc_id = int(fixture["trend_doc_ids"]["day"])
     settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
@@ -712,13 +1014,45 @@ def test_send_trend_email_returns_failed_when_any_recipient_fails(
         ),
     )
 
-    assert result.status == "failed"
+    assert result.status == "send_failed"
+    assert _send_entry(result).status == "send_failed"
     rows = repository.list_trend_deliveries(
         doc_id=trend_doc_id,
         channel=DELIVERY_CHANNEL_EMAIL,
     )
     assert len(rows) == 2
     assert {row.status for row in rows} == {DELIVERY_STATUS_SENT, DELIVERY_STATUS_FAILED}
+
+
+def test_send_trend_email_marks_later_bundles_not_attempted_after_send_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("day", "week"))
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["day", "week"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=PartialFailureResendBatchSender(),
+            url_checker=lambda _url: True,
+        ),
+    )
+
+    assert result.status == "send_failed"
+    assert _send_entry(result, "day").status == "send_failed"
+    assert _send_entry(result, "week").status == "not_attempted"
 
 
 def test_send_trend_email_rejects_recipient_lists_over_resend_batch_limit(
@@ -738,16 +1072,106 @@ def test_send_trend_email_rejects_recipient_lists_over_resend_batch_limit(
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
 
-    with pytest.raises(ValueError, match="at most 100 recipients"):
-        send_trend_email(
-            settings=settings,
-            repository=repository,
-            request=_send_request(
-                site_output_dir=site_dir,
-                sender=FakeResendBatchSender(),
-                url_checker=lambda _url: True,
-            ),
-        )
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=FakeResendBatchSender(),
+            url_checker=lambda _url: True,
+        ),
+    )
+
+    assert result.status == "preflight_failed"
+    assert _send_entry(result).status == "preflight_failed"
+    assert "at most 100 recipients" in str(_send_entry(result).error)
+
+
+def test_send_trend_email_force_batch_applies_only_to_selected_granularity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("day", "week"))
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["day", "week"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    sender = FakeResendBatchSender()
+
+    first = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
+    )
+    forced_week = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+            force_batch=True,
+            granularities=["week"],
+        ),
+    )
+
+    assert first.status == "succeeded"
+    assert forced_week.status == "succeeded"
+    assert [entry.granularity for entry in forced_week.results] == ["week"]
+    assert _send_entry(forced_week, "week").status == "sent"
+    assert len(sender.calls) == 3
+
+
+def test_send_trend_email_returns_succeeded_when_all_selected_bundles_are_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, granularities=("day", "week"))
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        granularities=["day", "week"],
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    sender = FakeResendBatchSender()
+
+    initial = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
+    )
+    result = send_trend_email(
+        settings=settings,
+        repository=repository,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: False,
+        ),
+    )
+
+    assert initial.status == "succeeded"
+    assert result.status == "succeeded"
+    assert [entry.status for entry in result.results] == ["skipped", "skipped"]
+    assert len(sender.calls) == 2
 
 
 def test_preview_content_hash_is_stable_across_workspace_paths(
@@ -784,7 +1208,7 @@ def test_preview_content_hash_is_stable_across_workspace_paths(
         site_output_dir=site_dir_two,
     )
 
-    assert preview_one.content_hash == preview_two.content_hash
+    assert _preview_entry(preview_one).content_hash == _preview_entry(preview_two).content_hash
 
 
 def test_preview_content_hash_changes_when_rewritten_internal_link_changes(
@@ -818,10 +1242,10 @@ def test_preview_content_hash_changes_when_rewritten_internal_link_changes(
         site_output_dir=site_dir,
     )
 
-    assert preview_one.content_hash != preview_two.content_hash
+    assert _preview_entry(preview_one).content_hash != _preview_entry(preview_two).content_hash
 
 
-def test_send_dir_for_bundle_is_unique_even_with_same_timestamp(
+def test_send_root_dir_is_unique_even_with_same_timestamp(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -830,11 +1254,6 @@ def test_send_dir_for_bundle_is_unique_even_with_same_timestamp(
     settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
-    bundle = trend_email_module._build_email_bundle(
-        settings=settings,
-        site_output_dir=site_dir,
-        anchor_date=None,
-    )
     frozen_now = datetime(2026, 4, 10, 4, 25, 6, tzinfo=UTC)
 
     class _FrozenDateTime:
@@ -845,8 +1264,8 @@ def test_send_dir_for_bundle_is_unique_even_with_same_timestamp(
 
     monkeypatch.setattr(trend_email_module, "datetime", _FrozenDateTime)
 
-    first = trend_email_module._send_dir_for_bundle(settings=settings, bundle=bundle)
-    second = trend_email_module._send_dir_for_bundle(settings=settings, bundle=bundle)
+    first = trend_email_module._send_root_dir(settings=settings)
+    second = trend_email_module._send_root_dir(settings=settings)
 
     assert first != second
 
@@ -860,18 +1279,11 @@ def test_run_email_send_command_exits_non_zero_when_batch_fails(
         repository=object(),
         console=SimpleNamespace(print=lambda *args, **kwargs: None),
     )
-    failed_result = SimpleNamespace(
-        status="failed",
-        send_dir=tmp_path / "send",
-        manifest_path=tmp_path / "send" / "manifest.json",
-        html_path=tmp_path / "send" / "body.html",
-        text_path=tmp_path / "send" / "body.txt",
-        primary_page_url="https://public.example/recoleta/trends/example",
-        content_hash="hash-123",
-        subject="[Recoleta] Day trends · 2026-02-25",
-        instance="default",
-        trend_doc_id=123,
-        period_token="2026-02-25",
+    failed_result = _fake_send_batch_result(
+        tmp_path=tmp_path,
+        status="send_failed",
+        entry_status="send_failed",
+        error="provider failed",
     )
 
     monkeypatch.setattr(cli_email_module, "load_runtime", lambda request: runtime)
@@ -902,18 +1314,10 @@ def test_run_email_send_command_requests_runtime_schema_init(
         repository=object(),
         console=SimpleNamespace(print=lambda *args, **kwargs: None),
     )
-    sent_result = SimpleNamespace(
-        status="sent",
-        send_dir=tmp_path / "send",
-        manifest_path=tmp_path / "send" / "manifest.json",
-        html_path=tmp_path / "send" / "body.html",
-        text_path=tmp_path / "send" / "body.txt",
-        primary_page_url="https://public.example/recoleta/trends/example",
-        content_hash="hash-123",
-        subject="[Recoleta] Day trends · 2026-02-25",
-        instance="default",
-        trend_doc_id=123,
-        period_token="2026-02-25",
+    sent_result = _fake_send_batch_result(
+        tmp_path=tmp_path,
+        status="succeeded",
+        entry_status="sent",
     )
 
     def _fake_load_runtime(*, request: object) -> object:
@@ -937,6 +1341,88 @@ def test_run_email_send_command_requests_runtime_schema_init(
     assert captured["init_schema"] is True
 
 
+def test_run_email_send_command_json_emits_batch_payload_and_non_zero_exit_on_preflight_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime = SimpleNamespace(
+        settings=object(),
+        repository=object(),
+        console=SimpleNamespace(print=lambda *args, **kwargs: None),
+    )
+    failed_result = _fake_send_batch_result(
+        tmp_path=tmp_path,
+        status="preflight_failed",
+        entry_status="preflight_failed",
+        error="mixed_batch_state",
+        with_artifacts=False,
+    )
+    captured_payload: dict[str, object] = {}
+
+    monkeypatch.setattr(cli_email_module, "load_runtime", lambda request: runtime)
+    monkeypatch.setattr(
+        cli_email_module,
+        "site_output_dir_from_settings",
+        lambda _settings: tmp_path / "site",
+    )
+    monkeypatch.setattr(
+        cli_email_module,
+        "send_trend_email",
+        lambda **kwargs: failed_result,
+    )
+    monkeypatch.setattr(
+        cli_email_module.cli,
+        "_emit_json",
+        lambda payload: captured_payload.update(payload),
+    )
+
+    with pytest.raises(recoleta.cli.typer.Exit) as exc:
+        cli_email_module.run_email_send_command(json_output=True)
+
+    assert exc.value.exit_code == 1
+    assert captured_payload["status"] == "preflight_failed"
+    assert "send_root_dir" in captured_payload
+    assert "batch_manifest_path" in captured_payload
+    assert captured_payload["results"][0]["status"] == "preflight_failed"
+    assert captured_payload["results"][0]["send_dir"] is None
+    assert captured_payload["results"][0]["manifest_path"] is None
+    assert captured_payload["results"][0]["html_path"] is None
+    assert captured_payload["results"][0]["text_path"] is None
+
+
+def test_run_email_preview_command_passes_selected_granularities(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runtime = SimpleNamespace(
+        settings=object(),
+        repository=object(),
+        console=SimpleNamespace(print=lambda *args, **kwargs: None),
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(cli_email_module, "load_runtime", lambda request: runtime)
+    monkeypatch.setattr(
+        cli_email_module,
+        "site_output_dir_from_settings",
+        lambda _settings: tmp_path / "site",
+    )
+
+    def _fake_build_trend_email_preview(**kwargs: object) -> object:
+        captured["granularities"] = kwargs["granularities"]
+        return _fake_preview_batch_result(tmp_path=tmp_path)
+
+    monkeypatch.setattr(
+        cli_email_module,
+        "build_trend_email_preview",
+        _fake_build_trend_email_preview,
+    )
+
+    cli_email_module.run_email_preview_command(granularities=["week", "day"])
+
+    assert captured["granularities"] == ["week", "day"]
+
+
 def test_settings_email_recipients_are_deduplicated(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -955,7 +1441,7 @@ def test_settings_email_recipients_are_deduplicated(
                     "alice@example.com",
                     "bob@example.com ",
                 ],
-                "granularity": "week",
+                "granularities": ["week"],
             }
         ),
     )
@@ -970,18 +1456,12 @@ def test_run_fleet_email_send_command_exits_non_zero_when_batch_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    failed_result = SimpleNamespace(
-        status="failed",
-        send_dir=tmp_path / "send",
-        manifest_path=tmp_path / "send" / "manifest.json",
-        html_path=tmp_path / "send" / "body.html",
-        text_path=tmp_path / "send" / "body.txt",
-        primary_page_url="https://public.example/recoleta/trends/example",
-        content_hash="hash-123",
-        subject="[Recoleta][Beta] Day trends · 2026-02-25",
+    failed_result = _fake_send_batch_result(
+        tmp_path=tmp_path,
+        status="send_failed",
+        entry_status="send_failed",
         instance="Beta",
-        trend_doc_id=123,
-        period_token="2026-02-25",
+        error="provider failed",
     )
     resolved_instance = SimpleNamespace(name="Beta", config_path=tmp_path / "beta.yaml")
     manifest = SimpleNamespace(manifest_path=tmp_path / "fleet.yaml")
@@ -1023,18 +1503,11 @@ def test_run_fleet_email_send_command_initializes_repository_schema(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    sent_result = SimpleNamespace(
-        status="sent",
-        send_dir=tmp_path / "send",
-        manifest_path=tmp_path / "send" / "manifest.json",
-        html_path=tmp_path / "send" / "body.html",
-        text_path=tmp_path / "send" / "body.txt",
-        primary_page_url="https://public.example/recoleta/trends/example",
-        content_hash="hash-123",
-        subject="[Recoleta][Beta] Day trends · 2026-02-25",
+    sent_result = _fake_send_batch_result(
+        tmp_path=tmp_path,
+        status="succeeded",
+        entry_status="sent",
         instance="Beta",
-        trend_doc_id=123,
-        period_token="2026-02-25",
     )
     resolved_instance = SimpleNamespace(name="Beta", config_path=tmp_path / "beta.yaml")
     manifest = SimpleNamespace(manifest_path=tmp_path / "fleet.yaml")
@@ -1089,18 +1562,11 @@ def test_run_fleet_email_send_command_uses_explicit_site_output_dir(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    sent_result = SimpleNamespace(
-        status="sent",
-        send_dir=tmp_path / "send",
-        manifest_path=tmp_path / "send" / "manifest.json",
-        html_path=tmp_path / "send" / "body.html",
-        text_path=tmp_path / "send" / "body.txt",
-        primary_page_url="https://public.example/recoleta/trends/example",
-        content_hash="hash-123",
-        subject="[Recoleta][Beta] Day trends · 2026-02-25",
+    sent_result = _fake_send_batch_result(
+        tmp_path=tmp_path,
+        status="succeeded",
+        entry_status="sent",
         instance="Beta",
-        trend_doc_id=123,
-        period_token="2026-02-25",
     )
     resolved_instance = SimpleNamespace(name="Beta", config_path=tmp_path / "beta.yaml")
     manifest = SimpleNamespace(manifest_path=tmp_path / "fleet.yaml")
@@ -1186,7 +1652,7 @@ def test_fleet_run_email_preview_uses_selected_child_instance(
                     '  public_site_url: "https://public.example/recoleta"',
                     '  from_email: "updates@example.com"',
                     '  to: ["alice@example.com"]',
-                    '  granularity: "day"',
+                    '  granularities: ["day"]',
                 ]
             )
             + "\n",
@@ -1228,4 +1694,6 @@ def test_fleet_run_email_preview_uses_selected_child_instance(
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["instance"] == "Beta"
-    assert payload["primary_page_url"].startswith("https://public.example/recoleta/trends/beta--")
+    assert payload["results"][0]["primary_page_url"].startswith(
+        "https://public.example/recoleta/trends/beta--"
+    )
