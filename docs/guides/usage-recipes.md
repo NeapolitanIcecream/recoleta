@@ -184,6 +184,41 @@ What to know:
   `linked` is the default; `all` restores the legacy behavior that exported
   every item note under `Inbox/`.
 
+## Preview or send a manual trend email
+
+Use these commands after the relevant trend note, sibling
+`*.presentation.json`, and site build already exist:
+
+```bash
+uv run recoleta run email preview
+uv run recoleta run email preview --date 2026-03-02
+uv run recoleta run email send
+uv run recoleta run email send --date 2026-03-02 --force-batch
+uv run recoleta fleet run email preview --manifest /path/to/fleet.yaml --instance agents-radar
+uv run recoleta fleet run email send --manifest /path/to/fleet.yaml --instance agents-radar
+```
+
+What to know:
+
+- `run email preview` reads the selected trend markdown note plus its sibling
+  presentation sidecar, resolves site-first links through the private email
+  link-map artifact, and writes `body.html`, `body.txt`, and `manifest.json`
+  under `MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...`.
+- `run email send` re-renders from the same canonical inputs and writes a send
+  bundle under `MARKDOWN_OUTPUT_DIR/.recoleta-email/sends/...`.
+- both commands require the private site email link-map artifact written by the
+  last site build. With the default site output path this artifact is
+  `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.
+- `run email send` also requires `email:` config plus
+  `RECOLETA_RESEND_API_KEY`. It refuses to send unless the primary trend page
+  under `email.public_site_url` is publicly reachable.
+- send semantics are batch-oriented. If part of the configured recipient list
+  already has the current content hash and part does not, the normal send path
+  fails with a mixed batch state error. Use `--force-batch` only when you want
+  a deliberate full resend.
+- fleet email commands target exactly one child instance at a time. `--instance`
+  accepts either the child instance name or its slug.
+
 ## Keep Recoleta running
 
 Run the built-in scheduler:

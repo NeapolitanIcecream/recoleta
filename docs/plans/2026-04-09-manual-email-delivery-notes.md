@@ -253,51 +253,60 @@ resolved language-specific page rather than relying on the site root redirect.
 That avoids ambiguous routing and makes email links stable even when the root
 redirect behavior changes.
 
-## Implementation Gates for Public Links
+## Public Link Contract In v1
 
-Public link resolution is not “free” in the current codebase.
+Public link resolution is explicit in the landed implementation.
 
-Today the site manifest records page lists, but it does not yet persist a
-stable mapping from “selected trend” or “selected evidence entry” to relative
-site paths in a form that email can consume directly.
+The site build now writes a private companion artifact beside the site root:
 
-That means v1 email send requires an explicit implementation gate:
+- `.<site_output_dir.name>-email-links.json`
+- with the default site output path `MARKDOWN_OUTPUT_DIR/site`, that becomes
+  `MARKDOWN_OUTPUT_DIR/.site-email-links.json`
 
-1. add stable link-resolution data to site build output, or add an equivalent
-   email-specific mapping artifact derived from the same site export
-2. require `public_site_url` to be configured
-3. verify that the selected trend detail page and the main secondary site entry
-   points needed by the email are publicly reachable before sending
+That artifact records:
 
-Until that gate exists, `run email send` should be treated as not yet ready,
-even if `run email preview` already exists.
+- absolute source markdown path -> public relative detail page path
+- topic slug -> public relative topic page path
+- per-language topic page mappings when multilingual output exists
+
+`run email preview` requires that artifact to exist.
+
+`run email send` adds two more hard checks:
+
+1. `email.public_site_url` must be configured
+2. the selected primary trend page under that base URL must be publicly
+   reachable before send is allowed
+
+This keeps the main trend CTA site-first without guessing URLs from markdown
+paths or silently downgrading to source links.
 
 ## Required Configuration Direction
 
-The current discussion suggests a dedicated email config section rather than
-folding everything into generic publish targets immediately.
+The landed implementation uses a dedicated email config section rather than
+folding email into `publish_targets`.
 
-Illustrative shape only:
+Implemented shape:
 
 ```yaml
 email:
-  enabled: true
   public_site_url: "https://example.github.io/recoleta"
-  transport: "resend"
-  from_name: "Recoleta"
   from_email: "recoleta@example.com"
-  reply_to: "research@example.com"
+  from_name: "Recoleta"
   to:
     - "operator@example.com"
-  resend_api_key_env: "RESEND_API_KEY"
   granularity: "week"
-  instance: "software_intelligence"
   language_code: "en"
   max_clusters: 3
   max_evidence_per_cluster: 2
+  subject_prefix: "[Recoleta]"
 ```
 
-Important observations from the current discussion:
+Related secret:
+
+- `RECOLETA_RESEND_API_KEY` is env-only and rejected if it appears in a config
+  file
+
+Important observations that still hold:
 
 - `public_site_url` should be explicit configuration
 - email should not guess public URLs from local export paths
@@ -534,194 +543,75 @@ The current design explicitly avoids these choices:
 - implementing a transport plugin matrix before one concrete provider works
 - silently retrying a partially successful batch on a per-recipient basis
 
-## Open Questions
+## Questions Resolved In v1
 
-The following questions surfaced during the initial design discussion.
-
-Some now have a current recommended answer even though the implementation has
-not started yet.
+The initial design discussion left a handful of open questions. The current
+repository implementation resolves them like this:
 
 ### 1. Selection semantics
 
-Should `run email send` choose:
-
-- the latest eligible trend
-- the latest unsent trend for the configured granularity
-- a specific explicit period passed on the command line
-
-### 2. Config placement
-
-Should email config live:
-
-- only in global settings
-- in global settings with per-instance override support
-- entirely in child instance configs for instance-first workflows
-
-### 3. Ideas support
-
-Should ideas email be:
-
-- out of scope for v1
-- a separate command
-- an alternate render mode under the same command
-
-### 4. Recipient tracking granularity
-
-Should sends be recorded:
-
-- once per configured recipient
-- once per config bundle
-
-The current recommendation is mixed:
-
-- selection and send semantics should be batch-oriented
-- persisted delivery rows may still remain per recipient for auditability
-- a mixed partial-success batch should be treated as an operator-visible error,
-  not as an invitation to retry the remaining recipients automatically
-
-### 5. Public site page resolution
-
-What is the cleanest source of truth for mapping a selected trend or evidence
-entry to its public absolute URL:
-
-- compose from `public_site_url` plus exported relative page paths
-- persist extra site URL metadata at export time
-- derive from a generated email preview manifest
-
-The current recommendation is to start with configured `public_site_url` plus
-known relative page paths, but only after an explicit mapping artifact exists.
-
-### 6. Transport/provider choice
-
-Should v1 email send use:
-
-- Resend only
-- Postmark only
-- SES only
-- SendGrid only
-- a provider abstraction from day one
-
-### 7. Preview-to-send contract
-
-Should `run email send`:
-
-- consume a preview manifest
-- re-render independently and use preview only for operator inspection
-- support both modes
-
-## Current Recommended Decisions
-
-If implementation started now, the recommended default choices would be:
-
-### 1. Selection semantics
-
-Default to the latest trend matching the configured `instance`,
-`granularity`, and `language_code` whose current content has not yet been sent
-for the configured batch.
-
-Also allow an explicit period override on the command line for deliberate
-re-send or backfill cases.
-
-This is better than a naive “latest trend” rule because it preserves manual
-operator convenience while still respecting idempotency.
+- default to the latest eligible trend for the configured `granularity`
+- respect `email.language_code` when set; otherwise use the settings' default
+  site language
+- allow explicit period selection through `--date`
+- treat the selected trend as one batch candidate for the configured recipient
+  set
 
 ### 2. Config placement
 
-Define email configuration in global settings, but allow child instances to
-override it in the instance-first runtime.
-
-That gives the project one shared schema and one obvious entry point while
-still allowing instance-specific recipient lists, language selection, or public
-site URLs when needed.
+- keep one shared `email:` schema in settings
+- allow instance-first workflows to override it through child configs
+- keep fleet email commands targeted at exactly one child instance per run
 
 ### 3. Ideas support
 
-Keep ideas email out of scope for v1.
-
-The first email surface should focus on trends only. Trends are the more stable
-reader-facing surface today, and their delivery semantics already line up more
-naturally with the existing trend-level delivery model.
-
-Ideas can be added later as a second render mode or a distinct surface once the
-trend email path is proven.
+- still out of scope for `v1`
+- trend email is the only shipped manual email surface
 
 ### 4. Recipient tracking granularity
 
-Treat selection and retry semantics as batch-oriented.
-
-For v1:
-
-- the selected trend is chosen once for the configured recipient set
-- send should not automatically retry a subset of recipients after a mixed
-  partial-success result
-- a mixed partial-success result should block the next ordinary `run email send`
-  until the operator resolves it deliberately
-
-Persisted delivery rows may still remain per recipient because that is the more
-useful audit shape and does not force per-recipient retry semantics.
+- persist trend delivery rows per recipient for auditability
+- keep selection and resend semantics batch-oriented
+- reject mixed partially sent batches unless the operator passes
+  `--force-batch`
 
 ### 5. Public site page resolution
 
-Require site-backed link resolution as an explicit implementation gate.
-
-More specifically:
-
-- `run email send` should depend on a stable mapping artifact derived from site
-  export output
-- `public_site_url` plus ad hoc path guessing is not enough by itself
-- the selected trend detail page should be publicly reachable before send is
-  allowed
-- evidence links may still fall back to source URLs when no public item page
+- use the private site email link-map artifact as the only path resolver
+- compose public absolute URLs from `email.public_site_url` plus resolved
+  relative page paths
+- require the primary trend page to be reachable before send is allowed
+- allow evidence links to fall back to source URLs when no public item page
   exists
 
-Do not persist public absolute URLs in canonical content just for email. If the
-site export is too weak for this mapping, strengthen the site export rather
-than introducing a second URL authority.
-
 ### 6. Transport/provider choice
 
-Use Resend only in v1.
-
-Specifically:
-
-- use the official Python SDK or the documented HTTP API directly
+- support Resend only in `v1`
+- use the official Python SDK batch path
 - authenticate with one env-only API key
-- require a verified sending domain before real sends
-- use the provider batch endpoint for the normal send path
-- pass an explicit provider idempotency key for each batch request
-- keep alternate providers out of scope until the Resend path proves too
-  limiting
-
-This keeps the initial implementation concrete and compatible with the current
-config/runtime model while still choosing a more modern integration surface than
-SMTP.
+- keep alternate providers out of scope
 
 ### 7. Preview-to-send contract
 
-Treat preview as advisory only in v1.
+- treat preview as advisory only
+- `run email send` re-renders from current canonical inputs
+- preview and send each write their own manifest and content hash
 
-That means:
+## Delivered v1 Slice
 
-- `run email preview` is for operator inspection
-- `run email send` re-renders from current inputs
-- send writes its own manifest and content hash at execution time
-- a stricter “send consumes preview manifest” contract can wait until there is
-  a real security or approval-chain requirement
+The repository now ships this narrow slice:
 
-## Recommended v1 Slice
+1. Explicit `email:` configuration including `public_site_url`.
+2. One env-only `RECOLETA_RESEND_API_KEY` secret.
+3. A dedicated email-safe renderer for one selected trend document.
+4. Manual `run email preview` and `fleet run email preview`.
+5. Site-backed email link-map artifacts for single-instance and fleet site
+   builds.
+6. Manual `run email send` and `fleet run email send` with public-site
+   reachability checks.
+7. Dedupe-only send state on top of `TrendDelivery`.
+8. Batch-oriented resend rules with explicit mixed-state refusal.
+9. Site-first CTA and evidence link resolution.
 
-The current best first slice is:
-
-1. Add explicit email configuration including `public_site_url`.
-2. Choose Resend as the only supported v1 transport and add the required
-   secret settings.
-3. Add an email preview renderer for one trend document.
-4. Add a manual `run email preview` command.
-5. Extend site export or adjacent artifacts with stable email link mapping.
-6. Add a manual `run email send` command with public-site reachability checks.
-7. Persist send state with dedupe-only idempotency semantics.
-8. Keep selection batch-oriented and refuse mixed partial-success reruns.
-9. Link all reader-facing CTAs to the public site.
-
-This is intentionally narrow, but it creates a useful delivery surface without
-committing the project to a full newsletter system prematurely.
+This is still intentionally narrow, but it is no longer only a proposal. It is
+the current `v1` manual trend email surface in the repository.

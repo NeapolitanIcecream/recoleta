@@ -21,6 +21,7 @@ llm_model: "openai/gpt-5.4"
 
 # Publish targets (default: ["markdown"])
 # Allowed: markdown, obsidian, telegram
+# Manual trend email is configured separately under `email:`.
 publish_targets:
   - markdown
 
@@ -30,6 +31,25 @@ publish_targets:
 # Obsidian integration (required only when publish_targets includes "obsidian")
 # obsidian_vault_path: "/absolute/path/to/your/ObsidianVault"
 # obsidian_base_folder: "Recoleta"  # Default: "Recoleta"
+
+# Manual trend email via Resend (preview/send only; not a publish target).
+# Build and deploy the site first so `public_site_url` is reachable and
+# `MARKDOWN_OUTPUT_DIR/.site-email-links.json` exists.
+#
+# email:
+#   public_site_url: "https://example.github.io/recoleta"
+#   from_email: "recoleta@example.com"
+#   from_name: "Recoleta"
+#   to:
+#     - "you@example.com"
+#   granularity: "week"
+#   language_code: "en"
+#   max_clusters: 3
+#   max_evidence_per_cluster: 2
+#   subject_prefix: "[Recoleta]"
+#
+# Env-only secret required for `recoleta run email send`:
+#   RECOLETA_RESEND_API_KEY="re_replace_me"
 
 ## LLM behavior
 

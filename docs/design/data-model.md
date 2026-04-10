@@ -125,7 +125,8 @@ Constraints / indexes:
 
 ### `trend_deliveries`
 
-Records outbound trend deliveries (currently Telegram PDF sends) separately from item deliveries.
+Records outbound trend deliveries separately from item deliveries. Current
+consumers are Telegram trend PDF sends and manual trend email batches.
 
 - `id` (PK, integer)
 - `doc_id` (FK -> documents.id)
@@ -138,6 +139,13 @@ Records outbound trend deliveries (currently Telegram PDF sends) separately from
 Constraint / index:
 
 - unique `(doc_id, channel, destination)`
+
+Operational note:
+
+- the current schema is dedupe-oriented current-state tracking. Re-sending an
+  updated trend later overwrites `content_hash` and `message_id` for the same
+  `(doc_id, channel, destination)` row instead of preserving multi-version send
+  history.
 
 ### `metrics`
 
@@ -317,6 +325,9 @@ Default layout under `MARKDOWN_OUTPUT_DIR`:
 - `Localized/<language>/Inbox|Trends|Ideas/` (translated or mirrored projections derived from canonical outputs)
 - `Trends/.pdf-debug/<pdf-stem>/` (optional trend PDF render debug bundle)
 - `site/` (optional static site export derived from `Trends/`)
+- `.recoleta-email/previews|sends/` (manual trend email preview/send artifacts)
+- `.site-email-links.json` (private site companion artifact used by manual
+  email link resolution when the default site output path is in use)
 
 Trend markdown notes are the canonical source for the richer trend surfaces:
 

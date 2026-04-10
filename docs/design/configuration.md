@@ -14,7 +14,9 @@ Precedence:
 
 Secrets:
 
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `RECOLETA_LLM_API_KEY` are **forbidden** in the config file and must come from environment variables.
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `RECOLETA_LLM_API_KEY`, and
+  `RECOLETA_RESEND_API_KEY` are **forbidden** in the config file and must come
+  from environment variables.
 
 ## Required settings
 
@@ -28,6 +30,8 @@ Secrets:
 - `OBSIDIAN_VAULT_PATH`: required when `PUBLISH_TARGETS` includes `obsidian`.
 - `TELEGRAM_BOT_TOKEN`: required when `PUBLISH_TARGETS` includes `telegram` (env-only).
 - `TELEGRAM_CHAT_ID`: required when `PUBLISH_TARGETS` includes `telegram` (env-only).
+- `RECOLETA_RESEND_API_KEY`: required for `recoleta run email send` and
+  `recoleta fleet run email send` (env-only).
 
 Optional LLM behavior:
 
@@ -37,6 +41,55 @@ Optional LLM behavior:
   - JSON keys remain English.
   - `topics` remain concise English tags for downstream allow/deny filtering.
   - Empty value means unset.
+
+## Manual trend email (optional)
+
+Manual trend email is configured separately from `PUBLISH_TARGETS`. It is not a
+publish target and it is not part of `run publish`.
+
+- `EMAIL.public_site_url`: required absolute base URL for the already deployed
+  public site. `run email send` refuses to run unless the selected trend detail
+  page resolves under this base URL and is publicly reachable.
+- `EMAIL.from_email`: required sender address.
+- `EMAIL.from_name`: optional sender display name (default `Recoleta`).
+- `EMAIL.to`: required list of recipients.
+- `EMAIL.granularity`: required selection window, one of `day|week|month`.
+- `EMAIL.language_code`: optional language filter for multilingual output; when
+  unset, `run email` uses the current settings' default site language.
+- `EMAIL.max_clusters`: max rendered trend clusters per email (default `3`).
+- `EMAIL.max_evidence_per_cluster`: max rendered evidence links per cluster
+  (default `2`).
+- `EMAIL.subject_prefix`: optional subject prefix (default `[Recoleta]`).
+
+Operational notes:
+
+- `recoleta run email preview` reads canonical trend markdown plus sibling
+  `*.presentation.json` sidecars and writes preview artifacts under
+  `MARKDOWN_OUTPUT_DIR/.recoleta-email/previews/...`.
+- `recoleta run email send` re-renders from the same inputs, writes send
+  artifacts under `MARKDOWN_OUTPUT_DIR/.recoleta-email/sends/...`, sends via
+  Resend, and persists dedupe-oriented state in `trend_deliveries`.
+- Both commands require the private site email link-map artifact written by the
+  last site build. With the default site output path, that artifact is
+  `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.
+- `run email send` is batch-oriented. Mixed partially sent recipient state is
+  rejected unless the operator passes `--force-batch`.
+
+Example:
+
+```yaml
+email:
+  public_site_url: "https://example.github.io/recoleta"
+  from_email: "recoleta@example.com"
+  from_name: "Recoleta"
+  to:
+    - "you@example.com"
+  granularity: "week"
+  language_code: "en"
+  max_clusters: 3
+  max_evidence_per_cluster: 2
+  subject_prefix: "[Recoleta]"
+```
 
 ## Localization (optional)
 
@@ -237,7 +290,7 @@ Migration note:
 - `ARTIFACTS_DIR` (required when `WRITE_DEBUG_ARTIFACTS=true`): where to write raw/debug artifacts (outside the Vault is fine).
 - `OBSIDIAN_BASE_FOLDER` (default `Recoleta`): base folder under the Vault.
 - `PUBLISH_TARGETS` (default `["markdown"]`): which publish integrations are enabled.
-- `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`, canonical `Trends/*.md` and `Ideas/*.md` plus adjacent `.presentation.json` sidecars, `Localized/<language>/...`, and derived `site/` output).
+- `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`, canonical `Trends/*.md` and `Ideas/*.md` plus adjacent `.presentation.json` sidecars, `Localized/<language>/...`, derived `site/` output, and manual email preview/send bundles under `.recoleta-email/`).
 
 ### Browser trend PDF rendering
 
@@ -260,6 +313,9 @@ Notes:
   `recoleta stage site stage --input-dir ... --output-dir ...` intentionally
   work without loading the full runtime config so CI can build from staged
   trend notes only.
+- site build also writes a private email link-map companion artifact beside the
+  site root, named `.<site_output_dir.name>-email-links.json`; with the default
+  site output path this is `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.
 - When localized markdown trees are present, `recoleta run site build`,
   `recoleta stage site stage`, `recoleta run site serve`, and
   `recoleta run deploy` use `LOCALIZATION.site_default_language_code` by
@@ -277,3 +333,5 @@ Notes:
 - Secrets must only come from env (or OS keychain in a future version).
 - Debug artifacts must be scrubbed (remove tokens, headers, cookies).
 - Logs must never include raw secrets.
+- This includes Telegram credentials, `RECOLETA_LLM_API_KEY`, and
+  `RECOLETA_RESEND_API_KEY`.
