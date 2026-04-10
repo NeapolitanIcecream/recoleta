@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TypedDict
+from typing import Callable, TypedDict
 from unittest.mock import ANY
 
 import pytest
@@ -27,6 +27,7 @@ from recoleta.site import TrendSiteInputSpec, export_trend_static_site
 from recoleta.site_email_links import email_links_artifact_path, load_email_links_artifact
 from recoleta.storage import Repository
 from recoleta.trend_email import (
+    TrendEmailSendRequest,
     build_trend_email_preview,
     send_trend_email,
 )
@@ -87,6 +88,23 @@ class EmailFixture(TypedDict):
     trend_doc_id: int
     trend_note_path: Path
     item_note_path: Path
+
+
+def _send_request(
+    *,
+    site_output_dir: Path,
+    sender: object | None = None,
+    url_checker: Callable[[str], bool] | None = None,
+    anchor_date: date | None = None,
+    force_batch: bool = False,
+) -> TrendEmailSendRequest:
+    return TrendEmailSendRequest(
+        site_output_dir=site_output_dir,
+        sender=sender,
+        url_checker=url_checker,
+        anchor_date=anchor_date,
+        force_batch=force_batch,
+    )
 
 
 def _set_email_env(
@@ -331,9 +349,11 @@ def test_send_trend_email_blocks_when_primary_page_is_not_publicly_reachable(
         send_trend_email(
             settings=settings,
             repository=repository,
-            site_output_dir=site_dir,
-            sender=FakeResendBatchSender(),
-            url_checker=lambda _url: False,
+            request=_send_request(
+                site_output_dir=site_dir,
+                sender=FakeResendBatchSender(),
+                url_checker=lambda _url: False,
+            ),
         )
 
 
@@ -353,16 +373,20 @@ def test_send_trend_email_skips_duplicate_batch_for_unchanged_content(
     first = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=sender,
-        url_checker=lambda _url: True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
     )
     second = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=sender,
-        url_checker=lambda _url: True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
     )
 
     assert first.status == "sent"
@@ -404,8 +428,10 @@ def test_send_trend_email_skips_without_requiring_public_url_reachability(
     result = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        url_checker=lambda _url: False,
+        request=_send_request(
+            site_output_dir=site_dir,
+            url_checker=lambda _url: False,
+        ),
     )
 
     assert result.status == "skipped"
@@ -440,9 +466,11 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
     retry_result = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=retry_sender,
-        url_checker=lambda _url: True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=retry_sender,
+            url_checker=lambda _url: True,
+        ),
     )
     assert retry_result.status == "sent"
     assert retry_sender.calls == [
@@ -478,18 +506,22 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
         send_trend_email(
             settings=settings,
             repository=repository,
-            site_output_dir=site_dir,
-            sender=FakeResendBatchSender(),
-            url_checker=lambda _url: True,
+            request=_send_request(
+                site_output_dir=site_dir,
+                sender=FakeResendBatchSender(),
+                url_checker=lambda _url: True,
+            ),
         )
 
     forced = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=FakeResendBatchSender(),
-        url_checker=lambda _url: True,
-        force_batch=True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=FakeResendBatchSender(),
+            url_checker=lambda _url: True,
+            force_batch=True,
+        ),
     )
     assert forced.status == "sent"
 
@@ -538,18 +570,22 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
     first_force = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=sender,
-        url_checker=lambda _url: True,
-        force_batch=True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+            force_batch=True,
+        ),
     )
     second_force = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=sender,
-        url_checker=lambda _url: True,
-        force_batch=True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+            force_batch=True,
+        ),
     )
 
     assert first_force.status == "sent"
@@ -573,9 +609,11 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
     first_retry = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=sender,
-        url_checker=lambda _url: True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
     )
     for destination in settings.email.to:
         repository.upsert_trend_delivery(
@@ -590,9 +628,11 @@ def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
     second_retry = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=sender,
-        url_checker=lambda _url: True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=sender,
+            url_checker=lambda _url: True,
+        ),
     )
 
     assert first_retry.status == "sent"
@@ -617,9 +657,11 @@ def test_send_trend_email_returns_failed_when_any_recipient_fails(
     result = send_trend_email(
         settings=settings,
         repository=repository,
-        site_output_dir=site_dir,
-        sender=PartialFailureResendBatchSender(),
-        url_checker=lambda _url: True,
+        request=_send_request(
+            site_output_dir=site_dir,
+            sender=PartialFailureResendBatchSender(),
+            url_checker=lambda _url: True,
+        ),
     )
 
     assert result.status == "failed"

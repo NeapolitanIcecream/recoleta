@@ -68,7 +68,8 @@ from recoleta.site_models import (
     TrendSiteSourceDocument,
 )
 from recoleta.site_email_links import (
-    load_email_links_artifact,
+    aggregate_multilingual_email_links,
+    remove_child_email_links_artifacts,
     write_email_links_artifact,
 )
 from recoleta.site_pages import (
@@ -147,6 +148,99 @@ class _TopicCardGridData:
     idea_counter: Counter[str]
     latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument]
     label_by_slug: dict[str, str]
+
+
+def _export_single_language_trend_static_site(
+    *,
+    input_dir: Path | TrendSiteInputSpec | Sequence[Path | TrendSiteInputSpec],
+    output_dir: Path,
+    limit: int | None,
+    item_export_scope: str,
+    language_inputs: Sequence[tuple[str | None, str, tuple[TrendSiteInputSpec, ...]]],
+) -> Path:
+    manifest_path = _export_trend_static_site_single_language(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        limit=limit,
+        item_export_scope=item_export_scope,
+    )
+    valid_language_inputs = [
+        (language_code, language_slug)
+        for language_code, language_slug, _root_paths in language_inputs
+        if language_code is not None and language_slug
+    ]
+    if valid_language_inputs:
+        language_code, language_slug = valid_language_inputs[0]
+        resolved_output_dir = output_dir.expanduser().resolve()
+        _apply_site_language_overrides(
+            output_dir=resolved_output_dir,
+            language_code=str(language_code),
+            language_slug=language_slug,
+            page_paths_by_language={
+                language_slug: _collect_site_html_files(resolved_output_dir)
+            },
+            language_code_by_slug={language_slug: str(language_code)},
+        )
+    return manifest_path
+
+
+def _write_multilingual_site_outputs(
+    *,
+    output_dir: Path,
+    valid_language_inputs: Sequence[tuple[str, str, tuple[TrendSiteInputSpec, ...]]],
+    limit: int | None,
+    item_export_scope: str,
+) -> tuple[dict[str, dict[str, Any]], dict[str, set[str]], dict[str, str]]:
+    manifest_by_language: dict[str, dict[str, Any]] = {}
+    page_paths_by_language: dict[str, set[str]] = {}
+    language_code_by_slug: dict[str, str] = {}
+    for language_code, language_slug, root_paths in valid_language_inputs:
+        language_output_dir = output_dir / language_slug
+        manifest_path = _export_trend_static_site_single_language(
+            input_dir=list(root_paths),
+            output_dir=language_output_dir,
+            limit=limit,
+            item_export_scope=item_export_scope,
+            include_localized_children=False,
+        )
+        manifest_by_language[language_slug] = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        page_paths_by_language[language_slug] = _collect_site_html_files(
+            language_output_dir
+        )
+        language_code_by_slug[language_slug] = str(language_code)
+    return manifest_by_language, page_paths_by_language, language_code_by_slug
+
+
+def _aggregate_multilingual_site_manifest(
+    *,
+    output_dir: Path,
+    manifest_by_language: dict[str, dict[str, Any]],
+    language_code_by_slug: dict[str, str],
+    default_language_slug: str,
+) -> dict[str, Any]:
+    default_manifest = manifest_by_language[default_language_slug]
+    aggregate_manifest = dict(default_manifest)
+    aggregate_files = dict(default_manifest.get("files") or {})
+    aggregate_files["language_homes"] = {
+        language_slug: f"{language_slug}/index.html"
+        for language_slug in sorted(language_code_by_slug)
+    }
+    aggregate_files["language_manifests"] = {
+        language_slug: f"{language_slug}/manifest.json"
+        for language_slug in sorted(language_code_by_slug)
+    }
+    aggregate_files["by_language"] = {
+        language_slug: dict(manifest_by_language[language_slug].get("files") or {})
+        for language_slug in sorted(language_code_by_slug)
+    }
+    aggregate_manifest["files"] = aggregate_files
+    aggregate_manifest["languages"] = sorted(language_code_by_slug)
+    aggregate_manifest["language_codes"] = language_code_by_slug
+    aggregate_manifest["default_language_code"] = default_language_slug
+    aggregate_manifest["output_dir"] = str(output_dir)
+    return aggregate_manifest
 
 
 def _coerce_topic_page_render_request(
@@ -3898,25 +3992,13 @@ def export_trend_static_site(
     ]
 
     if len(valid_language_inputs) <= 1:
-        manifest_path = _export_trend_static_site_single_language(
+        return _export_single_language_trend_static_site(
             input_dir=input_dir,
             output_dir=output_dir,
             limit=limit,
             item_export_scope=normalized_item_export_scope,
+            language_inputs=language_inputs,
         )
-        if valid_language_inputs:
-            language_code, language_slug, _root_paths = valid_language_inputs[0]
-            resolved_output_dir = output_dir.expanduser().resolve()
-            _apply_site_language_overrides(
-                output_dir=resolved_output_dir,
-                language_code=str(language_code),
-                language_slug=language_slug,
-                page_paths_by_language={
-                    language_slug: _collect_site_html_files(resolved_output_dir)
-                },
-                language_code_by_slug={language_slug: str(language_code)},
-            )
-        return manifest_path
 
     normalized_default_language_slug = language_slug_from_code(default_language_code)
     if not normalized_default_language_slug:
@@ -3935,26 +4017,14 @@ def export_trend_static_site(
     _reset_directory(resolved_output_dir)
     (resolved_output_dir / ".nojekyll").write_text("", encoding="utf-8")
 
-    manifest_by_language: dict[str, dict[str, Any]] = {}
-    page_paths_by_language: dict[str, set[str]] = {}
-    language_code_by_slug: dict[str, str] = {}
-
-    for language_code, language_slug, root_paths in valid_language_inputs:
-        language_output_dir = resolved_output_dir / language_slug
-        manifest_path = _export_trend_static_site_single_language(
-            input_dir=list(root_paths),
-            output_dir=language_output_dir,
+    manifest_by_language, page_paths_by_language, language_code_by_slug = (
+        _write_multilingual_site_outputs(
+            output_dir=resolved_output_dir,
+            valid_language_inputs=valid_language_inputs,
             limit=limit,
             item_export_scope=normalized_item_export_scope,
-            include_localized_children=False,
         )
-        manifest_by_language[language_slug] = json.loads(
-            manifest_path.read_text(encoding="utf-8")
-        )
-        page_paths_by_language[language_slug] = _collect_site_html_files(
-            language_output_dir
-        )
-        language_code_by_slug[language_slug] = str(language_code)
+    )
 
     for language_slug, language_code in language_code_by_slug.items():
         _apply_site_language_overrides(
@@ -3965,61 +4035,26 @@ def export_trend_static_site(
             language_code_by_slug=language_code_by_slug,
         )
 
-    default_manifest = manifest_by_language[normalized_default_language_slug]
-    aggregate_manifest = dict(default_manifest)
-    aggregate_files = dict(default_manifest.get("files") or {})
-    aggregate_files["language_homes"] = {
-        language_slug: f"{language_slug}/index.html"
-        for language_slug in sorted(language_code_by_slug)
-    }
-    aggregate_files["language_manifests"] = {
-        language_slug: f"{language_slug}/manifest.json"
-        for language_slug in sorted(language_code_by_slug)
-    }
-    aggregate_files["by_language"] = {
-        language_slug: dict(manifest_by_language[language_slug].get("files") or {})
-        for language_slug in sorted(language_code_by_slug)
-    }
-    aggregate_manifest["files"] = aggregate_files
-    aggregate_manifest["languages"] = sorted(language_code_by_slug)
-    aggregate_manifest["language_codes"] = language_code_by_slug
-    aggregate_manifest["default_language_code"] = normalized_default_language_slug
-    aggregate_manifest["output_dir"] = str(resolved_output_dir)
-
-    pages_by_source_markdown: dict[str, str | Path] = {}
-    topic_pages_by_slug: dict[str, str | Path] = {}
-    topic_pages_by_language: dict[str, dict[str, str | Path]] = {}
-    for language_slug in sorted(language_code_by_slug):
-        child_artifact_path = resolved_output_dir / f".{language_slug}-email-links.json"
-        child_links = load_email_links_artifact(
-            artifact_path=child_artifact_path
-        )
-        child_pages = child_links.get("pages_by_source_markdown") or {}
-        if isinstance(child_pages, dict):
-            pages_by_source_markdown.update(
-                {
-                    str(source_markdown): f"{language_slug}/{str(relative_path).lstrip('./')}"
-                    for source_markdown, relative_path in child_pages.items()
-                }
-            )
-        child_topic_pages = child_links.get("topic_pages_by_slug") or {}
-        if isinstance(child_topic_pages, dict):
-            namespaced_topic_pages: dict[str, str | Path] = {
-                str(slug): f"{language_slug}/{str(relative_path).lstrip('./')}"
-                for slug, relative_path in child_topic_pages.items()
-            }
-            topic_pages_by_language[language_slug] = namespaced_topic_pages
-            if language_slug == normalized_default_language_slug:
-                topic_pages_by_slug.update(namespaced_topic_pages)
-        try:
-            child_artifact_path.unlink()
-        except FileNotFoundError:
-            pass
+    aggregate_manifest = _aggregate_multilingual_site_manifest(
+        output_dir=resolved_output_dir,
+        manifest_by_language=manifest_by_language,
+        language_code_by_slug=language_code_by_slug,
+        default_language_slug=normalized_default_language_slug,
+    )
+    aggregated_email_links = aggregate_multilingual_email_links(
+        output_dir=resolved_output_dir,
+        language_slugs=sorted(language_code_by_slug),
+        default_language_slug=normalized_default_language_slug,
+    )
     write_email_links_artifact(
         site_output_dir=resolved_output_dir,
-        pages_by_source_markdown=pages_by_source_markdown,
-        topic_pages_by_slug=topic_pages_by_slug,
-        topic_pages_by_language=topic_pages_by_language,
+        pages_by_source_markdown=aggregated_email_links["pages_by_source_markdown"],
+        topic_pages_by_slug=aggregated_email_links["topic_pages_by_slug"],
+        topic_pages_by_language=aggregated_email_links["topic_pages_by_language"],
+    )
+    remove_child_email_links_artifacts(
+        output_dir=resolved_output_dir,
+        language_slugs=sorted(language_code_by_slug),
     )
 
     manifest_path = resolved_output_dir / "manifest.json"

@@ -37,7 +37,11 @@ from recoleta.fleet import (
     load_fleet_manifest,
 )
 from recoleta.storage import Repository
-from recoleta.trend_email import build_trend_email_preview, send_trend_email
+from recoleta.trend_email import (
+    TrendEmailSendRequest,
+    build_trend_email_preview,
+    send_trend_email,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,9 +308,11 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
         result = send_trend_email(
             settings=settings,
             repository=repository,
-            site_output_dir=_fleet_site_output_dir(manifest.manifest_path, None),
-            anchor_date=parsed_anchor,
-            force_batch=bool(kwargs.get("force_batch", False)),
+            request=TrendEmailSendRequest(
+                site_output_dir=_fleet_site_output_dir(manifest.manifest_path, None),
+                anchor_date=parsed_anchor,
+                force_batch=bool(kwargs.get("force_batch", False)),
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         emit_command_error(

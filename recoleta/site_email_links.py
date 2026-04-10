@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -76,3 +77,65 @@ def write_email_links_artifact(
 
 def load_email_links_artifact(*, artifact_path: Path) -> dict[str, Any]:
     return json.loads(artifact_path.expanduser().resolve().read_text(encoding="utf-8"))
+
+
+def _language_relative_path(*, language_slug: str, relative_path: str | Path) -> str:
+    return f"{language_slug}/{_normalize_relative_path(relative_path)}"
+
+
+def aggregate_multilingual_email_links(
+    *,
+    output_dir: Path,
+    language_slugs: Sequence[str],
+    default_language_slug: str,
+) -> dict[str, Any]:
+    resolved_output_dir = output_dir.expanduser().resolve()
+    pages_by_source_markdown: dict[str, str] = {}
+    topic_pages_by_slug: dict[str, str] = {}
+    topic_pages_by_language: dict[str, dict[str, str]] = {}
+    for language_slug in language_slugs:
+        child_links = load_email_links_artifact(
+            artifact_path=resolved_output_dir / f".{language_slug}-email-links.json"
+        )
+        child_pages = child_links.get("pages_by_source_markdown") or {}
+        if isinstance(child_pages, dict):
+            pages_by_source_markdown.update(
+                {
+                    str(source_markdown): _language_relative_path(
+                        language_slug=language_slug,
+                        relative_path=relative_path,
+                    )
+                    for source_markdown, relative_path in child_pages.items()
+                }
+            )
+        child_topic_pages = child_links.get("topic_pages_by_slug") or {}
+        if not isinstance(child_topic_pages, dict):
+            continue
+        namespaced_topic_pages = {
+            str(slug): _language_relative_path(
+                language_slug=language_slug,
+                relative_path=relative_path,
+            )
+            for slug, relative_path in child_topic_pages.items()
+        }
+        topic_pages_by_language[language_slug] = namespaced_topic_pages
+        if language_slug == default_language_slug:
+            topic_pages_by_slug.update(namespaced_topic_pages)
+    return {
+        "pages_by_source_markdown": pages_by_source_markdown,
+        "topic_pages_by_slug": topic_pages_by_slug,
+        "topic_pages_by_language": topic_pages_by_language,
+    }
+
+
+def remove_child_email_links_artifacts(
+    *,
+    output_dir: Path,
+    language_slugs: Sequence[str],
+) -> None:
+    resolved_output_dir = output_dir.expanduser().resolve()
+    for language_slug in language_slugs:
+        try:
+            (resolved_output_dir / f".{language_slug}-email-links.json").unlink()
+        except FileNotFoundError:
+            pass

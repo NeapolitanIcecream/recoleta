@@ -10,7 +10,11 @@ from recoleta.cli.command_support import (
     load_runtime,
 )
 from recoleta.cli.site_support import site_output_dir_from_settings
-from recoleta.trend_email import build_trend_email_preview, send_trend_email
+from recoleta.trend_email import (
+    TrendEmailSendRequest,
+    build_trend_email_preview,
+    send_trend_email,
+)
 
 
 def _parse_anchor_or_exit(
@@ -147,9 +151,11 @@ def run_email_send_command(**kwargs: Any) -> dict[str, Any]:
         result = send_trend_email(
             settings=runtime.settings,
             repository=runtime.repository,
-            site_output_dir=site_output_dir_from_settings(runtime.settings),
-            anchor_date=parsed_anchor,
-            force_batch=bool(kwargs.get("force_batch", False)),
+            request=TrendEmailSendRequest(
+                site_output_dir=site_output_dir_from_settings(runtime.settings),
+                anchor_date=parsed_anchor,
+                force_batch=bool(kwargs.get("force_batch", False)),
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         emit_command_error(

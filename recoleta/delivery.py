@@ -182,6 +182,69 @@ def _normalize_resend_error_message(error: Any) -> str:
     return normalized or "unknown resend error"
 
 
+def _resend_error_by_index(response_errors: list[Any]) -> dict[int, str]:
+    error_by_index: dict[int, str] = {}
+    for position, raw_error in enumerate(response_errors):
+        if not raw_error:
+            continue
+        raw_index: Any | None = None
+        if isinstance(raw_error, dict):
+            raw_index = raw_error.get("index")
+        else:
+            raw_index = getattr(raw_error, "index", None)
+        target_index = position
+        if raw_index is None:
+            normalized_index = None
+        else:
+            try:
+                normalized_index = int(raw_index)
+            except (TypeError, ValueError):
+                normalized_index = None
+        if normalized_index is not None and normalized_index >= 0:
+            target_index = normalized_index
+        error_by_index[target_index] = _normalize_resend_error_message(raw_error)
+    return error_by_index
+
+
+def _resend_message_id(result: Any) -> str | None:
+    raw_id = None
+    if isinstance(result, dict):
+        raw_id = result.get("id") or result.get("Id")
+    else:
+        raw_id = getattr(result, "id", None)
+    normalized_id = str(raw_id or "").strip()
+    return normalized_id or None
+
+
+def _build_resend_batch_outcomes(
+    *,
+    prepared_emails: list[dict[str, object]],
+    response_data: list[Any],
+    error_by_index: dict[int, str],
+) -> list[dict[str, str | None]]:
+    outcomes: list[dict[str, str | None]] = []
+    success_index = 0
+    for index, email in enumerate(prepared_emails):
+        message_id: str | None = None
+        error = error_by_index.get(index)
+        if error is None:
+            if success_index >= len(response_data):
+                error = "missing provider batch result"
+            else:
+                message_id = _resend_message_id(response_data[success_index])
+                success_index += 1
+                if message_id is None:
+                    error = "missing provider message id"
+        outcomes.append(
+            {
+                "destination": str(email.get("to") or "").strip() or None,
+                "message_id": message_id,
+                "error": error,
+            }
+        )
+    return outcomes
+
+
 class ResendBatchSender:
     def __init__(self, *, api_key: str) -> None:
         self.api_key = str(api_key or "").strip()
@@ -225,53 +288,8 @@ class ResendBatchSender:
 
         response_data = list(getattr(response, "data", None) or [])
         response_errors = list(getattr(response, "errors", None) or [])
-        error_by_index: dict[int, str] = {}
-        for position, raw_error in enumerate(response_errors):
-            if not raw_error:
-                continue
-            raw_index: Any | None = None
-            if isinstance(raw_error, dict):
-                raw_index = raw_error.get("index")
-            else:
-                raw_index = getattr(raw_error, "index", None)
-            target_index = position
-            if raw_index is None:
-                normalized_index = None
-            else:
-                try:
-                    normalized_index = int(raw_index)
-                except (TypeError, ValueError):
-                    normalized_index = None
-            if normalized_index is not None and normalized_index >= 0:
-                target_index = normalized_index
-            error_by_index[target_index] = _normalize_resend_error_message(raw_error)
-        outcomes: list[dict[str, str | None]] = []
-        success_index = 0
-        for index, email in enumerate(prepared_emails):
-            message_id: str | None = None
-            error: str | None = None
-            if index in error_by_index:
-                error = error_by_index[index]
-            elif success_index < len(response_data):
-                raw_id = None
-                result = response_data[success_index]
-                success_index += 1
-                if isinstance(result, dict):
-                    raw_id = result.get("id") or result.get("Id")
-                else:
-                    raw_id = getattr(result, "id", None)
-                normalized_id = str(raw_id or "").strip()
-                if normalized_id:
-                    message_id = normalized_id
-                else:
-                    error = "missing provider message id"
-            else:
-                error = "missing provider batch result"
-            outcomes.append(
-                {
-                    "destination": str(email.get("to") or "").strip() or None,
-                    "message_id": message_id,
-                    "error": error,
-                }
-            )
-        return outcomes
+        return _build_resend_batch_outcomes(
+            prepared_emails=prepared_emails,
+            response_data=response_data,
+            error_by_index=_resend_error_by_index(response_errors),
+        )
