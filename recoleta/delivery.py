@@ -225,12 +225,32 @@ class ResendBatchSender:
 
         response_data = list(getattr(response, "data", None) or [])
         response_errors = list(getattr(response, "errors", None) or [])
+        error_by_index: dict[int, str] = {}
+        for position, raw_error in enumerate(response_errors):
+            if not raw_error:
+                continue
+            raw_index: Any | None = None
+            if isinstance(raw_error, dict):
+                raw_index = raw_error.get("index")
+            else:
+                raw_index = getattr(raw_error, "index", None)
+            target_index = position
+            if raw_index is None:
+                normalized_index = None
+            else:
+                try:
+                    normalized_index = int(raw_index)
+                except (TypeError, ValueError):
+                    normalized_index = None
+            if normalized_index is not None and normalized_index >= 0:
+                target_index = normalized_index
+            error_by_index[target_index] = _normalize_resend_error_message(raw_error)
         outcomes: list[dict[str, str | None]] = []
         for index, email in enumerate(prepared_emails):
             message_id: str | None = None
             error: str | None = None
-            if index < len(response_errors) and response_errors[index]:
-                error = _normalize_resend_error_message(response_errors[index])
+            if index in error_by_index:
+                error = error_by_index[index]
             elif index < len(response_data):
                 raw_id = None
                 result = response_data[index]
