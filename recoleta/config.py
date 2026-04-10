@@ -646,6 +646,8 @@ class EmailConfig(BaseModel):
             recipients.append(normalized)
         if not recipients:
             raise ValueError("EMAIL.to must contain at least one recipient")
+        if len(recipients) > 100:
+            raise ValueError("EMAIL.to supports at most 100 recipients per batch")
         return recipients
 
     @field_validator("granularity", mode="before")

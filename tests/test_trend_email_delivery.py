@@ -673,6 +673,35 @@ def test_send_trend_email_returns_failed_when_any_recipient_fails(
     assert {row.status for row in rows} == {DELIVERY_STATUS_SENT, DELIVERY_STATUS_FAILED}
 
 
+def test_send_trend_email_rejects_recipient_lists_over_resend_batch_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+    )
+    assert settings.email is not None
+    settings.email.to = [f"user-{idx}@example.com" for idx in range(101)]
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    with pytest.raises(ValueError, match="at most 100 recipients"):
+        send_trend_email(
+            settings=settings,
+            repository=repository,
+            request=_send_request(
+                site_output_dir=site_dir,
+                sender=FakeResendBatchSender(),
+                url_checker=lambda _url: True,
+            ),
+        )
+
+
 def test_preview_content_hash_is_stable_across_workspace_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

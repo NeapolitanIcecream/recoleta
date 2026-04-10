@@ -37,6 +37,7 @@ from recoleta.site_email_links import (
 
 
 EMAIL_RENDERER_VERSION = "trend-email-v1"
+RESEND_BATCH_MAX_RECIPIENTS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -1043,6 +1044,10 @@ def _email_batch_payloads(
     bundle: _TrendEmailBundle,
     destinations: list[str],
 ) -> list[dict[str, object]]:
+    if len(destinations) > RESEND_BATCH_MAX_RECIPIENTS:
+        raise ValueError(
+            "EMAIL.to supports at most 100 recipients per Resend batch"
+        )
     html_body = _render_html_email(bundle=bundle, settings=settings)
     text_body = _render_text_email(bundle)
     return [

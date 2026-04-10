@@ -151,6 +151,27 @@ def test_settings_rejects_invalid_arxiv_enrich_configuration(
         Settings()  # pyright: ignore[reportCallIssue]
 
 
+def test_settings_rejects_email_recipient_lists_over_resend_batch_limit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv(
+        "EMAIL",
+        json.dumps(
+            {
+                "public_site_url": "https://example.com/recoleta",
+                "from_email": "updates@example.com",
+                "to": [f"user-{idx}@example.com" for idx in range(101)],
+                "granularity": "week",
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="at most 100 recipients"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_settings_loads_sources_from_yaml_env_string(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
