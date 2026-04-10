@@ -133,7 +133,7 @@ def run_email_send_command(**kwargs: Any) -> dict[str, Any]:
             config_path=kwargs.get("config_path"),
             command_name=command_name,
             require_settings=True,
-            init_schema=False,
+            init_schema=True,
         )
     )
     assert runtime.settings is not None

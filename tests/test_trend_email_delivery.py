@@ -596,6 +596,51 @@ def test_run_email_send_command_exits_non_zero_when_batch_fails(
     assert exc.value.exit_code == 1
 
 
+def test_run_email_send_command_requests_runtime_schema_init(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    runtime = SimpleNamespace(
+        settings=object(),
+        repository=object(),
+        console=SimpleNamespace(print=lambda *args, **kwargs: None),
+    )
+    sent_result = SimpleNamespace(
+        status="sent",
+        send_dir=tmp_path / "send",
+        manifest_path=tmp_path / "send" / "manifest.json",
+        html_path=tmp_path / "send" / "body.html",
+        text_path=tmp_path / "send" / "body.txt",
+        primary_page_url="https://public.example/recoleta/trends/example",
+        content_hash="hash-123",
+        subject="[Recoleta] Day trends · 2026-02-25",
+        instance="default",
+        trend_doc_id=123,
+        period_token="2026-02-25",
+    )
+
+    def _fake_load_runtime(*, request: object) -> object:
+        captured["init_schema"] = getattr(request, "init_schema")
+        return runtime
+
+    monkeypatch.setattr(cli_email_module, "load_runtime", _fake_load_runtime)
+    monkeypatch.setattr(
+        cli_email_module,
+        "site_output_dir_from_settings",
+        lambda _settings: tmp_path / "site",
+    )
+    monkeypatch.setattr(
+        cli_email_module,
+        "send_trend_email",
+        lambda **kwargs: sent_result,
+    )
+
+    cli_email_module.run_email_send_command()
+
+    assert captured["init_schema"] is True
+
+
 def test_settings_email_recipients_are_deduplicated(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -676,6 +721,72 @@ def test_run_fleet_email_send_command_exits_non_zero_when_batch_fails(
         )
 
     assert exc.value.exit_code == 1
+
+
+def test_run_fleet_email_send_command_initializes_repository_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sent_result = SimpleNamespace(
+        status="sent",
+        send_dir=tmp_path / "send",
+        manifest_path=tmp_path / "send" / "manifest.json",
+        html_path=tmp_path / "send" / "body.html",
+        text_path=tmp_path / "send" / "body.txt",
+        primary_page_url="https://public.example/recoleta/trends/example",
+        content_hash="hash-123",
+        subject="[Recoleta][Beta] Day trends · 2026-02-25",
+        instance="Beta",
+        trend_doc_id=123,
+        period_token="2026-02-25",
+    )
+    resolved_instance = SimpleNamespace(name="Beta", config_path=tmp_path / "beta.yaml")
+    manifest = SimpleNamespace(manifest_path=tmp_path / "fleet.yaml")
+    settings = SimpleNamespace(recoleta_db_path=tmp_path / "beta.db")
+    repository = SimpleNamespace(
+        initialized=False,
+        init_schema=lambda: None,
+    )
+
+    def _fake_init_schema() -> None:
+        repository.initialized = True
+
+    repository.init_schema = _fake_init_schema
+
+    monkeypatch.setattr(cli_fleet_module, "load_fleet_manifest", lambda _path: manifest)
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "_resolve_fleet_instance",
+        lambda manifest, value: resolved_instance,
+    )
+    monkeypatch.setattr(cli_fleet_module, "load_child_settings", lambda _path: settings)
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "Repository",
+        lambda db_path: repository,
+    )
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "_fleet_site_output_dir",
+        lambda manifest_path, _output_dir: tmp_path / "site",
+    )
+
+    def _fake_send_trend_email(**kwargs: object) -> object:
+        assert getattr(kwargs["repository"], "initialized") is True
+        return sent_result
+
+    monkeypatch.setattr(
+        cli_fleet_module,
+        "send_trend_email",
+        _fake_send_trend_email,
+    )
+
+    cli_fleet_module.run_fleet_email_send_command(
+        manifest_path=tmp_path / "fleet.yaml",
+        instance="beta",
+    )
+
+    assert repository.initialized is True
 
 
 def test_fleet_run_email_preview_uses_selected_child_instance(

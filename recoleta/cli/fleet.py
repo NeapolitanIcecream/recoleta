@@ -300,6 +300,7 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
         )
         settings = load_child_settings(resolved_instance.config_path)
         repository = Repository(db_path=Path(settings.recoleta_db_path))
+        repository.init_schema()
         result = send_trend_email(
             settings=settings,
             repository=repository,
