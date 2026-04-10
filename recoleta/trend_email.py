@@ -750,17 +750,22 @@ def _preview_dir_for_bundle(
 
 
 def _send_dir_for_bundle(*, settings: Settings, bundle: _TrendEmailBundle) -> Path:
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    nonce = uuid4().hex[:8]
+    token = _unique_invocation_token()
     return (
         Path(settings.markdown_output_dir).expanduser().resolve()
         / ".recoleta-email"
         / "sends"
         / (
-            f"{timestamp}-{nonce}--{bundle.granularity}"
+            f"{token}--{bundle.granularity}"
             f"--{bundle.period_token}--trend--{bundle.trend_doc_id}"
         )
     )
+
+
+def _unique_invocation_token() -> str:
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    nonce = uuid4().hex[:8]
+    return f"{timestamp}-{nonce}"
 
 
 def _write_email_artifacts(
@@ -952,13 +957,9 @@ def send_trend_email(
     ]
     idempotency_key = f"trend-email:{bundle.trend_doc_id}:{bundle.content_hash}"
     if force_batch:
-        idempotency_key = (
-            f"{idempotency_key}:force:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
-        )
+        idempotency_key = f"{idempotency_key}:force:{_unique_invocation_token()}"
     elif all(current_failed.values()):
-        idempotency_key = (
-            f"{idempotency_key}:retry:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
-        )
+        idempotency_key = f"{idempotency_key}:retry:{_unique_invocation_token()}"
     outcomes = resolved_sender.send_batch(
         emails=emails,
         idempotency_key=idempotency_key,

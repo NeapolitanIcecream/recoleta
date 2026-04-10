@@ -459,6 +459,114 @@ def test_send_trend_email_allows_retry_after_failed_batch_and_force_for_mixed_st
     assert forced.status == "sent"
 
 
+def test_send_trend_email_uses_unique_force_and_retry_idempotency_keys(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    repository = fixture["repository"]
+    trend_doc_id = int(fixture["trend_doc_id"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+    preview = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    sender = FakeResendBatchSender()
+    frozen_now = datetime(2026, 4, 10, 4, 55, 0, tzinfo=UTC)
+
+    class _FrozenDateTime:
+        @classmethod
+        def now(cls, tz: object | None = None) -> datetime:
+            assert tz is not None
+            return frozen_now
+
+    uuid_values = iter(
+        [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cccccccccccccccccccccccccccccccc",
+            "dddddddddddddddddddddddddddddddd",
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "ffffffffffffffffffffffffffffffff",
+            "11111111111111111111111111111111",
+            "22222222222222222222222222222222",
+        ]
+    )
+
+    monkeypatch.setattr(trend_email_module, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(
+        trend_email_module,
+        "uuid4",
+        lambda: SimpleNamespace(hex=next(uuid_values)),
+    )
+
+    first_force = send_trend_email(
+        settings=settings,
+        repository=repository,
+        site_output_dir=site_dir,
+        sender=sender,
+        url_checker=lambda _url: True,
+        force_batch=True,
+    )
+    second_force = send_trend_email(
+        settings=settings,
+        repository=repository,
+        site_output_dir=site_dir,
+        sender=sender,
+        url_checker=lambda _url: True,
+        force_batch=True,
+    )
+
+    assert first_force.status == "sent"
+    assert second_force.status == "sent"
+    assert sender.calls[0]["idempotency_key"] != sender.calls[1]["idempotency_key"]
+    assert ":force:" in str(sender.calls[0]["idempotency_key"])
+    assert ":force:" in str(sender.calls[1]["idempotency_key"])
+
+    assert settings.email is not None
+    for destination in settings.email.to:
+        repository.upsert_trend_delivery(
+            doc_id=trend_doc_id,
+            channel=DELIVERY_CHANNEL_EMAIL,
+            destination=destination,
+            content_hash=preview.content_hash,
+            message_id=None,
+            status=DELIVERY_STATUS_FAILED,
+            error="provider failed",
+        )
+
+    first_retry = send_trend_email(
+        settings=settings,
+        repository=repository,
+        site_output_dir=site_dir,
+        sender=sender,
+        url_checker=lambda _url: True,
+    )
+    for destination in settings.email.to:
+        repository.upsert_trend_delivery(
+            doc_id=trend_doc_id,
+            channel=DELIVERY_CHANNEL_EMAIL,
+            destination=destination,
+            content_hash=preview.content_hash,
+            message_id=None,
+            status=DELIVERY_STATUS_FAILED,
+            error="provider failed",
+        )
+    second_retry = send_trend_email(
+        settings=settings,
+        repository=repository,
+        site_output_dir=site_dir,
+        sender=sender,
+        url_checker=lambda _url: True,
+    )
+
+    assert first_retry.status == "sent"
+    assert second_retry.status == "sent"
+    assert sender.calls[2]["idempotency_key"] != sender.calls[3]["idempotency_key"]
+    assert ":retry:" in str(sender.calls[2]["idempotency_key"])
+    assert ":retry:" in str(sender.calls[3]["idempotency_key"])
+
+
 def test_send_trend_email_returns_failed_when_any_recipient_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
