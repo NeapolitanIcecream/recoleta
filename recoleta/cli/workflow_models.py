@@ -109,6 +109,7 @@ class WorkflowExecutionContext:
 class WorkflowStepResult:
     step_id: str
     status: str
+    duration_ms: int
     payload: dict[str, Any] | None = None
     error_type: str | None = None
     error: str | None = None
@@ -117,6 +118,7 @@ class WorkflowStepResult:
         payload: dict[str, Any] = {
             "step_id": self.step_id,
             "status": self.status,
+            "duration_ms": self.duration_ms,
         }
         if self.status == "ok":
             payload["label"] = self.step_id.replace(":", " ")

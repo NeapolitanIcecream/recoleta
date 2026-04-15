@@ -433,5 +433,10 @@ def test_run_translation_creates_localized_outputs_for_all_surfaces(
         source_record_id=idea_doc_id,
         language_code="zh-CN",
     ) is not None
+    metric_names = {
+        metric.name for metric in repository.list_metrics(run_id="run-translation")
+    }
+    assert "pipeline.translate.task_duration_ms_total" in metric_names
+    assert "pipeline.translate.duration_ms" not in metric_names
     assert trend_payload.title == "Agent systems"
     assert ideas_payload.title == "Operator wedges"

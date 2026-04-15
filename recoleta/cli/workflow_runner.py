@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import importlib
 from pathlib import Path
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -340,22 +341,42 @@ def execute_workflow_loop(
     step_results: list[WorkflowStepResult] = []
     with cli._graceful_shutdown_signals(), stdout_guard(enabled=request.json_output):
         for invocation in request.plan.invocations:
+            step_started = time.perf_counter()
             try:
                 step_payload = execute_step(
                     invocation, context=request.execution_context
                 )
             except Exception as exc:
+                duration_ms = _step_duration_ms(step_started)
+                _record_workflow_step_duration_metric(
+                    request=request,
+                    invocation=invocation,
+                    duration_ms=duration_ms,
+                )
                 handled = _handle_step_exception(
                     invocation=invocation,
                     request=request,
                     terminal_state=terminal_state,
                     exc=exc,
+                    duration_ms=duration_ms,
                 )
                 if handled is None:
                     raise
+                previous_snapshot = _update_step_billing_metrics(
+                    request=request,
+                    invocation=invocation,
+                    billing_metrics_by_step=billing_metrics_by_step,
+                    previous_snapshot=previous_snapshot,
+                )
                 terminal_state = handled.terminal_state
                 step_results.append(handled.step_result)
                 continue
+            duration_ms = _step_duration_ms(step_started)
+            _record_workflow_step_duration_metric(
+                request=request,
+                invocation=invocation,
+                duration_ms=duration_ms,
+            )
             request.heartbeat_monitor.raise_if_failed()
             previous_snapshot = _update_step_billing_metrics(
                 request=request,
@@ -369,12 +390,19 @@ def execute_workflow_loop(
                 request=request,
                 terminal_state=terminal_state,
                 step_payload=step_payload,
+                duration_ms=duration_ms,
             )
             if handled is not None:
                 terminal_state = handled.terminal_state
                 step_results.append(handled.step_result)
                 continue
-            step_results.append(_ok_step_result(invocation=invocation, step_payload=step_payload))
+            step_results.append(
+                _ok_step_result(
+                    invocation=invocation,
+                    step_payload=step_payload,
+                    duration_ms=duration_ms,
+                )
+            )
     return executed_steps, billing_metrics_by_step, terminal_state, step_results
 
 
@@ -384,6 +412,7 @@ def _handle_step_exception(
     request: WorkflowLoopRequest,
     terminal_state: str,
     exc: Exception,
+    duration_ms: int,
 ) -> _HandledStepResult | None:
     if invocation.step_id != STEP_TRANSLATE or request.on_translate_failure == "fail":
         return None
@@ -402,6 +431,7 @@ def _handle_step_exception(
         step_result=WorkflowStepResult(
             step_id=invocation.step_id,
             status=step_status,
+            duration_ms=duration_ms,
             error_type=type(exc).__name__,
             error=str(exc),
         ),
@@ -429,12 +459,41 @@ def _append_executed_step(*, executed_steps: list[str], step_id: str) -> None:
         executed_steps.append(step_id)
 
 
+def _step_duration_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
+
+
+def _workflow_step_metric_name(step_id: str) -> str:
+    token = (
+        str(step_id or "").strip().lower().replace(":", "_").replace("-", "_")
+    )
+    return f"pipeline.workflow.step.{token}.duration_ms"
+
+
+def _record_workflow_step_duration_metric(
+    *,
+    request: WorkflowLoopRequest,
+    invocation: WorkflowInvocation,
+    duration_ms: int,
+) -> None:
+    record_metric = getattr(request.repository, "record_metric", None)
+    if not callable(record_metric):
+        return
+    record_metric(
+        run_id=request.execution_context.run_id,
+        name=_workflow_step_metric_name(invocation.step_id),
+        value=float(duration_ms),
+        unit="ms",
+    )
+
+
 def _handle_translate_failed_payload(
     *,
     invocation: WorkflowInvocation,
     request: WorkflowLoopRequest,
     terminal_state: str,
     step_payload: Any,
+    duration_ms: int,
 ) -> _HandledStepResult | None:
     if invocation.step_id != STEP_TRANSLATE or not isinstance(step_payload, dict):
         return None
@@ -451,6 +510,7 @@ def _handle_translate_failed_payload(
         step_result=WorkflowStepResult(
             step_id=invocation.step_id,
             status=step_status,
+            duration_ms=duration_ms,
             payload=step_payload,
             error=(
                 "translation completed with failures "
@@ -462,10 +522,16 @@ def _handle_translate_failed_payload(
     )
 
 
-def _ok_step_result(*, invocation: WorkflowInvocation, step_payload: Any) -> WorkflowStepResult:
+def _ok_step_result(
+    *,
+    invocation: WorkflowInvocation,
+    step_payload: Any,
+    duration_ms: int,
+) -> WorkflowStepResult:
     return WorkflowStepResult(
         step_id=invocation.step_id,
         status="ok",
+        duration_ms=duration_ms,
         payload=step_payload,
     )
 

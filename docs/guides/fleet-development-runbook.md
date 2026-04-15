@@ -94,6 +94,63 @@ Good output should show:
 - `lease=free` when nothing is running
 - the expected `schema_version`
 
+## Workflow timing metrics
+
+Use these signals when you need to understand where a workflow run spent time:
+
+- `steps[].duration_ms` from `recoleta run ... --json` or `recoleta fleet run ... --json`
+- `pipeline.workflow.step.<step>.duration_ms` from run metrics
+
+These two signals describe top-level workflow step wall-time. They are the
+right inputs for hotspot ranking and e2e timing reports.
+
+Some stage-local metrics use different semantics. In particular:
+
+- `pipeline.translate.task_duration_ms_total` is cumulative task work across
+  translation requests
+- it is not the same thing as the workflow `translate` step wall-time
+
+If you need the runtime cost of the `translate` step, use the workflow step
+duration, not the cumulative task metric.
+
+Inspect a finished run with:
+
+```bash
+uv run recoleta inspect runs show --run-id <run-id> --json
+```
+
+That payload includes run metrics, billing, and the executed step list.
+
+## Controlled benchmark scripts
+
+Two scripts under `scripts/` are kept as DFX tools for repeatable measurement:
+
+- `scripts/bench_shadow_day_run.py`
+- `scripts/bench_fleet_day_e2e.py`
+
+Use `bench_shadow_day_run.py` for controlled A/B checks against one or more
+instances. It restores a backup into a shadow workspace, deletes derived
+outputs before each replay, runs the same date window, and writes comparable
+timing artifacts.
+
+Example:
+
+```bash
+uv run python scripts/bench_shadow_day_run.py \
+  --manifest /path/to/fleet.yaml \
+  --date 20260406 \
+  --backup-root bench-out/e2e-20260406/backups \
+  --output-dir bench-out/shadow-compare \
+  --instances embodied_ai,software_intelligence
+```
+
+Use `bench_fleet_day_e2e.py` when you want a one-shot fleet report from a live
+manifest run and do not need the stronger backup-restore controls of the shadow
+harness.
+
+Treat `bench-out*` directories as generated output. Do not keep experiment
+results in the repo as source files.
+
 ## Safe replay pattern
 
 For a fully settled historical window, prefer replaying only the stages that
