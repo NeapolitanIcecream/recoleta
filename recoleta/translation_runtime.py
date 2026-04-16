@@ -461,15 +461,19 @@ def _drain_completed_parallel_tasks(
     next_task_index: int,
 ) -> tuple[bool, int]:
     done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
-    should_abort = False
-    for future in done:
-        task = in_flight.pop(future)
-        if _handle_parallel_task_completion(
-            request=request,
-            task=task,
-            future=future,
-        ):
-            should_abort = True
+    failures, successes = _collect_completed_parallel_outcomes(
+        in_flight=in_flight,
+        done=done,
+    )
+    should_abort = _record_completed_parallel_failures(
+        context=request.context,
+        failures=failures,
+    )
+    _persist_completed_parallel_successes(
+        context=request.context,
+        successes=successes,
+        persist_task_fn=request.persist_task_fn,
+    )
     if should_abort:
         return True, next_task_index
     next_task_index = _fill_parallel_slots(
@@ -481,28 +485,57 @@ def _drain_completed_parallel_tasks(
     return False, next_task_index
 
 
-def _handle_parallel_task_completion(
+def _collect_completed_parallel_outcomes(
     *,
-    request: ParallelExecutionRequest,
-    task: Any,
-    future: Any,
+    in_flight: dict[Any, Any],
+    done: Any,
+) -> tuple[list[tuple[Any, Exception]], list[tuple[Any, Any]]]:
+    done_lookup = set(done)
+    failures: list[tuple[Any, Exception]] = []
+    successes: list[tuple[Any, Any]] = []
+    for future in tuple(in_flight):
+        if future not in done_lookup:
+            continue
+        task = in_flight.pop(future)
+        try:
+            completed = future.result()
+        except Exception as exc:  # noqa: BLE001
+            failures.append((task, exc))
+        else:
+            successes.append((task, completed))
+    return failures, successes
+
+
+def _record_completed_parallel_failures(
+    *,
+    context: TranslationBatchContext,
+    failures: list[tuple[Any, Exception]],
 ) -> bool:
-    try:
-        completed = future.result()
-    except Exception as exc:  # noqa: BLE001
-        return _handle_translation_failure(
-            context=request.context,
+    should_abort = False
+    for task, exc in failures:
+        if _handle_translation_failure(
+            context=context,
             candidate=task.candidate,
             language_code=task.target.code,
             exc=exc,
+        ):
+            should_abort = True
+    return should_abort
+
+
+def _persist_completed_parallel_successes(
+    *,
+    context: TranslationBatchContext,
+    successes: list[tuple[Any, Any]],
+    persist_task_fn: Any,
+) -> None:
+    for task, completed in successes:
+        _persist_completed_task(
+            context=context,
+            task=task,
+            completed=completed,
+            persist_task_fn=persist_task_fn,
         )
-    _persist_completed_task(
-        context=request.context,
-        task=task,
-        completed=completed,
-        persist_task_fn=request.persist_task_fn,
-    )
-    return False
 
 
 def _submit_task(

@@ -944,15 +944,6 @@ def _run_fleet_day(
     date_token: str,
     output_dir: Path,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    raw_path = output_dir / "fleet-run.raw.json"
-    time_path = output_dir / "time.txt"
-    if raw_path.exists() and time_path.exists():
-        raw_stdout = raw_path.read_text(encoding="utf-8")
-        raw_stderr = time_path.read_text(encoding="utf-8")
-        fleet_payload = _load_json_from_mixed_output(raw_stdout)
-        _write_json(output_dir / "fleet-run.json", fleet_payload)
-        return fleet_payload, _parse_time_output(raw_stderr)
-
     result = _run_command(
         [
             "/usr/bin/time",

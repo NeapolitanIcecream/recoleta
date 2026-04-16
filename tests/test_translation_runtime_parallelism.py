@@ -41,6 +41,18 @@ class _AbortingProviderFailures(_FakeProviderFailures):
         return "abort requested"
 
 
+class _ResetSensitiveProviderFailures(_FakeProviderFailures):
+    def __init__(self) -> None:
+        self.abort_armed = True
+
+    def record(self, exc: Exception) -> str | None:
+        _ = exc
+        return "abort requested" if self.abort_armed else None
+
+    def reset(self) -> None:
+        self.abort_armed = False
+
+
 class _FakeLog:
     def bind(self, **kwargs) -> _FakeLog:
         _ = kwargs
@@ -218,6 +230,67 @@ def test_parallel_translation_batch_persists_successes_completed_in_same_abortin
     assert context.result.failed_total == 1
     assert context.result.aborted is True
     assert context.result.abort_reason == "abort requested"
+
+
+def test_parallel_translation_batch_uses_deterministic_abort_policy_with_same_done_batch(
+    monkeypatch,
+) -> None:
+    def _run_with_done_order(done_order: tuple[str, str]) -> tuple[bool, int]:
+        repository = _FakeRepository()
+        context = _batch_context(
+            repository=repository,
+            provider_failures=_ResetSensitiveProviderFailures(),
+        )
+        failure_future = _FakeFuture(exc=RuntimeError("provider unavailable"))
+        success_future = _FakeFuture(value=SimpleNamespace(name="translated"))
+        prepared_tasks = [
+            SimpleNamespace(
+                name="failure",
+                candidate=SimpleNamespace(
+                    source_kind="analysis",
+                    source_record_id="failure",
+                ),
+                target=SimpleNamespace(code="zh-CN"),
+            ),
+            SimpleNamespace(
+                name="success",
+                candidate=SimpleNamespace(
+                    source_kind="analysis",
+                    source_record_id="success",
+                ),
+                target=SimpleNamespace(code="zh-CN"),
+            ),
+        ]
+        future_by_name = {
+            "failure": failure_future,
+            "success": success_future,
+        }
+
+        def _wait(futures, return_when):  # type: ignore[no-untyped-def]
+            assert return_when == translation_runtime.FIRST_COMPLETED
+            assert set(futures) == {failure_future, success_future}
+            return [future_by_name[name] for name in done_order], ()
+
+        monkeypatch.setattr(translation_runtime, "wait", _wait)
+        translation_runtime._run_prepared_tasks_in_parallel(
+            translation_runtime.ParallelExecutionRequest(
+                context=context,
+                prepared_tasks=prepared_tasks,
+                parallelism=2,
+                execute_task_fn=lambda **kwargs: None,
+                persist_task_fn=lambda **kwargs: None,
+                executor_class=partial(
+                    _FakeExecutor,
+                    [failure_future, success_future],
+                ),
+            )
+        )
+        return context.result.aborted, context.result.translated_total
+
+    first_result = _run_with_done_order(("failure", "success"))
+    second_result = _run_with_done_order(("success", "failure"))
+
+    assert first_result == second_result == (True, 1)
 
 
 def test_run_translation_batch_records_batch_parallelism_metrics() -> None:
