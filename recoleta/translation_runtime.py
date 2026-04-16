@@ -461,21 +461,23 @@ def _drain_completed_parallel_tasks(
     next_task_index: int,
 ) -> tuple[bool, int]:
     done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
+    should_abort = False
     for future in done:
         task = in_flight.pop(future)
-        should_abort = _handle_parallel_task_completion(
+        if _handle_parallel_task_completion(
             request=request,
             task=task,
             future=future,
-        )
-        if should_abort:
-            return True, next_task_index
-        next_task_index = _fill_parallel_slots(
-            request=request,
-            executor=executor,
-            in_flight=in_flight,
-            next_task_index=next_task_index,
-        )
+        ):
+            should_abort = True
+    if should_abort:
+        return True, next_task_index
+    next_task_index = _fill_parallel_slots(
+        request=request,
+        executor=executor,
+        in_flight=in_flight,
+        next_task_index=next_task_index,
+    )
     return False, next_task_index
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import time
 from types import SimpleNamespace
 
@@ -26,11 +27,66 @@ class _FakeRepository:
 
 
 class _FakeProviderFailures:
+    def record(self, exc: Exception) -> str | None:
+        _ = exc
+        return None
+
     def reset(self) -> None:
         return None
 
 
-def _batch_context(*, repository: _FakeRepository) -> translation_runtime.TranslationBatchContext:
+class _AbortingProviderFailures(_FakeProviderFailures):
+    def record(self, exc: Exception) -> str | None:
+        _ = exc
+        return "abort requested"
+
+
+class _FakeLog:
+    def bind(self, **kwargs) -> _FakeLog:
+        _ = kwargs
+        return self
+
+    def warning(self, *args, **kwargs) -> None:
+        _ = (args, kwargs)
+
+
+class _FakeFuture:
+    def __init__(self, *, value: object | None = None, exc: Exception | None = None) -> None:
+        self._value = value
+        self._exc = exc
+
+    def result(self) -> object | None:
+        if self._exc is not None:
+            raise self._exc
+        return self._value
+
+
+class _FakeExecutor:
+    def __init__(
+        self,
+        futures: list[_FakeFuture],
+        *,
+        max_workers: int | None = None,
+    ) -> None:
+        self._futures = list(futures)
+        self._max_workers = max_workers
+
+    def __enter__(self) -> _FakeExecutor:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+        _ = (exc_type, exc, tb)
+
+    def submit(self, fn, **kwargs) -> _FakeFuture:  # type: ignore[no-untyped-def]
+        _ = (fn, kwargs)
+        return self._futures.pop(0)
+
+
+def _batch_context(
+    *,
+    repository: _FakeRepository,
+    provider_failures: _FakeProviderFailures | None = None,
+) -> translation_runtime.TranslationBatchContext:
     return translation_runtime.TranslationBatchContext(
         repository=repository,
         settings=SimpleNamespace(),
@@ -42,8 +98,8 @@ def _batch_context(*, repository: _FakeRepository) -> translation_runtime.Transl
             aborted=False,
             abort_reason=None,
         ),
-        provider_failures=_FakeProviderFailures(),
-        log=SimpleNamespace(),
+        provider_failures=provider_failures or _FakeProviderFailures(),
+        log=_FakeLog(),
         force=False,
         run_id="run-translation",
         context_assist="direct",
@@ -109,6 +165,59 @@ def test_parallel_translation_batch_processes_completed_tasks_without_submission
     assert persisted_order[0] == "fast"
     assert set(persisted_order) == {"slow", "fast", "next"}
     assert context.result.translated_total == 3
+
+
+def test_parallel_translation_batch_persists_successes_completed_in_same_aborting_drain(
+    monkeypatch,
+) -> None:
+    """Regression: a sibling success in the same wait() drain must survive an aborting failure."""
+    repository = _FakeRepository()
+    context = _batch_context(
+        repository=repository,
+        provider_failures=_AbortingProviderFailures(),
+    )
+    persisted_order: list[str] = []
+    failure_future = _FakeFuture(exc=RuntimeError("provider unavailable"))
+    success_future = _FakeFuture(value=SimpleNamespace(name="translated"))
+    prepared_tasks = [
+        SimpleNamespace(
+            name="failure",
+            candidate=SimpleNamespace(source_kind="analysis", source_record_id="failure"),
+            target=SimpleNamespace(code="zh-CN"),
+        ),
+        SimpleNamespace(
+            name="success",
+            candidate=SimpleNamespace(source_kind="analysis", source_record_id="success"),
+            target=SimpleNamespace(code="zh-CN"),
+        ),
+    ]
+
+    def _wait(futures, return_when):  # type: ignore[no-untyped-def]
+        assert return_when == translation_runtime.FIRST_COMPLETED
+        assert set(futures) == {failure_future, success_future}
+        return [failure_future, success_future], ()
+
+    def _persist_task(**kwargs):  # type: ignore[no-untyped-def]
+        persisted_order.append(kwargs["task"].name)
+
+    monkeypatch.setattr(translation_runtime, "wait", _wait)
+
+    translation_runtime._run_prepared_tasks_in_parallel(
+        translation_runtime.ParallelExecutionRequest(
+            context=context,
+            prepared_tasks=prepared_tasks,
+            parallelism=2,
+            execute_task_fn=lambda **kwargs: None,
+            persist_task_fn=_persist_task,
+            executor_class=partial(_FakeExecutor, [failure_future, success_future]),
+        )
+    )
+
+    assert persisted_order == ["success"]
+    assert context.result.translated_total == 1
+    assert context.result.failed_total == 1
+    assert context.result.aborted is True
+    assert context.result.abort_reason == "abort requested"
 
 
 def test_run_translation_batch_records_batch_parallelism_metrics() -> None:
