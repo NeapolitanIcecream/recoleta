@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -142,6 +143,66 @@ def _parse_time_output(text: str) -> dict[str, Any]:
     return payload
 
 
+def _use_bsd_time_wrapper() -> bool:
+    return sys.platform == "darwin" and Path("/usr/bin/time").exists()
+
+
+def _portable_time_output(
+    *,
+    command_stderr: str,
+    real_seconds: float,
+    user_seconds: float,
+    sys_seconds: float,
+) -> str:
+    prefix = command_stderr.rstrip()
+    timing_lines = [
+        f"real {real_seconds:.6f}",
+        f"user {user_seconds:.6f}",
+        f"sys {sys_seconds:.6f}",
+        "timing_mode python_fallback",
+    ]
+    if prefix:
+        return prefix + "\n" + "\n".join(timing_lines) + "\n"
+    return "\n".join(timing_lines) + "\n"
+
+
+def _run_timed_command(
+    argv: list[str],
+    *,
+    cwd: Path = _REPO_ROOT,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[CommandResult, dict[str, Any]]:
+    if _use_bsd_time_wrapper():
+        result = _run_command(
+            ["/usr/bin/time", "-lp", *argv],
+            cwd=cwd,
+            extra_env=extra_env,
+        )
+        payload = _parse_time_output(result.stderr)
+        payload["timing_mode"] = "bsd_time"
+        return result, payload
+    started_wall = time.perf_counter()
+    started_times = os.times()
+    result = _run_command(argv, cwd=cwd, extra_env=extra_env)
+    finished_times = os.times()
+    raw = _portable_time_output(
+        command_stderr=result.stderr,
+        real_seconds=max(0.0, time.perf_counter() - started_wall),
+        user_seconds=max(
+            0.0,
+            float(finished_times.children_user) - float(started_times.children_user),
+        ),
+        sys_seconds=max(
+            0.0,
+            float(finished_times.children_system)
+            - float(started_times.children_system),
+        ),
+    )
+    payload = _parse_time_output(raw)
+    payload["timing_mode"] = "python_fallback"
+    return result, payload
+
+
 def _selected_instances(
     *,
     manifest: FleetManifest,
@@ -210,10 +271,8 @@ def _restore_shadow_db(*, bundle_dir: Path, shadow_config: Path, instance_dir: P
 
 
 def _run_day_once(*, shadow_config: Path, date_token: str, instance_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    result = _run_command(
+    result, time_payload = _run_timed_command(
         [
-            "/usr/bin/time",
-            "-lp",
             "uv",
             "run",
             "recoleta",
@@ -226,11 +285,11 @@ def _run_day_once(*, shadow_config: Path, date_token: str, instance_dir: Path) -
         extra_env={"RECOLETA_CONFIG_PATH": str(shadow_config)},
     )
     _write_text(instance_dir / "run.raw.json", result.stdout)
-    _write_text(instance_dir / "time.txt", result.stderr)
+    _write_text(instance_dir / "time.txt", str(time_payload.get("raw") or ""))
     _require_success(result, context="shadow run day")
     payload = _load_json_from_mixed_output(result.stdout)
     _write_json(instance_dir / "run.json", payload)
-    return payload, _parse_time_output(result.stderr)
+    return payload, time_payload
 
 
 def _inspect_run(*, shadow_config: Path, run_id: str, instance_dir: Path) -> dict[str, Any]:

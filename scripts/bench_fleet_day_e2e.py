@@ -11,9 +11,11 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +163,64 @@ def _parse_time_output(text: str) -> dict[str, Any]:
     payload["maximum_resident_set_size"] = extra.get("maximum_resident_set_size")
     payload["peak_memory_footprint"] = extra.get("peak_memory_footprint")
     return payload
+
+
+def _use_bsd_time_wrapper() -> bool:
+    return sys.platform == "darwin" and Path("/usr/bin/time").exists()
+
+
+def _portable_time_output(
+    *,
+    command_stderr: str,
+    real_seconds: float,
+    user_seconds: float,
+    sys_seconds: float,
+) -> str:
+    prefix = command_stderr.rstrip()
+    timing_lines = [
+        f"real {real_seconds:.6f}",
+        f"user {user_seconds:.6f}",
+        f"sys {sys_seconds:.6f}",
+        "timing_mode python_fallback",
+    ]
+    if prefix:
+        return prefix + "\n" + "\n".join(timing_lines) + "\n"
+    return "\n".join(timing_lines) + "\n"
+
+
+def _run_timed_command(
+    argv: list[str],
+    *,
+    cwd: Path = _REPO_ROOT,
+) -> tuple[CommandResult, dict[str, Any]]:
+    if _use_bsd_time_wrapper():
+        result = _run_command(
+            ["/usr/bin/time", "-lp", *argv],
+            cwd=cwd,
+        )
+        payload = _parse_time_output(result.stderr)
+        payload["timing_mode"] = "bsd_time"
+        return result, payload
+    started_wall = time.perf_counter()
+    started_times = os.times()
+    result = _run_command(argv, cwd=cwd)
+    finished_times = os.times()
+    raw = _portable_time_output(
+        command_stderr=result.stderr,
+        real_seconds=max(0.0, time.perf_counter() - started_wall),
+        user_seconds=max(
+            0.0,
+            float(finished_times.children_user) - float(started_times.children_user),
+        ),
+        sys_seconds=max(
+            0.0,
+            float(finished_times.children_system)
+            - float(started_times.children_system),
+        ),
+    )
+    payload = _parse_time_output(raw)
+    payload["timing_mode"] = "python_fallback"
+    return result, payload
 
 
 def _load_json_from_mixed_output(raw_text: str) -> Any:
@@ -944,10 +1004,8 @@ def _run_fleet_day(
     date_token: str,
     output_dir: Path,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    result = _run_command(
+    result, time_payload = _run_timed_command(
         [
-            "/usr/bin/time",
-            "-lp",
             "uv",
             "run",
             "recoleta",
@@ -962,11 +1020,11 @@ def _run_fleet_day(
         ]
     )
     _write_text(output_dir / "fleet-run.raw.json", result.stdout)
-    _write_text(output_dir / "time.txt", result.stderr)
+    _write_text(output_dir / "time.txt", str(time_payload.get("raw") or ""))
     _require_success(result, context="fleet run day")
     fleet_payload = _load_json_from_mixed_output(result.stdout)
     _write_json(output_dir / "fleet-run.json", fleet_payload)
-    return fleet_payload, _parse_time_output(result.stderr)
+    return fleet_payload, time_payload
 
 
 def _parse_args() -> argparse.Namespace:
