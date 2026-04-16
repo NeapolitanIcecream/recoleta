@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 import recoleta.cli
+import recoleta.cli.workflow_runner as workflow_runner
 import recoleta.cli.workflows as workflow_cli
 
 
@@ -115,6 +116,7 @@ class _FakeRepo:
     def __init__(self) -> None:
         self.updated: list[dict[str, object]] = []
         self.finished: list[tuple[str, bool, str | None]] = []
+        self.metrics: list[SimpleNamespace] = []
 
     def update_run_context(self, **kwargs: object) -> None:
         self.updated.append(dict(kwargs))
@@ -128,9 +130,20 @@ class _FakeRepo:
     ) -> None:
         self.finished.append((run_id, bool(success), terminal_state))
 
+    def record_metric(
+        self,
+        *,
+        run_id: str,
+        name: str,
+        value: float,
+        unit: str | None = None,
+    ) -> None:
+        self.metrics.append(
+            SimpleNamespace(run_id=run_id, name=name, value=value, unit=unit)
+        )
+
     def list_metrics(self, *, run_id: str) -> list[object]:
-        _ = run_id
-        return []
+        return [metric for metric in self.metrics if metric.run_id == run_id]
 
 
 type _ServiceCall = tuple[str, tuple[object, ...]]
@@ -321,6 +334,7 @@ def test_run_week_executes_recursive_day_and_week_synthesis_workflow(
     )
 
     assert result.exit_code == 0
+    payload = json.loads(result.stdout)
     assert len(site_build_calls) == 1
     prepare_calls = [call for call in fake_service.calls if call[0] == "prepare"]
     analyze_calls = [call for call in fake_service.calls if call[0] == "analyze"]
@@ -353,6 +367,16 @@ def test_run_week_executes_recursive_day_and_week_synthesis_workflow(
     assert len(day_ideas_calls) == 7
     assert len(week_trend_calls) == 1
     assert len(week_ideas_calls) == 1
+    assert all(step["duration_ms"] >= 0 for step in payload["steps"])
+    metric_names = {metric.name for metric in fake_repo.metrics}
+    assert "pipeline.workflow.step.ingest.duration_ms" in metric_names
+    assert "pipeline.workflow.step.analyze.duration_ms" in metric_names
+    assert "pipeline.workflow.step.publish.duration_ms" in metric_names
+    assert "pipeline.workflow.step.trends_day.duration_ms" in metric_names
+    assert "pipeline.workflow.step.ideas_day.duration_ms" in metric_names
+    assert "pipeline.workflow.step.trends_week.duration_ms" in metric_names
+    assert "pipeline.workflow.step.ideas_week.duration_ms" in metric_names
+    assert "pipeline.workflow.step.site_build.duration_ms" in metric_names
     assert all(call[1][5] is True for call in day_trend_calls + week_trend_calls)
     assert week_trend_calls[0][1][2] == date(2026, 3, 16)
     assert week_ideas_calls[0][1][2] == date(2026, 3, 16)
@@ -437,7 +461,17 @@ def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_bu
     )
 
     assert result.exit_code == 0
+    payload = json.loads(result.stdout)
     assert len(site_build_calls) == 1
+    translate_step = next(
+        step for step in payload["steps"] if step["step_id"] == "translate"
+    )
+    assert translate_step["duration_ms"] >= 0
+    assert translate_step["status"] == "partial_failure"
+    assert translate_step["error_type"] == "RuntimeError"
+    metric_names = {metric.name for metric in fake_repo.metrics}
+    assert "pipeline.workflow.step.translate.duration_ms" in metric_names
+    assert "pipeline.workflow.step.site_build.duration_ms" in metric_names
     assert fake_repo.finished == [("run-1", True, "succeeded_partial")]
     assert any(
         update.get("requested_steps")
@@ -451,6 +485,21 @@ def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_bu
             "site-build",
         ]
         for update in fake_repo.updated
+    )
+
+
+def test_workflow_step_metric_name_normalizes_fixed_step_ids() -> None:
+    assert (
+        workflow_runner._workflow_step_metric_name("trends:day")
+        == "pipeline.workflow.step.trends_day.duration_ms"
+    )
+    assert (
+        workflow_runner._workflow_step_metric_name("ideas:day")
+        == "pipeline.workflow.step.ideas_day.duration_ms"
+    )
+    assert (
+        workflow_runner._workflow_step_metric_name("site-build")
+        == "pipeline.workflow.step.site_build.duration_ms"
     )
 
 
@@ -597,7 +646,11 @@ def test_run_day_marks_terminal_state_partial_when_translate_reports_failed_outp
         step for step in payload["steps"] if step["step_id"] == "translate"
     )
     assert translate_step["status"] == "partial_failure"
+    assert translate_step["duration_ms"] >= 0
     assert translate_step["payload"]["failed"] == 1
+    assert "pipeline.workflow.step.translate.duration_ms" in {
+        metric.name for metric in fake_repo.metrics
+    }
     assert "site-build" in payload["executed_steps"]
     assert fake_repo.finished == [("run-1", True, "succeeded_partial")]
 

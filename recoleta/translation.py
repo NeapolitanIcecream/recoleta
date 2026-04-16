@@ -57,6 +57,7 @@ from recoleta.types import sha256_hex
 
 TRANSLATION_CONTEXT_ASSIST_VALUES = {"none", "direct", "hybrid"}
 TRANSLATION_INCLUDE_VALUES = {"items", "trends", "ideas"}
+_TRANSLATION_TASK_DURATION_TOTAL_METRIC = "pipeline.translate.task_duration_ms_total"
 _PROVIDER_FAILURE_ERROR_TYPES = {
     "APIConnectionError",
     "APIError",
@@ -66,7 +67,7 @@ _PROVIDER_FAILURE_ERROR_TYPES = {
     "Timeout",
 }
 _PROVIDER_FAILURE_ABORT_THRESHOLD = 5
-_DEFAULT_TRANSLATION_PARALLELISM = 4
+_DEFAULT_TRANSLATION_PARALLELISM = 8
 
 
 class _AnalysisTranslationPayload(BaseModel):
@@ -553,10 +554,14 @@ def _candidate_context(
     )
 
 
-def _translation_parallelism(task_total: int) -> int:
+def _translation_parallelism(task_total: int, *, settings: Settings) -> int:
+    default_parallelism = int(
+        getattr(settings, "translation_parallelism", _DEFAULT_TRANSLATION_PARALLELISM)
+        or _DEFAULT_TRANSLATION_PARALLELISM
+    )
     return _runtime_translation_parallelism(
         task_total,
-        default_parallelism=_DEFAULT_TRANSLATION_PARALLELISM,
+        default_parallelism=default_parallelism,
     )
 
 
@@ -647,9 +652,10 @@ def _record_translation_llm_metrics(
             value=1,
             unit="count",
         )
+    # This is cumulative task work, not the top-level workflow translate step wall-time.
     repository.record_metric(
         run_id=run_id,
-        name="pipeline.translate.duration_ms",
+        name=_TRANSLATION_TASK_DURATION_TOTAL_METRIC,
         value=float(max(0, int(duration_ms))),
         unit="ms",
     )
@@ -926,7 +932,10 @@ def run_translation(
             prepare_task_fn=_prepare_translation_task,
             execute_task_fn=_execute_prepared_translation_task,
             persist_task_fn=_persist_completed_translation_task,
-            parallelism_fn=_translation_parallelism,
+            parallelism_fn=lambda task_total: _translation_parallelism(
+                task_total,
+                settings=normalized_request.settings,
+            ),
             executor_class=ThreadPoolExecutor,
         ),
     )

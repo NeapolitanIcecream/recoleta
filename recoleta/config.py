@@ -719,6 +719,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "ANALYZE_MAX_CONCURRENCY": "analyze_max_concurrency",
         "ANALYZE_WRITE_BATCH_SIZE": "analyze_write_batch_size",
         "ANALYZE_CONTENT_MAX_CHARS": "analyze_content_max_chars",
+        "TRANSLATION_PARALLELISM": "translation_parallelism",
         "ARTIFACTS_DIR": "artifacts_dir",
         "OBSIDIAN_BASE_FOLDER": "obsidian_base_folder",
         "PUBLISH_TARGETS": "publish_targets",
@@ -1199,6 +1200,12 @@ class Settings(BaseSettings):
     )
     analyze_content_max_chars: int = Field(
         default=32_768, ge=0, validation_alias="ANALYZE_CONTENT_MAX_CHARS"
+    )
+    translation_parallelism: int = Field(
+        default=8,
+        ge=1,
+        le=32,
+        validation_alias="TRANSLATION_PARALLELISM",
     )
 
     artifacts_dir: Path | None = Field(default=None, validation_alias="ARTIFACTS_DIR")

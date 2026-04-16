@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import FIRST_COMPLETED, wait
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import time
@@ -275,15 +276,34 @@ def run_translation_batch(
     targets: list[Any],
     deps: TranslationBatchDeps,
 ) -> Any:
+    prepare_started = time.perf_counter()
     prepared_tasks = _prepare_batch_tasks(
         context=context,
         candidates=candidates,
         targets=targets,
         prepare_task_fn=deps.prepare_task_fn,
     )
+    _record_batch_metric(
+        context=context,
+        name="pipeline.translate.batch.prepare.duration_ms",
+        value=int((time.perf_counter() - prepare_started) * 1000),
+        unit="ms",
+    )
     if prepared_tasks is None:
         return context.result
+    _record_batch_metric(
+        context=context,
+        name="pipeline.translate.batch.prepared_tasks_total",
+        value=len(prepared_tasks),
+        unit="count",
+    )
     parallelism = deps.parallelism_fn(len(prepared_tasks))
+    _record_batch_metric(
+        context=context,
+        name="pipeline.translate.parallelism.effective",
+        value=parallelism if prepared_tasks else 0,
+        unit="count",
+    )
     if parallelism <= 1:
         return _run_prepared_tasks_serially(
             context=context,
@@ -393,52 +413,136 @@ def _run_prepared_tasks_serially(
 
 def _run_prepared_tasks_in_parallel(request: ParallelExecutionRequest) -> Any:
     with request.executor_class(max_workers=request.parallelism) as executor:
-        in_flight: list[tuple[Any, Any]] = []
+        in_flight: dict[Any, Any] = {}
         next_task_index = 0
-        while (
-            next_task_index < len(request.prepared_tasks)
-            and len(in_flight) < request.parallelism
-        ):
-            next_task_index = _submit_task(
+        next_task_index = _fill_parallel_slots(
+            request=request,
+            executor=executor,
+            in_flight=in_flight,
+            next_task_index=next_task_index,
+        )
+        while in_flight:
+            should_abort, next_task_index = _drain_completed_parallel_tasks(
                 request=request,
                 executor=executor,
                 in_flight=in_flight,
                 next_task_index=next_task_index,
             )
-        while in_flight:
-            task, future = in_flight.pop(0)
-            try:
-                completed = future.result()
-            except Exception as exc:  # noqa: BLE001
-                if _handle_translation_failure(
-                    context=request.context,
-                    candidate=task.candidate,
-                    language_code=task.target.code,
-                    exc=exc,
-                ):
-                    return request.context.result
-            else:
-                _persist_completed_task(
-                    context=request.context,
-                    task=task,
-                    completed=completed,
-                    persist_task_fn=request.persist_task_fn,
-                )
-            if next_task_index < len(request.prepared_tasks):
-                next_task_index = _submit_task(
-                    request=request,
-                    executor=executor,
-                    in_flight=in_flight,
-                    next_task_index=next_task_index,
-                )
+            if should_abort:
+                return request.context.result
     return request.context.result
+
+
+def _fill_parallel_slots(
+    *,
+    request: ParallelExecutionRequest,
+    executor: Any,
+    in_flight: dict[Any, Any],
+    next_task_index: int,
+) -> int:
+    while (
+        next_task_index < len(request.prepared_tasks)
+        and len(in_flight) < request.parallelism
+    ):
+        next_task_index = _submit_task(
+            request=request,
+            executor=executor,
+            in_flight=in_flight,
+            next_task_index=next_task_index,
+        )
+    return next_task_index
+
+
+def _drain_completed_parallel_tasks(
+    *,
+    request: ParallelExecutionRequest,
+    executor: Any,
+    in_flight: dict[Any, Any],
+    next_task_index: int,
+) -> tuple[bool, int]:
+    done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
+    failures, successes = _collect_completed_parallel_outcomes(
+        in_flight=in_flight,
+        done=done,
+    )
+    should_abort = _record_completed_parallel_failures(
+        context=request.context,
+        failures=failures,
+    )
+    _persist_completed_parallel_successes(
+        context=request.context,
+        successes=successes,
+        persist_task_fn=request.persist_task_fn,
+    )
+    if should_abort:
+        return True, next_task_index
+    next_task_index = _fill_parallel_slots(
+        request=request,
+        executor=executor,
+        in_flight=in_flight,
+        next_task_index=next_task_index,
+    )
+    return False, next_task_index
+
+
+def _collect_completed_parallel_outcomes(
+    *,
+    in_flight: dict[Any, Any],
+    done: Any,
+) -> tuple[list[tuple[Any, Exception]], list[tuple[Any, Any]]]:
+    done_lookup = set(done)
+    failures: list[tuple[Any, Exception]] = []
+    successes: list[tuple[Any, Any]] = []
+    for future in tuple(in_flight):
+        if future not in done_lookup:
+            continue
+        task = in_flight.pop(future)
+        try:
+            completed = future.result()
+        except Exception as exc:  # noqa: BLE001
+            failures.append((task, exc))
+        else:
+            successes.append((task, completed))
+    return failures, successes
+
+
+def _record_completed_parallel_failures(
+    *,
+    context: TranslationBatchContext,
+    failures: list[tuple[Any, Exception]],
+) -> bool:
+    should_abort = False
+    for task, exc in failures:
+        if _handle_translation_failure(
+            context=context,
+            candidate=task.candidate,
+            language_code=task.target.code,
+            exc=exc,
+        ):
+            should_abort = True
+    return should_abort
+
+
+def _persist_completed_parallel_successes(
+    *,
+    context: TranslationBatchContext,
+    successes: list[tuple[Any, Any]],
+    persist_task_fn: Any,
+) -> None:
+    for task, completed in successes:
+        _persist_completed_task(
+            context=context,
+            task=task,
+            completed=completed,
+            persist_task_fn=persist_task_fn,
+        )
 
 
 def _submit_task(
     *,
     request: ParallelExecutionRequest,
     executor: Any,
-    in_flight: list[tuple[Any, Any]],
+    in_flight: dict[Any, Any],
     next_task_index: int,
 ) -> int:
     task = request.prepared_tasks[next_task_index]
@@ -450,8 +554,26 @@ def _submit_task(
         source_language_label=request.context.source_language_label,
         llm_connection=request.context.llm_connection,
     )
-    in_flight.append((task, future))
+    in_flight[future] = task
     return next_task_index + 1
+
+
+def _record_batch_metric(
+    *,
+    context: TranslationBatchContext,
+    name: str,
+    value: int | float,
+    unit: str,
+) -> None:
+    run_id = str(context.run_id or "").strip()
+    if not run_id:
+        return
+    context.repository.record_metric(
+        run_id=run_id,
+        name=name,
+        value=float(value),
+        unit=unit,
+    )
 
 
 def _complete_prepared_task(
