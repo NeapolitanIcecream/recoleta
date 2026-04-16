@@ -415,45 +415,92 @@ def _run_prepared_tasks_in_parallel(request: ParallelExecutionRequest) -> Any:
     with request.executor_class(max_workers=request.parallelism) as executor:
         in_flight: dict[Any, Any] = {}
         next_task_index = 0
-        while (
-            next_task_index < len(request.prepared_tasks)
-            and len(in_flight) < request.parallelism
-        ):
-            next_task_index = _submit_task(
+        next_task_index = _fill_parallel_slots(
+            request=request,
+            executor=executor,
+            in_flight=in_flight,
+            next_task_index=next_task_index,
+        )
+        while in_flight:
+            should_abort, next_task_index = _drain_completed_parallel_tasks(
                 request=request,
                 executor=executor,
                 in_flight=in_flight,
                 next_task_index=next_task_index,
             )
-        while in_flight:
-            done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
-            for future in done:
-                task = in_flight.pop(future)
-                try:
-                    completed = future.result()
-                except Exception as exc:  # noqa: BLE001
-                    if _handle_translation_failure(
-                        context=request.context,
-                        candidate=task.candidate,
-                        language_code=task.target.code,
-                        exc=exc,
-                    ):
-                        return request.context.result
-                else:
-                    _persist_completed_task(
-                        context=request.context,
-                        task=task,
-                        completed=completed,
-                        persist_task_fn=request.persist_task_fn,
-                    )
-                if next_task_index < len(request.prepared_tasks):
-                    next_task_index = _submit_task(
-                        request=request,
-                        executor=executor,
-                        in_flight=in_flight,
-                        next_task_index=next_task_index,
-                    )
+            if should_abort:
+                return request.context.result
     return request.context.result
+
+
+def _fill_parallel_slots(
+    *,
+    request: ParallelExecutionRequest,
+    executor: Any,
+    in_flight: dict[Any, Any],
+    next_task_index: int,
+) -> int:
+    while (
+        next_task_index < len(request.prepared_tasks)
+        and len(in_flight) < request.parallelism
+    ):
+        next_task_index = _submit_task(
+            request=request,
+            executor=executor,
+            in_flight=in_flight,
+            next_task_index=next_task_index,
+        )
+    return next_task_index
+
+
+def _drain_completed_parallel_tasks(
+    *,
+    request: ParallelExecutionRequest,
+    executor: Any,
+    in_flight: dict[Any, Any],
+    next_task_index: int,
+) -> tuple[bool, int]:
+    done, _ = wait(tuple(in_flight), return_when=FIRST_COMPLETED)
+    for future in done:
+        task = in_flight.pop(future)
+        should_abort = _handle_parallel_task_completion(
+            request=request,
+            task=task,
+            future=future,
+        )
+        if should_abort:
+            return True, next_task_index
+        next_task_index = _fill_parallel_slots(
+            request=request,
+            executor=executor,
+            in_flight=in_flight,
+            next_task_index=next_task_index,
+        )
+    return False, next_task_index
+
+
+def _handle_parallel_task_completion(
+    *,
+    request: ParallelExecutionRequest,
+    task: Any,
+    future: Any,
+) -> bool:
+    try:
+        completed = future.result()
+    except Exception as exc:  # noqa: BLE001
+        return _handle_translation_failure(
+            context=request.context,
+            candidate=task.candidate,
+            language_code=task.target.code,
+            exc=exc,
+        )
+    _persist_completed_task(
+        context=request.context,
+        task=task,
+        completed=completed,
+        persist_task_fn=request.persist_task_fn,
+    )
+    return False
 
 
 def _submit_task(

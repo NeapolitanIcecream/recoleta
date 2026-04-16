@@ -37,6 +37,26 @@ class CommandResult:
     stderr: str
 
 
+@dataclass(frozen=True, slots=True)
+class ChildSummaryRequest:
+    instance_name: str
+    config_path: Path
+    health: dict[str, Any]
+    backup: dict[str, Any]
+    workflow_payload: dict[str, Any]
+    run_payload: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ReportRequest:
+    manifest: FleetManifest
+    date_token: str
+    time_payload: dict[str, Any]
+    children: list[dict[str, Any]]
+    aggregate_steps: list[dict[str, Any]]
+    recommendations: list[dict[str, Any]]
+
+
 def _run_command(
     argv: list[str],
     *,
@@ -505,54 +525,31 @@ def _build_hotspot(
 
 
 def _build_child_summary(
-    *,
-    instance_name: str,
-    config_path: Path,
-    health: dict[str, Any],
-    backup: dict[str, Any],
-    workflow_payload: dict[str, Any],
-    run_payload: dict[str, Any],
+    request: ChildSummaryRequest,
 ) -> dict[str, Any]:
-    run = run_payload["run"]
+    run = request.run_payload["run"]
     metrics = run.get("metrics") or {}
-    steps = []
-    for step in workflow_payload.get("steps") or []:
-        if not isinstance(step, dict):
-            continue
-        duration_ms = int(step.get("duration_ms") or 0)
-        steps.append(
-            {
-                "step_id": str(step.get("step_id") or ""),
-                "step_label": _step_label(str(step.get("step_id") or "")),
-                "status": str(step.get("status") or ""),
-                "duration_ms": duration_ms,
-            }
-        )
-    ranked_steps = sorted(steps, key=lambda item: (-item["duration_ms"], item["step_id"]))
+    steps = _workflow_steps_with_labels(request.workflow_payload)
+    ranked_steps = _ranked_steps(steps)
     total_duration_ms = _wall_duration_ms(
         started_at=run.get("started_at"),
         finished_at=run.get("finished_at"),
         heartbeat_at=run.get("heartbeat_at"),
     )
-    hotspots = [
-        _build_hotspot(
-            instance=instance_name,
-            step_id=step["step_id"],
-            duration_ms=step["duration_ms"],
-            total_duration_ms=total_duration_ms,
-            metrics=metrics,
-        )
-        for step in ranked_steps[:3]
-        if step["duration_ms"] > 0
-    ]
+    hotspots = _top_hotspots(
+        instance=request.instance_name,
+        ranked_steps=ranked_steps,
+        total_duration_ms=total_duration_ms,
+        metrics=metrics,
+    )
     return {
-        "instance": instance_name,
-        "config_path": str(config_path),
+        "instance": request.instance_name,
+        "config_path": str(request.config_path),
         "run_id": str(run.get("id") or ""),
         "terminal_state": str(run.get("terminal_state") or ""),
-        "workflow_status": str(workflow_payload.get("status") or ""),
-        "health": health,
-        "backup": backup,
+        "workflow_status": str(request.workflow_payload.get("status") or ""),
+        "health": request.health,
+        "backup": request.backup,
         "started_at": run.get("started_at"),
         "finished_at": run.get("finished_at"),
         "heartbeat_at": run.get("heartbeat_at"),
@@ -561,6 +558,50 @@ def _build_child_summary(
         "ranked_steps": ranked_steps,
         "hotspots": hotspots,
     }
+
+
+def _workflow_steps_with_labels(workflow_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = []
+    for step in workflow_payload.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        step_id = str(step.get("step_id") or "")
+        steps.append(
+            {
+                "step_id": step_id,
+                "step_label": _step_label(step_id),
+                "status": str(step.get("status") or ""),
+                "duration_ms": int(step.get("duration_ms") or 0),
+            }
+        )
+    return steps
+
+
+def _ranked_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(steps, key=lambda item: (-item["duration_ms"], item["step_id"]))
+
+
+def _top_hotspots(
+    *,
+    instance: str,
+    ranked_steps: list[dict[str, Any]],
+    total_duration_ms: int | None,
+    metrics: dict[str, Any],
+) -> list[dict[str, Any]]:
+    hotspots: list[dict[str, Any]] = []
+    for step in ranked_steps[:3]:
+        if step["duration_ms"] <= 0:
+            continue
+        hotspots.append(
+            _build_hotspot(
+                instance=instance,
+                step_id=step["step_id"],
+                duration_ms=step["duration_ms"],
+                total_duration_ms=total_duration_ms,
+                metrics=metrics,
+            )
+        )
+    return hotspots
 
 
 def _aggregate_step_durations(children: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -663,35 +704,42 @@ def _build_recommendations(
     ]
 
 
-def _build_report(
+def _report_header_lines(
     *,
     manifest: FleetManifest,
     date_token: str,
-    time_payload: dict[str, Any],
-    children: list[dict[str, Any]],
-    aggregate_steps: list[dict[str, Any]],
-    recommendations: list[dict[str, Any]],
-) -> str:
-    fleet_real_seconds = time_payload.get("real_seconds")
-    max_rss = time_payload.get("maximum_resident_set_size")
-    peak_memory = time_payload.get("peak_memory_footprint")
-    lines = [
+    fleet_real_seconds: Any,
+    max_rss: Any,
+    peak_memory: Any,
+) -> list[str]:
+    return [
         f"# {date_token} Fleet Day E2E 性能报告",
         "",
         "## 执行摘要",
         f"- manifest: `{manifest.manifest_path}`",
-        f"- fleet 总 wall time: `{fleet_real_seconds}` 秒" if fleet_real_seconds is not None else "- fleet 总 wall time: 未解析",
+        f"- fleet 总 wall time: `{fleet_real_seconds}` 秒"
+        if fleet_real_seconds is not None
+        else "- fleet 总 wall time: 未解析",
         f"- 最大常驻内存: `{max_rss}`" if max_rss is not None else "- 最大常驻内存: 未解析",
         f"- 峰值内存占用: `{peak_memory}`" if peak_memory is not None else "- 峰值内存占用: 未解析",
         "- fleet 当前按 manifest 顺序串行执行，以下阶段耗时为 3 个 child 串行汇总。",
         "- 当前 workflow 的 `ingest` step 实际调用 `service.prepare()`；本报告统一将其解释为 `prepare (ingest+enrich+triage)`。",
         "",
+    ]
+
+
+def _report_instance_lines(children: list[dict[str, Any]]) -> list[str]:
+    lines = [
         "## 实例结果",
         "| instance | run_id | terminal_state | total_ms | top_step | top_step_ms |",
         "| --- | --- | --- | ---: | --- | ---: |",
     ]
     for child in children:
-        top_step = child["ranked_steps"][0] if child["ranked_steps"] else {"step_label": "-", "duration_ms": 0}
+        top_step = (
+            child["ranked_steps"][0]
+            if child["ranked_steps"]
+            else {"step_label": "-", "duration_ms": 0}
+        )
         lines.append(
             "| "
             + " | ".join(
@@ -706,19 +754,24 @@ def _build_report(
             )
             + " |"
         )
-    lines.extend(
-        [
-            "",
-            "## 阶段排名",
-            "| rank | step | total_ms | share_% |",
-            "| ---: | --- | ---: | ---: |",
-        ]
-    )
+    return lines + [""]
+
+
+def _report_stage_lines(aggregate_steps: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "## 阶段排名",
+        "| rank | step | total_ms | share_% |",
+        "| ---: | --- | ---: | ---: |",
+    ]
     for index, step in enumerate(aggregate_steps, start=1):
         lines.append(
             f"| {index} | {step['step_label']} | {step['duration_ms']} | {step['share_percent']} |"
         )
-    lines.extend(["", "## 热点", ""])
+    return lines + ["", "## 热点", ""]
+
+
+def _report_hotspot_lines(children: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
     for child in children:
         lines.append(f"### {child['instance']}")
         if not child["hotspots"]:
@@ -733,23 +786,49 @@ def _build_report(
             lines.append(f"  mechanism: {hotspot['mechanism']}")
             lines.append(f"  ROI: {hotspot['roi']}")
         lines.append("")
-    lines.extend(["## 改进建议", ""])
+    return lines
+
+
+def _report_recommendation_lines(recommendations: list[dict[str, Any]]) -> list[str]:
+    lines = ["## 改进建议", ""]
     for index, recommendation in enumerate(recommendations, start=1):
         lines.append(f"{index}. {recommendation['title']}")
         lines.append(f"evidence: {recommendation['evidence']}")
         lines.append(f"mechanism: {recommendation['mechanism']}")
         lines.append(f"ROI: {recommendation['roi']}")
         lines.append("")
-    lines.extend(
-        [
-            "## 先验对照",
-            "- 历史样本显示 `embodied_ai` 的慢点偏向 HN enrich fetch。",
-            "- 历史样本显示 `software_intelligence` 的慢点偏向 arXiv + HN enrich。",
-            "- 历史样本中 `analyze`、`trends`、`ideas` 通常位于第二梯队；本次单样本里 `prepare` 与 `translate` 更靠前。",
-            "- `pipeline.translate.duration_ms`（历史）和 `pipeline.translate.task_duration_ms_total`（现行）都是逐任务累计，不能直接当 step wall-time；本报告统一使用 workflow step duration。",
-            "",
-        ]
+    return lines
+
+
+def _report_prior_context_lines() -> list[str]:
+    return [
+        "## 先验对照",
+        "- 历史样本显示 `embodied_ai` 的慢点偏向 HN enrich fetch。",
+        "- 历史样本显示 `software_intelligence` 的慢点偏向 arXiv + HN enrich。",
+        "- 历史样本中 `analyze`、`trends`、`ideas` 通常位于第二梯队；本次单样本里 `prepare` 与 `translate` 更靠前。",
+        "- `pipeline.translate.duration_ms`（历史）和 `pipeline.translate.task_duration_ms_total`（现行）都是逐任务累计，不能直接当 step wall-time；本报告统一使用 workflow step duration。",
+        "",
+    ]
+
+
+def _build_report(
+    request: ReportRequest,
+) -> str:
+    fleet_real_seconds = request.time_payload.get("real_seconds")
+    max_rss = request.time_payload.get("maximum_resident_set_size")
+    peak_memory = request.time_payload.get("peak_memory_footprint")
+    lines = _report_header_lines(
+        manifest=request.manifest,
+        date_token=request.date_token,
+        fleet_real_seconds=fleet_real_seconds,
+        max_rss=max_rss,
+        peak_memory=peak_memory,
     )
+    lines.extend(_report_instance_lines(request.children))
+    lines.extend(_report_stage_lines(request.aggregate_steps))
+    lines.extend(_report_hotspot_lines(request.children))
+    lines.extend(_report_recommendation_lines(request.recommendations))
+    lines.extend(_report_prior_context_lines())
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -962,12 +1041,14 @@ def main() -> int:
         _write_json(child_dir / "workflow.json", child_payload)
         preflight = json.loads((child_dir / "preflight.json").read_text(encoding="utf-8"))
         child_summary = _build_child_summary(
-            instance_name=instance_name,
-            config_path=children_by_name[instance_name].config_path,
-            health=preflight["health"],
-            backup=preflight["backup"],
-            workflow_payload=child_payload,
-            run_payload=child_run_payload,
+            ChildSummaryRequest(
+                instance_name=instance_name,
+                config_path=children_by_name[instance_name].config_path,
+                health=preflight["health"],
+                backup=preflight["backup"],
+                workflow_payload=child_payload,
+                run_payload=child_run_payload,
+            )
         )
         _write_json(child_dir / "summary.json", child_summary)
         child_summaries.append(child_summary)
@@ -982,12 +1063,14 @@ def main() -> int:
     )
     _write_json(output_dir / "summary.json", summary)
     report = _build_report(
-        manifest=manifest,
-        date_token=str(args.date),
-        time_payload=time_payload,
-        children=child_summaries,
-        aggregate_steps=summary["aggregate_steps"],
-        recommendations=summary["recommendations"],
+        ReportRequest(
+            manifest=manifest,
+            date_token=str(args.date),
+            time_payload=time_payload,
+            children=child_summaries,
+            aggregate_steps=summary["aggregate_steps"],
+            recommendations=summary["recommendations"],
+        )
     )
     _write_text(output_dir / "report.md", report)
     sys.stdout.write(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n")

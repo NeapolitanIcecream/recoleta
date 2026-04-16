@@ -37,6 +37,16 @@ class CommandResult:
     stderr: str
 
 
+@dataclass(frozen=True, slots=True)
+class InstanceSummaryRequest:
+    instance: FleetInstance
+    bundle_dir: Path
+    run_payload: dict[str, Any]
+    inspect_payload: dict[str, Any]
+    time_payload: dict[str, Any]
+    shadow_config: Path
+
+
 def _run_command(
     argv: list[str],
     *,
@@ -245,17 +255,8 @@ def _inspect_run(*, shadow_config: Path, run_id: str, instance_dir: Path) -> dic
     return payload
 
 
-def _instance_summary(
-    *,
-    instance: FleetInstance,
-    bundle_dir: Path,
-    run_payload: dict[str, Any],
-    inspect_payload: dict[str, Any],
-    time_payload: dict[str, Any],
-    shadow_config: Path,
-) -> dict[str, Any]:
-    metrics = ((inspect_payload.get("run") or {}).get("metrics") or {})
-    steps = []
+def _workflow_step_payloads(run_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = []
     for step in run_payload.get("steps") or []:
         if not isinstance(step, dict):
             continue
@@ -266,7 +267,21 @@ def _instance_summary(
                 "duration_ms": int(step.get("duration_ms") or 0),
             }
         )
-    ranked_steps = sorted(steps, key=lambda item: (-item["duration_ms"], item["step_id"]))
+    return steps
+
+
+def _ranked_step_payloads(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(steps, key=lambda item: (-item["duration_ms"], item["step_id"]))
+
+
+def _instance_metadata(
+    *,
+    instance: FleetInstance,
+    bundle_dir: Path,
+    shadow_config: Path,
+    run_payload: dict[str, Any],
+    time_payload: dict[str, Any],
+) -> dict[str, Any]:
     return {
         "instance": instance.name,
         "source_config_path": str(instance.config_path),
@@ -276,8 +291,24 @@ def _instance_summary(
         "run_id": str(run_payload.get("run_id") or ""),
         "terminal_state": str(run_payload.get("terminal_state") or ""),
         "executed_steps": list(run_payload.get("executed_steps") or []),
+    }
+
+
+def _instance_summary(
+    request: InstanceSummaryRequest,
+) -> dict[str, Any]:
+    metrics = ((request.inspect_payload.get("run") or {}).get("metrics") or {})
+    steps = _workflow_step_payloads(request.run_payload)
+    return {
+        **_instance_metadata(
+            instance=request.instance,
+            bundle_dir=request.bundle_dir,
+            shadow_config=request.shadow_config,
+            run_payload=request.run_payload,
+            time_payload=request.time_payload,
+        ),
         "steps": steps,
-        "ranked_steps": ranked_steps,
+        "ranked_steps": _ranked_step_payloads(steps),
         "metrics": metrics,
     }
 
@@ -356,12 +387,14 @@ def main() -> int:
             instance_dir=instance_dir,
         )
         summary = _instance_summary(
-            instance=instance,
-            bundle_dir=bundle_dir,
-            run_payload=run_payload,
-            inspect_payload=inspect_payload,
-            time_payload=time_payload,
-            shadow_config=shadow_config,
+            InstanceSummaryRequest(
+                instance=instance,
+                bundle_dir=bundle_dir,
+                run_payload=run_payload,
+                inspect_payload=inspect_payload,
+                time_payload=time_payload,
+                shadow_config=shadow_config,
+            )
         )
         _write_json(instance_dir / "summary.json", summary)
         children.append(summary)
