@@ -24,7 +24,9 @@ Use this skill when the goal is to judge whether the current code is merely larg
 - `complexipy` is the main “hard to change safely” signal.
 - `vulture` is not permission to delete code. It only produces review candidates.
 - The file-level `agent_routing_queue` is the primary “what should an agent touch next?” view. It combines churn, change coupling, ambiguity signals, coverage risk, static pressure, and dead-code concentration.
-- The repo verdict now includes `signal_health`. Treat `partial` as a real downgrade: the queue is still useful, but missing coverage means the coverage-risk component is inactive.
+- The repo verdict now separates `debt_status` from `routing_pressure`. Regression gates still follow hotspots and dead-code baseline changes; routing pressure is advisory.
+- The repo verdict includes `signal_health`. Treat `partial` as a real downgrade: the queue is still useful, but missing coverage means the coverage-risk component is inactive.
+- Shared-commit coupling ignores commits that touch more than the configured tracked-file threshold. That removes obvious sweep commits, but it is still a heuristic, not a ground-truth dependency graph.
 - A symbol hit by both `complexipy` and `lizard` is still a strong local refactor target, but the file-level routing rank should win when it conflicts with a low-churn isolated hotspot.
 - `investigate_now` and `investigate_soon` mean the file is a better next refactor candidate than a plain `watch` file, even if all contained hotspots are only `monitor`.
 - `refactor_now` still means the scope is already expensive to change and should not keep absorbing behavior work without decomposition.

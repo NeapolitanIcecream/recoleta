@@ -331,6 +331,7 @@ def test_build_history_summary_reads_commit_frequency_churn_and_coupling() -> No
             "recoleta/pipeline/service.py",
         ],
         min_shared_commits=2,
+        coupling_ignore_commit_file_count=10,
         lookback_days=180,
     )
 
@@ -362,11 +363,53 @@ def test_build_history_summary_marks_git_unavailable(monkeypatch) -> None:
         current_scope_files=["recoleta/example.py"],
         lookback_days=180,
         min_shared_commits=3,
+        coupling_ignore_commit_file_count=25,
     )
 
     assert summary["status"] == "unavailable"
     assert summary["files"]["recoleta/example.py"]["commit_frequency"] == 0
     assert summary["files"]["recoleta/example.py"]["top_coupled_files"] == []
+
+
+def test_build_history_summary_ignores_sweep_commit_for_coupling() -> None:
+    raw_text = "\n".join(
+        [
+            "commit a1",
+            "1\t0\trecoleta/a.py",
+            "1\t0\trecoleta/b.py",
+            "1\t0\trecoleta/c.py",
+            "commit b2",
+            "1\t0\trecoleta/a.py",
+            "1\t0\trecoleta/b.py",
+            "",
+        ]
+    )
+
+    summary = audit.build_history_summary(
+        raw_text=raw_text,
+        tracked_files={
+            "recoleta/a.py",
+            "recoleta/b.py",
+            "recoleta/c.py",
+        },
+        current_scope_files=[
+            "recoleta/a.py",
+            "recoleta/b.py",
+            "recoleta/c.py",
+        ],
+        min_shared_commits=1,
+        coupling_ignore_commit_file_count=2,
+        lookback_days=180,
+    )
+
+    assert summary["files"]["recoleta/a.py"]["commit_frequency"] == 2
+    assert summary["files"]["recoleta/a.py"]["top_coupled_files"] == [
+        {
+            "file": "recoleta/b.py",
+            "shared_commits": 1,
+            "in_scope": True,
+        }
+    ]
 
 
 def test_load_coverage_summary_prefers_branch_then_line_then_unknown(tmp_path: Path) -> None:
@@ -612,7 +655,7 @@ def test_build_agent_routing_queue_elevates_compatibility_heavy_file() -> None:
     assert queue[0]["priority_components"]["compatibility_pressure_score"] > 0
 
 
-def test_build_repo_verdict_marks_agent_routing_pressure_as_strained() -> None:
+def test_build_repo_verdict_reports_routing_pressure_separately_from_debt_status() -> None:
     verdict = audit.build_repo_verdict(
         hotspots=[
             {
@@ -629,7 +672,10 @@ def test_build_repo_verdict_marks_agent_routing_pressure_as_strained() -> None:
         history_summary={"status": "available"},
     )
 
-    assert verdict["status"] == "strained"
+    assert verdict["status"] == "stable"
+    assert verdict["debt_status"] == "stable"
+    assert verdict["routing_pressure"] == "investigate_soon"
+    assert "Routing pressure is investigate_soon" in verdict["summary"]
 
 
 def test_build_repo_verdict_marks_missing_coverage_as_partial_signal_health() -> None:
@@ -843,7 +889,9 @@ def test_render_markdown_report_contains_required_sections() -> None:
         },
         "repo_verdict": {
             "status": "strained",
-            "summary": "Existing routing pressure remains, but the current scope did not regress.",
+            "debt_status": "strained",
+            "routing_pressure": "investigate_soon",
+            "summary": "Existing structural debt remains, but the current scope did not regress. Routing pressure is investigate_soon. Signal health is partial: missing coverage.",
             "signal_health": "partial",
             "missing_signals": ["coverage"],
         },
@@ -922,6 +970,8 @@ def test_render_markdown_report_contains_required_sections() -> None:
     markdown = audit.render_markdown_report(report)
 
     assert "Repo verdict" in markdown
+    assert "Debt status" in markdown
+    assert "Routing pressure" in markdown
     assert "Signal health" in markdown
     assert "Missing signals: coverage" in markdown
     assert "Agent routing queue" in markdown
@@ -947,6 +997,8 @@ def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
         },
         "repo_verdict": {
             "status": "corroding",
+            "debt_status": "corroding",
+            "routing_pressure": "none",
             "summary": "Structural debt is regressing in the current scope.",
             "has_regressions": True,
             "signal_health": "full",
@@ -1123,7 +1175,9 @@ def test_build_baseline_snapshot_merges_partial_scope_updates() -> None:
         },
         "repo_verdict": {
             "status": "strained",
-            "summary": "Existing routing pressure remains, but the current scope did not regress.",
+            "debt_status": "strained",
+            "routing_pressure": "investigate_soon",
+            "summary": "Existing structural debt remains, but the current scope did not regress. Routing pressure is investigate_soon. Signal health is partial: missing coverage.",
             "has_regressions": False,
             "signal_health": "partial",
             "missing_signals": ["coverage"],
@@ -1278,7 +1332,9 @@ def test_build_baseline_snapshot_accepts_v1_baseline_without_routing_fields() ->
         },
         "repo_verdict": {
             "status": "stable",
-            "summary": "No routing pressure or regressions were detected.",
+            "debt_status": "stable",
+            "routing_pressure": "watch_only",
+            "summary": "No structural debt regressions were detected in the current scope.",
             "has_regressions": False,
             "refactor_now_total": 0,
             "investigate_now_total": 0,

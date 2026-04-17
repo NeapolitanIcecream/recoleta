@@ -98,6 +98,7 @@ class VultureBands:
 class HistoryConfig:
     lookback_days: int
     min_shared_commits: int
+    coupling_ignore_commit_file_count: int
 
 
 @dataclass(frozen=True)
@@ -288,6 +289,9 @@ def load_audit_config(*, repo_root: Path = REPO_ROOT) -> AuditConfig:
         history=HistoryConfig(
             lookback_days=int(config_data["history"]["lookback_days"]),
             min_shared_commits=int(config_data["history"]["min_shared_commits"]),
+            coupling_ignore_commit_file_count=int(
+                config_data["history"]["coupling_ignore_commit_file_count"]
+            ),
         ),
         coverage=CoverageConfig(
             coverage_json=(
@@ -986,6 +990,7 @@ def build_history_summary(
     tracked_files: Iterable[str],
     current_scope_files: Iterable[str],
     min_shared_commits: int,
+    coupling_ignore_commit_file_count: int,
     lookback_days: int,
 ) -> dict[str, Any]:
     tracked_file_set = set(tracked_files)
@@ -998,6 +1003,11 @@ def build_history_summary(
 
     def finalize_commit(files: set[str]) -> None:
         file_list = sorted(files)
+        if (
+            coupling_ignore_commit_file_count > 0
+            and len(file_list) > coupling_ignore_commit_file_count
+        ):
+            return
         for index, file_name in enumerate(file_list):
             for other in file_list[index + 1 :]:
                 coupling[file_name][other] += 1
@@ -1067,6 +1077,7 @@ def collect_git_history_summary(
     current_scope_files: Iterable[str],
     lookback_days: int,
     min_shared_commits: int,
+    coupling_ignore_commit_file_count: int,
     raw_path: Path | None = None,
 ) -> dict[str, Any]:
     tracked_file_set = set(tracked_files)
@@ -1106,6 +1117,7 @@ def collect_git_history_summary(
         tracked_files=tracked_file_set,
         current_scope_files=current_scope_files,
         min_shared_commits=min_shared_commits,
+        coupling_ignore_commit_file_count=coupling_ignore_commit_file_count,
         lookback_days=lookback_days,
     )
 
@@ -1324,6 +1336,18 @@ def _signal_health(
     if len(missing_signals) >= 2:
         return ("minimal", missing_signals)
     return ("partial", missing_signals)
+
+
+def _routing_pressure(agent_routing_queue: list[dict[str, Any]]) -> str:
+    if any(item["priority_band"] == "investigate_now" for item in agent_routing_queue):
+        return "investigate_now"
+    if any(
+        item["priority_band"] == "investigate_soon" for item in agent_routing_queue
+    ):
+        return "investigate_soon"
+    if agent_routing_queue:
+        return "watch_only"
+    return "none"
 
 
 def _count_dead_code_candidates(
@@ -1914,38 +1938,46 @@ def build_repo_verdict(
     current_refactor_now = [
         hotspot for hotspot in hotspots if hotspot["classification"] == "refactor_now"
     ]
+    current_refactor_soon = any(
+        hotspot["classification"] == "refactor_soon" for hotspot in hotspots
+    )
     new_refactor_now = any(
         item["kind"] == "hotspot" and item["after"]["classification"] == "refactor_now"
         for item in baseline_diff.get("new", [])
     )
     if has_regressions or new_refactor_now:
-        status = "corroding"
+        debt_status = "corroding"
         base_summary = "Structural debt is regressing in the current scope."
-    elif current_refactor_now or any(
-        hotspot["classification"] == "refactor_soon" for hotspot in hotspots
-    ) or any(
-        item["priority_band"] in {"investigate_now", "investigate_soon"}
-        for item in agent_routing_queue
-    ):
-        status = "strained"
+    elif current_refactor_now or current_refactor_soon:
+        debt_status = "strained"
         base_summary = (
-            "Existing routing pressure remains, but the current scope did not regress."
+            "Existing structural debt remains, but the current scope did not regress."
         )
     else:
-        status = "stable"
-        base_summary = "No routing pressure or regressions were detected."
+        debt_status = "stable"
+        base_summary = "No structural debt regressions were detected in the current scope."
+    routing_pressure = _routing_pressure(agent_routing_queue)
     signal_health, missing_signals = _signal_health(
         history_summary=history_summary,
         agent_routing_queue=agent_routing_queue,
     )
     summary = base_summary
+    if routing_pressure in {"investigate_now", "investigate_soon"}:
+        summary = f"{summary} Routing pressure is {routing_pressure}."
     if missing_signals:
         missing_label = ", ".join(missing_signals)
         summary = (
             f"{base_summary} Signal health is {signal_health}: missing {missing_label}."
         )
+        if routing_pressure in {"investigate_now", "investigate_soon"}:
+            summary = (
+                f"{base_summary} Routing pressure is {routing_pressure}. "
+                f"Signal health is {signal_health}: missing {missing_label}."
+            )
     return {
-        "status": status,
+        "status": debt_status,
+        "debt_status": debt_status,
+        "routing_pressure": routing_pressure,
         "summary": summary,
         "has_regressions": has_regressions,
         "signal_health": signal_health,
@@ -2013,6 +2045,8 @@ def _render_repo_verdict_lines(
         "## Repo verdict",
         "",
         f"- Status: `{repo_verdict['status']}`",
+        f"- Debt status: `{repo_verdict.get('debt_status', repo_verdict['status'])}`",
+        f"- Routing pressure: `{repo_verdict.get('routing_pressure', 'none')}`",
         f"- Signal health: `{repo_verdict.get('signal_health', 'full')}`",
     ]
     if repo_verdict.get("missing_signals"):
@@ -2627,6 +2661,7 @@ def run_refactor_audit(
         current_scope_files=scope_state.current_scope_files,
         lookback_days=resolved_request.lookback_days,
         min_shared_commits=resolved_request.config.history.min_shared_commits,
+        coupling_ignore_commit_file_count=resolved_request.config.history.coupling_ignore_commit_file_count,
         raw_path=scope_state.raw_dir / "git-history.txt",
     )
     coverage_summary = load_coverage_summary(

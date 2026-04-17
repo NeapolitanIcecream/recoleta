@@ -36,6 +36,10 @@ queue` is the primary “what should an agent change next?” view; the symbol-l
 hotspot table is the supporting local evidence.
 If you do not pass `--coverage-json`, the audit still runs, but the repo verdict
 is marked with `signal_health=partial` and coverage-risk scoring stays inactive.
+The repo verdict separates `debt_status` from `routing_pressure`; only the
+hotspot/dead-code baseline diff participates in regression gating. Shared-commit
+coupling also ignores very large tracked-file commits to reduce sweep-commit
+noise.
 
 `output/refactor-audit/` is temporary local output and remains ignored.
 `quality/refactor-baseline.json` is the checked-in baseline used to spot

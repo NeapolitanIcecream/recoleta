@@ -600,7 +600,9 @@ Read `output/refactor-audit/report.md` first. The file-level `Agent routing
 queue` is the primary next-target view for agent-driven refactors; see
 [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full workflow and baseline-update
 rules. Without `--coverage-json`, the audit still runs, but the verdict is
-marked with partial signal health and coverage-risk scoring is skipped.
+marked with partial signal health and coverage-risk scoring is skipped. The
+report also separates structural debt status from routing pressure, and filters
+out obvious sweep commits from shared-commit coupling.
 
 <a id="recoleta-license"></a>
 ## 📄 License

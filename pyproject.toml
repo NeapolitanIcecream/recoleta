@@ -100,6 +100,7 @@ high_confidence_candidate_min = 80
 [tool.recoleta_refactor.history]
 lookback_days = 180
 min_shared_commits = 3
+coupling_ignore_commit_file_count = 25
 
 [tool.recoleta_refactor.coverage]
 coverage_json = ""
