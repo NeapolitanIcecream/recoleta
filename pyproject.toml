@@ -97,6 +97,13 @@ critical_min = 50
 review_candidate_min = 60
 high_confidence_candidate_min = 80
 
+[tool.recoleta_refactor.history]
+lookback_days = 180
+min_shared_commits = 3
+
+[tool.recoleta_refactor.coverage]
+coverage_json = ""
+
 [build-system]
 requires = ["uv_build>=0.10.4,<0.12.0"]
 build-backend = "uv_build"

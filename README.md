@@ -588,6 +588,20 @@ uv run pytest
 uv run ruff check .
 ```
 
+For structural-debt work, run the refactor audit before or during a refactor:
+
+```bash
+uv run python scripts/refactor_audit.py
+uv run python scripts/refactor_audit.py --coverage-json coverage.json
+uv run python scripts/refactor_audit.py --fail-on-regression
+```
+
+Read `output/refactor-audit/report.md` first. The file-level `Agent routing
+queue` is the primary next-target view for agent-driven refactors; see
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full workflow and baseline-update
+rules. Without `--coverage-json`, the audit still runs, but the verdict is
+marked with partial signal health and coverage-risk scoring is skipped.
+
 <a id="recoleta-license"></a>
 ## 📄 License
 

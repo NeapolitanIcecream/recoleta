@@ -52,6 +52,29 @@ def _signal(
     )
 
 
+def _coverage_payload() -> dict[str, object]:
+    return {
+        "meta": {"version": "7.0"},
+        "files": {
+            "recoleta/branchy.py": {
+                "summary": {
+                    "covered_branches": 6,
+                    "num_branches": 8,
+                    "covered_lines": 10,
+                    "num_statements": 12,
+                }
+            },
+            "recoleta/line_only.py": {
+                "summary": {
+                    "covered_lines": 9,
+                    "num_statements": 12,
+                }
+            },
+            "recoleta/unknown.py": {"summary": {}},
+        },
+    }
+
+
 def test_parse_ruff_findings_reads_c901_json(tmp_path: Path) -> None:
     lookup = _lookup_for(tmp_path, "pkg/mod.py")
     raw_text = json.dumps(
@@ -280,6 +303,377 @@ def test_aggregate_hotspots_marks_critical_ruff_as_refactor_soon() -> None:
     assert hotspots[0]["classification"] == "refactor_soon"
 
 
+def test_build_history_summary_reads_commit_frequency_churn_and_coupling() -> None:
+    raw_text = "\n".join(
+        [
+            "commit a1",
+            "4\t1\trecoleta/cli/app.py",
+            "1\t0\trecoleta/pipeline/service.py",
+            "commit b2",
+            "2\t2\trecoleta/cli/app.py",
+            "3\t1\trecoleta/pipeline/service.py",
+            "1\t0\trecoleta/translation.py",
+            "commit c3",
+            "5\t0\trecoleta/translation.py",
+            "",
+        ]
+    )
+
+    summary = audit.build_history_summary(
+        raw_text=raw_text,
+        tracked_files={
+            "recoleta/cli/app.py",
+            "recoleta/pipeline/service.py",
+            "recoleta/translation.py",
+        },
+        current_scope_files=[
+            "recoleta/cli/app.py",
+            "recoleta/pipeline/service.py",
+        ],
+        min_shared_commits=2,
+        lookback_days=180,
+    )
+
+    assert summary["status"] == "available"
+    assert summary["max_commit_frequency"] == 2
+    assert summary["max_churn"] == 9
+    cli_history = summary["files"]["recoleta/cli/app.py"]
+    assert cli_history["commit_frequency"] == 2
+    assert cli_history["churn"] == 9
+    assert cli_history["top_coupled_files"] == [
+        {
+            "file": "recoleta/pipeline/service.py",
+            "shared_commits": 2,
+            "in_scope": True,
+        }
+    ]
+
+
+def test_build_history_summary_marks_git_unavailable(monkeypatch) -> None:
+    def _fail(**_: object) -> None:
+        raise RuntimeError("Command not found: git")
+
+    monkeypatch.setattr(audit, "run_command", _fail)
+
+    summary = audit.collect_git_history_summary(
+        repo_root=Path.cwd(),
+        targets=["recoleta"],
+        tracked_files={"recoleta/example.py"},
+        current_scope_files=["recoleta/example.py"],
+        lookback_days=180,
+        min_shared_commits=3,
+    )
+
+    assert summary["status"] == "unavailable"
+    assert summary["files"]["recoleta/example.py"]["commit_frequency"] == 0
+    assert summary["files"]["recoleta/example.py"]["top_coupled_files"] == []
+
+
+def test_load_coverage_summary_prefers_branch_then_line_then_unknown(tmp_path: Path) -> None:
+    coverage_path = tmp_path / "coverage.json"
+    coverage_path.write_text(json.dumps(_coverage_payload()), encoding="utf-8")
+
+    coverage = audit.load_coverage_summary(
+        coverage_json=coverage_path,
+        repo_root=tmp_path,
+        tracked_files={
+            "recoleta/branchy.py",
+            "recoleta/line_only.py",
+            "recoleta/unknown.py",
+            "recoleta/missing.py",
+        },
+    )
+
+    assert coverage["status"] == "available"
+    assert coverage["files"]["recoleta/branchy.py"] == {
+        "mode": "branch",
+        "fraction": 0.75,
+    }
+    assert coverage["files"]["recoleta/line_only.py"] == {
+        "mode": "line",
+        "fraction": 0.75,
+    }
+    assert coverage["files"]["recoleta/unknown.py"] == {
+        "mode": "unknown",
+        "fraction": None,
+    }
+    assert coverage["files"]["recoleta/missing.py"] == {
+        "mode": "unknown",
+        "fraction": None,
+    }
+
+
+def test_build_agent_ambiguity_index_detects_shims_facades_and_legacy(tmp_path: Path) -> None:
+    shadow_module = tmp_path / "pkg" / "cli.py"
+    shadow_module.parent.mkdir(parents=True, exist_ok=True)
+    shadow_module.write_text(
+        "from pkg.cli import *\n",
+        encoding="utf-8",
+    )
+    shadow_package = tmp_path / "pkg" / "cli"
+    shadow_package.mkdir()
+    (shadow_package / "__init__.py").write_text("", encoding="utf-8")
+
+    facade_path = tmp_path / "pkg" / "storage.py"
+    facade_path.write_text(
+        """
+from pkg.storage.facade import Repository
+
+__all__ = ["Repository"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    facade_dir = tmp_path / "pkg" / "storage"
+    facade_dir.mkdir()
+    (facade_dir / "__init__.py").write_text("", encoding="utf-8")
+
+    compat_path = tmp_path / "pkg" / "translate.py"
+    compat_path.write_text(
+        """
+from __future__ import annotations
+from typing import Any
+
+
+def wrapper(*, request: object | None = None, **legacy_kwargs: Any) -> object:
+    return request or legacy_kwargs
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    index = audit.build_agent_ambiguity_index(
+        repo_root=tmp_path,
+        files=[shadow_module, facade_path, compat_path],
+    )
+
+    assert index["pkg/cli.py"]["module_package_shadow"] == 1
+    assert index["pkg/cli.py"]["wildcard_reexport"] == 1
+    assert index["pkg/storage.py"]["facade_reexport"] == 1
+    assert index["pkg/translate.py"]["legacy_keyword_hits"] >= 2
+    assert index["pkg/translate.py"]["compat_request_wrapper"] == 1
+
+
+def test_build_agent_routing_queue_prioritizes_high_churn_ambiguous_file() -> None:
+    queue = audit.build_agent_routing_queue(
+        scope_files=["recoleta/cli.py", "recoleta/example.py"],
+        hotspots=[
+            {
+                "id": "recoleta/example.py::branchy",
+                "file": "recoleta/example.py",
+                "symbol": "branchy",
+                "classification": "monitor",
+                "subsystem": "other",
+                "tool_count": 1,
+                "tools": ["ruff"],
+                "metrics": {"ruff": {"complexity": 12}},
+            }
+        ],
+        dead_code_candidates=[
+            {
+                "id": "recoleta/cli.py::function::legacy_entrypoint",
+                "file": "recoleta/cli.py",
+                "symbol": "legacy_entrypoint",
+                "classification": "review_candidate",
+                "confidence": 60,
+                "kind": "function",
+            }
+        ],
+        history_summary={
+            "status": "available",
+            "max_commit_frequency": 10,
+            "max_churn": 500,
+            "files": {
+                "recoleta/cli.py": {
+                    "commit_frequency": 10,
+                    "churn": 500,
+                    "top_coupled_files": [
+                        {
+                            "file": "recoleta/cli/app.py",
+                            "shared_commits": 4,
+                            "in_scope": False,
+                        }
+                    ],
+                },
+                "recoleta/example.py": {
+                    "commit_frequency": 1,
+                    "churn": 10,
+                    "top_coupled_files": [],
+                },
+            },
+        },
+        coverage_summary={
+            "status": "available",
+            "files": {
+                "recoleta/cli.py": {"mode": "unknown", "fraction": None},
+                "recoleta/example.py": {"mode": "branch", "fraction": 0.9},
+            },
+        },
+        ambiguity_index={
+            "recoleta/cli.py": {
+                "module_package_shadow": 1,
+                "wildcard_reexport": 1,
+                "facade_reexport": 0,
+                "legacy_keyword_hits": 6,
+                "compat_request_wrapper": 0,
+            },
+            "recoleta/example.py": {
+                "module_package_shadow": 0,
+                "wildcard_reexport": 0,
+                "facade_reexport": 0,
+                "legacy_keyword_hits": 0,
+                "compat_request_wrapper": 0,
+            },
+        },
+    )
+
+    assert queue[0]["file"] == "recoleta/cli.py"
+    assert queue[0]["priority_band"] in {"investigate_now", "investigate_soon"}
+    assert queue[0]["dead_code_candidate_count"] == 1
+    assert queue[1]["file"] == "recoleta/example.py"
+    assert queue[1]["hotspot_summary"]["monitor"] == 1
+
+
+def test_build_agent_routing_queue_elevates_compatibility_heavy_file() -> None:
+    queue = audit.build_agent_routing_queue(
+        scope_files=["recoleta/translation.py", "recoleta/example.py"],
+        hotspots=[],
+        dead_code_candidates=[],
+        history_summary={
+            "status": "available",
+            "max_commit_frequency": 20,
+            "max_churn": 1000,
+            "files": {
+                "recoleta/translation.py": {
+                    "commit_frequency": 18,
+                    "churn": 600,
+                    "top_coupled_files": [
+                        {
+                            "file": "recoleta/cli/app.py",
+                            "shared_commits": 7,
+                            "in_scope": False,
+                        },
+                        {
+                            "file": "recoleta/cli/translate.py",
+                            "shared_commits": 7,
+                            "in_scope": False,
+                        },
+                        {
+                            "file": "recoleta/materialize.py",
+                            "shared_commits": 7,
+                            "in_scope": False,
+                        },
+                        {
+                            "file": "recoleta/trends.py",
+                            "shared_commits": 7,
+                            "in_scope": False,
+                        },
+                        {
+                            "file": "recoleta/pipeline/trends_stage.py",
+                            "shared_commits": 6,
+                            "in_scope": False,
+                        },
+                    ],
+                },
+                "recoleta/example.py": {
+                    "commit_frequency": 1,
+                    "churn": 10,
+                    "top_coupled_files": [],
+                },
+            },
+        },
+        coverage_summary={
+            "status": "unavailable",
+            "files": {
+                "recoleta/translation.py": {"mode": "unknown", "fraction": None},
+                "recoleta/example.py": {"mode": "unknown", "fraction": None},
+            },
+        },
+        ambiguity_index={
+            "recoleta/translation.py": {
+                "module_package_shadow": 0,
+                "wildcard_reexport": 0,
+                "facade_reexport": 0,
+                "legacy_keyword_hits": 80,
+                "compat_request_wrapper": 1,
+            },
+            "recoleta/example.py": {
+                "module_package_shadow": 0,
+                "wildcard_reexport": 0,
+                "facade_reexport": 0,
+                "legacy_keyword_hits": 0,
+                "compat_request_wrapper": 0,
+            },
+        },
+    )
+
+    assert queue[0]["file"] == "recoleta/translation.py"
+    assert queue[0]["priority_band"] == "investigate_soon"
+    assert queue[0]["priority_components"]["compatibility_pressure_score"] > 0
+
+
+def test_build_repo_verdict_marks_agent_routing_pressure_as_strained() -> None:
+    verdict = audit.build_repo_verdict(
+        hotspots=[
+            {
+                "classification": "monitor",
+            }
+        ],
+        baseline_diff={"has_regressions": False, "new": []},
+        agent_routing_queue=[
+            {
+                "priority_band": "investigate_soon",
+                "coverage": {"mode": "unknown", "fraction": None},
+            }
+        ],
+        history_summary={"status": "available"},
+    )
+
+    assert verdict["status"] == "strained"
+
+
+def test_build_repo_verdict_marks_missing_coverage_as_partial_signal_health() -> None:
+    verdict = audit.build_repo_verdict(
+        hotspots=[],
+        baseline_diff={"has_regressions": False, "new": []},
+        agent_routing_queue=[
+            {
+                "priority_band": "watch",
+                "coverage": {"mode": "unknown", "fraction": None},
+            }
+        ],
+        history_summary={"status": "available"},
+    )
+
+    assert verdict["status"] == "stable"
+    assert verdict["signal_health"] == "partial"
+    assert verdict["missing_signals"] == ["coverage"]
+    assert "missing coverage" in verdict["summary"]
+
+
+def test_build_repo_verdict_marks_sparse_coverage_as_partial_signal_health() -> None:
+    verdict = audit.build_repo_verdict(
+        hotspots=[],
+        baseline_diff={"has_regressions": False, "new": []},
+        agent_routing_queue=[
+            {
+                "priority_band": "watch",
+                "coverage": {"mode": "branch", "fraction": 0.8},
+            },
+            {
+                "priority_band": "watch",
+                "coverage": {"mode": "unknown", "fraction": None},
+            },
+        ],
+        history_summary={"status": "available"},
+    )
+
+    assert verdict["status"] == "stable"
+    assert verdict["signal_health"] == "partial"
+    assert verdict["missing_signals"] == ["coverage"]
+    assert "missing coverage" in verdict["summary"]
+
+
 def test_build_baseline_diff_marks_new_hotspots() -> None:
     current_hotspots = [
         {
@@ -440,13 +834,20 @@ def test_render_markdown_report_contains_required_sections() -> None:
             "monitor_total": 0,
             "refactor_soon_total": 1,
             "refactor_now_total": 0,
+            "agent_routing_queue_total": 1,
+            "investigate_now_total": 0,
+            "investigate_soon_total": 1,
+            "watch_total": 0,
             "dead_code_candidates_total": 1,
             "dead_code_high_confidence_total": 1,
         },
         "repo_verdict": {
             "status": "strained",
-            "summary": "Existing hotspots remain, but the current scope did not regress.",
+            "summary": "Existing routing pressure remains, but the current scope did not regress.",
+            "signal_health": "partial",
+            "missing_signals": ["coverage"],
         },
+        "history_summary": {"status": "available", "lookback_days": 180},
         "tool_summaries": {
             "ruff": {"findings_total": 1, "warning": 1, "high": 0, "critical": 0},
             "lizard": {"findings_total": 1, "warning": 1, "high": 0, "critical": 0},
@@ -484,6 +885,17 @@ def test_render_markdown_report_contains_required_sections() -> None:
                 "kind": "function",
             }
         ],
+        "agent_routing_queue": [
+            {
+                "file": "recoleta/example.py",
+                "priority_band": "investigate_soon",
+                "priority_score": 40,
+                "change_frequency": 4,
+                "churn": 20,
+                "top_coupled_files": [],
+                "coverage": {"mode": "branch", "fraction": 0.8},
+            }
+        ],
         "baseline_diff": {
             "baseline_available": True,
             "has_regressions": False,
@@ -494,15 +906,15 @@ def test_render_markdown_report_contains_required_sections() -> None:
         "recommended_refactor_queue": [
             {
                 "subsystem": "pipeline",
-                "hotspot_count": 0,
-                "refactor_now": 0,
-                "refactor_soon": 0,
+                "investigate_now": 0,
+                "investigate_soon": 0,
+                "watch": 0,
             },
             {
                 "subsystem": "other",
-                "hotspot_count": 1,
-                "refactor_now": 0,
-                "refactor_soon": 1,
+                "investigate_now": 0,
+                "investigate_soon": 1,
+                "watch": 0,
             },
         ],
     }
@@ -510,6 +922,9 @@ def test_render_markdown_report_contains_required_sections() -> None:
     markdown = audit.render_markdown_report(report)
 
     assert "Repo verdict" in markdown
+    assert "Signal health" in markdown
+    assert "Missing signals: coverage" in markdown
+    assert "Agent routing queue" in markdown
     assert "Top hotspots" in markdown
     assert "Dead code candidates" in markdown
     assert "Recommended refactor queue" in markdown
@@ -523,6 +938,10 @@ def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
             "monitor_total": 0,
             "refactor_soon_total": 1,
             "refactor_now_total": 0,
+            "agent_routing_queue_total": 0,
+            "investigate_now_total": 0,
+            "investigate_soon_total": 0,
+            "watch_total": 0,
             "dead_code_candidates_total": 0,
             "dead_code_high_confidence_total": 0,
         },
@@ -530,7 +949,11 @@ def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
             "status": "corroding",
             "summary": "Structural debt is regressing in the current scope.",
             "has_regressions": True,
+            "signal_health": "full",
+            "missing_signals": [],
             "refactor_now_total": 0,
+            "investigate_now_total": 0,
+            "investigate_soon_total": 0,
         },
         "hotspots": [
             {
@@ -543,6 +966,14 @@ def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
             }
         ],
         "dead_code_candidates": [],
+        "agent_routing_queue": [],
+        "history_summary": {
+            "status": "available",
+            "lookback_days": 180,
+            "max_commit_frequency": 0,
+            "max_churn": 0,
+            "files": {},
+        },
         "tool_summaries": {},
         "baseline_diff": {
             "baseline_available": True,
@@ -554,7 +985,7 @@ def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
         },
         "recommended_refactor_queue": [],
         "scope": {"files": ["recoleta/example.py"]},
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": "2026-04-02T00:00:00+00:00",
     }
 
@@ -563,6 +994,8 @@ def test_build_baseline_snapshot_resets_diff_and_repo_verdict() -> None:
     assert snapshot["baseline_diff"]["baseline_available"] is False
     assert snapshot["baseline_diff"]["has_regressions"] is False
     assert snapshot["baseline_diff"]["new"] == []
+    assert snapshot["history_summary"]["status"] == "available"
+    assert snapshot["agent_routing_queue"] == []
     assert snapshot["repo_verdict"]["status"] == "strained"
 
 
@@ -625,6 +1058,54 @@ def test_build_baseline_snapshot_merges_partial_scope_updates() -> None:
                 "size": None,
             }
         ],
+        "agent_routing_queue": [
+            {
+                "file": "recoleta/out_of_scope.py",
+                "subsystem": "other",
+                "priority_score": 80,
+                "priority_band": "investigate_now",
+                "change_frequency": 8,
+                "churn": 100,
+                "top_coupled_files": [],
+                "hotspot_summary": {
+                    "refactor_now": 1,
+                    "refactor_soon": 0,
+                    "monitor": 0,
+                    "multi_tool_monitor": 0,
+                    "top_symbols": [],
+                },
+                "ambiguity_signals": {
+                    "module_package_shadow": 0,
+                    "wildcard_reexport": 0,
+                    "facade_reexport": 0,
+                    "legacy_keyword_hits": 0,
+                    "compat_request_wrapper": 0,
+                },
+                "dead_code_candidate_count": 1,
+                "coverage": {"mode": "unknown", "fraction": None},
+                "priority_components": {
+                    "change_score": 10,
+                    "coupling_score": 0,
+                    "static_score": 5,
+                    "ambiguity_score": 0,
+                    "dead_code_score": 3,
+                    "coverage_risk_score": 0,
+                },
+            }
+        ],
+        "history_summary": {
+            "status": "available",
+            "lookback_days": 180,
+            "max_commit_frequency": 8,
+            "max_churn": 100,
+            "files": {
+                "recoleta/out_of_scope.py": {
+                    "commit_frequency": 8,
+                    "churn": 100,
+                    "top_coupled_files": [],
+                }
+            },
+        },
     }
     report = {
         "summary": {
@@ -633,14 +1114,22 @@ def test_build_baseline_snapshot_merges_partial_scope_updates() -> None:
             "monitor_total": 0,
             "refactor_soon_total": 1,
             "refactor_now_total": 0,
+            "agent_routing_queue_total": 1,
+            "investigate_now_total": 0,
+            "investigate_soon_total": 1,
+            "watch_total": 0,
             "dead_code_candidates_total": 0,
             "dead_code_high_confidence_total": 0,
         },
         "repo_verdict": {
             "status": "strained",
-            "summary": "Existing hotspots remain, but the current scope did not regress.",
+            "summary": "Existing routing pressure remains, but the current scope did not regress.",
             "has_regressions": False,
+            "signal_health": "partial",
+            "missing_signals": ["coverage"],
             "refactor_now_total": 0,
+            "investigate_now_total": 0,
+            "investigate_soon_total": 1,
         },
         "hotspots": [
             {
@@ -687,9 +1176,57 @@ def test_build_baseline_snapshot_merges_partial_scope_updates() -> None:
             "worsened": [],
             "resolved": [],
         },
+        "agent_routing_queue": [
+            {
+                "file": "recoleta/in_scope.py",
+                "subsystem": "other",
+                "priority_score": 50,
+                "priority_band": "investigate_soon",
+                "change_frequency": 5,
+                "churn": 40,
+                "top_coupled_files": [],
+                "hotspot_summary": {
+                    "refactor_now": 0,
+                    "refactor_soon": 1,
+                    "monitor": 0,
+                    "multi_tool_monitor": 0,
+                    "top_symbols": [],
+                },
+                "ambiguity_signals": {
+                    "module_package_shadow": 0,
+                    "wildcard_reexport": 0,
+                    "facade_reexport": 0,
+                    "legacy_keyword_hits": 0,
+                    "compat_request_wrapper": 0,
+                },
+                "dead_code_candidate_count": 0,
+                "coverage": {"mode": "line", "fraction": 0.5},
+                "priority_components": {
+                    "change_score": 10,
+                    "coupling_score": 0,
+                    "static_score": 3,
+                    "ambiguity_score": 0,
+                    "dead_code_score": 0,
+                    "coverage_risk_score": 5,
+                },
+            }
+        ],
+        "history_summary": {
+            "status": "available",
+            "lookback_days": 180,
+            "max_commit_frequency": 5,
+            "max_churn": 40,
+            "files": {
+                "recoleta/in_scope.py": {
+                    "commit_frequency": 5,
+                    "churn": 40,
+                    "top_coupled_files": [],
+                }
+            },
+        },
         "recommended_refactor_queue": [],
         "scope": {"files": ["recoleta/in_scope.py"], "file_count": 1},
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": "2026-04-02T00:00:00+00:00",
     }
 
@@ -708,7 +1245,133 @@ def test_build_baseline_snapshot_merges_partial_scope_updates() -> None:
     assert snapshot["tool_summaries"]["ruff"]["critical"] == 1
     assert snapshot["tool_summaries"]["complexipy"]["critical"] == 1
     assert snapshot["dead_code_candidates"][0]["file"] == "recoleta/out_of_scope.py"
+    assert [item["file"] for item in snapshot["agent_routing_queue"]] == [
+        "recoleta/out_of_scope.py",
+        "recoleta/in_scope.py",
+    ]
+    assert snapshot["history_summary"]["files"]["recoleta/out_of_scope.py"]["churn"] == 100
     assert snapshot["baseline_diff"]["has_regressions"] is False
+
+
+def test_build_baseline_snapshot_accepts_v1_baseline_without_routing_fields() -> None:
+    baseline_report = {
+        "scope": {
+            "files": ["recoleta/in_scope.py", "recoleta/out_of_scope.py"],
+            "file_count": 2,
+        },
+        "hotspots": [],
+        "dead_code_candidates": [],
+    }
+    report = {
+        "summary": {
+            "files_scanned": 1,
+            "hotspots_total": 0,
+            "monitor_total": 0,
+            "refactor_soon_total": 0,
+            "refactor_now_total": 0,
+            "agent_routing_queue_total": 1,
+            "investigate_now_total": 0,
+            "investigate_soon_total": 0,
+            "watch_total": 1,
+            "dead_code_candidates_total": 0,
+            "dead_code_high_confidence_total": 0,
+        },
+        "repo_verdict": {
+            "status": "stable",
+            "summary": "No routing pressure or regressions were detected.",
+            "has_regressions": False,
+            "refactor_now_total": 0,
+            "investigate_now_total": 0,
+            "investigate_soon_total": 0,
+        },
+        "hotspots": [],
+        "dead_code_candidates": [],
+        "tool_summaries": {
+            "ruff": {"findings_total": 0, "warning": 0, "high": 0, "critical": 0},
+            "lizard": {"findings_total": 0, "warning": 0, "high": 0, "critical": 0},
+            "complexipy": {
+                "findings_total": 0,
+                "warning": 0,
+                "high": 0,
+                "critical": 0,
+            },
+            "vulture": {
+                "findings_total": 0,
+                "review_candidate": 0,
+                "high_confidence_candidate": 0,
+            },
+        },
+        "agent_routing_queue": [
+            {
+                "file": "recoleta/in_scope.py",
+                "subsystem": "other",
+                "priority_score": 20,
+                "priority_band": "watch",
+                "change_frequency": 1,
+                "churn": 2,
+                "top_coupled_files": [],
+                "hotspot_summary": {
+                    "refactor_now": 0,
+                    "refactor_soon": 0,
+                    "monitor": 0,
+                    "multi_tool_monitor": 0,
+                    "top_symbols": [],
+                },
+                "ambiguity_signals": {
+                    "module_package_shadow": 0,
+                    "wildcard_reexport": 0,
+                    "facade_reexport": 0,
+                    "legacy_keyword_hits": 0,
+                    "compat_request_wrapper": 0,
+                },
+                "dead_code_candidate_count": 0,
+                "coverage": {"mode": "unknown", "fraction": None},
+                "priority_components": {
+                    "change_score": 2,
+                    "coupling_score": 0,
+                    "static_score": 0,
+                    "ambiguity_score": 0,
+                    "dead_code_score": 0,
+                    "coverage_risk_score": 0,
+                },
+            }
+        ],
+        "history_summary": {
+            "status": "available",
+            "lookback_days": 180,
+            "max_commit_frequency": 1,
+            "max_churn": 2,
+            "files": {
+                "recoleta/in_scope.py": {
+                    "commit_frequency": 1,
+                    "churn": 2,
+                    "top_coupled_files": [],
+                }
+            },
+        },
+        "baseline_diff": {
+            "baseline_available": True,
+            "baseline_path": "quality/refactor-baseline.json",
+            "has_regressions": False,
+            "new": [],
+            "worsened": [],
+            "resolved": [],
+        },
+        "recommended_refactor_queue": [],
+        "scope": {"files": ["recoleta/in_scope.py"], "file_count": 1},
+        "schema_version": 2,
+        "generated_at": "2026-04-02T00:00:00+00:00",
+    }
+
+    snapshot = audit.build_baseline_snapshot(
+        report,
+        baseline_report=baseline_report,
+        scope_files=["recoleta/in_scope.py"],
+    )
+
+    assert snapshot["agent_routing_queue"][0]["file"] == "recoleta/in_scope.py"
+    assert snapshot["history_summary"]["files"]["recoleta/in_scope.py"]["commit_frequency"] == 1
+    assert snapshot["summary"]["agent_routing_queue_total"] == 1
 
 
 def test_refactor_audit_cli_generates_schema_stable_outputs(tmp_path: Path) -> None:
@@ -789,7 +1452,7 @@ def unused_helper() -> str:
     assert (out_dir / "raw" / "vulture.txt").exists()
 
     payload = json.loads(report_json.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["scope"]["file_count"] == 2
     assert set(payload) >= {
         "schema_version",
@@ -797,9 +1460,11 @@ def unused_helper() -> str:
         "scope",
         "summary",
         "repo_verdict",
+        "history_summary",
         "tool_summaries",
         "hotspots",
         "dead_code_candidates",
+        "agent_routing_queue",
         "baseline_diff",
         "recommended_refactor_queue",
     }

@@ -27,12 +27,22 @@ refactor.
 uv sync --group dev
 uv run python scripts/refactor_audit.py
 uv run python scripts/refactor_audit.py recoleta/pipeline recoleta/site.py
+uv run python scripts/refactor_audit.py --coverage-json coverage.json
+uv run python scripts/refactor_audit.py --fail-on-regression
 ```
+
+Read `output/refactor-audit/report.md` first. The file-level `Agent routing
+queue` is the primary “what should an agent change next?” view; the symbol-level
+hotspot table is the supporting local evidence.
+If you do not pass `--coverage-json`, the audit still runs, but the repo verdict
+is marked with `signal_health=partial` and coverage-risk scoring stays inactive.
 
 `output/refactor-audit/` is temporary local output and remains ignored.
 `quality/refactor-baseline.json` is the checked-in baseline used to spot
 regressions without pretending that the existing hotspot backlog is already
-gone.
+gone. Only run `uv run python scripts/refactor_audit.py --update-baseline` when
+the measured debt actually dropped or the previous baseline schema/semantics
+were intentionally replaced.
 
 ## How to make changes easier to review
 
