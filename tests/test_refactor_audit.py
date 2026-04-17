@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
@@ -412,6 +413,38 @@ def test_build_history_summary_ignores_sweep_commit_for_coupling() -> None:
     ]
 
 
+def test_history_collection_inputs_include_explicit_scope_files_outside_default_targets(
+    tmp_path: Path,
+) -> None:
+    lookup = _lookup_for(tmp_path, "main.py")
+    scope_state = audit.AuditScopeState(
+        files=[tmp_path / "main.py"],
+        current_scope_files=["main.py"],
+        default_scope_files=("recoleta/example.py",),
+        is_partial_scope=True,
+        lookup=lookup,
+        raw_dir=tmp_path,
+    )
+    request = audit.RefactorAuditRunRequest(
+        scope_targets=["main.py"],
+        out_dir=tmp_path / "out",
+        baseline_path=tmp_path / "baseline.json",
+        update_baseline=False,
+        fail_on_regression=False,
+        lookback_days=CONFIG.history.lookback_days,
+        coverage_json=CONFIG.coverage.coverage_json,
+        config=CONFIG,
+    )
+
+    targets, tracked_files = audit._history_collection_inputs(
+        request=request,
+        scope_state=scope_state,
+    )
+
+    assert targets == [*CONFIG.targets, "main.py"]
+    assert tracked_files == ("main.py", "recoleta/example.py")
+
+
 def test_load_coverage_summary_prefers_branch_then_line_then_unknown(tmp_path: Path) -> None:
     coverage_path = tmp_path / "coverage.json"
     coverage_path.write_text(json.dumps(_coverage_payload()), encoding="utf-8")
@@ -444,6 +477,29 @@ def test_load_coverage_summary_prefers_branch_then_line_then_unknown(tmp_path: P
         "mode": "unknown",
         "fraction": None,
     }
+
+
+def test_coerce_refactor_audit_run_request_uses_config_defaults_for_legacy_kwargs(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        CONFIG,
+        coverage=audit.CoverageConfig(coverage_json=tmp_path / "coverage.json"),
+    )
+
+    request = audit._coerce_refactor_audit_run_request(
+        legacy_kwargs={
+            "scope_targets": ["scripts/refactor_audit.py"],
+            "out_dir": tmp_path / "out",
+            "baseline_path": tmp_path / "baseline.json",
+            "update_baseline": False,
+            "fail_on_regression": False,
+            "config": config,
+        }
+    )
+
+    assert request.lookback_days == config.history.lookback_days
+    assert request.coverage_json == config.coverage.coverage_json
 
 
 def test_build_agent_ambiguity_index_detects_shims_facades_and_legacy(tmp_path: Path) -> None:

@@ -2368,15 +2368,20 @@ def _coerce_refactor_audit_run_request(
     if request is not None:
         return request
     values = dict(legacy_kwargs or {})
+    config = values["config"]
+    lookback_value = values.get("lookback_days")
+    coverage_value = values.get("coverage_json", config.coverage.coverage_json)
     return RefactorAuditRunRequest(
         scope_targets=list(values["scope_targets"]),
         out_dir=Path(values["out_dir"]),
         baseline_path=Path(values["baseline_path"]),
         update_baseline=bool(values["update_baseline"]),
         fail_on_regression=bool(values["fail_on_regression"]),
-        lookback_days=int(values["lookback_days"]),
-        coverage_json=values.get("coverage_json"),
-        config=values["config"],
+        lookback_days=int(
+            config.history.lookback_days if lookback_value is None else lookback_value
+        ),
+        coverage_json=None if coverage_value is None else Path(coverage_value),
+        config=config,
     )
 
 
@@ -2411,6 +2416,20 @@ def _prepare_audit_scope(request: RefactorAuditRunRequest) -> AuditScopeState:
         lookup=lookup,
         raw_dir=raw_dir,
     )
+
+
+def _history_collection_inputs(
+    *,
+    request: RefactorAuditRunRequest,
+    scope_state: AuditScopeState,
+) -> tuple[list[str], tuple[str, ...]]:
+    targets = list(request.config.targets)
+    tracked_files = set(scope_state.default_scope_files)
+    extra_scope_files = sorted(set(scope_state.current_scope_files) - tracked_files)
+    if extra_scope_files:
+        targets.extend(extra_scope_files)
+        tracked_files.update(extra_scope_files)
+    return list(dict.fromkeys(targets)), tuple(sorted(tracked_files))
 
 
 def _run_ruff_audit(
@@ -2654,10 +2673,14 @@ def run_refactor_audit(
         complexipy_signals=tool_run.complexipy_signals,
         dead_code_candidates=tool_run.dead_code_candidates,
     )
+    history_targets, history_tracked_files = _history_collection_inputs(
+        request=resolved_request,
+        scope_state=scope_state,
+    )
     history_summary = collect_git_history_summary(
         repo_root=resolved_request.config.repo_root,
-        targets=list(resolved_request.config.targets),
-        tracked_files=scope_state.default_scope_files,
+        targets=history_targets,
+        tracked_files=history_tracked_files,
         current_scope_files=scope_state.current_scope_files,
         lookback_days=resolved_request.lookback_days,
         min_shared_commits=resolved_request.config.history.min_shared_commits,
