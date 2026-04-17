@@ -8,47 +8,49 @@ status: succeeded
 topics:
 - coding-agents
 - reinforcement-learning
+- software-testing
+- program-repair
 - verification
-- repository-repair
 - workflow-automation
 tags:
 - recoleta/ideas
 - topic/coding-agents
 - topic/reinforcement-learning
+- topic/software-testing
+- topic/program-repair
 - topic/verification
-- topic/repository-repair
 - topic/workflow-automation
 language_code: zh-CN
 ---
 
-# 软件代理的验证闭环
+# 带执行检查的代理工作流
 
 ## Summary
-近期最明确的变化，是围绕软件代理建立更紧的验证闭环：让修复系统在搜索时修订测试，把重复工作流迁移到经过验证的确定性代码里，并在代理修改代码库之前，把设计决策记录为测试。每一项都对应当前代理使用中的一种具体失效模式：冻结或不完整的判定标准、运行时波动和审计缺口，以及开发者对代理所做设计选择的误解。
+这里最值得直接动手测试的工作，是把软件代理放进带有硬执行检查的循环中。近期最清晰的三个构建方向是：一个会同时修改测试和代码的仓库修复 worker、一个面向高吞吐审计型业务的编译式工作流工具，以及一个用于微服务集成测试的在线依赖模拟器。每个方向都有明确用户、有边界清楚的试点方式，也都有足够具体的结果，适合放进现有工程流程里验证。
 
-## 带可编辑测试候选的仓库修复循环
-如果允许仓库修复代理在搜索过程中修改测试，并根据补丁与修订后测试之间的相互作用打分，它们就能减少脆弱修复。Agent-CoEvo 给出了一种具体做法：保留一组代码候选和一组测试候选，让两组候选相互运行，再根据执行矩阵对两边排序。对于已经在内部仓库上运行 SWE-bench 风格补丁循环的团队，这是一种可落地的构建方式，因为它不需要新的基础模型。它把验证器从冻结的通过/失败关卡，变成搜索过程的一部分。
+## 将代码补丁与测试补丁生成联动的仓库修复
+仓库级修复代理可以开始把测试当作可编辑的证据，而不是固定不变的把关者。Agent-CoEvo 清楚地展示了一种可落地的做法：同时运行代码补丁和测试补丁，在同一个执行矩阵里给两者打分，并且只保留那些既能解释 issue 报告、又会在有缺陷的仓库上失败、并在修复后的仓库上通过的候选。这里的实际痛点很常见：团队遇到的缺陷报告里，现有测试经常不完整、过时，或不足以准确约束行为变化，因此只改代码的修复循环要么对糟糕测试过拟合，要么直接卡住。
 
-这种运维痛点很常见：问题报告指出了行为缺口，但现有测试并不完整、规格有误，或者没有覆盖失败模式。这样一来，只改代码的代理就可能针对错误的判定标准做优化，却仍然在 CI 里看起来成功。Agent-CoEvo 在 SWE-bench Lite 上报告了 41.33% 的 resolved，在 SWT-bench Lite 上报告了 46.4%，测试质量的 ΔC 为 56.0%。对于内部工具，第一步的低成本验证可以很窄：找一小批过去需要人工同时修改代码和测试的 bug 报告，然后比较冻结测试的修复循环和协同演化循环在解决率与回归逃逸上的差异。
-
-### Evidence
-- [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): 摘要报告了协同演化方法，以及它在 SWE-bench Lite、SWT-bench Lite 和测试质量上的基准提升。
-- [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): 论文正文指出，行为约束应在修复过程中修订，并描述了代码候选与测试候选的相互评估。
-
-## 用于重复性文档和 API 任务的编译式工作流执行器
-高吞吐量的文档处理和函数调用工作流可以把模型使用前移到构建阶段，然后在生产中以经过验证的确定性代码运行。Compiled AI 为理赔处理、预授权、发票提取以及其他步骤稳定、操作人员又需要可预测输出、审计日志和更低单笔成本的工作流提供了一条具体路径。它的构建模式很小：先在固定模板里生成一个范围收窄的业务逻辑函数，再在部署前强制执行安全扫描、语法和类型检查、沙箱测试以及金标准输出校验。
-
-现有证据已经足够支持一次采用测试。在 BFCL 上，Compiled AI 报告了 96% 的任务完成率、4.5 ms 的中位延迟，并且相对直接运行时推理大约在 17 次交易后达到盈亏平衡。在 DocILE 上，它受限的 Code Factory 路径在线项目识别上达到 80.4%，延迟也低于直接使用 LLM。选择首个候选场景的团队应优先找那些模式重复、异常集合有限、且已有金标准样例的工作流。低成本验证步骤是把一个生产工作流编译出来，让两套系统并行运行一周，并测量输出波动、排队时间、审核负担和 token 开销。
+一个实际的产品形态，是面向大型 Python 或 Java 仓库维护者的 CI 侧修复 worker。它会提交一个草稿 PR，其中包含两个关联的 diff：实现补丁，以及为该补丁提供依据的测试改动。前期验证可以做得很窄也很直接：抽样那些维护者在修复时必须修改测试的 issue，再比较纯代码代理和协同进化循环在合并率与审查拒绝率上的差异。论文在 SWE-bench Lite 上报告了 41.33% 的 resolved，在 SWT-bench Lite 上报告了 46.4%，测试质量也高于列出的基线，这已经足以支持在那些缺陷积压稳定、且已有 CI 覆盖的仓库中测试这一工作流。
 
 ### Evidence
-- [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): 摘要给出了 compiled-AI 工作流、验证阶段、延迟、成本和基准结果。
-- [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): 摘要将确定性的编译执行路径用于需要可靠性和可审计性的企业工作流。
+- [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): 报告了代码补丁与测试补丁的联合搜索，以及在 SWE-bench Lite 和 SWT-bench Lite 上的基准提升。
+- [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): 解释了协同进化机制，以及为什么固定测试会让仓库级修复的约束不足。
 
-## 面向代理编写功能变更的决策日志与测试生成
-使用代理做功能开发的编码团队，可以在代码生成前加入决策日志，把已接受的设计选择转成可执行测试。Aporia 在 VS Code 中展示了一种可用的交互模型：提出有针对性的 yes/no 设计问题，把答案存入持久化的 Decision Bank，根据这些答案生成测试，再让 implementer 在这些测试约束下修改代码。这直接解决了重度使用代理团队的一个采用障碍：开发者批准了本地能运行的代码，却没有形成对刚刚接受行为的准确心智模型。
+## 面向高吞吐审计型业务的编译式工作流部署
+高吞吐的文档和交易工作流可以把模型调用前移到构建阶段，并在生产环境里运行经过验证的代码。Compiled AI 给出了一个具体模式：先在固定模板中一次性生成一个小型业务逻辑函数，再执行安全扫描、类型和语法检查、沙箱测试，以及基于黄金集的准确率检查，然后在主路径中运行这个已批准的产物，不再进行运行时模型调用。用户侧的压力很直接：计费、预授权、理赔录入和文档处理团队需要可重复的输出、较短的延迟，以及能够经受审查的审计记录。
 
-这项用户研究的证据范围比修复和工作流两篇论文更窄，但它指向了许多编码代理仍然缺少的一层具体支持。在一项包含 14 名程序员的被试内研究中，使用 Aporia 的参与者持有与代码不一致心智模型的可能性，比使用 Claude Code 时低 5 倍。实际的第一步上线不必替换整个 IDE。可以先在高风险功能分支中加入决策记录步骤，尤其针对策略逻辑、权限和边界情况处理，并跟踪评审意见是否从基础行为澄清转向真正的设计权衡。
+这现在就可以做成一个内部工具，给已经在维护基于提示词自动化的工作流工程师使用。先从一个模式稳定、数据量足够大的窄流程开始，例如发票字段抽取或基于规则的录入分流。第一步验证看成本和波动：把当前的提示词工作流编译成代码，回放一周的生产输入，再比较单笔交易延迟、输出漂移和人工异常处理率。论文报告 BFCL 上的盈亏平衡点约为 17 笔交易，中位延迟为 4.5 ms，可复现性为 100%，而且在规模化后成本差距很大。DocILE 的结果也说明，当脏乱文档仍然需要受约束的模型调用时，受限的混合模式是可行的。
 
 ### Evidence
-- [Decision-Oriented Programming with Aporia](../Inbox/2026-04-06--decision-oriented-programming-with-aporia.md): 摘要描述了 Decision Bank、questioner-planner-implementer 流程，以及心智模型研究结果。
-- [Decision-Oriented Programming with Aporia](../Inbox/2026-04-06--decision-oriented-programming-with-aporia.md): 摘要说明这些决策是显式的、结构化的、由人机共同写成，并且可以追溯到代码。
+- [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): 概述了编译式工作流模式、验证关卡，以及它与企业工作流的契合点。
+- [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): 提供了函数调用类工作负载的盈亏平衡、token 和延迟结果。
+
+## 用于微服务集成测试的在线依赖模拟
+做微服务测试的团队可以用在线依赖模拟器替换脆弱的录制式 mock；这种模拟器会在测试运行期间响应请求，并在整个场景里保留状态。Mirage 说明了原因：保留出来的测试场景会击穿静态替代物，因为后者必须在测试开始前就猜到所有相关行为，而运行时模拟器可以对新参数、错误路径和多步流程即时作出反应。这正对应了服务团队里的常见阻碍：下游系统部署成本高、在 CI 中不可用，或者太不稳定，无法支撑可重复的集成测试。
+
+一个具体的构建方式，是做一个测试 harness，拉起一个与 FastAPI 兼容的 mock 端点，底层由 LLM 驱动；有依赖源码时用源码做输入，没有时就用 traces。最早的用户会是平台和后端团队，他们通常有 service mesh、大量内部 API，并且经常遇到契约漂移。第一项检查很直接：选一个当前依赖 record-replay fixture 的下游依赖，让同一套集成测试分别跑在真实依赖、现有 mock 和在线模拟器上，然后比较通过/失败结果的一致性和 payload 形状保真度。Mirage 报告称，在 110 个场景上的白盒模式下，status-code fidelity 为 99%，response-shape fidelity 也为 99%；而 record-replay 在同一基准上分别只有 62% 和 16%。这个差距已经足以支持围绕最容易出问题的依赖做一次小范围试点。
+
+### Evidence
+- [MIRAGE: Online LLM Simulation for Microservice Dependency Testing](../Inbox/2026-04-06--mirage-online-llm-simulation-for-microservice-dependency-testing.md): 概述了在线模拟方法，以及它相对静态替代物的保真度提升。
+- [MIRAGE: Online LLM Simulation for Microservice Dependency Testing](../Inbox/2026-04-06--mirage-online-llm-simulation-for-microservice-dependency-testing.md): 说明了为什么保留场景会让 record-replay 和其他预生成 mock 失效。

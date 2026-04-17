@@ -11,6 +11,7 @@ topics:
 - video-planning
 - event-cameras
 - evaluation
+- reinforcement-learning
 tags:
 - recoleta/ideas
 - topic/robotics
@@ -18,37 +19,38 @@ tags:
 - topic/video-planning
 - topic/event-cameras
 - topic/evaluation
+- topic/reinforcement-learning
 language_code: zh-CN
 ---
 
-# 具身机器人工作流升级
+# 机器人策略部署升级
 
 ## Summary
-这一天的机器人学习工作指向了三个团队很快就能交付或测试的具体变化：用于操作任务的门控式规划器-执行器封装层、用于感知失效的事件相机感知附加模块，以及用于评测的自然语言任务编写流程。证据最具体的部分，是论文直接报告了任务成功率提升或可用性指标改善，因此这里重点放在这些可操作的变化上。
+这一天的机器人动作研究指向三个团队现在就能做的具体变化：在视频规划和响应式控制之间加入切换层，把事件相机当作修复 VLA 在低照度和模糊下感知失效的部署方案，以及把策略评测标准化，让主干和动作头的改动可以直接比较，而不用每次都重写整套系统。前两点有更清楚的任务层证据。第三点更像工作流建设，但它的运营价值也很具体。
 
-## 从视频规划到低层 VLA 执行的门控切换
-一个实用的机器人系统栈现在更像是两阶段执行回路：先用视频模型勾勒接近路径，再把接触操作和恢复交给反应式 VLA 策略。Veo-Act 的价值在于，它说明了这个分界点该放在哪里。纯视频到动作的路径保留了一些规划能力，但底层执行不够精确，无法稳定完成富接触任务。门控切换将论文报告的灵巧操作场景平均成功率从 45% 提高到 80%，而且在接近真实部署痛点的场景中提升很大：真实机器人上的 pass-by interaction 从 2/13 提升到 11/13，更丰富语义任务从 2/19 提升到 15/19。
+## 从视频规划到低层操作控制的门控切换
+一个更实用的机器人系统栈，现在在控制边界上更模块化：用视频模型起草接近路径，然后把接触和恢复阶段交给响应式 VLA 策略。Veo-Act 最清楚地说明了这种拆分方式。它的 Veo-3 规划器加低层 VLA 策略，在测试的仿真和真实操作设置中，把平均成功率从 45% 提高到 80%，在有歧义的场景和路过式交互上提升尤其大。在真实路过式交互中，成功次数从 2/13 提高到 11/13。论文也直接说明了它的边界：视频预测可以勾勒动作轨迹，但只靠动作恢复，控制精度仍然太松，无法稳定完成高接触操作。
 
-这里可落地的构建方式，是给现有 VLA 部署加一个规划器-执行器封装层，而不是重写整套策略。已经在运行操作策略的团队，可以先测试一个很窄的模块：生成一段简短的视觉轨迹，把它转换成动作块，并在交互检测器触发时切换到现有策略。一个低成本的验证方法，是重新运行那些目前会因为物体歧义、遮挡或接近几何而失败的任务，观察这个封装层是否能修复接近阶段，同时不损害近距离接触精度。
-
-### Evidence
-- [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](../Inbox/2026-04-06--veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation.md): 摘要报告了规划器加 VLA 架构，以及主要的成功率提升。
-- [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](../Inbox/2026-04-06--veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation.md): 论文正文说明，这个分层框架使用 Veo-3 作为高层规划器，使用 VLA 策略作为低层执行器。
-
-## 用于低照度和运动模糊操作的事件相机适配器
-对于那些在腕部相机无法捕获可用 RGB 时会失效的 VLA 系统，事件相机支持正在成为一个可落地的附加模块。E-VLA 给出了一条清晰的集成路径：把最近的事件流对齐到图像帧，保留预训练视觉 token 结构，先从简单融合开始，再加入一个小型事件适配器。论文报告的低照度结果很直接。在 Pick-Place 任务上，纯图像方案在 25 lux 和 20 lux 下成功率都降到 0%，而事件适配器在这两个照度下都达到 90%。跨六个照度等级，事件适配器的 Pick-Place 平均成功率达到 94.2%，纯图像方案是 47.5%。
-
-这里能做成产品的是一个面向操作单元的感知韧性模块，适用于光线较暗的通道、料箱内部或机械臂快速运动的场景。最先会用到它的，是那些已经在用曝光调节和图像增强排查模糊与欠曝光问题的团队。一个低成本检查方法很简单：在一个已知会出现光照失败的任务上，把 DAVIS 级别传感器装在现有相机旁边，记录同步的 RGB-event-action 轨迹，然后在分级 lux 条件下比较成功率，再决定是否投入更大范围的重训练。
+这里可以落地的具体构建，是在轨迹提议器和你已经信任的近物体动作策略之间，加一层带门控的切换层。做灵巧抓放、杂乱桌面操作或视角别扭的移动操作的团队，可以先在不重训完整端到端规划器的情况下测试这一点。先挑一类失败场景，比如当前策略在干扰物存在或部分可见时选错接近路径。记录机器人什么时候该继续沿规划路径执行，什么时候该切到响应式控制器，再衡量这种切换是否能在不增加不安全接触的前提下提高任务完成率。当前采用这类方案的主要障碍不只在模型质量，还在切换逻辑，以及规划器粗粒度未来表示与控制器动作块格式之间的接口。
 
 ### Evidence
-- [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](../Inbox/2026-04-06--e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes.md): 摘要给出了低照度和平均成功率结果，以及集成方法。
-- [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](../Inbox/2026-04-06--e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes.md): 摘要描述了事件增强 VLA 框架，以及在遥操作机器人上采集的同步 RGB-event-action 数据集。
+- [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](../Inbox/2026-04-06--veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation.md): 报告了规划器加 VLA 的架构，以及在仿真和真实操作任务中的主要成功率提升。
+- [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](../Inbox/2026-04-06--veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation.md): 确认了论文的结论：视频预测有助于高层运动规划，但单独使用时低层控制仍然不够。
 
-## 面向可执行机器人评测任务的自然语言编写
-机器人评测正在变得更容易编写，形式也更接近用户本来的思考方式：用自然语言写出任务指令、约束和成功条件，再编译成可执行测试。RoboPlayground 指向了实验室和平台团队的一种具体工作流变化，适合那些不满足于固定基准表的场景。这个系统把自然语言请求转换成任务规格，其中包含资产、初始条件和成功谓词，然后验证任务能否运行，并且在物理上是否仍然成立。用户研究中，它拿到了 83.4 的 SUS 和 18.6 的 NASA-TLX，表现都优于 Cursor 和 GenSim，69% 的用户总体上更偏好它。
+## 用于低照度和运动模糊操作的 VLA 事件相机 adapter
+事件相机现在像是 VLA 部署中的一个具体支撑层，适合用在腕部 RGB 最先失效的场景。E-VLA 给出了一条直接路径：保留预训练的图像-语言主干，通过简单的 overlay fusion 或一个小型 adapter 加入事件输入，然后在真实采集中关键的低照度和模糊失效场景上评估。对于 Pick-Place，纯图像策略的成功率从 75 lux 下的 100% 降到 25 lux 和 20 lux 下的 0%。事件 adapter 在 25 lux 和 20 lux 下都达到 90%，六档光照的平均成功率也提升到 94.2%，而纯图像策略是 47.5%。论文还报告了在 1000 ms 曝光下的运动模糊增益。
 
-眼下可以直接做的是一个内部评测编写工具，挂接到模拟器或积木世界这类领域上，并支持带版本的任务族，用来处理更严格的放置规则或变更后的成功定义等编辑。这一点重要，因为论文报告说，不同语言定义任务族之间的结果波动很大，其中有些任务上多个方法都得到 0 分。一个低成本验证步骤是：拿一个现有基准任务，让非专家做出五个受控变体，看看这些变体会不会暴露出当前基准从来没有记录到的失败。
+这指向机器人团队一个很具体的产品和集成方向：给现有 VLA 策略做一个感知升级套件，加入同步的 RGB-event 采集、事件窗口预处理，以及一个小型融合模块，而不用重写整套策略栈。仓库、后场空间、家庭环境和高速腕载操作是最先适用的场景，因为这些环境同时有弱光、运动模糊，以及很少时间去调任务专用视觉。一个低成本检查方式，是在受控 lux 和曝光设置下，先复现当前的一个失败模式，再决定要不要做大规模数据采集。如果机器人已经会在画面截黑或拖影时失败，这条传感器路线比再做一轮图像增强更容易 justify，因为论文里的增益来自传感阶段捕获到的信息，而不是事后清理。
 
 ### Evidence
-- [RoboPlayground: Democratizing Robotic Evaluation through Structured Physical Domains](../Inbox/2026-04-06--roboplayground-democratizing-robotic-evaluation-through-structured-physical-domains.md): 摘要涵盖了编译流程、验证流程、用户研究得分，以及任务族评测结果。
-- [RoboPlayground: Democratizing Robotic Evaluation through Structured Physical Domains](../Inbox/2026-04-06--roboplayground-democratizing-robotic-evaluation-through-structured-physical-domains.md): 摘要说明，自然语言会被编译成具有显式结构、可复现的任务规格。
+- [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](../Inbox/2026-04-06--e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes.md): 提供了低照度操作结果、数据集细节，以及 overlay 与 adapter 的对比。
+- [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](../Inbox/2026-04-06--e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes.md): 确认了论文正文中 20 lux 和严重运动模糊条件下的提升。
+
+## 面向 VLA 主干和动作头的统一消融与基准 runner
+VLA 研究基础设施已经具体到足以支撑跨策略类型的共享消融和基准工作流。StarVLA 把多种动作头、可替换主干、通用训练配方，以及覆盖主要机器人基准的一套评测接口放进同一个代码库。眼下最直接的构建机会，是做一个内部评测框架，把主干、动作头、dataloader 混合方式和基准目标当作独立旋钮，然后用同一套配方跑仿真和真实机器人检查。这对那些还在把每个新策略先移植进自定义系统、之后才能做比较的实验室和平台团队很有用。
+
+这里的证据重点更多在缺少工作流支持，而不是性能 headline。StarVLA 声称支持七个集成基准，并在一个代码库下同时覆盖 VLM 主干、世界模型主干、多模态联合训练、跨 embodiment 训练和多基准联合训练。摘录里没有给出完整的基准增益，因此更稳妥的近期动作是偏运营层面的：用这种接口风格减少复现时间，并让消融结果更值得信任。一个简单的验证步骤，是把两个现有、动作解码器不同的内部策略接入同一个 runner，看看需要手写的 benchmark glue 减少了多少。
+
+### Evidence
+- [StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing](../Inbox/2026-04-06--starvla-a-lego-like-codebase-for-vision-language-action-model-developing.md): 总结了模块化的主干加动作头设计，以及统一的评测栈。
+- [StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing](../Inbox/2026-04-06--starvla-a-lego-like-codebase-for-vision-language-action-model-developing.md): 确认了论文中的集成基准、可复现实验配方，以及从仿真到真实机器人的评测接口。

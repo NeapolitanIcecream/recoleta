@@ -7,8 +7,9 @@ period_end: '2026-04-07T00:00:00'
 topics:
 - coding-agents
 - reinforcement-learning
+- software-testing
+- program-repair
 - verification
-- repository-repair
 - workflow-automation
 run_id: materialize-outputs
 aliases:
@@ -17,45 +18,39 @@ tags:
 - recoleta/trend
 - topic/coding-agents
 - topic/reinforcement-learning
+- topic/software-testing
+- topic/program-repair
 - topic/verification
-- topic/repository-repair
 - topic/workflow-automation
 language_code: en
-pass_output_id: 20
+pass_output_id: 38
 pass_kind: trend_synthesis
 ---
 
-# Software-agent research is converging on explicit rewards and hard verification gates
+# Software-agent research is converging on verifiable training loops and hard control gates
 
 ## Overview
-This day’s strongest work makes software agents easier to train, easier to check, and easier to audit. The clearest evidence comes from atomic-skill reinforcement learning, editable test loops in repository repair, and compiled or solver-checked execution paths. The common standard is concrete feedback: unit tests, hidden evaluators, proof obligations, or deterministic code paths.
+The clearest work on this day makes software agents easier to score, easier to rerun, and easier to block when they fail checks. Atomic-skill RL, Agent-CoEvo, and Nidus each tighten the control loop in a different place: training target, repository repair, and engineering governance. Compared with the prior few days, the emphasis is less on showing that agents can act in real environments and more on building training and verification setups that keep those actions measurable.
 
 ## Clusters
 
-### Reward design is becoming a core research object
-Reinforcement learning work is getting more specific about what the agent is rewarded for and where the reward comes from. The strongest coding result trains one shared policy on five reusable skills, then shows transfer to harder repository tasks: SWE-bench Verified rises from 0.507 to 0.585 and SWE-bench Multilingual from 0.300 to 0.389. SandMLE applies the same idea to machine learning engineering by shrinking full pipelines into verifiable micro-tasks. That cuts execution time from about 200 seconds to under 15 seconds and improves Any Medal rate on MLE-bench-lite by 20.3% to 66.9% relative, with up to 32.4% HumanRank gain on MLE-Dojo.
+### Execution-scored RL for engineering agents
+Reinforcement learning is getting more usable because the training target is narrower and the environment is faster. *Scaling Coding Agents via Atomic Skills* breaks software work into five verifiable skills and reports an average 18.7% gain across ten tasks, including SWE-bench Verified at 0.585 from 0.507. *SandMLE* applies the same execution-first logic to machine learning engineering: synthetic tasks cut runtime from about 200 seconds to under 15 seconds, then improve Any Medal rate by 20.3% to 66.9% on MLE-bench-lite. The common pattern is simple: make each step cheap to run and easy to score, then scale on-policy RL.
 
 #### Evidence
-- [Scaling Coding Agents via Atomic Skills](../Inbox/2026-04-06--scaling-coding-agents-via-atomic-skills.md): Atomic-skill RL with transfer results across coding benchmarks.
-- [Synthetic Sandbox for Training Machine Learning Engineering Agents](../Inbox/2026-04-06--synthetic-sandbox-for-training-machine-learning-engineering-agents.md): Synthetic sandbox RL for MLE agents with large speed and benchmark gains.
+- [Scaling Coding Agents via Atomic Skills](../Inbox/2026-04-06--scaling-coding-agents-via-atomic-skills.md): Atomic-skill RL setup and cross-task gains for coding agents
+- [Synthetic Sandbox for Training Machine Learning Engineering Agents](../Inbox/2026-04-06--synthetic-sandbox-for-training-machine-learning-engineering-agents.md): Synthetic sandbox design, 13x speedup, and MLE gains
 
-### Validation loops now include the spec, the tests, and the simulator
-Repository repair papers are treating tests as editable evidence, not just a final gate. Agent-CoEvo keeps populations of code patches and test patches, scores them against each other, and reports 41.33% resolved on SWE-bench Lite and 46.4% on SWT-bench Lite. That is paired with 56.0% ΔC on test quality. The same control-minded attitude appears in StatsClaw, which splits planning, coding, testing, and simulation into isolated roles. In its probit package build, the workflow checks MLE outputs against R `glm` at 10^-6 to 10^-8 tolerance and reports 7 of 7 Monte Carlo acceptance checks passed.
-
-#### Evidence
-- [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): Coevolution of code and tests with benchmark results on SWE-bench Lite and SWT-bench Lite.
-- [StatsClaw: An AI-Collaborative Workflow for Statistical Software Development](../Inbox/2026-04-06--statsclaw-an-ai-collaborative-workflow-for-statistical-software-development.md): Isolated workflow and independent validation in statistical software generation.
-
-### External verification is moving into the product path
-A second thread is stricter external control over what an agent may ship. Nidus puts requirements, architecture, traceability, and proof obligations into one solver-checked artifact and reports a 100,000-line self-hosted system checked on every commit. Compiled AI pushes control even further for repetitive workflows: the model writes a small function once, then production runs as deterministic code. On BFCL, it reports 96% task completion, 4.5 ms median latency, and break-even against direct LLM use at about 17 transactions. On DocILE, its bounded Code Factory variant reaches 80.4% line item recognition with lower latency than direct runtime inference.
+### Behavior-first evaluation at repository and service level
+Repository agents are being judged on whether they can repair behavior, not just patch files. *Agent-CoEvo* searches over code patches and test patches together, then scores them through a pass-fail matrix. It reports 41.33% resolved on SWE-bench Lite and 46.4% on SWT-bench Lite, with higher test quality than the listed baselines. In microservices, *Mirage* keeps the model in the dependency loop during testing and reaches 99% status-code fidelity and 99% response-shape fidelity across 110 scenarios. Both papers put the model inside an executable feedback loop where behavior is checked as it unfolds.
 
 #### Evidence
-- [Nidus: Externalized Reasoning for AI-Assisted Engineering](../Inbox/2026-04-06--nidus-externalized-reasoning-for-ai-assisted-engineering.md): Solver-checked engineering governance with every-change verification.
-- [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): Deterministic compiled workflows with cost, latency, and accuracy data.
+- [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): Joint code-test search and benchmark results on SWE-bench Lite and SWT-bench Lite
+- [MIRAGE: Online LLM Simulation for Microservice Dependency Testing](../Inbox/2026-04-06--mirage-online-llm-simulation-for-microservice-dependency-testing.md): Runtime dependency simulation and fidelity metrics for microservice testing
 
-### Human oversight is being built into the interface, not left to prompt craft
-Developer-facing systems are also trying to keep humans oriented while agents do more work. Aporia records explicit design decisions in a Decision Bank and turns them into tests; in a 14-person study, participants' mental models were 5x less likely to disagree with the code than with Claude Code. Tonone takes a different route with a role-based agent pack: 23 specialists and 125 skills for engineering, product, security, and operations. The evidence there is operational and descriptive, not benchmarked, but it shows how quickly multi-role orchestration is becoming a product pattern.
+### Deterministic and solver-checked control layers
+A second line of work is reducing runtime model freedom once the task is clear enough to compile or verify. *Compiled AI* generates a small code artifact once, validates it, and then runs deterministically. On BFCL it reaches 96% task completion, breaks even after about 17 transactions, and runs at 4.5 ms median latency with 100% reproducibility. *Nidus* pushes harder on governance: every change is checked against a solver-backed living specification, and the paper reports a self-hosted 100,000-line system with proof obligations on every commit. This day’s strongest systems do not ask the model to be careful on its own. They bind it to code, tests, or formal checks.
 
 #### Evidence
-- [Decision-Oriented Programming with Aporia](../Inbox/2026-04-06--decision-oriented-programming-with-aporia.md): User study on explicit design decisions and understanding accuracy.
-- [Inspired by gstack: I stopped prompting Claude and gave it job titles instead](../Inbox/2026-04-06--inspired-by-gstack-i-stopped-prompting-claude-and-gave-it-job-titles-instead.md): Open-source multi-role orchestration system with concrete scope claims but no benchmark.
+- [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): Compiled workflow generation, validation pipeline, and cost/latency results
+- [Nidus: Externalized Reasoning for AI-Assisted Engineering](../Inbox/2026-04-06--nidus-externalized-reasoning-for-ai-assisted-engineering.md): Solver-checked living specification and self-hosting evidence
