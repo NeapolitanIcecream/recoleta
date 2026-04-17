@@ -27,6 +27,7 @@ Use this skill when the goal is to judge whether the current code is merely larg
 - The repo verdict now separates `debt_status` from `routing_pressure`. Regression gates still follow hotspots and dead-code baseline changes; routing pressure is advisory.
 - The repo verdict includes `signal_health`. Treat `partial` as a real downgrade: the queue is still useful, but missing coverage means the coverage-risk component is inactive.
 - Shared-commit coupling ignores commits that touch more than the configured tracked-file threshold. That removes obvious sweep commits, but it is still a heuristic, not a ground-truth dependency graph.
+- When you run the audit on an explicit file outside the default target set, history scoring still follows that file instead of silently zeroing it out.
 - A symbol hit by both `complexipy` and `lizard` is still a strong local refactor target, but the file-level routing rank should win when it conflicts with a low-churn isolated hotspot.
 - `investigate_now` and `investigate_soon` mean the file is a better next refactor candidate than a plain `watch` file, even if all contained hotspots are only `monitor`.
 - `refactor_now` still means the scope is already expensive to change and should not keep absorbing behavior work without decomposition.

@@ -602,7 +602,9 @@ queue` is the primary next-target view for agent-driven refactors; see
 rules. Without `--coverage-json`, the audit still runs, but the verdict is
 marked with partial signal health and coverage-risk scoring is skipped. The
 report also separates structural debt status from routing pressure, and filters
-out obvious sweep commits from shared-commit coupling.
+out obvious sweep commits from shared-commit coupling. Explicit scoped audits
+outside the default target set still keep git-history scoring for the files you
+asked to inspect.
 
 <a id="recoleta-license"></a>
 ## 📄 License
