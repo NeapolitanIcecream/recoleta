@@ -595,6 +595,13 @@ def _backup_output_dir_from_settings(settings: Any | None) -> Path | None:
     return Path(raw_path).expanduser().resolve()
 
 
+def _backup_output_dir_from_env() -> Path | None:
+    raw_path = str(os.getenv("BACKUP_OUTPUT_DIR", "")).strip()
+    if not raw_path:
+        return None
+    return Path(raw_path).expanduser().resolve()
+
+
 def _resolve_backup_output_dir(
     *,
     resolved_db_path: Path,
@@ -606,6 +613,9 @@ def _resolve_backup_output_dir(
     configured = _backup_output_dir_from_settings(settings)
     if configured is not None:
         return configured
+    configured_from_env = _backup_output_dir_from_env()
+    if configured_from_env is not None:
+        return configured_from_env
     return (resolved_db_path.parent / "backups").resolve()
 
 

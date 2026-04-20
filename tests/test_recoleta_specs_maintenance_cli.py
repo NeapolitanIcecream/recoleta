@@ -330,6 +330,29 @@ def test_admin_backup_defaults_to_configured_backup_output_dir(tmp_path: Path) -
     assert (bundle_dirs[0] / "manifest.json").exists()
 
 
+def test_admin_backup_honors_env_backup_output_dir_when_settings_are_skipped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "env-backups"
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", str(backup_root))
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["admin", "backup", "--db-path", str(db_path)],
+    )
+
+    assert result.exit_code == 0
+    bundle_dirs = [path for path in backup_root.iterdir() if path.is_dir()]
+    assert len(bundle_dirs) == 1
+    assert (bundle_dirs[0] / "manifest.json").exists()
+
+
 def test_restore_exits_when_workspace_lock_is_held(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"

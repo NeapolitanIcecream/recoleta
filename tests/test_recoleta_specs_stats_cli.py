@@ -612,6 +612,33 @@ def test_inspect_freshness_json_reports_split_freshness_axes(
     }
 
 
+def test_inspect_freshness_uses_env_backup_output_dir_when_settings_are_skipped(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "env-backups"
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", str(backup_root))
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    _seed_freshness_regression_scenario(repository=repository, backup_root=backup_root)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["inspect", "freshness", "--db-path", str(db_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["freshness"]["backup"]["root_dir"] == str(backup_root.resolve())
+    assert (
+        payload["freshness"]["backup"]["latest_created_at"]
+        == "2026-04-07T01:26:20.361189+00:00"
+    )
+
+
 def test_stats_json_includes_freshness_snapshot(
     configured_env: Path,
     monkeypatch,
