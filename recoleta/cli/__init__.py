@@ -586,6 +586,59 @@ def _workspace_bytes_from_settings(settings: Any) -> dict[str, int | None]:
     return workspace_bytes
 
 
+def _backup_output_dir_from_settings(settings: Any | None) -> Path | None:
+    if settings is None:
+        return None
+    raw_path = getattr(settings, "backup_output_dir", None)
+    if raw_path is None:
+        return None
+    return Path(raw_path).expanduser().resolve()
+
+
+def _backup_output_dir_from_env() -> Path | None:
+    raw_path = str(os.getenv("BACKUP_OUTPUT_DIR", "")).strip()
+    if not raw_path:
+        return None
+    return Path(raw_path).expanduser().resolve()
+
+
+def _backup_output_dir_from_config(*, config_path: Path | None) -> Path | None:
+    resolved_config_path = _resolved_config_path(config_path=config_path)
+    if resolved_config_path is None:
+        return None
+    try:
+        loaded = _load_config_mapping(resolved_config_path)
+    except Exception:
+        return None
+    raw_path = str(
+        loaded.get("backup_output_dir") or loaded.get("BACKUP_OUTPUT_DIR") or ""
+    ).strip()
+    if not raw_path:
+        return None
+    return Path(raw_path).expanduser().resolve()
+
+
+def _resolve_backup_output_dir(
+    *,
+    resolved_db_path: Path,
+    settings: Any | None = None,
+    output_dir: Path | None = None,
+    config_path: Path | None = None,
+) -> Path:
+    if output_dir is not None:
+        return output_dir.expanduser().resolve()
+    configured = _backup_output_dir_from_settings(settings)
+    if configured is not None:
+        return configured
+    configured_from_env = _backup_output_dir_from_env()
+    if configured_from_env is not None:
+        return configured_from_env
+    configured_from_config = _backup_output_dir_from_config(config_path=config_path)
+    if configured_from_config is not None:
+        return configured_from_config
+    return (resolved_db_path.parent / "backups").resolve()
+
+
 def _delete_path_if_present(*, path: Path, dry_run: bool = False) -> bool:
     if not path.exists():
         return False

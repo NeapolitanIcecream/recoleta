@@ -636,7 +636,7 @@ def _format_collection_meta(
     latest_token: str,
 ) -> str:
     mix = _format_collection_mix(trend_count=trend_count, idea_count=idea_count)
-    return f"{mix} · latest {latest_token}" if latest_token else mix
+    return f"{mix} · latest window {latest_token}" if latest_token else mix
 
 
 def _site_date_range_label(
@@ -980,7 +980,7 @@ def _render_collection_summary_section(
         "<div class='summary-stats'>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Trends</div><div class='meta-panel-value'>{trend_count}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>{idea_count}</div></div>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Latest</div><div class='meta-panel-value'>{html.escape(latest_token)}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Latest window</div><div class='meta-panel-value'>{html.escape(latest_token)}</div></div>"
         "</div>"
         "</section>"
     )
@@ -1541,7 +1541,7 @@ def _render_home_page(
         f"<div class='meta-panel'><div class='meta-panel-label'>Trends</div><div class='meta-panel-value'>{len(documents)}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>{len(idea_documents)}</div></div>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Topics</div><div class='meta-panel-value'>{len(topic_pages)}</div></div>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Window</div><div class='meta-panel-value'>{html.escape(generated_span or 'n/a')}</div></div>"
+        f"<div class='meta-panel'><div class='meta-panel-label'>Latest window</div><div class='meta-panel-value'>{html.escape(generated_span or 'n/a')}</div></div>"
         "</div>"
         "</section>"
         "<section class='split-layout paired-collection-layout'>"

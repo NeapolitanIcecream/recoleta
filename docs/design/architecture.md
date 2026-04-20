@@ -22,7 +22,7 @@ Recoleta is a CLI-first application with a small set of commands:
 - `recoleta repair outputs`: rebuild Markdown/PDF/site artifacts from stored DB
   state without rerunning ingest/analyze.
 - `recoleta daemon start`: run configured workflow schedules locally.
-- `recoleta inspect health|stats|runs|llm|why-empty`: operator diagnostics and
+- `recoleta inspect health|stats|freshness|runs|llm|why-empty`: operator diagnostics and
   run inspection surfaces.
 - `recoleta admin gc|vacuum|backup|restore|db`: maintenance commands for
   long-running workspaces.
@@ -168,6 +168,7 @@ Responsibilities:
 
 Responsibilities:
 - Write local Markdown notes and a per-run index (`latest.md`) by default.
+  That index is a publish surface, not a global freshness summary.
 - Optionally write Obsidian notes in Markdown with YAML frontmatter.
 - Optionally send Telegram messages (short mobile-friendly format) with safe rate limiting.
 - For trends, persist a canonical markdown note first, then derive the Telegram PDF from that note.

@@ -721,6 +721,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "ANALYZE_CONTENT_MAX_CHARS": "analyze_content_max_chars",
         "TRANSLATION_PARALLELISM": "translation_parallelism",
         "ARTIFACTS_DIR": "artifacts_dir",
+        "BACKUP_OUTPUT_DIR": "backup_output_dir",
         "OBSIDIAN_BASE_FOLDER": "obsidian_base_folder",
         "PUBLISH_TARGETS": "publish_targets",
         "MARKDOWN_OUTPUT_DIR": "markdown_output_dir",
@@ -1209,6 +1210,10 @@ class Settings(BaseSettings):
     )
 
     artifacts_dir: Path | None = Field(default=None, validation_alias="ARTIFACTS_DIR")
+    backup_output_dir: Path | None = Field(
+        default=None,
+        validation_alias="BACKUP_OUTPUT_DIR",
+    )
     obsidian_base_folder: str = Field(
         default="Recoleta", validation_alias="OBSIDIAN_BASE_FOLDER"
     )
@@ -1627,10 +1632,12 @@ class Settings(BaseSettings):
     def _normalize_db_path(cls, value: str | Path) -> Path:
         return Path(value).expanduser().resolve()
 
-    @field_validator("artifacts_dir", mode="before")
+    @field_validator("artifacts_dir", "backup_output_dir", mode="before")
     @classmethod
     def _normalize_optional_path(cls, value: str | Path | None) -> Path | None:
         if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
             return None
         return Path(value).expanduser().resolve()
 

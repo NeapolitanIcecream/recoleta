@@ -20,6 +20,7 @@ from recoleta.cli.maintenance import (
     run_doctor_command,
     run_doctor_llm_command,
     run_doctor_why_empty_command,
+    run_freshness_command,
     run_gc_command,
     run_restore_command,
     run_stats_command,
@@ -1227,6 +1228,31 @@ def inspect_stats(
         db_path=db_path,
         config_path=config_path,
         command_name="inspect stats",
+    )
+
+
+@inspect_app.command("freshness")
+def inspect_freshness(
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path.",
+    ),
+) -> None:
+    """Inspect distinct freshness axes for runs, data, derived windows, and backups."""
+    run_freshness_command(
+        json_output=json_output,
+        db_path=db_path,
+        config_path=config_path,
+        command_name="inspect freshness",
     )
 
 

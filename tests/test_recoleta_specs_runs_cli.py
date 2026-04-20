@@ -406,6 +406,48 @@ def test_runs_show_json_errors_for_missing_run(tmp_path: Path) -> None:
     assert "run not found" in payload["error"]
 
 
+def test_runs_show_text_reports_window_and_pass_outputs_without_scope_keyerror(
+    tmp_path: Path,
+) -> None:
+    """Regression: text runs show must not assume pass outputs carry a scope field."""
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-runs-text", run_id="run-trends-text")
+    repository.update_run_context(
+        run_id=run.id,
+        command="run day --date 2026-03-17",
+        scope="default",
+        granularity="day",
+        period_start=datetime(2026, 3, 17, tzinfo=UTC),
+        period_end=datetime(2026, 3, 18, tzinfo=UTC),
+    )
+    repository.create_pass_output(
+        run_id=run.id,
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        granularity="day",
+        period_start=datetime(2026, 3, 17, tzinfo=UTC),
+        period_end=datetime(2026, 3, 18, tzinfo=UTC),
+        payload={"title": "Agent Systems"},
+        diagnostics={"selected_total": 7},
+        input_refs=[],
+    )
+    repository.finish_run(run.id, success=True)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["runs", "show", "--db-path", str(db_path), "--run-id", "run-trends-text"],
+    )
+
+    assert result.exit_code == 0
+    assert "period_start=2026-03-17T00:00:00+00:00" in result.stdout
+    assert "period_end=2026-03-18T00:00:00+00:00" in result.stdout
+    assert "trend_synthesis" in result.stdout
+
+
 def test_runs_list_json_reports_recent_runs(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"
@@ -455,3 +497,30 @@ def test_runs_list_json_reports_recent_runs(tmp_path: Path) -> None:
     assert payload["runs"][0]["granularity"] == "day"
     assert payload["runs"][1]["id"] == "run-old"
     assert payload["runs"][1]["status"] == "failed"
+
+
+def test_runs_list_text_reports_period_bounds(tmp_path: Path) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-list-text", run_id="run-list-text")
+    repository.update_run_context(
+        run_id=run.id,
+        command="ideas",
+        scope="default",
+        granularity="day",
+        period_start=datetime(2026, 3, 18, tzinfo=UTC),
+        period_end=datetime(2026, 3, 19, tzinfo=UTC),
+    )
+    repository.finish_run(run.id, success=True)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["runs", "list", "--db-path", str(db_path), "--limit", "1"],
+    )
+
+    assert result.exit_code == 0
+    assert "period_start=2026-03-18T00:00:00+00:00" in result.stdout
+    assert "period_end=2026-03-19T00:00:00+00:00" in result.stdout

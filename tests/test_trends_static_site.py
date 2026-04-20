@@ -218,6 +218,7 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
     assert "Alternate" not in ideas_html
     assert "Anti-thesis" not in ideas_html
     assert "Agent systems" in index_html
+    assert "Latest window" in index_html
     assert "Trend briefs" not in index_html
     assert "Idea briefs" not in index_html
     assert "Trends" in index_html

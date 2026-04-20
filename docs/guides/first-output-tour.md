@@ -20,7 +20,8 @@ docker compose run --rm recoleta run now
 open these paths first:
 
 - `MARKDOWN_OUTPUT_DIR/latest.md` or `./data/outputs/latest.md`: summary page
-  for the latest run
+  for the latest publish run. This file is a publish index, not a global
+  freshness summary for data, workflow windows, or backups.
 - `MARKDOWN_OUTPUT_DIR/Inbox/`: one Markdown note per published item
 - `MARKDOWN_OUTPUT_DIR/Trends/`: day-level trend notes from the same workflow,
   plus adjacent `.presentation.json` sidecars for canonical trend notes
@@ -33,6 +34,16 @@ open these paths first:
   `.presentation.json` sidecars; localized item notes remain markdown-only.
 
 If you started from a preset, use the output paths in that preset YAML file.
+
+If dates disagree across these surfaces, check freshness explicitly:
+
+```bash
+uv run recoleta inspect freshness
+```
+
+`inspect freshness` separates run freshness, item-data coverage, derived trend
+or idea windows, and the latest DB backup recovery point. Use it instead of
+guessing from `latest.md` or one recent run row.
 
 ## 2. Rerender one surface only
 
@@ -125,7 +136,8 @@ Public examples:
 - Closest public example:
   <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
 - Expect: `latest.md`, `Inbox/`, trend notes, idea notes when evidence is
-  strong enough, and the static site
+  strong enough, and the static site. Here `latest.md` is still only the latest
+  publish index.
 
 ### Robotics radar
 

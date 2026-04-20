@@ -23,6 +23,152 @@ from recoleta.storage import Repository
 from recoleta.types import ItemDraft
 
 
+def _seed_freshness_regression_scenario(
+    *,
+    repository: Repository,
+    backup_root: Path,
+) -> None:
+    latest_item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="freshness-item-latest",
+            canonical_url="https://example.com/freshness-item-latest",
+            title="Freshness Latest Item",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 4, 12, 12, tzinfo=UTC),
+        )
+    )
+    published_item, _ = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="freshness-item-published",
+            canonical_url="https://example.com/freshness-item-published",
+            title="Freshness Published Item",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 4, 11, 12, tzinfo=UTC),
+        )
+    )
+    assert latest_item.id is not None
+    assert published_item.id is not None
+
+    day_run = repository.create_run("fp-freshness-day", run_id="run-freshness-day")
+    repository.update_run_context(
+        run_id=day_run.id,
+        command="run day --date 2026-04-06",
+        operation_kind="workflow.run.day",
+        scope="default",
+        granularity="day",
+        period_start=datetime(2026, 4, 6, tzinfo=UTC),
+        period_end=datetime(2026, 4, 7, tzinfo=UTC),
+    )
+    repository.finish_run(day_run.id, success=True)
+
+    week_run = repository.create_run("fp-freshness-week", run_id="run-freshness-week")
+    repository.update_run_context(
+        run_id=week_run.id,
+        command="run week --date 2026-03-30",
+        operation_kind="workflow.run.week",
+        scope="default",
+        granularity="week",
+        period_start=datetime(2026, 3, 30, tzinfo=UTC),
+        period_end=datetime(2026, 4, 6, tzinfo=UTC),
+    )
+    repository.finish_run(week_run.id, success=True)
+
+    source_run = repository.create_run(
+        "fp-freshness-source",
+        run_id="run-freshness-source",
+    )
+    repository.record_metric(
+        run_id=source_run.id,
+        name="pipeline.ingest.source.rss.drafts_total",
+        value=1,
+        unit="count",
+    )
+    repository.record_metric(
+        run_id=source_run.id,
+        name="pipeline.ingest.source.rss.newest_published_at_unix",
+        value=datetime(2026, 4, 12, 23, 55, tzinfo=UTC).timestamp(),
+        unit="unix",
+    )
+    repository.finish_run(source_run.id, success=True)
+
+    derived_run = repository.create_run(
+        "fp-freshness-derived",
+        run_id="run-freshness-derived",
+    )
+    for pass_kind in ("trend_synthesis", "trend_ideas"):
+        for granularity in ("day", "week"):
+            repository.create_pass_output(
+                run_id=derived_run.id,
+                pass_kind=pass_kind,
+                status="succeeded",
+                granularity=granularity,
+                period_start=datetime(2026, 4, 6, tzinfo=UTC),
+                period_end=datetime(2026, 4, 13, tzinfo=UTC),
+                payload={"title": f"{pass_kind}-{granularity}"},
+                diagnostics={},
+                input_refs=[],
+            )
+    repository.finish_run(derived_run.id, success=True)
+
+    with Session(repository.engine) as session:
+        latest_item_row = session.get(type(latest_item), int(latest_item.id))
+        published_item_row = session.get(type(published_item), int(published_item.id))
+        assert latest_item_row is not None
+        assert published_item_row is not None
+        latest_item_row.state = ITEM_STATE_ANALYZED
+        published_item_row.state = ITEM_STATE_PUBLISHED
+
+        day_run_row = session.get(Run, day_run.id)
+        week_run_row = session.get(Run, week_run.id)
+        source_run_row = session.get(Run, source_run.id)
+        derived_run_row = session.get(Run, derived_run.id)
+        assert day_run_row is not None
+        assert week_run_row is not None
+        assert source_run_row is not None
+        assert derived_run_row is not None
+
+        day_run_row.started_at = datetime(2026, 4, 11, 4, 30, tzinfo=UTC)
+        day_run_row.heartbeat_at = datetime(2026, 4, 11, 4, 35, tzinfo=UTC)
+        day_run_row.finished_at = datetime(2026, 4, 11, 4, 42, tzinfo=UTC)
+
+        week_run_row.started_at = datetime(2026, 4, 16, 10, 0, tzinfo=UTC)
+        week_run_row.heartbeat_at = datetime(2026, 4, 16, 10, 15, tzinfo=UTC)
+        week_run_row.finished_at = datetime(2026, 4, 16, 10, 22, tzinfo=UTC)
+
+        source_run_row.started_at = datetime(2026, 4, 17, 10, 30, tzinfo=UTC)
+        source_run_row.heartbeat_at = datetime(2026, 4, 17, 10, 31, tzinfo=UTC)
+        source_run_row.finished_at = datetime(2026, 4, 17, 10, 32, tzinfo=UTC)
+
+        derived_run_row.started_at = datetime(2026, 4, 17, 11, 0, tzinfo=UTC)
+        derived_run_row.heartbeat_at = datetime(2026, 4, 17, 11, 10, tzinfo=UTC)
+        derived_run_row.finished_at = datetime(2026, 4, 17, 11, 13, tzinfo=UTC)
+        session.commit()
+
+    bundle_dir = backup_root / "recoleta-backup-20260407T012620Z"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    (bundle_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "kind": "recoleta-db-backup",
+                "created_at": "2026-04-07T01:26:20.361189+00:00",
+                "schema_version": 8,
+                "database_filename": "recoleta.db",
+                "source_db_filename": "recoleta.db",
+                "database_size_bytes": 1024,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_stats_json_reports_backlog_stale_runs_and_lease(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"
@@ -396,3 +542,186 @@ def test_stats_json_reports_extended_ingest_source_diagnostics(
     assert ingest_payload["not_modified_total"] == 1
     assert ingest_payload["oldest_published_at"] == "2025-01-20T10:00:00+00:00"
     assert ingest_payload["newest_published_at"] == "2025-01-21T11:00:00+00:00"
+
+
+def test_inspect_freshness_json_reports_split_freshness_axes(
+    configured_env: Path,
+    monkeypatch,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    backup_root = configured_env / "configured-backups"
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", str(backup_root))
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    _seed_freshness_regression_scenario(repository=repository, backup_root=backup_root)
+
+    result = runner.invoke(recoleta.cli.app, ["inspect", "freshness", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["freshness"]["run"]["latest_successful_by_granularity"]["day"] == {
+        "finished_at": "2026-04-11T04:42:00+00:00",
+        "period_end": "2026-04-07T00:00:00+00:00",
+        "period_start": "2026-04-06T00:00:00+00:00",
+        "run_id": "run-freshness-day",
+    }
+    assert payload["freshness"]["run"]["latest_successful_by_granularity"]["week"] == {
+        "finished_at": "2026-04-16T10:22:00+00:00",
+        "period_end": "2026-04-06T00:00:00+00:00",
+        "period_start": "2026-03-30T00:00:00+00:00",
+        "run_id": "run-freshness-week",
+    }
+    assert (
+        payload["freshness"]["data"]["latest_item_published_at"]
+        == "2026-04-12T12:00:00+00:00"
+    )
+    assert (
+        payload["freshness"]["data"]["latest_published_item_at"]
+        == "2026-04-11T12:00:00+00:00"
+    )
+    assert (
+        payload["freshness"]["data"]["source_observation"]["sources"]["rss"]["ingest"][
+            "newest_published_at"
+        ]
+        == "2026-04-12T23:55:00+00:00"
+    )
+    assert (
+        payload["freshness"]["derived_windows"]["trends"]["day"]["latest_period_end"]
+        == "2026-04-13T00:00:00+00:00"
+    )
+    assert (
+        payload["freshness"]["derived_windows"]["ideas"]["week"]["latest_period_end"]
+        == "2026-04-13T00:00:00+00:00"
+    )
+    assert payload["freshness"]["backup"]["scope"] == "db_only"
+    assert payload["freshness"]["backup"]["root_dir"] == str(backup_root.resolve())
+    assert (
+        payload["freshness"]["backup"]["latest_created_at"]
+        == "2026-04-07T01:26:20.361189+00:00"
+    )
+    mismatch_codes = {
+        mismatch["code"] for mismatch in payload["freshness"]["mismatches"]
+    }
+    assert mismatch_codes == {
+        "backup_behind_data",
+        "workflow_day_behind_derived_day",
+        "workflow_week_behind_derived_week",
+    }
+
+
+def test_inspect_freshness_uses_env_backup_output_dir_when_settings_are_skipped(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "env-backups"
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", str(backup_root))
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    _seed_freshness_regression_scenario(repository=repository, backup_root=backup_root)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["inspect", "freshness", "--db-path", str(db_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["freshness"]["backup"]["root_dir"] == str(backup_root.resolve())
+    assert (
+        payload["freshness"]["backup"]["latest_created_at"]
+        == "2026-04-07T01:26:20.361189+00:00"
+    )
+
+
+def test_inspect_freshness_uses_config_backup_output_dir_when_settings_load_fails(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "config-backups"
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{db_path}"',
+                f'BACKUP_OUTPUT_DIR: "{backup_root}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    _seed_freshness_regression_scenario(repository=repository, backup_root=backup_root)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["inspect", "freshness", "--config", str(config_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["settings"] == "failed"
+    assert payload["freshness"]["backup"]["root_dir"] == str(backup_root.resolve())
+    assert (
+        payload["freshness"]["backup"]["latest_created_at"]
+        == "2026-04-07T01:26:20.361189+00:00"
+    )
+
+
+def test_stats_json_includes_freshness_snapshot(
+    configured_env: Path,
+    monkeypatch,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    backup_root = configured_env / "configured-backups"
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", str(backup_root))
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    _seed_freshness_regression_scenario(repository=repository, backup_root=backup_root)
+
+    result = runner.invoke(recoleta.cli.app, ["stats", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["latest_successful_run_id"] == "run-freshness-derived"
+    assert payload["freshness"]["run"]["latest_successful_run_id"] == "run-freshness-derived"
+    assert (
+        payload["freshness"]["data"]["latest_item_published_at"]
+        == "2026-04-12T12:00:00+00:00"
+    )
+    assert (
+        payload["freshness"]["backup"]["latest_created_at"]
+        == "2026-04-07T01:26:20.361189+00:00"
+    )
+
+
+def test_stats_text_distinguishes_run_data_derived_and_backup_freshness(
+    configured_env: Path,
+    monkeypatch,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    backup_root = configured_env / "configured-backups"
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", str(backup_root))
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    _seed_freshness_regression_scenario(repository=repository, backup_root=backup_root)
+
+    result = runner.invoke(recoleta.cli.app, ["stats"])
+
+    assert result.exit_code == 0
+    assert "run_freshness=" in result.stdout
+    assert "data_freshness=" in result.stdout
+    assert "derived_day_window=" in result.stdout
+    assert "derived_week_window=" in result.stdout
+    assert "backup_recovery_point=" in result.stdout

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import io
 import json
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
 import recoleta.cli as cli
 from recoleta.cli.doctor_support import (
+    FreshnessPayloadRequest,
     GcPayloadRequest,
     StatsPayloadRequest,
+    build_freshness_payload,
     build_doctor_payload,
     build_gc_payload,
     build_llm_diagnostics_payload as _build_llm_diagnostics_payload,
@@ -20,6 +24,7 @@ from recoleta.cli.doctor_support import (
     period_bounds_for_granularity as _period_bounds_for_granularity,
     record_doctor_llm_metrics as _record_doctor_llm_metrics,
     render_doctor_output,
+    render_freshness_output,
     render_gc_summary,
     render_stats_output,
     render_why_empty_output,
@@ -106,11 +111,13 @@ def _load_optional_settings(
     ):
         return None, "skipped"
     try:
-        return (
-            cli._build_settings(
+        with redirect_stdout(io.StringIO()):
+            settings = cli._build_settings(
                 config_path=config_path,
                 db_path=resolved_db_path,
-            ),
+            )
+        return (
+            settings,
             "ok",
         )
     except Exception as exc:  # noqa: BLE001
@@ -336,6 +343,14 @@ def run_backup_command(
         console.print(f"[red]db does not exist[/red] path={resolved}")
         raise cli.typer.Exit(code=2)
 
+    log = cli._runtime_symbols()["logger"].bind(module="cli.backup")
+    settings, _ = _load_optional_settings(
+        db_path=db_path,
+        config_path=config_path,
+        resolved_db_path=resolved,
+        log=log,
+        warning_template="Backup settings load failed db_path={} error_type={} error={}",
+    )
     repository = cli._build_repository_for_db_path(db_path=resolved)
     repository.init_schema()
     owner_token, log, heartbeat_monitor = cli._acquire_workspace_lease_for_command(
@@ -345,10 +360,11 @@ def run_backup_command(
         log_module="cli.backup",
     )
     try:
-        bundle_root = (
-            output_dir.expanduser().resolve()
-            if output_dir is not None
-            else (resolved.parent / "backups").resolve()
+        bundle_root = cli._resolve_backup_output_dir(
+            resolved_db_path=resolved,
+            settings=settings,
+            output_dir=output_dir,
+            config_path=config_path,
         )
         result = repository.backup_database(output_dir=bundle_root)
         heartbeat_monitor.raise_if_failed()
@@ -501,6 +517,7 @@ def run_stats_command(
             request=StatsPayloadRequest(
                 repository=repository,
                 resolved_db_path=resolved_db_path,
+                config_path=config_path,
                 settings=settings,
                 settings_status=settings_status,
                 workspace_bytes=workspace_bytes,
@@ -521,6 +538,82 @@ def run_stats_command(
         cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
         return
     render_stats_output(console=console, payload=payload, command_name=command_name)
+
+
+def run_freshness_command(
+    *,
+    json_output: bool,
+    db_path: Path | None,
+    config_path: Path | None,
+    command_name: str = "inspect freshness",
+) -> None:
+    symbols = cli._runtime_symbols()
+    console = symbols["Console"]()
+    log = symbols["logger"].bind(module="cli.freshness", json=json_output)
+    try:
+        resolved_db_path = cli._resolve_db_path(
+            db_path=db_path,
+            config_path=config_path,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _emit_command_failure(
+            context=CommandFailureContext(
+                console=console,
+                log=log,
+                failure_name=command_name,
+                message=f"db path resolution failed: {exc}",
+                json_output=json_output,
+            )
+        )
+    if not resolved_db_path.exists():
+        _emit_command_failure(
+            context=CommandFailureContext(
+                console=console,
+                log=log,
+                failure_name=command_name,
+                message=f"db does not exist: {resolved_db_path}",
+                json_output=json_output,
+            )
+        )
+    settings, settings_status = _load_optional_settings(
+        db_path=db_path,
+        config_path=config_path,
+        resolved_db_path=resolved_db_path,
+        log=log,
+        warning_template="Freshness settings load failed db_path={} error_type={} error={}",
+    )
+    repository = cli._build_repository_for_db_path(db_path=resolved_db_path)
+    try:
+        repository.ensure_schema_current()
+        freshness = build_freshness_payload(
+            request=FreshnessPayloadRequest(
+                repository=repository,
+                resolved_db_path=resolved_db_path,
+                config_path=config_path,
+                settings=settings,
+                reference_now=datetime.now(UTC),
+            )
+        )
+    except Exception as exc:
+        _emit_command_failure(
+            context=CommandFailureContext(
+                console=console,
+                log=log,
+                failure_name=command_name,
+                message=str(exc),
+                json_output=json_output,
+            )
+        )
+    payload = {
+        "status": "ok",
+        "db_path": str(resolved_db_path),
+        "settings": settings_status,
+        "freshness": freshness,
+    }
+    if json_output:
+        cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
+    render_freshness_output(console=console, payload=payload, command_name=command_name)
 
 
 def run_doctor_command(

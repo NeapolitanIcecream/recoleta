@@ -306,6 +306,9 @@ def test_publish_writes_local_markdown_notes_without_obsidian_or_telegram(
     latest = (markdown_dir / "latest.md").read_text(encoding="utf-8")
     assert "run-publish-markdown" in latest
     assert "Inbox/" in latest
+    assert "# Recoleta latest publish index" in latest
+    assert "Publish coverage (UTC):" in latest
+    assert "This index does not summarize run, data, or backup freshness." in latest
 
     with Session(repository.engine) as session:
         assert session.exec(select(Delivery)).first() is None
@@ -355,6 +358,9 @@ def test_publish_writes_markdown_index_when_telegram_daily_cap_reached(
     latest = (markdown_dir / "latest.md").read_text(encoding="utf-8")
     assert "run-publish-cap" in latest
     assert "No items published in this run" in latest
+    assert "# Recoleta latest publish index" in latest
+    assert "Publish coverage (UTC):" in latest
+    assert "This index does not summarize run, data, or backup freshness." in latest
 
     with Session(repository.engine) as session:
         assert (
