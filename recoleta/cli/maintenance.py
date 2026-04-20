@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import io
 import json
 from pathlib import Path
 from typing import Any, NoReturn, cast
@@ -109,11 +111,13 @@ def _load_optional_settings(
     ):
         return None, "skipped"
     try:
-        return (
-            cli._build_settings(
+        with redirect_stdout(io.StringIO()):
+            settings = cli._build_settings(
                 config_path=config_path,
                 db_path=resolved_db_path,
-            ),
+            )
+        return (
+            settings,
             "ok",
         )
     except Exception as exc:  # noqa: BLE001
@@ -360,6 +364,7 @@ def run_backup_command(
             resolved_db_path=resolved,
             settings=settings,
             output_dir=output_dir,
+            config_path=config_path,
         )
         result = repository.backup_database(output_dir=bundle_root)
         heartbeat_monitor.raise_if_failed()
@@ -512,6 +517,7 @@ def run_stats_command(
             request=StatsPayloadRequest(
                 repository=repository,
                 resolved_db_path=resolved_db_path,
+                config_path=config_path,
                 settings=settings,
                 settings_status=settings_status,
                 workspace_bytes=workspace_bytes,
@@ -583,6 +589,7 @@ def run_freshness_command(
             request=FreshnessPayloadRequest(
                 repository=repository,
                 resolved_db_path=resolved_db_path,
+                config_path=config_path,
                 settings=settings,
                 reference_now=datetime.now(UTC),
             )

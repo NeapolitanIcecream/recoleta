@@ -385,6 +385,37 @@ def test_admin_backup_falls_back_when_configured_backup_output_dir_is_empty(
     assert (bundle_dirs[0] / "manifest.json").exists()
 
 
+def test_admin_backup_uses_config_backup_output_dir_when_settings_load_fails(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "config-backups"
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{db_path}"',
+                f'BACKUP_OUTPUT_DIR: "{backup_root}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["admin", "backup", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    bundle_dirs = [path for path in backup_root.iterdir() if path.is_dir()]
+    assert len(bundle_dirs) == 1
+    assert (bundle_dirs[0] / "manifest.json").exists()
+
+
 def test_restore_exits_when_workspace_lock_is_held(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"

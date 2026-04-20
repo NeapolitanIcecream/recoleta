@@ -639,6 +639,42 @@ def test_inspect_freshness_uses_env_backup_output_dir_when_settings_are_skipped(
     )
 
 
+def test_inspect_freshness_uses_config_backup_output_dir_when_settings_load_fails(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "config-backups"
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{db_path}"',
+                f'BACKUP_OUTPUT_DIR: "{backup_root}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    _seed_freshness_regression_scenario(repository=repository, backup_root=backup_root)
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["inspect", "freshness", "--config", str(config_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["settings"] == "failed"
+    assert payload["freshness"]["backup"]["root_dir"] == str(backup_root.resolve())
+    assert (
+        payload["freshness"]["backup"]["latest_created_at"]
+        == "2026-04-07T01:26:20.361189+00:00"
+    )
+
+
 def test_stats_json_includes_freshness_snapshot(
     configured_env: Path,
     monkeypatch,

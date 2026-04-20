@@ -40,6 +40,7 @@ class GcPayloadRequest:
 class StatsPayloadRequest:
     repository: Any
     resolved_db_path: Path
+    config_path: Path | None
     settings: Any | None
     settings_status: str
     workspace_bytes: dict[str, int | None]
@@ -50,6 +51,7 @@ class StatsPayloadRequest:
 class FreshnessPayloadRequest:
     repository: Any
     resolved_db_path: Path
+    config_path: Path | None
     settings: Any | None
     reference_now: datetime
     source_observation: dict[str, Any] | None = None
@@ -424,10 +426,12 @@ def _latest_derived_period_end(
 def _freshness_backup_payload(
     *,
     resolved_db_path: Path,
+    config_path: Path | None,
     settings: Any | None,
 ) -> dict[str, Any]:
     root_dir = cli._resolve_backup_output_dir(
         resolved_db_path=resolved_db_path,
+        config_path=config_path,
         settings=settings,
     )
     latest_created_at: datetime | None = None
@@ -572,6 +576,7 @@ def build_freshness_payload(*, request: FreshnessPayloadRequest) -> dict[str, An
 
     backup_payload = _freshness_backup_payload(
         resolved_db_path=request.resolved_db_path,
+        config_path=request.config_path,
         settings=request.settings,
     )
     mismatches: list[dict[str, Any]] = []
@@ -1114,6 +1119,7 @@ def build_stats_payload(*, request: StatsPayloadRequest) -> dict[str, Any]:
         request=FreshnessPayloadRequest(
             repository=request.repository,
             resolved_db_path=request.resolved_db_path,
+            config_path=request.config_path,
             settings=request.settings,
             reference_now=request.reference_now,
             source_observation=source_diagnostics,
