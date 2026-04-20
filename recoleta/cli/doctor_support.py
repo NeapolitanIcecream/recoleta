@@ -2,14 +2,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import json
 import os
 from pathlib import Path
 import time
 from typing import Any
 
+from sqlalchemy import desc, func, or_
+from sqlmodel import Session, select
+
 import recoleta.cli as cli
+from recoleta.models import (
+    DOC_TYPE_TREND,
+    ITEM_STATE_PUBLISHED,
+    RUN_STATUS_SUCCEEDED,
+    Document,
+    Item,
+    PassOutput,
+    Run,
+)
 
 _SOURCE_DIAGNOSTIC_NAMES = ("arxiv", "hn", "hf_daily", "openreview", "rss")
+_DOC_TYPE_IDEA = "idea"
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +44,15 @@ class StatsPayloadRequest:
     settings_status: str
     workspace_bytes: dict[str, int | None]
     reference_now: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class FreshnessPayloadRequest:
+    repository: Any
+    resolved_db_path: Path
+    settings: Any | None
+    reference_now: datetime
+    source_observation: dict[str, Any] | None = None
 
 
 def _age_seconds(reference_now: datetime, value: datetime | None) -> int | None:
@@ -307,6 +330,351 @@ def build_source_diagnostics_payload(
         "started_at": started_at.isoformat() if started_at is not None else None,
         "age_seconds": _age_seconds(reference_now, started_at),
         "sources": sources_payload,
+    }
+
+
+def _freshness_run_entry(run: Run | None) -> dict[str, Any] | None:
+    if run is None:
+        return None
+    finished_at = cli._normalize_utc_datetime(getattr(run, "finished_at", None))
+    return {
+        "run_id": str(getattr(run, "id", "") or ""),
+        "period_start": cli._isoformat_or_none(getattr(run, "period_start", None)),
+        "period_end": cli._isoformat_or_none(getattr(run, "period_end", None)),
+        "finished_at": finished_at.isoformat() if finished_at is not None else None,
+    }
+
+
+def _latest_workflow_run_for_granularity(
+    *,
+    session: Session,
+    granularity: str,
+) -> Run | None:
+    operation_kind = f"workflow.run.{granularity}"
+    return session.exec(
+        select(Run)
+        .where(
+            Run.status == RUN_STATUS_SUCCEEDED,
+            Run.granularity == granularity,
+            or_(
+                Run.operation_kind == operation_kind,
+                Run.command.like(f"run {granularity}%"),
+                Run.command.like(f"fleet run {granularity}%"),
+            ),
+        )
+        .order_by(
+            desc(Run.finished_at),
+            desc(Run.started_at),
+            desc(Run.id),
+        )
+        .limit(1)
+    ).first()
+
+
+def _latest_datetime_value(
+    *,
+    session: Session,
+    model: Any,
+    field: Any,
+    filters: tuple[Any, ...] = (),
+) -> datetime | None:
+    statement = select(func.max(field))
+    for clause in filters:
+        statement = statement.where(clause)
+    value = session.exec(statement).one()
+    return cli._normalize_utc_datetime(value)
+
+
+def _latest_derived_period_end(
+    *,
+    session: Session,
+    granularity: str,
+    doc_type: str,
+    pass_kind: str,
+) -> datetime | None:
+    document_period_end = _latest_datetime_value(
+        session=session,
+        model=Document,
+        field=Document.period_end,
+        filters=(
+            Document.doc_type == doc_type,
+            Document.granularity == granularity,
+        ),
+    )
+    pass_output_period_end = _latest_datetime_value(
+        session=session,
+        model=PassOutput,
+        field=PassOutput.period_end,
+        filters=(
+            PassOutput.pass_kind == pass_kind,
+            PassOutput.granularity == granularity,
+            PassOutput.status == RUN_STATUS_SUCCEEDED,
+        ),
+    )
+    candidates = [
+        cli._normalize_utc_datetime(value)
+        for value in (document_period_end, pass_output_period_end)
+        if value is not None
+    ]
+    if not candidates:
+        return None
+    return max(candidates)
+
+
+def _freshness_backup_payload(
+    *,
+    resolved_db_path: Path,
+    settings: Any | None,
+) -> dict[str, Any]:
+    root_dir = cli._resolve_backup_output_dir(
+        resolved_db_path=resolved_db_path,
+        settings=settings,
+    )
+    latest_created_at: datetime | None = None
+    latest_bundle_dir: Path | None = None
+    if root_dir.exists() and root_dir.is_dir():
+        for manifest_path in root_dir.glob("*/manifest.json"):
+            try:
+                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            raw_created_at = str(payload.get("created_at") or "").strip()
+            if not raw_created_at:
+                continue
+            try:
+                created_at = datetime.fromisoformat(raw_created_at)
+            except ValueError:
+                continue
+            created_at = created_at.astimezone(UTC)
+            if latest_created_at is None or created_at > latest_created_at:
+                latest_created_at = created_at
+                latest_bundle_dir = manifest_path.parent
+    return {
+        "scope": "db_only",
+        "root_dir": str(root_dir),
+        "latest_created_at": (
+            latest_created_at.isoformat() if latest_created_at is not None else None
+        ),
+        "latest_bundle_dir": (
+            str(latest_bundle_dir) if latest_bundle_dir is not None else None
+        ),
+    }
+
+
+def _append_freshness_mismatch(
+    *,
+    mismatches: list[dict[str, Any]],
+    code: str,
+    older_label: str,
+    older_at: datetime | None,
+    newer_label: str,
+    newer_at: datetime | None,
+) -> None:
+    if older_at is None or newer_at is None or older_at >= newer_at:
+        return
+    mismatches.append(
+        {
+            "code": code,
+            "older_label": older_label,
+            "older_at": older_at.isoformat(),
+            "newer_label": newer_label,
+            "newer_at": newer_at.isoformat(),
+            "delta_seconds": int((newer_at - older_at).total_seconds()),
+        }
+    )
+
+
+def build_freshness_payload(*, request: FreshnessPayloadRequest) -> dict[str, Any]:
+    source_observation = request.source_observation or build_source_diagnostics_payload(
+        repository=request.repository,
+        settings=request.settings,
+        reference_now=request.reference_now,
+    )
+
+    latest_successful_run_id: str | None = None
+    latest_successful_run_at: datetime | None = None
+    run_by_granularity: dict[str, dict[str, Any] | None] = {
+        "day": None,
+        "week": None,
+        "month": None,
+    }
+    derived_windows: dict[str, dict[str, dict[str, str | None]]] = {
+        "trends": {},
+        "ideas": {},
+    }
+    latest_item_published_at: datetime | None = None
+    latest_published_item_at: datetime | None = None
+
+    with Session(request.repository.engine) as session:
+        latest_successful_run = session.exec(
+            select(Run)
+            .where(Run.status == RUN_STATUS_SUCCEEDED)
+            .order_by(
+                desc(Run.finished_at),
+                desc(Run.started_at),
+                desc(Run.id),
+            )
+            .limit(1)
+        ).first()
+        if latest_successful_run is not None:
+            latest_successful_run_id = latest_successful_run.id
+            latest_successful_run_at = cli._normalize_utc_datetime(
+                latest_successful_run.finished_at
+                or latest_successful_run.heartbeat_at
+                or latest_successful_run.started_at
+            )
+
+        for granularity in run_by_granularity:
+            run_by_granularity[granularity] = _freshness_run_entry(
+                _latest_workflow_run_for_granularity(
+                    session=session,
+                    granularity=granularity,
+                )
+            )
+
+        latest_item_published_at = _latest_datetime_value(
+            session=session,
+            model=Item,
+            field=Item.published_at,
+        )
+        latest_published_item_at = _latest_datetime_value(
+            session=session,
+            model=Item,
+            field=Item.published_at,
+            filters=(Item.state == ITEM_STATE_PUBLISHED,),
+        )
+
+        for granularity in ("day", "week", "month"):
+            trend_period_end = _latest_derived_period_end(
+                session=session,
+                granularity=granularity,
+                doc_type=DOC_TYPE_TREND,
+                pass_kind="trend_synthesis",
+            )
+            idea_period_end = _latest_derived_period_end(
+                session=session,
+                granularity=granularity,
+                doc_type=_DOC_TYPE_IDEA,
+                pass_kind="trend_ideas",
+            )
+            derived_windows["trends"][granularity] = {
+                "latest_period_end": (
+                    trend_period_end.isoformat() if trend_period_end is not None else None
+                )
+            }
+            derived_windows["ideas"][granularity] = {
+                "latest_period_end": (
+                    idea_period_end.isoformat() if idea_period_end is not None else None
+                )
+            }
+
+    backup_payload = _freshness_backup_payload(
+        resolved_db_path=request.resolved_db_path,
+        settings=request.settings,
+    )
+    mismatches: list[dict[str, Any]] = []
+
+    backup_created_at = (
+        datetime.fromisoformat(backup_payload["latest_created_at"])
+        if backup_payload["latest_created_at"] is not None
+        else None
+    )
+    day_run_period_end = (
+        datetime.fromisoformat(run_by_granularity["day"]["period_end"])
+        if run_by_granularity["day"] is not None
+        and run_by_granularity["day"]["period_end"] is not None
+        else None
+    )
+    week_run_period_end = (
+        datetime.fromisoformat(run_by_granularity["week"]["period_end"])
+        if run_by_granularity["week"] is not None
+        and run_by_granularity["week"]["period_end"] is not None
+        else None
+    )
+    derived_day_period_end = max(
+        [
+            value
+            for value in (
+                derived_windows["trends"]["day"]["latest_period_end"],
+                derived_windows["ideas"]["day"]["latest_period_end"],
+            )
+            if value is not None
+        ],
+        default=None,
+    )
+    derived_week_period_end = max(
+        [
+            value
+            for value in (
+                derived_windows["trends"]["week"]["latest_period_end"],
+                derived_windows["ideas"]["week"]["latest_period_end"],
+            )
+            if value is not None
+        ],
+        default=None,
+    )
+
+    _append_freshness_mismatch(
+        mismatches=mismatches,
+        code="backup_behind_data",
+        older_label="backup.latest_created_at",
+        older_at=backup_created_at,
+        newer_label="data.latest_item_published_at",
+        newer_at=latest_item_published_at,
+    )
+    _append_freshness_mismatch(
+        mismatches=mismatches,
+        code="workflow_day_behind_derived_day",
+        older_label="run.latest_successful_by_granularity.day.period_end",
+        older_at=day_run_period_end,
+        newer_label="derived_windows.day.latest_period_end",
+        newer_at=(
+            datetime.fromisoformat(derived_day_period_end)
+            if derived_day_period_end is not None
+            else None
+        ),
+    )
+    _append_freshness_mismatch(
+        mismatches=mismatches,
+        code="workflow_week_behind_derived_week",
+        older_label="run.latest_successful_by_granularity.week.period_end",
+        older_at=week_run_period_end,
+        newer_label="derived_windows.week.latest_period_end",
+        newer_at=(
+            datetime.fromisoformat(derived_week_period_end)
+            if derived_week_period_end is not None
+            else None
+        ),
+    )
+
+    return {
+        "run": {
+            "latest_successful_run_id": latest_successful_run_id,
+            "latest_successful_run_at": (
+                latest_successful_run_at.isoformat()
+                if latest_successful_run_at is not None
+                else None
+            ),
+            "latest_successful_by_granularity": run_by_granularity,
+        },
+        "data": {
+            "latest_item_published_at": (
+                latest_item_published_at.isoformat()
+                if latest_item_published_at is not None
+                else None
+            ),
+            "latest_published_item_at": (
+                latest_published_item_at.isoformat()
+                if latest_published_item_at is not None
+                else None
+            ),
+            "source_observation": source_observation,
+        },
+        "derived_windows": derived_windows,
+        "backup": backup_payload,
+        "mismatches": mismatches,
     }
 
 
@@ -737,6 +1105,20 @@ def build_stats_payload(*, request: StatsPayloadRequest) -> dict[str, Any]:
     latest_successful_run_at = cli._normalize_utc_datetime(
         snapshot.latest_successful_run_at
     )
+    source_diagnostics = build_source_diagnostics_payload(
+        repository=request.repository,
+        settings=request.settings,
+        reference_now=request.reference_now,
+    )
+    freshness = build_freshness_payload(
+        request=FreshnessPayloadRequest(
+            repository=request.repository,
+            resolved_db_path=request.resolved_db_path,
+            settings=request.settings,
+            reference_now=request.reference_now,
+            source_observation=source_diagnostics,
+        )
+    )
     return {
         "status": "ok",
         "db_path": str(request.resolved_db_path),
@@ -762,11 +1144,8 @@ def build_stats_payload(*, request: StatsPayloadRequest) -> dict[str, Any]:
             request.reference_now,
             latest_successful_run_at,
         ),
-        "source_diagnostics": build_source_diagnostics_payload(
-            repository=request.repository,
-            settings=request.settings,
-            reference_now=request.reference_now,
-        ),
+        "source_diagnostics": source_diagnostics,
+        "freshness": freshness,
         "lease": lease_payload,
         "lease_state": lease_state,
         "workspace_bytes": request.workspace_bytes,
@@ -797,6 +1176,14 @@ def render_stats_output(
     console.print("runs_by_status=" + _stats_count_parts(payload["runs_by_status"]))
     console.print(f"stale_running_runs={payload['stale_running_runs']}")
     console.print("latest_successful_run=" + _latest_successful_run_segment(payload))
+    if freshness := payload.get("freshness"):
+        console.print("run_freshness=" + _run_freshness_segment(freshness))
+        console.print("data_freshness=" + _data_freshness_segment(freshness))
+        console.print("derived_day_window=" + _derived_window_segment(freshness, "day"))
+        console.print(
+            "derived_week_window=" + _derived_window_segment(freshness, "week")
+        )
+        console.print("backup_recovery_point=" + _backup_freshness_segment(freshness))
     console.print(_lease_line(payload))
     if payload["workspace_bytes"]:
         console.print(
@@ -849,6 +1236,78 @@ def _workspace_bytes_line(workspace_bytes: dict[str, int | None]) -> str:
         f"{name}={size if size is not None else 'unavailable'}"
         for name, size in workspace_bytes.items()
     )
+
+
+def _run_freshness_segment(freshness: dict[str, Any]) -> str:
+    run_payload = freshness.get("run", {})
+    return " ".join(
+        [
+            f"latest_successful_run_id={run_payload.get('latest_successful_run_id') or 'none'}",
+            f"latest_successful_run_at={run_payload.get('latest_successful_run_at') or 'none'}",
+        ]
+    )
+
+
+def _data_freshness_segment(freshness: dict[str, Any]) -> str:
+    data_payload = freshness.get("data", {})
+    return " ".join(
+        [
+            f"latest_item_published_at={data_payload.get('latest_item_published_at') or 'none'}",
+            f"latest_published_item_at={data_payload.get('latest_published_item_at') or 'none'}",
+        ]
+    )
+
+
+def _derived_window_segment(freshness: dict[str, Any], granularity: str) -> str:
+    derived_payload = freshness.get("derived_windows", {})
+    trends_payload = derived_payload.get("trends", {}).get(granularity, {})
+    ideas_payload = derived_payload.get("ideas", {}).get(granularity, {})
+    return " ".join(
+        [
+            f"trends={trends_payload.get('latest_period_end') or 'none'}",
+            f"ideas={ideas_payload.get('latest_period_end') or 'none'}",
+        ]
+    )
+
+
+def _backup_freshness_segment(freshness: dict[str, Any]) -> str:
+    backup_payload = freshness.get("backup", {})
+    return " ".join(
+        [
+            f"scope={backup_payload.get('scope') or 'none'}",
+            f"root_dir={backup_payload.get('root_dir') or 'none'}",
+            f"latest_created_at={backup_payload.get('latest_created_at') or 'none'}",
+        ]
+    )
+
+
+def _mismatch_segment(freshness: dict[str, Any]) -> str:
+    mismatches = freshness.get("mismatches", [])
+    if not mismatches:
+        return "none"
+    return " ".join(
+        str(mismatch.get("code") or "unknown")
+        for mismatch in mismatches
+        if isinstance(mismatch, dict)
+    ) or "none"
+
+
+def render_freshness_output(
+    *,
+    console: Any,
+    payload: dict[str, Any],
+    command_name: str,
+) -> None:
+    freshness = payload["freshness"]
+    console.print(f"[green]{command_name} ok[/green]")
+    console.print(f"db={payload['db_path']}")
+    console.print(f"settings={payload['settings']}")
+    console.print("run_freshness=" + _run_freshness_segment(freshness))
+    console.print("data_freshness=" + _data_freshness_segment(freshness))
+    console.print("derived_day_window=" + _derived_window_segment(freshness, "day"))
+    console.print("derived_week_window=" + _derived_window_segment(freshness, "week"))
+    console.print("backup_recovery_point=" + _backup_freshness_segment(freshness))
+    console.print("mismatches=" + _mismatch_segment(freshness))
 
 
 def _render_source_diagnostics(*, console: Any, payload: dict[str, Any] | None) -> None:
@@ -970,6 +1429,7 @@ def render_doctor_output(
     if healthcheck:
         console.print(
             "[green]healthcheck ok[/green] "
+            "scope=run_freshness "
             f"schema_version={payload['schema_version']} "
             f"settings={payload['settings']} "
             f"paths={payload['paths']} "

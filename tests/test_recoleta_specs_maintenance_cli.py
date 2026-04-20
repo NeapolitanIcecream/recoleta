@@ -289,6 +289,47 @@ def test_backup_and_restore_roundtrip(tmp_path: Path) -> None:
     assert restored_items[0].canonical_url == "https://example.com/backup-item-1"
 
 
+def test_admin_backup_defaults_to_configured_backup_output_dir(tmp_path: Path) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    backup_root = tmp_path / "configured-backups"
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{db_path}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                f'BACKUP_OUTPUT_DIR: "{backup_root}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="backup-config-item-1",
+            canonical_url="https://example.com/backup-config-item-1",
+            title="Backup Config Item",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+            published_at=datetime(2026, 3, 1, tzinfo=UTC),
+        )
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["admin", "backup", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    bundle_dirs = [path for path in backup_root.iterdir() if path.is_dir()]
+    assert len(bundle_dirs) == 1
+    assert (bundle_dirs[0] / "manifest.json").exists()
+
+
 def test_restore_exits_when_workspace_lock_is_held(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"

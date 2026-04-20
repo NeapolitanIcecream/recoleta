@@ -165,10 +165,14 @@ The bundled healthcheck uses:
 recoleta inspect health --healthcheck
 ```
 
+This healthcheck is a run-freshness probe. It does not assert that item data,
+derived trend or idea windows, and DB backups are equally recent.
+
 For a machine-readable workspace snapshot:
 
 ```bash
 recoleta inspect stats --json
+recoleta inspect freshness --json
 ```
 
 If you want a one-shot test run from the same service definition:
@@ -204,7 +208,8 @@ docker compose run --rm recoleta run now
 
 Check these paths after the run:
 
-- `./data/outputs/latest.md`
+- `./data/outputs/latest.md`: latest publish index for item notes from the
+  most recent publish run, not a global freshness summary
 - `./data/outputs/Inbox/`
 - `./data/outputs/Trends/` with canonical trend `.md` notes and adjacent
   `.presentation.json` sidecars
@@ -221,6 +226,13 @@ page `summary` plus ordered idea blocks, and each idea block also contains only
 
 Then open the [first output tour](./docs/guides/first-output-tour.md) to compare
 your local files with sample output.
+
+If different surfaces show different dates, inspect them directly instead of
+guessing from `latest.md`:
+
+```bash
+uv run recoleta inspect freshness
+```
 
 Use `docker compose up -d` later when you want the bundled `daemon start`
 service to keep running from `daemon.schedules`.
@@ -391,7 +403,9 @@ If you are coming from older CLI docs or automation, start with
 Where outputs go:
 
 - Local Markdown: `MARKDOWN_OUTPUT_DIR/latest.md` and
-  `MARKDOWN_OUTPUT_DIR/Inbox/`
+  `MARKDOWN_OUTPUT_DIR/Inbox/`. `latest.md` is the latest publish index only.
+  Use `recoleta inspect freshness` when you need run freshness, item-data
+  coverage, derived windows, or the latest DB backup recovery point.
 - Trend notes: `MARKDOWN_OUTPUT_DIR/Trends/` with canonical `.md` notes plus
   adjacent `.presentation.json` sidecars
 - Idea notes: `MARKDOWN_OUTPUT_DIR/Ideas/` with canonical `.md` notes plus
@@ -492,6 +506,7 @@ uv run recoleta fleet run email send --manifest ./fleet/fleet.yaml --instance ag
 # inspect or repair a workspace
 uv run recoleta inspect health --healthcheck --max-success-age-minutes 180
 uv run recoleta inspect stats --json
+uv run recoleta inspect freshness --json
 uv run recoleta inspect llm --json
 uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --json
 uv run recoleta repair outputs --site --pdf --json
@@ -503,6 +518,11 @@ When you are scripting a subcommand, check `--help` for its `--json` support.
 
 Repair and backfill notes:
 
+- `recoleta inspect health --healthcheck --max-success-age-minutes ...` checks
+  run freshness only.
+- `recoleta inspect freshness` is the operator view that separates run
+  freshness, item-data coverage, derived windows, and the DB backup recovery
+  point.
 - `recoleta repair outputs` rebuilds markdown, sibling trend/idea sidecars,
   optional site output, and optional PDFs from stored DB state.
 - `recoleta stage translate backfill` regenerates localized trend/idea

@@ -33,6 +33,9 @@ What to know:
 After a successful run, check:
 
 - `MARKDOWN_OUTPUT_DIR/latest.md`
+  This file is the latest publish index for item notes from the most recent
+  publish run. It is not a global freshness summary for runs, trends, ideas,
+  or backups.
 - `MARKDOWN_OUTPUT_DIR/Inbox/`
 - `MARKDOWN_OUTPUT_DIR/Trends/` for canonical trend `.md` notes plus adjacent
   `.presentation.json` sidecars
@@ -285,6 +288,7 @@ Read-only operator checks:
 ```bash
 uv run recoleta inspect health --healthcheck --max-success-age-minutes 180
 uv run recoleta inspect stats --json
+uv run recoleta inspect freshness --json
 ```
 
 Many workflow, stage, repair, and inspect subcommands expose `--json`. Check
@@ -336,6 +340,7 @@ you rerun a date or repair state:
 uv run recoleta inspect llm --json
 uv run recoleta inspect llm --ping --json
 uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --config /path/to/instance/recoleta.yaml --json
+uv run recoleta inspect freshness --json
 uv run recoleta inspect runs show --run-id <run-id> --json
 uv run recoleta inspect runs list --limit 10 --json
 ```
@@ -353,10 +358,24 @@ What to know:
   `item_state_retryable_failed`.
 - point `inspect why-empty` at one child config with `--config` when you want
   to inspect one fleet member directly.
+- `inspect freshness` is the one place that splits "latest" into separate
+  operator axes:
+  `run.latest_successful_run_*`, workflow windows by granularity,
+  `data.latest_item_published_at`, derived trend or idea windows, and the DB
+  backup recovery point.
+- `inspect stats` includes the same freshness snapshot plus item and run
+  counts. The text form prints separate `run_freshness=`,
+  `data_freshness=`, `derived_*_window=`, and `backup_recovery_point=`
+  lines.
+- `inspect health --healthcheck --max-success-age-minutes ...` checks run
+  freshness only. It does not assert that item coverage, derived windows, or
+  backup recovery points are equally recent.
 - `inspect runs show` aggregates run status, billing, metrics, pass outputs,
-  artifacts, run context, and structured failure summaries in one JSON payload.
+  artifacts, run context, period bounds, and structured failure summaries in
+  one JSON payload.
 - `inspect runs list` gives a compact recent-run view that is easier to
-  automate than scraping logs.
+  automate than scraping logs, and its text output includes
+  `period_start` / `period_end` when the run carries a workflow window.
 
 ## Repair outputs or rerun one window
 
@@ -406,6 +425,9 @@ uv run recoleta admin db clear --yes
 Scope notes:
 
 - `admin backup` and `admin restore` cover the SQLite database only.
+- `admin backup` writes to `--output-dir` when you pass it. Otherwise it uses
+  `BACKUP_OUTPUT_DIR` / `backup_output_dir` first and falls back to
+  `<db parent>/backups`.
 - `admin db reset --trends-only` clears trend and item document projections
   while keeping ingest and analyze history.
 - `admin db clear` removes the configured SQLite file for a clean slate.

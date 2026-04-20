@@ -315,7 +315,8 @@ Recoleta can also write user-facing Markdown notes to a normal filesystem direct
 
 Default layout under `MARKDOWN_OUTPUT_DIR`:
 
-- `latest.md` (entry point for the most recent publish run)
+- `latest.md` (entry point for the most recent publish run; this is a publish
+  index, not a global freshness summary)
 - `Runs/<run_id>.md` (per-run index)
 - `Inbox/` (one note per item, Markdown + YAML frontmatter)
 - `Trends/` (canonical trend markdown notes, adjacent

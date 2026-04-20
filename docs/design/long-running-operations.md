@@ -26,6 +26,7 @@ Recoleta's long-running operating model is now implemented around a few concrete
 - maintenance and recovery commands (`admin gc`, `admin vacuum`,
   `admin backup`, `admin restore`)
 - diagnostics and repair commands (`inspect health`, `inspect stats`,
+  `inspect freshness`,
   `inspect runs`, `inspect llm`, `inspect why-empty`) plus a documented
   container contract
 
@@ -148,6 +149,17 @@ The first category is append-only by default. The second category may be refresh
 
 Freshness metadata is still useful, but only for the right classes of work.
 
+Recoleta now treats these as separate operator-facing freshness surfaces:
+
+- run freshness
+- data freshness
+- derived trend or idea windows
+- DB backup recovery point
+- latest publish index
+
+Those surfaces can disagree without implying corruption. The operator problem
+was the ambiguity, not the existence of different timestamps.
+
 Each rebuildable or in-progress stage should conceptually depend on two things:
 
 - input fingerprint: the effective upstream data for this stage
@@ -175,6 +187,13 @@ The first documentation-backed design should aim for:
 - avoid automatic replay for already successful historical user-facing work
 - support explicit reset/rebuild commands for operators
 - add freshness metadata only where it helps maintain caches or pending work
+
+Current operator contract:
+
+- `inspect freshness` exposes the split snapshot directly
+- `inspect stats` includes the same snapshot beside counts and lease state
+- `inspect health --healthcheck --max-success-age-minutes ...` remains a
+  run-freshness check only
 
 This keeps the mental model simple and avoids introducing a general workflow engine.
 
@@ -233,15 +252,15 @@ One important consequence of the current rebuild policy:
 
 The design should converge on a small set of lifecycle commands:
 
-- `recoleta gc`
+- `recoleta admin gc`
   - prune expired artifacts
   - prune expired metrics/runs
   - support an explicit cache-pruning mode for vector tables and rebuildable trend index material
-- `recoleta vacuum`
+- `recoleta admin vacuum`
   - run SQLite maintenance after GC-heavy operations
-- `recoleta backup`
+- `recoleta admin backup`
   - create a timestamped SQLite backup plus a small manifest
-- `recoleta restore`
+- `recoleta admin restore`
   - restore from a backup bundle
 
 The commands above are intentionally narrow. They are enough to make long-running storage manageable without introducing full archive infrastructure.
@@ -360,6 +379,8 @@ Operators should be able to answer these questions quickly:
 - can the process read config and write to the DB?
 - is another instance holding the lock?
 - when was the last successful run?
+- how recent is item data coverage versus derived windows?
+- what is the latest DB backup recovery point?
 - is backlog growing unexpectedly?
 - are storage directories growing unexpectedly?
 
@@ -367,6 +388,7 @@ Recoleta exposes two small operator-facing interfaces for this:
 
 - `recoleta inspect health`
 - `recoleta inspect stats --json`
+- `recoleta inspect freshness`
 - `recoleta inspect runs show` / `recoleta inspect runs list`
 - a container/system healthcheck command built on the same checks
 

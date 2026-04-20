@@ -46,7 +46,8 @@ Recoleta fails fast at the start of `publish` if a configured target is missing 
 
 Under `MARKDOWN_OUTPUT_DIR`:
 
-- `latest.md`: entry point for the most recent item publish run
+- `latest.md`: entry point for the most recent item publish run. This file is a
+  publish index, not a global freshness summary.
 - `Runs/<run_id>.md`: per-run item index (same content as `latest.md`)
 - `Inbox/`: one note per published item
 - `Trends/`: canonical trend markdown notes plus adjacent
@@ -115,6 +116,28 @@ Localized notes are projections, not canonical state:
 - translation and site rendering prefer sibling sidecars first and fall back to
   markdown parsing when those sidecars are missing or invalid
 - canonical `analyses`, `pass_outputs`, and `documents` remain unchanged
+
+## Freshness vocabulary
+
+Recoleta intentionally splits operator-facing "latest" state into separate
+surfaces instead of collapsing them into one timestamp:
+
+- run freshness: latest successful run and latest successful
+  day/week/month workflow windows
+- data freshness: latest `items.published_at` and latest published item date
+- derived windows: latest persisted trend and idea `period_end` values
+- backup recovery point: latest DB backup manifest `created_at`
+- publish index: `latest.md` and `Runs/<run_id>.md` for the most recent item
+  publish output only
+
+Operator guidance:
+
+- use `recoleta inspect freshness` when these surfaces disagree
+- use `recoleta inspect stats` for the same freshness snapshot plus inventory
+  counts
+- use `recoleta inspect health --healthcheck --max-success-age-minutes ...`
+  only for run freshness checks
+- do not infer global freshness from `latest.md`
 
 ## Trend PDF surface
 

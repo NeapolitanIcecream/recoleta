@@ -586,6 +586,29 @@ def _workspace_bytes_from_settings(settings: Any) -> dict[str, int | None]:
     return workspace_bytes
 
 
+def _backup_output_dir_from_settings(settings: Any | None) -> Path | None:
+    if settings is None:
+        return None
+    raw_path = getattr(settings, "backup_output_dir", None)
+    if raw_path is None:
+        return None
+    return Path(raw_path).expanduser().resolve()
+
+
+def _resolve_backup_output_dir(
+    *,
+    resolved_db_path: Path,
+    settings: Any | None = None,
+    output_dir: Path | None = None,
+) -> Path:
+    if output_dir is not None:
+        return output_dir.expanduser().resolve()
+    configured = _backup_output_dir_from_settings(settings)
+    if configured is not None:
+        return configured
+    return (resolved_db_path.parent / "backups").resolve()
+
+
 def _delete_path_if_present(*, path: Path, dry_run: bool = False) -> bool:
     if not path.exists():
         return False

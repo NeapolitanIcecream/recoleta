@@ -303,6 +303,26 @@ Migration note:
 - `OBSIDIAN_BASE_FOLDER` (default `Recoleta`): base folder under the Vault.
 - `PUBLISH_TARGETS` (default `["markdown"]`): which publish integrations are enabled.
 - `MARKDOWN_OUTPUT_DIR`: where local Markdown output is written (e.g. `latest.md`, `Inbox/`, `Runs/`, canonical `Trends/*.md` and `Ideas/*.md` plus adjacent `.presentation.json` sidecars, `Localized/<language>/...`, derived `site/` output, and manual email preview/send bundles under `.recoleta-email/`).
+- `BACKUP_OUTPUT_DIR`: optional default root for DB backup bundles used by
+  `recoleta admin backup` and `recoleta inspect freshness`.
+
+Backup root resolution order:
+
+- `recoleta admin backup --output-dir ...`
+- `BACKUP_OUTPUT_DIR` / `backup_output_dir`
+- `<RECOLETA_DB_PATH parent>/backups`
+
+Freshness vocabulary:
+
+- run freshness: latest successful run timestamp and latest successful
+  day/week/month workflow windows
+- data freshness: latest `items.published_at`, plus latest published item date
+- derived windows: latest persisted trend and idea windows
+- backup recovery point: latest DB backup manifest timestamp
+
+`recoleta inspect health --healthcheck --max-success-age-minutes ...` only
+checks run freshness. Use `recoleta inspect freshness` when you need the full
+freshness snapshot.
 
 ### Browser trend PDF rendering
 

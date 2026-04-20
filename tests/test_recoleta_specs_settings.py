@@ -37,6 +37,17 @@ def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(
     assert settings.trends_peer_history_window_count == 3
 
 
+def test_settings_loads_backup_output_dir_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backup_root = configured_env / "backups"
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", str(backup_root))
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.backup_output_dir == backup_root.resolve()
+
+
 def test_settings_rejects_configured_source_without_enabled(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -311,6 +322,30 @@ def test_settings_loads_from_config_file_and_env(
     assert settings.llm_model == "openai/gpt-4o-mini"
     assert settings.topics == ["agents"]
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
+
+
+def test_settings_loads_backup_output_dir_from_config_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    backup_root = tmp_path / "configured-backups"
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                f'BACKUP_OUTPUT_DIR: "{backup_root}"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.backup_output_dir == backup_root.resolve()
 
 
 def test_settings_loads_trends_self_similar_settings_from_config_file(

@@ -44,7 +44,10 @@ website, and manual trend email batches.
 1. Configure sources, topics, output paths, LLM model, and publish targets.
    Add `email:` settings separately if you want manual trend email preview/send.
 2. Run the pipeline on a schedule, manually stage by stage, or as a targeted `--date` catch-up for one UTC day.
-3. Read the local Markdown output (for example `latest.md`, `Inbox/`, and `Trends/`).
+3. Read the local Markdown output (for example the latest publish index
+   `latest.md`, `Inbox/`, and `Trends/`). Use `recoleta inspect freshness`
+   when you need the operator-facing freshness snapshot instead of one publish
+   surface.
 4. Optionally receive a curated Telegram batch, browse notes in an Obsidian
    Vault, publish a static trends site, or send a manual trend email batch.
 

@@ -138,6 +138,15 @@ def _string_attr(row: Any, attr_name: str) -> str | None:
     return str(getattr(row, attr_name, "") or "").strip() or None
 
 
+def _window_segment(*, period_start: str | None, period_end: str | None) -> str:
+    parts: list[str] = []
+    if period_start is not None:
+        parts.append(f"period_start={period_start}")
+    if period_end is not None:
+        parts.append(f"period_end={period_end}")
+    return " ".join(parts)
+
+
 def _build_failure_summary(*, artifacts: list[dict[str, Any]]) -> dict[str, Any]:
     failure_artifacts = [
         artifact
@@ -340,6 +349,11 @@ def run_runs_show_command(
             f"command={run_payload['command']} scope={run_payload['scope'] or 'unknown'} "
             f"granularity={run_payload['granularity'] or 'unknown'}"
         )
+    if window_segment := _window_segment(
+        period_start=run_payload["period_start"],
+        period_end=run_payload["period_end"],
+    ):
+        console.print(window_segment)
     console.print(
         f"metrics_total={run_payload['metrics_total']} "
         f"pass_outputs_total={run_payload['pass_outputs_total']} "
@@ -357,10 +371,17 @@ def run_runs_show_command(
         ]
         console.print("artifacts_by_kind=" + " ".join(parts))
     for row in run_payload["pass_outputs"]:
-        console.print(
+        message = (
             f"[cyan]{row['pass_kind']}[/cyan] "
-            f"id={row['id']} scope={row['scope']} status={row['status']}"
+            f"id={row['id']} status={row['status']} "
+            f"granularity={row['granularity'] or 'unknown'}"
         )
+        if window_segment := _window_segment(
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+        ):
+            message += f" {window_segment}"
+        console.print(message)
 
 
 def run_runs_list_command(
@@ -397,10 +418,18 @@ def run_runs_list_command(
     console = cli._runtime_symbols()["Console"]()
     console.print(f"[green]runs ok[/green] count={len(payload['runs'])}")
     for row in payload["runs"]:
-        console.print(
+        message = (
             f"[cyan]{row['id']}[/cyan] "
             f"command={row['command'] or 'unknown'} "
+            f"scope={row['scope'] or 'unknown'} "
+            f"granularity={row['granularity'] or 'unknown'} "
             f"status={row['status']} "
             f"duration_seconds={row['duration_seconds'] if row['duration_seconds'] is not None else 'unknown'} "
             f"pass_outputs={row['pass_outputs_total']} artifacts={row['artifacts_total']}"
         )
+        if window_segment := _window_segment(
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+        ):
+            message += f" {window_segment}"
+        console.print(message)

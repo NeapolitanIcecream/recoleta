@@ -477,11 +477,34 @@ def write_markdown_run_index(
     run_index_path = runs_dir / f"{safe_run_id}.md"
     latest_path = output_dir / "latest.md"
 
+    def publish_coverage_label(note_paths: list[Path]) -> str:
+        coverage_dates: list[str] = []
+        for note_path in note_paths:
+            candidate = note_path.name[:10]
+            try:
+                datetime.fromisoformat(candidate)
+            except ValueError:
+                continue
+            coverage_dates.append(candidate)
+        if not note_paths:
+            return "none"
+        if not coverage_dates:
+            return "unavailable"
+        ordered_dates = sorted(set(coverage_dates))
+        if len(ordered_dates) == 1:
+            return ordered_dates[0]
+        return f"{ordered_dates[0]} to {ordered_dates[-1]}"
+
+    publish_coverage = publish_coverage_label([note_path for _title, note_path in notes])
+
     lines: list[str] = [
-        "# Recoleta publish output",
+        "# Recoleta latest publish index",
         "",
         f"- Run ID: `{run_id}`",
         f"- Generated at (UTC): `{generated_at.astimezone(timezone.utc).isoformat()}`",
+        f"- Publish coverage (UTC): `{publish_coverage}`",
+        "",
+        "This index does not summarize run, data, or backup freshness.",
         "",
         "## Notes",
     ]
