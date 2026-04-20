@@ -203,6 +203,42 @@ class Example(BaseModel):
     assert candidates == []
 
 
+def test_parse_vulture_candidates_ignores_typer_command_functions(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "pkg" / "cli.py"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """
+class FakeTyper:
+    def command(self, name: str):
+        def decorator(fn):
+            return fn
+        return decorator
+
+
+inspect_app = FakeTyper()
+
+
+@inspect_app.command("freshness")
+def inspect_freshness() -> None:
+    return None
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    lookup = audit.ScopeLookup.from_files(repo_root=tmp_path, files=[path])
+    raw_text = "pkg/cli.py:11: unused function 'inspect_freshness' (60% confidence)\n"
+
+    candidates = audit.parse_vulture_candidates(
+        raw_text=raw_text,
+        lookup=lookup,
+        config=CONFIG,
+    )
+
+    assert candidates == []
+
+
 def test_parse_lizard_findings_keeps_same_leaf_methods_separate(tmp_path: Path) -> None:
     path = tmp_path / "pkg" / "mod.py"
     path.parent.mkdir(parents=True, exist_ok=True)

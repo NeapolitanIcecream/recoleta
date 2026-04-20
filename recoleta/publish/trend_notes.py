@@ -445,6 +445,77 @@ def write_markdown_trend_note(
     )
 
 
+def _sanitize_run_index_segment(
+    value: str, *, max_len: int = 72, fallback: str = "unknown"
+) -> str:
+    cleaned = str(value).strip()
+    normalized = "".join(
+        ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned
+    )
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    normalized = normalized.strip("_")
+    if not normalized:
+        return fallback
+    return normalized[:max_len]
+
+
+def _publish_coverage_label(note_paths: list[Path]) -> str:
+    coverage_dates: list[str] = []
+    for note_path in note_paths:
+        candidate = note_path.name[:10]
+        try:
+            datetime.fromisoformat(candidate)
+        except ValueError:
+            continue
+        coverage_dates.append(candidate)
+    if not note_paths:
+        return "none"
+    if not coverage_dates:
+        return "unavailable"
+    ordered_dates = sorted(set(coverage_dates))
+    if len(ordered_dates) == 1:
+        return ordered_dates[0]
+    return f"{ordered_dates[0]} to {ordered_dates[-1]}"
+
+
+def _run_index_note_href(*, output_dir: Path, note_path: Path) -> str:
+    try:
+        return str(note_path.resolve().relative_to(output_dir))
+    except Exception:
+        return str(note_path)
+
+
+def _render_markdown_run_index(
+    *,
+    output_dir: Path,
+    run_id: str,
+    generated_at: datetime,
+    notes: list[tuple[str, Path]],
+) -> str:
+    lines: list[str] = [
+        "# Recoleta latest publish index",
+        "",
+        f"- Run ID: `{run_id}`",
+        f"- Generated at (UTC): `{generated_at.astimezone(timezone.utc).isoformat()}`",
+        "- Publish coverage (UTC): "
+        f"`{_publish_coverage_label([note_path for _title, note_path in notes])}`",
+        "",
+        "This index does not summarize run, data, or backup freshness.",
+        "",
+        "## Notes",
+    ]
+    if not notes:
+        lines.extend(["", "_No items published in this run._", ""])
+        return "\n".join(lines).strip() + "\n"
+    for title, note_path in notes:
+        lines.append(
+            f"- [{title}]({_run_index_note_href(output_dir=output_dir, note_path=note_path)})"
+        )
+    lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
 def write_markdown_run_index(
     *,
     output_dir: Path,
@@ -456,71 +527,17 @@ def write_markdown_run_index(
     if output_dir.exists() and not output_dir.is_dir():
         raise ValueError("MARKDOWN_OUTPUT_DIR must be a directory")
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    def sanitize_segment(
-        value: str, *, max_len: int = 72, fallback: str = "unknown"
-    ) -> str:
-        cleaned = str(value).strip()
-        normalized = "".join(
-            ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in cleaned
-        )
-        while "__" in normalized:
-            normalized = normalized.replace("__", "_")
-        normalized = normalized.strip("_")
-        if not normalized:
-            return fallback
-        return normalized[:max_len]
-
-    safe_run_id = sanitize_segment(run_id, fallback="run")
+    safe_run_id = _sanitize_run_index_segment(run_id, fallback="run")
     runs_dir = output_dir / "Runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
     run_index_path = runs_dir / f"{safe_run_id}.md"
     latest_path = output_dir / "latest.md"
-
-    def publish_coverage_label(note_paths: list[Path]) -> str:
-        coverage_dates: list[str] = []
-        for note_path in note_paths:
-            candidate = note_path.name[:10]
-            try:
-                datetime.fromisoformat(candidate)
-            except ValueError:
-                continue
-            coverage_dates.append(candidate)
-        if not note_paths:
-            return "none"
-        if not coverage_dates:
-            return "unavailable"
-        ordered_dates = sorted(set(coverage_dates))
-        if len(ordered_dates) == 1:
-            return ordered_dates[0]
-        return f"{ordered_dates[0]} to {ordered_dates[-1]}"
-
-    publish_coverage = publish_coverage_label([note_path for _title, note_path in notes])
-
-    lines: list[str] = [
-        "# Recoleta latest publish index",
-        "",
-        f"- Run ID: `{run_id}`",
-        f"- Generated at (UTC): `{generated_at.astimezone(timezone.utc).isoformat()}`",
-        f"- Publish coverage (UTC): `{publish_coverage}`",
-        "",
-        "This index does not summarize run, data, or backup freshness.",
-        "",
-        "## Notes",
-    ]
-    if not notes:
-        lines.extend(["", "_No items published in this run._", ""])
-    else:
-        for title, note_path in notes:
-            rel: str
-            try:
-                rel = str(note_path.resolve().relative_to(output_dir))
-            except Exception:
-                rel = str(note_path)
-            lines.append(f"- [{title}]({rel})")
-        lines.append("")
-
-    payload = "\n".join(lines).strip() + "\n"
+    payload = _render_markdown_run_index(
+        output_dir=output_dir,
+        run_id=run_id,
+        generated_at=generated_at,
+        notes=notes,
+    )
     run_index_path.write_text(payload, encoding="utf-8")
     latest_path.write_text(payload, encoding="utf-8")
     return latest_path

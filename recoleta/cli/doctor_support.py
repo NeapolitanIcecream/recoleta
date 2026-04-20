@@ -57,6 +57,15 @@ class FreshnessPayloadRequest:
     source_observation: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _FreshnessMismatchCandidate:
+    code: str
+    older_label: str
+    older_at: datetime | None
+    newer_label: str
+    newer_at: datetime | None
+
+
 def _age_seconds(reference_now: datetime, value: datetime | None) -> int | None:
     if value is None:
         return None
@@ -434,27 +443,9 @@ def _freshness_backup_payload(
         config_path=config_path,
         settings=settings,
     )
-    latest_created_at: datetime | None = None
-    latest_bundle_dir: Path | None = None
-    if root_dir.exists() and root_dir.is_dir():
-        for manifest_path in root_dir.glob("*/manifest.json"):
-            try:
-                payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            if not isinstance(payload, dict):
-                continue
-            raw_created_at = str(payload.get("created_at") or "").strip()
-            if not raw_created_at:
-                continue
-            try:
-                created_at = datetime.fromisoformat(raw_created_at)
-            except ValueError:
-                continue
-            created_at = created_at.astimezone(UTC)
-            if latest_created_at is None or created_at > latest_created_at:
-                latest_created_at = created_at
-                latest_bundle_dir = manifest_path.parent
+    latest_backup = _latest_backup_bundle(root_dir=root_dir)
+    latest_created_at = latest_backup[0] if latest_backup is not None else None
+    latest_bundle_dir = latest_backup[1] if latest_backup is not None else None
     return {
         "scope": "db_only",
         "root_dir": str(root_dir),
@@ -467,204 +458,129 @@ def _freshness_backup_payload(
     }
 
 
+def _backup_manifest_created_at(*, manifest_path: Path) -> datetime | None:
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw_created_at = str(payload.get("created_at") or "").strip()
+    if not raw_created_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw_created_at)
+    except ValueError:
+        return None
+    return cli._normalize_utc_datetime(parsed)
+
+
+def _latest_backup_bundle(*, root_dir: Path) -> tuple[datetime, Path] | None:
+    if not root_dir.exists() or not root_dir.is_dir():
+        return None
+    latest_backup: tuple[datetime, Path] | None = None
+    for manifest_path in root_dir.glob("*/manifest.json"):
+        created_at = _backup_manifest_created_at(manifest_path=manifest_path)
+        if created_at is None:
+            continue
+        if latest_backup is None or created_at > latest_backup[0]:
+            latest_backup = (created_at, manifest_path.parent)
+    return latest_backup
+
+
 def _append_freshness_mismatch(
     *,
     mismatches: list[dict[str, Any]],
-    code: str,
-    older_label: str,
-    older_at: datetime | None,
-    newer_label: str,
-    newer_at: datetime | None,
+    candidate: _FreshnessMismatchCandidate,
 ) -> None:
-    if older_at is None or newer_at is None or older_at >= newer_at:
+    if (
+        candidate.older_at is None
+        or candidate.newer_at is None
+        or candidate.older_at >= candidate.newer_at
+    ):
         return
     mismatches.append(
         {
-            "code": code,
-            "older_label": older_label,
-            "older_at": older_at.isoformat(),
-            "newer_label": newer_label,
-            "newer_at": newer_at.isoformat(),
-            "delta_seconds": int((newer_at - older_at).total_seconds()),
+            "code": candidate.code,
+            "older_label": candidate.older_label,
+            "older_at": candidate.older_at.isoformat(),
+            "newer_label": candidate.newer_label,
+            "newer_at": candidate.newer_at.isoformat(),
+            "delta_seconds": int(
+                (candidate.newer_at - candidate.older_at).total_seconds()
+            ),
         }
     )
 
 
-def build_freshness_payload(*, request: FreshnessPayloadRequest) -> dict[str, Any]:
-    source_observation = request.source_observation or build_source_diagnostics_payload(
-        repository=request.repository,
-        settings=request.settings,
-        reference_now=request.reference_now,
-    )
-
-    latest_successful_run_id: str | None = None
-    latest_successful_run_at: datetime | None = None
-    run_by_granularity: dict[str, dict[str, Any] | None] = {
-        "day": None,
-        "week": None,
-        "month": None,
-    }
-    derived_windows: dict[str, dict[str, dict[str, str | None]]] = {
-        "trends": {},
-        "ideas": {},
-    }
-    latest_item_published_at: datetime | None = None
-    latest_published_item_at: datetime | None = None
-
-    with Session(request.repository.engine) as session:
-        latest_successful_run = session.exec(
-            select(Run)
-            .where(Run.status == RUN_STATUS_SUCCEEDED)
-            .order_by(
-                desc(Run.finished_at),
-                desc(Run.started_at),
-                desc(Run.id),
-            )
-            .limit(1)
-        ).first()
-        if latest_successful_run is not None:
-            latest_successful_run_id = latest_successful_run.id
-            latest_successful_run_at = cli._normalize_utc_datetime(
-                latest_successful_run.finished_at
-                or latest_successful_run.heartbeat_at
-                or latest_successful_run.started_at
-            )
-
-        for granularity in run_by_granularity:
-            run_by_granularity[granularity] = _freshness_run_entry(
-                _latest_workflow_run_for_granularity(
-                    session=session,
-                    granularity=granularity,
-                )
-            )
-
-        latest_item_published_at = _latest_datetime_value(
-            session=session,
-            model=Item,
-            field=Item.published_at,
+def _latest_successful_run_summary(
+    *,
+    session: Session,
+) -> tuple[str | None, datetime | None]:
+    latest_successful_run = session.exec(
+        select(Run)
+        .where(Run.status == RUN_STATUS_SUCCEEDED)
+        .order_by(
+            desc(Run.finished_at),
+            desc(Run.started_at),
+            desc(Run.id),
         )
-        latest_published_item_at = _latest_datetime_value(
-            session=session,
-            model=Item,
-            field=Item.published_at,
-            filters=(Item.state == ITEM_STATE_PUBLISHED,),
-        )
-
-        for granularity in ("day", "week", "month"):
-            trend_period_end = _latest_derived_period_end(
-                session=session,
-                granularity=granularity,
-                doc_type=DOC_TYPE_TREND,
-                pass_kind="trend_synthesis",
-            )
-            idea_period_end = _latest_derived_period_end(
-                session=session,
-                granularity=granularity,
-                doc_type=_DOC_TYPE_IDEA,
-                pass_kind="trend_ideas",
-            )
-            derived_windows["trends"][granularity] = {
-                "latest_period_end": (
-                    trend_period_end.isoformat() if trend_period_end is not None else None
-                )
-            }
-            derived_windows["ideas"][granularity] = {
-                "latest_period_end": (
-                    idea_period_end.isoformat() if idea_period_end is not None else None
-                )
-            }
-
-    backup_payload = _freshness_backup_payload(
-        resolved_db_path=request.resolved_db_path,
-        config_path=request.config_path,
-        settings=request.settings,
-    )
-    mismatches: list[dict[str, Any]] = []
-
-    backup_created_at = (
-        datetime.fromisoformat(backup_payload["latest_created_at"])
-        if backup_payload["latest_created_at"] is not None
-        else None
-    )
-    day_run_period_end = (
-        datetime.fromisoformat(run_by_granularity["day"]["period_end"])
-        if run_by_granularity["day"] is not None
-        and run_by_granularity["day"]["period_end"] is not None
-        else None
-    )
-    week_run_period_end = (
-        datetime.fromisoformat(run_by_granularity["week"]["period_end"])
-        if run_by_granularity["week"] is not None
-        and run_by_granularity["week"]["period_end"] is not None
-        else None
-    )
-    derived_day_period_end = max(
-        [
-            value
-            for value in (
-                derived_windows["trends"]["day"]["latest_period_end"],
-                derived_windows["ideas"]["day"]["latest_period_end"],
-            )
-            if value is not None
-        ],
-        default=None,
-    )
-    derived_week_period_end = max(
-        [
-            value
-            for value in (
-                derived_windows["trends"]["week"]["latest_period_end"],
-                derived_windows["ideas"]["week"]["latest_period_end"],
-            )
-            if value is not None
-        ],
-        default=None,
-    )
-
-    _append_freshness_mismatch(
-        mismatches=mismatches,
-        code="backup_behind_data",
-        older_label="backup.latest_created_at",
-        older_at=backup_created_at,
-        newer_label="data.latest_item_published_at",
-        newer_at=latest_item_published_at,
-    )
-    _append_freshness_mismatch(
-        mismatches=mismatches,
-        code="workflow_day_behind_derived_day",
-        older_label="run.latest_successful_by_granularity.day.period_end",
-        older_at=day_run_period_end,
-        newer_label="derived_windows.day.latest_period_end",
-        newer_at=(
-            datetime.fromisoformat(derived_day_period_end)
-            if derived_day_period_end is not None
-            else None
-        ),
-    )
-    _append_freshness_mismatch(
-        mismatches=mismatches,
-        code="workflow_week_behind_derived_week",
-        older_label="run.latest_successful_by_granularity.week.period_end",
-        older_at=week_run_period_end,
-        newer_label="derived_windows.week.latest_period_end",
-        newer_at=(
-            datetime.fromisoformat(derived_week_period_end)
-            if derived_week_period_end is not None
-            else None
+        .limit(1)
+    ).first()
+    if latest_successful_run is None:
+        return None, None
+    return (
+        latest_successful_run.id,
+        cli._normalize_utc_datetime(
+            latest_successful_run.finished_at
+            or latest_successful_run.heartbeat_at
+            or latest_successful_run.started_at
         ),
     )
 
+
+def _freshness_run_payload(*, session: Session) -> dict[str, Any]:
+    latest_successful_run_id, latest_successful_run_at = _latest_successful_run_summary(
+        session=session
+    )
+    run_by_granularity = {
+        granularity: _freshness_run_entry(
+            _latest_workflow_run_for_granularity(
+                session=session,
+                granularity=granularity,
+            )
+        )
+        for granularity in ("day", "week", "month")
+    }
     return {
-        "run": {
-            "latest_successful_run_id": latest_successful_run_id,
-            "latest_successful_run_at": (
-                latest_successful_run_at.isoformat()
-                if latest_successful_run_at is not None
-                else None
-            ),
-            "latest_successful_by_granularity": run_by_granularity,
-        },
-        "data": {
+        "latest_successful_run_id": latest_successful_run_id,
+        "latest_successful_run_at": (
+            latest_successful_run_at.isoformat()
+            if latest_successful_run_at is not None
+            else None
+        ),
+        "latest_successful_by_granularity": run_by_granularity,
+    }
+
+
+def _freshness_data_payload(
+    *,
+    session: Session,
+    source_observation: dict[str, Any] | None,
+) -> tuple[dict[str, Any], datetime | None]:
+    latest_item_published_at = _latest_datetime_value(
+        session=session,
+        model=Item,
+        field=Item.published_at,
+    )
+    latest_published_item_at = _latest_datetime_value(
+        session=session,
+        model=Item,
+        field=Item.published_at,
+        filters=(Item.state == ITEM_STATE_PUBLISHED,),
+    )
+    return (
+        {
             "latest_item_published_at": (
                 latest_item_published_at.isoformat()
                 if latest_item_published_at is not None
@@ -677,9 +593,165 @@ def build_freshness_payload(*, request: FreshnessPayloadRequest) -> dict[str, An
             ),
             "source_observation": source_observation,
         },
+        latest_item_published_at,
+    )
+
+
+def _freshness_derived_window_entry(
+    *,
+    session: Session,
+    granularity: str,
+    doc_type: str,
+    pass_kind: str,
+) -> dict[str, str | None]:
+    period_end = _latest_derived_period_end(
+        session=session,
+        granularity=granularity,
+        doc_type=doc_type,
+        pass_kind=pass_kind,
+    )
+    return {
+        "latest_period_end": period_end.isoformat() if period_end is not None else None
+    }
+
+
+def _freshness_derived_windows_payload(*, session: Session) -> dict[str, Any]:
+    return {
+        "trends": {
+            granularity: _freshness_derived_window_entry(
+                session=session,
+                granularity=granularity,
+                doc_type=DOC_TYPE_TREND,
+                pass_kind="trend_synthesis",
+            )
+            for granularity in ("day", "week", "month")
+        },
+        "ideas": {
+            granularity: _freshness_derived_window_entry(
+                session=session,
+                granularity=granularity,
+                doc_type=_DOC_TYPE_IDEA,
+                pass_kind="trend_ideas",
+            )
+            for granularity in ("day", "week", "month")
+        },
+    }
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return cli._normalize_utc_datetime(datetime.fromisoformat(value))
+    except ValueError:
+        return None
+
+
+def _max_iso_datetime(values: tuple[str | None, ...]) -> datetime | None:
+    candidates = [
+        parsed
+        for value in values
+        if (parsed := _parse_iso_datetime(value)) is not None
+    ]
+    if not candidates:
+        return None
+    return max(candidates)
+
+
+def _freshness_mismatch_candidates(
+    *,
+    run_payload: dict[str, Any],
+    data_latest_item_published_at: datetime | None,
+    derived_windows: dict[str, Any],
+    backup_payload: dict[str, Any],
+) -> tuple[_FreshnessMismatchCandidate, ...]:
+    run_by_granularity = run_payload["latest_successful_by_granularity"]
+    day_run = run_by_granularity.get("day") or {}
+    week_run = run_by_granularity.get("week") or {}
+    return (
+        _FreshnessMismatchCandidate(
+            code="backup_behind_data",
+            older_label="backup.latest_created_at",
+            older_at=_parse_iso_datetime(backup_payload["latest_created_at"]),
+            newer_label="data.latest_item_published_at",
+            newer_at=data_latest_item_published_at,
+        ),
+        _FreshnessMismatchCandidate(
+            code="workflow_day_behind_derived_day",
+            older_label="run.latest_successful_by_granularity.day.period_end",
+            older_at=_parse_iso_datetime(day_run.get("period_end")),
+            newer_label="derived_windows.day.latest_period_end",
+            newer_at=_max_iso_datetime(
+                (
+                    derived_windows["trends"]["day"]["latest_period_end"],
+                    derived_windows["ideas"]["day"]["latest_period_end"],
+                )
+            ),
+        ),
+        _FreshnessMismatchCandidate(
+            code="workflow_week_behind_derived_week",
+            older_label="run.latest_successful_by_granularity.week.period_end",
+            older_at=_parse_iso_datetime(week_run.get("period_end")),
+            newer_label="derived_windows.week.latest_period_end",
+            newer_at=_max_iso_datetime(
+                (
+                    derived_windows["trends"]["week"]["latest_period_end"],
+                    derived_windows["ideas"]["week"]["latest_period_end"],
+                )
+            ),
+        ),
+    )
+
+
+def _freshness_mismatches(
+    *,
+    run_payload: dict[str, Any],
+    data_latest_item_published_at: datetime | None,
+    derived_windows: dict[str, Any],
+    backup_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    for candidate in _freshness_mismatch_candidates(
+        run_payload=run_payload,
+        data_latest_item_published_at=data_latest_item_published_at,
+        derived_windows=derived_windows,
+        backup_payload=backup_payload,
+    ):
+        _append_freshness_mismatch(mismatches=mismatches, candidate=candidate)
+    return mismatches
+
+
+def build_freshness_payload(*, request: FreshnessPayloadRequest) -> dict[str, Any]:
+    source_observation = request.source_observation or build_source_diagnostics_payload(
+        repository=request.repository,
+        settings=request.settings,
+        reference_now=request.reference_now,
+    )
+
+    with Session(request.repository.engine) as session:
+        run_payload = _freshness_run_payload(session=session)
+        data_payload, latest_item_published_at = _freshness_data_payload(
+            session=session,
+            source_observation=source_observation,
+        )
+        derived_windows = _freshness_derived_windows_payload(session=session)
+
+    backup_payload = _freshness_backup_payload(
+        resolved_db_path=request.resolved_db_path,
+        config_path=request.config_path,
+        settings=request.settings,
+    )
+    return {
+        "run": run_payload,
+        "data": data_payload,
         "derived_windows": derived_windows,
         "backup": backup_payload,
-        "mismatches": mismatches,
+        "mismatches": _freshness_mismatches(
+            run_payload=run_payload,
+            data_latest_item_published_at=latest_item_published_at,
+            derived_windows=derived_windows,
+            backup_payload=backup_payload,
+        ),
     }
 
 

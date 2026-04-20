@@ -46,6 +46,8 @@ QUEUE_ORDER = (
 )
 _VULTURE_IGNORED_DECORATORS = frozenset(
     {
+        "callback",
+        "command",
         "field_validator",
         "model_validator",
         "field_serializer",
