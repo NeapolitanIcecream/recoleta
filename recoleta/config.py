@@ -1637,6 +1637,8 @@ class Settings(BaseSettings):
     def _normalize_optional_path(cls, value: str | Path | None) -> Path | None:
         if value is None:
             return None
+        if isinstance(value, str) and not value.strip():
+            return None
         return Path(value).expanduser().resolve()
 
     @field_validator("rag_lancedb_dir", mode="before")

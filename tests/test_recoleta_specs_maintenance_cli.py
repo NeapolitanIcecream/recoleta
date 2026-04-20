@@ -353,6 +353,38 @@ def test_admin_backup_honors_env_backup_output_dir_when_settings_are_skipped(
     assert (bundle_dirs[0] / "manifest.json").exists()
 
 
+def test_admin_backup_falls_back_when_configured_backup_output_dir_is_empty(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{db_path}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                'BACKUP_OUTPUT_DIR: ""',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["admin", "backup", "--config", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    fallback_root = (db_path.parent / "backups").resolve()
+    bundle_dirs = [path for path in fallback_root.iterdir() if path.is_dir()]
+    assert len(bundle_dirs) == 1
+    assert (bundle_dirs[0] / "manifest.json").exists()
+
+
 def test_restore_exits_when_workspace_lock_is_held(tmp_path: Path) -> None:
     runner = CliRunner()
     db_path = tmp_path / "recoleta.db"

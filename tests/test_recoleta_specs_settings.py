@@ -48,6 +48,20 @@ def test_settings_loads_backup_output_dir_from_env(
     assert settings.backup_output_dir == backup_root.resolve()
 
 
+def test_settings_treats_empty_backup_output_dir_env_as_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("RECOLETA_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("BACKUP_OUTPUT_DIR", "")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.backup_output_dir is None
+
+
 def test_settings_rejects_configured_source_without_enabled(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
