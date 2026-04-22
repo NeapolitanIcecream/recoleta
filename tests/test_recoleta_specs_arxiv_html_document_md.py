@@ -341,3 +341,72 @@ def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
         )
         assert pdf is not None
         assert pdf.text == "pdf recovered"
+
+
+def test_enrich_arxiv_html_document_reuses_existing_markdown_without_cleanup(
+    configured_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                    "enrich_method": "html_document",
+                    "enrich_failure_mode": "strict",
+                }
+            }
+        ),
+    )
+
+    import recoleta.pipeline as pipeline_module
+
+    arxiv_id = "3456.7890v1"
+    _, repository, service = _build_service(configured_env)
+    draft = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id=arxiv_id,
+        canonical_url=f"https://arxiv.org/abs/{arxiv_id}",
+        title="Existing HTML Markdown Reuse",
+    )
+    service.ingest(run_id="run-html-md-reuse-prepare", drafts=[draft])
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item).where(Item.source_item_id == arxiv_id)).first()
+        assert item is not None
+        assert item.id is not None
+        item_id = int(item.id)
+
+    repository.upsert_content(
+        item_id=item_id,
+        content_type="html_document",
+        text="<main><h1>Title</h1><p>Existing cleaned html.</p></main>",
+    )
+    repository.upsert_content(
+        item_id=item_id,
+        content_type="html_document_md",
+        text="# Title\n\nExisting cleaned html.\n",
+    )
+
+    def fail_cleanup(*_args: object, **_kwargs: object) -> tuple[str | None, str | None, dict[str, object]]:
+        raise AssertionError("cleanup should be skipped when html_document_md exists")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "extract_html_document_cleaned_with_references",
+        fail_cleanup,
+    )
+
+    service.enrich(run_id="run-html-md-reuse", limit=10)
+
+    metrics = repository.list_metrics(run_id="run-html-md-reuse")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.enrich.failed_total"].value == 0
+    assert by_name["pipeline.enrich.skipped_total"].value == 1
+    assert by_name["pipeline.enrich.arxiv.html_document.cleanup_ms_sum"].value == 0
+    assert by_name["pipeline.enrich.arxiv.html_document.pandoc_ms_sum"].value == 0
+
+    refs = repository.get_latest_content(item_id=item_id, content_type="html_references")
+    assert refs is None

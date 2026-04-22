@@ -12,6 +12,7 @@ import recoleta.translation_runtime as translation_runtime
 class _FakeRepository:
     def __init__(self) -> None:
         self.metrics: list[SimpleNamespace] = []
+        self.localized_outputs: dict[tuple[str, int, str], SimpleNamespace] = {}
 
     def record_metric(
         self,
@@ -23,6 +24,17 @@ class _FakeRepository:
     ) -> None:
         self.metrics.append(
             SimpleNamespace(run_id=run_id, name=name, value=value, unit=unit)
+        )
+
+    def get_localized_output(
+        self,
+        *,
+        source_kind: str,
+        source_record_id: int,
+        language_code: str,
+    ) -> SimpleNamespace | None:
+        return self.localized_outputs.get(
+            (source_kind, source_record_id, language_code)
         )
 
 
@@ -104,6 +116,7 @@ def _batch_context(
         settings=SimpleNamespace(),
         result=SimpleNamespace(
             translated_total=0,
+            mirrored_total=0,
             scanned_total=0,
             skipped_total=0,
             failed_total=0,
@@ -332,3 +345,77 @@ def test_run_translation_batch_records_batch_parallelism_metrics() -> None:
     assert "pipeline.translate.batch.prepare.duration_ms" in metric_names
     assert "pipeline.translate.batch.prepared_tasks_total" in metric_names
     assert "pipeline.translate.parallelism.effective" in metric_names
+
+
+def test_run_translation_batch_records_result_totals() -> None:
+    repository = _FakeRepository()
+    context = _batch_context(repository=repository)
+
+    def _prepare_task(**kwargs):  # type: ignore[no-untyped-def]
+        candidate = kwargs["candidate"]
+        if getattr(candidate, "source_record_id", None) == 1:
+            return "skipped", None
+        return "pending", SimpleNamespace(
+            candidate=candidate,
+            target=kwargs["target"],
+        )
+
+    result = translation_runtime.run_translation_batch(
+        context,
+        candidates=[
+            SimpleNamespace(source_kind="analysis", source_record_id=1),
+            SimpleNamespace(source_kind="analysis", source_record_id=2),
+        ],
+        targets=[SimpleNamespace(code="zh-CN")],
+        deps=translation_runtime.TranslationBatchDeps(
+            prepare_task_fn=_prepare_task,
+            execute_task_fn=lambda **kwargs: SimpleNamespace(),
+            persist_task_fn=lambda **kwargs: None,
+            parallelism_fn=lambda task_total: 1 if task_total else 0,
+            executor_class=ThreadPoolExecutor,
+        ),
+    )
+
+    metric_values = {metric.name: metric.value for metric in repository.metrics}
+    assert result.scanned_total == 2
+    assert result.translated_total == 1
+    assert result.mirrored_total == 0
+    assert result.skipped_total == 1
+    assert metric_values["pipeline.translate.scanned_total"] == 2
+    assert metric_values["pipeline.translate.translated_total"] == 1
+    assert metric_values["pipeline.translate.mirrored_total"] == 0
+    assert metric_values["pipeline.translate.skipped_total"] == 1
+
+
+def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -> None:
+    repository = _FakeRepository()
+    repository.localized_outputs[("analysis", 42, "zh-CN")] = SimpleNamespace(
+        source_hash="same-hash"
+    )
+    status, prepared = translation_runtime.prepare_translation_task(
+        translation_runtime.PrepareTaskRequest(
+            repository=repository,
+            settings=SimpleNamespace(),
+            candidate=SimpleNamespace(
+                source_kind="analysis",
+                source_record_id=42,
+                payload={"title": "same payload"},
+            ),
+            target=SimpleNamespace(code="zh-CN"),
+            context_assist="direct",
+            force=False,
+            run_id="run-translation",
+        ),
+        translation_runtime.PrepareTaskDeps(
+            payload_hash_fn=lambda _payload: "same-hash",
+            candidate_context_fn=lambda **kwargs: {"unused": kwargs},
+            task_factory=lambda **kwargs: kwargs,
+        ),
+    )
+
+    metric_values = {metric.name: metric.value for metric in repository.metrics}
+    assert status == "skipped"
+    assert prepared is None
+    assert (
+        metric_values["pipeline.translate.skipped_total.up_to_date_source_hash"] == 1
+    )

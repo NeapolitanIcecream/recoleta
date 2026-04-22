@@ -145,6 +145,25 @@ _PROVIDER_FAILURE_TYPES = {
 }
 
 
+def _record_run_metric(
+    *,
+    repository: Any,
+    run_id: str | None,
+    name: str,
+    value: int | float,
+    unit: str,
+) -> None:
+    normalized_run_id = str(run_id or "").strip()
+    if not normalized_run_id:
+        return
+    repository.record_metric(
+        run_id=normalized_run_id,
+        name=name,
+        value=float(value),
+        unit=unit,
+    )
+
+
 def translation_parallelism(task_total: int, *, default_parallelism: int) -> int:
     if task_total <= 1:
         return 1
@@ -163,6 +182,13 @@ def prepare_translation_task(
         source_hash=source_hash,
         force=request.force,
     ):
+        _record_run_metric(
+            repository=request.repository,
+            run_id=request.run_id,
+            name="pipeline.translate.skipped_total.up_to_date_source_hash",
+            value=1,
+            unit="count",
+        )
         return "skipped", None
     context = deps.candidate_context_fn(
         repository=request.repository,
@@ -290,6 +316,7 @@ def run_translation_batch(
         unit="ms",
     )
     if prepared_tasks is None:
+        _record_result_totals(context)
         return context.result
     _record_batch_metric(
         context=context,
@@ -305,13 +332,15 @@ def run_translation_batch(
         unit="count",
     )
     if parallelism <= 1:
-        return _run_prepared_tasks_serially(
+        result = _run_prepared_tasks_serially(
             context=context,
             prepared_tasks=prepared_tasks,
             execute_task_fn=deps.execute_task_fn,
             persist_task_fn=deps.persist_task_fn,
         )
-    return _run_prepared_tasks_in_parallel(
+        _record_result_totals(context)
+        return result
+    result = _run_prepared_tasks_in_parallel(
         ParallelExecutionRequest(
             context=context,
             prepared_tasks=prepared_tasks,
@@ -321,6 +350,8 @@ def run_translation_batch(
             executor_class=deps.executor_class,
         )
     )
+    _record_result_totals(context)
+    return result
 
 
 def run_translation_backfill_batch(
@@ -336,6 +367,7 @@ def run_translation_backfill_batch(
             candidate=candidate,
             translate_candidate_fn=deps.translate_candidate_fn,
         ):
+            _record_result_totals(context)
             return context.result
         _run_backfill_mirrors(
             context=context,
@@ -343,6 +375,7 @@ def run_translation_backfill_batch(
             mirror_language_codes_by_candidate=deps.mirror_language_codes_by_candidate,
             mirror_candidate_fn=deps.mirror_candidate_fn,
         )
+    _record_result_totals(context)
     return context.result
 
 
@@ -565,15 +598,26 @@ def _record_batch_metric(
     value: int | float,
     unit: str,
 ) -> None:
-    run_id = str(context.run_id or "").strip()
-    if not run_id:
-        return
-    context.repository.record_metric(
-        run_id=run_id,
+    _record_run_metric(
+        repository=context.repository,
+        run_id=context.run_id,
         name=name,
-        value=float(value),
+        value=value,
         unit=unit,
     )
+
+
+def _record_result_totals(context: TranslationBatchContext) -> None:
+    for name, value in (
+        ("pipeline.translate.scanned_total", int(context.result.scanned_total or 0)),
+        (
+            "pipeline.translate.translated_total",
+            int(context.result.translated_total or 0),
+        ),
+        ("pipeline.translate.mirrored_total", int(context.result.mirrored_total or 0)),
+        ("pipeline.translate.skipped_total", int(context.result.skipped_total or 0)),
+    ):
+        _record_batch_metric(context=context, name=name, value=value, unit="count")
 
 
 def _complete_prepared_task(

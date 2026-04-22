@@ -1313,7 +1313,6 @@ class _ArxivHtmlDocumentContext:
             )
             and existing_document is not None
             and existing_md is not None
-            and existing_refs is not None
         ):
             self.service._annotate_content_diag(
                 self.request.diag,
