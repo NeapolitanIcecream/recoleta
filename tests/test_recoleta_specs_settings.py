@@ -48,6 +48,16 @@ def test_settings_loads_backup_output_dir_from_env(
     assert settings.backup_output_dir == backup_root.resolve()
 
 
+def test_settings_loads_enrich_html_maintext_parallelism_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY", "4")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.enrich_html_maintext_max_concurrency == 4
+
+
 def test_settings_treats_empty_backup_output_dir_env_as_unset(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

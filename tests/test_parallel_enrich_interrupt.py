@@ -10,6 +10,7 @@ import pytest
 
 import recoleta.pipeline as pipeline
 from recoleta.pipeline import PipelineService
+from recoleta.pipeline.enrich_stage import EnrichStageRequest, _EnrichStageRunner
 
 
 class _FakeSqlDiag:
@@ -154,3 +155,56 @@ def test_parallel_enrich_does_not_close_http_clients_while_workers_running() -> 
     time.sleep(0.4)
 
     assert saw_closed_client["value"] is False
+
+
+def test_enrich_partition_parallelizes_non_arxiv_html_sources_when_enabled() -> None:
+    items = [
+        SimpleNamespace(id=1, source="hn"),
+        SimpleNamespace(id=2, source="rss"),
+        SimpleNamespace(id=3, source="hf_daily"),
+        SimpleNamespace(id=4, source="openreview"),
+        SimpleNamespace(id=5, source="arxiv"),
+    ]
+    repo = _FakeRepository(items=items)
+    settings = SimpleNamespace(
+        telegram_bot_token=None,
+        telegram_chat_id=None,
+        llm_model="test/fake-model",
+        llm_output_language=None,
+        analyze_content_max_chars=32768,
+        publish_targets=[],
+        write_debug_artifacts=False,
+        artifacts_dir=None,
+        enrich_html_maintext_max_concurrency=3,
+        sources=SimpleNamespace(
+            arxiv=SimpleNamespace(
+                enrich_method="html_document",
+                html_document_enable_parallel=False,
+                html_document_max_concurrency=4,
+                html_document_requests_per_second=0.0,
+            )
+        ),
+    )
+    dummy_triage = SimpleNamespace()
+    service = PipelineService(
+        settings=cast(Any, settings),
+        repository=cast(Any, repo),
+        analyzer=None,
+        triage=cast(Any, dummy_triage),
+    )
+    runner = _EnrichStageRunner(
+        service=cast(Any, service),
+        request=EnrichStageRequest(run_id="run-html-parallel", limit=10),
+    )
+
+    arxiv_parallel_items, html_parallel_items, serial_items = runner._partition_items(
+        items
+    )
+
+    assert [str(item.source) for item in arxiv_parallel_items] == []
+    assert [str(item.source) for item in html_parallel_items] == [
+        "hn",
+        "rss",
+        "hf_daily",
+    ]
+    assert [str(item.source) for item in serial_items] == ["openreview", "arxiv"]

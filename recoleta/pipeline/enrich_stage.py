@@ -533,6 +533,8 @@ class _EnrichStats:
     failed: int = 0
     skipped: int = 0
     duration_ms_total: int = 0
+    parallel_html_maintext_items_total: int = 0
+    parallel_html_maintext_max_workers: int = 0
     arxiv_items_by_method: dict[str, int] = None  # type: ignore[assignment]
     arxiv_failed_by_method: dict[str, int] = None  # type: ignore[assignment]
     html_document_items_total: int = 0
@@ -765,6 +767,16 @@ class _EnrichStats:
             ("pipeline.enrich.failed_total", self.failed, "count"),
             ("pipeline.enrich.item_duration_ms_total", self.duration_ms_total, "ms"),
             (
+                "pipeline.enrich.parallel.html_maintext.items_total",
+                self.parallel_html_maintext_items_total,
+                "count",
+            ),
+            (
+                "pipeline.enrich.parallel.html_maintext.max_workers",
+                self.parallel_html_maintext_max_workers,
+                "count",
+            ),
+            (
                 "pipeline.enrich.duration_ms",
                 int((time.perf_counter() - started) * 1000),
                 "ms",
@@ -932,17 +944,35 @@ class _EnrichStageRunner:
         self.html_document_max_concurrency = int(
             service.settings.sources.arxiv.html_document_max_concurrency or 1
         )
+        self.html_maintext_max_concurrency = int(
+            getattr(service.settings, "enrich_html_maintext_max_concurrency", 1) or 1
+        )
         self.enable_parallel = (
             bool(service.settings.sources.arxiv.enrich_method == "html_document")
             and bool(service.settings.sources.arxiv.html_document_enable_parallel)
             and self.html_document_max_concurrency > 1
         )
+        self.enable_html_maintext_parallel = self.html_maintext_max_concurrency > 1
         self.arxiv_html_throttle = _build_arxiv_html_throttle(service)
 
     def run(self) -> None:
         with self.service.repository.sql_diagnostics() as sql_diag:
             items = self._load_items()
             stats = _EnrichStats(service=self.service)
+            if self.enable_parallel or self.enable_html_maintext_parallel:
+                (
+                    arxiv_parallel_items,
+                    html_parallel_items,
+                    serial_items,
+                ) = self._partition_items(items)
+            else:
+                arxiv_parallel_items = []
+                html_parallel_items = []
+                serial_items = list(items)
+            stats.parallel_html_maintext_items_total = len(html_parallel_items)
+            stats.parallel_html_maintext_max_workers = (
+                self.html_maintext_max_concurrency if html_parallel_items else 0
+            )
             with _pipeline_progress()(
                 TextColumn("{task.description}"),
                 BarColumn(),
@@ -951,23 +981,27 @@ class _EnrichStageRunner:
                 console=self.service._progress_console,
             ) as progress:
                 task_id = progress.add_task("Enriching items", total=len(items))
-                if not self.enable_parallel:
-                    self._run_serial_items(
-                        items=items, progress=progress, task_id=task_id, stats=stats
-                    )
-                else:
-                    parallel_items, serial_items = self._partition_items(items)
-                    self._run_serial_items(
-                        items=serial_items,
-                        progress=progress,
-                        task_id=task_id,
-                        stats=stats,
-                    )
+                self._run_serial_items(
+                    items=serial_items,
+                    progress=progress,
+                    task_id=task_id,
+                    stats=stats,
+                )
+                if arxiv_parallel_items:
                     self._run_parallel_items(
-                        items=parallel_items,
+                        items=arxiv_parallel_items,
                         progress=progress,
                         task_id=task_id,
                         stats=stats,
+                        max_workers=self.html_document_max_concurrency,
+                    )
+                if html_parallel_items:
+                    self._run_parallel_items(
+                        items=html_parallel_items,
+                        progress=progress,
+                        task_id=task_id,
+                        stats=stats,
+                        max_workers=self.html_maintext_max_concurrency,
                     )
             stats.record_metrics(
                 run_id=self.request.run_id,
@@ -1040,15 +1074,14 @@ class _EnrichStageRunner:
         progress: Any,
         task_id: int,
         stats: _EnrichStats,
+        max_workers: int,
     ) -> None:
         parallel_state = _ParallelRunState(
             local=threading.local(),
             created_clients=[],
             created_lock=threading.Lock(),
         )
-        executor = _pipeline_thread_pool_executor()(
-            max_workers=self.html_document_max_concurrency
-        )
+        executor = _pipeline_thread_pool_executor()(max_workers=max_workers)
         futures = {
             executor.submit(self._parallel_worker, parallel_state, item): item
             for item in items
@@ -1082,20 +1115,26 @@ class _EnrichStageRunner:
                 interrupted=interrupted,
             )
 
-    def _partition_items(self, items: list[Any]) -> tuple[list[Any], list[Any]]:
-        parallel_items: list[Any] = []
+    def _partition_items(
+        self, items: list[Any]
+    ) -> tuple[list[Any], list[Any], list[Any]]:
+        arxiv_parallel_items: list[Any] = []
+        html_parallel_items: list[Any] = []
         serial_items: list[Any] = []
         for item in items:
             source = str(getattr(item, "source", "") or "").strip().lower()
             if (
-                source == "arxiv"
+                self.enable_parallel
+                and source == "arxiv"
                 and self.service.settings.sources.arxiv.enrich_method == "html_document"
             ):
-                parallel_items.append(item)
-            else:
-                serial_items.append(item)
-        return parallel_items, serial_items
-
+                arxiv_parallel_items.append(item)
+                continue
+            if self.enable_html_maintext_parallel and _uses_html_maintext_path(source):
+                html_parallel_items.append(item)
+                continue
+            serial_items.append(item)
+        return arxiv_parallel_items, html_parallel_items, serial_items
     def _process_one(self, *, client: httpx.Client, item: Any) -> dict[str, Any]:
         raw_item_id = getattr(item, "id", None)
         source = str(getattr(item, "source", "") or "").strip().lower()
@@ -1283,6 +1322,11 @@ class _EnrichStageRunner:
             log=self.log.bind(item_id=item_id),
             failure_message=f"Enrich {kind} artifact record failed: {{}}",
         )
+
+
+def _uses_html_maintext_path(source: str) -> bool:
+    normalized = str(source or "").strip().lower()
+    return normalized not in {"", "arxiv", "openreview"}
 
 
 class _ArxivHtmlDocumentContext:

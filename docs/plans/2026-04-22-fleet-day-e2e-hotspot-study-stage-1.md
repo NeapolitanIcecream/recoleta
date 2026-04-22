@@ -387,3 +387,200 @@ Based on the continuation wave, the next measured order is now:
 1. trends/ideas retrieval reuse
 2. translation only after a stable, isolated candidate is available
 3. site-build only if the first two do not move enough wall time
+
+## Continuation Update 2
+
+The next continuation wave returned to `prepare/enrich`, but with a different
+mechanism than the first arXiv-focused branch.
+
+The baseline evidence still showed large HN and generic HTML maintext fetch cost
+inside the two heavy children, while the existing parallel path only covered the
+arXiv `html_document` extractor.
+
+That led to one new candidate:
+
+- add an opt-in `ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY` setting
+- keep default behavior unchanged at `1`
+- run non-arXiv HTML maintext enrichment in parallel when the setting is greater
+  than `1`
+- emit low-cardinality summary metrics so the branch can be explained in the
+  compare report
+
+### Code added for the branch
+
+- `recoleta.config.Settings.enrich_html_maintext_max_concurrency`
+  - env alias: `ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY`
+  - default: `1`
+  - bounds: `1..32`
+- `recoleta.pipeline.enrich_stage`
+  - partition enrich items into
+    `arxiv_parallel_items`, `html_parallel_items`, and `serial_items`
+  - reuse the existing bounded parallel runner for the new HTML maintext bucket
+  - preserve old behavior unless the new setting is explicitly enabled
+- new summary metrics
+  - `pipeline.enrich.parallel.html_maintext.items_total`
+  - `pipeline.enrich.parallel.html_maintext.max_workers`
+
+### Translation side check before the new enrich branch
+
+A direct translation replay with `TRANSLATION_PARALLELISM=10` was also measured
+from the same backup root:
+
+```bash
+TRANSLATION_PARALLELISM=10 uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-translate-p10
+```
+
+That replay failed on `embodied_ai` during `translate` with:
+
+- `pipeline.translate.parallelism.effective = 10`
+- `pipeline.translate.translated_total = 25`
+- `pipeline.translate.failed_total = 1`
+- `pipeline.translate.failed_total.empty_content = 1`
+
+A smaller pilot with `TRANSLATION_PARALLELISM=9` succeeded for
+`embodied_ai`, but it did not improve the target step:
+
+- `embodied_ai translate`: `55,765ms -> 56,951ms`
+
+This was enough to deprioritize translation parallelism for the next branch.
+
+### HTML maintext parallel candidate
+
+First measured replay:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-html-maintext-p4
+```
+
+That run produced a strong fleet improvement, but one child regressed:
+
+- fleet wall time: `701.55s -> 548.23s` vs `shadow-20260413-arxiv-html-reuse`
+- `cross_platform` real time regressed by `11.62%`
+
+Because that violated the child-regression rule, the branch was repeated from
+the same backup root before drawing a conclusion.
+
+Repeat replay:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-html-maintext-p4-r2
+```
+
+Formal comparison against the real control:
+
+```bash
+uv run python scripts/compare_shadow_day_runs.py \
+  --baseline bench-out/shadow-20260413-control \
+  --candidate bench-out/shadow-20260413-html-maintext-p4-r2 \
+  --output-dir bench-out/compare-shadow-20260413-control-vs-html-maintext-p4-r2
+```
+
+### Accepted result
+
+The repeat cleared the acceptance bar against the shadow control.
+
+#### Fleet result
+
+| run | real_seconds_total |
+| --- | ---: |
+| shadow control | 706.11 |
+| html maintext p4 repeat | 533.62 |
+
+Fleet wall-time delta: `-172.49s` (`24.43%` faster).
+
+#### Dominant-step result
+
+| step | baseline_ms | candidate_ms | delta_ms | improvement |
+| --- | ---: | ---: | ---: | ---: |
+| ingest | 265,426 | 80,351 | -185,075 | 69.73% |
+| translate | 137,195 | 138,222 | +1,027 | -0.75% |
+| analyze | 99,556 | 107,752 | +8,196 | -8.23% |
+| ideas:day | 82,168 | 112,469 | +30,301 | -36.88% |
+| trends:day | 87,135 | 87,870 | +735 | -0.84% |
+| site-build | 14,457 | 2,496 | -11,961 | 82.74% |
+
+The win is first-order `ingest` time, not translation or trends time.
+
+#### Child-level result
+
+| child | control_s | candidate_s | delta_s | improvement |
+| --- | ---: | ---: | ---: | ---: |
+| `cross_platform` | 110.23 | 89.18 | -21.05 | 19.10% |
+| `embodied_ai` | 245.57 | 226.01 | -19.56 | 7.97% |
+| `software_intelligence` | 350.31 | 218.43 | -131.88 | 37.65% |
+
+No child regressed in the accepted repeat, and all terminal states remained
+`succeeded_clean`.
+
+#### Supporting metric result
+
+The new metrics showed that the branch was actually exercising the intended
+parallel path in the two heavy children:
+
+| child | html items | max workers | enrich duration delta |
+| --- | ---: | ---: | ---: |
+| `embodied_ai` | `50` | `4` | `58,881ms -> 18,071ms` |
+| `software_intelligence` | `50` | `4` | `158,072ms -> 40,652ms` |
+
+The HN fetch counters did **not** drop in the same way:
+
+| child | `pipeline.enrich.source.hn.fetch_ms_sum` |
+| --- | --- |
+| `embodied_ai` | `31,837ms -> 35,650ms` |
+| `software_intelligence` | `31,924ms -> 33,942ms` |
+
+This matters because it shows the measured win came from overlapping existing
+maintext work, not from skipping fetches through reuse.
+
+### Confounder control: project idempotence
+
+This continuation explicitly avoids attributing cross-run idempotent reuse to
+the candidate branch.
+
+What was controlled:
+
+- every treatment replay restored from the same live baseline backup root
+- the formal comparison baseline remained `shadow-20260413-control`
+- the accepted branch was compared to that same control, not to the live run
+
+What was intentionally **not** removed:
+
+- reuse that is already part of the restored snapshot's normal runtime behavior
+- within-run caching or step-local reuse that exists equally inside control and
+  candidate
+
+So the accepted `html-maintext` result excludes the usual "second run got faster
+because state was already warm" explanation. The control and candidate both
+started from the same backup snapshot. The causal evidence also points away from
+idempotent skipping:
+
+- `pipeline.enrich.parallel.html_maintext.items_total` moved from `0` to `50`
+- `pipeline.enrich.duration_ms` collapsed in the heavy children
+- `pipeline.enrich.source.hn.fetch_ms_sum` stayed roughly flat instead of
+  falling
+
+That pattern matches concurrency overlap, not pre-existing idempotent reuse.
+
+## Updated Recommendation Order
+
+Based on the accepted repeat, the measured order is now:
+
+1. promote the HTML maintext enrich parallelism branch as the top quantified
+   time-saver for `2026-04-13`
+2. keep translation parallelism behind a guard until the `empty_content`
+   instability is understood
+3. only reopen trends/ideas after the enrich win is accounted for, because the
+   next largest remaining costs are now mostly LLM-side variance rather than
+   fetch/extract wall time
