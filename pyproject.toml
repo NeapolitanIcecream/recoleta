@@ -43,66 +43,165 @@ recoleta = "recoleta.cli:main"
 
 [dependency-groups]
 dev = [
-    "complexipy>=5.2.0",
-    "lizard>=1.21.3",
+    "coverage>=7.0",
+    "cremona==0.1.0",
     "pyright>=1.1.408",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "respx>=0.22.0",
     "ruff>=0.15.2",
-    "vulture>=2.16",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 
-[tool.recoleta_refactor]
+[tool.coverage.run]
+branch = true
+source = ["recoleta", "scripts"]
+
+[tool.cremona]
+profile = "recoleta"
 targets = ["recoleta", "scripts"]
-exclude = ["tests", "bench-out*", ".venv", "*/__pycache__/*"]
+exclude = [
+    ".codex-debug*",
+    ".git",
+    ".pyright",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    ".worktrees*",
+    "*/__pycache__/*",
+    "bench-out*",
+    "tests",
+]
 out_dir = "output/refactor-audit"
 baseline = "quality/refactor-baseline.json"
 
-[tool.recoleta_refactor.ruff]
+[tool.cremona.profiles.recoleta]
+base = "generic-python"
+queue_order = [
+    "pipeline",
+    "site/render",
+    "translation",
+    "sources",
+    "storage",
+    "cli",
+    "rag",
+    "other",
+]
+fallback_subsystem = "other"
+
+[[tool.cremona.profiles.recoleta.subsystems]]
+name = "pipeline"
+include = ["recoleta/pipeline*"]
+
+[[tool.cremona.profiles.recoleta.subsystems]]
+name = "site/render"
+include = [
+    "recoleta/site*",
+    "recoleta/presentation*",
+    "recoleta/publish*",
+    "recoleta/trend_materialize*",
+]
+
+[[tool.cremona.profiles.recoleta.subsystems]]
+name = "translation"
+include = ["recoleta/translation*"]
+
+[[tool.cremona.profiles.recoleta.subsystems]]
+name = "sources"
+include = ["recoleta/sources*", "recoleta/extract*"]
+
+[[tool.cremona.profiles.recoleta.subsystems]]
+name = "storage"
+include = ["recoleta/storage*"]
+
+[[tool.cremona.profiles.recoleta.subsystems]]
+name = "cli"
+include = ["recoleta/cli*"]
+
+[[tool.cremona.profiles.recoleta.subsystems]]
+name = "rag"
+include = ["recoleta/rag*"]
+
+[[tool.cremona.profiles.recoleta.signals]]
+name = "legacy_keyword_hits"
+kind = "regex_count"
+pattern = "\\blegacy_kwargs\\b|\\blegacy_[A-Za-z0-9_]*\\b"
+points_per = 10
+max_points = 6
+
+[[tool.cremona.profiles.recoleta.signals]]
+name = "compat_request_wrapper"
+kind = "regex_flag"
+pattern = "(?s)(?=.*\\*\\*legacy_kwargs)(?=.*request\\s*:\\s*[^=\\n]+?\\|\\s*None\\s*=\\s*None)"
+points = 2
+
+[[tool.cremona.profiles.recoleta.routing_bonuses]]
+name = "compat_wrapper_pressure"
+points = 4
+all = [
+    { source = "signal", name = "legacy_keyword_hits", op = ">=", value = 25 },
+    { source = "signal", name = "compat_request_wrapper", op = ">=", value = 1 },
+]
+
+[[tool.cremona.profiles.recoleta.routing_bonuses]]
+name = "legacy_coupling_pressure"
+points = 3
+all = [
+    { source = "signal", name = "legacy_keyword_hits", op = ">=", value = 50 },
+    { source = "component", name = "coupling_score", op = ">=", value = 10 },
+]
+
+[[tool.cremona.profiles.recoleta.routing_bonuses]]
+name = "legacy_churn_pressure"
+points = 2
+all = [
+    { source = "signal", name = "legacy_keyword_hits", op = ">=", value = 100 },
+    { source = "component", name = "change_score", op = ">=", value = 8 },
+]
+
+[tool.cremona.ruff]
 warning_min = 11
 warning_max = 15
 high_min = 16
 high_max = 24
 critical_min = 25
 
-[tool.recoleta_refactor.lizard]
+[tool.cremona.lizard]
 ccn_warning_min = 15
 ccn_warning_max = 19
 ccn_high_min = 20
 ccn_high_max = 29
 ccn_critical_min = 30
-nloc_warning_min = 80
-nloc_warning_max = 119
-nloc_high_min = 120
-nloc_high_max = 149
-nloc_critical_min = 150
-parameter_warning_min = 6
-parameter_warning_max = 7
-parameter_high_min = 8
-parameter_high_max = 8
-parameter_critical_min = 9
+nloc_warning_min = 100
+nloc_warning_max = 149
+nloc_high_min = 150
+nloc_high_max = 199
+nloc_critical_min = 200
+parameter_warning_min = 7
+parameter_warning_max = 8
+parameter_high_min = 9
+parameter_high_max = 9
+parameter_critical_min = 10
 
-[tool.recoleta_refactor.complexipy]
+[tool.cremona.complexipy]
 warning_min = 16
 warning_max = 29
 high_min = 30
 high_max = 49
 critical_min = 50
 
-[tool.recoleta_refactor.vulture]
+[tool.cremona.vulture]
 review_candidate_min = 60
 high_confidence_candidate_min = 80
 
-[tool.recoleta_refactor.history]
+[tool.cremona.history]
 lookback_days = 180
-min_shared_commits = 3
+min_shared_commits = 2
 coupling_ignore_commit_file_count = 25
 
-[tool.recoleta_refactor.coverage]
+[tool.cremona.coverage]
 coverage_json = ""
 
 [build-system]

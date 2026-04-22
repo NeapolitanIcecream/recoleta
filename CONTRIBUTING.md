@@ -25,10 +25,12 @@ refactor.
 
 ```bash
 uv sync --group dev
-uv run python scripts/refactor_audit.py
-uv run python scripts/refactor_audit.py recoleta/pipeline recoleta/site.py
-uv run python scripts/refactor_audit.py --coverage-json coverage.json
-uv run python scripts/refactor_audit.py --fail-on-regression
+uv run cremona scan
+uv run cremona scan recoleta/pipeline recoleta/site.py
+uv run coverage run -m pytest
+uv run coverage json -o coverage.json
+uv run cremona scan --coverage-json coverage.json
+uv run cremona scan --coverage-json coverage.json --fail-on-regression
 ```
 
 Read `output/refactor-audit/report.md` first. The file-level `Agent routing
@@ -45,9 +47,11 @@ history/churn data for the files you asked to inspect.
 `output/refactor-audit/` is temporary local output and remains ignored.
 `quality/refactor-baseline.json` is the checked-in baseline used to spot
 regressions without pretending that the existing hotspot backlog is already
-gone. Only run `uv run python scripts/refactor_audit.py --update-baseline` when
-the measured debt actually dropped or the previous baseline schema/semantics
-were intentionally replaced.
+gone. Only run `uv run cremona scan --coverage-json coverage.json --update-baseline`
+when the measured debt actually dropped or the previous baseline schema or
+semantics were intentionally replaced. The repo pins a released `cremona`
+version in its dev dependencies, while `uv.lock` records the resolved package
+artifact used by the current branch.
 
 ## How to make changes easier to review
 
