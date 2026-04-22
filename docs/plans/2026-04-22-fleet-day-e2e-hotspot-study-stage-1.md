@@ -242,3 +242,148 @@ Translation is next because:
   projection rebuild time
 - the first prepare/enrich branch did not clear acceptance
 
+## Continuation Update
+
+After opening the draft PR for this stage, the experiment continued with one
+exploratory translation replay and one repeat, followed by the planned
+trends/ideas hotspot microbench.
+
+### Exploratory stacked translation replay
+
+Command run:
+
+```bash
+TRANSLATION_PARALLELISM=12 uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-translate-p12
+```
+
+Compared against the already-modified `shadow-20260413-arxiv-html-reuse` run:
+
+```bash
+uv run python scripts/compare_shadow_day_runs.py \
+  --baseline bench-out/shadow-20260413-arxiv-html-reuse \
+  --candidate bench-out/shadow-20260413-translate-p12 \
+  --output-dir bench-out/compare-shadow-20260413-translate-p12-vs-arxiv
+```
+
+Headline result:
+
+| run | real_seconds_total |
+| --- | ---: |
+| arxiv html reuse | 701.55 |
+| translate p12 | 565.79 |
+
+Fleet delta vs `arxiv-html-reuse`: `-135.76s` (`19.35%` faster).
+
+But this run is **not promotable as a translation win**, because the observed
+speedup was not isolated to translation:
+
+| aggregate step | baseline_ms | candidate_ms | delta_ms | improvement |
+| --- | ---: | ---: | ---: | ---: |
+| ingest | 265,951 | 158,614 | -107,337 | 40.36% |
+| translate | 127,467 | 114,172 | -13,295 | 10.43% |
+| site-build | 19,476 | 2,598 | -16,878 | 86.66% |
+| analyze | 90,324 | 114,432 | +24,108 | -26.69% |
+
+The key confounder is that the env change was only
+`TRANSLATION_PARALLELISM=12`, yet the dominant savings landed in `ingest` and
+`site-build`. That makes the replay directionally interesting, but not a clean
+single-factor treatment.
+
+The translation-specific signals were real but smaller:
+
+- `software_intelligence`
+  - `pipeline.workflow.step.translate.duration_ms`: `55,302 -> 39,202`
+  - `pipeline.translate.parallelism.effective`: `8 -> 12`
+  - `pipeline.translate.materialize_localized.duration_ms`: `4,897 -> 624`
+- `embodied_ai`
+  - `pipeline.workflow.step.translate.duration_ms`: `55,765 -> 55,792`
+  - `pipeline.translate.parallelism.effective`: `8 -> 12`
+  - `pipeline.translate.materialize_localized.duration_ms`: `4,190 -> 536`
+
+### Translation repeat disproved stability
+
+To measure replay variance, the same `TRANSLATION_PARALLELISM=12` candidate was
+run a second time from the same backup root:
+
+```bash
+TRANSLATION_PARALLELISM=12 uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-translate-p12-r2
+```
+
+This repeat **failed** on `embodied_ai` during the `translate` step.
+
+Failure evidence from the shadow run:
+
+- terminal state: `failed`
+- failure point: `translate`
+- recorded translation metrics before abort:
+  - `pipeline.translate.parallelism.effective = 12`
+  - `pipeline.translate.scanned_total = 26`
+  - `pipeline.translate.translated_total = 25`
+  - `pipeline.translate.failed_total = 1`
+  - `pipeline.translate.failed_total.empty_content = 1`
+  - `pipeline.translate.llm_requests_total = 30`
+- emitted error:
+  `translation failed error_type=TranslationLLMOutputError error=translation LLM returned empty content`
+
+This repeat is enough to reject `TRANSLATION_PARALLELISM=12` as a formal branch
+result under the current acceptance rule. Even if the first replay was faster,
+the second replay introduced a workflow terminal-state regression.
+
+### Trends/ideas direction check
+
+Because `trends:day + ideas:day` was already above the `15%` threshold in the
+baseline, the next decision gate was the existing microbench:
+
+```bash
+uv run python scripts/bench_trends_hotspots.py --repeats 3
+```
+
+Measured hotspot directions:
+
+- `semantic_corpus_cache`
+  - wall time median: `40ms -> 26ms` (`35.0%` improvement)
+  - SQL queries median: `6 -> 1` (`83.33%` reduction)
+- `index_batching`
+  - wall time median: `42ms -> 65ms` (`54.76%` slower)
+- `rep_enforcement`
+  - forced rebackfill upper bound: `93ms` median
+  - pass-through item reps: `3ms` median
+
+These microbench results match the actual `shadow-20260413-control` metrics:
+
+- `overview_pack.duration_ms` is tiny
+  - `cross_platform`: `9ms`
+  - `embodied_ai`: `4ms`
+  - `software_intelligence`: `13ms`
+- `history.pack.duration_ms` is tiny
+  - `cross_platform`: `15ms`
+  - `embodied_ai`: `4ms`
+  - `software_intelligence`: `31ms`
+- dominant trends cost is elsewhere
+  - `pipeline.trends.agent_run_sync.duration_ms`: about `28.5s` to `28.8s`
+  - `pipeline.trends.semantic_search.item.duration_ms`: `4.1s` to `8.3s`
+  - `pipeline.trends.semantic_index.item.duration_ms`: `3.1s` to `7.3s`
+  - `pipeline.trends.pass.ideas.duration_ms`: `25.8s` to `29.2s`
+
+Conclusion:
+
+- `context-pack trimming` is not the next high-ROI trends/ideas branch for this
+  day window.
+- `retrieval-loop reuse`, starting with semantic corpus cache reuse, is the
+  better next measured branch.
+
+## Updated Branch Order
+
+Based on the continuation wave, the next measured order is now:
+
+1. trends/ideas retrieval reuse
+2. translation only after a stable, isolated candidate is available
+3. site-build only if the first two do not move enough wall time
