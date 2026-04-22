@@ -45,11 +45,14 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
-      - name: Refactor audit
-        run: uv run python scripts/refactor_audit.py --fail-on-regression
-
       - name: Test
-        run: uv run pytest
+        run: uv run coverage run -m pytest
+
+      - name: Coverage JSON
+        run: uv run coverage json -o coverage.json
+
+      - name: Refactor audit
+        run: uv run cremona scan --coverage-json coverage.json --fail-on-regression
 
       - name: Upload refactor audit report
         if: always()

@@ -12,7 +12,8 @@ Use `uv` for local setup and execution.
 - `uv run pytest`: run the full test suite.
 - `uv run pytest tests/test_recoleta_specs_ingest.py -q`: run a focused spec or regression test while iterating.
 - `uv run recoleta --help`: smoke-test the CLI entry point.
-- `uv run python scripts/refactor_audit.py`: audit structural hotspots and refactor pressure using ruff, lizard, complexipy, and vulture.
+- `uv run coverage run -m pytest && uv run coverage json -o coverage.json`: generate coverage input for structural-debt checks.
+- `uv run cremona scan --coverage-json coverage.json --fail-on-regression`: audit structural hotspots and refactor pressure with the repo's `cremona` profile.
 
 ## Coding Style & Naming Conventions
 Target Python 3.14+, use 4-space indentation, and keep code typed. Follow the existing style: `from __future__ import annotations`, `snake_case` for modules/functions/tests, and `PascalCase` for classes. Prefer `pathlib.Path` over raw path strings and keep CLI/help text explicit. Let Ruff drive import ordering and formatting decisions; avoid manual style churn unrelated to the change.
@@ -28,4 +29,4 @@ Project-specific skills live under `.cursor/skills/`. When a task clearly matche
 
 - `research-site-design-language`: Use for site visuals, UI copy, badges, card hierarchy, section ordering, and markdown-to-site rendering changes. It keeps fixed research-facing chrome in English while allowing long-form body copy to follow the source language.
   When a new design rule becomes canonical or an old one is superseded, update the skill in the same change.
-- `proactive-refactoring-methodology`: Use for code-quality audits, structural hotspot reviews, refactor prioritization, and corruption checks based on ruff C901, lizard, complexipy, and vulture. It pairs the audit script with the existing architecture roadmap so refactors follow change axes instead of raw file size.
+- `proactive-refactoring-methodology`: Use for code-quality audits, structural hotspot reviews, refactor prioritization, and corruption checks with the repo's `cremona` profile. It pairs `uv run cremona scan` with the existing architecture roadmap so refactors follow change axes instead of raw file size.

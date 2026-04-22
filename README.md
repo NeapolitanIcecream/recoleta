@@ -611,9 +611,12 @@ uv run ruff check .
 For structural-debt work, run the refactor audit before or during a refactor:
 
 ```bash
-uv run python scripts/refactor_audit.py
-uv run python scripts/refactor_audit.py --coverage-json coverage.json
-uv run python scripts/refactor_audit.py --fail-on-regression
+uv run cremona scan
+uv run cremona scan recoleta/pipeline recoleta/site.py
+uv run coverage run -m pytest
+uv run coverage json -o coverage.json
+uv run cremona scan --coverage-json coverage.json
+uv run cremona scan --coverage-json coverage.json --fail-on-regression
 ```
 
 Read `output/refactor-audit/report.md` first. The file-level `Agent routing
@@ -624,7 +627,9 @@ marked with partial signal health and coverage-risk scoring is skipped. The
 report also separates structural debt status from routing pressure, and filters
 out obvious sweep commits from shared-commit coupling. Explicit scoped audits
 outside the default target set still keep git-history scoring for the files you
-asked to inspect.
+asked to inspect. The repo pins a released `cremona` version in its dev
+dependencies, while `uv.lock` pins the resolved package artifact used by CI and
+local runs.
 
 <a id="recoleta-license"></a>
 ## 📄 License
