@@ -584,3 +584,110 @@ Based on the accepted repeat, the measured order is now:
 3. only reopen trends/ideas after the enrich win is accounted for, because the
    next largest remaining costs are now mostly LLM-side variance rather than
    fetch/extract wall time
+
+## Continuation Update 3
+
+The next trends/ideas pass focused on deciding whether retrieval-loop reuse was
+still a useful branch after the accepted enrich win.
+
+### DFX addition
+
+`trends` debug payloads already contained `raw_tool_trace`, but the `ideas`
+debug payload only exposed aggregate tool counts. This made it impossible to
+distinguish repeated requests from merely high tool volume.
+
+The DFX gap was closed by adding `raw_tool_trace` to the `ideas` debug payload.
+This is a debug artifact only; it does not add high-cardinality metrics or
+change default CLI behavior.
+
+### Trace sampling command
+
+A single-child diagnostic replay was run against the accepted enrich setting:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
+WRITE_DEBUG_ARTIFACTS=true \
+ARTIFACTS_DIR=/Users/chenmohan/gits/recoleta/bench-out/shadow-20260413-trace-si-html-p4/artifacts \
+uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --instances software_intelligence \
+  --output-dir bench-out/shadow-20260413-trace-si-html-p4
+```
+
+This run succeeded with `real_seconds_total=223.65s`. It is not a formal
+performance comparison because debug artifact writing was enabled.
+
+Key `software_intelligence` metrics:
+
+| metric | value |
+| --- | ---: |
+| `trends:day` | `29,878ms` |
+| `ideas:day` | `25,609ms` |
+| `pipeline.trends.tool_calls_total` | `8` |
+| `pipeline.trends.tool.get_doc_bundle.calls_total` | `6` |
+| `pipeline.trends.tool.search_hybrid.calls_total` | `1` |
+| `pipeline.trends.pass.ideas.tool_calls_total` | `7` |
+| `pipeline.trends.pass.ideas.tool.get_doc_bundle.calls_total` | `5` |
+| `pipeline.trends.pass.ideas.tool.search_hybrid.calls_total` | `1` |
+
+Trace interpretation:
+
+- within each pass, there were no repeated `get_doc_bundle` calls
+- across `trends` and `ideas`, four doc ids repeated
+- the repeated cross-pass bundle requests used different parameters
+  (`700 chars / 2 chunks` in trends vs `900 chars / 3 chunks` in ideas)
+- therefore exact tool-result caching is not a high-ROI next branch for this
+  window
+
+### Rejected snapshot-first pilot
+
+A narrow prompt-gating candidate was tested locally: tell `ideas` to use the
+trend snapshot evidence first and only call tools for missing or contradictory
+evidence.
+
+Pilot command:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
+TRENDS_IDEAS_SNAPSHOT_FIRST=true \
+WRITE_DEBUG_ARTIFACTS=true \
+ARTIFACTS_DIR=/Users/chenmohan/gits/recoleta/bench-out/shadow-20260413-ideas-snapshot-first-si/artifacts \
+uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --instances software_intelligence \
+  --output-dir bench-out/shadow-20260413-ideas-snapshot-first-si
+```
+
+Pilot result:
+
+| metric | trace control | snapshot-first pilot | delta |
+| --- | ---: | ---: | ---: |
+| `real_seconds_total` | `223.65s` | `210.66s` | `-12.99s` |
+| `ideas:day` | `25,609ms` | `27,059ms` | `+1,450ms` |
+| `pipeline.trends.pass.ideas.tool_calls_total` | `7` | `5` | `-2` |
+| `pipeline.trends.pass.ideas.tool.search_hybrid.calls_total` | `1` | `0` | `-1` |
+| `pipeline.trends.pass.ideas.tool.get_doc_bundle.calls_total` | `5` | `4` | `-1` |
+| `pipeline.trends.pass.ideas.prompt_chars` | `8,919` | `10,575` | `+1,656` |
+
+The pilot reduced tool count but did not improve the target `ideas:day` step.
+The apparent whole-child wall-time improvement came from unrelated variance in
+`ingest` and `translate`, not from the targeted ideas step.
+
+Verdict: **do not promote** and do not run this branch fleet-wide. The
+experimental prompt-gating code was rolled back; only the `ideas` raw tool trace
+DFX remains.
+
+## Current Next Step
+
+After this continuation, the experiment should not spend more time on generic
+trends/ideas retrieval reuse for this day window. The next plausible work is:
+
+1. promote or productize the accepted HTML maintext enrich parallelism
+2. investigate translation `empty_content` stability before trying more
+   translation concurrency
+3. use the new `ideas` raw tool trace only when a future trends/ideas run shows
+   repeated exact tool requests or a clear LLM-loop pathology
