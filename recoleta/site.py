@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 import posixpath
 import re
 import shutil
+import time
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -190,18 +191,26 @@ def _write_multilingual_site_outputs(
     valid_language_inputs: Sequence[tuple[str, str, tuple[TrendSiteInputSpec, ...]]],
     limit: int | None,
     item_export_scope: str,
+    metrics_recorder: Any | None = None,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, set[str]], dict[str, str]]:
     manifest_by_language: dict[str, dict[str, Any]] = {}
     page_paths_by_language: dict[str, set[str]] = {}
     language_code_by_slug: dict[str, str] = {}
     for language_code, language_slug, root_paths in valid_language_inputs:
         language_output_dir = output_dir / language_slug
+        export_started = time.perf_counter()
         manifest_path = _export_trend_static_site_single_language(
             input_dir=list(root_paths),
             output_dir=language_output_dir,
             limit=limit,
             item_export_scope=item_export_scope,
             include_localized_children=False,
+        )
+        _record_site_build_timing(
+            metrics_recorder=metrics_recorder,
+            step_name="multilang.export_language",
+            started=export_started,
+            metadata={"language_slug": language_slug},
         )
         manifest_by_language[language_slug] = json.loads(
             manifest_path.read_text(encoding="utf-8")
@@ -241,6 +250,22 @@ def _aggregate_multilingual_site_manifest(
     aggregate_manifest["default_language_code"] = default_language_slug
     aggregate_manifest["output_dir"] = str(output_dir)
     return aggregate_manifest
+
+
+def _record_site_build_timing(
+    *,
+    metrics_recorder: Any | None,
+    step_name: str,
+    started: float,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    if not callable(metrics_recorder):
+        return
+    metrics_recorder(
+        str(step_name),
+        int((time.perf_counter() - started) * 1000),
+        dict(metadata or {}),
+    )
 
 
 def _coerce_topic_page_render_request(
@@ -3981,6 +4006,7 @@ def export_trend_static_site(
     limit: int | None = None,
     default_language_code: str | None = None,
     item_export_scope: str = "linked",
+    metrics_recorder: Any | None = None,
 ) -> Path:
     normalized_item_export_scope = _normalize_item_export_scope(item_export_scope)
     resolved_input_roots = _coerce_site_input_specs(input_dir)
@@ -3992,13 +4018,20 @@ def export_trend_static_site(
     ]
 
     if len(valid_language_inputs) <= 1:
-        return _export_single_language_trend_static_site(
+        export_started = time.perf_counter()
+        manifest_path = _export_single_language_trend_static_site(
             input_dir=input_dir,
             output_dir=output_dir,
             limit=limit,
             item_export_scope=normalized_item_export_scope,
             language_inputs=language_inputs,
         )
+        _record_site_build_timing(
+            metrics_recorder=metrics_recorder,
+            step_name="single_language.export",
+            started=export_started,
+        )
+        return manifest_path
 
     normalized_default_language_slug = language_slug_from_code(default_language_code)
     if not normalized_default_language_slug:
@@ -4014,19 +4047,34 @@ def export_trend_static_site(
         )
 
     resolved_output_dir = output_dir.expanduser().resolve()
+    prepare_started = time.perf_counter()
     _reset_directory(resolved_output_dir)
     (resolved_output_dir / ".nojekyll").write_text("", encoding="utf-8")
+    _record_site_build_timing(
+        metrics_recorder=metrics_recorder,
+        step_name="multilang.prepare_output",
+        started=prepare_started,
+    )
 
+    export_started = time.perf_counter()
     manifest_by_language, page_paths_by_language, language_code_by_slug = (
         _write_multilingual_site_outputs(
             output_dir=resolved_output_dir,
             valid_language_inputs=valid_language_inputs,
             limit=limit,
             item_export_scope=normalized_item_export_scope,
+            metrics_recorder=metrics_recorder,
         )
+    )
+    _record_site_build_timing(
+        metrics_recorder=metrics_recorder,
+        step_name="multilang.export_languages",
+        started=export_started,
+        metadata={"language_count": len(language_code_by_slug)},
     )
 
     for language_slug, language_code in language_code_by_slug.items():
+        overrides_started = time.perf_counter()
         _apply_site_language_overrides(
             output_dir=resolved_output_dir / language_slug,
             language_code=language_code,
@@ -4034,13 +4082,27 @@ def export_trend_static_site(
             page_paths_by_language=page_paths_by_language,
             language_code_by_slug=language_code_by_slug,
         )
+        _record_site_build_timing(
+            metrics_recorder=metrics_recorder,
+            step_name="multilang.apply_language_overrides",
+            started=overrides_started,
+            metadata={"language_slug": language_slug},
+        )
 
+    aggregate_started = time.perf_counter()
     aggregate_manifest = _aggregate_multilingual_site_manifest(
         output_dir=resolved_output_dir,
         manifest_by_language=manifest_by_language,
         language_code_by_slug=language_code_by_slug,
         default_language_slug=normalized_default_language_slug,
     )
+    _record_site_build_timing(
+        metrics_recorder=metrics_recorder,
+        step_name="multilang.aggregate_manifest",
+        started=aggregate_started,
+        metadata={"language_count": len(language_code_by_slug)},
+    )
+    email_links_started = time.perf_counter()
     aggregated_email_links = aggregate_multilingual_email_links(
         output_dir=resolved_output_dir,
         language_slugs=sorted(language_code_by_slug),
@@ -4056,7 +4118,14 @@ def export_trend_static_site(
         output_dir=resolved_output_dir,
         language_slugs=sorted(language_code_by_slug),
     )
+    _record_site_build_timing(
+        metrics_recorder=metrics_recorder,
+        step_name="multilang.email_links",
+        started=email_links_started,
+        metadata={"language_count": len(language_code_by_slug)},
+    )
 
+    root_files_started = time.perf_counter()
     manifest_path = resolved_output_dir / "manifest.json"
     manifest_path.write_text(
         json.dumps(aggregate_manifest, ensure_ascii=False, indent=2, sort_keys=True)
@@ -4069,6 +4138,12 @@ def export_trend_static_site(
             language_slugs=sorted(language_code_by_slug),
         ),
         encoding="utf-8",
+    )
+    _record_site_build_timing(
+        metrics_recorder=metrics_recorder,
+        step_name="multilang.write_root_files",
+        started=root_files_started,
+        metadata={"language_count": len(language_code_by_slug)},
     )
     logger.bind(
         module="site.build.multilang",

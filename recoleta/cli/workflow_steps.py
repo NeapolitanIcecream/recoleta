@@ -3,8 +3,10 @@ from __future__ import annotations
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime
+import inspect
 from pathlib import Path
 import sys
+import time
 from typing import Any, Iterator
 
 import recoleta.cli as cli
@@ -111,6 +113,7 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
         "mirrored": 0,
         "skipped": 0,
         "failed": 0,
+        "materialize_localized_duration_ms": 0,
     }
     abort_reason: str | None = None
     normalized_include = ",".join(request.include)
@@ -137,10 +140,20 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
             break
     if abort_reason is not None:
         raise RuntimeError(abort_reason)
+    materialize_started = time.perf_counter()
     materialize_localized_projections(
         repository=request.repository,
         settings=request.settings,
     )
+    materialize_duration_ms = int((time.perf_counter() - materialize_started) * 1000)
+    totals["materialize_localized_duration_ms"] = materialize_duration_ms
+    if str(request.run_id or "").strip():
+        request.repository.record_metric(
+            run_id=str(request.run_id),
+            name="pipeline.translate.materialize_localized.duration_ms",
+            value=float(materialize_duration_ms),
+            unit="ms",
+        )
     if request.fail_on_failed_outputs and totals["failed"] > 0:
         raise RuntimeError(
             "translation completed with failures "
@@ -154,6 +167,8 @@ def run_site_build_step(
     *,
     settings: Any,
     item_export_scope: str = "linked",
+    repository: Any | None = None,
+    run_id: str = "",
 ) -> dict[str, Any]:
     export_trend_static_site = cli._import_symbol(
         "recoleta.site",
@@ -167,6 +182,26 @@ def run_site_build_step(
     }
     if normalized_item_export_scope != "linked":
         export_kwargs["item_export_scope"] = normalized_item_export_scope
+    normalized_run_id = str(run_id or "").strip()
+    if repository is not None and normalized_run_id:
+        try:
+            parameters = inspect.signature(export_trend_static_site).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "metrics_recorder" in parameters:
+            def _record_site_metric(
+                step_name: str,
+                duration_ms: int,
+                _metadata: dict[str, Any],
+            ) -> None:
+                repository.record_metric(
+                    run_id=normalized_run_id,
+                    name=f"pipeline.site_build.{step_name}.duration_ms",
+                    value=float(duration_ms),
+                    unit="ms",
+                )
+
+            export_kwargs["metrics_recorder"] = _record_site_metric
     manifest_path = export_trend_static_site(**export_kwargs)
     return {
         "manifest_path": str(manifest_path),
@@ -334,6 +369,8 @@ def _execute_site_build_step(
     return run_site_build_step(
         settings=context.settings,
         item_export_scope=context.item_export_scope,
+        repository=context.repository,
+        run_id=context.run_id,
     )
 
 

@@ -32,6 +32,7 @@ class ExecuteTaskRequest:
     source_language_code: str
     source_language_label: str
     llm_connection: Any
+    llm_max_attempts: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +92,7 @@ class TranslationBatchContext:
     source_language_code: str
     source_language_label: str
     llm_connection: Any
+    llm_max_attempts: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +147,25 @@ _PROVIDER_FAILURE_TYPES = {
 }
 
 
+def _record_run_metric(
+    *,
+    repository: Any,
+    run_id: str | None,
+    name: str,
+    value: int | float,
+    unit: str,
+) -> None:
+    normalized_run_id = str(run_id or "").strip()
+    if not normalized_run_id:
+        return
+    repository.record_metric(
+        run_id=normalized_run_id,
+        name=name,
+        value=float(value),
+        unit=unit,
+    )
+
+
 def translation_parallelism(task_total: int, *, default_parallelism: int) -> int:
     if task_total <= 1:
         return 1
@@ -163,6 +184,13 @@ def prepare_translation_task(
         source_hash=source_hash,
         force=request.force,
     ):
+        _record_run_metric(
+            repository=request.repository,
+            run_id=request.run_id,
+            name="pipeline.translate.skipped_total.up_to_date_source_hash",
+            value=1,
+            unit="count",
+        )
         return "skipped", None
     context = deps.candidate_context_fn(
         repository=request.repository,
@@ -195,6 +223,7 @@ def execute_prepared_translation_task(
         context=request.task.context,
         payload_model=request.task.candidate.payload_model,
         llm_connection=request.llm_connection,
+        max_attempts=request.llm_max_attempts,
         return_debug=True,
     )
     translated_payload, debug = _split_translated_result(translated_result)
@@ -257,6 +286,7 @@ def translate_candidate_into_language(
         source_language_code=request.source_language_code,
         source_language_label=request.source_language_label,
         llm_connection=request.llm_connection,
+        llm_max_attempts=_translation_llm_max_attempts(request.settings),
     )
     deps.persist_task_fn(
         repository=request.repository,
@@ -290,6 +320,7 @@ def run_translation_batch(
         unit="ms",
     )
     if prepared_tasks is None:
+        _record_result_totals(context)
         return context.result
     _record_batch_metric(
         context=context,
@@ -304,14 +335,22 @@ def run_translation_batch(
         value=parallelism if prepared_tasks else 0,
         unit="count",
     )
+    _record_batch_metric(
+        context=context,
+        name="pipeline.translate.llm_max_attempts",
+        value=_translation_llm_max_attempts(context.settings),
+        unit="count",
+    )
     if parallelism <= 1:
-        return _run_prepared_tasks_serially(
+        result = _run_prepared_tasks_serially(
             context=context,
             prepared_tasks=prepared_tasks,
             execute_task_fn=deps.execute_task_fn,
             persist_task_fn=deps.persist_task_fn,
         )
-    return _run_prepared_tasks_in_parallel(
+        _record_result_totals(context)
+        return result
+    result = _run_prepared_tasks_in_parallel(
         ParallelExecutionRequest(
             context=context,
             prepared_tasks=prepared_tasks,
@@ -321,6 +360,8 @@ def run_translation_batch(
             executor_class=deps.executor_class,
         )
     )
+    _record_result_totals(context)
+    return result
 
 
 def run_translation_backfill_batch(
@@ -336,6 +377,7 @@ def run_translation_backfill_batch(
             candidate=candidate,
             translate_candidate_fn=deps.translate_candidate_fn,
         ):
+            _record_result_totals(context)
             return context.result
         _run_backfill_mirrors(
             context=context,
@@ -343,6 +385,7 @@ def run_translation_backfill_batch(
             mirror_language_codes_by_candidate=deps.mirror_language_codes_by_candidate,
             mirror_candidate_fn=deps.mirror_candidate_fn,
         )
+    _record_result_totals(context)
     return context.result
 
 
@@ -553,6 +596,7 @@ def _submit_task(
         source_language_code=request.context.source_language_code,
         source_language_label=request.context.source_language_label,
         llm_connection=request.context.llm_connection,
+        llm_max_attempts=request.context.llm_max_attempts,
     )
     in_flight[future] = task
     return next_task_index + 1
@@ -565,15 +609,34 @@ def _record_batch_metric(
     value: int | float,
     unit: str,
 ) -> None:
-    run_id = str(context.run_id or "").strip()
-    if not run_id:
-        return
-    context.repository.record_metric(
-        run_id=run_id,
+    _record_run_metric(
+        repository=context.repository,
+        run_id=context.run_id,
         name=name,
-        value=float(value),
+        value=value,
         unit=unit,
     )
+
+
+def _translation_llm_max_attempts(settings: Any) -> int:
+    try:
+        value = int(getattr(settings, "translation_llm_max_attempts", 3) or 3)
+    except (TypeError, ValueError):
+        value = 3
+    return max(1, value)
+
+
+def _record_result_totals(context: TranslationBatchContext) -> None:
+    for name, value in (
+        ("pipeline.translate.scanned_total", int(context.result.scanned_total or 0)),
+        (
+            "pipeline.translate.translated_total",
+            int(context.result.translated_total or 0),
+        ),
+        ("pipeline.translate.mirrored_total", int(context.result.mirrored_total or 0)),
+        ("pipeline.translate.skipped_total", int(context.result.skipped_total or 0)),
+    ):
+        _record_batch_metric(context=context, name=name, value=value, unit="count")
 
 
 def _complete_prepared_task(
@@ -589,6 +652,7 @@ def _complete_prepared_task(
             source_language_code=context.source_language_code,
             source_language_label=context.source_language_label,
             llm_connection=context.llm_connection,
+            llm_max_attempts=context.llm_max_attempts,
         )
     except Exception as exc:  # noqa: BLE001
         _handle_translation_failure(

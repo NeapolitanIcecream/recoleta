@@ -17,6 +17,7 @@ from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.ports import TrendRepositoryPort
 from recoleta.prompt_style import reader_facing_ai_tropes_prompt
 from recoleta.rag.corpus_tools import CorpusSpec, SearchService
+from recoleta.rag.agent_runtime import _extract_raw_tool_trace
 from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.trends import TrendPayload
@@ -575,6 +576,7 @@ def generate_trend_ideas_payload(
         "estimated_cost_usd": estimated_cost_usd,
         "tool_calls_total": tool_calls_total,
         "tool_call_breakdown": tool_call_breakdown,
+        "raw_tool_trace": _extract_raw_tool_trace(messages),
         "prompt_chars": len(prompt),
         "trend_snapshot_pack_chars": len(
             str(resolved_request.trend_snapshot_pack_md or "")

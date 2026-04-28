@@ -19,6 +19,7 @@ def test_enrich_records_source_metrics_for_html_and_pdf_paths(
         analyzer=FakeAnalyzer(),
         telegram_sender=FakeTelegramSender(),
     )
+    object.__setattr__(settings, "enrich_html_maintext_max_concurrency", 2)
 
     drafts = [
         ItemDraft.from_values(
@@ -89,3 +90,5 @@ def test_enrich_records_source_metrics_for_html_and_pdf_paths(
     assert by_name["pipeline.enrich.source.openreview.content_type.pdf_text_total"] == 1
     assert by_name["pipeline.enrich.source.rss.content_chars_sum"] > 0
     assert by_name["pipeline.enrich.source.openreview.content_chars_sum"] > 0
+    assert by_name["pipeline.enrich.parallel.html_maintext.max_workers"] == 2
+    assert by_name["pipeline.enrich.parallel.html_maintext.items_total"] == 3

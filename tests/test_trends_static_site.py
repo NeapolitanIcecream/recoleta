@@ -362,3 +362,73 @@ def test_export_trend_static_site_idea_markdown_fallback_uses_current_shape_only
         not in ideas_html
     )
     assert "Opportunities" not in ideas_html
+
+
+def test_export_trend_static_site_metrics_recorder_uses_low_cardinality_step_names(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=301,
+        title="Agent Systems",
+        granularity="day",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 3, 2, tzinfo=UTC),
+        run_id="run-site-metrics-en",
+        overview_md="## Overview\n\nEnglish note.\n",
+        topics=["agents"],
+        clusters=[],
+        language_code="en",
+    )
+    write_markdown_trend_note(
+        output_dir=notes_root / "Localized" / "zh-cn",
+        trend_doc_id=301,
+        title="智能体系统",
+        granularity="day",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 3, 2, tzinfo=UTC),
+        run_id="run-site-metrics-zh",
+        overview_md="## Overview\n\n中文笔记。\n",
+        topics=["agents"],
+        clusters=[],
+        language_code="zh-CN",
+    )
+
+    calls: list[tuple[str, int, dict[str, object]]] = []
+
+    def _record_metric(
+        step_name: str,
+        duration_ms: int,
+        metadata: dict[str, object],
+    ) -> None:
+        calls.append((step_name, duration_ms, metadata))
+
+    site_dir = tmp_path / "site"
+    manifest_path = export_trend_static_site(
+        input_dir=notes_root,
+        output_dir=site_dir,
+        default_language_code="en",
+        metrics_recorder=_record_metric,
+    )
+
+    expected_step_names = {
+        "multilang.prepare_output",
+        "multilang.export_language",
+        "multilang.export_languages",
+        "multilang.apply_language_overrides",
+        "multilang.aggregate_manifest",
+        "multilang.email_links",
+        "multilang.write_root_files",
+    }
+
+    assert manifest_path.exists()
+    assert calls
+    assert {step_name for step_name, _duration_ms, _metadata in calls} <= expected_step_names
+    assert "multilang.export_language" in {
+        step_name for step_name, _duration_ms, _metadata in calls
+    }
+    assert "multilang.apply_language_overrides" in {
+        step_name for step_name, _duration_ms, _metadata in calls
+    }
+    assert all(duration_ms >= 0 for _step_name, duration_ms, _metadata in calls)

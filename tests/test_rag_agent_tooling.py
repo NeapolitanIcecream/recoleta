@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, cast
 
 from pydantic_ai.messages import (
@@ -12,6 +14,7 @@ from pydantic_ai.messages import (
 
 
 rag_agent = importlib.import_module("recoleta.rag.agent")
+ideas_agent = importlib.import_module("recoleta.rag.ideas_agent")
 
 
 def test_trend_agent_tools_expose_descriptions_and_hybrid_search() -> None:
@@ -503,3 +506,90 @@ def test_extract_raw_tool_trace_marks_unavailable_without_messages() -> None:
     assert trace["status"] == "unavailable"
     assert trace["events"] == []
     assert trace["tool_calls_total"] == 0
+
+
+def test_generate_trend_ideas_debug_includes_raw_tool_trace(
+    monkeypatch,
+) -> None:
+    from recoleta.passes.trend_ideas import TrendIdeasPayload
+    from recoleta.trends import TrendPayload
+
+    messages = [
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="search_hybrid",
+                    args={"query": "agent memory", "doc_type": "item"},
+                    tool_call_id="ideas-call-1",
+                )
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name="search_hybrid",
+                    tool_call_id="ideas-call-1",
+                    content={"hits": [{"doc_id": 7, "chunk_index": 0}]},
+                )
+            ]
+        ),
+    ]
+
+    class FakeAgent:
+        def run_sync(self, _prompt: str, *, deps: Any) -> Any:
+            assert deps.run_id == "run-ideas-trace"
+            return SimpleNamespace(
+                output=TrendIdeasPayload(
+                    title="Agent memory checks",
+                    granularity="day",
+                    period_start="2026-03-02T00:00:00+00:00",
+                    period_end="2026-03-03T00:00:00+00:00",
+                    summary_md="Agent memory checks are ready.",
+                    ideas=[],
+                ),
+                usage=lambda: SimpleNamespace(
+                    input_tokens=11,
+                    output_tokens=7,
+                    requests=1,
+                ),
+                all_messages=lambda: messages,
+            )
+
+    monkeypatch.setattr(
+        ideas_agent,
+        "build_trend_ideas_agent",
+        lambda **_kwargs: FakeAgent(),
+    )
+
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    _, debug = ideas_agent.generate_trend_ideas_payload(
+        repository=object(),
+        vector_store=object(),
+        run_id="run-ideas-trace",
+        llm_model="test/fake-model",
+        embedding_model="test/embed",
+        embedding_dimensions=None,
+        embedding_batch_max_inputs=8,
+        embedding_batch_max_chars=1024,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        trend_payload=TrendPayload(
+            title="Agent memory",
+            granularity="day",
+            period_start=period_start.isoformat(),
+            period_end=period_end.isoformat(),
+            overview_md="Agent memory overview.",
+            topics=["agents"],
+        ),
+        trend_snapshot_pack_md="## Snapshot\n- Agent memory",
+    )
+
+    assert debug is not None
+    raw_tool_trace = debug["raw_tool_trace"]
+    assert raw_tool_trace["status"] == "captured"
+    assert raw_tool_trace["tool_calls_total"] == 1
+    assert raw_tool_trace["events_total"] == 2
+    assert raw_tool_trace["events"][0]["tool_name"] == "search_hybrid"
+    assert raw_tool_trace["events"][0]["args"]["query"] == "agent memory"
