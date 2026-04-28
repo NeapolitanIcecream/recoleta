@@ -58,6 +58,16 @@ def test_settings_loads_enrich_html_maintext_parallelism_from_env(
     assert settings.enrich_html_maintext_max_concurrency == 4
 
 
+def test_settings_loads_translation_llm_max_attempts_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TRANSLATION_LLM_MAX_ATTEMPTS", "5")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.translation_llm_max_attempts == 5
+
+
 def test_settings_treats_empty_backup_output_dir_env_as_unset(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

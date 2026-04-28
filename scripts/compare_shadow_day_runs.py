@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 _METRIC_PREFIXES = (
@@ -17,6 +17,17 @@ _METRIC_PREFIXES = (
     "pipeline.analyze.",
     "pipeline.trends.",
     "pipeline.translate.",
+)
+
+_WORKLOAD_COMPARABILITY_METRICS = (
+    "pipeline.ingest.source.arxiv.in_window_total",
+    "pipeline.ingest.source.arxiv.inserted_total",
+    "pipeline.ingest.source.arxiv.pull_failed_total",
+    "pipeline.enrich.source.arxiv.processed_total",
+    "pipeline.enrich.source.arxiv.content_chars_sum",
+    "pipeline.enrich.source.hn.content_chars_sum",
+    "pipeline.translate.scanned_total",
+    "pipeline.translate.translated_total",
 )
 
 
@@ -177,10 +188,14 @@ def _child_delta(
     candidate: dict[str, Any],
 ) -> dict[str, Any]:
     baseline_metrics = (
-        baseline.get("metrics") if isinstance(baseline.get("metrics"), dict) else {}
+        cast(dict[str, float], baseline.get("metrics"))
+        if isinstance(baseline.get("metrics"), dict)
+        else {}
     )
     candidate_metrics = (
-        candidate.get("metrics") if isinstance(candidate.get("metrics"), dict) else {}
+        cast(dict[str, float], candidate.get("metrics"))
+        if isinstance(candidate.get("metrics"), dict)
+        else {}
     )
     metric_names = _selected_metric_names(
         baseline_metrics=baseline_metrics,
@@ -272,6 +287,49 @@ def _top_changed_metrics(
     )[:limit]
 
 
+def _workload_warning_reason(metric_name: str, *, baseline: float, candidate: float) -> str | None:
+    if baseline == candidate:
+        return None
+    delta = candidate - baseline
+    if metric_name.endswith("_chars_sum"):
+        if baseline <= 0.0 or abs(delta) / baseline >= 0.02:
+            return "content workload changed"
+        return None
+    if abs(delta) >= 1.0:
+        return "count workload changed"
+    return None
+
+
+def _workload_comparability_warnings(children: dict[str, Any]) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for instance, child in sorted(children.items()):
+        metrics = child.get("metrics") if isinstance(child.get("metrics"), dict) else {}
+        for metric_name in _WORKLOAD_COMPARABILITY_METRICS:
+            payload = metrics.get(metric_name)
+            if not isinstance(payload, dict):
+                continue
+            baseline = float(payload.get("baseline") or 0.0)
+            candidate = float(payload.get("candidate") or 0.0)
+            reason = _workload_warning_reason(
+                metric_name,
+                baseline=baseline,
+                candidate=candidate,
+            )
+            if reason is None:
+                continue
+            warnings.append(
+                {
+                    "instance": instance,
+                    "metric": metric_name,
+                    "baseline": round(baseline, 2),
+                    "candidate": round(candidate, 2),
+                    "delta": round(candidate - baseline, 2),
+                    "reason": reason,
+                }
+            )
+    return warnings
+
+
 def _render_report(comparison: dict[str, Any]) -> str:
     fleet = comparison["fleet"]["real_seconds_total"]
     lines = [
@@ -295,6 +353,20 @@ def _render_report(comparison: dict[str, Any]) -> str:
         lines.append(
             f"| {step_id} | {payload['baseline_ms']} | {payload['candidate_ms']} | {payload['delta_ms']} | {payload['improvement_pct']} |"
         )
+    lines.extend(["", "## Workload Comparability Warnings"])
+    workload_warnings = comparison.get("workload_comparability_warnings") or []
+    if workload_warnings:
+        lines.append(
+            "Treat wall-time deltas as non-comparable until these source workload differences are explained."
+        )
+        for warning in workload_warnings:
+            lines.append(
+                f"- `{warning['instance']}` `{warning['metric']}`: "
+                f"{warning['baseline']} -> {warning['candidate']} "
+                f"(delta {warning['delta']}; {warning['reason']})"
+            )
+    else:
+        lines.append("- none")
     for instance, child in comparison["children"].items():
         lines.extend(
             [
@@ -340,6 +412,22 @@ def _build_comparison(*, baseline_dir: Path, candidate_dir: Path) -> dict[str, A
     baseline = _load_shadow_summary(baseline_dir)
     candidate = _load_shadow_summary(candidate_dir)
     child_names = sorted(set(baseline["children"]) | set(candidate["children"]))
+    children = {
+        instance: _child_delta(
+            instance=instance,
+            baseline=(
+                baseline["children"].get(instance)
+                if isinstance(baseline["children"].get(instance), dict)
+                else {}
+            ),
+            candidate=(
+                candidate["children"].get(instance)
+                if isinstance(candidate["children"].get(instance), dict)
+                else {}
+            ),
+        )
+        for instance in child_names
+    }
     return {
         "baseline_dir": str(baseline_dir),
         "candidate_dir": str(candidate_dir),
@@ -355,22 +443,8 @@ def _build_comparison(*, baseline_dir: Path, candidate_dir: Path) -> dict[str, A
             baseline_aggregate=baseline["aggregate"],
             candidate_aggregate=candidate["aggregate"],
         ),
-        "children": {
-            instance: _child_delta(
-                instance=instance,
-                baseline=(
-                    baseline["children"].get(instance)
-                    if isinstance(baseline["children"].get(instance), dict)
-                    else {}
-                ),
-                candidate=(
-                    candidate["children"].get(instance)
-                    if isinstance(candidate["children"].get(instance), dict)
-                    else {}
-                ),
-            )
-            for instance in child_names
-        },
+        "workload_comparability_warnings": _workload_comparability_warnings(children),
+        "children": children,
     }
 
 

@@ -177,3 +177,45 @@ def test_build_comparison_treats_missing_metrics_and_billing_as_zero(tmp_path: P
     assert child["billing_by_step"]["translate"]["candidate_usd"] == 0.5
     assert child["terminal_state"]["baseline"] == "succeeded_clean"
     assert child["terminal_state"]["candidate"] == "succeeded_partial"
+
+
+def test_build_comparison_flags_workload_metric_mismatches(tmp_path: Path) -> None:
+    baseline_dir = tmp_path / "baseline"
+    candidate_dir = tmp_path / "candidate"
+    _write_shadow_fixture(
+        baseline_dir,
+        fleet_real_seconds=100.0,
+        steps=[("ingest", 60_000), ("translate", 40_000)],
+        metrics={
+            "pipeline.ingest.source.arxiv.in_window_total": 14.0,
+            "pipeline.enrich.source.arxiv.content_chars_sum": 1_000_000.0,
+            "pipeline.translate.translated_total": 25.0,
+        },
+        billing_by_step={},
+    )
+    _write_shadow_fixture(
+        candidate_dir,
+        fleet_real_seconds=70.0,
+        steps=[("ingest", 30_000), ("translate", 40_000)],
+        metrics={
+            "pipeline.ingest.source.arxiv.in_window_total": 0.0,
+            "pipeline.enrich.source.arxiv.content_chars_sum": 0.0,
+            "pipeline.translate.translated_total": 24.0,
+        },
+        billing_by_step={},
+    )
+
+    comparison = compare._build_comparison(
+        baseline_dir=baseline_dir,
+        candidate_dir=candidate_dir,
+    )
+
+    warnings = comparison["workload_comparability_warnings"]
+    warning_keys = {(entry["instance"], entry["metric"]) for entry in warnings}
+    assert ("embodied_ai", "pipeline.ingest.source.arxiv.in_window_total") in warning_keys
+    assert ("embodied_ai", "pipeline.enrich.source.arxiv.content_chars_sum") in warning_keys
+    assert ("embodied_ai", "pipeline.translate.translated_total") in warning_keys
+
+    report = compare._render_report(comparison)
+    assert "## Workload Comparability Warnings" in report
+    assert "Treat wall-time deltas as non-comparable" in report

@@ -32,6 +32,7 @@ class ExecuteTaskRequest:
     source_language_code: str
     source_language_label: str
     llm_connection: Any
+    llm_max_attempts: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +92,7 @@ class TranslationBatchContext:
     source_language_code: str
     source_language_label: str
     llm_connection: Any
+    llm_max_attempts: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +223,7 @@ def execute_prepared_translation_task(
         context=request.task.context,
         payload_model=request.task.candidate.payload_model,
         llm_connection=request.llm_connection,
+        max_attempts=request.llm_max_attempts,
         return_debug=True,
     )
     translated_payload, debug = _split_translated_result(translated_result)
@@ -283,6 +286,7 @@ def translate_candidate_into_language(
         source_language_code=request.source_language_code,
         source_language_label=request.source_language_label,
         llm_connection=request.llm_connection,
+        llm_max_attempts=_translation_llm_max_attempts(request.settings),
     )
     deps.persist_task_fn(
         repository=request.repository,
@@ -329,6 +333,12 @@ def run_translation_batch(
         context=context,
         name="pipeline.translate.parallelism.effective",
         value=parallelism if prepared_tasks else 0,
+        unit="count",
+    )
+    _record_batch_metric(
+        context=context,
+        name="pipeline.translate.llm_max_attempts",
+        value=_translation_llm_max_attempts(context.settings),
         unit="count",
     )
     if parallelism <= 1:
@@ -586,6 +596,7 @@ def _submit_task(
         source_language_code=request.context.source_language_code,
         source_language_label=request.context.source_language_label,
         llm_connection=request.context.llm_connection,
+        llm_max_attempts=request.context.llm_max_attempts,
     )
     in_flight[future] = task
     return next_task_index + 1
@@ -605,6 +616,14 @@ def _record_batch_metric(
         value=value,
         unit=unit,
     )
+
+
+def _translation_llm_max_attempts(settings: Any) -> int:
+    try:
+        value = int(getattr(settings, "translation_llm_max_attempts", 3) or 3)
+    except (TypeError, ValueError):
+        value = 3
+    return max(1, value)
 
 
 def _record_result_totals(context: TranslationBatchContext) -> None:
@@ -633,6 +652,7 @@ def _complete_prepared_task(
             source_language_code=context.source_language_code,
             source_language_label=context.source_language_label,
             llm_connection=context.llm_connection,
+            llm_max_attempts=context.llm_max_attempts,
         )
     except Exception as exc:  # noqa: BLE001
         _handle_translation_failure(

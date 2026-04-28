@@ -43,6 +43,7 @@ class TranslationLLMRequest:
     context: dict[str, Any] | None = None
     payload_model: type[BaseModel] | None = None
     llm_connection: LLMConnectionConfig | None = None
+    max_attempts: int = _TRANSLATION_LLM_MAX_ATTEMPTS
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,9 +99,10 @@ def translate_structured_payload_with_debug(
         request.payload,
         payload_model=request.payload_model,
     )
+    max_attempts = _normalized_max_attempts(request.max_attempts)
     aggregated_debug: dict[str, Any] = {}
     retry_attempts: list[dict[str, Any]] = []
-    for attempt in range(1, _TRANSLATION_LLM_MAX_ATTEMPTS + 1):
+    for attempt in range(1, max_attempts + 1):
         response = _invoke_translation_completion(
             request=request,
             normalized_model=normalized_model,
@@ -132,7 +134,7 @@ def translate_structured_payload_with_debug(
         except ValueError as exc:
             if (
                 _is_retryable_translation_output_error(exc)
-                and attempt < _TRANSLATION_LLM_MAX_ATTEMPTS
+                and attempt < max_attempts
             ):
                 retry_attempts.append(
                     {
@@ -152,6 +154,14 @@ def translate_structured_payload_with_debug(
             }
         return translated_payload, aggregated_debug
     raise RuntimeError("translation attempts exhausted unexpectedly")
+
+
+def _normalized_max_attempts(value: int | None) -> int:
+    try:
+        normalized = int(value or _TRANSLATION_LLM_MAX_ATTEMPTS)
+    except (TypeError, ValueError):
+        normalized = _TRANSLATION_LLM_MAX_ATTEMPTS
+    return max(1, normalized)
 
 
 def _invoke_translation_completion(

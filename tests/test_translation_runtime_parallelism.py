@@ -113,7 +113,7 @@ def _batch_context(
 ) -> translation_runtime.TranslationBatchContext:
     return translation_runtime.TranslationBatchContext(
         repository=repository,
-        settings=SimpleNamespace(),
+        settings=SimpleNamespace(translation_llm_max_attempts=5),
         result=SimpleNamespace(
             translated_total=0,
             mirrored_total=0,
@@ -132,6 +132,7 @@ def _batch_context(
         source_language_code="en",
         source_language_label="English",
         llm_connection=None,
+        llm_max_attempts=5,
     )
 
 
@@ -345,6 +346,7 @@ def test_run_translation_batch_records_batch_parallelism_metrics() -> None:
     assert "pipeline.translate.batch.prepare.duration_ms" in metric_names
     assert "pipeline.translate.batch.prepared_tasks_total" in metric_names
     assert "pipeline.translate.parallelism.effective" in metric_names
+    assert "pipeline.translate.llm_max_attempts" in metric_names
 
 
 def test_run_translation_batch_records_result_totals() -> None:
@@ -385,6 +387,7 @@ def test_run_translation_batch_records_result_totals() -> None:
     assert metric_values["pipeline.translate.translated_total"] == 1
     assert metric_values["pipeline.translate.mirrored_total"] == 0
     assert metric_values["pipeline.translate.skipped_total"] == 1
+    assert metric_values["pipeline.translate.llm_max_attempts"] == 5
 
 
 def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -> None:

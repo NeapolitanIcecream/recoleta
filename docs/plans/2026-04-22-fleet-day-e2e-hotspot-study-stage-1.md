@@ -691,3 +691,134 @@ trends/ideas retrieval reuse for this day window. The next plausible work is:
    translation concurrency
 3. use the new `ideas` raw tool trace only when a future trends/ideas run shows
    repeated exact tool requests or a clear LLM-loop pathology
+
+## Continuation Update 4
+
+The next pass resumed after the network was stable again and focused on the
+translation instability seen in the previous concurrency attempts.
+
+### DFX addition
+
+Translation now exposes a guarded retry knob:
+
+- `TRANSLATION_LLM_MAX_ATTEMPTS`, default `3`, min `1`, max `10`
+- batch metric `pipeline.translate.llm_max_attempts`
+
+The default runtime behavior is unchanged. The knob exists to make high
+translation parallelism experiments terminally stable enough to measure, not as
+an accepted performance default.
+
+The compare script also now emits `workload_comparability_warnings` in
+`delta.json` and `report.md` when existing low-cardinality workload metrics
+change materially between baseline and candidate. This guards against accepting
+candidate runs where external source variance changed the actual work.
+
+### Current control
+
+The control was refreshed with the accepted enrich setting and default
+translation retry behavior:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
+uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-html-maintext-p4-current-control
+```
+
+Result: `real_seconds_total=519.13s`.
+
+This control had the expected arXiv workload for the heavy children:
+
+| child | arXiv in window | translated total | translate step |
+| --- | ---: | ---: | ---: |
+| `cross_platform` | `0` | `3` | `18,536ms` |
+| `embodied_ai` | `14` | `25` | `48,814ms` |
+| `software_intelligence` | `44` | `25` | `46,509ms` |
+
+### Invalidated p10 probe
+
+The first stable-network p10 run succeeded terminally:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
+TRANSLATION_PARALLELISM=10 \
+TRANSLATION_LLM_MAX_ATTEMPTS=5 \
+uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-translate-p10-attempts5
+```
+
+It reported `real_seconds_total=420.58s`, but it is not a valid treatment
+comparison: both heavy children had `arxiv_in_window=0`. This excludes the run
+from acceptance because live external source variance changed the workload.
+
+### p10 attempts5 repeat
+
+The p10 repeat restored the expected heavy arXiv workload and is the valid p10
+comparison:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
+TRANSLATION_PARALLELISM=10 \
+TRANSLATION_LLM_MAX_ATTEMPTS=5 \
+uv run python scripts/bench_shadow_day_run.py \
+  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --date 2026-04-13 \
+  --backup-root bench-out/e2e-20260413-baseline/backups \
+  --output-dir bench-out/shadow-20260413-translate-p10-attempts5-r2
+```
+
+Compare artifact:
+`bench-out/compare-shadow-20260413-html-maintext-p4-current-control-vs-translate-p10-attempts5-r2/report.md`.
+
+| outcome | control | p10 attempts5 | delta |
+| --- | ---: | ---: | ---: |
+| fleet wall time | `519.13s` | `482.24s` | `-36.89s` (`-7.11%`) |
+| aggregate translate | `113,859ms` | `101,909ms` | `-11,950ms` (`-10.5%`) |
+
+Verdict: **reject**. It missed the fleet `8%` threshold, missed the target-step
+`15%` threshold, and had a `cross_platform` wall-time regression above `5%`
+from unrelated non-target variance.
+
+### p12 attempts5 repeat
+
+The first p12 run looked acceptable:
+
+| outcome | control | p12 attempts5 | delta |
+| --- | ---: | ---: | ---: |
+| fleet wall time | `519.13s` | `432.62s` | `-86.51s` (`-16.66%`) |
+| aggregate translate | `113,859ms` | `95,053ms` | `-18,806ms` (`-16.52%`) |
+
+Because this contradicted the earlier p12 instability, a repeat was required.
+The repeat artifact is
+`bench-out/compare-shadow-20260413-html-maintext-p4-current-control-vs-translate-p12-attempts5-r2/report.md`.
+
+Repeat result:
+
+| outcome | control | p12 attempts5 repeat | delta |
+| --- | ---: | ---: | ---: |
+| fleet wall time | `519.13s` | `661.30s` | `+142.17s` (`+27.39%`) |
+| aggregate translate | `113,859ms` | `104,307ms` | `-9,552ms` (`-8.39%`) |
+| aggregate trends | `73,487ms` | `119,330ms` | `+45,843ms` |
+| aggregate ideas | `87,482ms` | `201,948ms` | `+114,466ms` |
+
+Verdict: **reject**. The branch was terminally stable with
+`TRANSLATION_LLM_MAX_ATTEMPTS=5`, but it failed repeat acceptance: fleet wall
+time regressed, translate improvement was below `15%`, and all children
+regressed by more than `5%` in wall time.
+
+### Updated recommendation
+
+Do not promote p10 or p12 translation parallelism as a fleet default for this
+window. Keep `TRANSLATION_LLM_MAX_ATTEMPTS` and
+`pipeline.translate.llm_max_attempts` as low-risk DFX/reliability controls with
+unchanged defaults.
+
+Before any further timing branches, either freeze source inputs or require the
+new workload-comparability diagnostics to be clean. The invalid p10 probe showed
+that shadow restore alone does not fully remove external source variance from
+fetch/extract workload.

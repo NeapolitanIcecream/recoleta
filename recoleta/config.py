@@ -720,6 +720,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "ANALYZE_WRITE_BATCH_SIZE": "analyze_write_batch_size",
         "ANALYZE_CONTENT_MAX_CHARS": "analyze_content_max_chars",
         "TRANSLATION_PARALLELISM": "translation_parallelism",
+        "TRANSLATION_LLM_MAX_ATTEMPTS": "translation_llm_max_attempts",
         "ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY": "enrich_html_maintext_max_concurrency",
         "ARTIFACTS_DIR": "artifacts_dir",
         "BACKUP_OUTPUT_DIR": "backup_output_dir",
@@ -1208,6 +1209,12 @@ class Settings(BaseSettings):
         ge=1,
         le=32,
         validation_alias="TRANSLATION_PARALLELISM",
+    )
+    translation_llm_max_attempts: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        validation_alias="TRANSLATION_LLM_MAX_ATTEMPTS",
     )
     enrich_html_maintext_max_concurrency: int = Field(
         default=1,

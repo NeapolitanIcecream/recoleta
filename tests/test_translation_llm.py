@@ -153,6 +153,48 @@ def test_translate_structured_payload_retries_after_missing_content() -> None:
     assert debug["retry"]["attempts"][0]["reason"] == "empty_content"
 
 
+def test_translate_structured_payload_uses_configured_max_attempts() -> None:
+    attempts = {"count": 0}
+    raw_responses = [
+        None,
+        None,
+        None,
+        json.dumps(_ideas_payload(), ensure_ascii=False),
+    ]
+
+    def _completion(**_: object) -> object:
+        response = {"raw": raw_responses[attempts["count"]]}
+        attempts["count"] += 1
+        return response
+
+    def _extract_raw(response: object) -> Any:
+        return cast(dict[str, Any], response)["raw"]
+
+    translated, debug = translate_structured_payload_with_debug(
+        TranslationLLMRequest(
+            model="test/fake-model",
+            source_kind="trend_ideas",
+            payload=_ideas_payload(),
+            source_language_code="en",
+            target_language_code="zh-CN",
+            payload_model=TrendIdeasPayload,
+            max_attempts=4,
+        ),
+        TranslationLLMDeps(
+            completion_factory=lambda: _completion,
+            extract_usage_dict_fn=lambda response: {"requests": 1, "cost": response},
+            extract_token_counts_fn=lambda usage: (10, 5, 15),
+            extract_content_fn=_extract_raw,
+            resolve_response_cost_usd_fn=lambda **_: 0.01,
+        ),
+    )
+
+    assert attempts["count"] == 4
+    assert translated["title"] == "Ideas"
+    assert debug["usage"]["requests"] == 4
+    assert debug["retry"]["attempts_total"] == 4
+
+
 def test_translate_structured_payload_classifies_content_filter_responses() -> None:
     attempts = {"count": 0}
 

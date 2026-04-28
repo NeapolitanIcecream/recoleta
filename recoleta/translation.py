@@ -132,6 +132,7 @@ class TranslateStructuredPayloadRequest:
     context: dict[str, Any] | None = None
     payload_model: type[BaseModel] | None = None
     llm_connection: LLMConnectionConfig | None = None
+    max_attempts: int = 3
     return_debug: bool = False
 
 
@@ -297,6 +298,7 @@ def coerce_translate_structured_payload_request(
         context=legacy_kwargs.get("context"),
         payload_model=legacy_kwargs.get("payload_model"),
         llm_connection=legacy_kwargs.get("llm_connection"),
+        max_attempts=int(legacy_kwargs.get("max_attempts") or 3),
         return_debug=bool(legacy_kwargs.get("return_debug", False)),
     )
 
@@ -506,6 +508,7 @@ def _translate_structured_payload_impl(
             request.context,
             request.payload_model,
             request.llm_connection,
+            request.max_attempts,
         ),
         _translation_llm_deps(),
     )
@@ -599,6 +602,7 @@ def _execute_prepared_translation_task(
     source_language_code: str,
     source_language_label: str,
     llm_connection: LLMConnectionConfig,
+    llm_max_attempts: int,
 ) -> _CompletedTranslationTask:
     return _runtime_execute_prepared_translation_task(
         ExecuteTaskRequest(
@@ -607,6 +611,7 @@ def _execute_prepared_translation_task(
             source_language_code=source_language_code,
             source_language_label=source_language_label,
             llm_connection=llm_connection,
+            llm_max_attempts=llm_max_attempts,
         ),
         ExecuteTaskDeps(
             translate_structured_payload_fn=translate_structured_payload,
@@ -785,6 +790,7 @@ def _translation_batch_context(
             request.settings.llm_output_language or request.source_language_code
         ).strip(),
         llm_connection=request.settings.llm_connection_config(),
+        llm_max_attempts=int(getattr(request.settings, "translation_llm_max_attempts", 3) or 3),
     )
 
 
@@ -826,6 +832,7 @@ def _translation_backfill_context(
             fallback=None,
         ),
         llm_connection=request.settings.llm_connection_config(),
+        llm_max_attempts=int(getattr(request.settings, "translation_llm_max_attempts", 3) or 3),
         translation_target=TranslationTarget(
             code=canonical_language_code,
             llm_label=_target_language_label(
