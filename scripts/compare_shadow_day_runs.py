@@ -103,51 +103,80 @@ def _billing_total_usd(entry: Any) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
-def _load_shadow_summary(root: Path) -> dict[str, Any]:
-    summary = _load_json(root / "summary.json")
+def _dict_value(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    value = payload.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _metric_values(raw_metrics: Any) -> dict[str, float]:
+    metrics = raw_metrics if isinstance(raw_metrics, dict) else {}
+    return {
+        str(name): _normalize_metric_value(entry)
+        for name, entry in metrics.items()
+    }
+
+
+def _child_steps(raw_child: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        step
+        for step in raw_child.get("steps") or []
+        if isinstance(step, dict)
+    ]
+
+
+def _run_payload(root: Path, instance: str) -> dict[str, Any]:
+    inspect_path = root / "instances" / instance / "inspect.json"
+    inspect_payload = _load_json(inspect_path) if inspect_path.exists() else {}
+    return _dict_value(inspect_payload, "run") if isinstance(inspect_payload, dict) else {}
+
+
+def _billing_by_step(root: Path, instance: str) -> dict[str, Any]:
+    billing = _run_payload(root, instance).get("billing_by_step")
+    return billing if isinstance(billing, dict) else {}
+
+
+def _load_child_summary(root: Path, raw_child: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    instance = str(raw_child.get("instance") or "").strip()
+    if not instance:
+        return None
+    child_steps = _child_steps(raw_child)
+    time_payload = _dict_value(raw_child, "time")
+    return instance, {
+        "instance": instance,
+        "terminal_state": str(raw_child.get("terminal_state") or ""),
+        "real_seconds": float(time_payload.get("real_seconds") or 0.0),
+        "steps": child_steps,
+        "step_totals": _step_totals(child_steps),
+        "total_duration_ms": sum(
+            int(step.get("duration_ms") or 0) for step in child_steps
+        ),
+        "metrics": _metric_values(raw_child.get("metrics")),
+        "billing_by_step": _billing_by_step(root, instance),
+    }
+
+
+def _load_children(root: Path, summary: dict[str, Any]) -> dict[str, dict[str, Any]]:
     children: dict[str, dict[str, Any]] = {}
     for raw_child in summary.get("children") or []:
         if not isinstance(raw_child, dict):
             continue
-        instance = str(raw_child.get("instance") or "").strip()
-        if not instance:
+        child_summary = _load_child_summary(root, raw_child)
+        if child_summary is None:
             continue
-        metrics = raw_child.get("metrics") or {}
-        if not isinstance(metrics, dict):
-            metrics = {}
-        inspect_path = root / "instances" / instance / "inspect.json"
-        inspect_payload = _load_json(inspect_path) if inspect_path.exists() else {}
-        run_payload = inspect_payload.get("run") if isinstance(inspect_payload, dict) else {}
-        if not isinstance(run_payload, dict):
-            run_payload = {}
-        child_steps = list(raw_child.get("steps") or [])
-        children[instance] = {
-            "instance": instance,
-            "terminal_state": str(raw_child.get("terminal_state") or ""),
-            "real_seconds": float(
-                ((raw_child.get("time") or {}).get("real_seconds") or 0.0)
-            ),
-            "steps": child_steps,
-            "step_totals": _step_totals(child_steps),
-            "total_duration_ms": sum(
-                int(step.get("duration_ms") or 0) for step in child_steps
-            ),
-            "metrics": {
-                name: _normalize_metric_value(entry)
-                for name, entry in metrics.items()
-            },
-            "billing_by_step": (
-                run_payload.get("billing_by_step")
-                if isinstance(run_payload.get("billing_by_step"), dict)
-                else {}
-            ),
-        }
-    aggregate = summary.get("aggregate")
+        instance, payload = child_summary
+        children[instance] = payload
+    return children
+
+
+def _load_shadow_summary(root: Path) -> dict[str, Any]:
+    summary = _load_json(root / "summary.json")
+    if not isinstance(summary, dict):
+        summary = {}
     return {
         "manifest_path": str(summary.get("manifest_path") or ""),
         "date": str(summary.get("date") or ""),
-        "aggregate": aggregate if isinstance(aggregate, dict) else {},
-        "children": children,
+        "aggregate": _dict_value(summary, "aggregate"),
+        "children": _load_children(root, summary),
     }
 
 
@@ -187,85 +216,123 @@ def _child_delta(
     baseline: dict[str, Any],
     candidate: dict[str, Any],
 ) -> dict[str, Any]:
-    baseline_metrics = (
-        cast(dict[str, float], baseline.get("metrics"))
-        if isinstance(baseline.get("metrics"), dict)
-        else {}
-    )
-    candidate_metrics = (
-        cast(dict[str, float], candidate.get("metrics"))
-        if isinstance(candidate.get("metrics"), dict)
-        else {}
-    )
-    metric_names = _selected_metric_names(
-        baseline_metrics=baseline_metrics,
-        candidate_metrics=candidate_metrics,
-    )
-    step_ids = sorted(
-        set(baseline.get("step_totals") or {}) | set(candidate.get("step_totals") or {})
-    )
-    billing_step_ids = sorted(
-        set(baseline.get("billing_by_step") or {})
-        | set(candidate.get("billing_by_step") or {})
-    )
+    baseline_metrics = _child_metrics(baseline)
+    candidate_metrics = _child_metrics(candidate)
     return {
         "instance": instance,
-        "terminal_state": {
-            "baseline": str(baseline.get("terminal_state") or ""),
-            "candidate": str(candidate.get("terminal_state") or ""),
-        },
+        "terminal_state": _terminal_state_delta(baseline, candidate),
         "real_seconds": _duration_delta_payload(
             baseline=float(baseline.get("real_seconds") or 0.0),
             candidate=float(candidate.get("real_seconds") or 0.0),
         ),
-        "total_duration_ms": {
-            "baseline": int(baseline.get("total_duration_ms") or 0),
-            "candidate": int(candidate.get("total_duration_ms") or 0),
-            "delta": int(candidate.get("total_duration_ms") or 0)
-            - int(baseline.get("total_duration_ms") or 0),
-            "improvement_pct": _duration_delta_payload(
-                baseline=float(baseline.get("total_duration_ms") or 0),
-                candidate=float(candidate.get("total_duration_ms") or 0),
-            )["improvement_pct"],
-        },
-        "steps": {
-            step_id: {
-                "baseline_ms": int((baseline.get("step_totals") or {}).get(step_id, 0)),
-                "candidate_ms": int((candidate.get("step_totals") or {}).get(step_id, 0)),
-                "delta_ms": int((candidate.get("step_totals") or {}).get(step_id, 0))
-                - int((baseline.get("step_totals") or {}).get(step_id, 0)),
-                "improvement_pct": _duration_delta_payload(
-                    baseline=float((baseline.get("step_totals") or {}).get(step_id, 0)),
-                    candidate=float((candidate.get("step_totals") or {}).get(step_id, 0)),
-                )["improvement_pct"],
-            }
-            for step_id in step_ids
-        },
-        "metrics": {
-            metric_name: _metric_delta_payload(
-                baseline=float(baseline_metrics.get(metric_name, 0.0)),
-                candidate=float(candidate_metrics.get(metric_name, 0.0)),
-            )
-            for metric_name in metric_names
-        },
-        "billing_by_step": {
-            step_id: {
-                "baseline_usd": round(
-                    _billing_total_usd((baseline.get("billing_by_step") or {}).get(step_id)),
-                    6,
-                ),
-                "candidate_usd": round(
-                    _billing_total_usd((candidate.get("billing_by_step") or {}).get(step_id)),
-                    6,
-                ),
-                "delta_usd": round(
-                    _billing_total_usd((candidate.get("billing_by_step") or {}).get(step_id))
-                    - _billing_total_usd((baseline.get("billing_by_step") or {}).get(step_id)),
-                    6,
-                ),
-            }
-            for step_id in billing_step_ids
-        },
+        "total_duration_ms": _total_duration_delta(baseline, candidate),
+        "steps": _step_deltas(baseline, candidate),
+        "metrics": _metric_deltas(baseline_metrics, candidate_metrics),
+        "billing_by_step": _billing_deltas(baseline, candidate),
+    }
+
+
+def _child_metrics(child: dict[str, Any]) -> dict[str, float]:
+    return (
+        cast(dict[str, float], child.get("metrics"))
+        if isinstance(child.get("metrics"), dict)
+        else {}
+    )
+
+
+def _terminal_state_delta(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, str]:
+    return {
+        "baseline": str(baseline.get("terminal_state") or ""),
+        "candidate": str(candidate.get("terminal_state") or ""),
+    }
+
+
+def _total_duration_delta(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, float | int]:
+    baseline_ms = int(baseline.get("total_duration_ms") or 0)
+    candidate_ms = int(candidate.get("total_duration_ms") or 0)
+    return {
+        "baseline": baseline_ms,
+        "candidate": candidate_ms,
+        "delta": candidate_ms - baseline_ms,
+        "improvement_pct": _duration_delta_payload(
+            baseline=float(baseline_ms),
+            candidate=float(candidate_ms),
+        )["improvement_pct"],
+    }
+
+
+def _step_deltas(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, dict[str, float | int]]:
+    baseline_steps = _dict_value(baseline, "step_totals")
+    candidate_steps = _dict_value(candidate, "step_totals")
+    return {
+        step_id: _step_delta(
+            baseline_ms=int(baseline_steps.get(step_id, 0)),
+            candidate_ms=int(candidate_steps.get(step_id, 0)),
+        )
+        for step_id in sorted(set(baseline_steps) | set(candidate_steps))
+    }
+
+
+def _step_delta(*, baseline_ms: int, candidate_ms: int) -> dict[str, float | int]:
+    return {
+        "baseline_ms": baseline_ms,
+        "candidate_ms": candidate_ms,
+        "delta_ms": candidate_ms - baseline_ms,
+        "improvement_pct": _duration_delta_payload(
+            baseline=float(baseline_ms),
+            candidate=float(candidate_ms),
+        )["improvement_pct"],
+    }
+
+
+def _metric_deltas(
+    baseline_metrics: dict[str, float],
+    candidate_metrics: dict[str, float],
+) -> dict[str, dict[str, float]]:
+    metric_names = _selected_metric_names(
+        baseline_metrics=baseline_metrics,
+        candidate_metrics=candidate_metrics,
+    )
+    return {
+        metric_name: _metric_delta_payload(
+            baseline=float(baseline_metrics.get(metric_name, 0.0)),
+            candidate=float(candidate_metrics.get(metric_name, 0.0)),
+        )
+        for metric_name in metric_names
+    }
+
+
+def _billing_deltas(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+) -> dict[str, dict[str, float]]:
+    baseline_billing = _dict_value(baseline, "billing_by_step")
+    candidate_billing = _dict_value(candidate, "billing_by_step")
+    return {
+        step_id: _billing_delta(
+            baseline_billing.get(step_id),
+            candidate_billing.get(step_id),
+        )
+        for step_id in sorted(set(baseline_billing) | set(candidate_billing))
+    }
+
+
+def _billing_delta(baseline_entry: Any, candidate_entry: Any) -> dict[str, float]:
+    baseline_usd = _billing_total_usd(baseline_entry)
+    candidate_usd = _billing_total_usd(candidate_entry)
+    return {
+        "baseline_usd": round(baseline_usd, 6),
+        "candidate_usd": round(candidate_usd, 6),
+        "delta_usd": round(candidate_usd - baseline_usd, 6),
     }
 
 
@@ -331,8 +398,21 @@ def _workload_comparability_warnings(children: dict[str, Any]) -> list[dict[str,
 
 
 def _render_report(comparison: dict[str, Any]) -> str:
-    fleet = comparison["fleet"]["real_seconds_total"]
     lines = [
+        *_render_report_header(comparison),
+        *_render_aggregate_steps(comparison["aggregate_steps"]),
+        *_render_workload_warnings(
+            comparison.get("workload_comparability_warnings") or []
+        ),
+    ]
+    for instance, child in comparison["children"].items():
+        lines.extend(_render_child_report(instance, child))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_report_header(comparison: dict[str, Any]) -> list[str]:
+    fleet = comparison["fleet"]["real_seconds_total"]
+    return [
         "# Shadow Day Run Comparison",
         "",
         f"- baseline: `{comparison['baseline_dir']}`",
@@ -345,16 +425,24 @@ def _render_report(comparison: dict[str, Any]) -> str:
             f"(delta `{fleet['delta']}s`, improvement `{fleet['improvement_pct']}%`)"
         ),
         "",
+    ]
+
+
+def _render_aggregate_steps(aggregate_steps: dict[str, Any]) -> list[str]:
+    lines = [
         "## Aggregate Steps",
         "| step | baseline_ms | candidate_ms | delta_ms | improvement_% |",
         "| --- | ---: | ---: | ---: | ---: |",
     ]
-    for step_id, payload in comparison["aggregate_steps"].items():
+    for step_id, payload in aggregate_steps.items():
         lines.append(
             f"| {step_id} | {payload['baseline_ms']} | {payload['candidate_ms']} | {payload['delta_ms']} | {payload['improvement_pct']} |"
         )
-    lines.extend(["", "## Workload Comparability Warnings"])
-    workload_warnings = comparison.get("workload_comparability_warnings") or []
+    return lines
+
+
+def _render_workload_warnings(workload_warnings: list[dict[str, Any]]) -> list[str]:
+    lines = ["", "## Workload Comparability Warnings"]
     if workload_warnings:
         lines.append(
             "Treat wall-time deltas as non-comparable until these source workload differences are explained."
@@ -367,45 +455,70 @@ def _render_report(comparison: dict[str, Any]) -> str:
             )
     else:
         lines.append("- none")
-    for instance, child in comparison["children"].items():
-        lines.extend(
-            [
-                "",
-                f"## {instance}",
-                (
-                    "- total_duration_ms: "
-                    f"`{child['total_duration_ms']['baseline']} -> {child['total_duration_ms']['candidate']}` "
-                    f"(delta `{child['total_duration_ms']['delta']}`, "
-                    f"improvement `{child['total_duration_ms']['improvement_pct']}%`)"
-                ),
-                (
-                    "- terminal_state: "
-                    f"`{child['terminal_state']['baseline']} -> {child['terminal_state']['candidate']}`"
-                ),
-                "",
-                "### Top Step Deltas",
-            ]
+    return lines
+
+
+def _render_child_report(instance: str, child: dict[str, Any]) -> list[str]:
+    lines = [
+        "",
+        f"## {instance}",
+        _render_child_total_duration(child),
+        _render_child_terminal_state(child),
+        "",
+        "### Top Step Deltas",
+    ]
+    lines.extend(_render_top_step_deltas(child["steps"]))
+    lines.extend(_render_top_metric_deltas(child["metrics"]))
+    lines.extend(_render_billing_deltas(child["billing_by_step"]))
+    return lines
+
+
+def _render_child_total_duration(child: dict[str, Any]) -> str:
+    total = child["total_duration_ms"]
+    return (
+        "- total_duration_ms: "
+        f"`{total['baseline']} -> {total['candidate']}` "
+        f"(delta `{total['delta']}`, improvement `{total['improvement_pct']}%`)"
+    )
+
+
+def _render_child_terminal_state(child: dict[str, Any]) -> str:
+    state = child["terminal_state"]
+    return f"- terminal_state: `{state['baseline']} -> {state['candidate']}`"
+
+
+def _render_top_step_deltas(steps: dict[str, Any]) -> list[str]:
+    return [
+        (
+            f"- `{step_id}`: {payload['baseline_ms']} -> {payload['candidate_ms']} ms "
+            f"(delta {payload['delta_ms']} ms, improvement {payload['improvement_pct']}%)"
         )
-        for step_id, payload in _top_changed_steps(child["steps"]):
-            lines.append(
-                f"- `{step_id}`: {payload['baseline_ms']} -> {payload['candidate_ms']} ms "
-                f"(delta {payload['delta_ms']} ms, improvement {payload['improvement_pct']}%)"
-            )
-        if child["metrics"]:
-            lines.extend(["", "### Top Metric Deltas"])
-            for metric_name, payload in _top_changed_metrics(child["metrics"]):
-                lines.append(
-                    f"- `{metric_name}`: {payload['baseline']} -> {payload['candidate']} "
-                    f"(delta {payload['delta']})"
-                )
-        if child["billing_by_step"]:
-            lines.extend(["", "### Billing By Step"])
-            for step_id, payload in sorted(child["billing_by_step"].items()):
-                lines.append(
-                    f"- `{step_id}`: {payload['baseline_usd']} -> {payload['candidate_usd']} usd "
-                    f"(delta {payload['delta_usd']} usd)"
-                )
-    return "\n".join(lines).rstrip() + "\n"
+        for step_id, payload in _top_changed_steps(steps)
+    ]
+
+
+def _render_top_metric_deltas(metrics: dict[str, Any]) -> list[str]:
+    if not metrics:
+        return []
+    lines = ["", "### Top Metric Deltas"]
+    for metric_name, payload in _top_changed_metrics(metrics):
+        lines.append(
+            f"- `{metric_name}`: {payload['baseline']} -> {payload['candidate']} "
+            f"(delta {payload['delta']})"
+        )
+    return lines
+
+
+def _render_billing_deltas(billing_by_step: dict[str, Any]) -> list[str]:
+    if not billing_by_step:
+        return []
+    lines = ["", "### Billing By Step"]
+    for step_id, payload in sorted(billing_by_step.items()):
+        lines.append(
+            f"- `{step_id}`: {payload['baseline_usd']} -> {payload['candidate_usd']} usd "
+            f"(delta {payload['delta_usd']} usd)"
+        )
+    return lines
 
 
 def _build_comparison(*, baseline_dir: Path, candidate_dir: Path) -> dict[str, Any]:
