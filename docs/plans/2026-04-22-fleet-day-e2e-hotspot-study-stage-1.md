@@ -822,3 +822,46 @@ Before any further timing branches, either freeze source inputs or require the
 new workload-comparability diagnostics to be clean. The invalid p10 probe showed
 that shadow restore alone does not fully remove external source variance from
 fetch/extract workload.
+
+## Closure Decision
+
+This stage is ready to close. The remaining branches have low expected ROI for
+this day window unless the experiment first freezes source inputs:
+
+- `translate`: p10 and p12 with higher retry budgets were terminally stable, but
+  neither passed repeat acceptance. The best repeatable target-step gain stayed
+  below the `15%` threshold, and p12 regressed fleet wall time on repeat.
+- `trends/ideas`: tool-trace evidence showed no high-ROI exact retrieval reuse.
+  The snapshot-first pilot reduced tool count but made the target `ideas:day`
+  step slower.
+- `site-build`: site-build remained far below the intervention threshold and is
+  not worth optimizing for this fleet-day critical path.
+- more source/fetch branches: shadow restore alone still allows external source
+  variance, so further timing branches need frozen inputs or clean workload
+  comparability warnings first.
+
+Final measured ranking by accepted milliseconds saved:
+
+| rank | branch | verdict | measured effect |
+| ---: | --- | --- | --- |
+| 1 | HTML maintext enrich parallelism (`ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4`) | accept | `706.11s -> 533.62s`, `-172.49s` (`-24.43%`) |
+| 2 | arXiv HTML reuse | reject | `706.11s -> 701.55s`, `-4.56s` (`-0.65%`) |
+| 3 | translation p10 attempts5 | reject | `519.13s -> 482.24s`, `-36.89s` (`-7.11%`), below acceptance |
+| 4 | translation p12 attempts5 | reject | repeat regressed to `661.30s`, `+142.17s` |
+| 5 | trends/ideas snapshot-first pilot | reject | target `ideas:day` regressed by `+1,450ms` |
+
+Recommended merge contents from this stage:
+
+- keep the DFX scripts and metrics: shadow compare reports, translation
+  counters, `materialize_localized.duration_ms`, site-build substep metrics,
+  ideas raw tool trace, and workload comparability warnings
+- keep `TRANSLATION_LLM_MAX_ATTEMPTS` as a reliability/debug knob with unchanged
+  default behavior
+- keep HTML maintext parallelism configurable and use
+  `ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4` for this fleet setup when the network
+  and source workload are comparable
+
+Do not spend more time in this phase on translation concurrency, generic
+trends/ideas reuse, or site-build optimization. Reopen performance work only
+with frozen source inputs or a compare report that has no workload
+comparability warnings.
