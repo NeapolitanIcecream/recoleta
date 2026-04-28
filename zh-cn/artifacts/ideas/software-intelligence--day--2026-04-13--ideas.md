@@ -1,0 +1,53 @@
+---
+kind: ideas
+granularity: day
+period_start: '2026-04-13T00:00:00'
+period_end: '2026-04-14T00:00:00'
+run_id: materialize-outputs
+status: succeeded
+topics:
+- coding-agents
+- execution-verification
+- software-analysis
+- bug-validation
+- traceability
+tags:
+- recoleta/ideas
+- topic/coding-agents
+- topic/execution-verification
+- topic/software-analysis
+- topic/bug-validation
+- topic/traceability
+language_code: zh-CN
+---
+
+# 可运行的验证工件
+
+## Summary
+可执行检查正在进入编码和分析工作流的交付工件。近期最清楚的构建方向是：为代理编写的补丁提供 CI 回执、为安全报告分诊提供 PoC 验证器，以及用分阶段的运行手册代理帮助团队把难配置的分析工具跑起来，并留下可复现的证据。
+
+## 面向代理编写补丁的 CI 执行回执
+仓库级编码代理应该返回补丁，以及证明该补丁有效的精确执行记录。AgentForge为此提供了最清楚的产品层面依据，而不只是研究细节：每次代码变更都必须先在隔离网络的 Docker 沙箱中运行，才能继续下一步；该系统在 SWE-bench Lite 上达到 40.0% 的问题解决率，比其单代理基线高出 26 到 28 个百分点。这里适合构建的东西，是一个面向 CI 的执行回执层，用来保存补丁、生成的测试、沙箱配置、stdout 和 stderr，以及每次尝试中的 fail-to-pass 和 pass-to-pass 结果。
+
+这很适合已经在试用仓库代理、但审查时间偏长的团队。审查者不需要再看一份解释为什么修复“应该”有效的摘要；他们需要的是一份可重放的记录，说明实际运行了什么，以及是否引入了回归。第一个低成本测试可以做得很窄：先要求代理只在一类任务上附带执行回执，例如 flaky 测试修复或小型 bug 修复，然后把审查者接受率和合并时间，与只提供文本和 diff 的代理输出做对比。AnalysisBench 从另一个角度支持同一条工作流边界。它的最佳代理只有在拿到工具特定证据后才会停止，而自验证仍把成功率高估了 15%，这说明如果没有外部工件检查，就不该让代理自己判定工作已经完成。
+
+### Evidence
+- [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md): AgentForge 要求每个补丁都经过沙箱执行，并报告了 40.0% 的问题解决率，且相比单代理基线有很大提升。
+- [Evaluating LLM Agents on Automated Software Analysis Tasks](../Inbox/2026-04-13--evaluating-llm-agents-on-automated-software-analysis-tasks.md): AnalysisBench 表明，基于证据的完成检查很重要，而自验证把成功率高估了 15%。
+
+## 用于漏洞报告分诊的可执行概念验证校验
+安全团队可以在 LLM 漏洞发现与人工分诊之间，加上一道可执行的 PoC 闸门。AnyPoC 说明了这一层为什么重要。它接收候选漏洞报告，要么生成一个带日志、可重复运行的概念验证，要么拒绝该报告；它已在 12 个大型系统上使用，包括 Chromium、Firefox、LLVM、OpenSSL、SQLite、FFmpeg 和 Redis。论文报告的提升很实际：对真实漏洞报告，生成的有效 PoC 多出 1.3x；拒绝的误报多出 9.8x；还有 45 个生成的 PoC 被采纳为官方回归测试。
+
+可以立刻着手构建的是一个验证服务：接收代理生成的漏洞报告，在隔离环境中启动目标项目，尝试生成并重新执行 PoC，然后只写回两种结果之一：已确认并附带可运行工件，或已拒绝并附带失败证据。这对内部 AppSec 团队和维护者都很有用，因为他们已经收到太多纯文本报告，不能直接相信。一个简单的首次部署方式，是先在一个代码库里针对一种漏洞类别上线，前提是该代码库 CI 稳定，然后比较每个已确认发现所需的分析时间，以及那些本来会进入人工审查、但最终被拒绝的报告占比。
+
+### Evidence
+- [AnyPoC: Universal Proof-of-Concept Test Generation for Scalable LLM-Based Bug Detection](../Inbox/2026-04-13--anypoc-universal-proof-of-concept-test-generation-for-scalable-llm-based-bug-detection.md): AnyPoC 通过生成并重新运行可执行 PoC 来验证漏洞报告，在有效确认和误报拒绝上都有明显提升。
+
+## 用于首次工具配置的分析运行手册代理
+采用分析器、模糊测试器、符号执行工具或性能分析器的团队，需要的是能完成完整配置并给出工具特定输出的代理，而不是在构建完成或显示帮助界面后就停止的代理。AnalysisBench 很直接地指出了失败模式：基线代理混淆阶段，在长日志里丢掉根因，并在一些表面信号出现后就宣布成功。定制的 AnalysisAgent 在 35 个工具-项目任务上达到 94% 的验证成功率，而最佳基线是 77%；它依靠的是显式工作流阶段、每个循环只执行一个动作、确定性的日志压缩，以及基于证据的完成检查。
+
+这指向一个适合平台工程和开发者生产力团队的具体支持型产品：分析运行手册代理。它负责安装工具、准备项目、记录精确命令和环境，并且在预期的分析工件出现之前拒绝结束。第一个低成本检查方法，是挑选两个因为配置脆弱而采用率低的内部难用工具，然后衡量这个运行手册代理是否能提高那些从未配置过这些工具的工程师的首次成功率。这里的价值不在于模型有多聪明，而在于把每个阶段都做得足够清楚，让环境配置失败时可以排查。
+
+### Evidence
+- [Evaluating LLM Agents on Automated Software Analysis Tasks](../Inbox/2026-04-13--evaluating-llm-agents-on-automated-software-analysis-tasks.md): AnalysisBench 指出，端到端配置和证据采集是核心瓶颈，并报告了分阶段工作流带来的更高验证成功率。
+- [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md): AgentForge 也表明，在系统接受工作完成之前，强制执行检查是必要的。
