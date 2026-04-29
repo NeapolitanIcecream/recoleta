@@ -1,0 +1,54 @@
+---
+source: arxiv
+url: http://arxiv.org/abs/2604.18791v1
+published_at: '2026-04-20T19:57:35'
+authors:
+- Zijian Zeng
+- Fei Ding
+- Huiming Yang
+- Xianwei Li
+topics:
+- vision-language-action
+- long-horizon-manipulation
+- episodic-memory
+- failure-recovery
+- robot-policy
+relevance_score: 0.96
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# HELM: Harness-Enhanced Long-horizon Memory for Vision-Language-Action Manipulation
+
+## Summary
+## 摘要
+HELM 通过加入显式记忆、执行前动作检查和失败后的恢复机制，提升了长时程视觉-语言-动作操作表现。论文认为，在反应式 VLA 策略中，单靠更大的上下文窗口不足以解决长时程任务中的错误。
+
+## 问题
+- VLA 模型在短任务上表现很好，但在包含多个子目标的长操作序列上会明显失效。论文中的例子显示，OpenVLA 在 LIBERO-SPATIAL 上达到 91.2%，但在 LIBERO-LONG 上降到 58.4%。
+- 论文认为这很重要，因为长时程任务要求机器人记住已经完成的子目标、在动作执行前拒绝错误动作，并在出错后恢复，而不是让错误持续累积。
+- 作者在反应式执行中识别出三类失败来源：记忆缺口、验证缺口和恢复缺口。在 83 个失败的 LIBERO-LONG episode 中，41% 出现记忆失败，33% 出现验证失败，26% 出现恢复失败，18% 同时出现多种失败模式。
+
+## 方法
+- HELM 在冻结的 VLA 外封装了三个模块：Episodic Memory Module、学习得到的 State Verifier，以及 Harness Controller。
+- Episodic Memory Module 存储关键帧和任务状态记录，用 CLIP 嵌入建立索引，检索最相关的前 3 个历史状态，并把检索到的历史以结构化文本形式追加到 VLA 输入中。
+- State Verifier 是主要的学习模块。它是一个小型 3 层 MLP，输入当前观测、候选动作、当前子目标和检索到的记忆上下文，在执行前预测该动作失败的概率。
+- Harness Controller 根据这个失败分数决定是执行、回滚到先前检查点，还是重新规划。它还会跟踪子目标，并最多允许 3 次恢复尝试。
+- 核心观点是，长时程成功依赖由记忆条件化的执行前失败预测，而不只是更长的 token 历史。验证器依赖检索到的记忆：从验证器中去掉记忆后，AUROC 会从 0.847 降到 0.791。
+
+## 结果
+- 在 LIBERO-LONG 上，搭配 OpenVLA 的 HELM 将任务成功率从 58.4% 提高到 81.5%，提升 23.1 个百分点。把 OpenVLA 的上下文从 H=8 增加到 H=32 只能达到 63.8%（+5.4 个百分点），即使 H=64 也只有 65.1%。
+- 在 LIBERO-LONG 上，HELM 还将子目标完成率从 74.2% 提高到 89.3%，将恢复成功率从 12.3% 提高到 54.2%。
+- 在 LIBERO-LONG 的 TSR 基线上，Oracle Memory 为 72.4%，Rule Verifier 为 65.2%，Ensemble x5 为 67.9%，LoRA(50K) 为 69.3%，Reflexion 为 63.1%，HELM-Fwd 为 76.3%，HELM 为 81.5%。
+- 在 CALVIN ABC->D 上，平均完成链条数从 OpenVLA 的 3.02 提高到 HELM 的 3.58。使用 Octo 时，HELM 将 TSR 从 51.2% 提高到 72.8%，提升 21.6 个百分点。
+- LIBERO-LONG 上的消融实验显示每个部分都重要：去掉 EMM 后 TSR 下降 11.2 个百分点，去掉 SV 下降 8.4 个百分点，去掉回滚机制下降 6.3 个百分点，同时去掉 EMM 和 SV 下降 19.1 个百分点。
+- 机制分析结果显示：CLIP 检索达到 81.5% TSR，随机检索为 64.3%，基于最近性的检索为 71.4%；SV 在 5 步失败预测范围下的 AUROC 最高，为 0.847；HELM 在每 100 个 episode 中将记忆失败减少 76%，验证失败减少 61%，恢复失败减少 82%。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [http://arxiv.org/abs/2604.18791v1](http://arxiv.org/abs/2604.18791v1)
