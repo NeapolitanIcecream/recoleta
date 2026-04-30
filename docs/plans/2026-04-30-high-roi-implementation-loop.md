@@ -2,13 +2,12 @@
 
 Date: 2026-04-30
 
-Status: active on `codex/high-roi-improvements`
+Status: completed on `codex/high-roi-improvements`
 
 ## Goal
 
 Land the highest-return improvement queue identified by the 2026-04-30 audit in
-small, reviewable slices. Keep the PR draft while the asynchronous implementation
-loop is running.
+small, reviewable slices.
 
 ## Baseline
 
@@ -69,14 +68,15 @@ Observed baseline:
 - Coordination state lives in `.codex-workflows/high-roi-implementation/` and is
   intentionally local-only.
 
-## Validation Expectations
+## Final Validation
 
-Run the narrowest meaningful checks for each slice. Before marking the whole PR
-ready for review, run:
+The supervisor ran narrow checks for each slice. Before marking the PR ready for
+review, the final CI-fix pass also ran:
 
 - `uv run ruff check .`
-- `uv run pyright`
-- `uv run pytest`
+- `uv run pytest tests/test_recoleta_specs_localization_audit_cli.py -q`
 - `uv run coverage run -m pytest`
 - `uv run coverage json -o coverage.json`
 - `uv run cremona scan --coverage-json coverage.json --fail-on-regression`
+
+GitHub CI passed after the final structural-debt gate fix.
