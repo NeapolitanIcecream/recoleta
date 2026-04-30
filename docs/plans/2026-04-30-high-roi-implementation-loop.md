@@ -51,6 +51,8 @@ Observed baseline:
 5. Continue small pipeline/trends decompositions by change axis.
    - Target orchestration boundaries before broad rewrites.
    - Keep public CLI, DB, and output contracts stable.
+   - Completed slice: extracted analyze item-state update persistence/status
+     fallback handling from `PipelineService` into `recoleta.pipeline`.
 6. Add focused tests around low-coverage user-facing edges.
    - Prioritize RAG CLI, translate CLI, delivery failure paths, and extraction
      fallbacks.
