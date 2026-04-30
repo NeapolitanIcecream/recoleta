@@ -50,14 +50,15 @@ Capture the remaining follow-up work after the English-canonical / Chinese-deriv
 - That specific defect is now fixed, but the broader risk remains: `materialize outputs`, `site stage`, and `site build` still coordinate through implicit directory layout conventions rather than an explicit shared contract.
 - This area needs broader round-trip regression coverage so future changes do not silently reintroduce missing-language or missing-stream pages.
 
-### 5. Localization coverage still requires manual auditing
+### 5. Localization coverage has an initial audit surface
 
 - During the live rollout, coverage checks required ad hoc queries against `localized_outputs`, filesystem counts, and site manifests.
-- There is no dedicated command that answers:
+- `inspect localization` now provides a read-only local audit for:
   - how many item / trend / idea rows have localized variants
   - which pages are missing peer-language variants
-  - whether materialized markdown and site manifests are in sync
-- Result: operational verification is possible, but more manual than it should be.
+  - whether materialized markdown, site manifests, and the site email link map are in sync
+  - orphan localized outputs
+- Remaining gaps: the audit does not evaluate translation quality, semantic equivalence, terminology preservation, or rendered punctuation/link quality.
 
 ### 6. Translation quality control is still mostly manual
 
@@ -102,12 +103,16 @@ Capture the remaining follow-up work after the English-canonical / Chinese-deriv
   - translated / mirrored / skipped / failed counts
   - prompt / completion tokens when available
   - estimated cost metrics when available
-- Add a dedicated localization audit command or doctor mode.
-- It should report at least:
+- Extend `inspect localization` as more contracts become explicit.
+- It already reports:
   - localized coverage by surface
   - missing peer-language pages
   - orphan localized outputs
   - materialized/site-level mismatches
+- Future extensions should focus on:
+  - translation-quality QA
+  - rendered punctuation/link anomalies
+  - explicit contracts shared by `materialize outputs`, `site stage`, and `site build`
 - Add more round-trip regression coverage for multilingual output layout contracts across:
   - `materialize outputs`
   - `site stage`

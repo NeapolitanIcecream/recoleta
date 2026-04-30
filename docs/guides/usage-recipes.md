@@ -140,6 +140,34 @@ What to know:
 - For trends and ideas, backfill also regenerates localized sidecars beside the
   localized markdown notes it rewrites.
 
+## Audit localization coverage
+
+Use `inspect localization` when you need a local coverage check before previewing
+or deploying a multilingual site:
+
+```bash
+uv run recoleta inspect localization
+uv run recoleta inspect localization --json
+uv run recoleta inspect localization --config /path/to/instance/recoleta.yaml --json
+uv run recoleta inspect localization --materialized-output-dir /path/to/notes --site-output-dir /path/to/notes/site --json
+```
+
+What to know:
+
+- The command is read-only. It checks SQLite, materialized Markdown, the static
+  site manifest, and the private site email link-map artifact. It does not call
+  providers or the network.
+- The JSON payload includes `audit_status`, `surfaces`, `materialized`, `site`,
+  `issue_counts`, and capped `issue_samples`.
+- Storage coverage reports item, trend, and idea localized outputs by target
+  language and flags missing target-language rows.
+- Materialized coverage compares peer Markdown filenames across the source
+  language root and `Localized/<language>/` roots when those directories exist.
+- Site coverage compares peer page paths across the multilingual site manifest
+  and reports whether the generated link-map artifact matches the site output.
+- The audit checks coverage and local contracts. It does not judge translation
+  quality, terminology fidelity, or semantic equivalence between languages.
+
 ## Build, preview, or deploy the site
 
 Use these commands when you want public-facing output from stored Markdown and
