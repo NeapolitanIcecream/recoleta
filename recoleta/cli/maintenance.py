@@ -91,6 +91,17 @@ class DoctorLlmRequest:
     command_name: str
 
 
+@dataclass(frozen=True, slots=True)
+class LocalizationAuditCommandRequest:
+    json_output: bool
+    db_path: Path | None
+    config_path: Path | None
+    materialized_output_dir: Path | None
+    site_output_dir: Path | None
+    sample_limit: int
+    command_name: str = "inspect localization"
+
+
 def _emit_command_failure(*, context: CommandFailureContext) -> NoReturn:
     context.log.warning("{} failed error={}", context.failure_name, context.message)
     if context.json_output:
@@ -621,32 +632,25 @@ def run_freshness_command(
     render_freshness_output(console=console, payload=payload, command_name=command_name)
 
 
-def run_localization_audit_command(
-    *,
-    json_output: bool,
-    db_path: Path | None,
-    config_path: Path | None,
-    materialized_output_dir: Path | None,
-    site_output_dir: Path | None,
-    sample_limit: int,
-    command_name: str = "inspect localization",
-) -> None:
+def run_localization_audit_command(*, request: LocalizationAuditCommandRequest) -> None:
     symbols = cli._runtime_symbols()
     console = symbols["Console"]()
-    log = symbols["logger"].bind(module="cli.localization", json=json_output)
+    log = symbols["logger"].bind(
+        module="cli.localization", json=request.json_output
+    )
     try:
         resolved_db_path = cli._resolve_db_path(
-            db_path=db_path,
-            config_path=config_path,
+            db_path=request.db_path,
+            config_path=request.config_path,
         )
     except Exception as exc:  # noqa: BLE001
         _emit_command_failure(
             context=CommandFailureContext(
                 console=console,
                 log=log,
-                failure_name=command_name,
+                failure_name=request.command_name,
                 message=f"db path resolution failed: {exc}",
-                json_output=json_output,
+                json_output=request.json_output,
             )
         )
     if not resolved_db_path.exists():
@@ -654,14 +658,14 @@ def run_localization_audit_command(
             context=CommandFailureContext(
                 console=console,
                 log=log,
-                failure_name=command_name,
+                failure_name=request.command_name,
                 message=f"db does not exist: {resolved_db_path}",
-                json_output=json_output,
+                json_output=request.json_output,
             )
         )
     settings, settings_status = _load_optional_settings(
-        db_path=db_path,
-        config_path=config_path,
+        db_path=request.db_path,
+        config_path=request.config_path,
         resolved_db_path=resolved_db_path,
         log=log,
         warning_template="Localization audit settings load failed db_path={} error_type={} error={}",
@@ -675,9 +679,9 @@ def run_localization_audit_command(
                 resolved_db_path=resolved_db_path,
                 settings=settings,
                 settings_status=settings_status,
-                materialized_output_dir=materialized_output_dir,
-                site_output_dir=site_output_dir,
-                sample_limit=sample_limit,
+                materialized_output_dir=request.materialized_output_dir,
+                site_output_dir=request.site_output_dir,
+                sample_limit=request.sample_limit,
             )
         )
     except Exception as exc:  # noqa: BLE001
@@ -685,18 +689,18 @@ def run_localization_audit_command(
             context=CommandFailureContext(
                 console=console,
                 log=log,
-                failure_name=command_name,
+                failure_name=request.command_name,
                 message=str(exc),
-                json_output=json_output,
+                json_output=request.json_output,
             )
         )
-    if json_output:
+    if request.json_output:
         cli.typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
         return
     render_localization_audit_output(
         console=console,
         payload=payload,
-        command_name=command_name,
+        command_name=request.command_name,
     )
 
 
