@@ -39,24 +39,30 @@ Legacy note:
 Current module layout:
 
 - `recoleta/cli/`: command implementations for workflow, stage, inspection,
-  repair, site, RAG, DB, and maintenance commands
-- `recoleta/cli.py`: compatibility shim that re-exports the package CLI entry points
+  repair, site, RAG, DB, and maintenance commands; exports `recoleta.cli:main`
+  for the console script
 - `recoleta/config.py`: typed config, env loading, validation
 - `recoleta/sources.py`: source connectors and incremental pull-state helpers (watermarks, ETag, Last-Modified)
-- `recoleta/pipeline/`: orchestration, stage implementations, metrics, and managed artifacts
-- `recoleta/pipeline.py`: compatibility shim that re-exports pipeline service symbols
+- `recoleta/pipeline/`: orchestration, stage implementations, metrics, managed
+  artifacts, and the `recoleta.pipeline` package-level service facade
 - `recoleta/extract.py`: fulltext extraction (HTML/PDF), HTML cleanup, and Markdown conversion
 - `recoleta/analyzer.py`: LLM invocation via LiteLLM and PydanticAI
 - `recoleta/triage.py`: semantic scoring and pre-ranking before LLM (optional)
 - `recoleta/rag/`: vector sync, LanceDB access, semantic search, and trend-agent tool wiring
-- `recoleta/storage/`: SQLite schema, repository facade, leases, source state, maintenance, and document helpers
-- `recoleta/storage.py`: convenience re-export of the storage facade and shared types
+- `recoleta/storage/`: SQLite schema, repository facade, leases, source state,
+  maintenance, document helpers, and the `recoleta.storage` package-level
+  convenience exports
 - `recoleta/publish/`: Markdown/Obsidian note writers plus Telegram-facing trend note and PDF rendering helpers
 - `recoleta/site.py` and `recoleta/site_deploy.py`: static site export and GitHub Pages branch deployment
 - `recoleta/site_email_links.py`: private site companion artifact for manual email link resolution
 - `recoleta/trend_email.py`: manual trend email candidate selection, rendering, link resolution, and send workflow
 - `recoleta/delivery.py`: Telegram sender plus Resend batch sender
 - `recoleta/observability.py`: logging setup, debug artifacts, and metrics helpers
+
+The old same-named top-level files (`recoleta/cli.py`,
+`recoleta/pipeline.py`, and `recoleta/storage.py`) have been removed. Public
+imports such as `import recoleta.cli`, `import recoleta.pipeline`, and
+`from recoleta.storage import Repository` resolve to the package directories.
 
 ## Pipeline stages
 

@@ -35,9 +35,10 @@ Observed baseline:
    - Validate docs and config examples against the existing setting in
      `recoleta.config.Settings`.
 2. Retire or neutralize stale top-level module/package shadow shims.
-   - Focus first on `recoleta/pipeline.py`, `recoleta/storage.py`, and
-     `recoleta/cli.py`.
-   - Avoid breaking supported imports such as `import recoleta.pipeline`.
+   - Remove stale same-named top-level files after proving imports resolve to
+     package directories.
+   - Avoid breaking supported imports such as `import recoleta.pipeline` or the
+     `recoleta = "recoleta.cli:main"` console script.
    - Update docs and structural-debt baseline only after behavior is verified.
 3. Align standalone translation CLI terminal state with workflow semantics.
    - Ensure non-zero translation failures are machine-readable as partial

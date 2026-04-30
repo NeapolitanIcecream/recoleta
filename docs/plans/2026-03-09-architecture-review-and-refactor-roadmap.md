@@ -50,7 +50,8 @@ Latest verification result at update time:
 In practical terms, the roadmap is now mostly achieved for the first-wave goals and for the main package-direction changes:
 
 - `recoleta.publish`, `recoleta.pipeline`, `recoleta.storage`, `recoleta.cli`, and `recoleta.app` now exist as real packages
-- the old top-level entry modules are compatibility shims or thin facades
+- the old same-named top-level `pipeline.py`, `storage.py`, and `cli.py` files
+  have been removed; public imports resolve to the package directories
 - site rendering depends on shared publish helpers instead of private publish internals
 - trend and RAG code now depend on `TrendRepositoryPort` rather than concrete `Repository`
 - stream-local trend scope is passed explicitly through trends/RAG instead of through a repository proxy
@@ -92,8 +93,8 @@ Several modules are still reasonably cohesive and should not be early refactor t
 
 The implementation has started to accumulate cross-cutting logic inside a few large modules:
 
-- `recoleta/pipeline.py` is both orchestrator and feature host
-- `recoleta/storage.py` is both repository and operational subsystem
+- `recoleta/pipeline/service.py` is both orchestrator and feature host
+- the `recoleta/storage/` package is both repository facade and operational subsystem
 - `recoleta/publish.py` is both note writer and rendering stack
 - `recoleta/site.py` depends on private helpers from `recoleta/publish.py`
 
@@ -103,7 +104,7 @@ Large files alone are not the problem. The problem is that these files combine c
 
 ### 1. `PipelineService` is the main architectural hotspot
 
-`recoleta/pipeline.py` is the strongest signal that the code wants more modules.
+`recoleta/pipeline/service.py` is the strongest signal that the code wants more modules.
 
 Observed responsibilities inside one class:
 
@@ -131,7 +132,7 @@ Verdict: this file should be split first.
 
 ### 2. `Repository` is too broad even if SQLite remains the right backend
 
-`recoleta/storage.py` is not just a repository. It currently owns:
+The `recoleta/storage/` package is not just a repository facade. It currently owns:
 
 - schema version checks and startup-safe migrations
 - workspace lease control
@@ -197,9 +198,9 @@ This means the code has architectural intent but not yet an enforced dependency 
 
 Verdict: add narrower ports after service extraction, not before.
 
-### 6. `cli.py` is large, but it is not the first problem to solve
+### 6. The CLI package is large, but it is not the first problem to solve
 
-`recoleta/cli.py` is big because it includes:
+The `recoleta/cli/` package is big because it includes:
 
 - lazy imports and runtime wiring
 - command definitions
@@ -207,7 +208,7 @@ Verdict: add narrower ports after service extraction, not before.
 - maintenance helpers
 - scheduler glue
 
-This is worth splitting, but it is less risky than `pipeline.py` and `storage.py`. The current lazy-import strategy is also deliberate and should be preserved unless it is proven harmful.
+This is worth splitting, but it is less risky than the pipeline service and storage package. The current lazy-import strategy is also deliberate and should be preserved unless it is proven harmful.
 
 Verdict: refactor later than pipeline/storage/publish.
 
@@ -407,7 +408,7 @@ Current status note:
 
 - publish-stage and trends-stage logic have been extracted into dedicated modules
 - topic-stream runtime helpers, debug-artifact writing, and stream metrics have been extracted into dedicated modules
-- a thin external `recoleta.pipeline` facade is preserved for compatibility
+- a thin external `recoleta.pipeline` package facade is preserved for compatibility
 - explicit trend scope now flows through trends/RAG calls without a repository proxy
 - the remaining `PipelineService` implementation is still concentrated around ingest/enrich/triage/analyze orchestration
 
@@ -479,7 +480,8 @@ Status: complete.
 After the application services settle:
 
 - move commands into modules by command area
-- keep a small top-level `cli.py` for app assembly
+- keep app assembly in `recoleta/cli/app.py` behind the `recoleta.cli:main`
+  console-script target
 - move managed run and lease helpers into an app/runtime layer
 
 This is mainly a maintainability pass.
@@ -488,7 +490,7 @@ Current status note:
 
 - `recoleta.cli` is now a real package and managed-run helpers live under `recoleta.app.runtime`
 - command implementations now live in dedicated modules under `recoleta/cli/`
-- top-level `recoleta/cli.py` is now a compatibility shim
+- the old top-level `recoleta/cli.py` compatibility shim has been removed
 - `recoleta/cli/app.py` now owns app assembly and command registration
 - `recoleta/cli/__init__.py` is now helper/runtime glue plus compatibility exports
 
@@ -529,7 +531,7 @@ This order gives the highest maintenance payoff with the lowest behavior risk.
 
 The first wave is successful when:
 
-- `pipeline.py`, `storage.py`, and `publish.py` are no longer the only places where new behavior lands
+- pipeline, storage, and publish behavior no longer lands in single top-level files
 - site generation no longer imports private publish helpers
 - trend and publish logic can be tested through smaller collaborators
 - `Repository` remains externally compatible while being internally decomposed
@@ -537,7 +539,7 @@ The first wave is successful when:
 
 Status against exit criteria:
 
-- complete: `pipeline.py`, `storage.py`, and `publish.py` are no longer the only places where new behavior lands
+- complete: pipeline, storage, and publish behavior no longer lands in single top-level files
 - complete: site generation no longer imports private publish helpers
 - complete: trend and publish logic can be tested through smaller collaborators
 - complete: `Repository` remains externally compatible while being internally decomposed
