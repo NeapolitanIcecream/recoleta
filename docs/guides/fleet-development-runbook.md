@@ -121,6 +121,47 @@ uv run recoleta inspect runs show --run-id <run-id> --json
 
 That payload includes run metrics, billing, and the executed step list.
 
+## HTML maintext enrich parallelism
+
+Use this tuning only for child fleets where the enrich step spends material time
+fetching and extracting non-arXiv HTML maintext from HN, Hugging Face Daily
+Papers, or RSS sources. The accepted fleet-day hotspot study found
+`ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4` to be the strongest measured runtime
+win for the current fleet setup: `706.11s -> 533.62s` (`-24.43%`) on the
+accepted repeat.
+
+For a one-off run:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
+  uv run recoleta fleet run day --manifest /path/to/fleet.yaml
+```
+
+For a child config that should keep the tuning:
+
+```yaml
+enrich_html_maintext_max_concurrency: 4
+```
+
+The default is `1`, so omitting the setting keeps sequential behavior. Roll
+back by unsetting `ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY` or setting it back to
+`1` in the environment or child config.
+
+After enabling it, watch:
+
+- `pipeline.enrich.failed_total`
+- `pipeline.enrich.parallel.html_maintext.items_total`
+- `pipeline.enrich.parallel.html_maintext.max_workers`
+- source HTTP 429/5xx errors
+- SQLite lock errors
+- total enrich step duration from the workflow step metrics
+
+If failures rise, source throttling appears, SQLite lock errors appear, or the
+fleet workload is no longer comparable to the measured setup, roll back to `1`.
+Use [`docs/design/performance-rollback-policy.md`](../design/performance-rollback-policy.md)
+for the shared thresholds. The measured study is recorded in
+[`docs/plans/2026-04-22-fleet-day-e2e-hotspot-study-stage-1.md`](../plans/2026-04-22-fleet-day-e2e-hotspot-study-stage-1.md).
+
 ## Controlled benchmark scripts
 
 Two scripts under `scripts/` are kept as DFX tools for repeatable measurement:

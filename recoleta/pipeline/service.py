@@ -32,12 +32,6 @@ from recoleta.extract import (
     fetch_url_html,
 )
 from recoleta.llm_connection import llm_connection_from_settings
-from recoleta.models import (
-    ITEM_STATE_ENRICHED,
-    ITEM_STATE_FAILED,
-    ITEM_STATE_RETRYABLE_FAILED,
-    ITEM_STATE_TRIAGED,
-)
 from recoleta.observability import (
     collect_environment_secrets,
     get_rich_console,
@@ -71,6 +65,7 @@ from recoleta.pipeline.triage_runtime import (
     TriageStageRequest,
     execute_triage,
 )
+from recoleta.pipeline.item_state_updates import update_item_states
 from recoleta.pipeline.publish_stage import run_publish_stage
 from recoleta.pipeline.ideas_stage import run_ideas_stage
 from recoleta.pipeline.trends_stage import TrendStageRequest, run_trends_stage
@@ -516,36 +511,7 @@ class PipelineService:
         return len(normalized)
 
     def _update_item_states_batch(self, *, updates: list[ItemStateUpdate]) -> int:
-        normalized = [
-            ItemStateUpdate(
-                item_id=int(update.item_id),
-                state=str(update.state or "").strip(),
-                mirror_item_state=bool(update.mirror_item_state),
-            )
-            for update in updates
-            if int(getattr(update, "item_id", 0) or 0) > 0
-            and str(getattr(update, "state", "") or "").strip()
-        ]
-        if not normalized:
-            return 0
-        batch_updater = getattr(self.repository, "update_item_states_batch", None)
-        if callable(batch_updater):
-            try:
-                return cast(int, batch_updater(updates=normalized))
-            except TypeError:
-                pass
-        for update in normalized:
-            if update.state == ITEM_STATE_RETRYABLE_FAILED:
-                self.repository.mark_item_retryable_failed(item_id=update.item_id)
-            elif update.state == ITEM_STATE_FAILED:
-                self.repository.mark_item_failed(item_id=update.item_id)
-            elif update.state == ITEM_STATE_TRIAGED:
-                self.repository.mark_item_triaged(item_id=update.item_id)
-            elif update.state == ITEM_STATE_ENRICHED:
-                self.repository.mark_item_enriched(item_id=update.item_id)
-            else:
-                self.repository.mark_item_failed(item_id=update.item_id)
-        return len(normalized)
+        return update_item_states(repository=self.repository, updates=updates)
 
     def _requested_analyze_parallelism(self) -> int:
         return max(1, int(self.settings.analyze_max_concurrency))

@@ -71,6 +71,14 @@ publish_targets:
 #     - code: "zh-CN"
 #       llm_label: "Chinese (Simplified)"
 
+## Enrich runtime tuning (optional)
+
+# Non-arXiv HTML maintext enrich is sequential by default. For comparable fleet
+# runs where HN, Hugging Face Daily Papers, or RSS HTML pages dominate Stage 3,
+# set this to 4 to overlap fetch/extract work. Roll back by unsetting it or
+# setting it back to 1.
+# enrich_html_maintext_max_concurrency: 4  # Opt-in tuning; default: 1
+
 ## Topic and ranking configuration
 
 # Topics are used for relevance scoring and optional semantic triage.

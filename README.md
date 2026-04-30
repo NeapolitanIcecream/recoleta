@@ -512,9 +512,27 @@ uv run recoleta inspect why-empty --date 2026-03-15 --granularity day --json
 uv run recoleta repair outputs --site --pdf --json
 uv run recoleta inspect runs show --run-id <run-id> --json
 uv run recoleta inspect runs list --limit 5 --json
+
+# opt into parallel HTML maintext enrich for comparable fleet workloads
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 uv run recoleta fleet run day --manifest ./fleet/fleet.yaml
 ```
 
 When you are scripting a subcommand, check `--help` for its `--json` support.
+
+Runtime tuning note:
+
+- `ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4` speeds up Stage 3 enrich when a
+  fleet run spends time fetching and extracting non-arXiv HTML maintext from
+  HN, Hugging Face Daily Papers, or RSS sources.
+- The default is `1`. Leave it unset for sequential behavior, or roll back by
+  setting it back to `1`.
+- Watch `pipeline.enrich.failed_total`,
+  `pipeline.enrich.parallel.html_maintext.items_total`,
+  `pipeline.enrich.parallel.html_maintext.max_workers`, source HTTP errors,
+  and SQLite lock errors after enabling it.
+- See the [fleet development runbook](./docs/guides/fleet-development-runbook.md)
+  and [performance rollback policy](./docs/design/performance-rollback-policy.md)
+  for rollout and rollback guidance.
 
 Repair and backfill notes:
 

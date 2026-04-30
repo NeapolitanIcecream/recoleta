@@ -7,12 +7,12 @@ This document specifies a design to **rank and optionally filter** candidate ite
 ### Current behavior (no pre-ranking)
 
 - `recoleta analyze` selects candidates purely by **state + recency** (`created_at DESC`) with a hard `limit` (default 100).
-  - Source of truth: `Repository.list_items_for_analysis()` (`recoleta/storage.py`).
+  - Source of truth: `Repository.list_items_for_analysis()` (`recoleta/storage/items.py`).
   - Effective query shape: `WHERE state IN (ingested, enriched, retryable_failed) ORDER BY created_at DESC LIMIT :limit`.
 - Stage 4 (Analyze/LLM) runs for each selected item and computes `relevance_score` inside the LLM output, but that score only becomes useful **after** the LLM call.
-  - Source of truth: `PipelineService.analyze()` (`recoleta/pipeline.py`) + `LiteLLMAnalyzer.analyze()` (`recoleta/analyzer.py`).
+  - Source of truth: `PipelineService.analyze()` (`recoleta/pipeline/service.py`) + `LiteLLMAnalyzer.analyze()` (`recoleta/analyzer.py`).
 - Stage 5 (Rank & Filter) currently happens after analysis/persistence, and therefore cannot reduce Stage 4 calls.
-  - Source of truth: `Repository.list_items_for_publish()` (`recoleta/storage.py`) + `PipelineService.publish()` (`recoleta/pipeline.py`).
+  - Source of truth: `Repository.list_items_for_publish()` (`recoleta/storage/analyses.py`) + `PipelineService.publish()` (`recoleta/pipeline/service.py`).
 
 This means that when the candidate pool is large, **LLM spend is currently driven by recency, not relevance to topics**.
 
@@ -236,7 +236,7 @@ Optional alternatives:
 
 ## Implementation (current)
 
-- `PipelineService.analyze()` (`recoleta/pipeline.py`) optionally runs semantic triage before LLM analysis when `TRIAGE_ENABLED=true` and `TOPICS` is non-empty.
+- `PipelineService.analyze()` (`recoleta/pipeline/service.py`) optionally runs semantic triage before LLM analysis when `TRIAGE_ENABLED=true` and `TOPICS` is non-empty.
 - Semantic scoring and selection live in `SemanticTriage` (`recoleta/triage.py`):
   - default: LiteLLM embeddings + cosine similarity
   - fallback: `rapidfuzz` title similarity when embeddings fail

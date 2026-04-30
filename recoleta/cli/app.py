@@ -16,12 +16,14 @@ from recoleta.cli.ideas import run_ideas_command
 from recoleta.cli.ingest import run_ingest_command
 from recoleta.cli.materialize import run_materialize_outputs_command
 from recoleta.cli.maintenance import (
+    LocalizationAuditCommandRequest,
     run_backup_command,
     run_doctor_command,
     run_doctor_llm_command,
     run_doctor_why_empty_command,
     run_freshness_command,
     run_gc_command,
+    run_localization_audit_command,
     run_restore_command,
     run_stats_command,
     run_vacuum_command,
@@ -1253,6 +1255,58 @@ def inspect_freshness(
         db_path=db_path,
         config_path=config_path,
         command_name="inspect freshness",
+    )
+
+
+@inspect_app.command("localization")
+def inspect_localization(
+    json_output: bool = typer.Option(
+        False, "--json", help="Emit machine-readable JSON output."
+    ),
+    db_path: Path | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to the SQLite DB file. Overrides config/env.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to config file used to resolve recoleta_db_path and localization settings.",
+    ),
+    materialized_output_dir: Path | None = typer.Option(
+        None,
+        "--materialized-output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Materialized Markdown output root. Defaults to MARKDOWN_OUTPUT_DIR when settings are available.",
+    ),
+    site_output_dir: Path | None = typer.Option(
+        None,
+        "--site-output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Static site output root. Defaults to MARKDOWN_OUTPUT_DIR/site when settings are available.",
+    ),
+    sample_limit: int = typer.Option(
+        20,
+        "--sample-limit",
+        min=0,
+        help="Maximum sample rows to include for each issue class.",
+    ),
+) -> None:
+    """Audit localization storage, materialized Markdown, and site coverage."""
+    run_localization_audit_command(
+        request=LocalizationAuditCommandRequest(
+            json_output=json_output,
+            db_path=db_path,
+            config_path=config_path,
+            materialized_output_dir=materialized_output_dir,
+            site_output_dir=site_output_dir,
+            sample_limit=sample_limit,
+            command_name="inspect localization",
+        )
     )
 
 
