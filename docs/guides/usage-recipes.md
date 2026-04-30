@@ -108,6 +108,10 @@ What to know:
 - `--context-assist hybrid` only reads existing search and vector state. It
   does not sync vectors automatically, and it falls back to direct-context
   behavior if hybrid retrieval fails.
+- `--json` emits `status: "ok"` for clean completion, `status:
+  "partial_failure"` when any translation output failed without aborting, and
+  `status: "aborted"` when provider failures stop the run. The `totals` block
+  keeps the scanned, translated, mirrored, skipped, and failed counters.
 
 ## Backfill historical canonical content into a new source language
 

@@ -326,11 +326,19 @@ def _resolved_translate_json_fields(
     }
 
 
+def _translate_json_status(result: Any) -> str:
+    if bool(result.aborted):
+        return "aborted"
+    if int(result.failed_total or 0) > 0:
+        return "partial_failure"
+    return "ok"
+
+
 def _emit_translate_result(*, context: TranslateResultContext) -> None:
     if context.json_output:
         cli._emit_json(
             {
-                "status": "aborted" if context.result.aborted else "ok",
+                "status": _translate_json_status(context.result),
                 "command": context.command_name,
                 "run_id": context.run_id,
                 "db_path": str(context.resolved_db_path),
