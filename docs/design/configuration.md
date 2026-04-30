@@ -206,6 +206,46 @@ SOURCES:
       - https://example.com/feed.xml
 ```
 
+## HTML maintext enrich parallelism (optional)
+
+Use `ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY` /
+`enrich_html_maintext_max_concurrency` to control parallelism for non-arXiv HTML
+maintext enrich work.
+
+- Default: `1` (sequential, unchanged behavior)
+- Accepted fleet tuning value: `4`
+- Bounds: `1..32`
+
+Set `4` when Stage 3 enrich is spending time fetching and extracting
+`html_maintext` for HN, Hugging Face Daily Papers, or RSS items, and the source
+mix is comparable to the measured fleet-day workload. This does not control the
+arXiv `html_document` path, which uses the separate
+`SOURCES.arxiv.html_document_*` settings above.
+
+Examples:
+
+```bash
+ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 uv run recoleta fleet run day --manifest ./fleet/fleet.yaml
+```
+
+```yaml
+enrich_html_maintext_max_concurrency: 4
+```
+
+Watch these signals after enabling it:
+
+- `pipeline.enrich.failed_total`
+- `pipeline.enrich.parallel.html_maintext.items_total`
+- `pipeline.enrich.parallel.html_maintext.max_workers`
+- source HTTP 429/5xx errors
+- SQLite lock errors
+
+Roll back by unsetting `ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY` or setting
+`ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=1` /
+`enrich_html_maintext_max_concurrency: 1`. See
+[`performance-rollback-policy.md`](performance-rollback-policy.md) for the
+shared rollback thresholds.
+
 ## Topic and ranking configuration
 
 - `TOPICS`: list of user topics (strings). These are used for LLM relevance scoring.
