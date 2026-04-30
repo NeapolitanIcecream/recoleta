@@ -56,6 +56,8 @@ Observed baseline:
 6. Add focused tests around low-coverage user-facing edges.
    - Prioritize RAG CLI, translate CLI, delivery failure paths, and extraction
      fallbacks.
+   - Completed slice: covered Resend batch delivery outcomes for incomplete
+     provider success data.
 
 ## Operating Rules
 
