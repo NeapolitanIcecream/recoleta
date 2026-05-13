@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import gzip
 from io import BytesIO
 import re
@@ -13,11 +15,12 @@ from bs4.element import NavigableString, Tag
 import httpx
 import trafilatura
 from tenacity import (
+    RetryCallState,
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential_jitter,
 )
+from tenacity.wait import wait_base, wait_exponential_jitter
 
 
 _PYMUPDF: Any | None = None
@@ -30,6 +33,7 @@ _HTML_REFERENCES_MAX_CHARS = 120_000
 _LATEX_TEXT_SUFFIXES = (".tex", ".bib", ".bbl", ".txt", ".cls", ".sty")
 _PDF_TEXT_LAYER_CHECK_MAX_PAGES = 3
 _PDF_TEXT_LAYER_MIN_CHARS = 200
+_HTTP_RETRY_AFTER_MAX_WAIT_S = 60.0
 
 # Pandoc availability is environment-dependent. Cache the check so we don't
 # repeatedly raise and log the same error on hot paths.
@@ -183,10 +187,44 @@ def _should_retry_httpx(exc: BaseException) -> bool:
     return False
 
 
+def _retry_after_seconds(response: httpx.Response | None) -> float | None:
+    if response is None:
+        return None
+    raw_value = str(response.headers.get("Retry-After") or "").strip()
+    if not raw_value:
+        return None
+    try:
+        seconds = float(raw_value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(raw_value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
+    return max(0.0, min(_HTTP_RETRY_AFTER_MAX_WAIT_S, seconds))
+
+
+class _HttpRetryAfterWait(wait_base):
+    def __init__(self) -> None:
+        self._fallback = wait_exponential_jitter(initial=0.5, max=6.0)
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        if retry_state.outcome is None:
+            return self._fallback(retry_state)
+        exc = retry_state.outcome.exception()
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            retry_after_s = _retry_after_seconds(exc.response)
+            if retry_after_s is not None:
+                return retry_after_s
+        return self._fallback(retry_state)
+
+
 @retry(
     retry=retry_if_exception(_should_retry_httpx),
     stop=stop_after_attempt(3),
-    wait=wait_exponential_jitter(initial=0.5, max=6.0),
+    wait=_HttpRetryAfterWait(),
     reraise=True,
 )
 def fetch_url_html(client: httpx.Client, url: str) -> str:
@@ -198,7 +236,7 @@ def fetch_url_html(client: httpx.Client, url: str) -> str:
 @retry(
     retry=retry_if_exception(_should_retry_httpx),
     stop=stop_after_attempt(3),
-    wait=wait_exponential_jitter(initial=0.5, max=6.0),
+    wait=_HttpRetryAfterWait(),
     reraise=True,
 )
 def fetch_url_bytes(client: httpx.Client, url: str) -> bytes:
