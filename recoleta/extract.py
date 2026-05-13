@@ -33,7 +33,6 @@ _HTML_REFERENCES_MAX_CHARS = 120_000
 _LATEX_TEXT_SUFFIXES = (".tex", ".bib", ".bbl", ".txt", ".cls", ".sty")
 _PDF_TEXT_LAYER_CHECK_MAX_PAGES = 3
 _PDF_TEXT_LAYER_MIN_CHARS = 200
-_HTTP_RETRY_AFTER_MAX_WAIT_S = 60.0
 
 # Pandoc availability is environment-dependent. Cache the check so we don't
 # repeatedly raise and log the same error on hot paths.
@@ -203,7 +202,7 @@ def _retry_after_seconds(response: httpx.Response | None) -> float | None:
         if retry_at.tzinfo is None:
             retry_at = retry_at.replace(tzinfo=timezone.utc)
         seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
-    return max(0.0, min(_HTTP_RETRY_AFTER_MAX_WAIT_S, seconds))
+    return max(0.0, seconds)
 
 
 class _HttpRetryAfterWait(wait_base):
