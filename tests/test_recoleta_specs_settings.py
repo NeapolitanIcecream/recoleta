@@ -37,6 +37,17 @@ def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(
     assert settings.trends_peer_history_window_count == 3
 
 
+def test_settings_defaults_arxiv_html_fetches_to_robots_friendly_serial_rate(
+    configured_env: Path,
+) -> None:
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.sources.arxiv.html_document_max_concurrency == 1
+    assert settings.sources.arxiv.html_document_requests_per_second == pytest.approx(
+        1.0 / 15.0
+    )
+
+
 def test_settings_loads_backup_output_dir_from_env(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

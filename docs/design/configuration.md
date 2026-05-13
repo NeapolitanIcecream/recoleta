@@ -160,9 +160,9 @@ Recommended fields:
     - `max_total_per_run`
     - `enrich_method`: `pdf_text|latex_source|html_document` (default `html_document`)
     - `enrich_failure_mode`: `fallback|strict` (default `fallback`)
-    - `html_document_max_concurrency`: max parallel workers for `enrich_method=html_document` (default `4`)
+    - `html_document_max_concurrency`: max parallel workers for `enrich_method=html_document` (default `1`)
     - `html_document_enable_parallel`: enable bounded parallel enrich for `enrich_method=html_document` (default `true`)
-    - `html_document_requests_per_second`: global throttle for arXiv HTML fetches across workers (default `2.0`)
+    - `html_document_requests_per_second`: global throttle for arXiv HTML fetches across workers (default `0.0667`, about one request every 15 seconds)
     - `html_document_log_sample_rate`: in parallel mode, keep per-item info logs sampled and demote the rest to debug (default `0.05`)
     - `html_document_skip_cleanup_when_complete`: skip cleanup/conversion when `html_document_md` is already present (default `true`)
     - `html_document_use_batched_db_writes`: batch content upserts into fewer commits to reduce SQLite lock contention (default `true`)
