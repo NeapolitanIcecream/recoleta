@@ -190,8 +190,7 @@ class ArxivPoolStore:
         return _window_record_from_row(row) if row is not None else None
 
     def is_window_completed(self, window: ArxivPoolWindow) -> bool:
-        record = self.get_window(window)
-        return record is not None and record.status == "completed"
+        return self.cached_papers_for_window(window) is not None
 
     def cached_papers_for_window(
         self, window: ArxivPoolWindow
@@ -206,42 +205,20 @@ class ArxivPoolStore:
             )
             if query_id is None:
                 return None
-            window_row = conn.execute(
-                """
-                SELECT status
-                FROM arxiv_query_windows
-                WHERE query_id = ?
-                  AND period_start = ?
-                  AND period_end = ?
-                  AND max_results = ?
-                """,
-                (
-                    query_id,
-                    _datetime_to_text(normalized_window.period_start),
-                    _datetime_to_text(normalized_window.period_end),
-                    normalized_window.max_results,
-                ),
-            ).fetchone()
+            window_row = self._window_cache_row(
+                conn=conn,
+                query_id=query_id,
+                window=normalized_window,
+            )
             if window_row is None or str(window_row["status"]) != "completed":
                 return None
-            rows = conn.execute(
-                """
-                SELECT p.*
-                FROM arxiv_query_matches m
-                JOIN arxiv_papers p ON p.arxiv_id = m.arxiv_id
-                WHERE m.query_id = ?
-                  AND m.period_start = ?
-                  AND m.period_end = ?
-                  AND m.max_results = ?
-                ORDER BY m.sort_position ASC, m.arxiv_id ASC
-                """,
-                (
-                    query_id,
-                    _datetime_to_text(normalized_window.period_start),
-                    _datetime_to_text(normalized_window.period_end),
-                    normalized_window.max_results,
-                ),
+            rows = self._cached_paper_rows_for_window(
+                conn=conn,
+                query_id=query_id,
+                window=normalized_window,
             ).fetchall()
+            if len(rows) != int(window_row["result_count"] or 0):
+                return None
         return [_paper_from_row(row) for row in rows]
 
     def record_completed_window(
@@ -313,20 +290,36 @@ class ArxivPoolStore:
             )
             assert query_id is not None
             previous = self._rate_state(conn=conn)
-            self._upsert_window(
+            if self._window_has_readable_completed_cache(
                 conn=conn,
                 query_id=query_id,
                 window=normalized_window,
-                status="rate_limited",
-                requested_at=now,
-                completed_at=None,
-                cooldown_until=cooldown_until,
-                upstream_requests_total=1,
-                upstream_status=upstream_status,
-                error_category="rate_limited",
-                error_message=error_message,
-                result_count=0,
-            )
+            ):
+                self._record_refresh_failure_for_cached_window(
+                    conn=conn,
+                    query_id=query_id,
+                    window=normalized_window,
+                    requested_at=now,
+                    cooldown_until=cooldown_until,
+                    upstream_status=upstream_status,
+                    error_category="rate_limited",
+                    error_message=error_message,
+                )
+            else:
+                self._upsert_window(
+                    conn=conn,
+                    query_id=query_id,
+                    window=normalized_window,
+                    status="rate_limited",
+                    requested_at=now,
+                    completed_at=None,
+                    cooldown_until=cooldown_until,
+                    upstream_requests_total=1,
+                    upstream_status=upstream_status,
+                    error_category="rate_limited",
+                    error_message=error_message,
+                    result_count=0,
+                )
             self._set_rate_state(
                 conn=conn,
                 last_request_at=now,
@@ -359,20 +352,36 @@ class ArxivPoolStore:
                 create=True,
             )
             assert query_id is not None
-            self._upsert_window(
+            if self._window_has_readable_completed_cache(
                 conn=conn,
                 query_id=query_id,
                 window=normalized_window,
-                status="failed",
-                requested_at=now,
-                completed_at=None,
-                cooldown_until=None,
-                upstream_requests_total=1,
-                upstream_status=upstream_status,
-                error_category=error_category,
-                error_message=error_message,
-                result_count=0,
-            )
+            ):
+                self._record_refresh_failure_for_cached_window(
+                    conn=conn,
+                    query_id=query_id,
+                    window=normalized_window,
+                    requested_at=now,
+                    cooldown_until=None,
+                    upstream_status=upstream_status,
+                    error_category=error_category,
+                    error_message=error_message,
+                )
+            else:
+                self._upsert_window(
+                    conn=conn,
+                    query_id=query_id,
+                    window=normalized_window,
+                    status="failed",
+                    requested_at=now,
+                    completed_at=None,
+                    cooldown_until=None,
+                    upstream_requests_total=1,
+                    upstream_status=upstream_status,
+                    error_category=error_category,
+                    error_message=error_message,
+                    result_count=0,
+                )
             self._set_rate_state(
                 conn=conn,
                 last_request_at=now,
@@ -424,6 +433,20 @@ class ArxivPoolStore:
                 """
                 DELETE FROM arxiv_query_matches
                 WHERE period_end < ?
+                """,
+                (_datetime_to_text(cutoff),),
+            )
+            conn.execute(
+                """
+                UPDATE arxiv_query_windows
+                SET status = 'pruned',
+                    completed_at = NULL,
+                    result_count = 0,
+                    error_category = 'pruned',
+                    error_message = 'query matches pruned by arxiv pool gc'
+                WHERE status = 'completed'
+                  AND result_count > 0
+                  AND period_end < ?
                 """,
                 (_datetime_to_text(cutoff),),
             )
@@ -521,6 +544,77 @@ class ArxivPoolStore:
             (fingerprint,),
         ).fetchone()
         return int(row["id"]) if row is not None else None
+
+    def _window_cache_row(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        query_id: int,
+        window: ArxivPoolWindow,
+    ) -> sqlite3.Row | None:
+        return conn.execute(
+            """
+            SELECT status, result_count
+            FROM arxiv_query_windows
+            WHERE query_id = ?
+              AND period_start = ?
+              AND period_end = ?
+              AND max_results = ?
+            """,
+            (
+                query_id,
+                _datetime_to_text(window.period_start),
+                _datetime_to_text(window.period_end),
+                window.max_results,
+            ),
+        ).fetchone()
+
+    def _cached_paper_rows_for_window(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        query_id: int,
+        window: ArxivPoolWindow,
+    ) -> sqlite3.Cursor:
+        return conn.execute(
+            """
+            SELECT p.*
+            FROM arxiv_query_matches m
+            JOIN arxiv_papers p ON p.arxiv_id = m.arxiv_id
+            WHERE m.query_id = ?
+              AND m.period_start = ?
+              AND m.period_end = ?
+              AND m.max_results = ?
+            ORDER BY m.sort_position ASC, m.arxiv_id ASC
+            """,
+            (
+                query_id,
+                _datetime_to_text(window.period_start),
+                _datetime_to_text(window.period_end),
+                window.max_results,
+            ),
+        )
+
+    def _window_has_readable_completed_cache(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        query_id: int,
+        window: ArxivPoolWindow,
+    ) -> bool:
+        window_row = self._window_cache_row(
+            conn=conn,
+            query_id=query_id,
+            window=window,
+        )
+        if window_row is None or str(window_row["status"]) != "completed":
+            return False
+        rows = self._cached_paper_rows_for_window(
+            conn=conn,
+            query_id=query_id,
+            window=window,
+        ).fetchall()
+        return len(rows) == int(window_row["result_count"] or 0)
 
     def _upsert_paper(
         self,
@@ -664,6 +758,46 @@ class ArxivPoolStore:
                 error_category,
                 _truncate_error(error_message),
                 int(result_count),
+            ),
+        )
+
+    def _record_refresh_failure_for_cached_window(
+        self,
+        *,
+        conn: sqlite3.Connection,
+        query_id: int,
+        window: ArxivPoolWindow,
+        requested_at: datetime,
+        cooldown_until: datetime | None,
+        upstream_status: int | None,
+        error_category: str,
+        error_message: str,
+    ) -> None:
+        conn.execute(
+            """
+            UPDATE arxiv_query_windows
+            SET requested_at = ?,
+                cooldown_until = ?,
+                upstream_requests_total = upstream_requests_total + 1,
+                upstream_status = ?,
+                error_category = ?,
+                error_message = ?
+            WHERE query_id = ?
+              AND period_start = ?
+              AND period_end = ?
+              AND max_results = ?
+              AND status = 'completed'
+            """,
+            (
+                _datetime_to_text(requested_at),
+                _datetime_to_text(cooldown_until),
+                upstream_status,
+                error_category,
+                _truncate_error(error_message),
+                query_id,
+                _datetime_to_text(window.period_start),
+                _datetime_to_text(window.period_end),
+                window.max_results,
             ),
         )
 
