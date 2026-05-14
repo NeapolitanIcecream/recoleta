@@ -71,6 +71,7 @@ def _default_lancedb_dir() -> Path:
 
 
 _ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
+_ALLOWED_ARXIV_SOURCE_MODES = {"direct", "pool"}
 _ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
 _ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
 _ALLOWED_TRENDS_EMBEDDING_FAILURE_MODES = {"continue", "fail_fast", "threshold"}
@@ -694,6 +695,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "LLM_MODEL": "llm_model",
         "LLM_OUTPUT_LANGUAGE": "llm_output_language",
         "RECOLETA_LLM_BASE_URL": "llm_base_url",
+        "ARXIV_POOL": "arxiv_pool",
         "SOURCES": "sources",
         "TOPICS": "topics",
         "ALLOW_TAGS": "allow_tags",
@@ -906,6 +908,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
 class ArxivSourceConfig(BaseModel):
     enabled: bool = False
     queries: list[str] = Field(default_factory=list)
+    mode: str = Field(default="direct")
     max_results_per_run: int = 50
     max_total_per_run: int | None = Field(default=None, ge=1, le=2000)
     enrich_method: str = Field(default="html_document")
@@ -918,6 +921,16 @@ class ArxivSourceConfig(BaseModel):
         default=1.0 / 15.0, gt=0.0, le=20.0
     )
     html_document_log_sample_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "direct"
+        if normalized not in _ALLOWED_ARXIV_SOURCE_MODES:
+            raise ValueError("SOURCES.arxiv.mode must be one of: direct, pool")
+        return normalized
 
     @field_validator("enrich_method", mode="before")
     @classmethod
@@ -1060,6 +1073,19 @@ class SourcesConfig(BaseModel):
     rss: RSSSourceConfig = Field(default_factory=RSSSourceConfig)
 
 
+class ArxivPoolConfig(BaseModel):
+    enabled: bool = False
+    db_path: Path | None = None
+    request_interval_seconds: float = Field(default=5.0, ge=0.0)
+    cooldown_seconds: int = Field(default=3600, ge=1)
+
+    @model_validator(mode="after")
+    def _validate_enabled_requires_db_path(self) -> "ArxivPoolConfig":
+        if self.enabled and self.db_path is None:
+            raise ValueError("ARXIV_POOL.db_path is required when enabled=true")
+        return self
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -1129,6 +1155,9 @@ class Settings(BaseSettings):
 
     sources: SourcesConfig = Field(
         default_factory=SourcesConfig, validation_alias="SOURCES"
+    )
+    arxiv_pool: ArxivPoolConfig = Field(
+        default_factory=ArxivPoolConfig, validation_alias="ARXIV_POOL"
     )
     topics: list[str] = Field(default_factory=list, validation_alias="TOPICS")
     allow_tags: list[str] = Field(default_factory=list, validation_alias="ALLOW_TAGS")
@@ -1330,6 +1359,14 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _validate_arxiv_pool_mode_requires_pool_config(self) -> "Settings":
+        if self.sources.arxiv.mode == "pool" and not self.arxiv_pool.enabled:
+            raise ValueError(
+                "SOURCES.arxiv.mode=pool requires ARXIV_POOL.enabled=true"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _reject_legacy_scheduler_intervals(self) -> "Settings":
         deprecated_keys: list[str] = []
         if self.legacy_ingest_interval_minutes is not None:
@@ -1367,6 +1404,18 @@ class Settings(BaseSettings):
             loaded = _parse_json_or_yaml(value)
             if not isinstance(loaded, dict):
                 raise ValueError("SOURCES must be a JSON/YAML object")
+            return loaded
+        return value
+
+    @field_validator("arxiv_pool", mode="before")
+    @classmethod
+    def _parse_arxiv_pool_from_env_string(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            loaded = _parse_json_or_yaml(value)
+            if not isinstance(loaded, dict):
+                raise ValueError("ARXIV_POOL must be a JSON/YAML object")
             return loaded
         return value
 

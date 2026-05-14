@@ -501,6 +501,10 @@ def test_ingest_records_source_window_diagnostics(
             filtered_out_total=7,
             in_window_total=1,
             missing_published_at_total=2,
+            extra_metrics={
+                "pool_drafts_total": 1,
+                "pool_window_unavailable_total": 2,
+            },
         ),
     )
 
@@ -522,6 +526,10 @@ def test_ingest_records_source_window_diagnostics(
     assert by_name["pipeline.ingest.source.arxiv.in_window_total"].value == 1
     assert by_name["pipeline.ingest.source.arxiv.missing_published_at_total"].value == 2
     assert by_name["pipeline.ingest.source.arxiv.inserted_total"].value == 1
+    assert by_name["pipeline.ingest.source.arxiv.pool_drafts_total"].value == 1
+    assert (
+        by_name["pipeline.ingest.source.arxiv.pool_window_unavailable_total"].value == 2
+    )
 
 
 def test_ingest_persists_source_pull_state_between_runs(

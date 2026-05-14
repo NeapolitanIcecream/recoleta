@@ -366,7 +366,102 @@ class _HFDailyPuller:
 
 
 def pull_arxiv_drafts(request: ArxivPullRequest) -> list[ItemDraft] | SourcePullResult:
+    if str(getattr(request, "mode", "direct") or "direct").strip().lower() == "pool":
+        return _ArxivPoolPuller(request).pull()
     return _ArxivPuller(request).pull()
+
+
+class _ArxivPoolPuller:
+    def __init__(self, request: ArxivPullRequest) -> None:
+        self.request = request
+        self.stats = SourcePullResult()
+        self.drafts: list[ItemDraft] = []
+        self.seen_entry_ids: set[str] = set()
+        self.total_cap = (
+            max(1, int(request.max_total_items))
+            if request.max_total_items is not None and int(request.max_total_items) > 0
+            else None
+        )
+        self.period_start, self.period_end = _normalize_period_bounds(
+            period_start=request.period_start,
+            period_end=request.period_end,
+        )
+
+    def pull(self) -> list[ItemDraft] | SourcePullResult:
+        if self.request.max_results_per_run <= 0:
+            return self._result()
+        for query in self._queries():
+            self._pull_query(query)
+        self.stats.drafts = self.drafts
+        return self._result()
+
+    def _result(self) -> list[ItemDraft] | SourcePullResult:
+        return self.stats if self.request.include_stats else self.drafts
+
+    def _queries(self) -> list[str]:
+        from recoleta.arxiv_pool import normalize_arxiv_query
+
+        return [
+            normalize_arxiv_query(query)
+            for query in self.request.queries
+            if normalize_arxiv_query(query)
+        ]
+
+    def _pull_query(self, query: str) -> None:
+        if self.request.pool_db_path is None:
+            self._record_unavailable_window()
+            return
+        if self.period_start is None or self.period_end is None:
+            self._record_unavailable_window()
+            return
+
+        from recoleta.arxiv_pool import (
+            ArxivPoolStore,
+            ArxivPoolWindow,
+            pool_paper_to_item_draft,
+        )
+
+        window = ArxivPoolWindow(
+            query_text=query,
+            period_start=self.period_start,
+            period_end=self.period_end,
+            max_results=self.request.max_results_per_run,
+        )
+        store = ArxivPoolStore(self.request.pool_db_path)
+        papers = store.cached_papers_for_window(window)
+        if papers is None:
+            self._record_unavailable_window()
+            return
+        emitted_total = 0
+        for paper in papers:
+            draft = pool_paper_to_item_draft(paper=paper, window=window)
+            if not self._should_keep_draft(draft):
+                continue
+            self.drafts.append(draft)
+            emitted_total += 1
+            self.stats.in_window_total += 1
+            _record_stats_published_at(self.stats, draft.published_at)
+        self._increment_extra_metric("pool_drafts_total", emitted_total)
+
+    def _should_keep_draft(self, draft: ItemDraft) -> bool:
+        entry_id = str(draft.canonical_url or "").strip()
+        if not entry_id or entry_id in self.seen_entry_ids:
+            if entry_id:
+                self.stats.deduped_total += 1
+            return False
+        self.seen_entry_ids.add(entry_id)
+        if self.total_cap is not None and len(self.drafts) >= self.total_cap:
+            self.stats.deferred_total += 1
+            return False
+        return True
+
+    def _record_unavailable_window(self) -> None:
+        self._increment_extra_metric("pool_window_unavailable_total", 1)
+
+    def _increment_extra_metric(self, key: str, value: int) -> None:
+        self.stats.extra_metrics[key] = int(self.stats.extra_metrics.get(key) or 0) + int(
+            value
+        )
 
 
 class _ArxivPuller:

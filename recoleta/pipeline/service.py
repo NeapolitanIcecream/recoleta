@@ -292,6 +292,8 @@ class PipelineService:
                 "newest_published_at_unix": 0,
                 "inserted_total": 0,
                 "updated_total": 0,
+                "pool_drafts_total": 0,
+                "pool_window_unavailable_total": 0,
             }
             for source_name in _SOURCE_DIAGNOSTIC_NAMES
         }

@@ -19,6 +19,7 @@ def test_cli_root_help_exposes_only_v2_top_level_groups() -> None:
 
     assert result.exit_code == 0
     assert "fleet" in result.stdout
+    assert "arxiv-pool" in result.stdout
     assert "run" in result.stdout
     assert "daemon" in result.stdout
     assert "inspect" in result.stdout
@@ -79,6 +80,30 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
 @pytest.mark.parametrize(
     ("argv", "target_name", "expected"),
     [
+        (
+            ["arxiv-pool", "sync", "--date", "2026-04-27"],
+            "run_arxiv_pool_sync_command",
+            {"command_name": "arxiv-pool sync", "anchor_date": "2026-04-27"},
+        ),
+        (
+            ["arxiv-pool", "backfill", "--start", "2026-04-27", "--end", "2026-04-28"],
+            "run_arxiv_pool_backfill_command",
+            {
+                "command_name": "arxiv-pool backfill",
+                "start_date": "2026-04-27",
+                "end_date": "2026-04-28",
+            },
+        ),
+        (
+            ["inspect", "arxiv-pool", "freshness"],
+            "run_inspect_arxiv_pool_freshness_command",
+            {"command_name": "inspect arxiv-pool freshness"},
+        ),
+        (
+            ["admin", "arxiv-pool", "gc"],
+            "run_admin_arxiv_pool_gc_command",
+            {"command_name": "admin arxiv-pool gc"},
+        ),
         (
             ["inspect", "health"],
             "run_doctor_command",

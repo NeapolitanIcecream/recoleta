@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Iterator, TypedDict, Unpack
 
 import arxiv  # noqa: F401
@@ -54,6 +55,7 @@ class SourcePullResult:
     oldest_published_at: datetime | None = None
     newest_published_at: datetime | None = None
     state_updates: list[SourcePullStateUpdate] = field(default_factory=list)
+    extra_metrics: dict[str, int] = field(default_factory=dict)
 
     def __iter__(self) -> Iterator[ItemDraft]:
         return iter(self.drafts)
@@ -83,6 +85,8 @@ class ArxivPullRequest:
     max_total_items: int | None = None
     pull_state_lookup: PullStateLookup | None = None
     include_stats: bool = False
+    mode: str = "direct"
+    pool_db_path: Path | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -135,6 +139,8 @@ class _ArxivPullRequestKwargs(TypedDict, total=False):
     max_total_items: int | None
     pull_state_lookup: PullStateLookup | None
     include_stats: bool
+    mode: str
+    pool_db_path: Path | None
 
 
 class _OpenReviewPullRequestKwargs(TypedDict, total=False):

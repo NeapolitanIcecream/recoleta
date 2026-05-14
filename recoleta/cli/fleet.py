@@ -36,7 +36,19 @@ from recoleta.fleet import (
     load_child_settings,
     load_fleet_manifest,
 )
+from recoleta.arxiv_pool import (
+    ArxivPoolStore,
+    ArxivPoolSync,
+    ArxivPoolSyncResult,
+    ArxivPoolWindow,
+    build_arxiv_pool_windows_for_period,
+    resolve_arxiv_pool_db_path,
+)
 from recoleta.storage import Repository
+from recoleta.cli.workflow_runner import (
+    normalize_anchor_date,
+    period_bounds_for_granularity,
+)
 from recoleta.trend_email import (
     TrendEmailSendRequest,
     build_trend_email_preview,
@@ -97,6 +109,26 @@ class FleetSiteDeployContext:
     pages_config: str
     force: bool
     item_export_scope: str
+
+
+@dataclass(frozen=True, slots=True)
+class FleetArxivPoolPreSyncPlan:
+    status: str
+    reason: str | None
+    pool_db_path: Path | None
+    windows: list[ArxivPoolWindow]
+    request_interval_seconds: float = 5.0
+    cooldown_seconds: int = 3600
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reason": self.reason,
+            "pool_db_path": str(self.pool_db_path) if self.pool_db_path else None,
+            "windows_total": len(self.windows),
+            "request_interval_seconds": self.request_interval_seconds,
+            "cooldown_seconds": self.cooldown_seconds,
+        }
 
 
 def _fleet_input_dirs(manifest_path: Path) -> tuple[Any, list[Any]]:
@@ -369,6 +401,20 @@ def execute_fleet_granularity_workflow(
     json_output: bool = False,
 ) -> dict[str, Any]:
     manifest = load_fleet_manifest(manifest_path)
+    arxiv_pool_plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest.manifest_path,
+        workflow_name=workflow_name,
+        anchor_date=anchor_date,
+        manifest=manifest,
+    )
+    arxiv_pool_payload: dict[str, Any] = arxiv_pool_plan.as_payload()
+    if arxiv_pool_plan.status == "planned":
+        sync_result = run_fleet_arxiv_pool_pre_sync(arxiv_pool_plan)
+        arxiv_pool_payload = {
+            **arxiv_pool_payload,
+            "status": "completed",
+            "sync": sync_result.as_payload(),
+        }
     children = [
         _fleet_granularity_child_payload(
             request=FleetGranularityChildRequest(
@@ -387,6 +433,7 @@ def execute_fleet_granularity_workflow(
         "command": command,
         "manifest_path": str(manifest.manifest_path),
         "workflow_name": workflow_name,
+        "arxiv_pool_pre_sync": arxiv_pool_payload,
         "children": children,
     }
     if json_output:
@@ -398,6 +445,97 @@ def execute_fleet_granularity_workflow(
         f"instances={len(children)} workflow={workflow_name}"
     )
     return payload
+
+
+def build_fleet_arxiv_pool_pre_sync_plan(
+    *,
+    manifest_path: Path,
+    workflow_name: str,
+    anchor_date: str | None,
+    manifest: Any | None = None,
+) -> FleetArxivPoolPreSyncPlan:
+    normalized_workflow = str(workflow_name or "").strip().lower()
+    if normalized_workflow == "now":
+        normalized_workflow = "day"
+    if normalized_workflow not in {"day", "week", "month"}:
+        return FleetArxivPoolPreSyncPlan(
+            status="skipped",
+            reason="unsupported_workflow",
+            pool_db_path=None,
+            windows=[],
+        )
+    resolved_manifest = manifest or load_fleet_manifest(manifest_path)
+    child_settings = [
+        load_child_settings(instance.config_path) for instance in resolved_manifest.instances
+    ]
+    arxiv_settings = [
+        settings
+        for settings in child_settings
+        if bool(getattr(settings.sources.arxiv, "enabled", False))
+    ]
+    if not arxiv_settings:
+        return FleetArxivPoolPreSyncPlan(
+            status="skipped",
+            reason="no_arxiv_sources",
+            pool_db_path=None,
+            windows=[],
+        )
+    if any(str(settings.sources.arxiv.mode) != "pool" for settings in arxiv_settings):
+        return FleetArxivPoolPreSyncPlan(
+            status="skipped",
+            reason="direct_arxiv_source_present",
+            pool_db_path=None,
+            windows=[],
+        )
+    pool_paths = {resolve_arxiv_pool_db_path(settings) for settings in arxiv_settings}
+    if len(pool_paths) != 1:
+        return FleetArxivPoolPreSyncPlan(
+            status="skipped",
+            reason="multiple_pool_db_paths",
+            pool_db_path=None,
+            windows=[],
+        )
+    anchor = normalize_anchor_date(anchor_date, workflow_name=normalized_workflow)
+    period_start, period_end = period_bounds_for_granularity(
+        granularity=normalized_workflow,
+        anchor=anchor,
+    )
+    windows_by_key: dict[tuple[str, str, str, int], ArxivPoolWindow] = {}
+    for settings in arxiv_settings:
+        for window in build_arxiv_pool_windows_for_period(
+            queries=list(settings.sources.arxiv.queries),
+            period_start=period_start,
+            period_end=period_end,
+            max_results=int(settings.sources.arxiv.max_results_per_run),
+        ):
+            key = (
+                window.query_text,
+                window.period_start.isoformat(),
+                window.period_end.isoformat(),
+                window.max_results,
+            )
+            windows_by_key[key] = window
+    pool_settings = arxiv_settings[0].arxiv_pool
+    return FleetArxivPoolPreSyncPlan(
+        status="planned",
+        reason=None,
+        pool_db_path=next(iter(pool_paths)),
+        windows=list(windows_by_key.values()),
+        request_interval_seconds=float(pool_settings.request_interval_seconds),
+        cooldown_seconds=int(pool_settings.cooldown_seconds),
+    )
+
+
+def run_fleet_arxiv_pool_pre_sync(
+    plan: FleetArxivPoolPreSyncPlan,
+) -> ArxivPoolSyncResult:
+    if plan.pool_db_path is None:
+        return ArxivPoolSyncResult(requested_windows_total=0)
+    return ArxivPoolSync(
+        store=ArxivPoolStore(plan.pool_db_path),
+        request_interval_seconds=plan.request_interval_seconds,
+        cooldown_seconds=plan.cooldown_seconds,
+    ).sync_windows(plan.windows)
 
 
 def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:

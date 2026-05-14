@@ -8,6 +8,12 @@ from typing import Annotated, Any
 
 from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
+from recoleta.cli.arxiv_pool import (
+    run_admin_arxiv_pool_gc_command,
+    run_arxiv_pool_backfill_command,
+    run_arxiv_pool_sync_command,
+    run_inspect_arxiv_pool_freshness_command,
+)
 from recoleta.cli.db import (
     run_db_clear_command,
     run_db_reset_command,
@@ -101,6 +107,11 @@ def run_fleet_email_send_command(**kwargs: Any) -> Any:
 
 app = typer.Typer(help="Recoleta workflow-first CLI.", no_args_is_help=True)
 
+arxiv_pool_app = typer.Typer(
+    help="Shared arXiv metadata pool commands.", no_args_is_help=True
+)
+app.add_typer(arxiv_pool_app, name="arxiv-pool")
+
 run_app = typer.Typer(help="Workflow entrypoints.", no_args_is_help=True)
 run_site_app = typer.Typer(help="Common site workflows.", no_args_is_help=True)
 run_email_app = typer.Typer(
@@ -127,7 +138,11 @@ app.add_typer(daemon_app, name="daemon")
 
 inspect_app = typer.Typer(help="Read-only inspection workflows.", no_args_is_help=True)
 inspect_runs_app = typer.Typer(help="Run history inspection.", no_args_is_help=True)
+inspect_arxiv_pool_app = typer.Typer(
+    help="Read-only arXiv pool inspection.", no_args_is_help=True
+)
 inspect_app.add_typer(inspect_runs_app, name="runs")
+inspect_app.add_typer(inspect_arxiv_pool_app, name="arxiv-pool")
 app.add_typer(inspect_app, name="inspect")
 
 repair_app = typer.Typer(help="Repair workflows.", no_args_is_help=True)
@@ -146,7 +161,11 @@ admin_app = typer.Typer(
     help="Administrative maintenance commands.", no_args_is_help=True
 )
 admin_db_app = typer.Typer(help="Administrative DB commands.", no_args_is_help=True)
+admin_arxiv_pool_app = typer.Typer(
+    help="Administrative arXiv pool commands.", no_args_is_help=True
+)
 admin_app.add_typer(admin_db_app, name="db")
+admin_app.add_typer(admin_arxiv_pool_app, name="arxiv-pool")
 app.add_typer(admin_app, name="admin")
 
 # Hidden legacy groups retained only where they still map cleanly.
@@ -304,6 +323,136 @@ def _legacy_error(
     else:
         typer.echo(message)
     raise typer.Exit(code=2)
+
+
+@arxiv_pool_app.command("sync")
+def arxiv_pool_sync(
+    anchor_date: str = typer.Option(
+        ...,
+        "--date",
+        help="Target UTC day to sync (YYYY-MM-DD or YYYYMMDD).",
+    ),
+    lookback_days: int = typer.Option(
+        1,
+        "--lookback-days",
+        min=1,
+        help="Include this many trailing UTC day windows ending at --date.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Refetch completed query windows instead of using cached rows.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to config file used to resolve arXiv pool settings.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Sync configured arXiv query windows into the shared metadata pool."""
+    run_arxiv_pool_sync_command(
+        anchor_date=anchor_date,
+        lookback_days=lookback_days,
+        force=force,
+        config_path=config_path,
+        json_output=json_output,
+        command_name="arxiv-pool sync",
+    )
+
+
+@arxiv_pool_app.command("backfill")
+def arxiv_pool_backfill(
+    start_date: str = typer.Option(
+        ...,
+        "--start",
+        help="First UTC day to sync (YYYY-MM-DD or YYYYMMDD).",
+    ),
+    end_date: str = typer.Option(
+        ...,
+        "--end",
+        help="Last UTC day to sync, inclusive (YYYY-MM-DD or YYYYMMDD).",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Refetch completed query windows instead of using cached rows.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to config file used to resolve arXiv pool settings.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Backfill configured arXiv query windows into the shared metadata pool."""
+    run_arxiv_pool_backfill_command(
+        start_date=start_date,
+        end_date=end_date,
+        force=force,
+        config_path=config_path,
+        json_output=json_output,
+        command_name="arxiv-pool backfill",
+    )
+
+
+@inspect_arxiv_pool_app.command("freshness")
+def inspect_arxiv_pool_freshness(
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to config file used to resolve arXiv pool settings.",
+    ),
+    limit: int = typer.Option(50, "--limit", min=1),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect arXiv pool cooldown and query-window freshness."""
+    run_inspect_arxiv_pool_freshness_command(
+        config_path=config_path,
+        limit=limit,
+        json_output=json_output,
+        command_name="inspect arxiv-pool freshness",
+    )
+
+
+@admin_arxiv_pool_app.command("gc")
+def admin_arxiv_pool_gc(
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to config file used to resolve arXiv pool settings.",
+    ),
+    older_than_days: int = typer.Option(
+        90,
+        "--older-than-days",
+        min=1,
+        help="Prune query-match rows older than this age.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Prune old arXiv pool query-match rows while preserving paper metadata."""
+    run_admin_arxiv_pool_gc_command(
+        config_path=config_path,
+        older_than_days=older_than_days,
+        json_output=json_output,
+        command_name="admin arxiv-pool gc",
+    )
 
 
 @run_app.callback(invoke_without_command=True)
