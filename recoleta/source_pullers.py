@@ -386,6 +386,7 @@ class _ArxivPoolPuller:
             period_start=request.period_start,
             period_end=request.period_end,
         )
+        self.upper_bound = _source_pull_now() + timedelta(minutes=1)
 
     def pull(self) -> list[ItemDraft] | SourcePullResult:
         if self.request.max_results_per_run <= 0:
@@ -408,52 +409,160 @@ class _ArxivPoolPuller:
         ]
 
     def _pull_query(self, query: str) -> None:
+        state = self._query_state(query)
         if self.request.pool_db_path is None:
             self._record_unavailable_window()
+            self._record_query_state_update(
+                state=state,
+                newest_published_at=state.watermark,
+            )
             return
-        if self.period_start is None or self.period_end is None:
+        windows = self._windows_for_query(state)
+        if not windows:
             self._record_unavailable_window()
+            self._record_query_state_update(
+                state=state,
+                newest_published_at=state.watermark,
+            )
             return
 
         from recoleta.arxiv_pool import (
             ArxivPoolStore,
-            ArxivPoolWindow,
             pool_paper_to_item_draft,
         )
 
-        window = ArxivPoolWindow(
-            query_text=query,
-            period_start=self.period_start,
-            period_end=self.period_end,
-            max_results=self.request.max_results_per_run,
-        )
         store = ArxivPoolStore(self.request.pool_db_path)
-        papers = store.cached_papers_for_window(window)
-        if papers is None:
-            self._record_unavailable_window()
-            return
+        newest_published_at = state.watermark
         emitted_total = 0
-        for paper in papers:
-            draft = pool_paper_to_item_draft(paper=paper, window=window)
-            if not self._should_keep_draft(draft):
+        complete = True
+        for window in windows:
+            papers = store.cached_papers_for_window(window)
+            if papers is None:
+                self._record_unavailable_window()
+                complete = False
                 continue
-            self.drafts.append(draft)
-            emitted_total += 1
-            self.stats.in_window_total += 1
-            _record_stats_published_at(self.stats, draft.published_at)
+            for paper in papers:
+                draft = pool_paper_to_item_draft(paper=paper, window=window)
+                if not self._should_keep_draft(draft=draft, state=state):
+                    continue
+                self.drafts.append(draft)
+                emitted_total += 1
+                newest_published_at = _newest_seen_timestamp(
+                    current=newest_published_at,
+                    candidate=draft.published_at,
+                )
         self._increment_extra_metric("pool_drafts_total", emitted_total)
+        self._record_query_state_update(
+            state=state,
+            newest_published_at=newest_published_at
+            if complete and self.stats.deferred_total <= 0
+            else state.watermark,
+        )
 
-    def _should_keep_draft(self, draft: ItemDraft) -> bool:
+    def _should_keep_draft(self, *, draft: ItemDraft, state: _ArxivQueryState) -> bool:
         entry_id = str(draft.canonical_url or "").strip()
         if not entry_id or entry_id in self.seen_entry_ids:
             if entry_id:
                 self.stats.deduped_total += 1
             return False
         self.seen_entry_ids.add(entry_id)
+        if not self._draft_in_query_window(draft=draft, state=state):
+            return False
         if self.total_cap is not None and len(self.drafts) >= self.total_cap:
             self.stats.deferred_total += 1
             return False
+        _record_stats_published_at(self.stats, draft.published_at)
         return True
+
+    def _draft_in_query_window(
+        self, *, draft: ItemDraft, state: _ArxivQueryState
+    ) -> bool:
+        if state.period_start is None or state.period_end is None:
+            return True
+        if draft.published_at is None:
+            self.stats.missing_published_at_total += 1
+            return False
+        if not _datetime_in_period(
+            value=draft.published_at,
+            period_start=state.period_start,
+            period_end=state.period_end,
+        ):
+            self.stats.filtered_out_total += 1
+            return False
+        if self._older_than_query_watermark(draft=draft, state=state):
+            self.stats.filtered_out_total += 1
+            return False
+        self.stats.in_window_total += 1
+        return True
+
+    def _older_than_query_watermark(
+        self, *, draft: ItemDraft, state: _ArxivQueryState
+    ) -> bool:
+        if state.watermark is None:
+            return False
+        if self.request.period_start is not None or self.request.period_end is not None:
+            return False
+        if draft.published_at is None:
+            return False
+        return _normalize_datetime(draft.published_at) <= state.watermark
+
+    def _query_state(self, query: str) -> _ArxivQueryState:
+        snapshot = _lookup_snapshot(self.request.pull_state_lookup, "query", query)
+        watermark = _snapshot_watermark(snapshot)
+        period_start = self.period_start
+        period_end = self.period_end
+        if period_start is None and period_end is None:
+            if watermark is not None:
+                period_start = watermark
+                period_end = self.upper_bound
+            else:
+                period_start = datetime(
+                    self.upper_bound.year,
+                    self.upper_bound.month,
+                    self.upper_bound.day,
+                    tzinfo=timezone.utc,
+                )
+                period_end = period_start + timedelta(days=1)
+        return _ArxivQueryState(
+            query=query,
+            snapshot=snapshot,
+            watermark=watermark,
+            period_start=period_start,
+            period_end=period_end,
+        )
+
+    def _windows_for_query(self, state: _ArxivQueryState) -> list[Any]:
+        if state.period_start is None or state.period_end is None:
+            return []
+
+        from recoleta.arxiv_pool import build_arxiv_pool_windows_for_days
+
+        days = [
+            datetime.fromisoformat(day_value).date()
+            for day_value in _iter_period_dates(
+                period_start=state.period_start,
+                period_end=state.period_end,
+            )
+        ]
+        return build_arxiv_pool_windows_for_days(
+            queries=[state.query],
+            days=days,
+            max_results=self.request.max_results_per_run,
+        )
+
+    def _record_query_state_update(
+        self, *, state: _ArxivQueryState, newest_published_at: datetime | None
+    ) -> None:
+        self.stats.state_updates.append(
+            SourcePullStateUpdate(
+                scope_kind="query",
+                scope_key=state.query,
+                watermark_published_at=_watermark_after_snapshot(
+                    state.snapshot,
+                    newest_published_at,
+                ),
+            )
+        )
 
     def _record_unavailable_window(self) -> None:
         self._increment_extra_metric("pool_window_unavailable_total", 1)

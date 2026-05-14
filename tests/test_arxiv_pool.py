@@ -20,7 +20,12 @@ from recoleta.cli.fleet import (
     build_fleet_arxiv_pool_pre_sync_plan,
     execute_fleet_granularity_workflow,
 )
-from recoleta.sources import ArxivPullRequest, SourcePullResult, fetch_arxiv_drafts
+from recoleta.sources import (
+    ArxivPullRequest,
+    SourcePullResult,
+    SourcePullStateSnapshot,
+    fetch_arxiv_drafts,
+)
 
 
 def _window(query: str = "cat:cs.AI") -> ArxivPoolWindow:
@@ -32,7 +37,12 @@ def _window(query: str = "cat:cs.AI") -> ArxivPoolWindow:
     )
 
 
-def _paper(arxiv_id: str, *, title: str = "Pool Paper") -> ArxivPoolPaper:
+def _paper(
+    arxiv_id: str,
+    *,
+    title: str = "Pool Paper",
+    published_at: datetime | None = None,
+) -> ArxivPoolPaper:
     return ArxivPoolPaper(
         arxiv_id=arxiv_id,
         version=1,
@@ -42,7 +52,7 @@ def _paper(arxiv_id: str, *, title: str = "Pool Paper") -> ArxivPoolPaper:
         authors=["Ada Lovelace", "Grace Hopper"],
         primary_category="cs.AI",
         categories=["cs.AI", "cs.LG"],
-        published_at=datetime(2026, 4, 27, 12, tzinfo=UTC),
+        published_at=published_at or datetime(2026, 4, 27, 12, tzinfo=UTC),
         updated_at=datetime(2026, 4, 27, 13, tzinfo=UTC),
         comment="demo",
         journal_ref=None,
@@ -412,6 +422,71 @@ def test_pool_backed_arxiv_ingest_reports_unavailable_window_without_direct_fetc
     assert isinstance(result, SourcePullResult)
     assert result.drafts == []
     assert result.extra_metrics["pool_window_unavailable_total"] == 1
+
+
+def test_pool_backed_arxiv_ingest_uses_saved_watermark_without_period_bounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: no-bound pool ingest skipped cached arXiv rows before reading watermarks."""
+    pool_path = tmp_path / "arxiv_pool.db"
+    watermark = datetime(2026, 4, 27, 12, tzinfo=UTC)
+    newer_published_at = datetime(2026, 4, 27, 13, tzinfo=UTC)
+    ArxivPoolSync(
+        store=ArxivPoolStore(pool_path),
+        fetcher=_FakeFetcher(
+            {
+                "cat:cs.AI": [
+                    _paper(
+                        "2604.27000v1",
+                        title="Already Seen",
+                        published_at=datetime(2026, 4, 27, 11, tzinfo=UTC),
+                    ),
+                    _paper(
+                        "2604.27001v1",
+                        title="New Since Watermark",
+                        published_at=newer_published_at,
+                    ),
+                ]
+            }
+        ),
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+    ).sync_windows([_window("cat:cs.AI")])
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 4, 27, 18, tzinfo=UTC),
+    )
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            pull_state_lookup=lambda scope_kind, scope_key: SourcePullStateSnapshot(
+                scope_kind=scope_kind,
+                scope_key=scope_key,
+                watermark_published_at=watermark,
+            )
+            if (scope_kind, scope_key) == ("query", "cat:cs.AI")
+            else None,
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert [draft.source_item_id for draft in result.drafts] == ["2604.27001v1"]
+    assert result.extra_metrics.get("pool_window_unavailable_total", 0) == 0
+    assert result.extra_metrics["pool_drafts_total"] == 1
+    assert len(result.state_updates) == 1
+    assert result.state_updates[0].scope_kind == "query"
+    assert result.state_updates[0].scope_key == "cat:cs.AI"
+    assert result.state_updates[0].watermark_published_at == newer_published_at
 
 
 def test_build_arxiv_pool_windows_expands_lookback_days() -> None:
