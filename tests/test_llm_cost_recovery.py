@@ -4,12 +4,30 @@ import json
 from typing import Any
 
 import pytest
+import litellm
 from litellm.cost_calculator import completion_cost, cost_per_token
 
 import recoleta.analyzer as analyzer_module
 import recoleta.cli.maintenance as maintenance_cli
 import recoleta.translation as translation_module
 from recoleta.analyzer import LiteLLMAnalyzer
+
+
+@pytest.fixture(autouse=True)
+def _stable_gpt54_pricing(monkeypatch: pytest.MonkeyPatch) -> None:
+    if "gpt-5.4" in litellm.model_cost:
+        return
+    monkeypatch.setitem(
+        litellm.model_cost,
+        "gpt-5.4",
+        {
+            "input_cost_per_token": 2.5e-6,
+            "output_cost_per_token": 1.5e-5,
+            "cache_read_input_token_cost": 2.5e-7,
+            "litellm_provider": "openai",
+            "mode": "chat",
+        },
+    )
 
 
 def _analysis_response_content() -> str:

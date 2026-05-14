@@ -188,6 +188,63 @@ def test_settings_loads_arxiv_enrich_configuration(
     assert settings.sources.arxiv.enrich_failure_mode == "strict"
 
 
+def test_settings_loads_arxiv_pool_configuration(
+    configured_env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pool_path = tmp_path / "arxiv_pool.db"
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps(
+            {
+                "enabled": True,
+                "db_path": str(pool_path),
+                "request_interval_seconds": 0,
+                "cooldown_seconds": 120,
+            }
+        ),
+    )
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "mode": "pool",
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.arxiv_pool.enabled is True
+    assert settings.arxiv_pool.db_path == pool_path
+    assert settings.arxiv_pool.request_interval_seconds == 0
+    assert settings.arxiv_pool.cooldown_seconds == 120
+    assert settings.sources.arxiv.mode == "pool"
+
+
+def test_settings_rejects_arxiv_pool_source_mode_without_pool_config(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "mode": "pool",
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="ARXIV_POOL.enabled=true"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_settings_rejects_invalid_arxiv_enrich_configuration(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

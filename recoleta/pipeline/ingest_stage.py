@@ -426,6 +426,12 @@ class _SourcePullRunner:
         arxiv_queries = _deduped_values(settings.queries) if settings.enabled else []
         if not arxiv_queries:
             return None
+        mode = str(getattr(settings, "mode", "direct") or "direct").strip().lower()
+        pool_db_path = None
+        if mode == "pool":
+            from recoleta.arxiv_pool import resolve_arxiv_pool_db_path
+
+            pool_db_path = resolve_arxiv_pool_db_path(self.service.settings)
         source_request = sources.ArxivPullRequest(
             queries=arxiv_queries,
             max_results_per_run=settings.max_results_per_run,
@@ -434,6 +440,8 @@ class _SourcePullRunner:
             max_total_items=settings.max_total_per_run,
             pull_state_lookup=self._pull_state_lookup("arxiv"),
             include_stats=True,
+            mode=mode,
+            pool_db_path=pool_db_path,
         )
         return (
             "arxiv",
@@ -447,6 +455,8 @@ class _SourcePullRunner:
                 "max_total_items": source_request.max_total_items,
                 "pull_state_lookup": source_request.pull_state_lookup,
                 "include_stats": source_request.include_stats,
+                "mode": source_request.mode,
+                "pool_db_path": source_request.pool_db_path,
             },
         )
 
@@ -521,6 +531,9 @@ class _SourcePullRunner:
         bucket["deduped_total"] += int(pull_result.deduped_total or 0)
         bucket["deferred_total"] += int(pull_result.deferred_total or 0)
         bucket["not_modified_total"] += int(pull_result.not_modified_total or 0)
+        for key, value in pull_result.extra_metrics.items():
+            if _safe_source_metric_key(key):
+                bucket[key] = int(bucket.get(key) or 0) + int(value or 0)
         _merge_published_at_bucket(
             bucket=bucket,
             oldest=pull_result.oldest_published_at,
@@ -600,6 +613,8 @@ def _ensure_source_pull_bucket(
             "newest_published_at_unix": 0,
             "inserted_total": 0,
             "updated_total": 0,
+            "pool_drafts_total": 0,
+            "pool_window_unavailable_total": 0,
         }
         source_stats[normalized] = bucket
     return bucket
@@ -642,6 +657,8 @@ def _record_source_pull_metrics(
         ("not_modified_total", "count"),
         ("inserted_total", "count"),
         ("updated_total", "count"),
+        ("pool_drafts_total", "count"),
+        ("pool_window_unavailable_total", "count"),
     )
     for key, unit in metric_names:
         repository.record_metric(
@@ -683,3 +700,10 @@ def _record_source_published_at_metric(
         value=value,
         unit="unix",
     )
+
+
+def _safe_source_metric_key(value: str) -> bool:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return False
+    return all(ch.islower() or ch.isdigit() or ch == "_" for ch in normalized)
