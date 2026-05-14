@@ -9,6 +9,7 @@ from recoleta.arxiv_pool import (
     ArxivPoolStore,
     ArxivPoolSync,
     ArxivPoolWindow,
+    build_arxiv_pool_windows,
     build_arxiv_pool_windows_for_days,
     resolve_arxiv_pool_db_path,
 )
@@ -25,12 +26,10 @@ def run_arxiv_pool_sync_command(
 ) -> dict[str, Any]:
     settings = cli._build_settings(config_path=config_path)
     target_date = cli._parse_anchor_date_option(anchor_date)
-    windows = _configured_windows_for_days(
+    windows = _configured_windows_for_lookback(
         settings=settings,
-        days=[
-            target_date - timedelta(days=offset)
-            for offset in range(max(1, int(lookback_days)) - 1, -1, -1)
-        ],
+        anchor_date=target_date,
+        lookback_days=lookback_days,
     )
     result = _sync_configured_windows(
         settings=settings,
@@ -166,16 +165,40 @@ def run_admin_arxiv_pool_gc_command(
 
 
 def _configured_windows_for_days(settings: Any, days: list[date]) -> list[ArxivPoolWindow]:
-    arxiv_settings = settings.sources.arxiv
-    if not bool(arxiv_settings.enabled):
+    arxiv_settings = _pool_arxiv_settings(settings)
+    if arxiv_settings is None:
         return []
-    if str(arxiv_settings.mode) != "pool":
-        raise ValueError("SOURCES.arxiv.mode must be pool for arxiv-pool commands")
     return build_arxiv_pool_windows_for_days(
         queries=list(arxiv_settings.queries),
         days=days,
         max_results=int(arxiv_settings.max_results_per_run),
     )
+
+
+def _configured_windows_for_lookback(
+    *,
+    settings: Any,
+    anchor_date: date,
+    lookback_days: int,
+) -> list[ArxivPoolWindow]:
+    arxiv_settings = _pool_arxiv_settings(settings)
+    if arxiv_settings is None:
+        return []
+    return build_arxiv_pool_windows(
+        queries=list(arxiv_settings.queries),
+        anchor_date=anchor_date,
+        lookback_days=lookback_days,
+        max_results=int(arxiv_settings.max_results_per_run),
+    )
+
+
+def _pool_arxiv_settings(settings: Any) -> Any | None:
+    arxiv_settings = settings.sources.arxiv
+    if not bool(arxiv_settings.enabled):
+        return None
+    if str(arxiv_settings.mode) != "pool":
+        raise ValueError("SOURCES.arxiv.mode must be pool for arxiv-pool commands")
+    return arxiv_settings
 
 
 def _sync_configured_windows(

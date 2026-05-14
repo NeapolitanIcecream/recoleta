@@ -489,6 +489,47 @@ def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     assert payload["arxiv_pool_pre_sync"]["sync"]["requested_windows_total"] == 14
 
 
+def test_fleet_workflow_skip_ingest_skips_pool_pre_sync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: skipping ingest should not perform upstream arXiv pool sync."""
+    manifest_path, _pool_path = _write_pool_fleet_manifest(tmp_path)
+    events: list[str] = []
+
+    import recoleta.cli.fleet as fleet_module
+
+    def fake_pre_sync(plan):  # type: ignore[no-untyped-def]
+        raise AssertionError("pre-sync should be skipped when ingest is skipped")
+
+    def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
+        events.append(f"child:{request.instance.name}:{request.skip}")
+        return {
+            "instance": request.instance.name,
+            "config_path": str(request.instance.config_path),
+        }
+
+    monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        fake_child_payload,
+    )
+
+    payload = execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="week",
+        command="fleet run week",
+        anchor_date="2026-04-27",
+        skip="ingest",
+        json_output=False,
+    )
+
+    assert events == ["child:embodied_ai:ingest", "child:software:ingest"]
+    assert payload["arxiv_pool_pre_sync"]["status"] == "skipped"
+    assert payload["arxiv_pool_pre_sync"]["reason"] == "ingest_not_requested"
+
+
 def _write_pool_fleet_manifest(tmp_path: Path) -> tuple[Path, Path]:
     pool_path = tmp_path / "fleet-arxiv-pool.db"
     child_paths: list[Path] = []

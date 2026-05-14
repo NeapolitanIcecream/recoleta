@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 import hashlib
@@ -72,6 +73,32 @@ class ArxivPoolRateState:
     consecutive_429_total: int
     last_status: int | None
     last_error_message: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _WindowWrite:
+    query_id: int
+    window: ArxivPoolWindow
+    status: str
+    requested_at: datetime | None
+    completed_at: datetime | None
+    cooldown_until: datetime | None
+    upstream_requests_total: int
+    upstream_status: int | None
+    error_category: str | None
+    error_message: str | None
+    result_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _WindowRefreshFailure:
+    query_id: int
+    window: ArxivPoolWindow
+    requested_at: datetime
+    cooldown_until: datetime | None
+    upstream_status: int | None
+    error_category: str
+    error_message: str
 
 
 @dataclass(slots=True)
@@ -190,7 +217,12 @@ class ArxivPoolStore:
         return _window_record_from_row(row) if row is not None else None
 
     def is_window_completed(self, window: ArxivPoolWindow) -> bool:
-        return self.cached_papers_for_window(window) is not None
+        record = self.get_window(window)
+        return (
+            record is not None
+            and record.status == "completed"
+            and self.cached_papers_for_window(window) is not None
+        )
 
     def cached_papers_for_window(
         self, window: ArxivPoolWindow
@@ -249,25 +281,29 @@ class ArxivPoolStore:
             )
             self._upsert_window(
                 conn=conn,
-                query_id=query_id,
-                window=normalized_window,
-                status="completed",
-                requested_at=now,
-                completed_at=now,
-                cooldown_until=None,
-                upstream_requests_total=1,
-                upstream_status=upstream_status,
-                error_category=None,
-                error_message=None,
-                result_count=len(papers),
+                record=_WindowWrite(
+                    query_id=query_id,
+                    window=normalized_window,
+                    status="completed",
+                    requested_at=now,
+                    completed_at=now,
+                    cooldown_until=None,
+                    upstream_requests_total=1,
+                    upstream_status=upstream_status,
+                    error_category=None,
+                    error_message=None,
+                    result_count=len(papers),
+                ),
             )
             self._set_rate_state(
                 conn=conn,
-                last_request_at=now,
-                cooldown_until=None,
-                last_status=upstream_status,
-                last_error_message=None,
-                consecutive_429_total=0,
+                state=ArxivPoolRateState(
+                    last_request_at=now,
+                    cooldown_until=None,
+                    consecutive_429_total=0,
+                    last_status=upstream_status,
+                    last_error_message=None,
+                ),
             )
             conn.commit()
 
@@ -297,39 +333,45 @@ class ArxivPoolStore:
             ):
                 self._record_refresh_failure_for_cached_window(
                     conn=conn,
-                    query_id=query_id,
-                    window=normalized_window,
-                    requested_at=now,
-                    cooldown_until=cooldown_until,
-                    upstream_status=upstream_status,
-                    error_category="rate_limited",
-                    error_message=error_message,
+                    failure=_WindowRefreshFailure(
+                        query_id=query_id,
+                        window=normalized_window,
+                        requested_at=now,
+                        cooldown_until=cooldown_until,
+                        upstream_status=upstream_status,
+                        error_category="rate_limited",
+                        error_message=error_message,
+                    ),
                 )
             else:
                 self._upsert_window(
                     conn=conn,
-                    query_id=query_id,
-                    window=normalized_window,
-                    status="rate_limited",
-                    requested_at=now,
-                    completed_at=None,
-                    cooldown_until=cooldown_until,
-                    upstream_requests_total=1,
-                    upstream_status=upstream_status,
-                    error_category="rate_limited",
-                    error_message=error_message,
-                    result_count=0,
+                    record=_WindowWrite(
+                        query_id=query_id,
+                        window=normalized_window,
+                        status="rate_limited",
+                        requested_at=now,
+                        completed_at=None,
+                        cooldown_until=cooldown_until,
+                        upstream_requests_total=1,
+                        upstream_status=upstream_status,
+                        error_category="rate_limited",
+                        error_message=error_message,
+                        result_count=0,
+                    ),
                 )
             self._set_rate_state(
                 conn=conn,
-                last_request_at=now,
-                cooldown_until=cooldown_until,
-                last_status=upstream_status,
-                last_error_message=error_message,
-                consecutive_429_total=(
-                    int(previous.consecutive_429_total) + 1
-                    if previous is not None
-                    else 1
+                state=ArxivPoolRateState(
+                    last_request_at=now,
+                    cooldown_until=cooldown_until,
+                    consecutive_429_total=(
+                        int(previous.consecutive_429_total) + 1
+                        if previous is not None
+                        else 1
+                    ),
+                    last_status=upstream_status,
+                    last_error_message=error_message,
                 ),
             )
             conn.commit()
@@ -359,36 +401,42 @@ class ArxivPoolStore:
             ):
                 self._record_refresh_failure_for_cached_window(
                     conn=conn,
-                    query_id=query_id,
-                    window=normalized_window,
-                    requested_at=now,
-                    cooldown_until=None,
-                    upstream_status=upstream_status,
-                    error_category=error_category,
-                    error_message=error_message,
+                    failure=_WindowRefreshFailure(
+                        query_id=query_id,
+                        window=normalized_window,
+                        requested_at=now,
+                        cooldown_until=None,
+                        upstream_status=upstream_status,
+                        error_category=error_category,
+                        error_message=error_message,
+                    ),
                 )
             else:
                 self._upsert_window(
                     conn=conn,
-                    query_id=query_id,
-                    window=normalized_window,
-                    status="failed",
-                    requested_at=now,
-                    completed_at=None,
-                    cooldown_until=None,
-                    upstream_requests_total=1,
-                    upstream_status=upstream_status,
-                    error_category=error_category,
-                    error_message=error_message,
-                    result_count=0,
+                    record=_WindowWrite(
+                        query_id=query_id,
+                        window=normalized_window,
+                        status="failed",
+                        requested_at=now,
+                        completed_at=None,
+                        cooldown_until=None,
+                        upstream_requests_total=1,
+                        upstream_status=upstream_status,
+                        error_category=error_category,
+                        error_message=error_message,
+                        result_count=0,
+                    ),
                 )
             self._set_rate_state(
                 conn=conn,
-                last_request_at=now,
-                cooldown_until=None,
-                last_status=upstream_status,
-                last_error_message=error_message,
-                consecutive_429_total=0,
+                state=ArxivPoolRateState(
+                    last_request_at=now,
+                    cooldown_until=None,
+                    consecutive_429_total=0,
+                    last_status=upstream_status,
+                    last_error_message=error_message,
+                ),
             )
             conn.commit()
 
@@ -513,7 +561,7 @@ class ArxivPoolStore:
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.row_factory = sqlite3.Row
+        conn.row_factory = sqlite3.Row  # noqa: V101 - sqlite uses this runtime hook.
         return conn
 
     def _query_id(
@@ -713,17 +761,7 @@ class ArxivPoolStore:
         self,
         *,
         conn: sqlite3.Connection,
-        query_id: int,
-        window: ArxivPoolWindow,
-        status: str,
-        requested_at: datetime | None,
-        completed_at: datetime | None,
-        cooldown_until: datetime | None,
-        upstream_requests_total: int,
-        upstream_status: int | None,
-        error_category: str | None,
-        error_message: str | None,
-        result_count: int,
+        record: _WindowWrite,
     ) -> None:
         conn.execute(
             """
@@ -745,19 +783,19 @@ class ArxivPoolStore:
                 result_count = excluded.result_count
             """,
             (
-                query_id,
-                _datetime_to_text(window.period_start),
-                _datetime_to_text(window.period_end),
-                int(window.max_results),
-                status,
-                _datetime_to_text(requested_at),
-                _datetime_to_text(completed_at),
-                _datetime_to_text(cooldown_until),
-                int(upstream_requests_total),
-                upstream_status,
-                error_category,
-                _truncate_error(error_message),
-                int(result_count),
+                record.query_id,
+                _datetime_to_text(record.window.period_start),
+                _datetime_to_text(record.window.period_end),
+                int(record.window.max_results),
+                record.status,
+                _datetime_to_text(record.requested_at),
+                _datetime_to_text(record.completed_at),
+                _datetime_to_text(record.cooldown_until),
+                int(record.upstream_requests_total),
+                record.upstream_status,
+                record.error_category,
+                _truncate_error(record.error_message),
+                int(record.result_count),
             ),
         )
 
@@ -765,13 +803,7 @@ class ArxivPoolStore:
         self,
         *,
         conn: sqlite3.Connection,
-        query_id: int,
-        window: ArxivPoolWindow,
-        requested_at: datetime,
-        cooldown_until: datetime | None,
-        upstream_status: int | None,
-        error_category: str,
-        error_message: str,
+        failure: _WindowRefreshFailure,
     ) -> None:
         conn.execute(
             """
@@ -789,15 +821,15 @@ class ArxivPoolStore:
               AND status = 'completed'
             """,
             (
-                _datetime_to_text(requested_at),
-                _datetime_to_text(cooldown_until),
-                upstream_status,
-                error_category,
-                _truncate_error(error_message),
-                query_id,
-                _datetime_to_text(window.period_start),
-                _datetime_to_text(window.period_end),
-                window.max_results,
+                _datetime_to_text(failure.requested_at),
+                _datetime_to_text(failure.cooldown_until),
+                failure.upstream_status,
+                failure.error_category,
+                _truncate_error(failure.error_message),
+                failure.query_id,
+                _datetime_to_text(failure.window.period_start),
+                _datetime_to_text(failure.window.period_end),
+                failure.window.max_results,
             ),
         )
 
@@ -827,11 +859,7 @@ class ArxivPoolStore:
         self,
         *,
         conn: sqlite3.Connection,
-        last_request_at: datetime,
-        cooldown_until: datetime | None,
-        consecutive_429_total: int,
-        last_status: int | None,
-        last_error_message: str | None,
+        state: ArxivPoolRateState,
     ) -> None:
         conn.execute(
             """
@@ -849,11 +877,11 @@ class ArxivPoolStore:
             """,
             (
                 _ARXIV_RATE_STATE_NAME,
-                _datetime_to_text(last_request_at),
-                _datetime_to_text(cooldown_until),
-                int(consecutive_429_total),
-                last_status,
-                _truncate_error(last_error_message),
+                _datetime_to_text(state.last_request_at),
+                _datetime_to_text(state.cooldown_until),
+                int(state.consecutive_429_total),
+                state.last_status,
+                _truncate_error(state.last_error_message),
             ),
         )
 
@@ -1080,30 +1108,58 @@ def normalize_arxiv_id(value: str) -> str:
     return normalized
 
 
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _optional_text(value: Any) -> str | None:
+    text = _clean_text(value)
+    return text if text else None
+
+
+def _clean_text_list(values: Iterable[Any] | None) -> list[str]:
+    if values is None:
+        return []
+    cleaned: list[str] = []
+    for value in values:
+        text = _clean_text(value)
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def _paper_version(*, paper: ArxivPoolPaper, arxiv_id: str) -> int | None:
+    if paper.version is not None:
+        return paper.version
+    return _version_from_id(arxiv_id)
+
+
+def _paper_canonical_url(value: Any, *, arxiv_id: str) -> str:
+    url = _clean_text(value)
+    if url:
+        return url
+    return f"https://arxiv.org/abs/{arxiv_id}"
+
+
 def normalize_pool_paper(paper: ArxivPoolPaper) -> ArxivPoolPaper:
     arxiv_id = normalize_arxiv_id(paper.arxiv_id)
-    canonical_url = str(paper.canonical_url or "").strip() or f"https://arxiv.org/abs/{arxiv_id}"
-    title = str(paper.title or "").strip()
+    title = _clean_text(paper.title)
     if not title:
         raise ValueError("arxiv pool paper title must not be empty")
     return ArxivPoolPaper(
         arxiv_id=arxiv_id,
-        version=paper.version if paper.version is not None else _version_from_id(arxiv_id),
-        canonical_url=canonical_url,
+        version=_paper_version(paper=paper, arxiv_id=arxiv_id),
+        canonical_url=_paper_canonical_url(paper.canonical_url, arxiv_id=arxiv_id),
         title=title,
-        abstract=str(paper.abstract or "").strip() or None,
-        authors=[str(author).strip() for author in paper.authors if str(author).strip()],
-        primary_category=str(paper.primary_category or "").strip() or None,
-        categories=[
-            str(category).strip()
-            for category in paper.categories
-            if str(category).strip()
-        ],
+        abstract=_optional_text(paper.abstract),
+        authors=_clean_text_list(paper.authors),
+        primary_category=_optional_text(paper.primary_category),
+        categories=_clean_text_list(paper.categories),
         published_at=_ensure_utc_optional(paper.published_at),
         updated_at=_ensure_utc_optional(paper.updated_at),
-        comment=str(paper.comment or "").strip() or None,
-        journal_ref=str(paper.journal_ref or "").strip() or None,
-        doi=str(paper.doi or "").strip() or None,
+        comment=_optional_text(paper.comment),
+        journal_ref=_optional_text(paper.journal_ref),
+        doi=_optional_text(paper.doi),
         raw_atom=dict(paper.raw_atom or {}),
     )
 
@@ -1126,9 +1182,11 @@ def _normalize_window(window: ArxivPoolWindow) -> ArxivPoolWindow:
 
 
 def _paper_from_arxiv_result(result: Any) -> ArxivPoolPaper | None:
-    entry_id = str(getattr(result, "entry_id", "") or "").strip()
-    title = str(getattr(result, "title", "") or "").strip()
-    if not entry_id or not title:
+    entry_id = _clean_text(getattr(result, "entry_id", ""))
+    title = _clean_text(getattr(result, "title", ""))
+    if not entry_id:
+        return None
+    if not title:
         return None
     arxiv_id = _result_short_id(result=result, fallback=entry_id)
     return ArxivPoolPaper(
@@ -1136,24 +1194,16 @@ def _paper_from_arxiv_result(result: Any) -> ArxivPoolPaper | None:
         version=_version_from_id(arxiv_id),
         canonical_url=entry_id,
         title=title,
-        abstract=str(getattr(result, "summary", "") or "").strip() or None,
-        authors=_named_authors(getattr(result, "authors", []) or []),
-        primary_category=str(getattr(result, "primary_category", "") or "").strip()
-        or None,
-        categories=[
-            str(category).strip()
-            for category in getattr(result, "categories", []) or []
-            if str(category).strip()
-        ],
+        abstract=_optional_text(getattr(result, "summary", "")),
+        authors=_named_authors(getattr(result, "authors", None)),
+        primary_category=_optional_text(getattr(result, "primary_category", "")),
+        categories=_clean_text_list(getattr(result, "categories", None)),
         published_at=_ensure_utc_optional(getattr(result, "published", None)),
         updated_at=_ensure_utc_optional(getattr(result, "updated", None)),
-        comment=str(getattr(result, "comment", "") or "").strip() or None,
-        journal_ref=str(getattr(result, "journal_ref", "") or "").strip() or None,
-        doi=str(getattr(result, "doi", "") or "").strip() or None,
-        raw_atom={
-            "entry_id": entry_id,
-            "pdf_url": str(getattr(result, "pdf_url", "") or "").strip() or None,
-        },
+        comment=_optional_text(getattr(result, "comment", "")),
+        journal_ref=_optional_text(getattr(result, "journal_ref", "")),
+        doi=_optional_text(getattr(result, "doi", "")),
+        raw_atom=_result_raw_atom(result=result, entry_id=entry_id),
     )
 
 
@@ -1169,10 +1219,19 @@ def _result_short_id(*, result: Any, fallback: str) -> str:
     return normalize_arxiv_id(fallback)
 
 
-def _named_authors(authors: list[Any]) -> list[str]:
+def _result_raw_atom(*, result: Any, entry_id: str) -> dict[str, Any]:
+    return {
+        "entry_id": entry_id,
+        "pdf_url": _optional_text(getattr(result, "pdf_url", "")),
+    }
+
+
+def _named_authors(authors: Iterable[Any] | None) -> list[str]:
+    if authors is None:
+        return []
     names: list[str] = []
     for author in authors:
-        name = str(getattr(author, "name", author) or "").strip()
+        name = _clean_text(getattr(author, "name", author))
         if name:
             names.append(name)
     return names

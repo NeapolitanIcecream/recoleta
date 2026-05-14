@@ -24,6 +24,7 @@ from recoleta.cli.site_support import (
 )
 from recoleta.cli.translate import run_translate_run_command
 from recoleta.cli.workflows import (
+    STEP_INGEST,
     STEP_TRANSLATE,
     _parse_step_list,
     _validate_step_overrides,
@@ -400,12 +401,20 @@ def execute_fleet_granularity_workflow(
     skip: str | None = None,
     json_output: bool = False,
 ) -> dict[str, Any]:
+    include_steps = _parse_step_list(include)
+    skip_steps = _parse_step_list(skip)
+    _validate_step_overrides(
+        workflow_name=workflow_name,
+        include_steps=include_steps,
+        skip_steps=skip_steps,
+    )
     manifest = load_fleet_manifest(manifest_path)
     arxiv_pool_plan = build_fleet_arxiv_pool_pre_sync_plan(
         manifest_path=manifest.manifest_path,
         workflow_name=workflow_name,
         anchor_date=anchor_date,
         manifest=manifest,
+        skip_steps=skip_steps,
     )
     arxiv_pool_payload: dict[str, Any] = arxiv_pool_plan.as_payload()
     if arxiv_pool_plan.status == "planned":
@@ -453,51 +462,92 @@ def build_fleet_arxiv_pool_pre_sync_plan(
     workflow_name: str,
     anchor_date: str | None,
     manifest: Any | None = None,
+    skip_steps: list[str] | None = None,
 ) -> FleetArxivPoolPreSyncPlan:
+    normalized_workflow = _fleet_arxiv_pool_workflow_name(workflow_name)
+    if normalized_workflow is None:
+        return _skipped_fleet_arxiv_pool_pre_sync_plan("unsupported_workflow")
+    if STEP_INGEST in set(skip_steps or []):
+        return _skipped_fleet_arxiv_pool_pre_sync_plan("ingest_not_requested")
+    resolved_manifest = manifest or load_fleet_manifest(manifest_path)
+    arxiv_settings = _fleet_arxiv_pool_source_settings(resolved_manifest)
+    skip_reason = _fleet_arxiv_pool_settings_skip_reason(arxiv_settings)
+    if skip_reason is not None:
+        return _skipped_fleet_arxiv_pool_pre_sync_plan(skip_reason)
+    pool_path = _shared_fleet_arxiv_pool_db_path(arxiv_settings)
+    if pool_path is None:
+        return _skipped_fleet_arxiv_pool_pre_sync_plan("multiple_pool_db_paths")
+    windows = _fleet_arxiv_pool_windows(
+        arxiv_settings=arxiv_settings,
+        workflow_name=normalized_workflow,
+        anchor_date=anchor_date,
+    )
+    pool_settings = arxiv_settings[0].arxiv_pool
+    return FleetArxivPoolPreSyncPlan(
+        status="planned",
+        reason=None,
+        pool_db_path=pool_path,
+        windows=windows,
+        request_interval_seconds=float(pool_settings.request_interval_seconds),
+        cooldown_seconds=int(pool_settings.cooldown_seconds),
+    )
+
+
+def _fleet_arxiv_pool_workflow_name(workflow_name: str) -> str | None:
     normalized_workflow = str(workflow_name or "").strip().lower()
     if normalized_workflow == "now":
         normalized_workflow = "day"
-    if normalized_workflow not in {"day", "week", "month"}:
-        return FleetArxivPoolPreSyncPlan(
-            status="skipped",
-            reason="unsupported_workflow",
-            pool_db_path=None,
-            windows=[],
-        )
-    resolved_manifest = manifest or load_fleet_manifest(manifest_path)
+    if normalized_workflow in {"day", "week", "month"}:
+        return normalized_workflow
+    return None
+
+
+def _skipped_fleet_arxiv_pool_pre_sync_plan(
+    reason: str,
+) -> FleetArxivPoolPreSyncPlan:
+    return FleetArxivPoolPreSyncPlan(
+        status="skipped",
+        reason=reason,
+        pool_db_path=None,
+        windows=[],
+    )
+
+
+def _fleet_arxiv_pool_source_settings(manifest: Any) -> list[Any]:
     child_settings = [
-        load_child_settings(instance.config_path) for instance in resolved_manifest.instances
+        load_child_settings(instance.config_path) for instance in manifest.instances
     ]
-    arxiv_settings = [
+    return [
         settings
         for settings in child_settings
         if bool(getattr(settings.sources.arxiv, "enabled", False))
     ]
+
+
+def _fleet_arxiv_pool_settings_skip_reason(arxiv_settings: list[Any]) -> str | None:
     if not arxiv_settings:
-        return FleetArxivPoolPreSyncPlan(
-            status="skipped",
-            reason="no_arxiv_sources",
-            pool_db_path=None,
-            windows=[],
-        )
+        return "no_arxiv_sources"
     if any(str(settings.sources.arxiv.mode) != "pool" for settings in arxiv_settings):
-        return FleetArxivPoolPreSyncPlan(
-            status="skipped",
-            reason="direct_arxiv_source_present",
-            pool_db_path=None,
-            windows=[],
-        )
+        return "direct_arxiv_source_present"
+    return None
+
+
+def _shared_fleet_arxiv_pool_db_path(arxiv_settings: list[Any]) -> Path | None:
     pool_paths = {resolve_arxiv_pool_db_path(settings) for settings in arxiv_settings}
     if len(pool_paths) != 1:
-        return FleetArxivPoolPreSyncPlan(
-            status="skipped",
-            reason="multiple_pool_db_paths",
-            pool_db_path=None,
-            windows=[],
-        )
-    anchor = normalize_anchor_date(anchor_date, workflow_name=normalized_workflow)
+        return None
+    return next(iter(pool_paths))
+
+
+def _fleet_arxiv_pool_windows(
+    *,
+    arxiv_settings: list[Any],
+    workflow_name: str,
+    anchor_date: str | None,
+) -> list[ArxivPoolWindow]:
+    anchor = normalize_anchor_date(anchor_date, workflow_name=workflow_name)
     period_start, period_end = period_bounds_for_granularity(
-        granularity=normalized_workflow,
+        granularity=workflow_name,
         anchor=anchor,
     )
     windows_by_key: dict[tuple[str, str, str, int], ArxivPoolWindow] = {}
@@ -515,15 +565,7 @@ def build_fleet_arxiv_pool_pre_sync_plan(
                 window.max_results,
             )
             windows_by_key[key] = window
-    pool_settings = arxiv_settings[0].arxiv_pool
-    return FleetArxivPoolPreSyncPlan(
-        status="planned",
-        reason=None,
-        pool_db_path=next(iter(pool_paths)),
-        windows=list(windows_by_key.values()),
-        request_interval_seconds=float(pool_settings.request_interval_seconds),
-        cooldown_seconds=int(pool_settings.cooldown_seconds),
-    )
+    return list(windows_by_key.values())
 
 
 def run_fleet_arxiv_pool_pre_sync(
