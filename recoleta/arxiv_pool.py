@@ -179,6 +179,71 @@ class ArxivPoolFetcher(Protocol):
     def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ArxivPoolWorkerConfig:
+    store: ArxivPoolStore
+    queries: list[str]
+    max_results: int
+    request_interval_seconds: float
+    cooldown_seconds: int
+    poll_interval_seconds: int = 300
+    lookback_days: int = 3
+    idle_jitter_seconds: int = 30
+    backfill_start: date | None = None
+    backfill_end: date | None = None
+    fetcher: ArxivPoolFetcher | None = None
+    sleep: Callable[[float], None] = time.sleep
+    sync_sleep: Callable[[float], None] | None = None
+    now: Callable[[], datetime] | None = None
+    event_sink: Callable[[dict[str, Any]], None] | None = None
+    state_name: str = "default"
+    failure_backoff_seconds: int = 60
+
+
+@dataclass(frozen=True, slots=True)
+class ArxivPoolWorkerPassRecord:
+    planned_windows_total: int
+    result: ArxivPoolSyncResult
+    cooldown_until: datetime | None
+    next_wake_at: datetime | None
+    error_category: str | None = None
+    error_message: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _WorkerPassCompletion:
+    planned_windows_total: int
+    result: ArxivPoolSyncResult
+    delay_seconds: float
+    cooldown_until: datetime | None
+    event_name: str
+    error_category: str | None = None
+    error_message: str | None = None
+
+
+_WORKER_PASS_RESULT_SQL = """
+INSERT INTO arxiv_pool_worker_state (
+    name, last_started_at, last_heartbeat_at, last_completed_at,
+    last_planned_windows_total, last_completed_windows_total,
+    last_cache_hit_total, last_failed_windows_total,
+    last_cooldown_until, next_wake_at,
+    last_error_category, last_error_message
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(name) DO UPDATE SET
+    last_heartbeat_at = excluded.last_heartbeat_at,
+    last_completed_at = excluded.last_completed_at,
+    last_planned_windows_total = excluded.last_planned_windows_total,
+    last_completed_windows_total = excluded.last_completed_windows_total,
+    last_cache_hit_total = excluded.last_cache_hit_total,
+    last_failed_windows_total = excluded.last_failed_windows_total,
+    last_cooldown_until = excluded.last_cooldown_until,
+    next_wake_at = excluded.next_wake_at,
+    last_error_category = excluded.last_error_category,
+    last_error_message = excluded.last_error_message
+"""
+
+
 class ArxivApiFetcher:
     def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]:
         search = arxiv.Search(
@@ -581,70 +646,27 @@ class ArxivPoolStore:
         self,
         *,
         name: str = "default",
-        planned_windows_total: int,
-        result: ArxivPoolSyncResult,
-        cooldown_until: datetime | None,
-        next_wake_at: datetime | None,
-        error_category: str | None = None,
-        error_message: str | None = None,
+        pass_record: ArxivPoolWorkerPassRecord | None = None,
+        **raw_pass_record: Any,
     ) -> ArxivPoolWorkerState:
         self.init_schema()
         normalized_name = _normalize_worker_name(name)
         now = _utc_now()
+        record = _coerce_worker_pass_record(pass_record, raw_pass_record)
         with self._connect() as conn:
             conn.execute(
-                """
-                INSERT INTO arxiv_pool_worker_state (
-                    name, last_started_at, last_heartbeat_at, last_completed_at,
-                    last_planned_windows_total, last_completed_windows_total,
-                    last_cache_hit_total, last_failed_windows_total,
-                    last_cooldown_until, next_wake_at,
-                    last_error_category, last_error_message
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET
-                    last_heartbeat_at = excluded.last_heartbeat_at,
-                    last_completed_at = excluded.last_completed_at,
-                    last_planned_windows_total = excluded.last_planned_windows_total,
-                    last_completed_windows_total = excluded.last_completed_windows_total,
-                    last_cache_hit_total = excluded.last_cache_hit_total,
-                    last_failed_windows_total = excluded.last_failed_windows_total,
-                    last_cooldown_until = excluded.last_cooldown_until,
-                    next_wake_at = excluded.next_wake_at,
-                    last_error_category = excluded.last_error_category,
-                    last_error_message = excluded.last_error_message
-                """,
-                (
-                    normalized_name,
-                    _datetime_to_text(now),
-                    _datetime_to_text(now),
-                    _datetime_to_text(now),
-                    max(0, int(planned_windows_total)),
-                    int(result.completed_windows_total),
-                    int(result.cache_hit_total),
-                    int(result.failed_windows_total + result.rate_limited_windows_total),
-                    _datetime_to_text(cooldown_until),
-                    _datetime_to_text(next_wake_at),
-                    _optional_text(error_category),
-                    _truncate_error(error_message),
+                _WORKER_PASS_RESULT_SQL,
+                _worker_pass_record_params(
+                    name=normalized_name,
+                    completed_at=now,
+                    record=record,
                 ),
             )
             conn.commit()
-        return self.get_worker_state(name=normalized_name) or ArxivPoolWorkerState(
+        return self.get_worker_state(name=normalized_name) or _worker_state_from_pass_record(
             name=normalized_name,
-            last_started_at=now,
-            last_heartbeat_at=now,
-            last_completed_at=now,
-            last_planned_windows_total=max(0, int(planned_windows_total)),
-            last_completed_windows_total=int(result.completed_windows_total),
-            last_cache_hit_total=int(result.cache_hit_total),
-            last_failed_windows_total=int(
-                result.failed_windows_total + result.rate_limited_windows_total
-            ),
-            last_cooldown_until=_ensure_utc_optional(cooldown_until),
-            next_wake_at=_ensure_utc_optional(next_wake_at),
-            last_error_category=_optional_text(error_category),
-            last_error_message=_truncate_error(error_message),
+            completed_at=now,
+            record=record,
         )
 
     def get_worker_state(
@@ -1225,42 +1247,31 @@ class ArxivPoolSync:
 class ArxivPoolWorker:
     def __init__(
         self,
-        *,
-        store: ArxivPoolStore,
-        queries: list[str],
-        max_results: int,
-        request_interval_seconds: float,
-        cooldown_seconds: int,
-        poll_interval_seconds: int = 300,
-        lookback_days: int = 3,
-        idle_jitter_seconds: int = 30,
-        backfill_start: date | None = None,
-        backfill_end: date | None = None,
-        fetcher: ArxivPoolFetcher | None = None,
-        sleep: Callable[[float], None] = time.sleep,
-        sync_sleep: Callable[[float], None] | None = None,
-        now: Callable[[], datetime] | None = None,
-        event_sink: Callable[[dict[str, Any]], None] | None = None,
-        state_name: str = "default",
-        failure_backoff_seconds: int = 60,
+        config: ArxivPoolWorkerConfig | None = None,
+        **raw_config: Any,
     ) -> None:
-        self.store = store
-        self.queries = list(queries)
-        self.max_results = max(1, int(max_results))
-        self.request_interval_seconds = max(0.0, float(request_interval_seconds))
-        self.cooldown_seconds = max(1, int(cooldown_seconds))
-        self.poll_interval_seconds = max(1, int(poll_interval_seconds))
-        self.lookback_days = max(1, int(lookback_days))
-        self.idle_jitter_seconds = max(0, int(idle_jitter_seconds))
-        self.backfill_start = backfill_start
-        self.backfill_end = backfill_end
-        self.fetcher = fetcher
-        self.sleep = sleep
-        self.sync_sleep = sync_sleep or time.sleep
-        self.now = now or _utc_now
-        self.event_sink = event_sink
-        self.state_name = _normalize_worker_name(state_name)
-        self.failure_backoff_seconds = max(1, int(failure_backoff_seconds))
+        worker_config = _coerce_worker_config(config, raw_config)
+        self.store = worker_config.store
+        self.queries = list(worker_config.queries)
+        self.max_results = max(1, int(worker_config.max_results))
+        self.request_interval_seconds = max(
+            0.0, float(worker_config.request_interval_seconds)
+        )
+        self.cooldown_seconds = max(1, int(worker_config.cooldown_seconds))
+        self.poll_interval_seconds = max(1, int(worker_config.poll_interval_seconds))
+        self.lookback_days = max(1, int(worker_config.lookback_days))
+        self.idle_jitter_seconds = max(0, int(worker_config.idle_jitter_seconds))
+        self.backfill_start = worker_config.backfill_start
+        self.backfill_end = worker_config.backfill_end
+        self.fetcher = worker_config.fetcher
+        self.sleep = worker_config.sleep
+        self.sync_sleep = worker_config.sync_sleep or time.sleep
+        self.now = worker_config.now or _utc_now
+        self.event_sink = worker_config.event_sink
+        self.state_name = _normalize_worker_name(worker_config.state_name)
+        self.failure_backoff_seconds = max(
+            1, int(worker_config.failure_backoff_seconds)
+        )
         self._failure_streak = 0
         self._log = logger.bind(module="arxiv_pool.worker", worker=self.state_name)
 
@@ -1398,48 +1409,45 @@ class ArxivPoolWorker:
 
     def _finish_pass(
         self,
-        *,
-        planned_windows_total: int,
-        result: ArxivPoolSyncResult,
-        delay_seconds: float,
-        cooldown_until: datetime | None,
-        event_name: str,
-        error_category: str | None = None,
-        error_message: str | None = None,
+        completion: _WorkerPassCompletion | None = None,
+        **raw_completion: Any,
     ) -> ArxivPoolWorkerPassResult:
-        next_wake_at = self._next_wake_at(delay_seconds)
+        pass_completion = _coerce_worker_pass_completion(completion, raw_completion)
+        next_wake_at = self._next_wake_at(pass_completion.delay_seconds)
         state = self.store.record_worker_pass_result(
             name=self.state_name,
-            planned_windows_total=planned_windows_total,
-            result=result,
-            cooldown_until=cooldown_until,
-            next_wake_at=next_wake_at,
-            error_category=error_category,
-            error_message=error_message,
+            pass_record=ArxivPoolWorkerPassRecord(
+                planned_windows_total=pass_completion.planned_windows_total,
+                result=pass_completion.result,
+                cooldown_until=pass_completion.cooldown_until,
+                next_wake_at=next_wake_at,
+                error_category=pass_completion.error_category,
+                error_message=pass_completion.error_message,
+            ),
         )
         self._emit_event(
-            event_name,
-            sync=result.as_payload(),
+            pass_completion.event_name,
+            sync=pass_completion.result.as_payload(),
             worker_state=worker_state_payload(state),
-            cooldown_until=_isoformat_or_none(cooldown_until),
+            cooldown_until=_isoformat_or_none(pass_completion.cooldown_until),
             next_wake_at=next_wake_at.isoformat(),
-            sleep_seconds=delay_seconds,
-            error_category=error_category,
-            error_message=error_message,
+            sleep_seconds=pass_completion.delay_seconds,
+            error_category=pass_completion.error_category,
+            error_message=pass_completion.error_message,
         )
         self._emit_event(
             "next_wake_time",
             next_wake_at=next_wake_at.isoformat(),
-            sleep_seconds=delay_seconds,
+            sleep_seconds=pass_completion.delay_seconds,
         )
         return ArxivPoolWorkerPassResult(
-            planned_windows_total=planned_windows_total,
-            sync=result,
+            planned_windows_total=pass_completion.planned_windows_total,
+            sync=pass_completion.result,
             next_wake_at=next_wake_at,
-            next_sleep_seconds=delay_seconds,
-            cooldown_until=cooldown_until,
-            error_category=error_category,
-            error_message=error_message,
+            next_sleep_seconds=pass_completion.delay_seconds,
+            cooldown_until=pass_completion.cooldown_until,
+            error_category=pass_completion.error_category,
+            error_message=pass_completion.error_message,
         )
 
     def _active_cooldown_until(self) -> datetime | None:
@@ -1863,6 +1871,87 @@ def _worker_state_from_row(row: sqlite3.Row) -> ArxivPoolWorkerState:
         next_wake_at=_datetime_from_text(row["next_wake_at"]),
         last_error_category=row["last_error_category"],
         last_error_message=row["last_error_message"],
+    )
+
+
+def _coerce_worker_pass_record(
+    pass_record: ArxivPoolWorkerPassRecord | None,
+    raw_pass_record: dict[str, Any],
+) -> ArxivPoolWorkerPassRecord:
+    if pass_record is not None:
+        if raw_pass_record:
+            raise TypeError("pass_record cannot be combined with result fields")
+        return pass_record
+    return ArxivPoolWorkerPassRecord(**raw_pass_record)
+
+
+def _coerce_worker_config(
+    config: ArxivPoolWorkerConfig | None,
+    raw_config: dict[str, Any],
+) -> ArxivPoolWorkerConfig:
+    if config is not None:
+        if raw_config:
+            raise TypeError("config cannot be combined with worker fields")
+        return config
+    return ArxivPoolWorkerConfig(**raw_config)
+
+
+def _coerce_worker_pass_completion(
+    completion: _WorkerPassCompletion | None,
+    raw_completion: dict[str, Any],
+) -> _WorkerPassCompletion:
+    if completion is not None:
+        if raw_completion:
+            raise TypeError("completion cannot be combined with pass fields")
+        return completion
+    return _WorkerPassCompletion(**raw_completion)
+
+
+def _worker_pass_record_params(
+    *,
+    name: str,
+    completed_at: datetime,
+    record: ArxivPoolWorkerPassRecord,
+) -> tuple[Any, ...]:
+    result = record.result
+    return (
+        name,
+        _datetime_to_text(completed_at),
+        _datetime_to_text(completed_at),
+        _datetime_to_text(completed_at),
+        max(0, int(record.planned_windows_total)),
+        int(result.completed_windows_total),
+        int(result.cache_hit_total),
+        int(result.failed_windows_total + result.rate_limited_windows_total),
+        _datetime_to_text(record.cooldown_until),
+        _datetime_to_text(record.next_wake_at),
+        _optional_text(record.error_category),
+        _truncate_error(record.error_message),
+    )
+
+
+def _worker_state_from_pass_record(
+    *,
+    name: str,
+    completed_at: datetime,
+    record: ArxivPoolWorkerPassRecord,
+) -> ArxivPoolWorkerState:
+    result = record.result
+    return ArxivPoolWorkerState(
+        name=name,
+        last_started_at=completed_at,
+        last_heartbeat_at=completed_at,
+        last_completed_at=completed_at,
+        last_planned_windows_total=max(0, int(record.planned_windows_total)),
+        last_completed_windows_total=int(result.completed_windows_total),
+        last_cache_hit_total=int(result.cache_hit_total),
+        last_failed_windows_total=int(
+            result.failed_windows_total + result.rate_limited_windows_total
+        ),
+        last_cooldown_until=_ensure_utc_optional(record.cooldown_until),
+        next_wake_at=_ensure_utc_optional(record.next_wake_at),
+        last_error_category=_optional_text(record.error_category),
+        last_error_message=_truncate_error(record.error_message),
     )
 
 

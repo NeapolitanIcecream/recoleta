@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,18 @@ from recoleta.arxiv_pool import (
     resolve_arxiv_pool_db_path,
     worker_state_payload,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ArxivPoolWorkerCommandOptions:
+    poll_interval_seconds: int
+    lookback_days: int
+    idle_jitter_seconds: int
+    backfill_start: str | None
+    backfill_end: str | None
+    config_path: Path | None
+    json_output: bool
+    command_name: str = "arxiv-pool worker"
 
 
 def run_arxiv_pool_sync_command(
@@ -94,67 +107,40 @@ def run_arxiv_pool_backfill_command(
 
 
 def run_arxiv_pool_worker_command(
-    *,
-    poll_interval_seconds: int,
-    lookback_days: int,
-    idle_jitter_seconds: int,
-    backfill_start: str | None,
-    backfill_end: str | None,
-    config_path: Path | None,
-    json_output: bool,
-    command_name: str = "arxiv-pool worker",
+    options: ArxivPoolWorkerCommandOptions | None = None,
+    **raw_options: Any,
 ) -> dict[str, Any]:
-    settings = cli._build_settings(config_path=config_path)
+    worker_options = _coerce_worker_command_options(options, raw_options)
+    return _run_arxiv_pool_worker_command(worker_options)
+
+
+def _run_arxiv_pool_worker_command(
+    options: ArxivPoolWorkerCommandOptions,
+) -> dict[str, Any]:
+    settings = cli._build_settings(config_path=options.config_path)
     arxiv_settings = _pool_arxiv_settings(settings)
     if arxiv_settings is None:
         raise ValueError("SOURCES.arxiv.enabled=true is required for arxiv-pool worker")
-    start = _optional_date(backfill_start)
-    end = _optional_date(backfill_end)
-    if (start is None) != (end is None):
-        raise ValueError("--backfill-start and --backfill-end must be provided together")
-    if start is not None and end is not None and end < start:
-        raise ValueError("--backfill-end must be on or after --backfill-start")
 
+    start, end = _worker_backfill_range(options)
     pool_path = resolve_arxiv_pool_db_path(settings)
     store = ArxivPoolStore(pool_path)
-    console = None if json_output else cli._runtime_symbols()["Console"]()
-
-    def emit_event(payload: dict[str, Any]) -> None:
-        event_payload = {
-            "status": "ok",
-            "command": command_name,
-            "pool_db_path": str(pool_path),
-            **payload,
-        }
-        if json_output:
-            cli._emit_json(event_payload)
-            return
-        if console is None:
-            return
-        event = str(event_payload.get("event") or "")
-        if event in {"worker_start", "worker_stop", "sync_pass_result"}:
-            console.print(
-                f"[cyan]{command_name}[/cyan] {event} "
-                f"pool={event_payload['pool_db_path']}"
-            )
-        elif event in {"cooldown_active", "transient_failure"}:
-            console.print(
-                f"[yellow]{command_name}[/yellow] {event} "
-                f"next_wake={event_payload.get('next_wake_at', '-')}"
-            )
-
     worker = ArxivPoolWorker(
         store=store,
         queries=list(arxiv_settings.queries),
         max_results=int(arxiv_settings.max_results_per_run),
         request_interval_seconds=float(settings.arxiv_pool.request_interval_seconds),
         cooldown_seconds=int(settings.arxiv_pool.cooldown_seconds),
-        poll_interval_seconds=poll_interval_seconds,
-        lookback_days=lookback_days,
-        idle_jitter_seconds=idle_jitter_seconds,
+        poll_interval_seconds=options.poll_interval_seconds,
+        lookback_days=options.lookback_days,
+        idle_jitter_seconds=options.idle_jitter_seconds,
         backfill_start=start,
         backfill_end=end,
-        event_sink=emit_event,
+        event_sink=_worker_event_sink(
+            command_name=options.command_name,
+            pool_path=pool_path,
+            json_output=options.json_output,
+        ),
     )
     log = cli._runtime_symbols()["logger"].bind(module="cli.arxiv_pool.worker")
     try:
@@ -168,10 +154,101 @@ def run_arxiv_pool_worker_command(
         )
     return {
         "status": "ok",
-        "command": command_name,
+        "command": options.command_name,
         "pool_db_path": str(pool_path),
         "worker_state": worker_state_payload(store.get_worker_state()),
     }
+
+
+def _coerce_worker_command_options(
+    options: ArxivPoolWorkerCommandOptions | None,
+    raw_options: dict[str, Any],
+) -> ArxivPoolWorkerCommandOptions:
+    if options is not None:
+        if raw_options:
+            raise TypeError("options cannot be combined with worker command fields")
+        return options
+    return ArxivPoolWorkerCommandOptions(
+        poll_interval_seconds=int(raw_options["poll_interval_seconds"]),
+        lookback_days=int(raw_options["lookback_days"]),
+        idle_jitter_seconds=int(raw_options["idle_jitter_seconds"]),
+        backfill_start=raw_options.get("backfill_start"),
+        backfill_end=raw_options.get("backfill_end"),
+        config_path=raw_options.get("config_path"),
+        json_output=bool(raw_options["json_output"]),
+        command_name=str(raw_options.get("command_name", "arxiv-pool worker")),
+    )
+
+
+def _worker_backfill_range(
+    options: ArxivPoolWorkerCommandOptions,
+) -> tuple[date | None, date | None]:
+    start = _optional_date(options.backfill_start)
+    end = _optional_date(options.backfill_end)
+    if (start is None) != (end is None):
+        raise ValueError("--backfill-start and --backfill-end must be provided together")
+    if start is not None and end is not None and end < start:
+        raise ValueError("--backfill-end must be on or after --backfill-start")
+    return start, end
+
+
+def _worker_event_sink(
+    *,
+    command_name: str,
+    pool_path: Path,
+    json_output: bool,
+) -> Any:
+    console = None if json_output else cli._runtime_symbols()["Console"]()
+
+    def emit_event(payload: dict[str, Any]) -> None:
+        event_payload = _worker_event_payload(
+            command_name=command_name,
+            pool_path=pool_path,
+            payload=payload,
+        )
+        if json_output:
+            cli._emit_json(event_payload)
+        elif console is not None:
+            _print_worker_event(
+                console=console,
+                command_name=command_name,
+                event_payload=event_payload,
+            )
+
+    return emit_event
+
+
+def _worker_event_payload(
+    *,
+    command_name: str,
+    pool_path: Path,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "command": command_name,
+        "pool_db_path": str(pool_path),
+        **payload,
+    }
+
+
+def _print_worker_event(
+    *,
+    console: Any,
+    command_name: str,
+    event_payload: dict[str, Any],
+) -> None:
+    event = str(event_payload.get("event") or "")
+    if event in {"worker_start", "worker_stop", "sync_pass_result"}:
+        console.print(
+            f"[cyan]{command_name}[/cyan] {event} "
+            f"pool={event_payload['pool_db_path']}"
+        )
+    elif event in {"cooldown_active", "transient_failure"}:
+        console.print(
+            f"[yellow]{command_name}[/yellow] {event} "
+            f"next_wake={event_payload.get('next_wake_at', '-')}"
+        )
 
 
 def run_inspect_arxiv_pool_freshness_command(
