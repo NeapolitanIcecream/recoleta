@@ -12,6 +12,7 @@ from recoleta.cli.arxiv_pool import (
     run_admin_arxiv_pool_gc_command,
     run_arxiv_pool_backfill_command,
     run_arxiv_pool_sync_command,
+    run_arxiv_pool_worker_command,
     run_inspect_arxiv_pool_freshness_command,
 )
 from recoleta.cli.db import (
@@ -401,6 +402,60 @@ def arxiv_pool_backfill(
         config_path=config_path,
         json_output=json_output,
         command_name="arxiv-pool backfill",
+    )
+
+
+@arxiv_pool_app.command("worker")
+def arxiv_pool_worker(
+    poll_interval_seconds: int = typer.Option(
+        300,
+        "--poll-interval-seconds",
+        min=1,
+        help="Seconds between worker sync passes when no cooldown or failure is active.",
+    ),
+    lookback_days: int = typer.Option(
+        3,
+        "--lookback-days",
+        min=1,
+        help="Include this many trailing UTC day windows ending at the current UTC date.",
+    ),
+    idle_jitter_seconds: int = typer.Option(
+        30,
+        "--idle-jitter-seconds",
+        min=0,
+        help="Add up to this many seconds of jitter before idle sleeps.",
+    ),
+    backfill_start: str | None = typer.Option(
+        None,
+        "--backfill-start",
+        help="Optional first UTC day for historical windows (YYYY-MM-DD or YYYYMMDD).",
+    ),
+    backfill_end: str | None = typer.Option(
+        None,
+        "--backfill-end",
+        help="Optional last UTC day for historical windows, inclusive.",
+    ),
+    config_path: Path | None = typer.Option(
+        None,
+        "--config",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to config file used to resolve arXiv pool settings.",
+    ),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the foreground long-running arXiv pool worker."""
+    run_arxiv_pool_worker_command(
+        poll_interval_seconds=poll_interval_seconds,
+        lookback_days=lookback_days,
+        idle_jitter_seconds=idle_jitter_seconds,
+        backfill_start=backfill_start,
+        backfill_end=backfill_end,
+        config_path=config_path,
+        json_output=json_output,
+        command_name="arxiv-pool worker",
     )
 
 
