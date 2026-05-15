@@ -1,24 +1,32 @@
 from __future__ import annotations
 
+import calendar
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
+from email.utils import parsedate_to_datetime
 import hashlib
 import json
+import math
 from pathlib import Path
 import random
 import re
 import sqlite3
 import time
 from typing import Any, Protocol
+from urllib.parse import urlparse
 from uuid import uuid4
 
-import arxiv
+import feedparser
+import httpx
 from loguru import logger
 
 from recoleta.sources import _arxiv_query_with_period
 from recoleta.types import ItemDraft
 
+_ARXIV_API_URL = "https://export.arxiv.org/api/query"
+_ARXIV_POOL_FETCHER_NAME = "httpx_atom"
+_ARXIV_POOL_USER_AGENT = "Recoleta/0.2.1 (arxiv-pool; metadata cache)"
 _ARXIV_RATE_STATE_NAME = "arxiv_api"
 _ARXIV_SYNC_LEASE_NAME = "arxiv_pool_sync"
 _ARXIV_POOL_SCHEMA_VERSION = 2
@@ -138,13 +146,14 @@ class ArxivPoolSyncResult:
     cache_miss_total: int = 0
     upstream_requests_total: int = 0
     upstream_429_total: int = 0
+    retry_after_seconds: int | None = None
     cooldown_active_total: int = 0
     skipped_windows_total: int = 0
     rate_limited_windows_total: int = 0
     failed_windows_total: int = 0
     papers_total: int = 0
 
-    def as_payload(self) -> dict[str, int]:
+    def as_payload(self) -> dict[str, int | None]:
         return {
             "requested_windows_total": self.requested_windows_total,
             "completed_windows_total": self.completed_windows_total,
@@ -152,6 +161,7 @@ class ArxivPoolSyncResult:
             "cache_miss_total": self.cache_miss_total,
             "upstream_requests_total": self.upstream_requests_total,
             "upstream_429_total": self.upstream_429_total,
+            "retry_after_seconds": self.retry_after_seconds,
             "cooldown_active_total": self.cooldown_active_total,
             "skipped_windows_total": self.skipped_windows_total,
             "rate_limited_windows_total": self.rate_limited_windows_total,
@@ -169,6 +179,22 @@ class ArxivPoolRateLimitedError(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
+
+
+class ArxivPoolFetchError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status_code
+        self.status_code = status_code
+
+
+class ArxivPoolTransientFetchError(ArxivPoolFetchError):
+    pass
 
 
 class ArxivPoolLeaseHeldError(RuntimeError):
@@ -245,28 +271,58 @@ ON CONFLICT(name) DO UPDATE SET
 
 
 class ArxivApiFetcher:
+    def __init__(
+        self,
+        *,
+        client: httpx.Client | None = None,
+        api_url: str = _ARXIV_API_URL,
+        timeout_seconds: float = 30.0,
+        user_agent: str = _ARXIV_POOL_USER_AGENT,
+    ) -> None:
+        self._client = client
+        self._api_url = str(api_url)
+        self._timeout_seconds = max(1.0, float(timeout_seconds))
+        self._user_agent = str(user_agent or _ARXIV_POOL_USER_AGENT)
+
     def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]:
-        search = arxiv.Search(
-            query=_arxiv_query_with_period(
-                query=window.query_text,
-                period_start=window.period_start,
-                period_end=window.period_end,
-            ),
-            max_results=max(1, int(window.max_results)),
-            sort_by=arxiv.SortCriterion.SubmittedDate,
-        )
+        response = self._request(window)
+        status_code = int(response.status_code)
+        if status_code == 429:
+            raise ArxivPoolRateLimitedError(
+                "arXiv API rate limited (HTTP 429)",
+                retry_after_seconds=_retry_after_seconds_from_response(response),
+            )
+        if status_code >= 500:
+            raise ArxivPoolTransientFetchError(
+                f"arXiv API returned HTTP {status_code}",
+                status_code=status_code,
+            )
+        if status_code < 200 or status_code >= 300:
+            raise ArxivPoolFetchError(
+                f"arXiv API returned HTTP {status_code}",
+                status_code=status_code,
+            )
+        return _papers_from_arxiv_atom_feed(response.text)
+
+    def _request(self, window: ArxivPoolWindow) -> httpx.Response:
+        kwargs = {
+            "params": _arxiv_api_query_params(window),
+            "headers": {"User-Agent": self._user_agent},
+            "timeout": self._timeout_seconds,
+        }
         try:
-            return [
-                paper
-                for paper in (_paper_from_arxiv_result(result) for result in arxiv.Client().results(search))
-                if paper is not None
-            ]
-        except Exception as exc:
-            if _exception_status_code(exc) == 429:
-                raise ArxivPoolRateLimitedError(
-                    retry_after_seconds=_retry_after_seconds(exc),
-                ) from exc
-            raise
+            if self._client is not None:
+                return self._client.get(self._api_url, **kwargs)
+            with httpx.Client() as client:
+                return client.get(self._api_url, **kwargs)
+        except httpx.RequestError as exc:
+            raise ArxivPoolTransientFetchError(
+                f"arXiv API request failed: {type(exc).__name__}"
+            ) from exc
+
+
+def arxiv_pool_fetcher_name() -> str:
+    return _ARXIV_POOL_FETCHER_NAME
 
 
 class ArxivPoolStore:
@@ -1196,9 +1252,15 @@ class ArxivPoolSync:
             except ArxivPoolRateLimitedError as exc:
                 result.upstream_requests_total += 1
                 result.upstream_429_total += 1
+                result.retry_after_seconds = exc.retry_after_seconds
                 result.rate_limited_windows_total += 1
+                retry_after_seconds = (
+                    exc.retry_after_seconds
+                    if exc.retry_after_seconds is not None
+                    else self.cooldown_seconds
+                )
                 cooldown_until = _utc_now() + timedelta(
-                    seconds=exc.retry_after_seconds or self.cooldown_seconds
+                    seconds=retry_after_seconds
                 )
                 self.store.record_rate_limited_window(
                     window=window,
@@ -1658,7 +1720,7 @@ def arxiv_query_fingerprint(query_text: str) -> str:
 def normalize_arxiv_id(value: str) -> str:
     raw = str(value or "").strip()
     if raw.startswith("http://") or raw.startswith("https://"):
-        raw = raw.rstrip("/").rsplit("/", 1)[-1]
+        raw = urlparse(raw).path.strip("/")
     for prefix in ("arXiv:", "arxiv:", "abs/", "pdf/", "html/"):
         if raw.startswith(prefix):
             raw = raw[len(prefix) :]
@@ -1762,60 +1824,115 @@ def _normalize_window(window: ArxivPoolWindow) -> ArxivPoolWindow:
     )
 
 
-def _paper_from_arxiv_result(result: Any) -> ArxivPoolPaper | None:
-    entry_id = _clean_text(getattr(result, "entry_id", ""))
-    title = _clean_text(getattr(result, "title", ""))
-    if not entry_id:
-        return None
-    if not title:
-        return None
-    arxiv_id = _result_short_id(result=result, fallback=entry_id)
-    return ArxivPoolPaper(
-        arxiv_id=arxiv_id,
-        version=_version_from_id(arxiv_id),
-        canonical_url=entry_id,
-        title=title,
-        abstract=_optional_text(getattr(result, "summary", "")),
-        authors=_named_authors(getattr(result, "authors", None)),
-        primary_category=_optional_text(getattr(result, "primary_category", "")),
-        categories=_clean_text_list(getattr(result, "categories", None)),
-        published_at=_ensure_utc_optional(getattr(result, "published", None)),
-        updated_at=_ensure_utc_optional(getattr(result, "updated", None)),
-        comment=_optional_text(getattr(result, "comment", "")),
-        journal_ref=_optional_text(getattr(result, "journal_ref", "")),
-        doi=_optional_text(getattr(result, "doi", "")),
-        raw_atom=_result_raw_atom(result=result, entry_id=entry_id),
-    )
-
-
-def _result_short_id(*, result: Any, fallback: str) -> str:
-    get_short_id = getattr(result, "get_short_id", None)
-    if callable(get_short_id):
-        try:
-            short_id = str(get_short_id() or "").strip()
-        except Exception:
-            short_id = ""
-        if short_id:
-            return short_id
-    return normalize_arxiv_id(fallback)
-
-
-def _result_raw_atom(*, result: Any, entry_id: str) -> dict[str, Any]:
+def _arxiv_api_query_params(window: ArxivPoolWindow) -> dict[str, str]:
+    normalized_window = _normalize_window(window)
     return {
-        "entry_id": entry_id,
-        "pdf_url": _optional_text(getattr(result, "pdf_url", "")),
+        "search_query": _arxiv_query_with_period(
+            query=normalized_window.query_text,
+            period_start=normalized_window.period_start,
+            period_end=normalized_window.period_end,
+        ),
+        "sortBy": "submittedDate",
+        "sortOrder": "descending",
+        "start": "0",
+        "max_results": str(normalized_window.max_results),
     }
 
 
-def _named_authors(authors: Iterable[Any] | None) -> list[str]:
-    if authors is None:
+def _papers_from_arxiv_atom_feed(feed_text: str) -> list[ArxivPoolPaper]:
+    parsed = feedparser.parse(feed_text)
+    entries = getattr(parsed, "entries", []) or []
+    return [
+        paper
+        for paper in (_paper_from_arxiv_atom_entry(entry) for entry in entries)
+        if paper is not None
+    ]
+
+
+def _paper_from_arxiv_atom_entry(entry: Any) -> ArxivPoolPaper | None:
+    entry_id = _clean_text(_feed_value(entry, "id") or _feed_value(entry, "link"))
+    title = _clean_whitespace(_feed_value(entry, "title"))
+    if not entry_id or not title:
+        return None
+    arxiv_id = normalize_arxiv_id(entry_id)
+    return ArxivPoolPaper(
+        arxiv_id=arxiv_id,
+        version=_version_from_id(arxiv_id),
+        canonical_url=f"https://arxiv.org/abs/{arxiv_id}",
+        title=title,
+        abstract=_optional_text(_feed_value(entry, "summary")),
+        authors=_atom_authors(_feed_value(entry, "authors")),
+        primary_category=_atom_primary_category(entry),
+        categories=_atom_categories(_feed_value(entry, "tags")),
+        published_at=_datetime_from_struct_time(_feed_value(entry, "published_parsed")),
+        updated_at=_datetime_from_struct_time(_feed_value(entry, "updated_parsed")),
+        comment=_optional_text(_feed_value(entry, "arxiv_comment")),
+        journal_ref=_optional_text(_feed_value(entry, "arxiv_journal_ref")),
+        doi=_optional_text(_feed_value(entry, "arxiv_doi")),
+        raw_atom=_atom_raw_metadata(entry=entry, entry_id=entry_id),
+    )
+
+
+def _feed_value(container: Any, key: str) -> Any:
+    getter = getattr(container, "get", None)
+    if callable(getter):
+        return getter(key)
+    return getattr(container, key, None)
+
+
+def _clean_whitespace(value: Any) -> str:
+    return " ".join(_clean_text(value).split())
+
+
+def _atom_authors(raw_authors: Any) -> list[str]:
+    if not isinstance(raw_authors, Iterable) or isinstance(raw_authors, (str, bytes)):
         return []
-    names: list[str] = []
-    for author in authors:
-        name = _clean_text(getattr(author, "name", author))
-        if name:
-            names.append(name)
-    return names
+    return _clean_text_list(_feed_value(author, "name") for author in raw_authors)
+
+
+def _atom_primary_category(entry: Any) -> str | None:
+    primary = _feed_value(entry, "arxiv_primary_category")
+    return _optional_text(_feed_value(primary, "term"))
+
+
+def _atom_categories(raw_tags: Any) -> list[str]:
+    if not isinstance(raw_tags, Iterable) or isinstance(raw_tags, (str, bytes)):
+        return []
+    return _clean_text_list(_feed_value(tag, "term") for tag in raw_tags)
+
+
+def _datetime_from_struct_time(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(calendar.timegm(value), tz=UTC)
+    except Exception:
+        return None
+
+
+def _atom_raw_metadata(*, entry: Any, entry_id: str) -> dict[str, Any]:
+    raw_atom: dict[str, Any] = {
+        "entry_id": entry_id,
+        "fetcher": _ARXIV_POOL_FETCHER_NAME,
+    }
+    pdf_url = _atom_pdf_url(_feed_value(entry, "links"))
+    if pdf_url is not None:
+        raw_atom["pdf_url"] = pdf_url
+    return raw_atom
+
+
+def _atom_pdf_url(raw_links: Any) -> str | None:
+    if not isinstance(raw_links, Iterable) or isinstance(raw_links, (str, bytes)):
+        return None
+    for link in raw_links:
+        href = _optional_text(_feed_value(link, "href"))
+        if href is None:
+            continue
+        title = str(_feed_value(link, "title") or "").lower()
+        media_type = str(_feed_value(link, "type") or "").lower()
+        if title == "pdf" or media_type == "application/pdf" or "/pdf/" in href:
+            return href
+    return None
 
 
 def _paper_from_row(row: sqlite3.Row) -> ArxivPoolPaper:
@@ -2043,17 +2160,33 @@ def _exception_status_code(exc: BaseException) -> int | None:
         return None
 
 
-def _retry_after_seconds(exc: BaseException) -> int | None:
-    response = getattr(exc, "response", None)
+def _retry_after_seconds_from_response(response: Any | None) -> int | None:
+    if response is None:
+        return None
     headers = getattr(response, "headers", {}) or {}
     try:
         raw = headers.get("Retry-After")
     except Exception:
         raw = None
+    return _parse_retry_after_seconds(raw)
+
+
+def _parse_retry_after_seconds(raw: Any) -> int | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
     try:
-        return max(1, int(str(raw).strip()))
+        return max(0, int(text))
+    except Exception:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(text)
     except Exception:
         return None
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=UTC)
+    delay_seconds = (retry_at.astimezone(UTC) - _utc_now()).total_seconds()
+    return max(0, int(math.ceil(delay_seconds)))
 
 
 _SCHEMA_DDL = """
