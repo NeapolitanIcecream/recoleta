@@ -137,7 +137,8 @@ Worker loop:
 1. Load settings and resolve `ARXIV_POOL.db_path`.
 2. Build current-day and lookback query windows from configured arXiv queries.
 3. Optionally add historical backfill windows.
-4. Call `ArxivPoolSync.sync_windows(...)`.
+4. Call `ArxivPoolSync.sync_windows(...)`, marking only current-day and
+   lookback windows as refreshable for this pass.
 5. Persist worker heartbeat and outcome.
 6. Decide the next wake time from cooldown, failures, backfill progress, and
    poll interval.
@@ -146,6 +147,11 @@ Worker loop:
 
 The worker should never hold the sync lease while idle. The lease protects
 active upstream work only.
+
+Completed current-day and lookback windows are mutable from the worker's point
+of view. A later worker pass refreshes them so newly returned arXiv papers can
+enter the pool. Optional historical backfill windows keep normal completed-cache
+semantics unless an operator uses a forced one-shot sync.
 
 ## Lifecycle Separation
 

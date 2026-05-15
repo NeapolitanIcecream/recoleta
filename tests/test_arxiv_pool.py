@@ -581,6 +581,141 @@ def test_arxiv_pool_worker_sleeps_until_cooldown_without_fetch(
     assert state.next_wake_at == cooldown_until
 
 
+def test_arxiv_pool_worker_refreshes_completed_current_lookback_windows(
+    tmp_path: Path,
+) -> None:
+    """Regression: completed worker windows stopped receiving later arXiv results."""
+
+    class WindowAwareFetcher:
+        def __init__(self) -> None:
+            self.calls: list[ArxivPoolWindow] = []
+            self.papers_by_day: dict[date, list[ArxivPoolPaper]] = {
+                date(2026, 5, 13): [
+                    _paper(
+                        "2605.13001v1",
+                        published_at=datetime(2026, 5, 13, 12, tzinfo=UTC),
+                    )
+                ],
+                date(2026, 5, 14): [
+                    _paper(
+                        "2605.14001v1",
+                        published_at=datetime(2026, 5, 14, 12, tzinfo=UTC),
+                    )
+                ],
+            }
+
+        def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]:
+            self.calls.append(window)
+            return list(self.papers_by_day[window.period_start.date()])
+
+    fixed_now = datetime(2026, 5, 14, 8, tzinfo=UTC)
+    pool_path = tmp_path / "arxiv_pool.db"
+    fetcher = WindowAwareFetcher()
+    worker = ArxivPoolWorker(
+        store=ArxivPoolStore(pool_path),
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=30,
+        lookback_days=2,
+        idle_jitter_seconds=0,
+        fetcher=fetcher,
+        now=lambda: fixed_now,
+    )
+    first = worker.run_once()
+    fetcher.papers_by_day[date(2026, 5, 13)].append(
+        _paper(
+            "2605.13002v1",
+            published_at=datetime(2026, 5, 13, 14, tzinfo=UTC),
+        )
+    )
+    fetcher.papers_by_day[date(2026, 5, 14)].append(
+        _paper(
+            "2605.14002v1",
+            published_at=datetime(2026, 5, 14, 14, tzinfo=UTC),
+        )
+    )
+
+    second = worker.run_once()
+    ingested = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 14, tzinfo=UTC),
+            period_end=datetime(2026, 5, 15, tzinfo=UTC),
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert first.sync.completed_windows_total == 2
+    assert second.sync.upstream_requests_total == 2
+    assert second.sync.completed_windows_total == 2
+    assert second.sync.cache_hit_total == 0
+    assert [call.period_start.date() for call in fetcher.calls] == [
+        date(2026, 5, 13),
+        date(2026, 5, 14),
+        date(2026, 5, 13),
+        date(2026, 5, 14),
+    ]
+    assert isinstance(ingested, SourcePullResult)
+    assert [draft.source_item_id for draft in ingested.drafts] == [
+        "2605.14001v1",
+        "2605.14002v1",
+    ]
+
+
+def test_arxiv_pool_worker_refresh_policy_honors_active_cooldown(
+    tmp_path: Path,
+) -> None:
+    """Regression: mutable worker refreshes must not bypass arXiv cooldown."""
+
+    fixed_now = datetime(2026, 5, 14, 8, tzinfo=UTC)
+    cooldown_until = fixed_now + timedelta(seconds=90)
+    current_window = build_arxiv_pool_worker_windows(
+        queries=["cat:cs.AI"],
+        max_results=60,
+        now=fixed_now,
+        lookback_days=1,
+    )[0]
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    ArxivPoolSync(
+        store=store,
+        fetcher=_FakeFetcher({"cat:cs.AI": [_paper("2605.14001v1")]}),
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+    ).sync_windows([current_window])
+    store.record_rate_limited_window(
+        window=current_window,
+        cooldown_until=cooldown_until,
+        error_message="rate limited",
+    )
+    refresh_fetcher = _FakeFetcher({"cat:cs.AI": [_paper("2605.14002v1")]})
+
+    pass_result = ArxivPoolWorker(
+        store=store,
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=300,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        fetcher=refresh_fetcher,
+        now=lambda: fixed_now,
+    ).run_once()
+
+    cached = store.cached_papers_for_window(current_window)
+    assert refresh_fetcher.calls == []
+    assert pass_result.sync.upstream_requests_total == 0
+    assert pass_result.sync.cooldown_active_total == 1
+    assert pass_result.next_wake_at == cooldown_until
+    assert cached is not None
+    assert [paper.arxiv_id for paper in cached] == ["2605.14001v1"]
+
+
 def test_arxiv_pool_worker_retries_transient_failures_with_bounded_backoff(
     tmp_path: Path,
 ) -> None:

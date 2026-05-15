@@ -1128,15 +1128,25 @@ class ArxivPoolSync:
         windows: list[ArxivPoolWindow],
         *,
         force: bool = False,
+        refresh_windows: Iterable[ArxivPoolWindow] | None = None,
     ) -> ArxivPoolSyncResult:
         self.store.init_schema()
+        refresh_window_keys = (
+            {_window_cache_key(window) for window in refresh_windows}
+            if refresh_windows is not None
+            else set()
+        )
         owner_token = uuid4().hex
         self.store.acquire_sync_lease(
             owner_token=owner_token,
             timeout_seconds=self._lease_timeout_seconds(windows),
         )
         try:
-            return self._sync_windows_locked(windows=windows, force=force)
+            return self._sync_windows_locked(
+                windows=windows,
+                force=force,
+                refresh_window_keys=refresh_window_keys,
+            )
         finally:
             self.store.release_sync_lease(owner_token=owner_token)
 
@@ -1145,10 +1155,12 @@ class ArxivPoolSync:
         *,
         windows: list[ArxivPoolWindow],
         force: bool,
+        refresh_window_keys: set[tuple[str, str, str, int]],
     ) -> ArxivPoolSyncResult:
         result = ArxivPoolSyncResult(requested_windows_total=len(windows))
         for window in [_normalize_window(candidate) for candidate in windows]:
-            if not force and self.store.is_window_completed(window):
+            should_refresh = force or _window_cache_key(window) in refresh_window_keys
+            if not should_refresh and self.store.is_window_completed(window):
                 result.cache_hit_total += 1
                 continue
             result.cache_miss_total += 1
@@ -1272,7 +1284,9 @@ class ArxivPoolWorker:
             self._emit_event("worker_stop", reason=stop_reason)
 
     def run_once(self) -> ArxivPoolWorkerPassResult:
-        planned_windows = self.plan_windows()
+        reference = self._now()
+        planned_windows = self.plan_windows(now=reference)
+        refresh_windows = self.plan_refresh_windows(now=reference)
         planned_total = len(planned_windows)
         self.store.record_worker_heartbeat(
             name=self.state_name,
@@ -1297,7 +1311,10 @@ class ArxivPoolWorker:
             )
 
         try:
-            result = self._sync().sync_windows(planned_windows)
+            result = self._sync().sync_windows(
+                planned_windows,
+                refresh_windows=refresh_windows,
+            )
         except ArxivPoolLeaseHeldError as exc:
             result = ArxivPoolSyncResult(
                 requested_windows_total=planned_total,
@@ -1348,14 +1365,26 @@ class ArxivPoolWorker:
             event_name="sync_pass_result",
         )
 
-    def plan_windows(self) -> list[ArxivPoolWindow]:
+    def plan_windows(self, *, now: datetime | None = None) -> list[ArxivPoolWindow]:
+        reference = _ensure_utc(now or self.now())
         return build_arxiv_pool_worker_windows(
             queries=self.queries,
             max_results=self.max_results,
-            now=self.now(),
+            now=reference,
             lookback_days=self.lookback_days,
             backfill_start=self.backfill_start,
             backfill_end=self.backfill_end,
+        )
+
+    def plan_refresh_windows(
+        self, *, now: datetime | None = None
+    ) -> list[ArxivPoolWindow]:
+        reference = _ensure_utc(now or self.now())
+        return build_arxiv_pool_windows(
+            queries=self.queries,
+            anchor_date=reference.date(),
+            lookback_days=self.lookback_days,
+            max_results=self.max_results,
         )
 
     def _sync(self) -> ArxivPoolSync:
@@ -1565,15 +1594,18 @@ def build_arxiv_pool_windows_for_days(
 def _dedupe_windows(windows: list[ArxivPoolWindow]) -> list[ArxivPoolWindow]:
     deduped: dict[tuple[str, str, str, int], ArxivPoolWindow] = {}
     for window in (_normalize_window(candidate) for candidate in windows):
-        deduped[
-            (
-                window.query_text,
-                _datetime_to_text(window.period_start) or "",
-                _datetime_to_text(window.period_end) or "",
-                int(window.max_results),
-            )
-        ] = window
+        deduped[_window_cache_key(window)] = window
     return list(deduped.values())
+
+
+def _window_cache_key(window: ArxivPoolWindow) -> tuple[str, str, str, int]:
+    normalized = _normalize_window(window)
+    return (
+        normalized.query_text,
+        _datetime_to_text(normalized.period_start) or "",
+        _datetime_to_text(normalized.period_end) or "",
+        int(normalized.max_results),
+    )
 
 
 def pool_paper_to_item_draft(
