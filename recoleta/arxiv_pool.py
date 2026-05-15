@@ -271,8 +271,6 @@ ON CONFLICT(name) DO UPDATE SET
 
 
 class ArxivApiFetcher:
-    fetcher_name = _ARXIV_POOL_FETCHER_NAME
-
     def __init__(
         self,
         *,
