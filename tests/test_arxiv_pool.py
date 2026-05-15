@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+import json
 from pathlib import Path
+import signal
+import sqlite3
 
 import pytest
+import typer
 import yaml
 
 from recoleta.arxiv_pool import (
@@ -13,9 +17,12 @@ from recoleta.arxiv_pool import (
     ArxivPoolStore,
     ArxivPoolSync,
     ArxivPoolSyncResult,
+    ArxivPoolWorker,
     ArxivPoolWindow,
     build_arxiv_pool_windows,
+    build_arxiv_pool_worker_windows,
 )
+from recoleta.cli.arxiv_pool import run_inspect_arxiv_pool_freshness_command
 from recoleta.cli.fleet import (
     build_fleet_arxiv_pool_pre_sync_plan,
     execute_fleet_granularity_workflow,
@@ -79,6 +86,12 @@ class _RaisingFetcher:
     def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]:
         self.calls.append(window)
         raise self.exc
+
+
+class _FakeSignalInterrupt(KeyboardInterrupt):
+    def __init__(self, signum: int) -> None:
+        super().__init__()
+        self.signum = signum
 
 
 def test_arxiv_pool_daily_sync_fetches_one_page_per_uncached_query(
@@ -505,6 +518,471 @@ def test_build_arxiv_pool_windows_expands_lookback_days() -> None:
     ]
 
 
+def test_arxiv_pool_worker_plans_current_lookback_and_backfill_windows() -> None:
+    windows = build_arxiv_pool_worker_windows(
+        queries=["cat:cs.AI", "cat:cs.AI", "cat:cs.LG"],
+        max_results=25,
+        now=datetime(2026, 5, 14, 9, tzinfo=UTC),
+        lookback_days=2,
+        backfill_start=date(2026, 5, 10),
+        backfill_end=date(2026, 5, 11),
+    )
+
+    assert [(window.query_text, window.period_start.date()) for window in windows] == [
+        ("cat:cs.AI", date(2026, 5, 13)),
+        ("cat:cs.LG", date(2026, 5, 13)),
+        ("cat:cs.AI", date(2026, 5, 14)),
+        ("cat:cs.LG", date(2026, 5, 14)),
+        ("cat:cs.AI", date(2026, 5, 10)),
+        ("cat:cs.LG", date(2026, 5, 10)),
+        ("cat:cs.AI", date(2026, 5, 11)),
+        ("cat:cs.LG", date(2026, 5, 11)),
+    ]
+    assert {window.max_results for window in windows} == {25}
+
+
+def test_arxiv_pool_worker_sleeps_until_cooldown_without_fetch(
+    tmp_path: Path,
+) -> None:
+    fixed_now = datetime(2026, 5, 14, 8, tzinfo=UTC)
+    cooldown_until = fixed_now + timedelta(seconds=90)
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    store.record_rate_limited_window(
+        window=_window("cat:cs.AI"),
+        cooldown_until=cooldown_until,
+        error_message="rate limited",
+    )
+    fetcher = _FakeFetcher({"cat:cs.AI": [_paper("2605.14001v1")]})
+    events: list[dict[str, object]] = []
+
+    pass_result = ArxivPoolWorker(
+        store=store,
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=300,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        fetcher=fetcher,
+        now=lambda: fixed_now,
+        event_sink=events.append,
+    ).run_once()
+
+    assert fetcher.calls == []
+    assert pass_result.sync.upstream_requests_total == 0
+    assert pass_result.sync.cooldown_active_total == 1
+    assert pass_result.next_sleep_seconds == 90
+    assert pass_result.next_wake_at == cooldown_until
+    assert any(event["event"] == "cooldown_active" for event in events)
+    state = store.get_worker_state()
+    assert state is not None
+    assert state.last_cooldown_until == cooldown_until
+    assert state.next_wake_at == cooldown_until
+
+
+def test_arxiv_pool_worker_refreshes_completed_current_lookback_windows(
+    tmp_path: Path,
+) -> None:
+    """Regression: completed worker windows stopped receiving later arXiv results."""
+
+    class WindowAwareFetcher:
+        def __init__(self) -> None:
+            self.calls: list[ArxivPoolWindow] = []
+            self.papers_by_day: dict[date, list[ArxivPoolPaper]] = {
+                date(2026, 5, 13): [
+                    _paper(
+                        "2605.13001v1",
+                        published_at=datetime(2026, 5, 13, 12, tzinfo=UTC),
+                    )
+                ],
+                date(2026, 5, 14): [
+                    _paper(
+                        "2605.14001v1",
+                        published_at=datetime(2026, 5, 14, 12, tzinfo=UTC),
+                    )
+                ],
+            }
+
+        def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]:
+            self.calls.append(window)
+            return list(self.papers_by_day[window.period_start.date()])
+
+    fixed_now = datetime(2026, 5, 14, 8, tzinfo=UTC)
+    pool_path = tmp_path / "arxiv_pool.db"
+    fetcher = WindowAwareFetcher()
+    worker = ArxivPoolWorker(
+        store=ArxivPoolStore(pool_path),
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=30,
+        lookback_days=2,
+        idle_jitter_seconds=0,
+        fetcher=fetcher,
+        now=lambda: fixed_now,
+    )
+    first = worker.run_once()
+    fetcher.papers_by_day[date(2026, 5, 13)].append(
+        _paper(
+            "2605.13002v1",
+            published_at=datetime(2026, 5, 13, 14, tzinfo=UTC),
+        )
+    )
+    fetcher.papers_by_day[date(2026, 5, 14)].append(
+        _paper(
+            "2605.14002v1",
+            published_at=datetime(2026, 5, 14, 14, tzinfo=UTC),
+        )
+    )
+
+    second = worker.run_once()
+    ingested = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 14, tzinfo=UTC),
+            period_end=datetime(2026, 5, 15, tzinfo=UTC),
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert first.sync.completed_windows_total == 2
+    assert second.sync.upstream_requests_total == 2
+    assert second.sync.completed_windows_total == 2
+    assert second.sync.cache_hit_total == 0
+    assert [call.period_start.date() for call in fetcher.calls] == [
+        date(2026, 5, 13),
+        date(2026, 5, 14),
+        date(2026, 5, 13),
+        date(2026, 5, 14),
+    ]
+    assert isinstance(ingested, SourcePullResult)
+    assert [draft.source_item_id for draft in ingested.drafts] == [
+        "2605.14001v1",
+        "2605.14002v1",
+    ]
+
+
+def test_arxiv_pool_worker_refresh_policy_honors_active_cooldown(
+    tmp_path: Path,
+) -> None:
+    """Regression: mutable worker refreshes must not bypass arXiv cooldown."""
+
+    fixed_now = datetime(2026, 5, 14, 8, tzinfo=UTC)
+    cooldown_until = fixed_now + timedelta(seconds=90)
+    current_window = build_arxiv_pool_worker_windows(
+        queries=["cat:cs.AI"],
+        max_results=60,
+        now=fixed_now,
+        lookback_days=1,
+    )[0]
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    ArxivPoolSync(
+        store=store,
+        fetcher=_FakeFetcher({"cat:cs.AI": [_paper("2605.14001v1")]}),
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+    ).sync_windows([current_window])
+    store.record_rate_limited_window(
+        window=current_window,
+        cooldown_until=cooldown_until,
+        error_message="rate limited",
+    )
+    refresh_fetcher = _FakeFetcher({"cat:cs.AI": [_paper("2605.14002v1")]})
+
+    pass_result = ArxivPoolWorker(
+        store=store,
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=300,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        fetcher=refresh_fetcher,
+        now=lambda: fixed_now,
+    ).run_once()
+
+    cached = store.cached_papers_for_window(current_window)
+    assert refresh_fetcher.calls == []
+    assert pass_result.sync.upstream_requests_total == 0
+    assert pass_result.sync.cooldown_active_total == 1
+    assert pass_result.next_wake_at == cooldown_until
+    assert cached is not None
+    assert [paper.arxiv_id for paper in cached] == ["2605.14001v1"]
+
+
+def test_arxiv_pool_worker_retries_transient_failures_with_bounded_backoff(
+    tmp_path: Path,
+) -> None:
+    class FlakyFetcher:
+        def __init__(self) -> None:
+            self.calls: list[ArxivPoolWindow] = []
+
+        def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]:
+            self.calls.append(window)
+            if len(self.calls) == 1:
+                raise RuntimeError("temporary arXiv outage")
+            return [_paper("2605.14001v1")]
+
+    fixed_now = datetime(2026, 5, 14, 8, tzinfo=UTC)
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    fetcher = FlakyFetcher()
+    sleeps: list[float] = []
+    events: list[dict[str, object]] = []
+
+    ArxivPoolWorker(
+        store=store,
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=30,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        failure_backoff_seconds=5,
+        fetcher=fetcher,
+        sleep=sleeps.append,
+        now=lambda: fixed_now,
+        event_sink=events.append,
+    ).run(max_passes=2)
+
+    assert len(fetcher.calls) == 2
+    assert sleeps == [5.0]
+    transient_event = next(
+        event for event in events if event["event"] == "transient_failure"
+    )
+    assert transient_event["error_category"] == "transient_failure"
+    assert transient_event["sync"]["failed_windows_total"] == 1  # type: ignore[index]
+    assert store.get_window(fetcher.calls[-1]).status == "completed"  # type: ignore[union-attr]
+    state = store.get_worker_state()
+    assert state is not None
+    assert state.last_error_category is None
+    assert state.last_completed_windows_total == 1
+
+
+def test_arxiv_pool_worker_emits_stop_event_on_interrupt(tmp_path: Path) -> None:
+    fixed_now = datetime(2026, 5, 14, 8, tzinfo=UTC)
+    events: list[dict[str, object]] = []
+
+    def interrupting_sleep(_: float) -> None:
+        raise KeyboardInterrupt
+
+    worker = ArxivPoolWorker(
+        store=ArxivPoolStore(tmp_path / "arxiv_pool.db"),
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=30,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        fetcher=_FakeFetcher({"cat:cs.AI": [_paper("2605.14001v1")]}),
+        sleep=interrupting_sleep,
+        now=lambda: fixed_now,
+        event_sink=events.append,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        worker.run()
+
+    assert events[-1]["event"] == "worker_stop"
+    assert events[-1]["reason"] == "interrupted"
+    assert worker.store.get_worker_state() is not None
+
+
+def test_arxiv_pool_worker_recovers_stale_sync_lease_and_releases_before_idle(
+    tmp_path: Path,
+) -> None:
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    store.acquire_sync_lease(owner_token="stale", timeout_seconds=1)
+    with sqlite3.connect(store.db_path) as conn:
+        conn.execute(
+            "UPDATE arxiv_pool_leases SET expires_at = ? WHERE name = ?",
+            ("2000-01-01T00:00:00+00:00", "arxiv_pool_sync"),
+        )
+        conn.commit()
+    fetcher = _FakeFetcher({"cat:cs.AI": [_paper("2605.14001v1")]})
+
+    result = ArxivPoolWorker(
+        store=store,
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=30,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        fetcher=fetcher,
+        now=lambda: datetime(2026, 5, 14, 8, tzinfo=UTC),
+    ).run_once()
+
+    with sqlite3.connect(store.db_path) as conn:
+        lease_rows = conn.execute("SELECT COUNT(*) FROM arxiv_pool_leases").fetchone()
+    assert fetcher.calls
+    assert result.sync.completed_windows_total == 1
+    assert lease_rows is not None
+    assert lease_rows[0] == 0
+
+
+def test_pool_mode_ingest_reads_worker_cached_windows_after_worker_stops(
+    tmp_path: Path,
+) -> None:
+    pool_path = tmp_path / "arxiv_pool.db"
+    fetcher = _FakeFetcher(
+        {
+            "cat:cs.AI": [
+                _paper(
+                    "2605.14001v1",
+                    published_at=datetime(2026, 5, 14, 12, tzinfo=UTC),
+                )
+            ]
+        }
+    )
+    worker = ArxivPoolWorker(
+        store=ArxivPoolStore(pool_path),
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=30,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        fetcher=fetcher,
+        now=lambda: datetime(2026, 5, 14, 8, tzinfo=UTC),
+    )
+    worker.run(max_passes=1)
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 14, tzinfo=UTC),
+            period_end=datetime(2026, 5, 15, tzinfo=UTC),
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert [draft.source_item_id for draft in result.drafts] == ["2605.14001v1"]
+    assert result.extra_metrics.get("pool_window_unavailable_total", 0) == 0
+
+
+def test_inspect_arxiv_pool_freshness_json_reports_worker_state(
+    tmp_path: Path,
+) -> None:
+    pool_path = tmp_path / "arxiv_pool.db"
+    config_path = _write_pool_config(tmp_path=tmp_path, pool_path=pool_path)
+    ArxivPoolWorker(
+        store=ArxivPoolStore(pool_path),
+        queries=["cat:cs.AI"],
+        max_results=60,
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+        poll_interval_seconds=30,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        fetcher=_FakeFetcher({"cat:cs.AI": [_paper("2605.14001v1")]}),
+        now=lambda: datetime(2026, 5, 14, 8, tzinfo=UTC),
+    ).run(max_passes=1)
+
+    payload = run_inspect_arxiv_pool_freshness_command(
+        config_path=config_path,
+        limit=10,
+        json_output=True,
+    )
+
+    assert payload["worker_state"] is not None
+    assert payload["worker_state"]["last_heartbeat_at"] is not None
+    assert payload["worker_state"]["next_wake_at"] is not None
+    assert payload["active_cooldown"] is False
+    assert payload["window_status_summary"] == {"completed": 1}
+
+
+def test_arxiv_pool_worker_command_emits_json_lifecycle_lines(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import recoleta.cli.arxiv_pool as arxiv_pool_cli
+
+    pool_path = tmp_path / "arxiv_pool.db"
+    config_path = _write_pool_config(tmp_path=tmp_path, pool_path=pool_path)
+
+    class FakeWorker:
+        def __init__(self, **kwargs: object) -> None:
+            self.event_sink = kwargs["event_sink"]
+
+        def run(self) -> None:
+            assert callable(self.event_sink)
+            self.event_sink(
+                {
+                    "event": "worker_start",
+                    "worker": "default",
+                    "timestamp": "2026-05-14T00:00:00+00:00",
+                }
+            )
+
+    monkeypatch.setattr(arxiv_pool_cli, "ArxivPoolWorker", FakeWorker)
+
+    arxiv_pool_cli.run_arxiv_pool_worker_command(
+        poll_interval_seconds=30,
+        lookback_days=1,
+        idle_jitter_seconds=0,
+        backfill_start=None,
+        backfill_end=None,
+        config_path=config_path,
+        json_output=True,
+    )
+
+    output = capsys.readouterr().out.strip().splitlines()
+    assert len(output) == 1
+    event = json.loads(output[0])
+    assert event["command"] == "arxiv-pool worker"
+    assert event["event"] == "worker_start"
+    assert event["pool_db_path"] == str(pool_path.resolve())
+
+
+def test_arxiv_pool_worker_command_preserves_sigterm_exit_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.cli.arxiv_pool as arxiv_pool_cli
+
+    config_path = _write_pool_config(
+        tmp_path=tmp_path,
+        pool_path=tmp_path / "arxiv_pool.db",
+    )
+
+    class FakeWorker:
+        def __init__(self, **_: object) -> None:
+            return None
+
+        def run(self) -> None:
+            raise _FakeSignalInterrupt(signal.SIGTERM)
+
+    monkeypatch.setattr(arxiv_pool_cli, "ArxivPoolWorker", FakeWorker)
+
+    with pytest.raises(typer.Exit) as exc:
+        arxiv_pool_cli.run_arxiv_pool_worker_command(
+            poll_interval_seconds=30,
+            lookback_days=1,
+            idle_jitter_seconds=0,
+            backfill_start=None,
+            backfill_end=None,
+            config_path=config_path,
+            json_output=True,
+        )
+
+    assert exc.value.exit_code == 143
+
+
 def test_fleet_pre_sync_plan_collects_unique_pool_windows(tmp_path: Path) -> None:
     manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
 
@@ -648,3 +1126,31 @@ def _write_pool_fleet_manifest(tmp_path: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     return manifest_path, pool_path
+
+
+def _write_pool_config(*, tmp_path: Path, pool_path: Path) -> Path:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "RECOLETA_DB_PATH": str(tmp_path / "recoleta.db"),
+                "LLM_MODEL": "openai/gpt-4o-mini",
+                "PUBLISH_TARGETS": ["markdown"],
+                "ARXIV_POOL": {
+                    "enabled": True,
+                    "db_path": str(pool_path),
+                    "request_interval_seconds": 0,
+                },
+                "SOURCES": {
+                    "arxiv": {
+                        "enabled": True,
+                        "mode": "pool",
+                        "queries": ["cat:cs.AI"],
+                        "max_results_per_run": 60,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path

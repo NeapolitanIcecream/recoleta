@@ -95,6 +95,27 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             },
         ),
         (
+            [
+                "arxiv-pool",
+                "worker",
+                "--poll-interval-seconds",
+                "30",
+                "--lookback-days",
+                "2",
+                "--idle-jitter-seconds",
+                "0",
+                "--json",
+            ],
+            "run_arxiv_pool_worker_command",
+            {
+                "command_name": "arxiv-pool worker",
+                "poll_interval_seconds": 30,
+                "lookback_days": 2,
+                "idle_jitter_seconds": 0,
+                "json_output": True,
+            },
+        ),
+        (
             ["inspect", "arxiv-pool", "freshness"],
             "run_inspect_arxiv_pool_freshness_command",
             {"command_name": "inspect arxiv-pool freshness"},
