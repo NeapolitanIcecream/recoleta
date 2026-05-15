@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from email.utils import format_datetime
 import json
 from pathlib import Path
 import signal
 import sqlite3
 
+import httpx
 import pytest
 import typer
 import yaml
 
 from recoleta.arxiv_pool import (
+    ArxivApiFetcher,
     ArxivPoolLeaseHeldError,
     ArxivPoolPaper,
     ArxivPoolRateLimitedError,
@@ -33,6 +36,52 @@ from recoleta.sources import (
     SourcePullStateSnapshot,
     fetch_arxiv_drafts,
 )
+
+
+_EMPTY_ARXIV_FEED = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" />
+"""
+
+
+_ARXIV_FEED_WITH_PAPER = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2604.27001v2</id>
+    <updated>2026-04-28T12:34:56Z</updated>
+    <published>2026-04-27T11:00:00Z</published>
+    <title>  Pool
+ Paper  </title>
+    <summary>Abstract text.</summary>
+    <author><name>Ada Lovelace</name></author>
+    <author><name>Grace Hopper</name></author>
+    <arxiv:primary_category term="cs.AI" scheme="http://arxiv.org/schemas/atom" />
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom" />
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom" />
+    <arxiv:comment>12 pages</arxiv:comment>
+    <arxiv:journal_ref>Journal Demo</arxiv:journal_ref>
+    <arxiv:doi>10.1234/demo</arxiv:doi>
+    <link href="http://arxiv.org/abs/2604.27001v2" rel="alternate" type="text/html" />
+    <link href="http://arxiv.org/pdf/2604.27001v2" rel="related" type="application/pdf" title="pdf" />
+  </entry>
+</feed>
+"""
+
+
+_ARXIV_FEED_WITH_OLD_STYLE_PAPER = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/math/0309136v1</id>
+    <updated>2003-09-12T00:00:00Z</updated>
+    <published>2003-09-12T00:00:00Z</published>
+    <title>Old Style Identifier</title>
+    <summary>Abstract text.</summary>
+    <author><name>Author One</name></author>
+  </entry>
+</feed>
+"""
 
 
 def _window(query: str = "cat:cs.AI") -> ArxivPoolWindow:
@@ -288,7 +337,7 @@ def test_forced_rate_limit_preserves_completed_cache_during_cooldown(
     assert normal.cooldown_active_total == 0
 
 
-def test_arxiv_pool_429_records_cooldown_and_blocks_followup_requests(
+def test_arxiv_pool_sync_stops_after_first_429_without_fetching_later_windows(
     tmp_path: Path,
 ) -> None:
     class RateLimitedFetcher:
@@ -311,12 +360,14 @@ def test_arxiv_pool_429_records_cooldown_and_blocks_followup_requests(
     result = sync.sync_windows([_window("cat:cs.AI"), _window("cat:cs.LG")])
     rate_state = store.get_rate_state()
     recorded_window = store.get_window(_window("cat:cs.AI"))
+    later_window = store.get_window(_window("cat:cs.LG"))
 
     assert fetcher.calls == 1
     assert result.upstream_429_total == 1
     assert result.rate_limited_windows_total == 1
     assert recorded_window is not None
     assert recorded_window.status == "rate_limited"
+    assert later_window is None
     assert rate_state is not None
     assert rate_state.cooldown_until is not None
 
@@ -333,24 +384,152 @@ def test_arxiv_pool_429_records_cooldown_and_blocks_followup_requests(
     assert blocked.skipped_windows_total == 1
 
 
-def test_arxiv_api_fetcher_maps_arxiv_http_429_to_pool_rate_limit(
+def test_arxiv_pool_fetcher_sends_single_request_per_window() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, text=_EMPTY_ARXIV_FEED)
+
+    fetcher = ArxivApiFetcher(
+        client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+    papers = fetcher.fetch(_window("cat:cs.AI"))
+
+    assert papers == []
+    assert len(requests) == 1
+    request = requests[0]
+    assert str(request.url).startswith("https://export.arxiv.org/api/query?")
+    assert request.url.params["search_query"] == (
+        "(cat:cs.AI) AND submittedDate:[202604270000 TO 202604272359]"
+    )
+    assert request.url.params["sortBy"] == "submittedDate"
+    assert request.url.params["sortOrder"] == "descending"
+    assert request.url.params["start"] == "0"
+    assert request.url.params["max_results"] == "60"
+    assert "Recoleta" in request.headers["user-agent"]
+
+
+def test_arxiv_pool_fetcher_429_raises_rate_limited_with_retry_after() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "120"},
+            text="rate limited",
+        )
+
+    fetcher = ArxivApiFetcher(
+        client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+    with pytest.raises(ArxivPoolRateLimitedError) as exc:
+        fetcher.fetch(_window("cat:cs.AI"))
+
+    assert len(requests) == 1
+    assert exc.value.retry_after_seconds == 120
+
+
+def test_arxiv_pool_fetcher_parses_http_date_retry_after(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import recoleta.arxiv_pool as pool_module
 
-    class FakeClient:
-        def results(self, search):  # noqa: ANN001
-            _ = search
-            raise pool_module.arxiv.HTTPError(
-                url="https://export.arxiv.org/api/query",
-                retry=0,
-                status=429,
-            )
+    fixed_now = datetime(2026, 5, 15, 12, tzinfo=UTC)
+    retry_at = fixed_now + timedelta(seconds=75)
+    monkeypatch.setattr(pool_module, "_utc_now", lambda: fixed_now)
 
-    monkeypatch.setattr(pool_module.arxiv, "Client", FakeClient)
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            headers={"Retry-After": format_datetime(retry_at, usegmt=True)},
+            text="rate limited",
+        )
 
-    with pytest.raises(ArxivPoolRateLimitedError):
-        pool_module.ArxivApiFetcher().fetch(_window("cat:cs.AI"))
+    fetcher = ArxivApiFetcher(
+        client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+    with pytest.raises(ArxivPoolRateLimitedError) as exc:
+        fetcher.fetch(_window("cat:cs.AI"))
+
+    assert exc.value.retry_after_seconds == 75
+
+
+def test_arxiv_pool_fetcher_parses_atom_feed_to_pool_papers() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_ARXIV_FEED_WITH_PAPER)
+
+    fetcher = ArxivApiFetcher(
+        client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+    papers = fetcher.fetch(_window("cat:cs.AI"))
+
+    assert len(papers) == 1
+    paper = papers[0]
+    assert paper.arxiv_id == "2604.27001v2"
+    assert paper.version == 2
+    assert paper.canonical_url == "https://arxiv.org/abs/2604.27001v2"
+    assert paper.title == "Pool Paper"
+    assert paper.abstract == "Abstract text."
+    assert paper.authors == ["Ada Lovelace", "Grace Hopper"]
+    assert paper.primary_category == "cs.AI"
+    assert paper.categories == ["cs.AI", "cs.LG"]
+    assert paper.published_at == datetime(2026, 4, 27, 11, tzinfo=UTC)
+    assert paper.updated_at == datetime(2026, 4, 28, 12, 34, 56, tzinfo=UTC)
+    assert paper.comment == "12 pages"
+    assert paper.journal_ref == "Journal Demo"
+    assert paper.doi == "10.1234/demo"
+    assert paper.raw_atom["entry_id"] == "http://arxiv.org/abs/2604.27001v2"
+    assert paper.raw_atom["pdf_url"] == "http://arxiv.org/pdf/2604.27001v2"
+
+
+def test_arxiv_pool_fetcher_preserves_old_style_arxiv_ids() -> None:
+    """Regression: Atom URL parsing must not drop old archive prefixes."""
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_ARXIV_FEED_WITH_OLD_STYLE_PAPER)
+
+    fetcher = ArxivApiFetcher(
+        client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+    papers = fetcher.fetch(_window("all:old"))
+
+    assert len(papers) == 1
+    assert papers[0].arxiv_id == "math/0309136v1"
+    assert papers[0].canonical_url == "https://arxiv.org/abs/math/0309136v1"
+
+
+def test_arxiv_pool_fetcher_records_http_status_for_non_retryable_failure(
+    tmp_path: Path,
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text="forbidden")
+
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    sync = ArxivPoolSync(
+        store=store,
+        fetcher=ArxivApiFetcher(
+            client=httpx.Client(transport=httpx.MockTransport(handler))
+        ),
+        request_interval_seconds=0,
+        cooldown_seconds=3600,
+    )
+
+    result = sync.sync_windows([_window("cat:cs.AI")])
+    recorded_window = store.get_window(_window("cat:cs.AI"))
+
+    assert result.upstream_requests_total == 1
+    assert result.failed_windows_total == 1
+    assert recorded_window is not None
+    assert recorded_window.status == "failed"
+    assert recorded_window.upstream_status == 403
+    assert recorded_window.error_category == "ArxivPoolFetchError"
 
 
 def test_arxiv_pool_sync_lease_prevents_concurrent_upstream_batches(
@@ -902,6 +1081,7 @@ def test_inspect_arxiv_pool_freshness_json_reports_worker_state(
     assert payload["worker_state"]["last_heartbeat_at"] is not None
     assert payload["worker_state"]["next_wake_at"] is not None
     assert payload["active_cooldown"] is False
+    assert payload["fetcher"] == "httpx_atom"
     assert payload["window_status_summary"] == {"completed": 1}
 
 
