@@ -392,14 +392,15 @@ class _ArxivPoolPuller:
             period_start=request.period_start,
             period_end=request.period_end,
         )
-        self.upper_bound = _source_pull_now() + timedelta(minutes=1)
+        self.now = _source_pull_now()
+        self.upper_bound = self.now + timedelta(minutes=1)
         from recoleta.arxiv_pool import ArxivPoolReadinessPolicy
 
         self.readiness_policy = ArxivPoolReadinessPolicy(
             maturity_lag_days=request.pool_maturity_lag_days,
             readiness_gate=request.pool_readiness_gate,
             allow_immature_windows=request.pool_allow_immature_windows,
-            now=self.upper_bound,
+            now=self.now,
         )
 
     def pull(self) -> list[ItemDraft] | SourcePullResult:

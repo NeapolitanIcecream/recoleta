@@ -38,6 +38,7 @@ from recoleta.fleet import (
     load_fleet_manifest,
 )
 from recoleta.arxiv_pool import (
+    ArxivPoolReadinessPolicy,
     ArxivPoolStore,
     ArxivPoolSync,
     ArxivPoolSyncResult,
@@ -57,6 +58,8 @@ from recoleta.trend_email import (
     build_trend_email_preview,
     send_trend_email,
 )
+
+_READINESS_GATE_RANK = {"off": 0, "warn": 1, "strict": 2}
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,15 +522,18 @@ def build_fleet_arxiv_pool_pre_sync_plan(
         workflow_name=normalized_workflow,
         anchor_date=anchor_date,
     )
-    pool_settings = arxiv_settings[0].arxiv_pool
-    readiness_policy = arxiv_pool_readiness_policy_from_settings(arxiv_settings[0])
+    (
+        request_interval_seconds,
+        cooldown_seconds,
+        readiness_policy,
+    ) = _merged_fleet_arxiv_pool_plan_settings(arxiv_settings)
     return FleetArxivPoolPreSyncPlan(
         status="planned",
         reason=None,
         pool_db_path=pool_path,
         windows=windows,
-        request_interval_seconds=float(pool_settings.request_interval_seconds),
-        cooldown_seconds=int(pool_settings.cooldown_seconds),
+        request_interval_seconds=request_interval_seconds,
+        cooldown_seconds=cooldown_seconds,
         maturity_lag_days=readiness_policy.maturity_lag_days,
         readiness_gate=readiness_policy.readiness_gate,
         allow_immature_windows=readiness_policy.allow_immature_windows,
@@ -578,6 +584,33 @@ def _shared_fleet_arxiv_pool_db_path(arxiv_settings: list[Any]) -> Path | None:
     if len(pool_paths) != 1:
         return None
     return next(iter(pool_paths))
+
+
+def _merged_fleet_arxiv_pool_plan_settings(
+    arxiv_settings: list[Any],
+) -> tuple[float, int, ArxivPoolReadinessPolicy]:
+    pool_settings = [settings.arxiv_pool for settings in arxiv_settings]
+    readiness_policies = [
+        arxiv_pool_readiness_policy_from_settings(settings)
+        for settings in arxiv_settings
+    ]
+    readiness_gate = max(
+        (policy.readiness_gate for policy in readiness_policies),
+        key=lambda gate: _READINESS_GATE_RANK[gate],
+    )
+    return (
+        max(float(pool.request_interval_seconds) for pool in pool_settings),
+        max(int(pool.cooldown_seconds) for pool in pool_settings),
+        ArxivPoolReadinessPolicy(
+            maturity_lag_days=max(
+                policy.maturity_lag_days for policy in readiness_policies
+            ),
+            readiness_gate=readiness_gate,
+            allow_immature_windows=all(
+                policy.allow_immature_windows for policy in readiness_policies
+            ),
+        ),
+    )
 
 
 def _fleet_arxiv_pool_windows(
@@ -643,8 +676,6 @@ def evaluate_fleet_arxiv_pool_readiness(
             },
             "windows": [],
         }
-    from recoleta.arxiv_pool import ArxivPoolReadinessPolicy
-
     policy = ArxivPoolReadinessPolicy(
         maturity_lag_days=plan.maturity_lag_days,
         readiness_gate=plan.readiness_gate,

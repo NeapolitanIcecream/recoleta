@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import signal
 import sqlite3
+from typing import Any
 
 import httpx
 import pytest
@@ -761,6 +762,47 @@ def test_arxiv_pool_puller_skips_immature_completed_window(
     assert result.extra_metrics.get("pool_drafts_total", 0) == 0
 
 
+def test_arxiv_pool_puller_uses_current_time_for_maturity_cutoff_near_midnight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the pool puller must not mature today's window via +1 minute."""
+    pool_path = tmp_path / "arxiv_pool.db"
+    store = ArxivPoolStore(pool_path)
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.20001v1")
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 5, 20, 23, 59, 30, tzinfo=UTC),
+    )
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 20, tzinfo=UTC),
+            period_end=datetime(2026, 5, 21, tzinfo=UTC),
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert result.drafts == []
+    assert result.extra_metrics["pool_window_immature_total"] == 1
+    assert result.extra_metrics.get("pool_drafts_total", 0) == 0
+
+
 def test_arxiv_pool_puller_preserves_watermark_for_immature_window(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1423,6 +1465,33 @@ def test_fleet_pre_sync_plan_collects_unique_pool_windows(tmp_path: Path) -> Non
     }
 
 
+def test_fleet_pre_sync_plan_merges_mixed_child_readiness_policies_safely(
+    tmp_path: Path,
+) -> None:
+    """Regression: fleet readiness must not depend on child manifest order."""
+    manifest_path, _pool_path = _write_pool_fleet_manifest(
+        tmp_path,
+        readiness_gate=("warn", "strict"),
+        maturity_lag_days=(0, 2),
+        allow_immature_windows=(True, False),
+        request_interval_seconds=(0, 2),
+        cooldown_seconds=(60, 3600),
+    )
+
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+
+    assert plan.status == "planned"
+    assert plan.readiness_gate == "strict"
+    assert plan.maturity_lag_days == 2
+    assert plan.allow_immature_windows is False
+    assert plan.request_interval_seconds == 2
+    assert plan.cooldown_seconds == 3600
+
+
 def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1694,11 +1763,17 @@ def test_fleet_arxiv_pool_readiness_warn_mode_continues(
 def _write_pool_fleet_manifest(
     tmp_path: Path,
     *,
-    readiness_gate: str = "strict",
+    readiness_gate: str | tuple[str, str] = "strict",
+    maturity_lag_days: int | tuple[int, int] = 1,
+    allow_immature_windows: bool | tuple[bool, bool] = False,
+    request_interval_seconds: float | tuple[float, float] = 0,
+    cooldown_seconds: int | tuple[int, int] = 3600,
 ) -> tuple[Path, Path]:
     pool_path = tmp_path / "fleet-arxiv-pool.db"
     child_paths: list[Path] = []
-    for name, query in (("embodied_ai", "cat:cs.AI"), ("software", "cat:cs.LG")):
+    for index, (name, query) in enumerate(
+        (("embodied_ai", "cat:cs.AI"), ("software", "cat:cs.LG"))
+    ):
         child_path = tmp_path / f"{name}.yaml"
         child_path.write_text(
             yaml.safe_dump(
@@ -1709,8 +1784,15 @@ def _write_pool_fleet_manifest(
                     "ARXIV_POOL": {
                         "enabled": True,
                         "db_path": str(pool_path),
-                        "request_interval_seconds": 0,
-                        "readiness_gate": readiness_gate,
+                        "request_interval_seconds": _child_setting(
+                            request_interval_seconds, index
+                        ),
+                        "cooldown_seconds": _child_setting(cooldown_seconds, index),
+                        "maturity_lag_days": _child_setting(maturity_lag_days, index),
+                        "readiness_gate": _child_setting(readiness_gate, index),
+                        "allow_immature_windows": _child_setting(
+                            allow_immature_windows, index
+                        ),
                     },
                     "SOURCES": {
                         "arxiv": {
@@ -1739,6 +1821,12 @@ def _write_pool_fleet_manifest(
         encoding="utf-8",
     )
     return manifest_path, pool_path
+
+
+def _child_setting(value: Any, index: int) -> Any:
+    if isinstance(value, tuple):
+        return value[index]
+    return value
 
 
 def _write_pool_config(*, tmp_path: Path, pool_path: Path) -> Path:
