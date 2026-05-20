@@ -200,6 +200,9 @@ def test_settings_loads_arxiv_pool_configuration(
                 "db_path": str(pool_path),
                 "request_interval_seconds": 0,
                 "cooldown_seconds": 120,
+                "maturity_lag_days": 2,
+                "readiness_gate": "warn",
+                "allow_immature_windows": True,
             }
         ),
     )
@@ -222,6 +225,9 @@ def test_settings_loads_arxiv_pool_configuration(
     assert settings.arxiv_pool.db_path == pool_path
     assert settings.arxiv_pool.request_interval_seconds == 0
     assert settings.arxiv_pool.cooldown_seconds == 120
+    assert settings.arxiv_pool.maturity_lag_days == 2
+    assert settings.arxiv_pool.readiness_gate == "warn"
+    assert settings.arxiv_pool.allow_immature_windows is True
     assert settings.sources.arxiv.mode == "pool"
 
 

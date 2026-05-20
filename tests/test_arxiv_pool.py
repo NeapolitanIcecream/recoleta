@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import signal
 import sqlite3
+from typing import Any
 
 import httpx
 import pytest
@@ -17,6 +18,7 @@ from recoleta.arxiv_pool import (
     ArxivPoolLeaseHeldError,
     ArxivPoolPaper,
     ArxivPoolRateLimitedError,
+    ArxivPoolReadinessPolicy,
     ArxivPoolStore,
     ArxivPoolSync,
     ArxivPoolSyncResult,
@@ -24,6 +26,7 @@ from recoleta.arxiv_pool import (
     ArxivPoolWindow,
     build_arxiv_pool_windows,
     build_arxiv_pool_worker_windows,
+    evaluate_arxiv_pool_window_readiness,
 )
 from recoleta.cli.arxiv_pool import run_inspect_arxiv_pool_freshness_command
 from recoleta.cli.fleet import (
@@ -135,6 +138,24 @@ class _RaisingFetcher:
     def fetch(self, window: ArxivPoolWindow) -> list[ArxivPoolPaper]:
         self.calls.append(window)
         raise self.exc
+
+
+def _record_completed_window(
+    store: ArxivPoolStore,
+    window: ArxivPoolWindow,
+    *,
+    arxiv_id: str | None = None,
+) -> None:
+    paper_id = arxiv_id or f"{window.period_start:%y%m.%d}001v1"
+    store.record_completed_window(
+        window=window,
+        papers=[
+            _paper(
+                paper_id,
+                published_at=window.period_start + timedelta(hours=12),
+            )
+        ],
+    )
 
 
 class _FakeSignalInterrupt(KeyboardInterrupt):
@@ -274,6 +295,7 @@ def test_forced_refresh_failure_preserves_completed_cache_for_ingest_and_sync(
             include_stats=True,
             mode="pool",
             pool_db_path=pool_path,
+            pool_maturity_lag_days=0,
         )
     )
 
@@ -335,6 +357,87 @@ def test_forced_rate_limit_preserves_completed_cache_during_cooldown(
     assert normal_fetcher.calls == []
     assert normal.cache_hit_total == 1
     assert normal.cooldown_active_total == 0
+
+
+def test_arxiv_pool_readiness_current_day_is_immature(tmp_path: Path) -> None:
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.20001v1")
+
+    readiness = evaluate_arxiv_pool_window_readiness(
+        store=store,
+        window=window,
+        policy=ArxivPoolReadinessPolicy(
+            maturity_lag_days=1,
+            now=datetime(2026, 5, 20, 12, tzinfo=UTC),
+        ),
+    )
+
+    assert readiness.cache_readable is True
+    assert readiness.mature is False
+    assert readiness.analysis_ready is False
+    assert readiness.blocked_reason == "immature_window"
+
+
+def test_arxiv_pool_readiness_yesterday_is_analysis_ready(tmp_path: Path) -> None:
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 19, tzinfo=UTC),
+        period_end=datetime(2026, 5, 20, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.19001v1")
+
+    readiness = evaluate_arxiv_pool_window_readiness(
+        store=store,
+        window=window,
+        policy=ArxivPoolReadinessPolicy(
+            maturity_lag_days=1,
+            now=datetime(2026, 5, 20, 0, 1, tzinfo=UTC),
+        ),
+    )
+
+    assert readiness.cache_readable is True
+    assert readiness.mature is True
+    assert readiness.analysis_ready is True
+    assert readiness.blocked_reason is None
+
+
+def test_arxiv_pool_readiness_keeps_completed_cache_ready_after_refresh_failure(
+    tmp_path: Path,
+) -> None:
+    store = ArxivPoolStore(tmp_path / "arxiv_pool.db")
+    window = _window("cat:cs.AI")
+    _record_completed_window(store, window, arxiv_id="2604.27001v1")
+
+    store.record_rate_limited_window(
+        window=window,
+        cooldown_until=datetime(2026, 5, 20, 13, tzinfo=UTC),
+        error_message="rate limited",
+    )
+
+    readiness = evaluate_arxiv_pool_window_readiness(
+        store=store,
+        window=window,
+        policy=ArxivPoolReadinessPolicy(
+            maturity_lag_days=1,
+            now=datetime(2026, 5, 20, 12, tzinfo=UTC),
+        ),
+    )
+    record = store.get_window(window)
+
+    assert record is not None
+    assert record.status == "completed"
+    assert record.error_category == "rate_limited"
+    assert readiness.cache_readable is True
+    assert readiness.mature is True
+    assert readiness.analysis_ready is True
 
 
 def test_arxiv_pool_sync_stops_after_first_429_without_fetching_later_windows(
@@ -577,6 +680,7 @@ def test_pool_backed_arxiv_ingest_reads_cached_drafts_without_upstream(
             include_stats=True,
             mode="pool",
             pool_db_path=pool_path,
+            pool_maturity_lag_days=0,
         )
     )
 
@@ -608,12 +712,197 @@ def test_pool_backed_arxiv_ingest_reports_unavailable_window_without_direct_fetc
             include_stats=True,
             mode="pool",
             pool_db_path=pool_path,
+            pool_maturity_lag_days=0,
         )
     )
 
     assert isinstance(result, SourcePullResult)
     assert result.drafts == []
     assert result.extra_metrics["pool_window_unavailable_total"] == 1
+
+
+def test_arxiv_pool_puller_skips_immature_completed_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool_path = tmp_path / "arxiv_pool.db"
+    store = ArxivPoolStore(pool_path)
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.20001v1")
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 20, tzinfo=UTC),
+            period_end=datetime(2026, 5, 21, tzinfo=UTC),
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert result.drafts == []
+    assert result.extra_metrics["pool_window_immature_total"] == 1
+    assert result.extra_metrics.get("pool_window_unavailable_total", 0) == 0
+    assert result.extra_metrics.get("pool_drafts_total", 0) == 0
+
+
+def test_arxiv_pool_puller_uses_current_time_for_maturity_cutoff_near_midnight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the pool puller must not mature today's window via +1 minute."""
+    pool_path = tmp_path / "arxiv_pool.db"
+    store = ArxivPoolStore(pool_path)
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.20001v1")
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 5, 20, 23, 59, 30, tzinfo=UTC),
+    )
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 20, tzinfo=UTC),
+            period_end=datetime(2026, 5, 21, tzinfo=UTC),
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert result.drafts == []
+    assert result.extra_metrics["pool_window_immature_total"] == 1
+    assert result.extra_metrics.get("pool_drafts_total", 0) == 0
+
+
+def test_arxiv_pool_puller_preserves_watermark_for_immature_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool_path = tmp_path / "arxiv_pool.db"
+    store = ArxivPoolStore(pool_path)
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.20001v1")
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+    watermark = datetime(2026, 5, 19, 23, tzinfo=UTC)
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 20, tzinfo=UTC),
+            period_end=datetime(2026, 5, 21, tzinfo=UTC),
+            pull_state_lookup=lambda scope_kind, scope_key: SourcePullStateSnapshot(
+                scope_kind=scope_kind,
+                scope_key=scope_key,
+                watermark_published_at=watermark,
+            )
+            if (scope_kind, scope_key) == ("query", "cat:cs.AI")
+            else None,
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert result.drafts == []
+    assert len(result.state_updates) == 1
+    assert result.state_updates[0].watermark_published_at == watermark
+
+
+def test_pool_backed_arxiv_ingest_without_watermark_uses_latest_mature_day_gh_54(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: first-time strict pool ingest must not deadlock on today."""
+    pool_path = tmp_path / "arxiv_pool.db"
+    store = ArxivPoolStore(pool_path)
+    mature_window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 19, tzinfo=UTC),
+        period_end=datetime(2026, 5, 20, tzinfo=UTC),
+        max_results=60,
+    )
+    immature_window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, mature_window, arxiv_id="2605.19001v1")
+    _record_completed_window(store, immature_window, arxiv_id="2605.20001v1")
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert [draft.source_item_id for draft in result.drafts] == ["2605.19001v1"]
+    assert result.extra_metrics.get("pool_window_immature_total", 0) == 0
+    assert result.extra_metrics["pool_drafts_total"] == 1
+    assert len(result.state_updates) == 1
+    assert result.state_updates[0].watermark_published_at == datetime(
+        2026,
+        5,
+        19,
+        12,
+        tzinfo=UTC,
+    )
 
 
 def test_pool_backed_arxiv_ingest_uses_saved_watermark_without_period_bounds(
@@ -668,6 +957,7 @@ def test_pool_backed_arxiv_ingest_uses_saved_watermark_without_period_bounds(
             include_stats=True,
             mode="pool",
             pool_db_path=pool_path,
+            pool_maturity_lag_days=0,
         )
     )
 
@@ -1082,7 +1372,54 @@ def test_inspect_arxiv_pool_freshness_json_reports_worker_state(
     assert payload["worker_state"]["next_wake_at"] is not None
     assert payload["active_cooldown"] is False
     assert payload["fetcher"] == "httpx_atom"
-    assert payload["window_status_summary"] == {"completed": 1}
+    assert payload["window_status_summary"]["completed"] == 1
+    assert payload["window_status_summary"]["analysis_ready"] == 1
+    assert payload["maturity_policy"]["timezone"] == "UTC"
+
+
+def test_inspect_arxiv_pool_freshness_reports_maturity_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool_path = tmp_path / "arxiv_pool.db"
+    config_path = _write_pool_config(tmp_path=tmp_path, pool_path=pool_path)
+    store = ArxivPoolStore(pool_path)
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.20001v1")
+
+    import recoleta.arxiv_pool as arxiv_pool_module
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "_utc_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+
+    payload = run_inspect_arxiv_pool_freshness_command(
+        config_path=config_path,
+        limit=10,
+        json_output=True,
+    )
+
+    assert payload["maturity_policy"] == {
+        "timezone": "UTC",
+        "maturity_lag_days": 1,
+        "maturity_cutoff": "2026-05-20T00:00:00+00:00",
+        "readiness_gate": "strict",
+        "allow_immature_windows": False,
+    }
+    assert payload["window_status_summary"]["completed"] == 1
+    assert payload["window_status_summary"]["analysis_ready"] == 0
+    assert payload["window_status_summary"]["immature"] == 1
+    assert payload["windows"][0]["cache_readable"] is True
+    assert payload["windows"][0]["mature"] is False
+    assert payload["windows"][0]["analysis_ready"] is False
+    assert payload["windows"][0]["blocked_reason"] == "immature_window"
 
 
 def test_arxiv_pool_worker_command_emits_json_lifecycle_lines(
@@ -1182,11 +1519,41 @@ def test_fleet_pre_sync_plan_collects_unique_pool_windows(tmp_path: Path) -> Non
     }
 
 
+def test_fleet_pre_sync_plan_merges_mixed_child_readiness_policies_safely(
+    tmp_path: Path,
+) -> None:
+    """Regression: fleet readiness must not depend on child manifest order."""
+    manifest_path, _pool_path = _write_pool_fleet_manifest(
+        tmp_path,
+        readiness_gate=("warn", "strict"),
+        maturity_lag_days=(0, 2),
+        allow_immature_windows=(True, False),
+        request_interval_seconds=(0, 2),
+        cooldown_seconds=(60, 3600),
+    )
+
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+
+    assert plan.status == "planned"
+    assert plan.readiness_gate == "strict"
+    assert plan.maturity_lag_days == 2
+    assert plan.allow_immature_windows is False
+    assert plan.request_interval_seconds == 2
+    assert plan.cooldown_seconds == 3600
+
+
 def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    manifest_path, _pool_path = _write_pool_fleet_manifest(tmp_path)
+    manifest_path, _pool_path = _write_pool_fleet_manifest(
+        tmp_path,
+        readiness_gate="warn",
+    )
     events: list[str] = []
 
     import recoleta.cli.fleet as fleet_module
@@ -1263,10 +1630,266 @@ def test_fleet_workflow_skip_ingest_skips_pool_pre_sync(
     assert payload["arxiv_pool_pre_sync"]["reason"] == "ingest_not_requested"
 
 
-def _write_pool_fleet_manifest(tmp_path: Path) -> tuple[Path, Path]:
+def test_fleet_arxiv_pool_readiness_blocks_strict_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    store = ArxivPoolStore(pool_path)
+    for index, window in enumerate(plan.windows):
+        _record_completed_window(store, window, arxiv_id=f"2605.20{index:03d}v1")
+
+    import recoleta.arxiv_pool as arxiv_pool_module
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "_utc_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+    events: list[str] = []
+
+    def fake_pre_sync(pre_sync_plan):  # type: ignore[no-untyped-def]
+        events.append("pre_sync")
+        return ArxivPoolSyncResult(
+            requested_windows_total=len(pre_sync_plan.windows),
+            cache_hit_total=len(pre_sync_plan.windows),
+        )
+
+    def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
+        events.append(f"child:{request.instance.name}")
+        return {"instance": request.instance.name}
+
+    monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        fake_child_payload,
+    )
+
+    with pytest.raises(typer.Exit) as exc:
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="day",
+            command="fleet run day",
+            anchor_date="2026-05-20",
+            json_output=True,
+        )
+
+    emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert exc.value.exit_code == 1
+    assert events == ["pre_sync"]
+    assert emitted["status"] == "blocked"
+    assert emitted["arxiv_pool_readiness"]["status"] == "blocked"
+    assert emitted["arxiv_pool_readiness"]["immature_windows_total"] == 2
+    assert emitted["children"] == []
+
+
+def test_fleet_arxiv_pool_readiness_does_not_block_when_analyze_skipped_gh_54(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: strict pool readiness blocks before analysis, not ingest-only runs."""
+    manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    store = ArxivPoolStore(pool_path)
+    for index, window in enumerate(plan.windows):
+        _record_completed_window(store, window, arxiv_id=f"2605.20{index:03d}v1")
+
+    import recoleta.arxiv_pool as arxiv_pool_module
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "_utc_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+    events: list[str] = []
+
+    def fake_pre_sync(pre_sync_plan):  # type: ignore[no-untyped-def]
+        events.append("pre_sync")
+        return ArxivPoolSyncResult(
+            requested_windows_total=len(pre_sync_plan.windows),
+            cache_hit_total=len(pre_sync_plan.windows),
+        )
+
+    def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
+        events.append(f"child:{request.instance.name}:{request.skip}")
+        return {"instance": request.instance.name}
+
+    monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        fake_child_payload,
+    )
+
+    payload = execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        command="fleet run day",
+        anchor_date="2026-05-20",
+        skip="analyze",
+        json_output=False,
+    )
+
+    assert events == [
+        "pre_sync",
+        "child:embodied_ai:analyze",
+        "child:software:analyze",
+    ]
+    assert payload["status"] == "ok"
+    assert payload["arxiv_pool_readiness"]["status"] == "blocked"
+    assert payload["arxiv_pool_readiness"]["immature_windows_total"] == 2
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "command"),
+    [
+        ("week", "fleet run week"),
+        ("month", "fleet run month"),
+    ],
+)
+def test_fleet_arxiv_pool_readiness_blocks_periods_until_all_days_mature(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    workflow_name: str,
+    command: str,
+) -> None:
+    manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name=workflow_name,
+        anchor_date="2026-05-20",
+    )
+    store = ArxivPoolStore(pool_path)
+    for index, window in enumerate(plan.windows):
+        _record_completed_window(store, window, arxiv_id=f"2605.{index:05d}v1")
+
+    import recoleta.arxiv_pool as arxiv_pool_module
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "_utc_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "run_fleet_arxiv_pool_pre_sync",
+        lambda pre_sync_plan: ArxivPoolSyncResult(
+            requested_windows_total=len(pre_sync_plan.windows),
+            cache_hit_total=len(pre_sync_plan.windows),
+        ),
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        lambda *, request: pytest.fail("strict readiness should stop before children"),
+    )
+
+    with pytest.raises(typer.Exit) as exc:
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name=workflow_name,
+            command=command,
+            anchor_date="2026-05-20",
+            json_output=True,
+        )
+
+    emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert exc.value.exit_code == 1
+    assert emitted["arxiv_pool_readiness"]["status"] == "blocked"
+    assert emitted["arxiv_pool_readiness"]["immature_windows_total"] > 0
+
+
+def test_fleet_arxiv_pool_readiness_warn_mode_continues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path, pool_path = _write_pool_fleet_manifest(
+        tmp_path,
+        readiness_gate="warn",
+    )
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    store = ArxivPoolStore(pool_path)
+    for index, window in enumerate(plan.windows):
+        _record_completed_window(store, window, arxiv_id=f"2605.21{index:03d}v1")
+
+    import recoleta.arxiv_pool as arxiv_pool_module
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "_utc_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+    events: list[str] = []
+
+    def fake_pre_sync(pre_sync_plan):  # type: ignore[no-untyped-def]
+        events.append("pre_sync")
+        return ArxivPoolSyncResult(
+            requested_windows_total=len(pre_sync_plan.windows),
+            cache_hit_total=len(pre_sync_plan.windows),
+        )
+
+    def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
+        events.append(f"child:{request.instance.name}")
+        return {
+            "instance": request.instance.name,
+            "config_path": str(request.instance.config_path),
+        }
+
+    monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        fake_child_payload,
+    )
+
+    payload = execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        command="fleet run day",
+        anchor_date="2026-05-20",
+        json_output=False,
+    )
+
+    assert events == ["pre_sync", "child:embodied_ai", "child:software"]
+    assert payload["status"] == "ok"
+    assert payload["arxiv_pool_readiness"]["status"] == "blocked"
+    assert payload["arxiv_pool_readiness"]["immature_windows_total"] == 2
+
+
+def _write_pool_fleet_manifest(
+    tmp_path: Path,
+    *,
+    readiness_gate: str | tuple[str, str] = "strict",
+    maturity_lag_days: int | tuple[int, int] = 1,
+    allow_immature_windows: bool | tuple[bool, bool] = False,
+    request_interval_seconds: float | tuple[float, float] = 0,
+    cooldown_seconds: int | tuple[int, int] = 3600,
+) -> tuple[Path, Path]:
     pool_path = tmp_path / "fleet-arxiv-pool.db"
     child_paths: list[Path] = []
-    for name, query in (("embodied_ai", "cat:cs.AI"), ("software", "cat:cs.LG")):
+    for index, (name, query) in enumerate(
+        (("embodied_ai", "cat:cs.AI"), ("software", "cat:cs.LG"))
+    ):
         child_path = tmp_path / f"{name}.yaml"
         child_path.write_text(
             yaml.safe_dump(
@@ -1277,7 +1900,15 @@ def _write_pool_fleet_manifest(tmp_path: Path) -> tuple[Path, Path]:
                     "ARXIV_POOL": {
                         "enabled": True,
                         "db_path": str(pool_path),
-                        "request_interval_seconds": 0,
+                        "request_interval_seconds": _child_setting(
+                            request_interval_seconds, index
+                        ),
+                        "cooldown_seconds": _child_setting(cooldown_seconds, index),
+                        "maturity_lag_days": _child_setting(maturity_lag_days, index),
+                        "readiness_gate": _child_setting(readiness_gate, index),
+                        "allow_immature_windows": _child_setting(
+                            allow_immature_windows, index
+                        ),
                     },
                     "SOURCES": {
                         "arxiv": {
@@ -1306,6 +1937,12 @@ def _write_pool_fleet_manifest(tmp_path: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     return manifest_path, pool_path
+
+
+def _child_setting(value: Any, index: int) -> Any:
+    if isinstance(value, tuple):
+        return value[index]
+    return value
 
 
 def _write_pool_config(*, tmp_path: Path, pool_path: Path) -> Path:

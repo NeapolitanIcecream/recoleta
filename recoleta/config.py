@@ -1078,6 +1078,19 @@ class ArxivPoolConfig(BaseModel):
     db_path: Path | None = None
     request_interval_seconds: float = Field(default=5.0, ge=0.0)
     cooldown_seconds: int = Field(default=3600, ge=1)
+    maturity_lag_days: int = Field(default=1, ge=0)
+    readiness_gate: str = "strict"
+    allow_immature_windows: bool = False
+
+    @field_validator("readiness_gate", mode="before")
+    @classmethod
+    def _normalize_readiness_gate(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "strict"
+        if normalized not in {"off", "warn", "strict"}:
+            raise ValueError("ARXIV_POOL.readiness_gate must be one of: off, warn, strict")
+        return normalized
 
     @model_validator(mode="after")
     def _validate_enabled_requires_db_path(self) -> "ArxivPoolConfig":

@@ -122,6 +122,7 @@ sources:
 
   arxiv:
     enabled: false  # Default: false
+    # mode: "direct"  # Default: "direct" (direct|pool)
     # queries: []  # Required when enabled=true
     # queries:
     #   - "cat:cs.AI"
@@ -147,6 +148,16 @@ sources:
   hf_daily:
     enabled: false  # Default: false
     # max_items_per_run: 50  # Default: 50
+
+# Shared arXiv metadata pool used when sources.arxiv.mode="pool".
+# arxiv_pool:
+#   enabled: false
+#   db_path: "~/.local/share/recoleta/arxiv_pool.db"
+#   request_interval_seconds: 5.0
+#   cooldown_seconds: 3600
+#   maturity_lag_days: 1
+#   readiness_gate: "strict"  # off|warn|strict
+#   allow_immature_windows: false
 
 ## Semantic triage (optional)
 #

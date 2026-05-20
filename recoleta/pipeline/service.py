@@ -294,6 +294,9 @@ class PipelineService:
                 "updated_total": 0,
                 "pool_drafts_total": 0,
                 "pool_window_unavailable_total": 0,
+                "pool_window_immature_total": 0,
+                "pool_window_immature_allowed_total": 0,
+                "pool_window_analysis_ready_total": 0,
             }
             for source_name in _SOURCE_DIAGNOSTIC_NAMES
         }

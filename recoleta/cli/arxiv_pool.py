@@ -11,9 +11,11 @@ from recoleta.arxiv_pool import (
     ArxivPoolSync,
     ArxivPoolWorker,
     ArxivPoolWindow,
+    arxiv_pool_readiness_policy_from_settings,
     arxiv_pool_fetcher_name,
     build_arxiv_pool_windows,
     build_arxiv_pool_windows_for_days,
+    evaluate_arxiv_pool_window_readiness,
     resolve_arxiv_pool_db_path,
     worker_state_payload,
 )
@@ -263,6 +265,20 @@ def run_inspect_arxiv_pool_freshness_command(
     store = ArxivPoolStore(resolve_arxiv_pool_db_path(settings))
     rate_state = store.get_rate_state()
     windows = store.list_window_records(limit=limit)
+    readiness_policy = arxiv_pool_readiness_policy_from_settings(settings)
+    window_readiness = [
+        evaluate_arxiv_pool_window_readiness(
+            store=store,
+            window=ArxivPoolWindow(
+                query_text=window.query_text,
+                period_start=window.period_start,
+                period_end=window.period_end,
+                max_results=window.max_results,
+            ),
+            policy=readiness_policy,
+        )
+        for window in windows
+    ]
     worker_state = store.get_worker_state()
     active_cooldown = _active_cooldown(rate_state)
     payload = {
@@ -273,8 +289,15 @@ def run_inspect_arxiv_pool_freshness_command(
         "active_cooldown": active_cooldown,
         "rate_state": _rate_state_payload(rate_state),
         "worker_state": worker_state_payload(worker_state),
-        "window_status_summary": _window_status_summary(windows),
-        "windows": [_window_payload(window) for window in windows],
+        "maturity_policy": readiness_policy.as_payload(),
+        "window_status_summary": _window_status_summary(
+            windows,
+            window_readiness=window_readiness,
+        ),
+        "windows": [
+            _window_payload(window, readiness=readiness)
+            for window, readiness in zip(windows, window_readiness, strict=True)
+        ],
     }
     if json_output:
         cli._emit_json(payload)
@@ -388,8 +411,8 @@ def _emit_or_print_sync_payload(
     return payload
 
 
-def _window_payload(window: Any) -> dict[str, Any]:
-    return {
+def _window_payload(window: Any, *, readiness: Any | None = None) -> dict[str, Any]:
+    payload = {
         "query_text": window.query_text,
         "period_start": window.period_start.isoformat(),
         "period_end": window.period_end.isoformat(),
@@ -404,6 +427,16 @@ def _window_payload(window: Any) -> dict[str, Any]:
         "error_message": window.error_message,
         "result_count": window.result_count,
     }
+    if readiness is not None:
+        payload.update(
+            {
+                "cache_readable": bool(readiness.cache_readable),
+                "mature": bool(readiness.mature),
+                "analysis_ready": bool(readiness.analysis_ready),
+                "blocked_reason": readiness.blocked_reason,
+            }
+        )
+    return payload
 
 
 def _optional_date(value: str | None) -> date | None:
@@ -438,11 +471,25 @@ def _active_cooldown(rate_state: Any | None) -> bool:
     return cooldown_until > datetime.now().astimezone()
 
 
-def _window_status_summary(windows: list[Any]) -> dict[str, int]:
+def _window_status_summary(
+    windows: list[Any],
+    *,
+    window_readiness: list[Any] | None = None,
+) -> dict[str, int]:
     summary: dict[str, int] = {}
     for window in windows:
         status = str(getattr(window, "status", "") or "unknown")
         summary[status] = int(summary.get(status, 0)) + 1
+    if window_readiness is not None:
+        summary["analysis_ready"] = sum(
+            1 for readiness in window_readiness if bool(readiness.analysis_ready)
+        )
+        summary["immature"] = sum(
+            1
+            for readiness in window_readiness
+            if readiness.blocked_reason == "immature_window"
+        )
+        summary.setdefault("rate_limited", 0)
     return dict(sorted(summary.items()))
 
 
