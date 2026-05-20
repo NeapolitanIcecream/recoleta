@@ -66,6 +66,12 @@ class _ArxivQueryState:
 
 
 @dataclass(slots=True, frozen=True)
+class _ArxivPoolWindowPull:
+    papers: list[Any] | None
+    complete: bool
+
+
+@dataclass(slots=True, frozen=True)
 class _OpenReviewVenueState:
     venue: str
     invitation: str
@@ -434,49 +440,27 @@ class _ArxivPoolPuller:
             )
             return
 
-        from recoleta.arxiv_pool import (
-            ArxivPoolStore,
-            evaluate_arxiv_pool_window_readiness,
-            pool_paper_to_item_draft,
-        )
+        from recoleta.arxiv_pool import ArxivPoolStore
 
         store = ArxivPoolStore(self.request.pool_db_path)
         newest_published_at = state.watermark
         emitted_total = 0
         complete = True
         for window in windows:
-            readiness = evaluate_arxiv_pool_window_readiness(
+            window_pull = self._cached_pool_window_papers(
                 store=store,
                 window=window,
-                policy=self.readiness_policy,
             )
-            if readiness.analysis_ready:
-                self._record_analysis_ready_window()
-            elif readiness.blocked_reason == "immature_window":
-                self._record_immature_window()
-                if not self.readiness_policy.allows_immature_windows:
-                    complete = False
-                    continue
-                self._record_immature_window_allowed()
-            else:
-                self._record_unavailable_window()
-                complete = False
+            complete = complete and window_pull.complete
+            if window_pull.papers is None:
                 continue
-            papers = store.cached_papers_for_window(window)
-            if papers is None:
-                self._record_unavailable_window()
-                complete = False
-                continue
-            for paper in papers:
-                draft = pool_paper_to_item_draft(paper=paper, window=window)
-                if not self._should_keep_draft(draft=draft, state=state):
-                    continue
-                self.drafts.append(draft)
-                emitted_total += 1
-                newest_published_at = _newest_seen_timestamp(
-                    current=newest_published_at,
-                    candidate=draft.published_at,
-                )
+            emitted_count, newest_published_at = self._append_pool_papers(
+                papers=window_pull.papers,
+                window=window,
+                state=state,
+                newest_published_at=newest_published_at,
+            )
+            emitted_total += emitted_count
         self._increment_extra_metric("pool_drafts_total", emitted_total)
         self._record_query_state_update(
             state=state,
@@ -484,6 +468,60 @@ class _ArxivPoolPuller:
             if complete and self.stats.deferred_total <= 0
             else state.watermark,
         )
+
+    def _cached_pool_window_papers(
+        self, *, store: Any, window: Any
+    ) -> _ArxivPoolWindowPull:
+        if not self._record_pool_window_readiness(store=store, window=window):
+            return _ArxivPoolWindowPull(papers=None, complete=False)
+        papers = store.cached_papers_for_window(window)
+        if papers is None:
+            self._record_unavailable_window()
+            return _ArxivPoolWindowPull(papers=None, complete=False)
+        return _ArxivPoolWindowPull(papers=papers, complete=True)
+
+    def _record_pool_window_readiness(self, *, store: Any, window: Any) -> bool:
+        from recoleta.arxiv_pool import evaluate_arxiv_pool_window_readiness
+
+        readiness = evaluate_arxiv_pool_window_readiness(
+            store=store,
+            window=window,
+            policy=self.readiness_policy,
+        )
+        if readiness.analysis_ready:
+            self._record_analysis_ready_window()
+            return True
+        if readiness.blocked_reason != "immature_window":
+            self._record_unavailable_window()
+            return False
+        self._record_immature_window()
+        if not self.readiness_policy.allows_immature_windows:
+            return False
+        self._record_immature_window_allowed()
+        return True
+
+    def _append_pool_papers(
+        self,
+        *,
+        papers: list[Any],
+        window: Any,
+        state: _ArxivQueryState,
+        newest_published_at: datetime | None,
+    ) -> tuple[int, datetime | None]:
+        from recoleta.arxiv_pool import pool_paper_to_item_draft
+
+        emitted_total = 0
+        for paper in papers:
+            draft = pool_paper_to_item_draft(paper=paper, window=window)
+            if not self._should_keep_draft(draft=draft, state=state):
+                continue
+            self.drafts.append(draft)
+            emitted_total += 1
+            newest_published_at = _newest_seen_timestamp(
+                current=newest_published_at,
+                candidate=draft.published_at,
+            )
+        return emitted_total, newest_published_at
 
     def _should_keep_draft(self, *, draft: ItemDraft, state: _ArxivQueryState) -> bool:
         entry_id = str(draft.canonical_url or "").strip()
