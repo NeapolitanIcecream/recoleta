@@ -577,9 +577,21 @@ class _ArxivPoolPuller:
         period_start = self.period_start
         period_end = self.period_end
         if period_start is None and period_end is None:
+            maturity_cutoff = self.readiness_policy.maturity_cutoff
             if watermark is not None:
                 period_start = watermark
-                period_end = self.upper_bound
+                period_end = (
+                    maturity_cutoff
+                    if maturity_cutoff is not None
+                    and not self.readiness_policy.allows_immature_windows
+                    else self.upper_bound
+                )
+            elif (
+                maturity_cutoff is not None
+                and not self.readiness_policy.allows_immature_windows
+            ):
+                period_end = maturity_cutoff
+                period_start = maturity_cutoff - timedelta(days=1)
             else:
                 period_start = datetime(
                     self.upper_bound.year,

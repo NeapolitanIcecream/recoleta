@@ -851,6 +851,60 @@ def test_arxiv_pool_puller_preserves_watermark_for_immature_window(
     assert result.state_updates[0].watermark_published_at == watermark
 
 
+def test_pool_backed_arxiv_ingest_without_watermark_uses_latest_mature_day_gh_54(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: first-time strict pool ingest must not deadlock on today."""
+    pool_path = tmp_path / "arxiv_pool.db"
+    store = ArxivPoolStore(pool_path)
+    mature_window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 19, tzinfo=UTC),
+        period_end=datetime(2026, 5, 20, tzinfo=UTC),
+        max_results=60,
+    )
+    immature_window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, mature_window, arxiv_id="2605.19001v1")
+    _record_completed_window(store, immature_window, arxiv_id="2605.20001v1")
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert [draft.source_item_id for draft in result.drafts] == ["2605.19001v1"]
+    assert result.extra_metrics.get("pool_window_immature_total", 0) == 0
+    assert result.extra_metrics["pool_drafts_total"] == 1
+    assert len(result.state_updates) == 1
+    assert result.state_updates[0].watermark_published_at == datetime(
+        2026,
+        5,
+        19,
+        12,
+        tzinfo=UTC,
+    )
+
+
 def test_pool_backed_arxiv_ingest_uses_saved_watermark_without_period_bounds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1635,6 +1689,68 @@ def test_fleet_arxiv_pool_readiness_blocks_strict_mode(
     assert emitted["arxiv_pool_readiness"]["status"] == "blocked"
     assert emitted["arxiv_pool_readiness"]["immature_windows_total"] == 2
     assert emitted["children"] == []
+
+
+def test_fleet_arxiv_pool_readiness_does_not_block_when_analyze_skipped_gh_54(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: strict pool readiness blocks before analysis, not ingest-only runs."""
+    manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    store = ArxivPoolStore(pool_path)
+    for index, window in enumerate(plan.windows):
+        _record_completed_window(store, window, arxiv_id=f"2605.20{index:03d}v1")
+
+    import recoleta.arxiv_pool as arxiv_pool_module
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "_utc_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+    events: list[str] = []
+
+    def fake_pre_sync(pre_sync_plan):  # type: ignore[no-untyped-def]
+        events.append("pre_sync")
+        return ArxivPoolSyncResult(
+            requested_windows_total=len(pre_sync_plan.windows),
+            cache_hit_total=len(pre_sync_plan.windows),
+        )
+
+    def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
+        events.append(f"child:{request.instance.name}:{request.skip}")
+        return {"instance": request.instance.name}
+
+    monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        fake_child_payload,
+    )
+
+    payload = execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        command="fleet run day",
+        anchor_date="2026-05-20",
+        skip="analyze",
+        json_output=False,
+    )
+
+    assert events == [
+        "pre_sync",
+        "child:embodied_ai:analyze",
+        "child:software:analyze",
+    ]
+    assert payload["status"] == "ok"
+    assert payload["arxiv_pool_readiness"]["status"] == "blocked"
+    assert payload["arxiv_pool_readiness"]["immature_windows_total"] == 2
 
 
 @pytest.mark.parametrize(

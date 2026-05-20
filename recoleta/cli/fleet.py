@@ -24,6 +24,7 @@ from recoleta.cli.site_support import (
 )
 from recoleta.cli.translate import run_translate_run_command
 from recoleta.cli.workflows import (
+    STEP_ANALYZE,
     STEP_INGEST,
     STEP_TRANSLATE,
     _parse_step_list,
@@ -443,6 +444,7 @@ def execute_fleet_granularity_workflow(
         if _fleet_arxiv_pool_readiness_should_block(
             arxiv_pool_plan,
             arxiv_pool_readiness_payload,
+            analysis_requested=STEP_ANALYZE not in set(skip_steps),
         ):
             payload = {
                 "status": "blocked",
@@ -691,7 +693,11 @@ def evaluate_fleet_arxiv_pool_readiness(
 def _fleet_arxiv_pool_readiness_should_block(
     plan: FleetArxivPoolPreSyncPlan,
     readiness: dict[str, Any],
+    *,
+    analysis_requested: bool = True,
 ) -> bool:
+    if not analysis_requested:
+        return False
     if plan.readiness_gate != "strict":
         return False
     return int(readiness.get("blocked_windows_total") or 0) > 0
