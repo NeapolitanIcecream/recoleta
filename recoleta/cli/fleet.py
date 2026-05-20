@@ -50,7 +50,6 @@ from recoleta.arxiv_pool import (
     ArxivPoolWindow,
     arxiv_pool_readiness_policy_from_settings,
     build_arxiv_pool_windows_for_period,
-    evaluate_arxiv_pool_readiness,
     resolve_arxiv_pool_db_path,
 )
 from recoleta.storage import Repository
@@ -148,6 +147,15 @@ class FleetArxivPoolPreSyncPlan:
             "readiness_gate": self.readiness_gate,
             "allow_immature_windows": self.allow_immature_windows,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class FleetGranularityReadinessContext:
+    manifest: Any
+    requested_steps: list[str]
+    readiness_plan: Any
+    arxiv_pool_pre_sync: dict[str, Any]
+    arxiv_pool_readiness: dict[str, Any] | None
 
 
 def _fleet_input_dirs(manifest_path: Path) -> tuple[Any, list[Any]]:
@@ -426,6 +434,64 @@ def execute_fleet_granularity_workflow(
         include_steps=include_steps,
         skip_steps=skip_steps,
     )
+    context = _fleet_granularity_readiness_context(
+        manifest_path=manifest_path,
+        workflow_name=workflow_name,
+        command=command,
+        anchor_date=anchor_date,
+        include_steps=include_steps,
+        skip_steps=skip_steps,
+    )
+    if _fleet_granularity_readiness_should_block(context):
+        payload = _fleet_granularity_blocked_payload(
+            context=context,
+            command=command,
+            workflow_name=workflow_name,
+        )
+        _emit_fleet_granularity_blocked(
+            payload=payload,
+            command=command,
+            json_output=json_output,
+        )
+        raise cli.typer.Exit(code=1)
+
+    children = _fleet_granularity_child_payloads(
+        manifest=context.manifest,
+        workflow_name=workflow_name,
+        command=command,
+        anchor_date=anchor_date,
+        include=include,
+        skip=skip,
+    )
+    payload = {
+        "status": "ok",
+        "command": command,
+        "manifest_path": str(context.manifest.manifest_path),
+        "workflow_name": workflow_name,
+        "arxiv_pool_pre_sync": context.arxiv_pool_pre_sync,
+        "arxiv_pool_readiness": context.arxiv_pool_readiness,
+        "children": children,
+    }
+    if json_output:
+        cli._emit_json(payload)
+        return payload
+    console = cli._runtime_symbols()["Console"]()
+    console.print(
+        f"[green]{command} completed[/green] "
+        f"instances={len(children)} workflow={workflow_name}"
+    )
+    return payload
+
+
+def _fleet_granularity_readiness_context(
+    *,
+    manifest_path: Path,
+    workflow_name: str,
+    command: str,
+    anchor_date: str | None,
+    include_steps: list[str],
+    skip_steps: list[str],
+) -> FleetGranularityReadinessContext:
     manifest = load_fleet_manifest(manifest_path)
     child_settings = [
         load_child_settings(instance.config_path) for instance in manifest.instances
@@ -442,65 +508,110 @@ def execute_fleet_granularity_workflow(
         include_steps=include_steps,
         skip_steps=skip_steps,
     )
-    arxiv_pool_readiness_plan = build_arxiv_pool_workflow_readiness_plan(
+    readiness_plan = build_arxiv_pool_workflow_readiness_plan(
         settings_list=child_settings,
         target_period_start=target_period_start,
         target_period_end=target_period_end,
         requested_steps=requested_steps,
     )
-    arxiv_pool_plan = build_fleet_arxiv_pool_pre_sync_plan(
+    pre_sync_plan = build_fleet_arxiv_pool_pre_sync_plan(
         manifest_path=manifest.manifest_path,
         workflow_name=workflow_name,
         anchor_date=anchor_date,
         manifest=manifest,
         skip_steps=skip_steps,
     )
-    arxiv_pool_payload: dict[str, Any] = arxiv_pool_plan.as_payload()
-    arxiv_pool_readiness_payload: dict[str, Any] | None = None
-    if arxiv_pool_plan.status == "planned":
-        sync_result = run_fleet_arxiv_pool_pre_sync(arxiv_pool_plan)
-        arxiv_pool_payload = {
-            **arxiv_pool_payload,
+    pre_sync_payload, readiness_payload = _fleet_arxiv_pool_pre_sync_payload(
+        pre_sync_plan=pre_sync_plan,
+        readiness_plan=readiness_plan,
+    )
+    return FleetGranularityReadinessContext(
+        manifest=manifest,
+        requested_steps=requested_steps,
+        readiness_plan=readiness_plan,
+        arxiv_pool_pre_sync=pre_sync_payload,
+        arxiv_pool_readiness=readiness_payload,
+    )
+
+
+def _fleet_arxiv_pool_pre_sync_payload(
+    *,
+    pre_sync_plan: FleetArxivPoolPreSyncPlan,
+    readiness_plan: Any,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    pre_sync_payload: dict[str, Any] = pre_sync_plan.as_payload()
+    if pre_sync_plan.status == "planned":
+        sync_result = run_fleet_arxiv_pool_pre_sync(pre_sync_plan)
+        pre_sync_payload = {
+            **pre_sync_payload,
             "status": "completed",
             "sync": sync_result.as_payload(),
         }
-        if arxiv_pool_readiness_plan.status == "planned":
-            arxiv_pool_readiness_payload = evaluate_arxiv_pool_workflow_readiness(
-                arxiv_pool_readiness_plan
-            )
-            arxiv_pool_payload["readiness"] = arxiv_pool_readiness_payload
-    elif arxiv_pool_readiness_plan.status == "planned":
-        arxiv_pool_readiness_payload = evaluate_arxiv_pool_workflow_readiness(
-            arxiv_pool_readiness_plan
-        )
-    if (
-        arxiv_pool_readiness_payload is not None
-        and arxiv_pool_workflow_readiness_should_block(
-            arxiv_pool_readiness_plan,
-            arxiv_pool_readiness_payload,
-        )
-    ):
-        payload = {
-            "status": "blocked",
-            "command": command,
-            "manifest_path": str(manifest.manifest_path),
-            "workflow_name": workflow_name,
-            "requested_steps": requested_steps,
-            "arxiv_pool_pre_sync": arxiv_pool_payload,
-            "arxiv_pool_readiness": arxiv_pool_readiness_payload,
-            "children": [],
-        }
-        if json_output:
-            cli._emit_json(payload)
-        else:
-            console = cli._runtime_symbols()["Console"]()
-            console.print(
-                f"[yellow]{command} blocked[/yellow] "
-                f"arxiv_pool_windows="
-                f"{arxiv_pool_readiness_payload['blocked_windows_total']}"
-            )
-        raise cli.typer.Exit(code=1)
-    children = [
+        if readiness_plan.status == "planned":
+            readiness_payload = evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+            pre_sync_payload["readiness"] = readiness_payload
+            return pre_sync_payload, readiness_payload
+    if readiness_plan.status == "planned":
+        return pre_sync_payload, evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+    return pre_sync_payload, None
+
+
+def _fleet_granularity_readiness_should_block(
+    context: FleetGranularityReadinessContext,
+) -> bool:
+    if context.arxiv_pool_readiness is None:
+        return False
+    return arxiv_pool_workflow_readiness_should_block(
+        context.readiness_plan,
+        context.arxiv_pool_readiness,
+    )
+
+
+def _fleet_granularity_blocked_payload(
+    *,
+    context: FleetGranularityReadinessContext,
+    command: str,
+    workflow_name: str,
+) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "command": command,
+        "manifest_path": str(context.manifest.manifest_path),
+        "workflow_name": workflow_name,
+        "requested_steps": context.requested_steps,
+        "arxiv_pool_pre_sync": context.arxiv_pool_pre_sync,
+        "arxiv_pool_readiness": context.arxiv_pool_readiness,
+        "children": [],
+    }
+
+
+def _emit_fleet_granularity_blocked(
+    *,
+    payload: dict[str, Any],
+    command: str,
+    json_output: bool,
+) -> None:
+    if json_output:
+        cli._emit_json(payload)
+        return
+    readiness = payload["arxiv_pool_readiness"]
+    console = cli._runtime_symbols()["Console"]()
+    console.print(
+        f"[yellow]{command} blocked[/yellow] "
+        f"arxiv_pool_windows={readiness['blocked_windows_total']}"
+    )
+
+
+def _fleet_granularity_child_payloads(
+    *,
+    manifest: Any,
+    workflow_name: str,
+    command: str,
+    anchor_date: str | None,
+    include: str | None,
+    skip: str | None,
+) -> list[dict[str, Any]]:
+    return [
         _fleet_granularity_child_payload(
             request=FleetGranularityChildRequest(
                 instance=instance,
@@ -513,24 +624,6 @@ def execute_fleet_granularity_workflow(
         )
         for instance in manifest.instances
     ]
-    payload = {
-        "status": "ok",
-        "command": command,
-        "manifest_path": str(manifest.manifest_path),
-        "workflow_name": workflow_name,
-        "arxiv_pool_pre_sync": arxiv_pool_payload,
-        "arxiv_pool_readiness": arxiv_pool_readiness_payload,
-        "children": children,
-    }
-    if json_output:
-        cli._emit_json(payload)
-        return payload
-    console = cli._runtime_symbols()["Console"]()
-    console.print(
-        f"[green]{command} completed[/green] "
-        f"instances={len(children)} workflow={workflow_name}"
-    )
-    return payload
 
 
 def _fleet_granularity_target_period(
@@ -727,53 +820,6 @@ def run_fleet_arxiv_pool_pre_sync(
         request_interval_seconds=plan.request_interval_seconds,
         cooldown_seconds=plan.cooldown_seconds,
     ).sync_windows(plan.windows)
-
-
-def evaluate_fleet_arxiv_pool_readiness(
-    plan: FleetArxivPoolPreSyncPlan,
-) -> dict[str, Any]:
-    if plan.pool_db_path is None:
-        return {
-            "status": "skipped",
-            "reason": plan.reason,
-            "windows_total": 0,
-            "analysis_ready_windows_total": 0,
-            "blocked_windows_total": 0,
-            "immature_windows_total": 0,
-            "unavailable_windows_total": 0,
-            "unsafe_override_windows_total": 0,
-            "maturity_policy": {
-                "timezone": "UTC",
-                "maturity_lag_days": plan.maturity_lag_days,
-                "maturity_cutoff": None,
-                "readiness_gate": plan.readiness_gate,
-                "allow_immature_windows": plan.allow_immature_windows,
-            },
-            "windows": [],
-        }
-    policy = ArxivPoolReadinessPolicy(
-        maturity_lag_days=plan.maturity_lag_days,
-        readiness_gate=plan.readiness_gate,
-        allow_immature_windows=plan.allow_immature_windows,
-    )
-    return evaluate_arxiv_pool_readiness(
-        store=ArxivPoolStore(plan.pool_db_path),
-        windows=plan.windows,
-        policy=policy,
-    )
-
-
-def _fleet_arxiv_pool_readiness_should_block(
-    plan: FleetArxivPoolPreSyncPlan,
-    readiness: dict[str, Any],
-    *,
-    analysis_requested: bool = True,
-) -> bool:
-    if not analysis_requested:
-        return False
-    if plan.readiness_gate != "strict":
-        return False
-    return int(readiness.get("blocked_windows_total") or 0) > 0
 
 
 def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:

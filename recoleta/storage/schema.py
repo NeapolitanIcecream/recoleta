@@ -7,6 +7,59 @@ from sqlmodel import SQLModel
 
 from recoleta.storage_common import CURRENT_SCHEMA_VERSION, SchemaVersionError
 
+_RUN_WORKFLOW_METADATA_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
+    (
+        "operation_kind",
+        "ALTER TABLE runs ADD COLUMN operation_kind VARCHAR(64);",
+        "CREATE INDEX IF NOT EXISTS ix_runs_operation_kind ON runs (operation_kind);",
+    ),
+    (
+        "target_granularity",
+        "ALTER TABLE runs ADD COLUMN target_granularity VARCHAR(16);",
+        "CREATE INDEX IF NOT EXISTS ix_runs_target_granularity ON runs (target_granularity);",
+    ),
+    (
+        "target_period_start",
+        "ALTER TABLE runs ADD COLUMN target_period_start DATETIME;",
+        "CREATE INDEX IF NOT EXISTS ix_runs_target_period_start ON runs (target_period_start);",
+    ),
+    (
+        "target_period_end",
+        "ALTER TABLE runs ADD COLUMN target_period_end DATETIME;",
+        "CREATE INDEX IF NOT EXISTS ix_runs_target_period_end ON runs (target_period_end);",
+    ),
+    (
+        "requested_steps_json",
+        "ALTER TABLE runs ADD COLUMN requested_steps_json TEXT NOT NULL DEFAULT '[]';",
+        None,
+    ),
+    (
+        "executed_steps_json",
+        "ALTER TABLE runs ADD COLUMN executed_steps_json TEXT NOT NULL DEFAULT '[]';",
+        None,
+    ),
+    (
+        "skipped_steps_json",
+        "ALTER TABLE runs ADD COLUMN skipped_steps_json TEXT NOT NULL DEFAULT '[]';",
+        None,
+    ),
+    (
+        "billing_by_step_json",
+        "ALTER TABLE runs ADD COLUMN billing_by_step_json TEXT NOT NULL DEFAULT '{}';",
+        None,
+    ),
+    (
+        "source_diagnostics_json",
+        "ALTER TABLE runs ADD COLUMN source_diagnostics_json TEXT NOT NULL DEFAULT '{}';",
+        None,
+    ),
+    (
+        "terminal_state",
+        "ALTER TABLE runs ADD COLUMN terminal_state VARCHAR(32);",
+        "CREATE INDEX IF NOT EXISTS ix_runs_terminal_state ON runs (terminal_state);",
+    ),
+)
+
 
 class SchemaStoreMixin:
     engine: Any
@@ -138,59 +191,12 @@ class SchemaStoreMixin:
         if not columns:
             return
 
-        ddl: list[str] = []
-        index_ddl: list[str] = []
-        if "operation_kind" not in columns:
-            ddl.append("ALTER TABLE runs ADD COLUMN operation_kind VARCHAR(64);")
-            index_ddl.append(
-                "CREATE INDEX IF NOT EXISTS ix_runs_operation_kind ON runs (operation_kind);"
-            )
-        if "target_granularity" not in columns:
-            ddl.append("ALTER TABLE runs ADD COLUMN target_granularity VARCHAR(16);")
-            index_ddl.append(
-                "CREATE INDEX IF NOT EXISTS ix_runs_target_granularity ON runs (target_granularity);"
-            )
-        if "target_period_start" not in columns:
-            ddl.append("ALTER TABLE runs ADD COLUMN target_period_start DATETIME;")
-            index_ddl.append(
-                "CREATE INDEX IF NOT EXISTS ix_runs_target_period_start ON runs (target_period_start);"
-            )
-        if "target_period_end" not in columns:
-            ddl.append("ALTER TABLE runs ADD COLUMN target_period_end DATETIME;")
-            index_ddl.append(
-                "CREATE INDEX IF NOT EXISTS ix_runs_target_period_end ON runs (target_period_end);"
-            )
-        if "requested_steps_json" not in columns:
-            ddl.append(
-                "ALTER TABLE runs ADD COLUMN requested_steps_json TEXT NOT NULL DEFAULT '[]';"
-            )
-        if "executed_steps_json" not in columns:
-            ddl.append(
-                "ALTER TABLE runs ADD COLUMN executed_steps_json TEXT NOT NULL DEFAULT '[]';"
-            )
-        if "skipped_steps_json" not in columns:
-            ddl.append(
-                "ALTER TABLE runs ADD COLUMN skipped_steps_json TEXT NOT NULL DEFAULT '[]';"
-            )
-        if "billing_by_step_json" not in columns:
-            ddl.append(
-                "ALTER TABLE runs ADD COLUMN billing_by_step_json TEXT NOT NULL DEFAULT '{}';"
-            )
-        if "source_diagnostics_json" not in columns:
-            ddl.append(
-                "ALTER TABLE runs ADD COLUMN source_diagnostics_json TEXT NOT NULL DEFAULT '{}';"
-            )
-        if "terminal_state" not in columns:
-            ddl.append("ALTER TABLE runs ADD COLUMN terminal_state VARCHAR(32);")
-            index_ddl.append(
-                "CREATE INDEX IF NOT EXISTS ix_runs_terminal_state ON runs (terminal_state);"
-            )
-
-        if not ddl and not index_ddl:
+        statements = _run_workflow_metadata_statements(columns)
+        if not statements:
             return
 
         with self.engine.begin() as conn:
-            for statement in ddl + index_ddl:
+            for statement in statements:
                 conn.execute(text(statement))
 
     def _migrate_runs_add_heartbeat(self) -> None:
@@ -285,3 +291,15 @@ class SchemaStoreMixin:
             return
         with self.engine.begin() as conn:
             conn.execute(text("DELETE FROM chunk_fts WHERE kind = 'meta'"))
+
+
+def _run_workflow_metadata_statements(columns: set[str]) -> list[str]:
+    ddl: list[str] = []
+    index_ddl: list[str] = []
+    for column_name, ddl_statement, index_statement in _RUN_WORKFLOW_METADATA_COLUMNS:
+        if column_name in columns:
+            continue
+        ddl.append(ddl_statement)
+        if index_statement is not None:
+            index_ddl.append(index_statement)
+    return ddl + index_ddl

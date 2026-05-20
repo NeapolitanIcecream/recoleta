@@ -341,6 +341,7 @@ def build_source_diagnostics_payload(
     _merge_stored_source_diagnostics(
         sources_payload=sources_payload,
         settings=settings,
+        repository=repository,
         run=run,
     )
     _finalize_source_payloads(sources_payload=sources_payload)
@@ -358,12 +359,10 @@ def _merge_stored_source_diagnostics(
     *,
     sources_payload: dict[str, dict[str, Any]],
     settings: Any | None,
+    repository: Any,
     run: Any,
 ) -> None:
-    try:
-        loaded = json.loads(str(getattr(run, "source_diagnostics_json", "") or "{}"))
-    except Exception:
-        return
+    loaded = _run_source_diagnostics(repository=repository, run=run)
     if not isinstance(loaded, dict):
         return
     stored_sources = loaded.get("sources")
@@ -386,6 +385,20 @@ def _merge_stored_source_diagnostics(
         entry["ingest"]["window_diagnostics"] = [
             dict(item) for item in window_diagnostics if isinstance(item, dict)
         ]
+
+
+def _run_source_diagnostics(*, repository: Any, run: Any) -> dict[str, Any] | None:
+    run_id = str(getattr(run, "id", "") or "").strip()
+    if run_id:
+        try:
+            return repository.get_run_source_diagnostics(run_id=run_id)
+        except AttributeError:
+            pass
+    try:
+        loaded = json.loads(str(getattr(run, "source_diagnostics_json", "") or "{}"))
+    except Exception:
+        return None
+    return loaded if isinstance(loaded, dict) else None
 
 
 def _freshness_run_entry(run: Run | None) -> dict[str, Any] | None:

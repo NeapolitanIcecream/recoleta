@@ -618,79 +618,132 @@ def _deploy_workflow_payload(
     )
 
 
+def _managed_workflow_blocked_payload(context: Any) -> dict[str, Any] | None:
+    blocked_payload = getattr(context, "blocked_payload", None)
+    return blocked_payload if isinstance(blocked_payload, dict) else None
+
+
+def _raise_blocked_managed_workflow(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    blocked_payload: dict[str, Any],
+) -> NoReturn:
+    cli._finish_run(
+        request.runtime.repository,
+        run_id=request.runtime.run_id,
+        success=False,
+        terminal_state=RUN_TERMINAL_STATE_FAILED,
+    )
+    _emit_blocked_managed_workflow(
+        request=request,
+        blocked_payload=blocked_payload,
+    )
+    raise cli.typer.Exit(code=1)
+
+
+def _emit_blocked_managed_workflow(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    blocked_payload: dict[str, Any],
+) -> None:
+    if bool(request.kwargs.get("json_output", False)):
+        if bool(request.kwargs.get("emit_output", True)):
+            cli._emit_json(blocked_payload)
+        return
+    if not bool(request.kwargs.get("emit_output", True)):
+        return
+    readiness = blocked_payload.get("arxiv_pool_readiness") or {}
+    request.runtime.console.print(
+        f"[yellow]{request.command} blocked[/yellow] "
+        f"arxiv_pool_windows={readiness.get('blocked_windows_total')}"
+    )
+
+
+def _execute_and_emit_managed_workflow(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    context: Any,
+) -> dict[str, Any]:
+    outcome = _execute_managed_workflow_loop(
+        request=_ManagedWorkflowLoopRequest(
+            runtime=request.runtime,
+            plan=context.plan,
+            execution_context=context.execution_context,
+            json_output=bool(request.kwargs.get("json_output", False)),
+            on_translate_failure=context.on_translate_failure,
+            failure_messages=request.failure_messages,
+        )
+    )
+    return _emit_workflow_payload(
+        request=_WorkflowPayloadRequest(
+            payload=request.payload_builder(context, outcome),
+            runtime=request.runtime,
+            command=request.command,
+            terminal_state=outcome.terminal_state,
+            executed_steps=outcome.executed_steps,
+            requested_steps=context.plan.requested_steps,
+            json_output=bool(request.kwargs.get("json_output", False)),
+            emit_output=bool(request.kwargs.get("emit_output", True)),
+        )
+    )
+
+
+def _handle_preloop_start_failure(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    loop_started: bool,
+    exc: BaseException,
+) -> None:
+    if loop_started:
+        return
+    if isinstance(exc, KeyboardInterrupt):
+        _handle_preloop_interrupt(
+            runtime=request.runtime,
+            exc=exc,
+            finish_message=request.failure_messages.interrupt_finish,
+            interrupt_message=request.failure_messages.interrupted,
+        )
+        return
+    if isinstance(exc, request.runtime.workspace_lease_lost_error):
+        _handle_preloop_lease_loss(
+            runtime=request.runtime,
+            exc=exc,
+            finish_message=request.failure_messages.lease_finish,
+            warning_message=request.failure_messages.lease_stopped,
+        )
+        return
+    if isinstance(exc, Exception):
+        _handle_preloop_exception(
+            runtime=request.runtime,
+            finish_message=request.failure_messages.exception_finish,
+            exception_message=request.failure_messages.exception_log,
+        )
+
+
 def _run_managed_workflow(
     request: _ManagedWorkflowRunRequest,
 ) -> dict[str, Any]:
     loop_started = False
     try:
         context = request.prepare_context()
-        blocked_payload = getattr(context, "blocked_payload", None)
-        if isinstance(blocked_payload, dict):
-            cli._finish_run(
-                request.runtime.repository,
-                run_id=request.runtime.run_id,
-                success=False,
-                terminal_state=RUN_TERMINAL_STATE_FAILED,
-            )
-            if bool(request.kwargs.get("json_output", False)):
-                if bool(request.kwargs.get("emit_output", True)):
-                    cli._emit_json(blocked_payload)
-            elif bool(request.kwargs.get("emit_output", True)):
-                readiness = blocked_payload.get("arxiv_pool_readiness") or {}
-                request.runtime.console.print(
-                    f"[yellow]{request.command} blocked[/yellow] "
-                    f"arxiv_pool_windows={readiness.get('blocked_windows_total')}"
-                )
+        blocked_payload = _managed_workflow_blocked_payload(context)
+        if blocked_payload is not None:
             loop_started = True
-            raise cli.typer.Exit(code=1)
+            _raise_blocked_managed_workflow(
+                request=request,
+                blocked_payload=blocked_payload,
+            )
         loop_started = True
-        outcome = _execute_managed_workflow_loop(
-            request=_ManagedWorkflowLoopRequest(
-                runtime=request.runtime,
-                plan=context.plan,
-                execution_context=context.execution_context,
-                json_output=bool(request.kwargs.get("json_output", False)),
-                on_translate_failure=context.on_translate_failure,
-                failure_messages=request.failure_messages,
-            )
+        return _execute_and_emit_managed_workflow(
+            request=request,
+            context=context,
         )
-        return _emit_workflow_payload(
-            request=_WorkflowPayloadRequest(
-                payload=request.payload_builder(context, outcome),
-                runtime=request.runtime,
-                command=request.command,
-                terminal_state=outcome.terminal_state,
-                executed_steps=outcome.executed_steps,
-                requested_steps=context.plan.requested_steps,
-                json_output=bool(request.kwargs.get("json_output", False)),
-                emit_output=bool(request.kwargs.get("emit_output", True)),
-            )
+    except (KeyboardInterrupt, Exception) as exc:
+        _handle_preloop_start_failure(
+            request=request,
+            loop_started=loop_started,
+            exc=exc,
         )
-    except KeyboardInterrupt as exc:
-        if not loop_started:
-            _handle_preloop_interrupt(
-                runtime=request.runtime,
-                exc=exc,
-                finish_message=request.failure_messages.interrupt_finish,
-                interrupt_message=request.failure_messages.interrupted,
-            )
-        raise
-    except request.runtime.workspace_lease_lost_error as exc:
-        if not loop_started:
-            _handle_preloop_lease_loss(
-                runtime=request.runtime,
-                exc=exc,
-                finish_message=request.failure_messages.lease_finish,
-                warning_message=request.failure_messages.lease_stopped,
-            )
-        raise
-    except Exception:
-        if not loop_started:
-            _handle_preloop_exception(
-                runtime=request.runtime,
-                finish_message=request.failure_messages.exception_finish,
-                exception_message=request.failure_messages.exception_log,
-            )
         raise
     finally:
         cli._cleanup_managed_run(
