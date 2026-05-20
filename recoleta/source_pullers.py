@@ -387,6 +387,14 @@ class _ArxivPoolPuller:
             period_end=request.period_end,
         )
         self.upper_bound = _source_pull_now() + timedelta(minutes=1)
+        from recoleta.arxiv_pool import ArxivPoolReadinessPolicy
+
+        self.readiness_policy = ArxivPoolReadinessPolicy(
+            maturity_lag_days=request.pool_maturity_lag_days,
+            readiness_gate=request.pool_readiness_gate,
+            allow_immature_windows=request.pool_allow_immature_windows,
+            now=self.upper_bound,
+        )
 
     def pull(self) -> list[ItemDraft] | SourcePullResult:
         if self.request.max_results_per_run <= 0:
@@ -428,6 +436,7 @@ class _ArxivPoolPuller:
 
         from recoleta.arxiv_pool import (
             ArxivPoolStore,
+            evaluate_arxiv_pool_window_readiness,
             pool_paper_to_item_draft,
         )
 
@@ -436,6 +445,23 @@ class _ArxivPoolPuller:
         emitted_total = 0
         complete = True
         for window in windows:
+            readiness = evaluate_arxiv_pool_window_readiness(
+                store=store,
+                window=window,
+                policy=self.readiness_policy,
+            )
+            if readiness.analysis_ready:
+                self._record_analysis_ready_window()
+            elif readiness.blocked_reason == "immature_window":
+                self._record_immature_window()
+                if not self.readiness_policy.allows_immature_windows:
+                    complete = False
+                    continue
+                self._record_immature_window_allowed()
+            else:
+                self._record_unavailable_window()
+                complete = False
+                continue
             papers = store.cached_papers_for_window(window)
             if papers is None:
                 self._record_unavailable_window()
@@ -566,6 +592,15 @@ class _ArxivPoolPuller:
 
     def _record_unavailable_window(self) -> None:
         self._increment_extra_metric("pool_window_unavailable_total", 1)
+
+    def _record_immature_window(self) -> None:
+        self._increment_extra_metric("pool_window_immature_total", 1)
+
+    def _record_immature_window_allowed(self) -> None:
+        self._increment_extra_metric("pool_window_immature_allowed_total", 1)
+
+    def _record_analysis_ready_window(self) -> None:
+        self._increment_extra_metric("pool_window_analysis_ready_total", 1)
 
     def _increment_extra_metric(self, key: str, value: int) -> None:
         self.stats.extra_metrics[key] = int(self.stats.extra_metrics.get(key) or 0) + int(

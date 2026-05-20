@@ -31,6 +31,7 @@ _ARXIV_RATE_STATE_NAME = "arxiv_api"
 _ARXIV_SYNC_LEASE_NAME = "arxiv_pool_sync"
 _ARXIV_POOL_SCHEMA_VERSION = 2
 _ARXIV_VERSION_RE = re.compile(r"v(?P<version>\d+)$")
+_ARXIV_POOL_READINESS_GATES = {"off", "warn", "strict"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,91 @@ class ArxivPoolWindowRecord:
     error_category: str | None
     error_message: str | None
     result_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ArxivPoolReadinessPolicy:
+    maturity_lag_days: int = 1
+    readiness_gate: str = "strict"
+    allow_immature_windows: bool = False
+    now: datetime | None = None
+
+    def __post_init__(self) -> None:
+        lag_days = max(0, int(self.maturity_lag_days))
+        gate = _normalize_readiness_gate(self.readiness_gate)
+        reference = _ensure_utc(self.now or _utc_now())
+        object.__setattr__(self, "maturity_lag_days", lag_days)
+        object.__setattr__(self, "readiness_gate", gate)
+        object.__setattr__(self, "now", reference)
+
+    @property
+    def maturity_cutoff(self) -> datetime | None:
+        if self.maturity_lag_days <= 0:
+            return None
+        assert self.now is not None
+        current_utc_day = datetime(
+            self.now.year,
+            self.now.month,
+            self.now.day,
+            tzinfo=UTC,
+        )
+        return current_utc_day - timedelta(days=self.maturity_lag_days - 1)
+
+    @property
+    def allows_immature_windows(self) -> bool:
+        return self.readiness_gate == "off" or bool(self.allow_immature_windows)
+
+    def is_mature(self, window: ArxivPoolWindow | ArxivPoolWindowRecord) -> bool:
+        cutoff = self.maturity_cutoff
+        if cutoff is None:
+            return True
+        return _ensure_utc(window.period_end) <= cutoff
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "timezone": "UTC",
+            "maturity_lag_days": self.maturity_lag_days,
+            "maturity_cutoff": _isoformat_or_none(self.maturity_cutoff),
+            "readiness_gate": self.readiness_gate,
+            "allow_immature_windows": bool(self.allow_immature_windows),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ArxivPoolWindowReadiness:
+    window: ArxivPoolWindow
+    record: ArxivPoolWindowRecord | None
+    cache_readable: bool
+    mature: bool
+    analysis_ready: bool
+    blocked_reason: str | None
+
+    @property
+    def status(self) -> str:
+        if self.record is None:
+            return "missing"
+        return self.record.status
+
+    @property
+    def unavailable(self) -> bool:
+        return (
+            not self.analysis_ready
+            and self.blocked_reason is not None
+            and self.blocked_reason != "immature_window"
+        )
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "query_text": self.window.query_text,
+            "period_start": self.window.period_start.isoformat(),
+            "period_end": self.window.period_end.isoformat(),
+            "max_results": self.window.max_results,
+            "status": self.status,
+            "cache_readable": self.cache_readable,
+            "mature": self.mature,
+            "analysis_ready": self.analysis_ready,
+            "blocked_reason": self.blocked_reason,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,6 +458,14 @@ class ArxivPoolStore:
             record is not None
             and record.status == "completed"
             and self.cached_papers_for_window(window) is not None
+        )
+
+    def is_window_cache_readable(
+        self, window: ArxivPoolWindow | ArxivPoolWindowRecord
+    ) -> bool:
+        return (
+            self.cached_papers_for_window(_window_from_record_or_window(window))
+            is not None
         )
 
     def cached_papers_for_window(
@@ -1815,6 +1909,101 @@ def resolve_arxiv_pool_db_path(settings: Any) -> Path:
     return Path(db_path).expanduser().resolve()
 
 
+def arxiv_pool_readiness_policy_from_settings(
+    settings: Any,
+    *,
+    now: datetime | None = None,
+) -> ArxivPoolReadinessPolicy:
+    pool = getattr(settings, "arxiv_pool", settings)
+    return ArxivPoolReadinessPolicy(
+        maturity_lag_days=int(getattr(pool, "maturity_lag_days", 1) or 0),
+        readiness_gate=str(getattr(pool, "readiness_gate", "strict") or "strict"),
+        allow_immature_windows=bool(
+            getattr(pool, "allow_immature_windows", False)
+        ),
+        now=now,
+    )
+
+
+def evaluate_arxiv_pool_window_readiness(
+    *,
+    store: ArxivPoolStore,
+    window: ArxivPoolWindow,
+    policy: ArxivPoolReadinessPolicy,
+) -> ArxivPoolWindowReadiness:
+    normalized_window = _normalize_window(window)
+    record = store.get_window(normalized_window)
+    cache_readable = (
+        record is not None
+        and record.status == "completed"
+        and store.is_window_cache_readable(normalized_window)
+    )
+    mature = policy.is_mature(normalized_window)
+    analysis_ready = bool(cache_readable and mature)
+    blocked_reason = _arxiv_pool_blocked_reason(
+        record=record,
+        cache_readable=cache_readable,
+        mature=mature,
+    )
+    return ArxivPoolWindowReadiness(
+        window=normalized_window,
+        record=record,
+        cache_readable=cache_readable,
+        mature=mature,
+        analysis_ready=analysis_ready,
+        blocked_reason=blocked_reason,
+    )
+
+
+def evaluate_arxiv_pool_readiness(
+    *,
+    store: ArxivPoolStore,
+    windows: list[ArxivPoolWindow],
+    policy: ArxivPoolReadinessPolicy,
+) -> dict[str, Any]:
+    window_readiness = [
+        evaluate_arxiv_pool_window_readiness(
+            store=store,
+            window=window,
+            policy=policy,
+        )
+        for window in windows
+    ]
+    immature_windows = [
+        readiness
+        for readiness in window_readiness
+        if readiness.blocked_reason == "immature_window"
+    ]
+    unavailable_windows = [
+        readiness for readiness in window_readiness if readiness.unavailable
+    ]
+    unsafe_override_total = (
+        len(immature_windows) if policy.allows_immature_windows else 0
+    )
+    blocked_windows_total = len(unavailable_windows) + (
+        0 if policy.allows_immature_windows else len(immature_windows)
+    )
+    if policy.readiness_gate == "off":
+        status = "disabled"
+    elif blocked_windows_total > 0:
+        status = "blocked"
+    else:
+        status = "ready"
+    return {
+        "status": status,
+        "windows_total": len(window_readiness),
+        "analysis_ready_windows_total": sum(
+            1 for readiness in window_readiness if readiness.analysis_ready
+        ),
+        "blocked_windows_total": blocked_windows_total,
+        "immature_windows_total": len(immature_windows),
+        "unavailable_windows_total": len(unavailable_windows),
+        "unsafe_override_windows_total": unsafe_override_total,
+        "maturity_policy": policy.as_payload(),
+        "windows": [readiness.as_payload() for readiness in window_readiness],
+    }
+
+
 def _normalize_window(window: ArxivPoolWindow) -> ArxivPoolWindow:
     return ArxivPoolWindow(
         query_text=normalize_arxiv_query(window.query_text),
@@ -1822,6 +2011,46 @@ def _normalize_window(window: ArxivPoolWindow) -> ArxivPoolWindow:
         period_end=_ensure_utc(window.period_end),
         max_results=max(1, int(window.max_results)),
     )
+
+
+def _window_from_record_or_window(
+    value: ArxivPoolWindow | ArxivPoolWindowRecord,
+) -> ArxivPoolWindow:
+    return ArxivPoolWindow(
+        query_text=value.query_text,
+        period_start=value.period_start,
+        period_end=value.period_end,
+        max_results=value.max_results,
+    )
+
+
+def _arxiv_pool_blocked_reason(
+    *,
+    record: ArxivPoolWindowRecord | None,
+    cache_readable: bool,
+    mature: bool,
+) -> str | None:
+    if record is None:
+        return "missing_window"
+    if not cache_readable:
+        status = str(record.status or "").strip().lower()
+        if status in {"rate_limited", "failed"}:
+            return f"{status}_window"
+        if status == "completed":
+            return "incomplete_cache"
+        return f"{status or 'unavailable'}_window"
+    if not mature:
+        return "immature_window"
+    return None
+
+
+def _normalize_readiness_gate(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return "strict"
+    if normalized not in _ARXIV_POOL_READINESS_GATES:
+        raise ValueError("ARXIV_POOL.readiness_gate must be one of: off, warn, strict")
+    return normalized
 
 
 def _arxiv_api_query_params(window: ArxivPoolWindow) -> dict[str, str]:

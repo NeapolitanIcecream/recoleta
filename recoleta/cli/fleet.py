@@ -42,7 +42,9 @@ from recoleta.arxiv_pool import (
     ArxivPoolSync,
     ArxivPoolSyncResult,
     ArxivPoolWindow,
+    arxiv_pool_readiness_policy_from_settings,
     build_arxiv_pool_windows_for_period,
+    evaluate_arxiv_pool_readiness,
     resolve_arxiv_pool_db_path,
 )
 from recoleta.storage import Repository
@@ -120,6 +122,9 @@ class FleetArxivPoolPreSyncPlan:
     windows: list[ArxivPoolWindow]
     request_interval_seconds: float = 5.0
     cooldown_seconds: int = 3600
+    maturity_lag_days: int = 1
+    readiness_gate: str = "strict"
+    allow_immature_windows: bool = False
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -129,6 +134,9 @@ class FleetArxivPoolPreSyncPlan:
             "windows_total": len(self.windows),
             "request_interval_seconds": self.request_interval_seconds,
             "cooldown_seconds": self.cooldown_seconds,
+            "maturity_lag_days": self.maturity_lag_days,
+            "readiness_gate": self.readiness_gate,
+            "allow_immature_windows": self.allow_immature_windows,
         }
 
 
@@ -417,6 +425,7 @@ def execute_fleet_granularity_workflow(
         skip_steps=skip_steps,
     )
     arxiv_pool_payload: dict[str, Any] = arxiv_pool_plan.as_payload()
+    arxiv_pool_readiness_payload: dict[str, Any] | None = None
     if arxiv_pool_plan.status == "planned":
         sync_result = run_fleet_arxiv_pool_pre_sync(arxiv_pool_plan)
         arxiv_pool_payload = {
@@ -424,6 +433,33 @@ def execute_fleet_granularity_workflow(
             "status": "completed",
             "sync": sync_result.as_payload(),
         }
+        arxiv_pool_readiness_payload = evaluate_fleet_arxiv_pool_readiness(
+            arxiv_pool_plan
+        )
+        arxiv_pool_payload["readiness"] = arxiv_pool_readiness_payload
+        if _fleet_arxiv_pool_readiness_should_block(
+            arxiv_pool_plan,
+            arxiv_pool_readiness_payload,
+        ):
+            payload = {
+                "status": "blocked",
+                "command": command,
+                "manifest_path": str(manifest.manifest_path),
+                "workflow_name": workflow_name,
+                "arxiv_pool_pre_sync": arxiv_pool_payload,
+                "arxiv_pool_readiness": arxiv_pool_readiness_payload,
+                "children": [],
+            }
+            if json_output:
+                cli._emit_json(payload)
+            else:
+                console = cli._runtime_symbols()["Console"]()
+                console.print(
+                    f"[yellow]{command} blocked[/yellow] "
+                    f"arxiv_pool_windows="
+                    f"{arxiv_pool_readiness_payload['blocked_windows_total']}"
+                )
+            raise cli.typer.Exit(code=1)
     children = [
         _fleet_granularity_child_payload(
             request=FleetGranularityChildRequest(
@@ -443,6 +479,7 @@ def execute_fleet_granularity_workflow(
         "manifest_path": str(manifest.manifest_path),
         "workflow_name": workflow_name,
         "arxiv_pool_pre_sync": arxiv_pool_payload,
+        "arxiv_pool_readiness": arxiv_pool_readiness_payload,
         "children": children,
     }
     if json_output:
@@ -483,6 +520,7 @@ def build_fleet_arxiv_pool_pre_sync_plan(
         anchor_date=anchor_date,
     )
     pool_settings = arxiv_settings[0].arxiv_pool
+    readiness_policy = arxiv_pool_readiness_policy_from_settings(arxiv_settings[0])
     return FleetArxivPoolPreSyncPlan(
         status="planned",
         reason=None,
@@ -490,6 +528,9 @@ def build_fleet_arxiv_pool_pre_sync_plan(
         windows=windows,
         request_interval_seconds=float(pool_settings.request_interval_seconds),
         cooldown_seconds=int(pool_settings.cooldown_seconds),
+        maturity_lag_days=readiness_policy.maturity_lag_days,
+        readiness_gate=readiness_policy.readiness_gate,
+        allow_immature_windows=readiness_policy.allow_immature_windows,
     )
 
 
@@ -578,6 +619,51 @@ def run_fleet_arxiv_pool_pre_sync(
         request_interval_seconds=plan.request_interval_seconds,
         cooldown_seconds=plan.cooldown_seconds,
     ).sync_windows(plan.windows)
+
+
+def evaluate_fleet_arxiv_pool_readiness(
+    plan: FleetArxivPoolPreSyncPlan,
+) -> dict[str, Any]:
+    if plan.pool_db_path is None:
+        return {
+            "status": "skipped",
+            "reason": plan.reason,
+            "windows_total": 0,
+            "analysis_ready_windows_total": 0,
+            "blocked_windows_total": 0,
+            "immature_windows_total": 0,
+            "unavailable_windows_total": 0,
+            "unsafe_override_windows_total": 0,
+            "maturity_policy": {
+                "timezone": "UTC",
+                "maturity_lag_days": plan.maturity_lag_days,
+                "maturity_cutoff": None,
+                "readiness_gate": plan.readiness_gate,
+                "allow_immature_windows": plan.allow_immature_windows,
+            },
+            "windows": [],
+        }
+    from recoleta.arxiv_pool import ArxivPoolReadinessPolicy
+
+    policy = ArxivPoolReadinessPolicy(
+        maturity_lag_days=plan.maturity_lag_days,
+        readiness_gate=plan.readiness_gate,
+        allow_immature_windows=plan.allow_immature_windows,
+    )
+    return evaluate_arxiv_pool_readiness(
+        store=ArxivPoolStore(plan.pool_db_path),
+        windows=plan.windows,
+        policy=policy,
+    )
+
+
+def _fleet_arxiv_pool_readiness_should_block(
+    plan: FleetArxivPoolPreSyncPlan,
+    readiness: dict[str, Any],
+) -> bool:
+    if plan.readiness_gate != "strict":
+        return False
+    return int(readiness.get("blocked_windows_total") or 0) > 0
 
 
 def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:

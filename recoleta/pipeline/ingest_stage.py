@@ -432,6 +432,7 @@ class _SourcePullRunner:
             from recoleta.arxiv_pool import resolve_arxiv_pool_db_path
 
             pool_db_path = resolve_arxiv_pool_db_path(self.service.settings)
+        pool_settings = self.service.settings.arxiv_pool
         source_request = sources.ArxivPullRequest(
             queries=arxiv_queries,
             max_results_per_run=settings.max_results_per_run,
@@ -442,6 +443,11 @@ class _SourcePullRunner:
             include_stats=True,
             mode=mode,
             pool_db_path=pool_db_path,
+            pool_maturity_lag_days=int(pool_settings.maturity_lag_days),
+            pool_readiness_gate=str(pool_settings.readiness_gate),
+            pool_allow_immature_windows=bool(
+                pool_settings.allow_immature_windows
+            ),
         )
         return (
             "arxiv",
@@ -457,6 +463,9 @@ class _SourcePullRunner:
                 "include_stats": source_request.include_stats,
                 "mode": source_request.mode,
                 "pool_db_path": source_request.pool_db_path,
+                "pool_maturity_lag_days": source_request.pool_maturity_lag_days,
+                "pool_readiness_gate": source_request.pool_readiness_gate,
+                "pool_allow_immature_windows": source_request.pool_allow_immature_windows,
             },
         )
 
@@ -615,6 +624,9 @@ def _ensure_source_pull_bucket(
             "updated_total": 0,
             "pool_drafts_total": 0,
             "pool_window_unavailable_total": 0,
+            "pool_window_immature_total": 0,
+            "pool_window_immature_allowed_total": 0,
+            "pool_window_analysis_ready_total": 0,
         }
         source_stats[normalized] = bucket
     return bucket
@@ -659,6 +671,9 @@ def _record_source_pull_metrics(
         ("updated_total", "count"),
         ("pool_drafts_total", "count"),
         ("pool_window_unavailable_total", "count"),
+        ("pool_window_immature_total", "count"),
+        ("pool_window_immature_allowed_total", "count"),
+        ("pool_window_analysis_ready_total", "count"),
     )
     for key, unit in metric_names:
         repository.record_metric(

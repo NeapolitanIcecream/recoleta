@@ -87,6 +87,9 @@ class ArxivPullRequest:
     include_stats: bool = False
     mode: str = "direct"
     pool_db_path: Path | None = None
+    pool_maturity_lag_days: int = 1
+    pool_readiness_gate: str = "strict"
+    pool_allow_immature_windows: bool = False
 
 
 @dataclass(slots=True, frozen=True)
