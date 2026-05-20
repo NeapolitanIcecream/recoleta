@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any
 
 import recoleta.cli as cli
+from recoleta.cli.arxiv_pool_readiness import (
+    arxiv_pool_workflow_readiness_should_block,
+    build_arxiv_pool_workflow_readiness_plan,
+    evaluate_arxiv_pool_workflow_readiness,
+)
 from recoleta.cli.command_support import emit_command_error
 from recoleta.cli.email import (
     _parse_anchor_or_exit,
@@ -24,7 +29,6 @@ from recoleta.cli.site_support import (
 )
 from recoleta.cli.translate import run_translate_run_command
 from recoleta.cli.workflows import (
-    STEP_ANALYZE,
     STEP_INGEST,
     STEP_TRANSLATE,
     _parse_step_list,
@@ -51,6 +55,8 @@ from recoleta.arxiv_pool import (
 )
 from recoleta.storage import Repository
 from recoleta.cli.workflow_runner import (
+    GranularityPlanRequest,
+    build_granularity_plan,
     normalize_anchor_date,
     period_bounds_for_granularity,
 )
@@ -421,6 +427,27 @@ def execute_fleet_granularity_workflow(
         skip_steps=skip_steps,
     )
     manifest = load_fleet_manifest(manifest_path)
+    child_settings = [
+        load_child_settings(instance.config_path) for instance in manifest.instances
+    ]
+    target_period_start, target_period_end = _fleet_granularity_target_period(
+        workflow_name=workflow_name,
+        anchor_date=anchor_date,
+    )
+    requested_steps = _fleet_granularity_requested_steps(
+        settings_list=child_settings,
+        workflow_name=workflow_name,
+        command=command,
+        anchor_date=anchor_date,
+        include_steps=include_steps,
+        skip_steps=skip_steps,
+    )
+    arxiv_pool_readiness_plan = build_arxiv_pool_workflow_readiness_plan(
+        settings_list=child_settings,
+        target_period_start=target_period_start,
+        target_period_end=target_period_end,
+        requested_steps=requested_steps,
+    )
     arxiv_pool_plan = build_fleet_arxiv_pool_pre_sync_plan(
         manifest_path=manifest.manifest_path,
         workflow_name=workflow_name,
@@ -437,34 +464,42 @@ def execute_fleet_granularity_workflow(
             "status": "completed",
             "sync": sync_result.as_payload(),
         }
-        arxiv_pool_readiness_payload = evaluate_fleet_arxiv_pool_readiness(
-            arxiv_pool_plan
+        if arxiv_pool_readiness_plan.status == "planned":
+            arxiv_pool_readiness_payload = evaluate_arxiv_pool_workflow_readiness(
+                arxiv_pool_readiness_plan
+            )
+            arxiv_pool_payload["readiness"] = arxiv_pool_readiness_payload
+    elif arxiv_pool_readiness_plan.status == "planned":
+        arxiv_pool_readiness_payload = evaluate_arxiv_pool_workflow_readiness(
+            arxiv_pool_readiness_plan
         )
-        arxiv_pool_payload["readiness"] = arxiv_pool_readiness_payload
-        if _fleet_arxiv_pool_readiness_should_block(
-            arxiv_pool_plan,
+    if (
+        arxiv_pool_readiness_payload is not None
+        and arxiv_pool_workflow_readiness_should_block(
+            arxiv_pool_readiness_plan,
             arxiv_pool_readiness_payload,
-            analysis_requested=STEP_ANALYZE not in set(skip_steps),
-        ):
-            payload = {
-                "status": "blocked",
-                "command": command,
-                "manifest_path": str(manifest.manifest_path),
-                "workflow_name": workflow_name,
-                "arxiv_pool_pre_sync": arxiv_pool_payload,
-                "arxiv_pool_readiness": arxiv_pool_readiness_payload,
-                "children": [],
-            }
-            if json_output:
-                cli._emit_json(payload)
-            else:
-                console = cli._runtime_symbols()["Console"]()
-                console.print(
-                    f"[yellow]{command} blocked[/yellow] "
-                    f"arxiv_pool_windows="
-                    f"{arxiv_pool_readiness_payload['blocked_windows_total']}"
-                )
-            raise cli.typer.Exit(code=1)
+        )
+    ):
+        payload = {
+            "status": "blocked",
+            "command": command,
+            "manifest_path": str(manifest.manifest_path),
+            "workflow_name": workflow_name,
+            "requested_steps": requested_steps,
+            "arxiv_pool_pre_sync": arxiv_pool_payload,
+            "arxiv_pool_readiness": arxiv_pool_readiness_payload,
+            "children": [],
+        }
+        if json_output:
+            cli._emit_json(payload)
+        else:
+            console = cli._runtime_symbols()["Console"]()
+            console.print(
+                f"[yellow]{command} blocked[/yellow] "
+                f"arxiv_pool_windows="
+                f"{arxiv_pool_readiness_payload['blocked_windows_total']}"
+            )
+        raise cli.typer.Exit(code=1)
     children = [
         _fleet_granularity_child_payload(
             request=FleetGranularityChildRequest(
@@ -496,6 +531,44 @@ def execute_fleet_granularity_workflow(
         f"instances={len(children)} workflow={workflow_name}"
     )
     return payload
+
+
+def _fleet_granularity_target_period(
+    *, workflow_name: str, anchor_date: str | None
+) -> tuple[Any, Any]:
+    normalized_workflow = _fleet_arxiv_pool_workflow_name(workflow_name) or workflow_name
+    anchor = normalize_anchor_date(anchor_date, workflow_name=normalized_workflow)
+    return period_bounds_for_granularity(
+        granularity=normalized_workflow,
+        anchor=anchor,
+    )
+
+
+def _fleet_granularity_requested_steps(
+    *,
+    settings_list: list[Any],
+    workflow_name: str,
+    command: str,
+    anchor_date: str | None,
+    include_steps: list[str],
+    skip_steps: list[str],
+) -> list[str]:
+    requested_steps: list[str] = []
+    for settings in settings_list:
+        plan = build_granularity_plan(
+            request=GranularityPlanRequest(
+                workflow_name=workflow_name,
+                command=command,
+                anchor_date=anchor_date,
+                settings=settings,
+                include_steps=include_steps,
+                skip_steps=skip_steps,
+            )
+        )
+        for step_id in plan.requested_steps:
+            if step_id not in requested_steps:
+                requested_steps.append(step_id)
+    return requested_steps
 
 
 def build_fleet_arxiv_pool_pre_sync_plan(

@@ -53,6 +53,7 @@ class Run(SQLModel, table=True):
     executed_steps_json: str = Field(default="[]", sa_type=Text)
     skipped_steps_json: str = Field(default="[]", sa_type=Text)
     billing_by_step_json: str = Field(default="{}", sa_type=Text)
+    source_diagnostics_json: str = Field(default="{}", sa_type=Text)
     terminal_state: str | None = Field(default=None, max_length=32, index=True)
     config_fingerprint: str = Field(max_length=128)
 

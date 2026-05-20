@@ -489,6 +489,7 @@ class _ArxivPoolPuller:
             window=window,
             policy=self.readiness_policy,
         )
+        self._record_window_readiness_diagnostic(readiness)
         if readiness.analysis_ready:
             self._record_analysis_ready_window()
             return True
@@ -652,6 +653,26 @@ class _ArxivPoolPuller:
 
     def _record_analysis_ready_window(self) -> None:
         self._increment_extra_metric("pool_window_analysis_ready_total", 1)
+
+    def _record_window_readiness_diagnostic(self, readiness: Any) -> None:
+        payload = readiness.as_payload()
+        self.stats.diagnostics.append(
+            {
+                "source": "arxiv",
+                "kind": "pool_window_readiness",
+                "query_text": payload["query_text"],
+                "period_start": payload["period_start"],
+                "period_end": payload["period_end"],
+                "max_results": payload["max_results"],
+                "record_status": payload["status"],
+                "cache_readable": payload["cache_readable"],
+                "mature": payload["mature"],
+                "analysis_ready": payload["analysis_ready"],
+                "blocked_reason": payload["blocked_reason"],
+                "readiness_gate": self.readiness_policy.readiness_gate,
+                "allow_immature_windows": self.readiness_policy.allow_immature_windows,
+            }
+        )
 
     def _increment_extra_metric(self, key: str, value: int) -> None:
         self.stats.extra_metrics[key] = int(self.stats.extra_metrics.get(key) or 0) + int(

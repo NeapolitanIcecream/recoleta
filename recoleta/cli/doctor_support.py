@@ -91,6 +91,11 @@ def _default_source_diagnostic_entry(*, enabled: bool | None) -> dict[str, Any]:
             "newest_published_at": None,
             "inserted_total": 0,
             "updated_total": 0,
+            "pool_drafts_total": 0,
+            "pool_window_unavailable_total": 0,
+            "pool_window_immature_total": 0,
+            "pool_window_immature_allowed_total": 0,
+            "pool_window_analysis_ready_total": 0,
         },
         "enrich": {
             "processed_total": 0,
@@ -333,6 +338,11 @@ def build_source_diagnostics_payload(
             settings=settings,
             metric=metric,
         )
+    _merge_stored_source_diagnostics(
+        sources_payload=sources_payload,
+        settings=settings,
+        run=run,
+    )
     _finalize_source_payloads(sources_payload=sources_payload)
     started_at = cli._normalize_utc_datetime(getattr(run, "started_at", None))
     return {
@@ -342,6 +352,40 @@ def build_source_diagnostics_payload(
         "age_seconds": _age_seconds(reference_now, started_at),
         "sources": sources_payload,
     }
+
+
+def _merge_stored_source_diagnostics(
+    *,
+    sources_payload: dict[str, dict[str, Any]],
+    settings: Any | None,
+    run: Any,
+) -> None:
+    try:
+        loaded = json.loads(str(getattr(run, "source_diagnostics_json", "") or "{}"))
+    except Exception:
+        return
+    if not isinstance(loaded, dict):
+        return
+    stored_sources = loaded.get("sources")
+    if not isinstance(stored_sources, dict):
+        return
+    for source_name, source_payload in stored_sources.items():
+        if not isinstance(source_payload, dict):
+            continue
+        stored_ingest = source_payload.get("ingest")
+        if not isinstance(stored_ingest, dict):
+            continue
+        window_diagnostics = stored_ingest.get("window_diagnostics")
+        if not isinstance(window_diagnostics, list):
+            continue
+        entry = _source_entry(
+            sources_payload=sources_payload,
+            settings=settings,
+            source_name=str(source_name),
+        )
+        entry["ingest"]["window_diagnostics"] = [
+            dict(item) for item in window_diagnostics if isinstance(item, dict)
+        ]
 
 
 def _freshness_run_entry(run: Run | None) -> dict[str, Any] | None:

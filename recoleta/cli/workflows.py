@@ -5,6 +5,11 @@ from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
 import recoleta.cli as cli
+from recoleta.cli.arxiv_pool_readiness import (
+    arxiv_pool_workflow_readiness_should_block,
+    build_arxiv_pool_workflow_readiness_plan,
+    evaluate_arxiv_pool_workflow_readiness,
+)
 from recoleta.cli import workflow_models as _workflow_models
 from recoleta.cli.workflow_models import WorkflowExecutionContext
 from recoleta.cli.workflow_runner import (
@@ -25,6 +30,7 @@ from recoleta.cli.workflow_runner import (
     validate_step_overrides as _validate_step_overrides,
     deploy_workflow_payload,
 )
+from recoleta.models import RUN_TERMINAL_STATE_FAILED
 
 STEP_INGEST = _workflow_models.STEP_INGEST
 STEP_ANALYZE = _workflow_models.STEP_ANALYZE
@@ -119,6 +125,8 @@ class _GranularityWorkflowContext:
     plan: Any
     execution_context: WorkflowExecutionContext
     on_translate_failure: str
+    arxiv_pool_readiness: dict[str, Any] | None = None
+    blocked_payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -430,10 +438,22 @@ def _granularity_workflow_context(
         pages_config="auto",
         force=True,
     )
+    arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
+        settings=request.runtime.settings,
+        plan=plan,
+    )
+    blocked_payload = _granularity_arxiv_pool_blocked_payload(
+        command=request.command,
+        run_id=request.runtime.run_id,
+        plan=plan,
+        readiness=arxiv_pool_readiness,
+    )
     return _GranularityWorkflowContext(
         plan=plan,
         execution_context=execution_context,
         on_translate_failure=str(policy.on_translate_failure or "fail"),
+        arxiv_pool_readiness=arxiv_pool_readiness,
+        blocked_payload=blocked_payload,
     )
 
 
@@ -443,6 +463,7 @@ def _granularity_workflow_payload(
     runtime: _ManagedWorkflowRuntime,
     plan: Any,
     outcome: _WorkflowLoopOutcome,
+    arxiv_pool_readiness: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return granularity_workflow_payload(
         context=WorkflowPayloadContext(
@@ -454,8 +475,72 @@ def _granularity_workflow_payload(
             billing_metrics_by_step=outcome.billing_metrics_by_step,
             terminal_state=outcome.terminal_state,
             step_results=outcome.step_results,
+            arxiv_pool_readiness=_public_arxiv_pool_readiness(
+                arxiv_pool_readiness
+            ),
         )
     )
+
+
+def _public_arxiv_pool_readiness(
+    readiness: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if readiness is None:
+        return None
+    return {
+        key: value
+        for key, value in readiness.items()
+        if key != "_workflow_readiness_plan"
+    }
+
+
+def _evaluate_granularity_arxiv_pool_readiness(
+    *,
+    settings: Any,
+    plan: Any,
+) -> dict[str, Any] | None:
+    readiness_plan = build_arxiv_pool_workflow_readiness_plan(
+        settings_list=[settings],
+        target_period_start=plan.target_period_start,
+        target_period_end=plan.target_period_end,
+        requested_steps=list(plan.requested_steps),
+    )
+    if readiness_plan.status != "planned":
+        return None
+    readiness = evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+    return {
+        **readiness,
+        "_workflow_readiness_plan": readiness_plan,
+    }
+
+
+def _granularity_arxiv_pool_blocked_payload(
+    *,
+    command: str,
+    run_id: str,
+    plan: Any,
+    readiness: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if readiness is None:
+        return None
+    readiness_plan = readiness.get("_workflow_readiness_plan")
+    if readiness_plan is None:
+        return None
+    if not arxiv_pool_workflow_readiness_should_block(readiness_plan, readiness):
+        return None
+    payload_readiness = _public_arxiv_pool_readiness(readiness) or {}
+    return {
+        "status": "blocked",
+        "command": command,
+        "run_id": run_id,
+        "operation_kind": plan.operation_kind,
+        "target_granularity": plan.target_granularity,
+        "target_period_start": cli._isoformat_or_none(plan.target_period_start),
+        "target_period_end": cli._isoformat_or_none(plan.target_period_end),
+        "requested_steps": plan.requested_steps,
+        "skipped_steps": plan.skipped_steps,
+        "arxiv_pool_readiness": payload_readiness,
+    }
 
 
 def _deploy_workflow_context(
@@ -539,6 +624,25 @@ def _run_managed_workflow(
     loop_started = False
     try:
         context = request.prepare_context()
+        blocked_payload = getattr(context, "blocked_payload", None)
+        if isinstance(blocked_payload, dict):
+            cli._finish_run(
+                request.runtime.repository,
+                run_id=request.runtime.run_id,
+                success=False,
+                terminal_state=RUN_TERMINAL_STATE_FAILED,
+            )
+            if bool(request.kwargs.get("json_output", False)):
+                if bool(request.kwargs.get("emit_output", True)):
+                    cli._emit_json(blocked_payload)
+            elif bool(request.kwargs.get("emit_output", True)):
+                readiness = blocked_payload.get("arxiv_pool_readiness") or {}
+                request.runtime.console.print(
+                    f"[yellow]{request.command} blocked[/yellow] "
+                    f"arxiv_pool_windows={readiness.get('blocked_windows_total')}"
+                )
+            loop_started = True
+            raise cli.typer.Exit(code=1)
         loop_started = True
         outcome = _execute_managed_workflow_loop(
             request=_ManagedWorkflowLoopRequest(
@@ -686,6 +790,7 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                 runtime=runtime,
                 plan=context.plan,
                 outcome=outcome,
+                arxiv_pool_readiness=context.arxiv_pool_readiness,
             ),
             failure_messages=_GRANULARITY_FAILURE_MESSAGES,
         )

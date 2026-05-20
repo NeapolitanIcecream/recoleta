@@ -176,6 +176,10 @@ class SchemaStoreMixin:
             ddl.append(
                 "ALTER TABLE runs ADD COLUMN billing_by_step_json TEXT NOT NULL DEFAULT '{}';"
             )
+        if "source_diagnostics_json" not in columns:
+            ddl.append(
+                "ALTER TABLE runs ADD COLUMN source_diagnostics_json TEXT NOT NULL DEFAULT '{}';"
+            )
         if "terminal_state" not in columns:
             ddl.append("ALTER TABLE runs ADD COLUMN terminal_state VARCHAR(32);")
             index_ddl.append(
