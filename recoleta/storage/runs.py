@@ -97,6 +97,35 @@ class RunStoreMixin:
             session.add(run)
             self._commit(session)
 
+    def get_run_source_diagnostics(self, *, run_id: str) -> dict[str, Any]:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            return {}
+        with Session(self.engine) as session:
+            run = session.get(Run, normalized_run_id)
+            if run is None:
+                return {}
+            return _source_diagnostics_payload(run.source_diagnostics_json)
+
+    def merge_run_source_diagnostics(
+        self,
+        *,
+        run_id: str,
+        diagnostics: list[dict[str, Any]],
+    ) -> None:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id or not diagnostics:
+            return
+        with Session(self.engine) as session:
+            run = session.get(Run, normalized_run_id)
+            if run is None:
+                return
+            payload = _source_diagnostics_payload(run.source_diagnostics_json)
+            _merge_window_diagnostics(payload=payload, diagnostics=diagnostics)
+            run.source_diagnostics_json = _normalized_json(payload) or "{}"
+            session.add(run)
+            self._commit(session)
+
     def heartbeat_run(self, run_id: str, *, now: datetime | None = None) -> None:
         heartbeat_at = now or utc_now()
         statement = text(
@@ -236,6 +265,91 @@ def _normalized_json(value: Any) -> str | None:
         if value is not None
         else None
     )
+
+
+def _source_diagnostics_payload(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {"sources": {}}
+    try:
+        loaded = json.loads(value)
+    except Exception:
+        return {"sources": {}}
+    if not isinstance(loaded, dict):
+        return {"sources": {}}
+    sources = loaded.get("sources")
+    if not isinstance(sources, dict):
+        loaded["sources"] = {}
+    return loaded
+
+
+def _merge_window_diagnostics(
+    *, payload: dict[str, Any], diagnostics: list[dict[str, Any]]
+) -> None:
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, dict):
+            continue
+        if str(diagnostic.get("kind") or "") != "pool_window_readiness":
+            continue
+        source_name = str(diagnostic.get("source") or "").strip().lower()
+        if not source_name:
+            source_name = "unknown"
+        sources = payload.setdefault("sources", {})
+        if not isinstance(sources, dict):
+            sources = {}
+            payload["sources"] = sources
+        source_payload = sources.setdefault(source_name, {})
+        if not isinstance(source_payload, dict):
+            source_payload = {}
+            sources[source_name] = source_payload
+        ingest_payload = source_payload.setdefault("ingest", {})
+        if not isinstance(ingest_payload, dict):
+            ingest_payload = {}
+            source_payload["ingest"] = ingest_payload
+        _upsert_window_diagnostic(
+            ingest_payload=ingest_payload,
+            diagnostic=dict(diagnostic),
+        )
+
+
+def _upsert_window_diagnostic(
+    *, ingest_payload: dict[str, Any], diagnostic: dict[str, Any]
+) -> None:
+    existing = ingest_payload.get("window_diagnostics")
+    existing_entries = existing if isinstance(existing, list) else []
+    by_key: dict[tuple[str, str, str, str, str, int], dict[str, Any]] = {}
+    order: list[tuple[str, str, str, str, str, int]] = []
+    for entry in existing_entries:
+        if not isinstance(entry, dict):
+            continue
+        key = _window_diagnostic_identity(entry)
+        if key is None:
+            continue
+        if key not in by_key:
+            order.append(key)
+        by_key[key] = dict(entry)
+    key = _window_diagnostic_identity(diagnostic)
+    if key is None:
+        return
+    if key not in by_key:
+        order.append(key)
+    by_key[key] = diagnostic
+    ingest_payload["window_diagnostics"] = [by_key[key] for key in order]
+
+
+def _window_diagnostic_identity(
+    entry: dict[str, Any],
+) -> tuple[str, str, str, str, str, int] | None:
+    try:
+        return (
+            str(entry["source"]),
+            str(entry["kind"]),
+            str(entry["query_text"]),
+            str(entry["period_start"]),
+            str(entry["period_end"]),
+            int(entry["max_results"]),
+        )
+    except Exception:
+        return None
 
 
 def coerce_update_run_context_request(

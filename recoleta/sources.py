@@ -56,6 +56,7 @@ class SourcePullResult:
     newest_published_at: datetime | None = None
     state_updates: list[SourcePullStateUpdate] = field(default_factory=list)
     extra_metrics: dict[str, int] = field(default_factory=dict)
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     def __iter__(self) -> Iterator[ItemDraft]:
         return iter(self.drafts)

@@ -5,6 +5,11 @@ from dataclasses import dataclass, field
 from typing import Any, NoReturn
 
 import recoleta.cli as cli
+from recoleta.cli.arxiv_pool_readiness import (
+    arxiv_pool_workflow_readiness_should_block,
+    build_arxiv_pool_workflow_readiness_plan,
+    evaluate_arxiv_pool_workflow_readiness,
+)
 from recoleta.cli import workflow_models as _workflow_models
 from recoleta.cli.workflow_models import WorkflowExecutionContext
 from recoleta.cli.workflow_runner import (
@@ -25,6 +30,7 @@ from recoleta.cli.workflow_runner import (
     validate_step_overrides as _validate_step_overrides,
     deploy_workflow_payload,
 )
+from recoleta.models import RUN_TERMINAL_STATE_FAILED
 
 STEP_INGEST = _workflow_models.STEP_INGEST
 STEP_ANALYZE = _workflow_models.STEP_ANALYZE
@@ -119,6 +125,8 @@ class _GranularityWorkflowContext:
     plan: Any
     execution_context: WorkflowExecutionContext
     on_translate_failure: str
+    arxiv_pool_readiness: dict[str, Any] | None = None
+    blocked_payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -430,10 +438,22 @@ def _granularity_workflow_context(
         pages_config="auto",
         force=True,
     )
+    arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
+        settings=request.runtime.settings,
+        plan=plan,
+    )
+    blocked_payload = _granularity_arxiv_pool_blocked_payload(
+        command=request.command,
+        run_id=request.runtime.run_id,
+        plan=plan,
+        readiness=arxiv_pool_readiness,
+    )
     return _GranularityWorkflowContext(
         plan=plan,
         execution_context=execution_context,
         on_translate_failure=str(policy.on_translate_failure or "fail"),
+        arxiv_pool_readiness=arxiv_pool_readiness,
+        blocked_payload=blocked_payload,
     )
 
 
@@ -443,6 +463,7 @@ def _granularity_workflow_payload(
     runtime: _ManagedWorkflowRuntime,
     plan: Any,
     outcome: _WorkflowLoopOutcome,
+    arxiv_pool_readiness: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return granularity_workflow_payload(
         context=WorkflowPayloadContext(
@@ -454,8 +475,72 @@ def _granularity_workflow_payload(
             billing_metrics_by_step=outcome.billing_metrics_by_step,
             terminal_state=outcome.terminal_state,
             step_results=outcome.step_results,
+            arxiv_pool_readiness=_public_arxiv_pool_readiness(
+                arxiv_pool_readiness
+            ),
         )
     )
+
+
+def _public_arxiv_pool_readiness(
+    readiness: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if readiness is None:
+        return None
+    return {
+        key: value
+        for key, value in readiness.items()
+        if key != "_workflow_readiness_plan"
+    }
+
+
+def _evaluate_granularity_arxiv_pool_readiness(
+    *,
+    settings: Any,
+    plan: Any,
+) -> dict[str, Any] | None:
+    readiness_plan = build_arxiv_pool_workflow_readiness_plan(
+        settings_list=[settings],
+        target_period_start=plan.target_period_start,
+        target_period_end=plan.target_period_end,
+        requested_steps=list(plan.requested_steps),
+    )
+    if readiness_plan.status != "planned":
+        return None
+    readiness = evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+    return {
+        **readiness,
+        "_workflow_readiness_plan": readiness_plan,
+    }
+
+
+def _granularity_arxiv_pool_blocked_payload(
+    *,
+    command: str,
+    run_id: str,
+    plan: Any,
+    readiness: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if readiness is None:
+        return None
+    readiness_plan = readiness.get("_workflow_readiness_plan")
+    if readiness_plan is None:
+        return None
+    if not arxiv_pool_workflow_readiness_should_block(readiness_plan, readiness):
+        return None
+    payload_readiness = _public_arxiv_pool_readiness(readiness) or {}
+    return {
+        "status": "blocked",
+        "command": command,
+        "run_id": run_id,
+        "operation_kind": plan.operation_kind,
+        "target_granularity": plan.target_granularity,
+        "target_period_start": cli._isoformat_or_none(plan.target_period_start),
+        "target_period_end": cli._isoformat_or_none(plan.target_period_end),
+        "requested_steps": plan.requested_steps,
+        "skipped_steps": plan.skipped_steps,
+        "arxiv_pool_readiness": payload_readiness,
+    }
 
 
 def _deploy_workflow_context(
@@ -533,60 +618,132 @@ def _deploy_workflow_payload(
     )
 
 
+def _managed_workflow_blocked_payload(context: Any) -> dict[str, Any] | None:
+    blocked_payload = getattr(context, "blocked_payload", None)
+    return blocked_payload if isinstance(blocked_payload, dict) else None
+
+
+def _raise_blocked_managed_workflow(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    blocked_payload: dict[str, Any],
+) -> NoReturn:
+    cli._finish_run(
+        request.runtime.repository,
+        run_id=request.runtime.run_id,
+        success=False,
+        terminal_state=RUN_TERMINAL_STATE_FAILED,
+    )
+    _emit_blocked_managed_workflow(
+        request=request,
+        blocked_payload=blocked_payload,
+    )
+    raise cli.typer.Exit(code=1)
+
+
+def _emit_blocked_managed_workflow(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    blocked_payload: dict[str, Any],
+) -> None:
+    if bool(request.kwargs.get("json_output", False)):
+        if bool(request.kwargs.get("emit_output", True)):
+            cli._emit_json(blocked_payload)
+        return
+    if not bool(request.kwargs.get("emit_output", True)):
+        return
+    readiness = blocked_payload.get("arxiv_pool_readiness") or {}
+    request.runtime.console.print(
+        f"[yellow]{request.command} blocked[/yellow] "
+        f"arxiv_pool_windows={readiness.get('blocked_windows_total')}"
+    )
+
+
+def _execute_and_emit_managed_workflow(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    context: Any,
+) -> dict[str, Any]:
+    outcome = _execute_managed_workflow_loop(
+        request=_ManagedWorkflowLoopRequest(
+            runtime=request.runtime,
+            plan=context.plan,
+            execution_context=context.execution_context,
+            json_output=bool(request.kwargs.get("json_output", False)),
+            on_translate_failure=context.on_translate_failure,
+            failure_messages=request.failure_messages,
+        )
+    )
+    return _emit_workflow_payload(
+        request=_WorkflowPayloadRequest(
+            payload=request.payload_builder(context, outcome),
+            runtime=request.runtime,
+            command=request.command,
+            terminal_state=outcome.terminal_state,
+            executed_steps=outcome.executed_steps,
+            requested_steps=context.plan.requested_steps,
+            json_output=bool(request.kwargs.get("json_output", False)),
+            emit_output=bool(request.kwargs.get("emit_output", True)),
+        )
+    )
+
+
+def _handle_preloop_start_failure(
+    *,
+    request: _ManagedWorkflowRunRequest,
+    loop_started: bool,
+    exc: BaseException,
+) -> None:
+    if loop_started:
+        return
+    if isinstance(exc, KeyboardInterrupt):
+        _handle_preloop_interrupt(
+            runtime=request.runtime,
+            exc=exc,
+            finish_message=request.failure_messages.interrupt_finish,
+            interrupt_message=request.failure_messages.interrupted,
+        )
+        return
+    if isinstance(exc, request.runtime.workspace_lease_lost_error):
+        _handle_preloop_lease_loss(
+            runtime=request.runtime,
+            exc=exc,
+            finish_message=request.failure_messages.lease_finish,
+            warning_message=request.failure_messages.lease_stopped,
+        )
+        return
+    if isinstance(exc, Exception):
+        _handle_preloop_exception(
+            runtime=request.runtime,
+            finish_message=request.failure_messages.exception_finish,
+            exception_message=request.failure_messages.exception_log,
+        )
+
+
 def _run_managed_workflow(
     request: _ManagedWorkflowRunRequest,
 ) -> dict[str, Any]:
     loop_started = False
     try:
         context = request.prepare_context()
+        blocked_payload = _managed_workflow_blocked_payload(context)
+        if blocked_payload is not None:
+            loop_started = True
+            _raise_blocked_managed_workflow(
+                request=request,
+                blocked_payload=blocked_payload,
+            )
         loop_started = True
-        outcome = _execute_managed_workflow_loop(
-            request=_ManagedWorkflowLoopRequest(
-                runtime=request.runtime,
-                plan=context.plan,
-                execution_context=context.execution_context,
-                json_output=bool(request.kwargs.get("json_output", False)),
-                on_translate_failure=context.on_translate_failure,
-                failure_messages=request.failure_messages,
-            )
+        return _execute_and_emit_managed_workflow(
+            request=request,
+            context=context,
         )
-        return _emit_workflow_payload(
-            request=_WorkflowPayloadRequest(
-                payload=request.payload_builder(context, outcome),
-                runtime=request.runtime,
-                command=request.command,
-                terminal_state=outcome.terminal_state,
-                executed_steps=outcome.executed_steps,
-                requested_steps=context.plan.requested_steps,
-                json_output=bool(request.kwargs.get("json_output", False)),
-                emit_output=bool(request.kwargs.get("emit_output", True)),
-            )
+    except (KeyboardInterrupt, Exception) as exc:
+        _handle_preloop_start_failure(
+            request=request,
+            loop_started=loop_started,
+            exc=exc,
         )
-    except KeyboardInterrupt as exc:
-        if not loop_started:
-            _handle_preloop_interrupt(
-                runtime=request.runtime,
-                exc=exc,
-                finish_message=request.failure_messages.interrupt_finish,
-                interrupt_message=request.failure_messages.interrupted,
-            )
-        raise
-    except request.runtime.workspace_lease_lost_error as exc:
-        if not loop_started:
-            _handle_preloop_lease_loss(
-                runtime=request.runtime,
-                exc=exc,
-                finish_message=request.failure_messages.lease_finish,
-                warning_message=request.failure_messages.lease_stopped,
-            )
-        raise
-    except Exception:
-        if not loop_started:
-            _handle_preloop_exception(
-                runtime=request.runtime,
-                finish_message=request.failure_messages.exception_finish,
-                exception_message=request.failure_messages.exception_log,
-            )
         raise
     finally:
         cli._cleanup_managed_run(
@@ -686,6 +843,7 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                 runtime=runtime,
                 plan=context.plan,
                 outcome=outcome,
+                arxiv_pool_readiness=context.arxiv_pool_readiness,
             ),
             failure_messages=_GRANULARITY_FAILURE_MESSAGES,
         )

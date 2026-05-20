@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 import recoleta.cli
 import recoleta.cli.workflow_runner as workflow_runner
 import recoleta.cli.workflows as workflow_cli
+from recoleta.arxiv_pool import ArxivPoolStore
 
 
 class _FakeConsole:
@@ -90,6 +91,8 @@ class _FakeSettings:
         tmp_path: Path,
         localization: _FakeLocalization | None = None,
         workflows: _FakeWorkflows | None = None,
+        arxiv_pool_db_path: Path | None = None,
+        arxiv_readiness_gate: str = "strict",
     ) -> None:
         self.log_json = False
         self.publish_targets = ["markdown"]
@@ -99,6 +102,21 @@ class _FakeSettings:
         self.analyze_limit = 8
         self.localization = localization
         self.workflows = workflows or _FakeWorkflows()
+        self.sources = SimpleNamespace(
+            arxiv=SimpleNamespace(
+                enabled=arxiv_pool_db_path is not None,
+                mode="pool" if arxiv_pool_db_path is not None else "direct",
+                queries=["cat:cs.AI"],
+                max_results_per_run=60,
+            )
+        )
+        self.arxiv_pool = SimpleNamespace(
+            enabled=arxiv_pool_db_path is not None,
+            db_path=arxiv_pool_db_path,
+            maturity_lag_days=1,
+            readiness_gate=arxiv_readiness_gate,
+            allow_immature_windows=False,
+        )
 
     def safe_fingerprint(self) -> str:
         return "fp-v2"
@@ -288,6 +306,207 @@ def _install_workflow_runtime(
 
         monkeypatch.setattr(recoleta.cli, "_import_symbol", _fake_import_symbol)
     return console
+
+
+def test_run_day_strict_blocks_before_analysis_when_arxiv_pool_not_ready(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    pool_path = tmp_path / "arxiv_pool.db"
+    ArxivPoolStore(pool_path).init_schema()
+    fake_settings = _FakeSettings(tmp_path=tmp_path, arxiv_pool_db_path=pool_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-05-20", "--skip", "site-build", "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["arxiv_pool_readiness"]["status"] == "blocked"
+    assert payload["arxiv_pool_readiness"]["blocked_windows_total"] == 1
+    assert fake_service.calls == []
+    assert fake_repo.finished == [("run-1", False, "failed")]
+
+
+def test_run_day_strict_blocks_when_analyze_skipped_but_publish_requested(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    pool_path = tmp_path / "arxiv_pool.db"
+    ArxivPoolStore(pool_path).init_schema()
+    fake_settings = _FakeSettings(tmp_path=tmp_path, arxiv_pool_db_path=pool_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-05-20", "--skip", "analyze", "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert "publish" in payload["requested_steps"]
+    assert "analyze" not in payload["requested_steps"]
+    assert payload["arxiv_pool_readiness"]["blocked_windows_total"] == 1
+    assert fake_service.calls == []
+
+
+def test_run_day_warn_continues_with_readiness_payload(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    pool_path = tmp_path / "arxiv_pool.db"
+    ArxivPoolStore(pool_path).init_schema()
+    fake_settings = _FakeSettings(
+        tmp_path=tmp_path,
+        arxiv_pool_db_path=pool_path,
+        arxiv_readiness_gate="warn",
+    )
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-05-20", "--skip", "site-build", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["arxiv_pool_readiness"]["status"] == "blocked"
+    assert (
+        payload["arxiv_pool_readiness"]["maturity_policy"]["readiness_gate"]
+        == "warn"
+    )
+    assert any(call[0] == "prepare" for call in fake_service.calls)
+
+
+def test_run_day_ingest_only_does_not_block_on_workflow_readiness(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    pool_path = tmp_path / "arxiv_pool.db"
+    ArxivPoolStore(pool_path).init_schema()
+    fake_settings = _FakeSettings(tmp_path=tmp_path, arxiv_pool_db_path=pool_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "run",
+            "day",
+            "--date",
+            "2026-05-20",
+            "--skip",
+            "analyze,publish,trends:day,ideas:day,site-build",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["requested_steps"] == ["ingest"]
+    assert [call[0] for call in fake_service.calls] == ["prepare"]
+
+
+def test_run_week_strict_blocks_before_analysis_when_any_day_window_not_ready(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    pool_path = tmp_path / "arxiv_pool.db"
+    ArxivPoolStore(pool_path).init_schema()
+    fake_settings = _FakeSettings(tmp_path=tmp_path, arxiv_pool_db_path=pool_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "week", "--date", "2026-05-18", "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["arxiv_pool_readiness"]["windows_total"] == 7
+    assert payload["arxiv_pool_readiness"]["blocked_windows_total"] == 7
+    assert fake_service.calls == []
+
+
+def test_run_month_strict_blocks_before_analysis_when_any_day_window_not_ready(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    pool_path = tmp_path / "arxiv_pool.db"
+    ArxivPoolStore(pool_path).init_schema()
+    fake_settings = _FakeSettings(tmp_path=tmp_path, arxiv_pool_db_path=pool_path)
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "month", "--date", "2026-05-20", "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "blocked"
+    assert payload["arxiv_pool_readiness"]["windows_total"] == 31
+    assert payload["arxiv_pool_readiness"]["blocked_windows_total"] == 31
+    assert fake_service.calls == []
 
 
 def test_run_week_executes_recursive_day_and_week_synthesis_workflow(

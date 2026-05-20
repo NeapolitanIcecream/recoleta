@@ -69,6 +69,7 @@ class WorkflowPayloadContext:
     billing_metrics_by_step: dict[str, list[Any]]
     terminal_state: str
     step_results: list[WorkflowStepResult]
+    arxiv_pool_readiness: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -573,7 +574,7 @@ def finish_workflow_failure(
 
 
 def granularity_workflow_payload(*, context: WorkflowPayloadContext) -> dict[str, Any]:
-    return {
+    payload = {
         "status": (
             "ok" if context.terminal_state != RUN_TERMINAL_STATE_FAILED else "error"
         ),
@@ -591,6 +592,9 @@ def granularity_workflow_payload(*, context: WorkflowPayloadContext) -> dict[str
         "terminal_state": context.terminal_state,
         "steps": [step_result.as_payload() for step_result in context.step_results],
     }
+    if context.arxiv_pool_readiness is not None:
+        payload["arxiv_pool_readiness"] = context.arxiv_pool_readiness
+    return payload
 
 
 def deploy_workflow_payload(*, context: WorkflowPayloadContext) -> dict[str, Any]:

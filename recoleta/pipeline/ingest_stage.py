@@ -77,6 +77,13 @@ class IngestStageService(Protocol):
         updates: list[sources.SourcePullStateUpdate],
     ) -> None: ...
 
+    def _merge_run_source_diagnostics(
+        self,
+        *,
+        run_id: str,
+        diagnostics: list[dict[str, Any]],
+    ) -> None: ...
+
     def _sanitize_error_message(self, message: str) -> str: ...
 
     def _record_debug_artifact(
@@ -543,6 +550,11 @@ class _SourcePullRunner:
         for key, value in pull_result.extra_metrics.items():
             if _safe_source_metric_key(key):
                 bucket[key] = int(bucket.get(key) or 0) + int(value or 0)
+        if pull_result.diagnostics:
+            self.service._merge_run_source_diagnostics(
+                run_id=self.request.run_id,
+                diagnostics=list(pull_result.diagnostics),
+            )
         _merge_published_at_bucket(
             bucket=bucket,
             oldest=pull_result.oldest_published_at,

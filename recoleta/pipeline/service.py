@@ -366,6 +366,21 @@ class PipelineService:
                 update=update,
             )
 
+    def _merge_run_source_diagnostics(
+        self,
+        *,
+        run_id: str,
+        diagnostics: list[dict[str, Any]],
+    ) -> None:
+        merger = getattr(self.repository, "merge_run_source_diagnostics", None)
+        if not callable(merger):
+            return
+        self._invoke_callable_with_supported_kwargs(
+            merger,
+            run_id=run_id,
+            diagnostics=diagnostics,
+        )
+
     @staticmethod
     def _normalize_source_pull_result(raw: Any) -> sources.SourcePullResult:
         if isinstance(raw, sources.SourcePullResult):

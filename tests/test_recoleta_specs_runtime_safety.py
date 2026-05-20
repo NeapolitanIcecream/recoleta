@@ -47,6 +47,7 @@ def test_init_schema_sets_user_version_and_runtime_tables(tmp_path: Path) -> Non
     assert "granularity" in run_columns
     assert "period_start" in run_columns
     assert "period_end" in run_columns
+    assert "source_diagnostics_json" in run_columns
     assert "workspace_leases" in lease_tables
     assert "pass_outputs" in lease_tables
     assert "item_stream_states" not in lease_tables
@@ -104,6 +105,7 @@ def test_init_schema_migrates_run_context_and_artifact_details_columns(
         "granularity",
         "period_start",
         "period_end",
+        "source_diagnostics_json",
     } <= run_columns
     assert "details_json" in artifact_columns
 

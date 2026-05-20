@@ -544,6 +544,109 @@ def test_stats_json_reports_extended_ingest_source_diagnostics(
     assert ingest_payload["newest_published_at"] == "2025-01-21T11:00:00+00:00"
 
 
+def test_stats_json_reports_arxiv_pool_window_diagnostics(
+    configured_env: Path,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+
+    run = repository.create_run("fp-source-diag", run_id="run-arxiv-diag")
+    repository.record_metric(
+        run_id=run.id,
+        name="pipeline.ingest.source.arxiv.pool_window_immature_total",
+        value=1,
+        unit="count",
+    )
+    repository.merge_run_source_diagnostics(
+        run_id=run.id,
+        diagnostics=[
+            {
+                "source": "arxiv",
+                "kind": "pool_window_readiness",
+                "query_text": "cat:cs.AI",
+                "period_start": "2026-05-20T00:00:00+00:00",
+                "period_end": "2026-05-21T00:00:00+00:00",
+                "max_results": 60,
+                "record_status": "completed",
+                "cache_readable": True,
+                "mature": False,
+                "analysis_ready": False,
+                "blocked_reason": "immature_window",
+                "readiness_gate": "warn",
+                "allow_immature_windows": False,
+            }
+        ],
+    )
+    repository.finish_run(run.id, success=True)
+
+    result = runner.invoke(recoleta.cli.app, ["stats", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    ingest_payload = payload["source_diagnostics"]["sources"]["arxiv"]["ingest"]
+    assert ingest_payload["pool_window_immature_total"] == 1
+    assert ingest_payload["window_diagnostics"] == [
+        {
+            "source": "arxiv",
+            "kind": "pool_window_readiness",
+            "query_text": "cat:cs.AI",
+            "period_start": "2026-05-20T00:00:00+00:00",
+            "period_end": "2026-05-21T00:00:00+00:00",
+            "max_results": 60,
+            "record_status": "completed",
+            "cache_readable": True,
+            "mature": False,
+            "analysis_ready": False,
+            "blocked_reason": "immature_window",
+            "readiness_gate": "warn",
+            "allow_immature_windows": False,
+        }
+    ]
+
+
+def test_run_week_merges_arxiv_pool_window_diagnostics_across_day_ingests(
+    configured_env: Path,
+) -> None:
+    db_path = configured_env / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    run = repository.create_run("fp-source-diag", run_id="run-week-diag")
+
+    first = {
+        "source": "arxiv",
+        "kind": "pool_window_readiness",
+        "query_text": "cat:cs.AI",
+        "period_start": "2026-05-18T00:00:00+00:00",
+        "period_end": "2026-05-19T00:00:00+00:00",
+        "max_results": 60,
+        "record_status": "missing",
+        "cache_readable": False,
+        "mature": True,
+        "analysis_ready": False,
+        "blocked_reason": "missing_window",
+        "readiness_gate": "warn",
+        "allow_immature_windows": False,
+    }
+    second = {
+        **first,
+        "period_start": "2026-05-19T00:00:00+00:00",
+        "period_end": "2026-05-20T00:00:00+00:00",
+    }
+    refreshed_first = {**first, "record_status": "completed", "analysis_ready": True}
+
+    repository.merge_run_source_diagnostics(run_id=run.id, diagnostics=[first])
+    repository.merge_run_source_diagnostics(run_id=run.id, diagnostics=[second])
+    repository.merge_run_source_diagnostics(
+        run_id=run.id, diagnostics=[refreshed_first]
+    )
+
+    stored = repository.get_run_source_diagnostics(run_id=run.id)
+    diagnostics = stored["sources"]["arxiv"]["ingest"]["window_diagnostics"]
+    assert diagnostics == [refreshed_first, second]
+
+
 def test_inspect_freshness_json_reports_split_freshness_axes(
     configured_env: Path,
     monkeypatch,

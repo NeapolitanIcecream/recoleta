@@ -762,6 +762,62 @@ def test_arxiv_pool_puller_skips_immature_completed_window(
     assert result.extra_metrics.get("pool_drafts_total", 0) == 0
 
 
+def test_arxiv_pool_puller_records_structured_window_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool_path = tmp_path / "arxiv_pool.db"
+    store = ArxivPoolStore(pool_path)
+    window = ArxivPoolWindow(
+        query_text="cat:cs.AI",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
+    _record_completed_window(store, window, arxiv_id="2605.20001v1")
+
+    import recoleta.source_pullers as source_pullers
+
+    monkeypatch.setattr(
+        source_pullers,
+        "_source_pull_now",
+        lambda: datetime(2026, 5, 20, 12, tzinfo=UTC),
+    )
+
+    result = fetch_arxiv_drafts(
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=60,
+            period_start=datetime(2026, 5, 20, tzinfo=UTC),
+            period_end=datetime(2026, 5, 21, tzinfo=UTC),
+            include_stats=True,
+            mode="pool",
+            pool_db_path=pool_path,
+            pool_readiness_gate="warn",
+        )
+    )
+
+    assert isinstance(result, SourcePullResult)
+    assert result.extra_metrics["pool_window_immature_total"] == 1
+    assert result.diagnostics == [
+        {
+            "source": "arxiv",
+            "kind": "pool_window_readiness",
+            "query_text": "cat:cs.AI",
+            "period_start": "2026-05-20T00:00:00+00:00",
+            "period_end": "2026-05-21T00:00:00+00:00",
+            "max_results": 60,
+            "record_status": "completed",
+            "cache_readable": True,
+            "mature": False,
+            "analysis_ready": False,
+            "blocked_reason": "immature_window",
+            "readiness_gate": "warn",
+            "allow_immature_windows": False,
+        }
+    ]
+
+
 def test_arxiv_pool_puller_uses_current_time_for_maturity_cutoff_near_midnight(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1589,11 +1645,12 @@ def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     assert payload["arxiv_pool_pre_sync"]["sync"]["requested_windows_total"] == 14
 
 
-def test_fleet_workflow_skip_ingest_skips_pool_pre_sync(
+def test_fleet_workflow_skip_ingest_skips_pool_pre_sync_but_still_gates_analysis(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Regression: skipping ingest should not perform upstream arXiv pool sync."""
+    """Regression: skipping ingest must not skip strict analysis readiness."""
     manifest_path, _pool_path = _write_pool_fleet_manifest(tmp_path)
     events: list[str] = []
 
@@ -1603,11 +1660,7 @@ def test_fleet_workflow_skip_ingest_skips_pool_pre_sync(
         raise AssertionError("pre-sync should be skipped when ingest is skipped")
 
     def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
-        events.append(f"child:{request.instance.name}:{request.skip}")
-        return {
-            "instance": request.instance.name,
-            "config_path": str(request.instance.config_path),
-        }
+        raise AssertionError("strict readiness should stop before children")
 
     monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
     monkeypatch.setattr(
@@ -1616,18 +1669,22 @@ def test_fleet_workflow_skip_ingest_skips_pool_pre_sync(
         fake_child_payload,
     )
 
-    payload = execute_fleet_granularity_workflow(
-        manifest_path=manifest_path,
-        workflow_name="week",
-        command="fleet run week",
-        anchor_date="2026-04-27",
-        skip="ingest",
-        json_output=False,
-    )
+    with pytest.raises(typer.Exit) as exc:
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="week",
+            command="fleet run week",
+            anchor_date="2026-04-27",
+            skip="ingest",
+            json_output=True,
+        )
 
-    assert events == ["child:embodied_ai:ingest", "child:software:ingest"]
-    assert payload["arxiv_pool_pre_sync"]["status"] == "skipped"
-    assert payload["arxiv_pool_pre_sync"]["reason"] == "ingest_not_requested"
+    emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert exc.value.exit_code == 1
+    assert events == []
+    assert emitted["arxiv_pool_pre_sync"]["status"] == "skipped"
+    assert emitted["arxiv_pool_pre_sync"]["reason"] == "ingest_not_requested"
+    assert emitted["arxiv_pool_readiness"]["blocked_windows_total"] == 14
 
 
 def test_fleet_arxiv_pool_readiness_blocks_strict_mode(
@@ -1691,11 +1748,11 @@ def test_fleet_arxiv_pool_readiness_blocks_strict_mode(
     assert emitted["children"] == []
 
 
-def test_fleet_arxiv_pool_readiness_does_not_block_when_analyze_skipped_gh_54(
+def test_fleet_arxiv_pool_readiness_blocks_when_analyze_skipped_but_publish_requested(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Regression: strict pool readiness blocks before analysis, not ingest-only runs."""
     manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
     plan = build_fleet_arxiv_pool_pre_sync_plan(
         manifest_path=manifest_path,
@@ -1724,8 +1781,7 @@ def test_fleet_arxiv_pool_readiness_does_not_block_when_analyze_skipped_gh_54(
         )
 
     def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
-        events.append(f"child:{request.instance.name}:{request.skip}")
-        return {"instance": request.instance.name}
+        raise AssertionError("strict readiness should stop before children")
 
     monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
     monkeypatch.setattr(
@@ -1734,23 +1790,22 @@ def test_fleet_arxiv_pool_readiness_does_not_block_when_analyze_skipped_gh_54(
         fake_child_payload,
     )
 
-    payload = execute_fleet_granularity_workflow(
-        manifest_path=manifest_path,
-        workflow_name="day",
-        command="fleet run day",
-        anchor_date="2026-05-20",
-        skip="analyze",
-        json_output=False,
-    )
+    with pytest.raises(typer.Exit) as exc:
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="day",
+            command="fleet run day",
+            anchor_date="2026-05-20",
+            skip="analyze",
+            json_output=True,
+        )
 
-    assert events == [
-        "pre_sync",
-        "child:embodied_ai:analyze",
-        "child:software:analyze",
-    ]
-    assert payload["status"] == "ok"
-    assert payload["arxiv_pool_readiness"]["status"] == "blocked"
-    assert payload["arxiv_pool_readiness"]["immature_windows_total"] == 2
+    emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert exc.value.exit_code == 1
+    assert events == ["pre_sync"]
+    assert emitted["status"] == "blocked"
+    assert emitted["arxiv_pool_readiness"]["status"] == "blocked"
+    assert emitted["arxiv_pool_readiness"]["immature_windows_total"] == 2
 
 
 @pytest.mark.parametrize(
