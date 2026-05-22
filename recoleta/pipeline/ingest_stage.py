@@ -435,10 +435,20 @@ class _SourcePullRunner:
             return None
         mode = str(getattr(settings, "mode", "direct") or "direct").strip().lower()
         pool_db_path = None
+        pool_backend = None
         if mode == "pool":
-            from recoleta.arxiv_pool import resolve_arxiv_pool_db_path
+            from recoleta.arxiv_pool import (
+                arxiv_pool_backend_descriptor_from_settings,
+                build_arxiv_pool_backend_from_settings,
+                resolve_arxiv_pool_db_path,
+            )
 
-            pool_db_path = resolve_arxiv_pool_db_path(self.service.settings)
+            pool_backend = build_arxiv_pool_backend_from_settings(self.service.settings)
+            if (
+                arxiv_pool_backend_descriptor_from_settings(self.service.settings).kind
+                == "local_sqlite"
+            ):
+                pool_db_path = resolve_arxiv_pool_db_path(self.service.settings)
         pool_settings = self.service.settings.arxiv_pool
         source_request = sources.ArxivPullRequest(
             queries=arxiv_queries,
@@ -473,6 +483,7 @@ class _SourcePullRunner:
                 "pool_maturity_lag_days": source_request.pool_maturity_lag_days,
                 "pool_readiness_gate": source_request.pool_readiness_gate,
                 "pool_allow_immature_windows": source_request.pool_allow_immature_windows,
+                "pool_backend": pool_backend,
             },
         )
 

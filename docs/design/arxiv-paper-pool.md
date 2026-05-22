@@ -81,6 +81,7 @@ environment-style keys below or the equivalent lowercase field names:
 ```yaml
 ARXIV_POOL:
   enabled: true
+  backend: local_sqlite
   db_path: /path/to/fleet/arxiv_pool.db
   request_interval_seconds: 5
   cooldown_seconds: 3600
@@ -94,6 +95,30 @@ SOURCES:
     max_results_per_run: 60
 ```
 
+`backend: local_sqlite` is the original Recoleta-owned SQLite metadata pool.
+`backend: huldra` delegates arXiv metadata caching, queueing, and rate limiting
+to a Huldra broker while preserving Recoleta pool-mode ingest semantics:
+
+```yaml
+ARXIV_POOL:
+  enabled: true
+  backend: huldra
+  huldra_base_url: http://127.0.0.1:8765
+  huldra_request_timeout_seconds: 30
+  huldra_wait_timeout_seconds: null
+  maturity_lag_days: 1
+  readiness_gate: strict
+  allow_immature_windows: false
+```
+
+In Huldra mode, Recoleta does not read a Huldra SQLite database and does not
+call arXiv directly. Ingest uses cache-only Huldra reads, sync/backfill and fleet
+pre-sync call Huldra maintenance APIs with `wait=true`, and rollback is the
+configuration-only switch back to `backend: local_sqlite` with `db_path` set.
+An external Huldra worker can still be run by operators for continuous warming,
+but deterministic Recoleta sync and fleet pre-sync do not require one because
+they ask Huldra to drain the requested windows before ingest continues.
+
 Implemented CLI surfaces:
 
 - `recoleta arxiv-pool sync --date YYYY-MM-DD`: sync all configured arXiv
@@ -102,18 +127,32 @@ Implemented CLI surfaces:
   recent trailing window to catch delayed metadata and updates.
 - `recoleta arxiv-pool backfill --start YYYY-MM-DD --end YYYY-MM-DD`: fill
   historical query windows under the same global limiter.
+- `recoleta arxiv-pool worker`: run the local SQLite pool worker. In Huldra mode
+  this is rejected with `huldra_backend_uses_huldra_worker`; run a Huldra worker
+  instead when continuous broker-side warming is desired.
 - `recoleta inspect arxiv-pool freshness`: report latest completed windows,
-  cooldown state, upstream requests, 429s, and cache coverage.
+  cooldown state, upstream requests, 429s, and cache coverage. In Huldra mode,
+  this reports configured-window readiness because Huldra V1 does not expose an
+  arbitrary recent-cache listing API.
 - `recoleta admin arxiv-pool gc`: prune old query-match rows while preserving
-  paper metadata.
+  paper metadata. In Huldra mode this is rejected with
+  `huldra_backend_gc_not_supported`; use Huldra maintenance once it exposes a
+  public GC contract.
+
+`--force` on Huldra-mode sync/backfill is rejected with
+`huldra_force_refresh_unsupported` until Huldra exposes a public force-refresh
+contract.
 
 Fleet behavior:
 
 - `recoleta fleet run day|week|month` pre-syncs the pool once before running
   child instances when every arXiv-enabled child uses `mode: pool` and all
-  arXiv-enabled children share the same pool DB path.
-- Child instances then ingest from local pool rows only. Instance ingest should
-  record zero upstream arXiv API requests in this mode.
+  arXiv-enabled children share the same pool backend identity: one SQLite DB
+  path for `local_sqlite`, or one Huldra endpoint for `huldra`.
+- Child instances then ingest from the configured pool backend only. Instance
+  ingest should record zero upstream arXiv API requests in this mode. With
+  `backend: huldra`, child ingest receives metadata only through Huldra
+  cache-only requests.
 - If the pool is in cooldown, fleet ingest should either use cached windows or
   record a clean `arxiv_pool_window_unavailable` diagnostic. It should not fall
   back to direct arXiv calls unless explicitly configured.

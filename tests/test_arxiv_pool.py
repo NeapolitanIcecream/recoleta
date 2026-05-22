@@ -12,9 +12,12 @@ import httpx
 import pytest
 import typer
 import yaml
+from typer.testing import CliRunner
 
+import recoleta.cli
 from recoleta.arxiv_pool import (
     ArxivApiFetcher,
+    ArxivPoolBackendReadiness,
     ArxivPoolLeaseHeldError,
     ArxivPoolPaper,
     ArxivPoolRateLimitedError,
@@ -28,10 +31,18 @@ from recoleta.arxiv_pool import (
     build_arxiv_pool_worker_windows,
     evaluate_arxiv_pool_window_readiness,
 )
-from recoleta.cli.arxiv_pool import run_inspect_arxiv_pool_freshness_command
+from recoleta.cli.arxiv_pool import (
+    ArxivPoolWorkerCommandOptions,
+    run_admin_arxiv_pool_gc_command,
+    run_arxiv_pool_backfill_command,
+    run_arxiv_pool_sync_command,
+    run_arxiv_pool_worker_command,
+    run_inspect_arxiv_pool_freshness_command,
+)
 from recoleta.cli.fleet import (
     build_fleet_arxiv_pool_pre_sync_plan,
     execute_fleet_granularity_workflow,
+    run_fleet_arxiv_pool_pre_sync,
 )
 from recoleta.sources import (
     ArxivPullRequest,
@@ -1478,6 +1489,64 @@ def test_inspect_arxiv_pool_freshness_reports_maturity_fields(
     assert payload["windows"][0]["blocked_reason"] == "immature_window"
 
 
+def test_inspect_arxiv_pool_freshness_reports_huldra_configured_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.cli.arxiv_pool as arxiv_pool_cli
+
+    config_path = _write_huldra_pool_config(
+        tmp_path=tmp_path,
+        base_url="http://127.0.0.1:8765",
+    )
+    seen_windows: list[ArxivPoolWindow] = []
+
+    class FakeBackend:
+        def evaluate_window_readiness(
+            self,
+            window: ArxivPoolWindow,
+            *,
+            readiness_policy: ArxivPoolReadinessPolicy,
+        ) -> ArxivPoolBackendReadiness:
+            seen_windows.append(window)
+            return ArxivPoolBackendReadiness(
+                query_text=window.query_text,
+                period_start=window.period_start,
+                period_end=window.period_end,
+                max_results=window.max_results,
+                backend="huldra",
+                cache_status="missing",
+                serving_status="cache_miss",
+                cache_readable=False,
+                mature=False,
+                analysis_ready=False,
+                blocked_reason="missing_window",
+                cache_key="huldra:v1:demo",
+                diagnostic={"huldra_status": "cache_miss"},
+            )
+
+    monkeypatch.setattr(
+        arxiv_pool_cli,
+        "build_arxiv_pool_backend_from_settings",
+        lambda settings: FakeBackend(),  # noqa: ARG005
+    )
+
+    payload = run_inspect_arxiv_pool_freshness_command(
+        config_path=config_path,
+        limit=2,
+        json_output=True,
+    )
+
+    assert payload["backend"] == "huldra"
+    assert payload["huldra_base_url"] == "http://127.0.0.1:8765"
+    assert payload["inspect_scope"] == "configured_windows"
+    assert payload["cache_listing_supported"] is False
+    assert payload["pool_db_path"] is None
+    assert len(payload["windows"]) == 2
+    assert len(seen_windows) == 2
+    assert payload["windows"][0]["serving_status"] == "cache_miss"
+
+
 def test_arxiv_pool_worker_command_emits_json_lifecycle_lines(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1556,6 +1625,222 @@ def test_arxiv_pool_worker_command_preserves_sigterm_exit_code(
     assert exc.value.exit_code == 143
 
 
+def test_huldra_pool_worker_and_gc_commands_do_not_touch_local_store(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_huldra_pool_config(
+        tmp_path=tmp_path,
+        base_url="http://127.0.0.1:8765",
+    )
+
+    worker_payload = run_arxiv_pool_worker_command(
+        ArxivPoolWorkerCommandOptions(
+            poll_interval_seconds=300,
+            lookback_days=3,
+            idle_jitter_seconds=30,
+            backfill_start=None,
+            backfill_end=None,
+            config_path=config_path,
+            json_output=True,
+        )
+    )
+    gc_payload = run_admin_arxiv_pool_gc_command(
+        config_path=config_path,
+        older_than_days=30,
+        json_output=True,
+    )
+
+    assert worker_payload["status"] == "skipped"
+    assert worker_payload["reason"] == "huldra_backend_uses_huldra_worker"
+    assert worker_payload["pool_db_path"] is None
+    assert gc_payload["status"] == "skipped"
+    assert gc_payload["reason"] == "huldra_backend_gc_not_supported"
+    assert not (tmp_path / "arxiv_pool.db").exists()
+
+
+def test_huldra_pool_sync_command_delegates_to_huldra_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from huldra.models import HuldraMaintenanceResult
+
+    config_path = _write_huldra_pool_config(
+        tmp_path=tmp_path,
+        base_url="http://127.0.0.1:8765",
+    )
+    calls: list[dict[str, Any]] = []
+
+    class FakeHuldraClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            calls.append({"base_url": base_url, "timeout": timeout})
+
+        def __enter__(self) -> "FakeHuldraClient":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def sync_windows(
+            self,
+            requests: list[Any],
+            *,
+            wait: bool,
+            wait_timeout_seconds: float | None,
+        ) -> HuldraMaintenanceResult:
+            calls.append(
+                {
+                    "requests": requests,
+                    "wait": wait,
+                    "wait_timeout_seconds": wait_timeout_seconds,
+                }
+            )
+            return HuldraMaintenanceResult(
+                requested_total=len(requests),
+                completed_windows_total=len(requests),
+                papers_total=3,
+            )
+
+    import huldra.client
+
+    monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
+
+    payload = run_arxiv_pool_sync_command(
+        anchor_date="2026-05-20",
+        lookback_days=1,
+        force=False,
+        config_path=config_path,
+        json_output=True,
+    )
+
+    assert payload["backend"] == "huldra"
+    assert payload["pool_db_path"] is None
+    assert payload["sync"]["requested_windows_total"] == 1
+    assert payload["sync"]["completed_windows_total"] == 1
+    assert calls[0] == {"base_url": "http://127.0.0.1:8765", "timeout": 5.0}
+    assert calls[1]["wait"] is True
+    assert calls[1]["wait_timeout_seconds"] == 3600
+    assert calls[1]["requests"][0].readiness == "analysis_ready"
+    assert calls[1]["requests"][0].cache_policy == "cache_only"
+
+
+@pytest.mark.parametrize("json_output", [True, False])
+def test_huldra_pool_sync_cli_rejects_force_refresh_with_stable_reason(
+    tmp_path: Path,
+    json_output: bool,
+) -> None:
+    config_path = _write_huldra_pool_config(
+        tmp_path=tmp_path,
+        base_url="http://127.0.0.1:8765",
+    )
+    args = [
+        "arxiv-pool",
+        "sync",
+        "--date",
+        "2026-05-20",
+        "--force",
+        "--config",
+        str(config_path),
+    ]
+    if json_output:
+        args.append("--json")
+
+    result = CliRunner().invoke(recoleta.cli.app, args)
+
+    assert result.exit_code == 1
+    if json_output:
+        payload = json.loads(result.output)
+        assert payload["status"] == "error"
+        assert payload["reason"] == "huldra_force_refresh_unsupported"
+    else:
+        assert "huldra_force_refresh_unsupported" in result.output
+
+
+def test_huldra_pool_backfill_command_uses_huldra_backfill_api(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from huldra.models import HuldraMaintenanceResult
+
+    config_path = _write_huldra_pool_config(
+        tmp_path=tmp_path,
+        base_url="http://127.0.0.1:8765",
+    )
+    calls: list[dict[str, Any]] = []
+
+    class FakeHuldraClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            calls.append({"base_url": base_url, "timeout": timeout})
+
+        def __enter__(self) -> "FakeHuldraClient":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def backfill_windows(self, **kwargs: Any) -> HuldraMaintenanceResult:
+            calls.append(kwargs)
+            return HuldraMaintenanceResult(
+                requested_total=3,
+                completed_windows_total=3,
+            )
+
+    import huldra.client
+
+    monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
+
+    payload = run_arxiv_pool_backfill_command(
+        start_date="2026-05-18",
+        end_date="2026-05-20",
+        force=False,
+        config_path=config_path,
+        json_output=True,
+    )
+
+    assert payload["backend"] == "huldra"
+    assert payload["pool_db_path"] is None
+    assert payload["sync"]["requested_windows_total"] == 3
+    assert calls[0] == {"base_url": "http://127.0.0.1:8765", "timeout": 5.0}
+    assert calls[1]["search_queries"] == ["cat:cs.AI"]
+    assert calls[1]["start_date"] == date(2026, 5, 18)
+    assert calls[1]["end_date"] == date(2026, 5, 20)
+    assert calls[1]["wait"] is True
+    assert calls[1]["wait_timeout_seconds"] == 3600
+
+
+@pytest.mark.parametrize("json_output", [True, False])
+def test_huldra_pool_backfill_cli_rejects_force_refresh_with_stable_reason(
+    tmp_path: Path,
+    json_output: bool,
+) -> None:
+    config_path = _write_huldra_pool_config(
+        tmp_path=tmp_path,
+        base_url="http://127.0.0.1:8765",
+    )
+    args = [
+        "arxiv-pool",
+        "backfill",
+        "--start",
+        "2026-05-18",
+        "--end",
+        "2026-05-20",
+        "--force",
+        "--config",
+        str(config_path),
+    ]
+    if json_output:
+        args.append("--json")
+
+    result = CliRunner().invoke(recoleta.cli.app, args)
+
+    assert result.exit_code == 1
+    if json_output:
+        payload = json.loads(result.output)
+        assert payload["status"] == "error"
+        assert payload["reason"] == "huldra_force_refresh_unsupported"
+    else:
+        assert "huldra_force_refresh_unsupported" in result.output
+
+
 def test_fleet_pre_sync_plan_collects_unique_pool_windows(tmp_path: Path) -> None:
     manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
 
@@ -1573,6 +1858,165 @@ def test_fleet_pre_sync_plan_collects_unique_pool_windows(tmp_path: Path) -> Non
         datetime(2026, 4, 27, tzinfo=UTC).date() + timedelta(days=offset)
         for offset in range(7)
     }
+
+
+def test_fleet_pre_sync_plan_rejects_mixed_pool_backends(tmp_path: Path) -> None:
+    manifest_path = _write_mixed_backend_fleet_manifest(tmp_path)
+
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+
+    assert plan.status == "blocked"
+    assert plan.reason == "mixed_arxiv_pool_backends"
+
+
+def test_fleet_pre_sync_plan_rejects_multiple_huldra_endpoints(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8766"),
+    )
+
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+
+    assert plan.status == "blocked"
+    assert plan.reason == "multiple_huldra_endpoints"
+
+
+@pytest.mark.parametrize(
+    ("scenario", "reason"),
+    [
+        ("mixed_backend", "mixed_arxiv_pool_backends"),
+        ("multiple_huldra_endpoints", "multiple_huldra_endpoints"),
+        ("multiple_local_pool_db_paths", "multiple_pool_db_paths"),
+    ],
+)
+def test_fleet_workflow_pool_backend_conflicts_block_before_children(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    scenario: str,
+    reason: str,
+) -> None:
+    """Regression: fleet-level pool conflicts must be terminal, not skipped."""
+    if scenario == "mixed_backend":
+        manifest_path = _write_mixed_backend_fleet_manifest(tmp_path)
+    elif scenario == "multiple_huldra_endpoints":
+        manifest_path = _write_huldra_fleet_manifest(
+            tmp_path,
+            base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8766"),
+        )
+    else:
+        manifest_path = _write_multiple_local_pool_fleet_manifest(tmp_path)
+
+    import recoleta.cli.fleet as fleet_module
+
+    def fake_pre_sync(plan):  # type: ignore[no-untyped-def]
+        raise AssertionError(f"pre-sync must not run for {plan.reason}")
+
+    def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
+        raise AssertionError(f"child payload must not run for {request.instance.name}")
+
+    monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        fake_child_payload,
+    )
+
+    with pytest.raises(typer.Exit) as exc:
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="day",
+            command="fleet run day",
+            anchor_date="2026-05-20",
+            json_output=True,
+        )
+
+    emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert exc.value.exit_code == 1
+    assert emitted["status"] == "blocked"
+    assert emitted["children"] == []
+    assert emitted["arxiv_pool_pre_sync"]["status"] == "blocked"
+    assert emitted["arxiv_pool_pre_sync"]["reason"] == reason
+    assert emitted["arxiv_pool_readiness"]["status"] == "blocked"
+    assert emitted["arxiv_pool_readiness"]["reason"] == reason
+
+
+def test_huldra_fleet_pre_sync_delegates_deduped_windows_to_huldra(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from huldra.models import HuldraMaintenanceResult
+
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8765"),
+        queries=("cat:cs.AI", "cat:cs.AI"),
+    )
+    calls: list[dict[str, Any]] = []
+
+    class FakeHuldraClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            calls.append({"base_url": base_url, "timeout": timeout})
+
+        def __enter__(self) -> "FakeHuldraClient":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def sync_windows(
+            self,
+            requests: list[Any],
+            *,
+            wait: bool,
+            wait_timeout_seconds: float | None,
+        ) -> HuldraMaintenanceResult:
+            calls.append(
+                {
+                    "requests": requests,
+                    "wait": wait,
+                    "wait_timeout_seconds": wait_timeout_seconds,
+                }
+            )
+            return HuldraMaintenanceResult(
+                requested_total=len(requests),
+                completed_windows_total=len(requests),
+                papers_total=4,
+            )
+
+    import huldra.client
+
+    monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
+
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    result = run_fleet_arxiv_pool_pre_sync(plan)
+
+    assert plan.status == "planned"
+    assert plan.backend_descriptor is not None
+    assert plan.backend_descriptor.kind == "huldra"
+    assert len(plan.windows) == 1
+    assert result.requested_windows_total == 1
+    assert result.completed_windows_total == 1
+    assert calls[0] == {"base_url": "http://127.0.0.1:8765", "timeout": 30.0}
+    assert calls[1]["wait"] is True
+    assert calls[1]["wait_timeout_seconds"] == 3600
+    assert len(calls[1]["requests"]) == 1
+    assert calls[1]["requests"][0].search_query == "cat:cs.AI"
+    assert calls[1]["requests"][0].readiness == "analysis_ready"
 
 
 def test_fleet_pre_sync_plan_merges_mixed_child_readiness_policies_safely(
@@ -2026,3 +2470,149 @@ def _write_pool_config(*, tmp_path: Path, pool_path: Path) -> Path:
         encoding="utf-8",
     )
     return config_path
+
+
+def _write_huldra_pool_config(*, tmp_path: Path, base_url: str) -> Path:
+    config_path = tmp_path / "huldra-config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "RECOLETA_DB_PATH": str(tmp_path / "recoleta.db"),
+                "LLM_MODEL": "openai/gpt-4o-mini",
+                "PUBLISH_TARGETS": ["markdown"],
+                "ARXIV_POOL": {
+                    "enabled": True,
+                    "backend": "huldra",
+                    "huldra_base_url": base_url,
+                    "huldra_request_timeout_seconds": 5,
+                },
+                "SOURCES": {
+                    "arxiv": {
+                        "enabled": True,
+                        "mode": "pool",
+                        "queries": ["cat:cs.AI"],
+                        "max_results_per_run": 60,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _write_huldra_fleet_manifest(
+    tmp_path: Path,
+    *,
+    base_urls: tuple[str, str],
+    queries: tuple[str, str] = ("cat:cs.AI", "cat:cs.LG"),
+) -> Path:
+    child_paths: list[Path] = []
+    for index, name in enumerate(("embodied_ai", "software")):
+        query = queries[index]
+        child_path = tmp_path / f"{name}.yaml"
+        child_path.write_text(
+            yaml.safe_dump(
+                {
+                    "RECOLETA_DB_PATH": str(tmp_path / f"{name}.db"),
+                    "LLM_MODEL": "openai/gpt-4o-mini",
+                    "PUBLISH_TARGETS": ["markdown"],
+                    "ARXIV_POOL": {
+                        "enabled": True,
+                        "backend": "huldra",
+                        "huldra_base_url": base_urls[index],
+                    },
+                    "SOURCES": {
+                        "arxiv": {
+                            "enabled": True,
+                            "mode": "pool",
+                            "queries": [query],
+                            "max_results_per_run": 60,
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        child_paths.append(child_path)
+    return _write_manifest_for_children(tmp_path, child_paths)
+
+
+def _write_mixed_backend_fleet_manifest(tmp_path: Path) -> Path:
+    local_path = tmp_path / "local.yaml"
+    local_path.write_text(
+        yaml.safe_dump(
+            {
+                "RECOLETA_DB_PATH": str(tmp_path / "local.db"),
+                "LLM_MODEL": "openai/gpt-4o-mini",
+                "PUBLISH_TARGETS": ["markdown"],
+                "ARXIV_POOL": {
+                    "enabled": True,
+                    "backend": "local_sqlite",
+                    "db_path": str(tmp_path / "arxiv_pool.db"),
+                },
+                "SOURCES": {
+                    "arxiv": {
+                        "enabled": True,
+                        "mode": "pool",
+                        "queries": ["cat:cs.AI"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    huldra_path = _write_huldra_pool_config(
+        tmp_path=tmp_path,
+        base_url="http://127.0.0.1:8765",
+    )
+    return _write_manifest_for_children(tmp_path, [local_path, huldra_path])
+
+
+def _write_multiple_local_pool_fleet_manifest(tmp_path: Path) -> Path:
+    child_paths: list[Path] = []
+    for index, (name, query) in enumerate(
+        (("embodied_ai", "cat:cs.AI"), ("software", "cat:cs.LG"))
+    ):
+        child_path = tmp_path / f"{name}.yaml"
+        child_path.write_text(
+            yaml.safe_dump(
+                {
+                    "RECOLETA_DB_PATH": str(tmp_path / f"{name}.db"),
+                    "LLM_MODEL": "openai/gpt-4o-mini",
+                    "PUBLISH_TARGETS": ["markdown"],
+                    "ARXIV_POOL": {
+                        "enabled": True,
+                        "backend": "local_sqlite",
+                        "db_path": str(tmp_path / f"arxiv_pool_{index}.db"),
+                    },
+                    "SOURCES": {
+                        "arxiv": {
+                            "enabled": True,
+                            "mode": "pool",
+                            "queries": [query],
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        child_paths.append(child_path)
+    return _write_manifest_for_children(tmp_path, child_paths)
+
+
+def _write_manifest_for_children(tmp_path: Path, child_paths: list[Path]) -> Path:
+    manifest_path = tmp_path / f"fleet-{len(child_paths)}.yaml"
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "instances": [
+                    {"name": f"child-{index}", "config_path": str(path)}
+                    for index, path in enumerate(child_paths)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return manifest_path
