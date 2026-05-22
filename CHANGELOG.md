@@ -7,6 +7,41 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-22
+
+### Added
+
+- Optional Huldra-backed arXiv pool mode for workspaces that need arXiv
+  metadata served from a shared pool instead of fetched by each instance.
+- `recoleta arxiv-pool sync|backfill|worker`, `recoleta inspect arxiv-pool
+  freshness`, and `recoleta admin arxiv-pool gc` for managing pool-backed
+  arXiv metadata.
+- Pool readiness checks for single-instance and fleet workflows, including
+  maturity lag, `off|warn|strict` gating, structured readiness payloads, and
+  fleet pre-sync behavior.
+- Huldra-backed arXiv pool settings in starter presets, the example config,
+  and the main operator docs.
+- `recoleta inspect localization` for checking localized output coverage before
+  previewing or publishing multilingual surfaces.
+- Workflow timing metrics and benchmark/comparison helpers for fleet day runs.
+- Batch-first manual trend email runs that can cover multiple configured
+  granularities.
+
+### Changed
+
+- Presets that include arXiv now use Huldra-backed pool mode by default.
+- Freshness reporting now separates run freshness, data freshness, derived
+  windows, and backup recovery points more consistently.
+- Refactor-audit guidance now uses the released `cremona` package and the
+  repo's checked-in structural-debt baseline.
+
+### Fixed
+
+- arXiv HTML enrichment now respects conservative fetch-rate limits more
+  consistently.
+- Huldra-backed arXiv pool sync rejects unsupported force-refresh paths and
+  reports structured skip or block reasons.
+
 ## [0.2.1] - 2026-04-10
 
 ### Added
