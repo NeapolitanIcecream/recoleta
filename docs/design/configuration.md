@@ -202,8 +202,9 @@ ArXiv pool fields:
 - `ARXIV_POOL.enabled`: bool (default `false`). Required when
   `SOURCES.arxiv.mode=pool`.
 - `ARXIV_POOL.backend`: `local_sqlite|huldra` (default `local_sqlite`).
-- `ARXIV_POOL.huldra_base_url`: Huldra service URL, required for
-  `backend=huldra`.
+- `ARXIV_POOL.huldra_base_url`:
+  [Huldra](https://github.com/NeapolitanIcecream/huldra) service URL, required
+  for `backend=huldra`.
 - `ARXIV_POOL.huldra_request_timeout_seconds`: per-request timeout for Huldra
   calls (default `30.0`).
 - `ARXIV_POOL.huldra_wait_timeout_seconds`: optional wait cap for Huldra

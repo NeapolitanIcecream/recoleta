@@ -1,4 +1,4 @@
-# Huldra arXiv Pool Adapter Proposal
+# [Huldra](https://github.com/NeapolitanIcecream/huldra) arXiv Pool Adapter Proposal
 
 Status: Proposed
 

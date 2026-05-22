@@ -81,7 +81,8 @@ Suggested tag:
 
 Suggested release title:
 
-- `v0.3.0: Huldra-backed arXiv pool and readiness gates`
+- v0.3.0: [Huldra](https://github.com/NeapolitanIcecream/huldra)-backed arXiv
+  pool and readiness gates
 
 ## Suggested checklist
 

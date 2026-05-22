@@ -79,7 +79,8 @@ for replays and backlog repair.
 - Do not keep running the old shared config after cutover.
 - Do not point new writes at the archived shared DB.
 - Keep all arXiv-enabled child configs on the same pool backend identity. Mixed
-  `local_sqlite`/`huldra` backends or multiple Huldra endpoints block fleet
+  `local_sqlite`/`huldra` backends or multiple
+  [Huldra](https://github.com/NeapolitanIcecream/huldra) endpoints block fleet
   pre-sync before child workflows run.
 - When you need to inspect one child directly, use that child config for
   `inspect` or one-off debugging, not for normal recurring workflow runs.

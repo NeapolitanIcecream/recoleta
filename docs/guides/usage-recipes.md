@@ -69,7 +69,7 @@ What to know:
 - inspect, translate, or repair one child by pointing the single-instance
   command at that child config or output root.
 
-## Use Huldra-backed arXiv ingest
+## Use [Huldra](https://github.com/NeapolitanIcecream/huldra)-backed arXiv ingest
 
 Use Huldra when arXiv metadata should be cached and rate-limited outside each
 Recoleta instance. Install the optional dependency first:

@@ -79,8 +79,8 @@ Multi-instance deployments now use one child config per instance plus a
 - [`uv`](https://docs.astral.sh/uv/)
 - An LLM provider supported by LiteLLM
 - Pandoc if you want `html_document_md` output from arXiv `html_document`
-- Huldra and the `huldra` extra if your arXiv source uses the Huldra-backed
-  pool
+- [Huldra](https://github.com/NeapolitanIcecream/huldra) and the `huldra`
+  extra if your arXiv source uses the Huldra-backed pool
 - Optional integrations:
   - Obsidian vault for direct note writing
   - Telegram bot token and chat ID for chat delivery

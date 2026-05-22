@@ -19,7 +19,7 @@ instance in a fleet run.
 
 The implemented MVP keeps direct arXiv ingest available for compatibility and
 adds an explicit pool mode. Current arXiv fleet configs should use pool mode
-with the Huldra backend:
+with the [Huldra](https://github.com/NeapolitanIcecream/huldra) backend:
 
 - `ARXIV_POOL.enabled=true` with either `backend: huldra` plus
   `huldra_base_url`, or `backend: local_sqlite` plus an explicit
