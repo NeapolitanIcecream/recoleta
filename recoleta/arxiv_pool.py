@@ -2209,12 +2209,23 @@ def arxiv_pool_backend_descriptor_from_settings(
 def build_arxiv_pool_backend_from_settings(settings: Any) -> ArxivMetadataPoolBackend:
     pool = getattr(settings, "arxiv_pool", settings)
     descriptor = arxiv_pool_backend_descriptor_from_settings(settings)
+    return build_arxiv_pool_backend_from_descriptor(
+        descriptor,
+        huldra_request_timeout_seconds=float(
+            getattr(pool, "huldra_request_timeout_seconds", 30.0) or 30.0
+        ),
+    )
+
+
+def build_arxiv_pool_backend_from_descriptor(
+    descriptor: ArxivPoolBackendDescriptor,
+    *,
+    huldra_request_timeout_seconds: float = 30.0,
+) -> ArxivMetadataPoolBackend:
     if descriptor.kind == "huldra":
         return HuldraArxivPoolBackend(
             base_url=descriptor.identity,
-            request_timeout_seconds=float(
-                getattr(pool, "huldra_request_timeout_seconds", 30.0) or 30.0
-            ),
+            request_timeout_seconds=float(huldra_request_timeout_seconds),
         )
     return LocalSqliteArxivPoolBackend(ArxivPoolStore(Path(descriptor.identity)))
 
@@ -2313,6 +2324,14 @@ def evaluate_arxiv_pool_window_readiness(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _ArxivPoolReadinessCounts:
+    blocked_windows_total: int
+    immature_windows_total: int
+    unavailable_windows_total: int
+    unsafe_override_windows_total: int
+
+
 def evaluate_arxiv_pool_readiness(
     *,
     store: ArxivPoolStore | None = None,
@@ -2320,18 +2339,65 @@ def evaluate_arxiv_pool_readiness(
     windows: list[ArxivPoolWindow],
     policy: ArxivPoolReadinessPolicy,
 ) -> dict[str, Any]:
-    resolved_backend = backend
-    if resolved_backend is None:
-        if store is None:
-            raise ValueError("store or backend is required")
-        resolved_backend = LocalSqliteArxivPoolBackend(store)
-    window_readiness = [
-        resolved_backend.evaluate_window_readiness(
+    resolved_backend = _resolve_arxiv_pool_readiness_backend(
+        store=store,
+        backend=backend,
+    )
+    window_readiness = _evaluate_arxiv_pool_windows_readiness(
+        backend=resolved_backend,
+        windows=windows,
+        policy=policy,
+    )
+    immature_windows, unavailable_windows = _partition_arxiv_pool_blocked_windows(
+        window_readiness
+    )
+    counts = _arxiv_pool_readiness_counts(
+        immature_windows=immature_windows,
+        unavailable_windows=unavailable_windows,
+        policy=policy,
+    )
+    status = _arxiv_pool_readiness_status(
+        blocked_windows_total=counts.blocked_windows_total,
+        policy=policy,
+    )
+    return _arxiv_pool_readiness_payload(
+        status=status,
+        window_readiness=window_readiness,
+        counts=counts,
+        policy=policy,
+    )
+
+
+def _resolve_arxiv_pool_readiness_backend(
+    *,
+    store: ArxivPoolStore | None,
+    backend: ArxivMetadataPoolBackend | None,
+) -> ArxivMetadataPoolBackend:
+    if backend is not None:
+        return backend
+    if store is None:
+        raise ValueError("store or backend is required")
+    return LocalSqliteArxivPoolBackend(store)
+
+
+def _evaluate_arxiv_pool_windows_readiness(
+    *,
+    backend: ArxivMetadataPoolBackend,
+    windows: list[ArxivPoolWindow],
+    policy: ArxivPoolReadinessPolicy,
+) -> list[ArxivPoolBackendReadiness]:
+    return [
+        backend.evaluate_window_readiness(
             window=window,
             readiness_policy=policy,
         )
         for window in windows
     ]
+
+
+def _partition_arxiv_pool_blocked_windows(
+    window_readiness: list[ArxivPoolBackendReadiness],
+) -> tuple[list[ArxivPoolBackendReadiness], list[ArxivPoolBackendReadiness]]:
     immature_windows = [
         readiness
         for readiness in window_readiness
@@ -2340,28 +2406,60 @@ def evaluate_arxiv_pool_readiness(
     unavailable_windows = [
         readiness for readiness in window_readiness if readiness.unavailable
     ]
-    unsafe_override_total = (
-        len(immature_windows) if policy.allows_immature_windows else 0
-    )
-    blocked_windows_total = len(unavailable_windows) + (
-        0 if policy.allows_immature_windows else len(immature_windows)
-    )
-    if policy.readiness_gate == "off":
-        status = "disabled"
-    elif blocked_windows_total > 0:
-        status = "blocked"
+    return immature_windows, unavailable_windows
+
+
+def _arxiv_pool_readiness_counts(
+    *,
+    immature_windows: list[ArxivPoolBackendReadiness],
+    unavailable_windows: list[ArxivPoolBackendReadiness],
+    policy: ArxivPoolReadinessPolicy,
+) -> _ArxivPoolReadinessCounts:
+    immature_total = len(immature_windows)
+    unavailable_total = len(unavailable_windows)
+    if policy.allows_immature_windows:
+        blocked_total = unavailable_total
+        unsafe_override_total = immature_total
     else:
-        status = "ready"
+        blocked_total = unavailable_total + immature_total
+        unsafe_override_total = 0
+    return _ArxivPoolReadinessCounts(
+        blocked_windows_total=blocked_total,
+        immature_windows_total=immature_total,
+        unavailable_windows_total=unavailable_total,
+        unsafe_override_windows_total=unsafe_override_total,
+    )
+
+
+def _arxiv_pool_readiness_status(
+    *,
+    blocked_windows_total: int,
+    policy: ArxivPoolReadinessPolicy,
+) -> str:
+    if policy.readiness_gate == "off":
+        return "disabled"
+    if blocked_windows_total > 0:
+        return "blocked"
+    return "ready"
+
+
+def _arxiv_pool_readiness_payload(
+    *,
+    status: str,
+    window_readiness: list[ArxivPoolBackendReadiness],
+    counts: _ArxivPoolReadinessCounts,
+    policy: ArxivPoolReadinessPolicy,
+) -> dict[str, Any]:
     return {
         "status": status,
         "windows_total": len(window_readiness),
         "analysis_ready_windows_total": sum(
             1 for readiness in window_readiness if readiness.analysis_ready
         ),
-        "blocked_windows_total": blocked_windows_total,
-        "immature_windows_total": len(immature_windows),
-        "unavailable_windows_total": len(unavailable_windows),
-        "unsafe_override_windows_total": unsafe_override_total,
+        "blocked_windows_total": counts.blocked_windows_total,
+        "immature_windows_total": counts.immature_windows_total,
+        "unavailable_windows_total": counts.unavailable_windows_total,
+        "unsafe_override_windows_total": counts.unsafe_override_windows_total,
         "maturity_policy": policy.as_payload(),
         "windows": [readiness.as_payload() for readiness in window_readiness],
     }

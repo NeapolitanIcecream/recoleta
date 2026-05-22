@@ -56,7 +56,6 @@ from recoleta.arxiv_pool import (
     build_huldra_arxiv_request_for_window,
     build_arxiv_pool_windows_for_period,
     huldra_wait_timeout_seconds,
-    resolve_arxiv_pool_db_path,
 )
 from recoleta.storage import Repository
 from recoleta.cli.workflow_runner import (
@@ -801,13 +800,6 @@ def _fleet_arxiv_pool_settings_skip_reason(arxiv_settings: list[Any]) -> str | N
     if any(str(settings.sources.arxiv.mode) != "pool" for settings in arxiv_settings):
         return "direct_arxiv_source_present"
     return None
-
-
-def _shared_fleet_arxiv_pool_db_path(arxiv_settings: list[Any]) -> Path | None:
-    pool_paths = {resolve_arxiv_pool_db_path(settings) for settings in arxiv_settings}
-    if len(pool_paths) != 1:
-        return None
-    return next(iter(pool_paths))
 
 
 def _shared_fleet_arxiv_pool_backend_descriptor(

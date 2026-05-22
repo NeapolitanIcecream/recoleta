@@ -66,12 +66,6 @@ class _ArxivQueryState:
 
 
 @dataclass(slots=True, frozen=True)
-class _ArxivPoolWindowPull:
-    papers: list[Any] | None
-    complete: bool
-
-
-@dataclass(slots=True, frozen=True)
 class _OpenReviewVenueState:
     venue: str
     invitation: str

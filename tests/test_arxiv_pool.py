@@ -39,11 +39,15 @@ from recoleta.cli.arxiv_pool import (
     run_arxiv_pool_worker_command,
     run_inspect_arxiv_pool_freshness_command,
 )
+from recoleta.cli.arxiv_pool_readiness import (
+    build_arxiv_pool_workflow_readiness_plan,
+)
 from recoleta.cli.fleet import (
     build_fleet_arxiv_pool_pre_sync_plan,
     execute_fleet_granularity_workflow,
     run_fleet_arxiv_pool_pre_sync,
 )
+from recoleta.fleet import load_child_settings, load_fleet_manifest
 from recoleta.sources import (
     ArxivPullRequest,
     SourcePullResult,
@@ -2046,6 +2050,32 @@ def test_fleet_pre_sync_plan_merges_mixed_child_readiness_policies_safely(
     assert plan.cooldown_seconds == 3600
 
 
+def test_fleet_workflow_readiness_plan_merges_huldra_timeout(
+    tmp_path: Path,
+) -> None:
+    """Regression: Huldra readiness must not depend on child manifest order."""
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8765"),
+        huldra_request_timeout_seconds=(3, 12),
+    )
+    manifest = load_fleet_manifest(manifest_path)
+    settings_list = [
+        load_child_settings(instance.config_path) for instance in manifest.instances
+    ]
+
+    plan = build_arxiv_pool_workflow_readiness_plan(
+        settings_list=settings_list,
+        target_period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        target_period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        requested_steps=["trends:day"],
+    )
+
+    assert plan.status == "planned"
+    assert plan.pool_backend is not None
+    assert getattr(plan.pool_backend, "request_timeout_seconds") == 12.0
+
+
 def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2506,6 +2536,7 @@ def _write_huldra_fleet_manifest(
     *,
     base_urls: tuple[str, str],
     queries: tuple[str, str] = ("cat:cs.AI", "cat:cs.LG"),
+    huldra_request_timeout_seconds: tuple[float, float] = (30.0, 30.0),
 ) -> Path:
     child_paths: list[Path] = []
     for index, name in enumerate(("embodied_ai", "software")):
@@ -2521,6 +2552,9 @@ def _write_huldra_fleet_manifest(
                         "enabled": True,
                         "backend": "huldra",
                         "huldra_base_url": base_urls[index],
+                        "huldra_request_timeout_seconds": (
+                            huldra_request_timeout_seconds[index]
+                        ),
                     },
                     "SOURCES": {
                         "arxiv": {

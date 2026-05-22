@@ -13,10 +13,9 @@ from recoleta.arxiv_pool import (
     ArxivPoolWindow,
     arxiv_pool_backend_descriptor_from_settings,
     arxiv_pool_readiness_policy_from_settings,
-    build_arxiv_pool_backend_from_settings,
+    build_arxiv_pool_backend_from_descriptor,
     build_arxiv_pool_windows_for_period,
     evaluate_arxiv_pool_readiness,
-    resolve_arxiv_pool_db_path,
 )
 from recoleta.cli.workflow_models import (
     STEP_ANALYZE,
@@ -148,7 +147,10 @@ def build_arxiv_pool_workflow_readiness_plan(
             target_period_end=target_period_end,
         ),
         backend_descriptor=backend_descriptor,
-        pool_backend=build_arxiv_pool_backend_from_settings(arxiv_settings[0]),
+        pool_backend=_merged_arxiv_pool_backend(
+            arxiv_settings=arxiv_settings,
+            backend_descriptor=backend_descriptor,
+        ),
         maturity_lag_days=readiness_policy.maturity_lag_days,
         readiness_gate=readiness_policy.readiness_gate,
         allow_immature_windows=readiness_policy.allow_immature_windows,
@@ -216,13 +218,6 @@ def _pool_mode_arxiv_source_settings(settings_list: list[Any]) -> list[Any]:
     ]
 
 
-def _shared_arxiv_pool_db_path(arxiv_settings: list[Any]) -> Path | None:
-    pool_paths = {resolve_arxiv_pool_db_path(settings) for settings in arxiv_settings}
-    if len(pool_paths) != 1:
-        return None
-    return next(iter(pool_paths))
-
-
 def _shared_arxiv_pool_backend_descriptor(
     arxiv_settings: list[Any],
 ) -> tuple[ArxivPoolBackendDescriptor | None, str | None]:
@@ -240,6 +235,31 @@ def _shared_arxiv_pool_backend_descriptor(
             return None, "multiple_huldra_endpoints"
         return None, "multiple_pool_db_paths"
     return descriptors[0], None
+
+
+def _merged_arxiv_pool_backend(
+    *,
+    arxiv_settings: list[Any],
+    backend_descriptor: ArxivPoolBackendDescriptor,
+) -> ArxivMetadataPoolBackend:
+    return build_arxiv_pool_backend_from_descriptor(
+        backend_descriptor,
+        huldra_request_timeout_seconds=_merged_huldra_request_timeout(arxiv_settings),
+    )
+
+
+def _merged_huldra_request_timeout(arxiv_settings: list[Any]) -> float:
+    return max(
+        float(
+            getattr(
+                getattr(settings, "arxiv_pool", settings),
+                "huldra_request_timeout_seconds",
+                30.0,
+            )
+            or 30.0
+        )
+        for settings in arxiv_settings
+    )
 
 
 def _merged_arxiv_pool_readiness_policy(
