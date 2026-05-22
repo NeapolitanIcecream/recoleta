@@ -12,6 +12,8 @@ from recoleta.arxiv_pool import (
     ArxivPoolSyncResult,
     ArxivPoolWorker,
     ArxivPoolWindow,
+    HULDRA_DEPENDENCY_MISSING_REASON,
+    HuldraDependencyMissingError,
     arxiv_pool_backend_descriptor_from_settings,
     arxiv_pool_readiness_policy_from_settings,
     arxiv_pool_sync_result_from_huldra,
@@ -22,6 +24,7 @@ from recoleta.arxiv_pool import (
     build_arxiv_pool_windows_for_days,
     evaluate_arxiv_pool_window_readiness,
     huldra_wait_timeout_seconds,
+    require_huldra_client,
     resolve_arxiv_pool_db_path,
     worker_state_payload,
 )
@@ -63,11 +66,18 @@ def run_arxiv_pool_sync_command(
             command_name=command_name,
             json_output=json_output,
         )
-    result = _sync_configured_windows(
-        settings=settings,
-        windows=windows,
-        force=force,
-    )
+    try:
+        result = _sync_configured_windows(
+            settings=settings,
+            windows=windows,
+            force=force,
+        )
+    except HuldraDependencyMissingError as exc:
+        _reject_huldra_dependency_missing(
+            command_name=command_name,
+            json_output=json_output,
+            exc=exc,
+        )
     payload = {
         "status": "ok",
         "command": command_name,
@@ -114,21 +124,28 @@ def run_arxiv_pool_backfill_command(
     while cursor <= end:
         days.append(cursor)
         cursor += timedelta(days=1)
-    result = (
-        _huldra_backfill_configured_days(
-            settings=settings,
-            start=start,
-            end=end,
-            requested_days_total=len(days),
-            force=force,
+    try:
+        result = (
+            _huldra_backfill_configured_days(
+                settings=settings,
+                start=start,
+                end=end,
+                requested_days_total=len(days),
+                force=force,
+            )
+            if descriptor.kind == "huldra"
+            else _sync_configured_windows(
+                settings=settings,
+                windows=_configured_windows_for_days(settings=settings, days=days),
+                force=force,
+            )
         )
-        if descriptor.kind == "huldra"
-        else _sync_configured_windows(
-            settings=settings,
-            windows=_configured_windows_for_days(settings=settings, days=days),
-            force=force,
+    except HuldraDependencyMissingError as exc:
+        _reject_huldra_dependency_missing(
+            command_name=command_name,
+            json_output=json_output,
+            exc=exc,
         )
-    )
     payload = {
         "status": "ok",
         "command": command_name,
@@ -575,6 +592,29 @@ def _reject_huldra_force_refresh(
     raise cli.typer.Exit(code=1)
 
 
+def _reject_huldra_dependency_missing(
+    *,
+    command_name: str,
+    json_output: bool,
+    exc: HuldraDependencyMissingError,
+) -> NoReturn:
+    reason = HULDRA_DEPENDENCY_MISSING_REASON
+    message = str(exc)
+    if json_output:
+        cli._emit_json(
+            {
+                "status": "error",
+                "command": command_name,
+                "reason": reason,
+                "error": message,
+            }
+        )
+    else:
+        console = cli._runtime_symbols()["Console"]()
+        console.print(f"[red]{command_name} failed[/red] reason={reason} {message}")
+    raise cli.typer.Exit(code=1)
+
+
 def _sync_configured_windows(
     *,
     settings: Any,
@@ -586,7 +626,7 @@ def _sync_configured_windows(
     if descriptor.kind == "huldra":
         if force:
             raise ValueError(HULDRA_FORCE_REFRESH_UNSUPPORTED_REASON)
-        from huldra.client import HuldraClient
+        HuldraClient = require_huldra_client()
 
         readiness_policy = arxiv_pool_readiness_policy_from_settings(settings)
         requests = [
@@ -629,7 +669,7 @@ def _huldra_backfill_configured_days(
 ) -> Any:
     if force:
         raise ValueError(HULDRA_FORCE_REFRESH_UNSUPPORTED_REASON)
-    from huldra.client import HuldraClient
+    HuldraClient = require_huldra_client()
 
     arxiv_settings = _pool_arxiv_settings(settings)
     if arxiv_settings is None:

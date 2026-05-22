@@ -7,8 +7,6 @@ from typing import Any
 import httpx
 import pytest
 
-from huldra.models import ArxivPaper, ArxivResult
-
 from recoleta.arxiv_pool import (
     ArxivPoolPaper,
     ArxivPoolReadinessPolicy,
@@ -20,6 +18,16 @@ from recoleta.arxiv_pool import (
     pool_paper_to_item_draft,
 )
 from recoleta.sources import ArxivPullRequest, SourcePullResult, fetch_arxiv_drafts
+from tests.spec_support import (
+    FakeHuldraArxivPaper as ArxivPaper,
+    FakeHuldraArxivResult as ArxivResult,
+    install_fake_huldra,
+)
+
+
+@pytest.fixture(autouse=True)
+def _fake_huldra_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    install_fake_huldra(monkeypatch)
 
 
 def _window() -> ArxivPoolWindow:

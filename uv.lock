@@ -2627,7 +2627,6 @@ dependencies = [
     { name = "feedparser" },
     { name = "httpx" },
     { name = "huggingface-hub" },
-    { name = "huldra" },
     { name = "lancedb" },
     { name = "litellm" },
     { name = "loguru" },
@@ -2654,6 +2653,11 @@ dependencies = [
     { name = "typer" },
 ]
 
+[package.optional-dependencies]
+huldra = [
+    { name = "huldra" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
@@ -2674,7 +2678,7 @@ requires-dist = [
     { name = "feedparser", specifier = ">=6.0.12" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=0.36.2" },
-    { name = "huldra", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=278bf6b23e78bdd685fab915ac2b745143123410" },
+    { name = "huldra", marker = "extra == 'huldra'", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=278bf6b23e78bdd685fab915ac2b745143123410" },
     { name = "lancedb", specifier = ">=0.29.2" },
     { name = "litellm", specifier = ">=1.76.1" },
     { name = "loguru", specifier = ">=0.7.3" },
@@ -2700,6 +2704,7 @@ requires-dist = [
     { name = "trafilatura", specifier = ">=2.0.0" },
     { name = "typer", specifier = ">=0.24.1" },
 ]
+provides-extras = ["huldra"]
 
 [package.metadata.requires-dev]
 dev = [

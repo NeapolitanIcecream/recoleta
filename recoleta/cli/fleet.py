@@ -50,12 +50,14 @@ from recoleta.arxiv_pool import (
     ArxivPoolSync,
     ArxivPoolSyncResult,
     ArxivPoolWindow,
+    HuldraDependencyMissingError,
     arxiv_pool_backend_descriptor_from_settings,
     arxiv_pool_readiness_policy_from_settings,
     arxiv_pool_sync_result_from_huldra,
     build_huldra_arxiv_request_for_window,
     build_arxiv_pool_windows_for_period,
     huldra_wait_timeout_seconds,
+    require_huldra_client,
 )
 from recoleta.storage import Repository
 from recoleta.cli.workflow_runner import (
@@ -559,7 +561,20 @@ def _fleet_arxiv_pool_pre_sync_payload(
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     pre_sync_payload: dict[str, Any] = pre_sync_plan.as_payload()
     if pre_sync_plan.status == "planned":
-        sync_result = run_fleet_arxiv_pool_pre_sync(pre_sync_plan)
+        try:
+            sync_result = run_fleet_arxiv_pool_pre_sync(pre_sync_plan)
+        except HuldraDependencyMissingError as exc:
+            pre_sync_payload = {
+                **pre_sync_payload,
+                "status": "blocked",
+                "reason": exc.reason,
+                "error": str(exc),
+            }
+            if readiness_plan.status == "planned":
+                return pre_sync_payload, evaluate_arxiv_pool_workflow_readiness(
+                    readiness_plan
+                )
+            return pre_sync_payload, None
         pre_sync_payload = {
             **pre_sync_payload,
             "status": "completed",
@@ -908,7 +923,7 @@ def run_fleet_arxiv_pool_pre_sync(
         plan.backend_descriptor is not None
         and plan.backend_descriptor.kind == "huldra"
     ):
-        from huldra.client import HuldraClient
+        HuldraClient = require_huldra_client()
 
         readiness_policy = ArxivPoolReadinessPolicy(
             maturity_lag_days=plan.maturity_lag_days,

@@ -12,7 +12,6 @@ dependencies = [
     "feedparser>=6.0.12",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
-    "huldra @ git+https://github.com/NeapolitanIcecream/huldra.git@278bf6b23e78bdd685fab915ac2b745143123410",
     "lancedb>=0.29.2",
     "litellm>=1.76.1",
     "loguru>=0.7.3",
@@ -37,6 +36,11 @@ dependencies = [
     "tenacity>=9.1.4",
     "trafilatura>=2.0.0",
     "typer>=0.24.1",
+]
+
+[project.optional-dependencies]
+huldra = [
+    "huldra @ git+https://github.com/NeapolitanIcecream/huldra.git@278bf6b23e78bdd685fab915ac2b745143123410",
 ]
 
 [project.scripts]

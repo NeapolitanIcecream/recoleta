@@ -357,6 +357,45 @@ class ArxivPoolFetchError(RuntimeError):
         self.status_code = status_code
 
 
+HULDRA_DEPENDENCY_MISSING_REASON = "huldra_dependency_missing"
+HULDRA_DEPENDENCY_MISSING_MESSAGE = (
+    "Huldra arXiv pool backend requires the optional Huldra dependency; "
+    "install Recoleta with the huldra extra to use ARXIV_POOL.backend=huldra."
+)
+
+
+class HuldraDependencyMissingError(RuntimeError):
+    reason = HULDRA_DEPENDENCY_MISSING_REASON
+
+    def __init__(self, message: str = HULDRA_DEPENDENCY_MISSING_MESSAGE) -> None:
+        super().__init__(message)
+
+
+def require_huldra_client() -> Any:
+    try:
+        from huldra.client import HuldraClient
+    except ModuleNotFoundError as exc:
+        if _is_missing_huldra_import(exc):
+            raise HuldraDependencyMissingError() from exc
+        raise
+    return HuldraClient
+
+
+def require_huldra_arxiv_models() -> tuple[Any, Any, Any]:
+    try:
+        from huldra.models import ArxivRequest, CachePolicy, ReadinessMode
+    except ModuleNotFoundError as exc:
+        if _is_missing_huldra_import(exc):
+            raise HuldraDependencyMissingError() from exc
+        raise
+    return ArxivRequest, CachePolicy, ReadinessMode
+
+
+def _is_missing_huldra_import(exc: ModuleNotFoundError) -> bool:
+    missing_name = str(getattr(exc, "name", "") or "")
+    return missing_name == "huldra" or missing_name.startswith("huldra.")
+
+
 class LocalSqliteArxivPoolBackend:
     def __init__(self, store: ArxivPoolStore) -> None:
         self.store = store
@@ -434,7 +473,7 @@ class HuldraArxivPoolBackend:
     @property
     def client(self) -> Any:
         if self._client is None:
-            from huldra.client import HuldraClient
+            HuldraClient = require_huldra_client()
 
             self._client = HuldraClient(
                 base_url=self.base_url,
@@ -495,14 +534,26 @@ class HuldraArxivPoolBackend:
         *,
         readiness_policy: ArxivPoolReadinessPolicy,
     ) -> tuple[ArxivPoolBackendReadiness, list[ArxivPoolPaper] | None]:
-        request = build_huldra_arxiv_request_for_window(
-            window=window,
-            readiness_policy=readiness_policy,
-            client_id=self.client_id,
-            timeout_seconds=self.request_timeout_seconds,
-        )
         try:
+            request = build_huldra_arxiv_request_for_window(
+                window=window,
+                readiness_policy=readiness_policy,
+                client_id=self.client_id,
+                timeout_seconds=self.request_timeout_seconds,
+            )
             result = self.client.ensure(request)
+        except HuldraDependencyMissingError as exc:
+            readiness = _failed_huldra_readiness(
+                window=window,
+                reason=HULDRA_DEPENDENCY_MISSING_REASON,
+                diagnostic={
+                    "backend": "huldra",
+                    "huldra_base_url": self.base_url,
+                    "reason": HULDRA_DEPENDENCY_MISSING_REASON,
+                    "error_message": str(exc),
+                },
+            )
+            return readiness, None
         except Exception as exc:
             readiness = _failed_huldra_readiness(
                 window=window,
@@ -2237,7 +2288,7 @@ def build_huldra_arxiv_request_for_window(
     client_id: str,
     timeout_seconds: float,
 ) -> Any:
-    from huldra.models import ArxivRequest, CachePolicy, ReadinessMode
+    ArxivRequest, CachePolicy, ReadinessMode = require_huldra_arxiv_models()
 
     normalized_window = _normalize_window(window)
     readiness = (

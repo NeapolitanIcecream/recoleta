@@ -54,6 +54,7 @@ from recoleta.sources import (
     SourcePullStateSnapshot,
     fetch_arxiv_drafts,
 )
+from tests.spec_support import install_fake_huldra
 
 
 _EMPTY_ARXIV_FEED = """\
@@ -1666,6 +1667,7 @@ def test_huldra_pool_sync_command_delegates_to_huldra_client(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    install_fake_huldra(monkeypatch)
     from huldra.models import HuldraMaintenanceResult
 
     config_path = _write_huldra_pool_config(
@@ -1763,6 +1765,7 @@ def test_huldra_pool_backfill_command_uses_huldra_backfill_api(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    install_fake_huldra(monkeypatch)
     from huldra.models import HuldraMaintenanceResult
 
     config_path = _write_huldra_pool_config(
@@ -1959,6 +1962,7 @@ def test_huldra_fleet_pre_sync_delegates_deduped_windows_to_huldra(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    install_fake_huldra(monkeypatch)
     from huldra.models import HuldraMaintenanceResult
 
     manifest_path = _write_huldra_fleet_manifest(
@@ -2028,6 +2032,7 @@ def test_fleet_pre_sync_preserves_default_huldra_wait_timeout_for_unset_children
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Regression: one explicit child timeout must not suppress another child's default."""
+    install_fake_huldra(monkeypatch)
     from huldra.models import HuldraMaintenanceResult
 
     manifest_path = _write_huldra_fleet_manifest(
