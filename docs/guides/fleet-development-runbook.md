@@ -21,6 +21,8 @@ This means:
 - each child instance now has its own config, DB, output tree, and LanceDB root
 - `embodied_ai` keeps only the embodied arXiv query
 - `software_intelligence` keeps only the software-intelligence arXiv query
+- arXiv-enabled children use `sources.arxiv.mode: pool` with the shared
+  `arxiv_pool.backend: huldra` endpoint
 - `hn` and `hf_daily` remain enabled in both children by design
 - stale per-query `source_pull_states` were removed so future incremental pulls
   follow the live child config
@@ -76,6 +78,9 @@ for replays and backlog repair.
 - Treat the fleet manifest as the only manual entry point for the migrated deployment.
 - Do not keep running the old shared config after cutover.
 - Do not point new writes at the archived shared DB.
+- Keep all arXiv-enabled child configs on the same pool backend identity. Mixed
+  `local_sqlite`/`huldra` backends or multiple Huldra endpoints block fleet
+  pre-sync before child workflows run.
 - When you need to inspect one child directly, use that child config for
   `inspect` or one-off debugging, not for normal recurring workflow runs.
 

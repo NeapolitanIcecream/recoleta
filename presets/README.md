@@ -12,6 +12,10 @@ child configs and drive them from one `fleet.yaml` manifest.
 If you want screenshots and sample pages for comparison, start with
 [`../docs/guides/first-output-tour.md`](../docs/guides/first-output-tour.md).
 
+Presets that include arXiv use Huldra-backed pool mode. Run
+`uv sync --extra huldra` and keep Huldra reachable at the configured
+`arxiv_pool.huldra_base_url`, or edit that URL before the first run.
+
 ## Pick a preset
 
 ### Agents radar

@@ -130,6 +130,10 @@ Public examples:
 
 ## 4. Pick the closest preset example
 
+The preset configs that include arXiv use Huldra-backed pool mode. Install the
+`huldra` extra and make sure the configured `arxiv_pool.huldra_base_url` points
+at your Huldra service before running one of them.
+
 ### Agents radar
 
 - Start from: [`presets/agents-radar.yaml`](../../presets/agents-radar.yaml)

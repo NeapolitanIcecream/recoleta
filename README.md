@@ -79,6 +79,8 @@ Multi-instance deployments now use one child config per instance plus a
 - [`uv`](https://docs.astral.sh/uv/)
 - An LLM provider supported by LiteLLM
 - Pandoc if you want `html_document_md` output from arXiv `html_document`
+- Huldra and the `huldra` extra if your arXiv source uses the Huldra-backed
+  pool
 - Optional integrations:
   - Obsidian vault for direct note writing
   - Telegram bot token and chat ID for chat delivery
@@ -93,6 +95,12 @@ git clone https://github.com/NeapolitanIcecream/recoleta.git
 cd recoleta
 uv sync
 uv run recoleta --help
+```
+
+For Huldra-backed arXiv ingest, include the optional dependency:
+
+```bash
+uv sync --extra huldra
 ```
 
 <a id="recoleta-docker"></a>
@@ -300,6 +308,14 @@ topics:
   - ml-systems
 
 sources:
+  arxiv:
+    enabled: true
+    mode: pool
+    queries:
+      - "cat:cs.AI"
+      - "cat:cs.LG"
+    max_results_per_run: 50
+
   hn:
     enabled: true
     rss_urls:
@@ -308,6 +324,16 @@ sources:
     enabled: true
     feeds:
       - "https://example.com/feed.xml"
+
+arxiv_pool:
+  enabled: true
+  backend: huldra
+  huldra_base_url: "http://127.0.0.1:8765"
+  huldra_request_timeout_seconds: 30
+  huldra_wait_timeout_seconds: null
+  maturity_lag_days: 1
+  readiness_gate: strict
+  allow_immature_windows: false
 
 min_relevance_score: 0.6
 max_deliveries_per_day: 10
@@ -341,6 +367,16 @@ Run the default UTC-day workflow:
 
 ```bash
 uv run recoleta run now
+```
+
+When arXiv is configured with `mode: pool` and `arxiv_pool.backend: huldra`,
+Recoleta reads arXiv metadata through Huldra instead of calling arXiv directly
+from instance ingest. `huldra_base_url` must point at the Huldra service your
+operator runs. For a one-off prewarm or repair, run:
+
+```bash
+uv run recoleta arxiv-pool sync --date 2026-01-02 --lookback-days 3
+uv run recoleta inspect arxiv-pool freshness --json
 ```
 
 Use these commands when you want more control:
@@ -444,6 +480,10 @@ The fleet manifest sits above those child output trees.
 
 Use a preset when you want working sources and output paths without editing the
 full example config first.
+
+Presets that include arXiv use Huldra-backed pool mode. Install with
+`uv sync --extra huldra` and edit `arxiv_pool.huldra_base_url` if your Huldra
+service is not on `http://127.0.0.1:8765`.
 
 - [`presets/agents-radar.yaml`](./presets/agents-radar.yaml): track agent
   tooling, code agents, and evals

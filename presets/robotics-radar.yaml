@@ -16,6 +16,16 @@ publish_targets:
 
 markdown_output_dir: "~/.local/share/recoleta/presets/robotics-radar/outputs"
 
+arxiv_pool:
+  enabled: true
+  backend: huldra
+  huldra_base_url: "http://127.0.0.1:8765"
+  huldra_request_timeout_seconds: 30
+  huldra_wait_timeout_seconds: null
+  maturity_lag_days: 1
+  readiness_gate: strict
+  allow_immature_windows: false
+
 topics:
   - robotics
   - embodied-ai
@@ -25,6 +35,7 @@ topics:
 sources:
   arxiv:
     enabled: true
+    mode: pool
     queries:
       - "cat:cs.RO"
       - "cat:cs.AI AND all:robot"

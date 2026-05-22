@@ -123,6 +123,8 @@ sources:
   arxiv:
     enabled: false  # Default: false
     # mode: "direct"  # Default: "direct" (direct|pool)
+    # Use mode: "pool" with the arxiv_pool block below when arXiv metadata is
+    # served by Huldra or by Recoleta's local SQLite pool.
     # queries: []  # Required when enabled=true
     # queries:
     #   - "cat:cs.AI"
@@ -150,9 +152,19 @@ sources:
     # max_items_per_run: 50  # Default: 50
 
 # Shared arXiv metadata pool used when sources.arxiv.mode="pool".
+#
+# Huldra-backed pool mode keeps instance ingest from calling arXiv directly.
+# Install with `uv sync --extra huldra`, run or point at a Huldra service, then
+# set `sources.arxiv.mode: "pool"`.
 # arxiv_pool:
 #   enabled: false
-#   db_path: "~/.local/share/recoleta/arxiv_pool.db"
+#   backend: "huldra"  # Allowed: local_sqlite, huldra
+#   huldra_base_url: "http://127.0.0.1:8765"
+#   huldra_request_timeout_seconds: 30.0
+#   huldra_wait_timeout_seconds: null
+#   # For local_sqlite rollback, set:
+#   # backend: "local_sqlite"
+#   # db_path: "~/.local/share/recoleta/arxiv_pool.db"
 #   request_interval_seconds: 5.0
 #   cooldown_seconds: 3600
 #   maturity_lag_days: 1

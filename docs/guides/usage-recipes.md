@@ -69,6 +69,58 @@ What to know:
 - inspect, translate, or repair one child by pointing the single-instance
   command at that child config or output root.
 
+## Use Huldra-backed arXiv ingest
+
+Use Huldra when arXiv metadata should be cached and rate-limited outside each
+Recoleta instance. Install the optional dependency first:
+
+```bash
+uv sync --extra huldra
+```
+
+Then configure arXiv as a pool-backed source:
+
+```yaml
+sources:
+  arxiv:
+    enabled: true
+    mode: pool
+    queries:
+      - "cat:cs.AI"
+    max_results_per_run: 50
+
+arxiv_pool:
+  enabled: true
+  backend: huldra
+  huldra_base_url: "http://127.0.0.1:8765"
+  huldra_request_timeout_seconds: 30
+  huldra_wait_timeout_seconds: null
+  maturity_lag_days: 1
+  readiness_gate: strict
+  allow_immature_windows: false
+```
+
+Prewarm or inspect configured windows with:
+
+```bash
+uv run recoleta arxiv-pool sync --date 2026-01-02 --lookback-days 3
+uv run recoleta arxiv-pool backfill --start 2026-01-01 --end 2026-01-07
+uv run recoleta inspect arxiv-pool freshness --json
+```
+
+What to know:
+
+- `huldra_base_url` must point at the Huldra service used by this workspace.
+- instance ingest reads Huldra cache-only results and does not call arXiv
+  directly when `sources.arxiv.mode=pool`.
+- `arxiv-pool sync`, `arxiv-pool backfill`, and fleet pre-sync ask Huldra to
+  drain the requested windows before ingest continues.
+- `--force` is rejected for Huldra-backed sync/backfill until Huldra exposes a
+  force-refresh contract.
+- `recoleta arxiv-pool worker` and `recoleta admin arxiv-pool gc` are local
+  SQLite pool commands. In Huldra mode they return a structured unsupported
+  reason.
+
 ## Run one stage only
 
 ```bash

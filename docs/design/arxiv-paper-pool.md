@@ -17,14 +17,17 @@ infrastructure. It keeps upstream access polite, makes backfills deterministic,
 and prevents one 429 event from being amplified across every day and every
 instance in a fleet run.
 
-The implemented MVP keeps direct arXiv ingest as the default and adds an
-explicit pool mode:
+The implemented MVP keeps direct arXiv ingest available for compatibility and
+adds an explicit pool mode. Current arXiv fleet configs should use pool mode
+with the Huldra backend:
 
-- `ARXIV_POOL.enabled=true` with an explicit `ARXIV_POOL.db_path`.
+- `ARXIV_POOL.enabled=true` with either `backend: huldra` plus
+  `huldra_base_url`, or `backend: local_sqlite` plus an explicit
+  `ARXIV_POOL.db_path`.
 - `SOURCES.arxiv.mode=pool` to make ingest read cached windows only.
 - `recoleta arxiv-pool sync` and `backfill` to populate the shared pool.
 - Fleet pre-sync when every arXiv-enabled child instance uses pool mode and
-  points at the same pool database.
+  points at the same pool backend identity.
 - Pool-local durable rate state and a pool-local sync lease so concurrent sync
   commands cannot issue overlapping arXiv API requests.
 
@@ -75,8 +78,9 @@ time, the current two-query daily workload should finish in seconds, not hours.
 
 ## User-facing Behavior
 
-Add an opt-in pool mode first. Config files may use either the uppercase
-environment-style keys below or the equivalent lowercase field names:
+Config files may use either the uppercase environment-style keys below or the
+equivalent lowercase field names. Huldra is the current preferred pool backend
+for arXiv fleet configs; `local_sqlite` remains a rollback backend.
 
 ```yaml
 ARXIV_POOL:
@@ -347,12 +351,13 @@ On cache miss:
 - Add pool-backed source puller that returns `ItemDraft` objects from cached
   matches. Done.
 - Add inspect output for freshness and rate state. Done.
-- Keep direct arXiv mode available as the default during rollout. Done.
+- Keep direct arXiv mode available as a compatibility fallback during rollout.
+  Done.
 
 ### Phase 2: Fleet integration and cooldowns
 
 - Add fleet pre-sync when child arXiv sources use pool mode and share one pool
-  DB path. Done.
+  backend identity. Done.
 - Add durable rate limiter, cooldown behavior, and sync lease. Done.
 - Add metrics and diagnostics for upstream requests, cache hits, cache misses,
   429s, skipped windows, and cooldown state. Partially done: sync/backfill
@@ -448,9 +453,9 @@ Implemented test coverage:
 - Query text changes should create a new query fingerprint instead of mutating
   historical match rows.
 - A global user cache is convenient, but a fleet-local cache is easier to reason
-  about for reproducible backfills. The MVP requires an explicit shared
-  `ARXIV_POOL.db_path` for fleet pre-sync; an automatic fleet-local default can
-  be added later if needed.
+  about for reproducible backfills. The local SQLite backend requires an
+  explicit shared `ARXIV_POOL.db_path` for fleet pre-sync; an automatic
+  fleet-local default can be added later if needed.
 - If many instances share broad overlapping queries, dedup by `arxiv_id` should
   keep storage small, but query-window match rows can still grow and need GC.
 - The migration path from direct mode to pool mode should be explicit: direct

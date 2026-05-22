@@ -13,6 +13,9 @@ Config file:
 
 - [`robotics-radar.yaml`](./robotics-radar.yaml)
 
+This preset uses Huldra-backed arXiv pool mode. Keep Huldra reachable at
+`http://127.0.0.1:8765`, or edit `arxiv_pool.huldra_base_url` before running.
+
 ## Default outputs
 
 With default workflow settings:
@@ -37,6 +40,7 @@ RECOLETA_CONFIG_PATH=./recoleta.yaml
 RECOLETA_LLM_API_KEY="sk-replace-me"
 ENV
 
+uv sync --extra huldra
 uv run recoleta run now
 ```
 
