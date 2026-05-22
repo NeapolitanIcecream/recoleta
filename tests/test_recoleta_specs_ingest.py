@@ -532,6 +532,89 @@ def test_ingest_records_source_window_diagnostics(
     )
 
 
+def test_ingest_injects_huldra_pool_backend_without_local_pool_store(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.arxiv_pool as arxiv_pool_module
+    import recoleta.sources as source_connectors
+
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps(
+            {
+                "enabled": True,
+                "backend": "huldra",
+                "huldra_base_url": "http://127.0.0.1:8765",
+                "huldra_request_timeout_seconds": 7,
+            }
+        ),
+    )
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "mode": "pool",
+                    "queries": ["cat:cs.AI"],
+                    "max_results_per_run": 12,
+                }
+            }
+        ),
+    )
+    sentinel_backend = object()
+    calls: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "build_arxiv_pool_backend_from_settings",
+        lambda settings: sentinel_backend,  # noqa: ARG005
+    )
+
+    def fail_resolve_local_pool_path(settings: Any) -> Path:  # noqa: ARG001
+        raise AssertionError("Huldra ingest should not resolve a local pool DB path")
+
+    monkeypatch.setattr(
+        arxiv_pool_module,
+        "resolve_arxiv_pool_db_path",
+        fail_resolve_local_pool_path,
+    )
+
+    def fake_fetch_arxiv_drafts(
+        *,
+        request,
+        pool_backend=None,  # noqa: ANN001
+        **legacy_kwargs: Any,
+    ) -> SourcePullResult:
+        calls["request"] = request
+        calls["pool_backend"] = pool_backend
+        calls["legacy_pool_db_path"] = legacy_kwargs.get("pool_db_path")
+        return SourcePullResult()
+
+    monkeypatch.setattr(
+        source_connectors,
+        "fetch_arxiv_drafts",
+        fake_fetch_arxiv_drafts,
+    )
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    result = service.ingest(run_id="run-huldra-pool-injection")
+
+    assert result.inserted == 0
+    assert calls["pool_backend"] is sentinel_backend
+    assert calls["request"].mode == "pool"
+    assert calls["request"].pool_db_path is None
+    assert calls["legacy_pool_db_path"] is None
+
+
 def test_ingest_persists_source_pull_state_between_runs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

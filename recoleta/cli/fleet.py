@@ -6,6 +6,7 @@ from typing import Any
 
 import recoleta.cli as cli
 from recoleta.cli.arxiv_pool_readiness import (
+    TERMINAL_ARXIV_POOL_BACKEND_REASONS,
     arxiv_pool_workflow_readiness_should_block,
     build_arxiv_pool_workflow_readiness_plan,
     evaluate_arxiv_pool_workflow_readiness,
@@ -43,14 +44,20 @@ from recoleta.fleet import (
     load_fleet_manifest,
 )
 from recoleta.arxiv_pool import (
+    ArxivPoolBackendDescriptor,
     ArxivPoolReadinessPolicy,
     ArxivPoolStore,
     ArxivPoolSync,
     ArxivPoolSyncResult,
     ArxivPoolWindow,
+    HuldraDependencyMissingError,
+    arxiv_pool_backend_descriptor_from_settings,
     arxiv_pool_readiness_policy_from_settings,
+    arxiv_pool_sync_result_from_huldra,
+    build_huldra_arxiv_request_for_window,
     build_arxiv_pool_windows_for_period,
-    resolve_arxiv_pool_db_path,
+    huldra_wait_timeout_seconds,
+    require_huldra_client,
 )
 from recoleta.storage import Repository
 from recoleta.cli.workflow_runner import (
@@ -129,20 +136,33 @@ class FleetArxivPoolPreSyncPlan:
     reason: str | None
     pool_db_path: Path | None
     windows: list[ArxivPoolWindow]
+    backend_descriptor: ArxivPoolBackendDescriptor | None = None
     request_interval_seconds: float = 5.0
     cooldown_seconds: int = 3600
+    huldra_request_timeout_seconds: float = 30.0
+    huldra_wait_timeout_seconds: float | None = None
     maturity_lag_days: int = 1
     readiness_gate: str = "strict"
     allow_immature_windows: bool = False
 
     def as_payload(self) -> dict[str, Any]:
+        backend = self.backend_descriptor.kind if self.backend_descriptor else None
         return {
             "status": self.status,
             "reason": self.reason,
+            "backend": backend,
+            "huldra_base_url": (
+                self.backend_descriptor.identity
+                if self.backend_descriptor is not None
+                and self.backend_descriptor.kind == "huldra"
+                else None
+            ),
             "pool_db_path": str(self.pool_db_path) if self.pool_db_path else None,
             "windows_total": len(self.windows),
             "request_interval_seconds": self.request_interval_seconds,
             "cooldown_seconds": self.cooldown_seconds,
+            "huldra_request_timeout_seconds": self.huldra_request_timeout_seconds,
+            "huldra_wait_timeout_seconds": self.huldra_wait_timeout_seconds,
             "maturity_lag_days": self.maturity_lag_days,
             "readiness_gate": self.readiness_gate,
             "allow_immature_windows": self.allow_immature_windows,
@@ -541,7 +561,20 @@ def _fleet_arxiv_pool_pre_sync_payload(
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     pre_sync_payload: dict[str, Any] = pre_sync_plan.as_payload()
     if pre_sync_plan.status == "planned":
-        sync_result = run_fleet_arxiv_pool_pre_sync(pre_sync_plan)
+        try:
+            sync_result = run_fleet_arxiv_pool_pre_sync(pre_sync_plan)
+        except HuldraDependencyMissingError as exc:
+            pre_sync_payload = {
+                **pre_sync_payload,
+                "status": "blocked",
+                "reason": exc.reason,
+                "error": str(exc),
+            }
+            if readiness_plan.status == "planned":
+                return pre_sync_payload, evaluate_arxiv_pool_workflow_readiness(
+                    readiness_plan
+                )
+            return pre_sync_payload, None
         pre_sync_payload = {
             **pre_sync_payload,
             "status": "completed",
@@ -553,12 +586,16 @@ def _fleet_arxiv_pool_pre_sync_payload(
             return pre_sync_payload, readiness_payload
     if readiness_plan.status == "planned":
         return pre_sync_payload, evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+    if readiness_plan.status == "blocked":
+        return pre_sync_payload, evaluate_arxiv_pool_workflow_readiness(readiness_plan)
     return pre_sync_payload, None
 
 
 def _fleet_granularity_readiness_should_block(
     context: FleetGranularityReadinessContext,
 ) -> bool:
+    if context.arxiv_pool_pre_sync.get("status") == "blocked":
+        return True
     if context.arxiv_pool_readiness is None:
         return False
     return arxiv_pool_workflow_readiness_should_block(
@@ -596,6 +633,13 @@ def _emit_fleet_granularity_blocked(
         return
     readiness = payload["arxiv_pool_readiness"]
     console = cli._runtime_symbols()["Console"]()
+    if readiness is None:
+        pre_sync = payload["arxiv_pool_pre_sync"]
+        console.print(
+            f"[yellow]{command} blocked[/yellow] "
+            f"reason={pre_sync.get('reason')}"
+        )
+        return
     console.print(
         f"[yellow]{command} blocked[/yellow] "
         f"arxiv_pool_windows={readiness['blocked_windows_total']}"
@@ -682,9 +726,14 @@ def build_fleet_arxiv_pool_pre_sync_plan(
     skip_reason = _fleet_arxiv_pool_settings_skip_reason(arxiv_settings)
     if skip_reason is not None:
         return _skipped_fleet_arxiv_pool_pre_sync_plan(skip_reason)
-    pool_path = _shared_fleet_arxiv_pool_db_path(arxiv_settings)
-    if pool_path is None:
-        return _skipped_fleet_arxiv_pool_pre_sync_plan("multiple_pool_db_paths")
+    backend_descriptor, backend_skip_reason = _shared_fleet_arxiv_pool_backend_descriptor(
+        arxiv_settings
+    )
+    if backend_descriptor is None:
+        reason = backend_skip_reason or "multiple_pool_db_paths"
+        if reason in TERMINAL_ARXIV_POOL_BACKEND_REASONS:
+            return _blocked_fleet_arxiv_pool_pre_sync_plan(reason)
+        return _skipped_fleet_arxiv_pool_pre_sync_plan(reason)
     windows = _fleet_arxiv_pool_windows(
         arxiv_settings=arxiv_settings,
         workflow_name=normalized_workflow,
@@ -698,10 +747,23 @@ def build_fleet_arxiv_pool_pre_sync_plan(
     return FleetArxivPoolPreSyncPlan(
         status="planned",
         reason=None,
-        pool_db_path=pool_path,
+        pool_db_path=(
+            Path(backend_descriptor.identity)
+            if backend_descriptor.kind == "local_sqlite"
+            else None
+        ),
         windows=windows,
+        backend_descriptor=backend_descriptor,
         request_interval_seconds=request_interval_seconds,
         cooldown_seconds=cooldown_seconds,
+        huldra_request_timeout_seconds=max(
+            float(settings.arxiv_pool.huldra_request_timeout_seconds)
+            for settings in arxiv_settings
+        ),
+        huldra_wait_timeout_seconds=_merged_huldra_wait_timeout(
+            arxiv_settings,
+            requested_windows_total=len(windows),
+        ),
         maturity_lag_days=readiness_policy.maturity_lag_days,
         readiness_gate=readiness_policy.readiness_gate,
         allow_immature_windows=readiness_policy.allow_immature_windows,
@@ -728,6 +790,17 @@ def _skipped_fleet_arxiv_pool_pre_sync_plan(
     )
 
 
+def _blocked_fleet_arxiv_pool_pre_sync_plan(
+    reason: str,
+) -> FleetArxivPoolPreSyncPlan:
+    return FleetArxivPoolPreSyncPlan(
+        status="blocked",
+        reason=reason,
+        pool_db_path=None,
+        windows=[],
+    )
+
+
 def _fleet_arxiv_pool_source_settings(manifest: Any) -> list[Any]:
     child_settings = [
         load_child_settings(instance.config_path) for instance in manifest.instances
@@ -747,11 +820,44 @@ def _fleet_arxiv_pool_settings_skip_reason(arxiv_settings: list[Any]) -> str | N
     return None
 
 
-def _shared_fleet_arxiv_pool_db_path(arxiv_settings: list[Any]) -> Path | None:
-    pool_paths = {resolve_arxiv_pool_db_path(settings) for settings in arxiv_settings}
-    if len(pool_paths) != 1:
+def _shared_fleet_arxiv_pool_backend_descriptor(
+    arxiv_settings: list[Any],
+) -> tuple[ArxivPoolBackendDescriptor | None, str | None]:
+    descriptors = [
+        arxiv_pool_backend_descriptor_from_settings(settings)
+        for settings in arxiv_settings
+    ]
+    kinds = {descriptor.kind for descriptor in descriptors}
+    if len(kinds) > 1:
+        return None, "mixed_arxiv_pool_backends"
+    identities = {descriptor.identity for descriptor in descriptors}
+    if len(identities) != 1:
+        kind = next(iter(kinds))
+        if kind == "huldra":
+            return None, "multiple_huldra_endpoints"
+        return None, "multiple_pool_db_paths"
+    return descriptors[0], None
+
+
+def _merged_huldra_wait_timeout(
+    arxiv_settings: list[Any],
+    *,
+    requested_windows_total: int,
+) -> float | None:
+    values = [
+        getattr(settings.arxiv_pool, "huldra_wait_timeout_seconds", None)
+        for settings in arxiv_settings
+    ]
+    numeric_values = [float(value) for value in values if value is not None]
+    if len(numeric_values) == len(values):
+        return max(numeric_values) if numeric_values else None
+    if not numeric_values:
         return None
-    return next(iter(pool_paths))
+    default_timeout = huldra_wait_timeout_seconds(
+        configured_timeout_seconds=None,
+        requested_windows_total=requested_windows_total,
+    )
+    return max(default_timeout, *numeric_values)
 
 
 def _merged_fleet_arxiv_pool_plan_settings(
@@ -813,6 +919,40 @@ def _fleet_arxiv_pool_windows(
 def run_fleet_arxiv_pool_pre_sync(
     plan: FleetArxivPoolPreSyncPlan,
 ) -> ArxivPoolSyncResult:
+    if (
+        plan.backend_descriptor is not None
+        and plan.backend_descriptor.kind == "huldra"
+    ):
+        HuldraClient = require_huldra_client()
+
+        readiness_policy = ArxivPoolReadinessPolicy(
+            maturity_lag_days=plan.maturity_lag_days,
+            readiness_gate=plan.readiness_gate,
+            allow_immature_windows=plan.allow_immature_windows,
+        )
+        requests = [
+            build_huldra_arxiv_request_for_window(
+                window=window,
+                readiness_policy=readiness_policy,
+                client_id="recoleta:fleet",
+                timeout_seconds=plan.huldra_request_timeout_seconds,
+            )
+            for window in plan.windows
+        ]
+        wait_timeout = huldra_wait_timeout_seconds(
+            configured_timeout_seconds=plan.huldra_wait_timeout_seconds,
+            requested_windows_total=len(requests),
+        )
+        with HuldraClient(
+            base_url=plan.backend_descriptor.identity,
+            timeout=plan.huldra_request_timeout_seconds,
+        ) as client:
+            result = client.sync_windows(
+                requests,
+                wait=True,
+                wait_timeout_seconds=wait_timeout,
+            )
+        return arxiv_pool_sync_result_from_huldra(result)
     if plan.pool_db_path is None:
         return ArxivPoolSyncResult(requested_windows_total=0)
     return ArxivPoolSync(

@@ -38,6 +38,11 @@ dependencies = [
     "typer>=0.24.1",
 ]
 
+[project.optional-dependencies]
+huldra = [
+    "huldra @ git+https://github.com/NeapolitanIcecream/huldra.git@278bf6b23e78bdd685fab915ac2b745143123410",
+]
+
 [project.scripts]
 recoleta = "recoleta.cli:main"
 

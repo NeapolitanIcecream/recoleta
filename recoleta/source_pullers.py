@@ -66,12 +66,6 @@ class _ArxivQueryState:
 
 
 @dataclass(slots=True, frozen=True)
-class _ArxivPoolWindowPull:
-    papers: list[Any] | None
-    complete: bool
-
-
-@dataclass(slots=True, frozen=True)
 class _OpenReviewVenueState:
     venue: str
     invitation: str
@@ -371,15 +365,25 @@ class _HFDailyPuller:
         )
 
 
-def pull_arxiv_drafts(request: ArxivPullRequest) -> list[ItemDraft] | SourcePullResult:
+def pull_arxiv_drafts(
+    request: ArxivPullRequest,
+    *,
+    pool_backend: Any | None = None,
+) -> list[ItemDraft] | SourcePullResult:
     if str(getattr(request, "mode", "direct") or "direct").strip().lower() == "pool":
-        return _ArxivPoolPuller(request).pull()
+        return _ArxivPoolPuller(request, pool_backend=pool_backend).pull()
     return _ArxivPuller(request).pull()
 
 
 class _ArxivPoolPuller:
-    def __init__(self, request: ArxivPullRequest) -> None:
+    def __init__(
+        self,
+        request: ArxivPullRequest,
+        *,
+        pool_backend: Any | None = None,
+    ) -> None:
         self.request = request
+        self.pool_backend = pool_backend
         self.stats = SourcePullResult()
         self.drafts: list[ItemDraft] = []
         self.seen_entry_ids: set[str] = set()
@@ -425,7 +429,8 @@ class _ArxivPoolPuller:
 
     def _pull_query(self, query: str) -> None:
         state = self._query_state(query)
-        if self.request.pool_db_path is None:
+        backend = self.pool_backend
+        if backend is None and self.request.pool_db_path is None:
             self._record_unavailable_window()
             self._record_query_state_update(
                 state=state,
@@ -441,15 +446,18 @@ class _ArxivPoolPuller:
             )
             return
 
-        from recoleta.arxiv_pool import ArxivPoolStore
+        if backend is None:
+            from recoleta.arxiv_pool import ArxivPoolStore, LocalSqliteArxivPoolBackend
 
-        store = ArxivPoolStore(self.request.pool_db_path)
+            pool_db_path = self.request.pool_db_path
+            assert pool_db_path is not None
+            backend = LocalSqliteArxivPoolBackend(ArxivPoolStore(pool_db_path))
         newest_published_at = state.watermark
         emitted_total = 0
         complete = True
         for window in windows:
             window_pull = self._cached_pool_window_papers(
-                store=store,
+                backend=backend,
                 window=window,
             )
             complete = complete and window_pull.complete
@@ -458,6 +466,9 @@ class _ArxivPoolPuller:
             emitted_count, newest_published_at = self._append_pool_papers(
                 papers=window_pull.papers,
                 window=window,
+                extra_raw_metadata=self._extra_raw_metadata_for_readiness(
+                    window_pull.readiness
+                ),
                 state=state,
                 newest_published_at=newest_published_at,
             )
@@ -471,24 +482,19 @@ class _ArxivPoolPuller:
         )
 
     def _cached_pool_window_papers(
-        self, *, store: Any, window: Any
-    ) -> _ArxivPoolWindowPull:
-        if not self._record_pool_window_readiness(store=store, window=window):
-            return _ArxivPoolWindowPull(papers=None, complete=False)
-        papers = store.cached_papers_for_window(window)
-        if papers is None:
-            self._record_unavailable_window()
-            return _ArxivPoolWindowPull(papers=None, complete=False)
-        return _ArxivPoolWindowPull(papers=papers, complete=True)
-
-    def _record_pool_window_readiness(self, *, store: Any, window: Any) -> bool:
-        from recoleta.arxiv_pool import evaluate_arxiv_pool_window_readiness
-
-        readiness = evaluate_arxiv_pool_window_readiness(
-            store=store,
-            window=window,
-            policy=self.readiness_policy,
+        self, *, backend: Any, window: Any
+    ) -> Any:
+        window_pull = backend.cached_papers_for_window(
+            window,
+            readiness_policy=self.readiness_policy,
         )
+        if not self._record_pool_window_readiness(window_pull.readiness):
+            return window_pull
+        if window_pull.papers is None:
+            self._record_unavailable_window()
+        return window_pull
+
+    def _record_pool_window_readiness(self, readiness: Any) -> bool:
         self._record_window_readiness_diagnostic(readiness)
         if readiness.analysis_ready:
             self._record_analysis_ready_window()
@@ -507,6 +513,7 @@ class _ArxivPoolPuller:
         *,
         papers: list[Any],
         window: Any,
+        extra_raw_metadata: Mapping[str, Any] | None,
         state: _ArxivQueryState,
         newest_published_at: datetime | None,
     ) -> tuple[int, datetime | None]:
@@ -514,7 +521,11 @@ class _ArxivPoolPuller:
 
         emitted_total = 0
         for paper in papers:
-            draft = pool_paper_to_item_draft(paper=paper, window=window)
+            draft = pool_paper_to_item_draft(
+                paper=paper,
+                window=window,
+                extra_raw_metadata=extra_raw_metadata,
+            )
             if not self._should_keep_draft(draft=draft, state=state):
                 continue
             self.drafts.append(draft)
@@ -524,6 +535,17 @@ class _ArxivPoolPuller:
                 candidate=draft.published_at,
             )
         return emitted_total, newest_published_at
+
+    def _extra_raw_metadata_for_readiness(
+        self,
+        readiness: Any,
+    ) -> Mapping[str, Any] | None:
+        if getattr(readiness, "backend", None) != "huldra":
+            return None
+        cache_key = str(getattr(readiness, "cache_key", "") or "").strip()
+        if not cache_key:
+            return None
+        return {"huldra_cache_key": cache_key}
 
     def _should_keep_draft(self, *, draft: ItemDraft, state: _ArxivQueryState) -> bool:
         entry_id = str(draft.canonical_url or "").strip()
@@ -656,23 +678,33 @@ class _ArxivPoolPuller:
 
     def _record_window_readiness_diagnostic(self, readiness: Any) -> None:
         payload = readiness.as_payload()
-        self.stats.diagnostics.append(
-            {
-                "source": "arxiv",
-                "kind": "pool_window_readiness",
-                "query_text": payload["query_text"],
-                "period_start": payload["period_start"],
-                "period_end": payload["period_end"],
-                "max_results": payload["max_results"],
-                "record_status": payload["status"],
-                "cache_readable": payload["cache_readable"],
-                "mature": payload["mature"],
-                "analysis_ready": payload["analysis_ready"],
-                "blocked_reason": payload["blocked_reason"],
-                "readiness_gate": self.readiness_policy.readiness_gate,
-                "allow_immature_windows": self.readiness_policy.allow_immature_windows,
-            }
-        )
+        diagnostic = {
+            "source": "arxiv",
+            "kind": "pool_window_readiness",
+            "query_text": payload["query_text"],
+            "period_start": payload["period_start"],
+            "period_end": payload["period_end"],
+            "max_results": payload["max_results"],
+            "record_status": payload["status"],
+            "cache_readable": payload["cache_readable"],
+            "mature": payload["mature"],
+            "analysis_ready": payload["analysis_ready"],
+            "blocked_reason": payload["blocked_reason"],
+            "readiness_gate": self.readiness_policy.readiness_gate,
+            "allow_immature_windows": self.readiness_policy.allow_immature_windows,
+        }
+        if payload.get("backend") not in {None, "local_sqlite"}:
+            diagnostic["backend"] = payload["backend"]
+        if payload.get("backend") == "huldra" and payload.get("cache_status") is not None:
+            diagnostic["cache_status"] = payload["cache_status"]
+        if payload.get("serving_status") is not None:
+            diagnostic["serving_status"] = payload["serving_status"]
+        if payload.get("cache_key") is not None:
+            diagnostic["huldra_cache_key"] = payload["cache_key"]
+        backend_diagnostic = payload.get("diagnostic")
+        if isinstance(backend_diagnostic, Mapping):
+            diagnostic.update(dict(backend_diagnostic))
+        self.stats.diagnostics.append(diagnostic)
 
     def _increment_extra_metric(self, key: str, value: int) -> None:
         self.stats.extra_metrics[key] = int(self.stats.extra_metrics.get(key) or 0) + int(

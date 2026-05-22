@@ -72,6 +72,7 @@ def _default_lancedb_dir() -> Path:
 
 _ALLOWED_PUBLISH_TARGETS = {"markdown", "obsidian", "telegram"}
 _ALLOWED_ARXIV_SOURCE_MODES = {"direct", "pool"}
+_ALLOWED_ARXIV_POOL_BACKENDS = {"local_sqlite", "huldra"}
 _ALLOWED_ARXIV_ENRICH_METHODS = {"pdf_text", "latex_source", "html_document"}
 _ALLOWED_ARXIV_ENRICH_FAILURE_MODES = {"fallback", "strict"}
 _ALLOWED_TRENDS_EMBEDDING_FAILURE_MODES = {"continue", "fail_fast", "threshold"}
@@ -1075,12 +1076,36 @@ class SourcesConfig(BaseModel):
 
 class ArxivPoolConfig(BaseModel):
     enabled: bool = False
+    backend: str = "local_sqlite"
     db_path: Path | None = None
     request_interval_seconds: float = Field(default=5.0, ge=0.0)
     cooldown_seconds: int = Field(default=3600, ge=1)
+    huldra_base_url: str | None = None
+    huldra_request_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    huldra_wait_timeout_seconds: float | None = Field(default=None, gt=0.0)
     maturity_lag_days: int = Field(default=1, ge=0)
     readiness_gate: str = "strict"
     allow_immature_windows: bool = False
+
+    @field_validator("backend", mode="before")
+    @classmethod
+    def _normalize_backend(cls, value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            return "local_sqlite"
+        if normalized not in _ALLOWED_ARXIV_POOL_BACKENDS:
+            raise ValueError(
+                "ARXIV_POOL.backend must be one of: local_sqlite, huldra"
+            )
+        return normalized
+
+    @field_validator("huldra_base_url", mode="before")
+    @classmethod
+    def _normalize_huldra_base_url(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized.rstrip("/") if normalized else None
 
     @field_validator("readiness_gate", mode="before")
     @classmethod
@@ -1093,9 +1118,17 @@ class ArxivPoolConfig(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def _validate_enabled_requires_db_path(self) -> "ArxivPoolConfig":
-        if self.enabled and self.db_path is None:
-            raise ValueError("ARXIV_POOL.db_path is required when enabled=true")
+    def _validate_enabled_backend_requirements(self) -> "ArxivPoolConfig":
+        if not self.enabled:
+            return self
+        if self.backend == "local_sqlite" and self.db_path is None:
+            raise ValueError(
+                "ARXIV_POOL.db_path is required when enabled=true and backend=local_sqlite"
+            )
+        if self.backend == "huldra" and not self.huldra_base_url:
+            raise ValueError(
+                "ARXIV_POOL.huldra_base_url is required when backend=huldra"
+            )
         return self
 
 

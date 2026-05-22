@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import calendar
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -13,7 +13,7 @@ import random
 import re
 import sqlite3
 import time
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -163,6 +163,84 @@ class ArxivPoolWindowReadiness:
 
 
 @dataclass(frozen=True, slots=True)
+class ArxivPoolBackendReadiness:
+    query_text: str
+    period_start: datetime
+    period_end: datetime
+    max_results: int
+    backend: Literal["local_sqlite", "huldra"]
+    cache_status: str
+    serving_status: str | None
+    cache_readable: bool
+    mature: bool
+    analysis_ready: bool
+    blocked_reason: str | None
+    cache_key: str | None = None
+    diagnostic: dict[str, Any] | None = None
+
+    @property
+    def status(self) -> str:
+        return self.cache_status
+
+    @property
+    def unavailable(self) -> bool:
+        return (
+            not self.analysis_ready
+            and self.blocked_reason is not None
+            and self.blocked_reason != "immature_window"
+        )
+
+    def as_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "query_text": self.query_text,
+            "period_start": self.period_start.isoformat(),
+            "period_end": self.period_end.isoformat(),
+            "max_results": self.max_results,
+            "backend": self.backend,
+            "status": self.cache_status,
+            "cache_status": self.cache_status,
+            "serving_status": self.serving_status,
+            "cache_readable": self.cache_readable,
+            "mature": self.mature,
+            "analysis_ready": self.analysis_ready,
+            "blocked_reason": self.blocked_reason,
+            "cache_key": self.cache_key,
+        }
+        if self.diagnostic:
+            payload["diagnostic"] = dict(self.diagnostic)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ArxivPoolWindowPullResult:
+    papers: list[ArxivPoolPaper] | None
+    complete: bool
+    readiness: ArxivPoolBackendReadiness
+
+
+class ArxivMetadataPoolBackend(Protocol):
+    def cached_papers_for_window(
+        self,
+        window: ArxivPoolWindow,
+        *,
+        readiness_policy: ArxivPoolReadinessPolicy,
+    ) -> ArxivPoolWindowPullResult: ...
+
+    def evaluate_window_readiness(
+        self,
+        window: ArxivPoolWindow,
+        *,
+        readiness_policy: ArxivPoolReadinessPolicy,
+    ) -> ArxivPoolBackendReadiness: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ArxivPoolBackendDescriptor:
+    kind: Literal["local_sqlite", "huldra"]
+    identity: str
+
+
+@dataclass(frozen=True, slots=True)
 class ArxivPoolRateState:
     last_request_at: datetime | None
     cooldown_until: datetime | None
@@ -277,6 +355,233 @@ class ArxivPoolFetchError(RuntimeError):
         super().__init__(message)
         self.status = status_code
         self.status_code = status_code
+
+
+HULDRA_DEPENDENCY_MISSING_REASON = "huldra_dependency_missing"
+HULDRA_DEPENDENCY_MISSING_MESSAGE = (
+    "Huldra arXiv pool backend requires the optional Huldra dependency; "
+    "install Recoleta with the huldra extra to use ARXIV_POOL.backend=huldra."
+)
+
+
+class HuldraDependencyMissingError(RuntimeError):
+    reason = HULDRA_DEPENDENCY_MISSING_REASON
+
+    def __init__(self, message: str = HULDRA_DEPENDENCY_MISSING_MESSAGE) -> None:
+        super().__init__(message)
+
+
+def require_huldra_client() -> Any:
+    try:
+        from huldra.client import HuldraClient
+    except ModuleNotFoundError as exc:
+        if _is_missing_huldra_import(exc):
+            raise HuldraDependencyMissingError() from exc
+        raise
+    return HuldraClient
+
+
+def require_huldra_arxiv_models() -> tuple[Any, Any, Any]:
+    try:
+        from huldra.models import ArxivRequest, CachePolicy, ReadinessMode
+    except ModuleNotFoundError as exc:
+        if _is_missing_huldra_import(exc):
+            raise HuldraDependencyMissingError() from exc
+        raise
+    return ArxivRequest, CachePolicy, ReadinessMode
+
+
+def _is_missing_huldra_import(exc: ModuleNotFoundError) -> bool:
+    missing_name = str(getattr(exc, "name", "") or "")
+    return missing_name == "huldra" or missing_name.startswith("huldra.")
+
+
+class LocalSqliteArxivPoolBackend:
+    def __init__(self, store: ArxivPoolStore) -> None:
+        self.store = store
+
+    def cached_papers_for_window(
+        self,
+        window: ArxivPoolWindow,
+        *,
+        readiness_policy: ArxivPoolReadinessPolicy,
+    ) -> ArxivPoolWindowPullResult:
+        readiness = self.evaluate_window_readiness(
+            window,
+            readiness_policy=readiness_policy,
+        )
+        if not readiness.analysis_ready:
+            if readiness.blocked_reason != "immature_window":
+                return ArxivPoolWindowPullResult(
+                    papers=None,
+                    complete=False,
+                    readiness=readiness,
+                )
+            if not readiness_policy.allows_immature_windows:
+                return ArxivPoolWindowPullResult(
+                    papers=None,
+                    complete=False,
+                    readiness=readiness,
+                )
+        papers = self.store.cached_papers_for_window(window)
+        return ArxivPoolWindowPullResult(
+            papers=papers,
+            complete=papers is not None,
+            readiness=readiness,
+        )
+
+    def evaluate_window_readiness(
+        self,
+        window: ArxivPoolWindow,
+        *,
+        readiness_policy: ArxivPoolReadinessPolicy,
+    ) -> ArxivPoolBackendReadiness:
+        readiness = evaluate_arxiv_pool_window_readiness(
+            store=self.store,
+            window=window,
+            policy=readiness_policy,
+        )
+        return ArxivPoolBackendReadiness(
+            query_text=readiness.window.query_text,
+            period_start=readiness.window.period_start,
+            period_end=readiness.window.period_end,
+            max_results=readiness.window.max_results,
+            backend="local_sqlite",
+            cache_status=readiness.status,
+            serving_status=None,
+            cache_readable=readiness.cache_readable,
+            mature=readiness.mature,
+            analysis_ready=readiness.analysis_ready,
+            blocked_reason=readiness.blocked_reason,
+        )
+
+
+class HuldraArxivPoolBackend:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        request_timeout_seconds: float = 30.0,
+        client: Any | None = None,
+        client_id: str = "recoleta",
+    ) -> None:
+        self.base_url = str(base_url or "").strip().rstrip("/")
+        self.request_timeout_seconds = float(request_timeout_seconds)
+        self.client_id = str(client_id or "recoleta").strip() or "recoleta"
+        self._client = client
+
+    @property
+    def client(self) -> Any:
+        if self._client is None:
+            HuldraClient = require_huldra_client()
+
+            self._client = HuldraClient(
+                base_url=self.base_url,
+                timeout=self.request_timeout_seconds,
+            )
+        return self._client
+
+    def cached_papers_for_window(
+        self,
+        window: ArxivPoolWindow,
+        *,
+        readiness_policy: ArxivPoolReadinessPolicy,
+    ) -> ArxivPoolWindowPullResult:
+        normalized_window = _normalize_window(window)
+        readiness, papers = self._request_window(
+            normalized_window,
+            readiness_policy=readiness_policy,
+        )
+        if readiness.analysis_ready:
+            return ArxivPoolWindowPullResult(
+                papers=papers,
+                complete=True,
+                readiness=readiness,
+            )
+        if readiness.blocked_reason == "immature_window":
+            if readiness_policy.allows_immature_windows:
+                return ArxivPoolWindowPullResult(
+                    papers=papers,
+                    complete=papers is not None,
+                    readiness=readiness,
+                )
+            return ArxivPoolWindowPullResult(
+                papers=None,
+                complete=False,
+                readiness=readiness,
+            )
+        return ArxivPoolWindowPullResult(
+            papers=None,
+            complete=False,
+            readiness=readiness,
+        )
+
+    def evaluate_window_readiness(
+        self,
+        window: ArxivPoolWindow,
+        *,
+        readiness_policy: ArxivPoolReadinessPolicy,
+    ) -> ArxivPoolBackendReadiness:
+        readiness, _ = self._request_window(
+            _normalize_window(window),
+            readiness_policy=readiness_policy,
+        )
+        return readiness
+
+    def _request_window(
+        self,
+        window: ArxivPoolWindow,
+        *,
+        readiness_policy: ArxivPoolReadinessPolicy,
+    ) -> tuple[ArxivPoolBackendReadiness, list[ArxivPoolPaper] | None]:
+        try:
+            request = build_huldra_arxiv_request_for_window(
+                window=window,
+                readiness_policy=readiness_policy,
+                client_id=self.client_id,
+                timeout_seconds=self.request_timeout_seconds,
+            )
+            result = self.client.ensure(request)
+        except HuldraDependencyMissingError as exc:
+            readiness = _failed_huldra_readiness(
+                window=window,
+                reason=HULDRA_DEPENDENCY_MISSING_REASON,
+                diagnostic={
+                    "backend": "huldra",
+                    "huldra_base_url": self.base_url,
+                    "reason": HULDRA_DEPENDENCY_MISSING_REASON,
+                    "error_message": str(exc),
+                },
+            )
+            return readiness, None
+        except Exception as exc:
+            readiness = _failed_huldra_readiness(
+                window=window,
+                reason="huldra_unreachable",
+                diagnostic={
+                    "backend": "huldra",
+                    "huldra_base_url": self.base_url,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
+            return readiness, None
+        try:
+            readiness = _huldra_result_readiness(window=window, result=result)
+            papers = [_huldra_paper_to_pool_paper(paper) for paper in result.papers]
+        except Exception as exc:
+            readiness = _failed_huldra_readiness(
+                window=window,
+                reason="malformed_huldra_response",
+                diagnostic={
+                    "backend": "huldra",
+                    "huldra_base_url": self.base_url,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
+            return readiness, None
+        return readiness, papers if papers else []
 
 
 class ArxivPoolTransientFetchError(ArxivPoolFetchError):
@@ -1773,7 +2078,10 @@ def _window_cache_key(window: ArxivPoolWindow) -> tuple[str, str, str, int]:
 
 
 def pool_paper_to_item_draft(
-    *, paper: ArxivPoolPaper, window: ArxivPoolWindow
+    *,
+    paper: ArxivPoolPaper,
+    window: ArxivPoolWindow,
+    extra_raw_metadata: Mapping[str, Any] | None = None,
 ) -> ItemDraft:
     normalized = normalize_pool_paper(paper)
     raw_metadata = dict(normalized.raw_atom)
@@ -1792,6 +2100,12 @@ def pool_paper_to_item_draft(
         raw_metadata["primary_category"] = normalized.primary_category
     if normalized.comment:
         raw_metadata["comment"] = normalized.comment
+    if normalized.journal_ref:
+        raw_metadata["journal_ref"] = normalized.journal_ref
+    if normalized.doi:
+        raw_metadata["doi"] = normalized.doi
+    if extra_raw_metadata:
+        raw_metadata.update(dict(extra_raw_metadata))
     return ItemDraft.from_values(
         source="arxiv",
         source_item_id=normalized.arxiv_id,
@@ -1925,6 +2239,112 @@ def arxiv_pool_readiness_policy_from_settings(
     )
 
 
+def arxiv_pool_backend_descriptor_from_settings(
+    settings: Any,
+) -> ArxivPoolBackendDescriptor:
+    pool = getattr(settings, "arxiv_pool", settings)
+    backend = str(getattr(pool, "backend", "local_sqlite") or "local_sqlite").lower()
+    if backend == "huldra":
+        base_url = _normalize_huldra_base_url(getattr(pool, "huldra_base_url", None))
+        if not base_url:
+            raise ValueError(
+                "ARXIV_POOL.huldra_base_url is required when backend=huldra"
+            )
+        return ArxivPoolBackendDescriptor(kind="huldra", identity=base_url)
+    return ArxivPoolBackendDescriptor(
+        kind="local_sqlite",
+        identity=str(resolve_arxiv_pool_db_path(settings)),
+    )
+
+
+def build_arxiv_pool_backend_from_settings(settings: Any) -> ArxivMetadataPoolBackend:
+    pool = getattr(settings, "arxiv_pool", settings)
+    descriptor = arxiv_pool_backend_descriptor_from_settings(settings)
+    return build_arxiv_pool_backend_from_descriptor(
+        descriptor,
+        huldra_request_timeout_seconds=float(
+            getattr(pool, "huldra_request_timeout_seconds", 30.0) or 30.0
+        ),
+    )
+
+
+def build_arxiv_pool_backend_from_descriptor(
+    descriptor: ArxivPoolBackendDescriptor,
+    *,
+    huldra_request_timeout_seconds: float = 30.0,
+) -> ArxivMetadataPoolBackend:
+    if descriptor.kind == "huldra":
+        return HuldraArxivPoolBackend(
+            base_url=descriptor.identity,
+            request_timeout_seconds=float(huldra_request_timeout_seconds),
+        )
+    return LocalSqliteArxivPoolBackend(ArxivPoolStore(Path(descriptor.identity)))
+
+
+def build_huldra_arxiv_request_for_window(
+    *,
+    window: ArxivPoolWindow,
+    readiness_policy: ArxivPoolReadinessPolicy,
+    client_id: str,
+    timeout_seconds: float,
+) -> Any:
+    ArxivRequest, CachePolicy, ReadinessMode = require_huldra_arxiv_models()
+
+    normalized_window = _normalize_window(window)
+    readiness = (
+        ReadinessMode.RAW_COMPLETED
+        if readiness_policy.allows_immature_windows
+        else ReadinessMode.ANALYSIS_READY
+    )
+    return ArxivRequest(
+        client_id=client_id,
+        search_query=normalized_window.query_text,
+        sort_by="submittedDate",
+        sort_order="descending",
+        start=0,
+        max_results=normalized_window.max_results,
+        submitted_start=normalized_window.period_start,
+        submitted_end=normalized_window.period_end,
+        cache_policy=CachePolicy.CACHE_ONLY,
+        readiness=readiness,
+        maturity_lag_days=readiness_policy.maturity_lag_days,
+        timeout_seconds=float(timeout_seconds),
+    )
+
+
+def huldra_wait_timeout_seconds(
+    *,
+    configured_timeout_seconds: float | None,
+    requested_windows_total: int,
+) -> float:
+    if configured_timeout_seconds is not None:
+        return float(configured_timeout_seconds)
+    return float(max(3600, int(requested_windows_total) * 35))
+
+
+def arxiv_pool_sync_result_from_huldra(result: Any) -> ArxivPoolSyncResult:
+    return ArxivPoolSyncResult(
+        requested_windows_total=int(getattr(result, "requested_total", 0) or 0),
+        completed_windows_total=int(
+            getattr(result, "completed_windows_total", 0) or 0
+        ),
+        cache_hit_total=int(getattr(result, "cache_hit_total", 0) or 0),
+        cache_miss_total=int(getattr(result, "cache_miss_total", 0) or 0),
+        upstream_requests_total=int(
+            getattr(result, "upstream_requests_total", 0) or 0
+        ),
+        upstream_429_total=int(getattr(result, "upstream_429_total", 0) or 0),
+        retry_after_seconds=getattr(result, "retry_after_seconds", None),
+        cooldown_active_total=int(getattr(result, "cooldown_active_total", 0) or 0),
+        skipped_windows_total=int(getattr(result, "skipped_windows_total", 0) or 0),
+        rate_limited_windows_total=int(
+            getattr(result, "rate_limited_windows_total", 0) or 0
+        ),
+        failed_windows_total=int(getattr(result, "failed_windows_total", 0) or 0),
+        papers_total=int(getattr(result, "papers_total", 0) or 0),
+    )
+
+
 def evaluate_arxiv_pool_window_readiness(
     *,
     store: ArxivPoolStore,
@@ -1955,20 +2375,80 @@ def evaluate_arxiv_pool_window_readiness(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _ArxivPoolReadinessCounts:
+    blocked_windows_total: int
+    immature_windows_total: int
+    unavailable_windows_total: int
+    unsafe_override_windows_total: int
+
+
 def evaluate_arxiv_pool_readiness(
     *,
-    store: ArxivPoolStore,
+    store: ArxivPoolStore | None = None,
+    backend: ArxivMetadataPoolBackend | None = None,
     windows: list[ArxivPoolWindow],
     policy: ArxivPoolReadinessPolicy,
 ) -> dict[str, Any]:
-    window_readiness = [
-        evaluate_arxiv_pool_window_readiness(
-            store=store,
+    resolved_backend = _resolve_arxiv_pool_readiness_backend(
+        store=store,
+        backend=backend,
+    )
+    window_readiness = _evaluate_arxiv_pool_windows_readiness(
+        backend=resolved_backend,
+        windows=windows,
+        policy=policy,
+    )
+    immature_windows, unavailable_windows = _partition_arxiv_pool_blocked_windows(
+        window_readiness
+    )
+    counts = _arxiv_pool_readiness_counts(
+        immature_windows=immature_windows,
+        unavailable_windows=unavailable_windows,
+        policy=policy,
+    )
+    status = _arxiv_pool_readiness_status(
+        blocked_windows_total=counts.blocked_windows_total,
+        policy=policy,
+    )
+    return _arxiv_pool_readiness_payload(
+        status=status,
+        window_readiness=window_readiness,
+        counts=counts,
+        policy=policy,
+    )
+
+
+def _resolve_arxiv_pool_readiness_backend(
+    *,
+    store: ArxivPoolStore | None,
+    backend: ArxivMetadataPoolBackend | None,
+) -> ArxivMetadataPoolBackend:
+    if backend is not None:
+        return backend
+    if store is None:
+        raise ValueError("store or backend is required")
+    return LocalSqliteArxivPoolBackend(store)
+
+
+def _evaluate_arxiv_pool_windows_readiness(
+    *,
+    backend: ArxivMetadataPoolBackend,
+    windows: list[ArxivPoolWindow],
+    policy: ArxivPoolReadinessPolicy,
+) -> list[ArxivPoolBackendReadiness]:
+    return [
+        backend.evaluate_window_readiness(
             window=window,
-            policy=policy,
+            readiness_policy=policy,
         )
         for window in windows
     ]
+
+
+def _partition_arxiv_pool_blocked_windows(
+    window_readiness: list[ArxivPoolBackendReadiness],
+) -> tuple[list[ArxivPoolBackendReadiness], list[ArxivPoolBackendReadiness]]:
     immature_windows = [
         readiness
         for readiness in window_readiness
@@ -1977,28 +2457,60 @@ def evaluate_arxiv_pool_readiness(
     unavailable_windows = [
         readiness for readiness in window_readiness if readiness.unavailable
     ]
-    unsafe_override_total = (
-        len(immature_windows) if policy.allows_immature_windows else 0
-    )
-    blocked_windows_total = len(unavailable_windows) + (
-        0 if policy.allows_immature_windows else len(immature_windows)
-    )
-    if policy.readiness_gate == "off":
-        status = "disabled"
-    elif blocked_windows_total > 0:
-        status = "blocked"
+    return immature_windows, unavailable_windows
+
+
+def _arxiv_pool_readiness_counts(
+    *,
+    immature_windows: list[ArxivPoolBackendReadiness],
+    unavailable_windows: list[ArxivPoolBackendReadiness],
+    policy: ArxivPoolReadinessPolicy,
+) -> _ArxivPoolReadinessCounts:
+    immature_total = len(immature_windows)
+    unavailable_total = len(unavailable_windows)
+    if policy.allows_immature_windows:
+        blocked_total = unavailable_total
+        unsafe_override_total = immature_total
     else:
-        status = "ready"
+        blocked_total = unavailable_total + immature_total
+        unsafe_override_total = 0
+    return _ArxivPoolReadinessCounts(
+        blocked_windows_total=blocked_total,
+        immature_windows_total=immature_total,
+        unavailable_windows_total=unavailable_total,
+        unsafe_override_windows_total=unsafe_override_total,
+    )
+
+
+def _arxiv_pool_readiness_status(
+    *,
+    blocked_windows_total: int,
+    policy: ArxivPoolReadinessPolicy,
+) -> str:
+    if policy.readiness_gate == "off":
+        return "disabled"
+    if blocked_windows_total > 0:
+        return "blocked"
+    return "ready"
+
+
+def _arxiv_pool_readiness_payload(
+    *,
+    status: str,
+    window_readiness: list[ArxivPoolBackendReadiness],
+    counts: _ArxivPoolReadinessCounts,
+    policy: ArxivPoolReadinessPolicy,
+) -> dict[str, Any]:
     return {
         "status": status,
         "windows_total": len(window_readiness),
         "analysis_ready_windows_total": sum(
             1 for readiness in window_readiness if readiness.analysis_ready
         ),
-        "blocked_windows_total": blocked_windows_total,
-        "immature_windows_total": len(immature_windows),
-        "unavailable_windows_total": len(unavailable_windows),
-        "unsafe_override_windows_total": unsafe_override_total,
+        "blocked_windows_total": counts.blocked_windows_total,
+        "immature_windows_total": counts.immature_windows_total,
+        "unavailable_windows_total": counts.unavailable_windows_total,
+        "unsafe_override_windows_total": counts.unsafe_override_windows_total,
         "maturity_policy": policy.as_payload(),
         "windows": [readiness.as_payload() for readiness in window_readiness],
     }
@@ -2042,6 +2554,156 @@ def _arxiv_pool_blocked_reason(
     if not mature:
         return "immature_window"
     return None
+
+
+def _normalize_huldra_base_url(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized.rstrip("/") if normalized else None
+
+
+def _failed_huldra_readiness(
+    *,
+    window: ArxivPoolWindow,
+    reason: str,
+    diagnostic: dict[str, Any],
+) -> ArxivPoolBackendReadiness:
+    normalized_window = _normalize_window(window)
+    return ArxivPoolBackendReadiness(
+        query_text=normalized_window.query_text,
+        period_start=normalized_window.period_start,
+        period_end=normalized_window.period_end,
+        max_results=normalized_window.max_results,
+        backend="huldra",
+        cache_status="failed",
+        serving_status=None,
+        cache_readable=False,
+        mature=False,
+        analysis_ready=False,
+        blocked_reason=reason,
+        diagnostic=diagnostic,
+    )
+
+
+def _huldra_result_readiness(
+    *,
+    window: ArxivPoolWindow,
+    result: Any,
+) -> ArxivPoolBackendReadiness:
+    normalized_window = _normalize_window(window)
+    status = _clean_text(getattr(result, "status", "")).lower()
+    cache_readable = bool(getattr(result, "cache_readable", False))
+    mature = bool(getattr(result, "mature", False))
+    analysis_ready = bool(getattr(result, "analysis_ready", False))
+    cache_key = _optional_text(getattr(result, "cache_key", None))
+    blocked_reason = _huldra_blocked_reason(
+        status=status,
+        cache_readable=cache_readable,
+        mature=mature,
+        analysis_ready=analysis_ready,
+        raw_blocked_reason=_optional_text(getattr(result, "blocked_reason", None)),
+    )
+    diagnostic = {
+        key: value
+        for key, value in {
+            "backend": "huldra",
+            "huldra_status": status or None,
+            "huldra_cache_key": cache_key,
+            "huldra_serving_mode": _optional_text(
+                getattr(result, "serving_mode", None)
+            ),
+            "stale": bool(getattr(result, "stale", False)),
+            "error_category": _optional_text(getattr(result, "error_category", None)),
+            "error_message": _optional_text(getattr(result, "error_message", None)),
+        }.items()
+        if value is not None
+    }
+    return ArxivPoolBackendReadiness(
+        query_text=normalized_window.query_text,
+        period_start=normalized_window.period_start,
+        period_end=normalized_window.period_end,
+        max_results=normalized_window.max_results,
+        backend="huldra",
+        cache_status=_huldra_cache_status(
+            status=status,
+            cache_readable=cache_readable,
+        ),
+        serving_status=status or None,
+        cache_readable=cache_readable,
+        mature=mature,
+        analysis_ready=analysis_ready,
+        blocked_reason=blocked_reason,
+        cache_key=cache_key,
+        diagnostic=diagnostic,
+    )
+
+
+def _huldra_cache_status(*, status: str, cache_readable: bool) -> str:
+    if cache_readable:
+        return "completed"
+    return {
+        "ready": "completed",
+        "immature": "completed",
+        "cache_miss": "missing",
+        "queued": "queued",
+        "cooling_down": "rate_limited",
+        "rate_limited": "rate_limited",
+        "failed": "failed",
+        "timeout": "timeout",
+        "skipped": "skipped",
+    }.get(status, "failed")
+
+
+def _huldra_blocked_reason(
+    *,
+    status: str,
+    cache_readable: bool,
+    mature: bool,
+    analysis_ready: bool,
+    raw_blocked_reason: str | None,
+) -> str | None:
+    if analysis_ready:
+        return None
+    if cache_readable and (status == "immature" or not mature):
+        return "immature_window"
+    if raw_blocked_reason == "immature_window":
+        return "immature_window"
+    mapped = {
+        "cache_miss": "missing_window",
+        "queued": "queued_window",
+        "cooling_down": "rate_limited_window",
+        "rate_limited": "rate_limited_window",
+        "failed": "failed_window",
+        "timeout": "timeout_window",
+        "skipped": "skipped_window",
+    }.get(status)
+    if mapped is not None:
+        return mapped
+    if raw_blocked_reason in {"cache_miss", "missing"}:
+        return "missing_window"
+    if raw_blocked_reason == "cooldown":
+        return "rate_limited_window"
+    if raw_blocked_reason:
+        return raw_blocked_reason
+    return "unavailable_window"
+
+
+def _huldra_paper_to_pool_paper(paper: Any) -> ArxivPoolPaper:
+    return ArxivPoolPaper(
+        arxiv_id=str(getattr(paper, "arxiv_id")),
+        version=getattr(paper, "version", None),
+        canonical_url=str(getattr(paper, "canonical_url")),
+        title=str(getattr(paper, "title")),
+        abstract=getattr(paper, "abstract", None),
+        authors=list(getattr(paper, "authors", []) or []),
+        primary_category=getattr(paper, "primary_category", None),
+        categories=list(getattr(paper, "categories", []) or []),
+        published_at=getattr(paper, "published_at", None),
+        updated_at=getattr(paper, "updated_at", None),
+        comment=getattr(paper, "comment", None),
+        journal_ref=getattr(paper, "journal_ref", None),
+        doi=getattr(paper, "doi", None),
+        raw_atom=dict(getattr(paper, "raw_atom", {}) or {}),
+    )
 
 
 def _normalize_readiness_gate(value: Any) -> str:

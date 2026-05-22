@@ -145,6 +145,9 @@ class _ArxivPullRequestKwargs(TypedDict, total=False):
     include_stats: bool
     mode: str
     pool_db_path: Path | None
+    pool_maturity_lag_days: int
+    pool_readiness_gate: str
+    pool_allow_immature_windows: bool
 
 
 class _OpenReviewPullRequestKwargs(TypedDict, total=False):
@@ -394,12 +397,13 @@ def _arxiv_query_with_period(
 def fetch_arxiv_drafts(
     *,
     request: ArxivPullRequest | None = None,
+    pool_backend: Any | None = None,
     **legacy_kwargs: Unpack[_ArxivPullRequestKwargs],
 ) -> list[ItemDraft] | SourcePullResult:
     normalized_request = request or ArxivPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_arxiv_drafts
 
-    return pull_arxiv_drafts(normalized_request)
+    return pull_arxiv_drafts(normalized_request, pool_backend=pool_backend)
 
 
 def fetch_openreview_drafts(

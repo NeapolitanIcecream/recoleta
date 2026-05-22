@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import json
+import sys
+from types import ModuleType
 
 from datetime import datetime
 from typing import Any
@@ -9,6 +12,104 @@ from recoleta.config import Settings
 from recoleta.models import Analysis, Content, Delivery, Item
 from recoleta.storage import Repository
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
+
+
+class FakeHuldraCachePolicy:
+    CACHE_ONLY = "cache_only"
+
+
+class FakeHuldraReadinessMode:
+    ANALYSIS_READY = "analysis_ready"
+    RAW_COMPLETED = "raw_completed"
+
+
+@dataclass(slots=True)
+class FakeHuldraArxivRequest:
+    client_id: str
+    search_query: str
+    submitted_start: datetime
+    submitted_end: datetime
+    cache_policy: str
+    readiness: str
+    sort_by: str = "submittedDate"
+    sort_order: str = "descending"
+    start: int = 0
+    max_results: int = 100
+    maturity_lag_days: int = 1
+    timeout_seconds: float | None = None
+
+
+@dataclass(slots=True)
+class FakeHuldraArxivPaper:
+    arxiv_id: str
+    version: int | None
+    canonical_url: str
+    title: str
+    abstract: str | None = None
+    authors: list[str] = field(default_factory=list)
+    primary_category: str | None = None
+    categories: list[str] = field(default_factory=list)
+    published_at: datetime | None = None
+    updated_at: datetime | None = None
+    comment: str | None = None
+    journal_ref: str | None = None
+    doi: str | None = None
+    raw_atom: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class FakeHuldraArxivResult:
+    serving_mode: str
+    status: str
+    cache_key: str | None
+    cache_readable: bool
+    mature: bool
+    analysis_ready: bool
+    ready: bool
+    papers: list[FakeHuldraArxivPaper] = field(default_factory=list)
+    papers_total: int = 0
+    cached_papers_total: int = 0
+    blocked_reason: str | None = None
+
+
+@dataclass(slots=True)
+class FakeHuldraMaintenanceResult:
+    requested_total: int = 0
+    completed_windows_total: int = 0
+    cache_hit_total: int = 0
+    cache_miss_total: int = 0
+    upstream_requests_total: int = 0
+    upstream_429_total: int = 0
+    retry_after_seconds: int | None = None
+    cooldown_active_total: int = 0
+    skipped_windows_total: int = 0
+    rate_limited_windows_total: int = 0
+    failed_windows_total: int = 0
+    papers_total: int = 0
+
+
+class _UnconfiguredFakeHuldraClient:
+    def __init__(self, *_: Any, **__: Any) -> None:
+        raise AssertionError("test must install a fake HuldraClient")
+
+
+def install_fake_huldra(monkeypatch: Any) -> ModuleType:
+    package = ModuleType("huldra")
+    client_module = ModuleType("huldra.client")
+    models_module = ModuleType("huldra.models")
+    client_module.HuldraClient = _UnconfiguredFakeHuldraClient
+    models_module.ArxivRequest = FakeHuldraArxivRequest
+    models_module.ArxivPaper = FakeHuldraArxivPaper
+    models_module.ArxivResult = FakeHuldraArxivResult
+    models_module.CachePolicy = FakeHuldraCachePolicy
+    models_module.ReadinessMode = FakeHuldraReadinessMode
+    models_module.HuldraMaintenanceResult = FakeHuldraMaintenanceResult
+    package.client = client_module  # type: ignore[attr-defined]
+    package.models = models_module  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huldra", package)
+    monkeypatch.setitem(sys.modules, "huldra.client", client_module)
+    monkeypatch.setitem(sys.modules, "huldra.models", models_module)
+    return package
 
 
 class FakeAnalyzer:

@@ -231,6 +231,79 @@ def test_settings_loads_arxiv_pool_configuration(
     assert settings.sources.arxiv.mode == "pool"
 
 
+def test_settings_loads_huldra_arxiv_pool_backend(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps(
+            {
+                "enabled": True,
+                "backend": "huldra",
+                "huldra_base_url": "http://127.0.0.1:8765/",
+                "huldra_request_timeout_seconds": 12,
+                "huldra_wait_timeout_seconds": 1200,
+            }
+        ),
+    )
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "mode": "pool",
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.arxiv_pool.backend == "huldra"
+    assert settings.arxiv_pool.db_path is None
+    assert settings.arxiv_pool.huldra_base_url == "http://127.0.0.1:8765"
+    assert settings.arxiv_pool.huldra_request_timeout_seconds == 12
+    assert settings.arxiv_pool.huldra_wait_timeout_seconds == 1200
+
+
+def test_settings_rejects_huldra_arxiv_pool_backend_without_endpoint(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps({"enabled": True, "backend": "huldra"}),
+    )
+
+    with pytest.raises(ValueError, match="huldra_base_url"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_local_arxiv_pool_backend_without_db_path(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps({"enabled": True, "backend": "local_sqlite"}),
+    )
+
+    with pytest.raises(ValueError, match="backend=local_sqlite"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_invalid_arxiv_pool_backend(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps({"enabled": True, "backend": "unknown"}),
+    )
+
+    with pytest.raises(ValueError, match="ARXIV_POOL.backend"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_settings_rejects_arxiv_pool_source_mode_without_pool_config(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
