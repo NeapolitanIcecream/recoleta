@@ -2023,6 +2023,67 @@ def test_huldra_fleet_pre_sync_delegates_deduped_windows_to_huldra(
     assert calls[1]["requests"][0].readiness == "analysis_ready"
 
 
+def test_fleet_pre_sync_preserves_default_huldra_wait_timeout_for_unset_children(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: one explicit child timeout must not suppress another child's default."""
+    from huldra.models import HuldraMaintenanceResult
+
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8765"),
+        queries=("cat:cs.AI", "cat:cs.AI"),
+        huldra_wait_timeout_seconds=(None, 5),
+    )
+    calls: list[dict[str, Any]] = []
+
+    class FakeHuldraClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            calls.append({"base_url": base_url, "timeout": timeout})
+
+        def __enter__(self) -> "FakeHuldraClient":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def sync_windows(
+            self,
+            requests: list[Any],
+            *,
+            wait: bool,
+            wait_timeout_seconds: float | None,
+        ) -> HuldraMaintenanceResult:
+            calls.append(
+                {
+                    "requests": requests,
+                    "wait": wait,
+                    "wait_timeout_seconds": wait_timeout_seconds,
+                }
+            )
+            return HuldraMaintenanceResult(
+                requested_total=len(requests),
+                completed_windows_total=len(requests),
+                papers_total=4,
+            )
+
+    import huldra.client
+
+    monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
+
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    result = run_fleet_arxiv_pool_pre_sync(plan)
+
+    assert plan.status == "planned"
+    assert result.completed_windows_total == 1
+    assert calls[1]["wait_timeout_seconds"] == 3600
+
+
 def test_fleet_pre_sync_plan_merges_mixed_child_readiness_policies_safely(
     tmp_path: Path,
 ) -> None:
@@ -2537,25 +2598,28 @@ def _write_huldra_fleet_manifest(
     base_urls: tuple[str, str],
     queries: tuple[str, str] = ("cat:cs.AI", "cat:cs.LG"),
     huldra_request_timeout_seconds: tuple[float, float] = (30.0, 30.0),
+    huldra_wait_timeout_seconds: tuple[float | None, float | None] = (None, None),
 ) -> Path:
     child_paths: list[Path] = []
     for index, name in enumerate(("embodied_ai", "software")):
         query = queries[index]
         child_path = tmp_path / f"{name}.yaml"
+        arxiv_pool_config: dict[str, Any] = {
+            "enabled": True,
+            "backend": "huldra",
+            "huldra_base_url": base_urls[index],
+            "huldra_request_timeout_seconds": huldra_request_timeout_seconds[index],
+        }
+        wait_timeout = huldra_wait_timeout_seconds[index]
+        if wait_timeout is not None:
+            arxiv_pool_config["huldra_wait_timeout_seconds"] = wait_timeout
         child_path.write_text(
             yaml.safe_dump(
                 {
                     "RECOLETA_DB_PATH": str(tmp_path / f"{name}.db"),
                     "LLM_MODEL": "openai/gpt-4o-mini",
                     "PUBLISH_TARGETS": ["markdown"],
-                    "ARXIV_POOL": {
-                        "enabled": True,
-                        "backend": "huldra",
-                        "huldra_base_url": base_urls[index],
-                        "huldra_request_timeout_seconds": (
-                            huldra_request_timeout_seconds[index]
-                        ),
-                    },
+                    "ARXIV_POOL": arxiv_pool_config,
                     "SOURCES": {
                         "arxiv": {
                             "enabled": True,

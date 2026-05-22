@@ -745,7 +745,10 @@ def build_fleet_arxiv_pool_pre_sync_plan(
             float(settings.arxiv_pool.huldra_request_timeout_seconds)
             for settings in arxiv_settings
         ),
-        huldra_wait_timeout_seconds=_merged_huldra_wait_timeout(arxiv_settings),
+        huldra_wait_timeout_seconds=_merged_huldra_wait_timeout(
+            arxiv_settings,
+            requested_windows_total=len(windows),
+        ),
         maturity_lag_days=readiness_policy.maturity_lag_days,
         readiness_gate=readiness_policy.readiness_gate,
         allow_immature_windows=readiness_policy.allow_immature_windows,
@@ -821,13 +824,25 @@ def _shared_fleet_arxiv_pool_backend_descriptor(
     return descriptors[0], None
 
 
-def _merged_huldra_wait_timeout(arxiv_settings: list[Any]) -> float | None:
+def _merged_huldra_wait_timeout(
+    arxiv_settings: list[Any],
+    *,
+    requested_windows_total: int,
+) -> float | None:
     values = [
         getattr(settings.arxiv_pool, "huldra_wait_timeout_seconds", None)
         for settings in arxiv_settings
     ]
     numeric_values = [float(value) for value in values if value is not None]
-    return max(numeric_values) if numeric_values else None
+    if len(numeric_values) == len(values):
+        return max(numeric_values) if numeric_values else None
+    if not numeric_values:
+        return None
+    default_timeout = huldra_wait_timeout_seconds(
+        configured_timeout_seconds=None,
+        requested_windows_total=requested_windows_total,
+    )
+    return max(default_timeout, *numeric_values)
 
 
 def _merged_fleet_arxiv_pool_plan_settings(
