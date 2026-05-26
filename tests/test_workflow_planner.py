@@ -230,6 +230,11 @@ class _NoCurrentAnalysisCandidatesRepo(_ReadOnlyPlannerRepo):
         return []
 
 
+class _AnalyzeCandidatesRepo(_ReadOnlyPlannerRepo):
+    def list_items_for_llm_analysis(self, **_kwargs: Any) -> list[Any]:
+        return [SimpleNamespace(id=1)]
+
+
 class _TranslationPlannerRepo(_ReadOnlyPlannerRepo):
     def __init__(
         self,
@@ -400,6 +405,27 @@ def test_planner_runs_analyze_when_planned_ingest_may_create_candidates() -> Non
     assert trend_decision.action == "run"
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "upstream_ingest_planned"
+
+
+def test_planner_reruns_trends_and_ideas_when_analyze_is_planned() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_AnalyzeCandidatesRepo(),
+        settings=_Settings(),
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "candidate_items"
+    assert trend_decision.action == "run"
+    assert trend_decision.reason == "upstream_analyze_planned"
+    assert ideas_decision.action == "run"
+    assert ideas_decision.reason == "upstream_trend_planned"
 
 
 def test_planner_is_read_only() -> None:

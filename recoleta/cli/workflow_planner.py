@@ -1052,18 +1052,7 @@ def _run_generation_when_upstream_is_planned(
         for decision in decisions
         if decision.step_id == STEP_INGEST and decision.action in PLANNED_RUN_ACTIONS
     }
-    trend_run_windows = {
-        (
-            decision.step_id,
-            decision.granularity,
-            decision.period_start,
-            decision.period_end,
-        )
-        for decision in decisions
-        if decision.step_id in TREND_STEPS
-        and decision.action in PLANNED_RUN_ACTIONS
-    }
-    upstream_updated: list[WorkflowPlanDecision] = []
+    analyze_updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if (
             decision.step_id == STEP_ANALYZE
@@ -1071,7 +1060,7 @@ def _run_generation_when_upstream_is_planned(
             and decision.reason == "no_candidate_items"
             and (decision.period_start, decision.period_end) in ingest_run_windows
         ):
-            upstream_updated.append(
+            analyze_updated.append(
                 replace(
                     decision,
                     action="run",
@@ -1080,6 +1069,43 @@ def _run_generation_when_upstream_is_planned(
                 )
             )
             continue
+        analyze_updated.append(decision)
+
+    analyze_run_windows = {
+        (decision.granularity, decision.period_start, decision.period_end)
+        for decision in analyze_updated
+        if decision.step_id == STEP_ANALYZE and decision.action in PLANNED_RUN_ACTIONS
+    }
+    trend_updated: list[WorkflowPlanDecision] = []
+    for decision in analyze_updated:
+        if _trend_has_planned_analyze(
+            decision=decision,
+            analyze_run_windows=analyze_run_windows,
+        ):
+            trend_updated.append(
+                replace(
+                    decision,
+                    action="run",
+                    reason="upstream_analyze_planned",
+                    estimated_llm_calls=None,
+                )
+            )
+            continue
+        trend_updated.append(decision)
+
+    trend_run_windows = {
+        (
+            decision.step_id,
+            decision.granularity,
+            decision.period_start,
+            decision.period_end,
+        )
+        for decision in trend_updated
+        if decision.step_id in TREND_STEPS
+        and decision.action in PLANNED_RUN_ACTIONS
+    }
+    upstream_updated: list[WorkflowPlanDecision] = []
+    for decision in trend_updated:
         if _idea_has_planned_trend(
             decision=decision,
             trend_run_windows=trend_run_windows,
@@ -1095,6 +1121,20 @@ def _run_generation_when_upstream_is_planned(
             continue
         upstream_updated.append(decision)
     return upstream_updated
+
+
+def _trend_has_planned_analyze(
+    *,
+    decision: WorkflowPlanDecision,
+    analyze_run_windows: set[tuple[str | None, datetime | None, datetime | None]],
+) -> bool:
+    if decision.step_id not in TREND_STEPS or decision.action != "skip":
+        return False
+    return (
+        decision.granularity,
+        decision.period_start,
+        decision.period_end,
+    ) in analyze_run_windows
 
 
 def _idea_has_planned_trend(
