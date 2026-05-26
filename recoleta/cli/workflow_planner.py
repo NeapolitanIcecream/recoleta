@@ -59,6 +59,7 @@ CONTENT_COMPLETION_STEPS = {
 }
 TREND_STEPS = {STEP_TRENDS_DAY, STEP_TRENDS_WEEK, STEP_TRENDS_MONTH}
 IDEA_STEPS = {STEP_IDEAS_DAY, STEP_IDEAS_WEEK, STEP_IDEAS_MONTH}
+TRANSLATABLE_GENERATION_STEPS = {STEP_ANALYZE} | TREND_STEPS | IDEA_STEPS
 IDEA_TO_TREND_STEP = {
     STEP_IDEAS_DAY: STEP_TRENDS_DAY,
     STEP_IDEAS_WEEK: STEP_TRENDS_WEEK,
@@ -1109,7 +1110,7 @@ def _run_translation_when_generation_is_planned(
     generation_runs = [
         decision
         for decision in decisions
-        if decision.step_id in TREND_STEPS | IDEA_STEPS
+        if decision.step_id in TRANSLATABLE_GENERATION_STEPS
         and decision.action in PLANNED_RUN_ACTIONS
     ]
     updated: list[WorkflowPlanDecision] = []
@@ -1156,9 +1157,22 @@ def _generation_requires_translation(
     generation_decision: WorkflowPlanDecision,
 ) -> bool:
     include = _translation_include_from_decision(translation_decision)
-    if generation_decision.step_id in TREND_STEPS and "trends" not in include:
-        return False
-    if generation_decision.step_id in IDEA_STEPS and "ideas" not in include:
+    if generation_decision.step_id == STEP_ANALYZE:
+        if "items" not in include:
+            return False
+        return _decision_periods_overlap(
+            left_start=translation_decision.period_start,
+            left_end=translation_decision.period_end,
+            right_start=generation_decision.period_start,
+            right_end=generation_decision.period_end,
+        )
+    if generation_decision.step_id in TREND_STEPS:
+        if "trends" not in include:
+            return False
+    elif generation_decision.step_id in IDEA_STEPS:
+        if "ideas" not in include:
+            return False
+    else:
         return False
     granularities = _translation_granularities_from_decision(translation_decision)
     if None not in granularities and generation_decision.granularity not in granularities:

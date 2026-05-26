@@ -517,6 +517,33 @@ def test_translation_planner_sees_ideas_rerun_from_changed_trend_source(
     assert decision.reason == "upstream_generation_planned"
 
 
+def test_translation_planner_sees_analyze_run_for_item_translation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        workflow_planner_module,
+        "_translation_candidates_for_plan",
+        lambda **_kwargs: [],
+    )
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_translation_plan(),
+        repository=_TranslationPlannerRepo(
+            existing_hashes={},
+            missing_days={source_day},
+        ),
+        settings=_TranslationSettings(),
+        translate_include=["items"],
+        translate_granularities=["day"],
+    )
+
+    assert _decision_for(decisions, "analyze", source_day).action == "run"
+    decision = _translation_decision(decisions)
+    assert decision.action == "run"
+    assert decision.reason == "upstream_generation_planned"
+
+
 def test_translation_planner_candidate_loader_is_read_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
