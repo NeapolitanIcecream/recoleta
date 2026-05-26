@@ -261,6 +261,76 @@ class _TranslationPlannerRepo(_ReadOnlyPlannerRepo):
         return SimpleNamespace(source_hash=source_hash) if source_hash else None
 
 
+class _MixedStatusIdeasRepo(_ReadOnlyPlannerRepo):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        if kwargs["pass_kind"] != "trend_ideas":
+            return super().get_latest_pass_output(**kwargs)
+        status = kwargs.get("status")
+        period_start = kwargs["period_start"]
+        period_end = kwargs["period_end"]
+        granularity = kwargs["granularity"]
+        upstream_id = _stable_pass_output_id(
+            granularity,
+            period_start,
+            "trend_synthesis",
+        )
+        if status == "succeeded":
+            return self._ideas_row(
+                status=status,
+                row_id=upstream_id + 10,
+                upstream_id=upstream_id - 1,
+                created_at=datetime(2026, 3, 16, 2, tzinfo=UTC),
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+            )
+        if status == "suppressed":
+            return self._ideas_row(
+                status=status,
+                row_id=upstream_id + 11,
+                upstream_id=upstream_id,
+                created_at=datetime(2026, 3, 16, 3, tzinfo=UTC),
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+            )
+        return None
+
+    def _ideas_row(
+        self,
+        *,
+        status: str,
+        row_id: int,
+        upstream_id: int,
+        created_at: datetime,
+        granularity: str,
+        period_start: datetime,
+        period_end: datetime,
+    ) -> Any:
+        freshness = build_trend_ideas_freshness(
+            settings=_Settings(),
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            upstream_pass_output_id=upstream_id,
+        )
+        return SimpleNamespace(
+            id=row_id,
+            status=status,
+            created_at=created_at,
+            diagnostics_json=json.dumps({"workflow_freshness": freshness}),
+            input_refs_json=json.dumps(
+                [
+                    {
+                        "ref_kind": "pass_output",
+                        "pass_kind": "trend_synthesis",
+                        "pass_output_id": upstream_id,
+                    }
+                ]
+            ),
+        )
+
+
 def test_planner_skips_complete_day_level_work_for_week() -> None:
     plan = _week_plan()
     decisions = plan_workflow_execution(
@@ -486,6 +556,21 @@ def test_trend_planner_reruns_trend_and_ideas_when_source_hash_changes() -> None
     ideas_decision = _decision_for(decisions, "ideas:day", source_day)
     assert ideas_decision.action == "run"
     assert ideas_decision.reason == "upstream_trend_planned"
+
+
+def test_ideas_planner_prefers_newer_suppressed_output_over_older_success() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_MixedStatusIdeasRepo(),
+        settings=_Settings(),
+    )
+
+    decision = _decision_for(decisions, "ideas:day", source_day)
+    assert decision.action == "skip"
+    assert decision.reason == "suppressed_ideas"
+    assert decision.estimated_llm_calls == 0
 
 
 def test_translation_planner_sees_ideas_rerun_from_changed_trend_source(

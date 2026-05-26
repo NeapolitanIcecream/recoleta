@@ -696,6 +696,7 @@ def _latest_pass_output(
     getter = getattr(repository, "get_latest_pass_output", None)
     if not callable(getter):
         return None
+    rows: list[Any] = []
     for status in statuses:
         try:
             row = getter(
@@ -708,8 +709,16 @@ def _latest_pass_output(
         except Exception:
             return None
         if row is not None:
-            return row
-    return None
+            rows.append(row)
+    if not rows:
+        return None
+    return max(rows, key=_pass_output_recency_key)
+
+
+def _pass_output_recency_key(row: Any) -> tuple[float, int]:
+    created_at = getattr(row, "created_at", None)
+    timestamp = created_at.timestamp() if isinstance(created_at, datetime) else 0.0
+    return (timestamp, _row_id(row) or 0)
 
 
 def _projection_contract_present(
