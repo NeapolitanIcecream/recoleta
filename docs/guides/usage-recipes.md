@@ -17,18 +17,26 @@ uv run recoleta run now
 uv run recoleta run day --date 2026-01-02
 uv run recoleta run week --date 2026-03-02
 uv run recoleta run month --date 2026-03-02
+uv run recoleta run week --date 2026-03-02 --dry-run --json
 ```
 
 What to know:
 
 - `run now` means "run the current UTC day end to end".
-- `run day`, `run week`, and `run month` run ingest, analyze, publish,
-  recursive trends and ideas, then translation and site build when your config
-  enables them.
-- `run week` includes both day-level and week-level trends and ideas.
-- `run month` includes day-level, week-level, and month-level trends and ideas.
-- Use `--include` and `--skip` when you want to override optional workflow
-  steps such as `publish`, `translate`, and `site-build`.
+- `run day`, `run week`, and `run month` are ensure/backfill commands. They
+  inspect existing state, run missing or stale work, and skip fresh expensive
+  generation.
+- With the default `recursive_lower_levels: true`, `run week` ensures the seven
+  day windows plus the week window, and `run month` ensures day, week, and
+  month windows. Fresh day-level trends and ideas are not regenerated just
+  because you run the week.
+- Use `--dry-run --json` before a replay when you want the exact plan, skip
+  reasons, and planned expensive-step count without creating run rows or
+  calling providers.
+- Use `--force` only when you intentionally want to regenerate expensive
+  content for the selected workflow windows.
+- Use `--include` and `--skip` as advanced repair controls when you need to
+  override the planner for selected steps.
 
 After a successful run, check:
 
@@ -53,6 +61,7 @@ manual entrypoint:
 uv run recoleta fleet run day --manifest /path/to/fleet.yaml
 uv run recoleta fleet run week --manifest /path/to/fleet.yaml
 uv run recoleta fleet run month --manifest /path/to/fleet.yaml
+uv run recoleta fleet run week --manifest /path/to/fleet.yaml --dry-run --json
 uv run recoleta fleet site build --manifest /path/to/fleet.yaml
 uv run recoleta fleet run deploy --manifest /path/to/fleet.yaml
 ```
@@ -64,8 +73,12 @@ What to know:
   from cron, systemd, CI, or another external scheduler when you need recurring
   fleet runs.
 - `fleet run day`, `fleet run week`, `fleet run month`, and
-  `fleet run deploy` accept the same `--include` / `--skip` pattern as the
-  single-instance workflow commands.
+  `fleet run deploy` accept the same advanced `--include` / `--skip` pattern as
+  the single-instance workflow commands. `fleet run day|week|month` also accepts
+  `--dry-run` and `--force`.
+- `fleet run ... --dry-run --json` emits one child plan per instance plus an
+  aggregate planned expensive-step count. It does not run fleet arXiv pre-sync
+  or child workflows.
 - inspect, translate, or repair one child by pointing the single-instance
   command at that child config or output root.
 

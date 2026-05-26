@@ -100,6 +100,13 @@ _COMPONENT_SPECS: tuple[_BillingComponentSpec, ...] = (
         cost_missing_metric="pipeline.doctor.llm.cost_missing_total",
     ),
 )
+_TRANSLATION_SOURCE_METRICS = (
+    "llm_requests_total",
+    "llm_input_tokens_total",
+    "llm_output_tokens_total",
+    "estimated_cost_usd",
+    "cost_missing_total",
+)
 
 
 def _sum_metrics(metrics: Iterable[Any]) -> dict[str, float]:
@@ -200,7 +207,47 @@ def summarize_billing_metrics(metrics: Iterable[Any]) -> dict[str, Any] | None:
         "components": components,
         "total_cost_usd": _json_number(total_cost_usd) if any_cost else None,
     }
+    translation_by_source = _translation_by_source_payload(totals)
+    if translation_by_source:
+        summary["translation_by_source"] = translation_by_source
     return summary
+
+
+def _translation_by_source_payload(
+    totals: dict[str, float],
+) -> dict[str, dict[str, int | float | None]]:
+    buckets: dict[str, dict[str, float]] = {}
+    prefix = "pipeline.translate.source."
+    for metric_name, value in totals.items():
+        if not metric_name.startswith(prefix):
+            continue
+        remainder = metric_name.removeprefix(prefix)
+        parsed = _parse_translation_source_metric(remainder)
+        if parsed is None:
+            continue
+        bucket, metric = parsed
+        buckets.setdefault(bucket, {})[metric] = (
+            buckets.setdefault(bucket, {}).get(metric, 0.0) + float(value)
+        )
+    return {
+        bucket: {
+            "calls": _json_number(values.get("llm_requests_total")),
+            "input_tokens": _json_number(values.get("llm_input_tokens_total")),
+            "output_tokens": _json_number(values.get("llm_output_tokens_total")),
+            "cost_usd": _json_number(values.get("estimated_cost_usd")),
+            "cost_missing": _json_number(values.get("cost_missing_total")),
+        }
+        for bucket, values in sorted(buckets.items())
+    }
+
+
+def _parse_translation_source_metric(remainder: str) -> tuple[str, str] | None:
+    for suffix in _TRANSLATION_SOURCE_METRICS:
+        marker = f".{suffix}"
+        if remainder.endswith(marker):
+            bucket = remainder[: -len(marker)]
+            return (bucket, suffix) if bucket else None
+    return None
 
 
 def _fmt_int(value: float | None) -> str:

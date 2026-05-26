@@ -244,6 +244,7 @@ def persist_completed_translation_task(
             run_id=str(request.run_id),
             debug=request.completed.debug,
             duration_ms=request.completed.duration_ms,
+            candidate=request.task.candidate,
         )
     request.repository.upsert_localized_output(
         source_kind=request.task.candidate.source_kind,
@@ -260,6 +261,14 @@ def persist_completed_translation_task(
             "context_keys": sorted(request.task.context.keys()),
             "hybrid_status": request.task.context.get("hybrid_status"),
             "hybrid_query": request.task.context.get("hybrid_query"),
+            "source_kind": request.task.candidate.source_kind,
+            "source_granularity": getattr(request.task.candidate, "granularity", None),
+            "source_period_start": _source_datetime_iso(
+                getattr(request.task.candidate, "period_start", None)
+            ),
+            "source_period_end": _source_datetime_iso(
+                getattr(request.task.candidate, "period_end", None)
+            ),
         },
         variant_role="translation",
     )
@@ -372,6 +381,11 @@ def run_translation_backfill_batch(
 ) -> Any:
     for candidate in candidates:
         context.result.scanned_total += 1
+        _record_source_bucket_metric(
+            context=context,
+            candidate=candidate,
+            metric_name="scanned_total",
+        )
         if _run_backfill_translation(
             context=context,
             candidate=candidate,
@@ -400,6 +414,11 @@ def _prepare_batch_tasks(
     for candidate in candidates:
         for target in targets:
             context.result.scanned_total += 1
+            _record_source_bucket_metric(
+                context=context,
+                candidate=candidate,
+                metric_name="scanned_total",
+            )
             try:
                 status, prepared = prepare_task_fn(
                     repository=context.repository,
@@ -421,6 +440,11 @@ def _prepare_batch_tasks(
                 continue
             if status == "skipped":
                 context.result.skipped_total += 1
+                _record_source_bucket_metric(
+                    context=context,
+                    candidate=candidate,
+                    metric_name="skipped_total",
+                )
                 context.provider_failures.reset()
                 continue
             if prepared is not None:
@@ -681,6 +705,11 @@ def _persist_completed_task(
         run_id=context.run_id,
     )
     context.result.translated_total += 1
+    _record_source_bucket_metric(
+        context=context,
+        candidate=task.candidate,
+        metric_name="translated_total",
+    )
 
 
 def _run_backfill_translation(
@@ -714,8 +743,18 @@ def _run_backfill_translation(
     context.provider_failures.reset()
     if status == "skipped":
         context.result.skipped_total += 1
+        _record_source_bucket_metric(
+            context=context,
+            candidate=candidate,
+            metric_name="skipped_total",
+        )
     elif changed:
         context.result.translated_total += 1
+        _record_source_bucket_metric(
+            context=context,
+            candidate=candidate,
+            metric_name="translated_total",
+        )
     return False
 
 
@@ -748,11 +787,26 @@ def _run_backfill_mirrors(
                 )
             )
             context.result.failed_total += 1
+            _record_source_bucket_metric(
+                context=context,
+                candidate=candidate,
+                metric_name="failed_total",
+            )
             continue
         if status == "skipped":
             context.result.skipped_total += 1
+            _record_source_bucket_metric(
+                context=context,
+                candidate=candidate,
+                metric_name="skipped_total",
+            )
         elif changed:
             context.result.mirrored_total += 1
+            _record_source_bucket_metric(
+                context=context,
+                candidate=candidate,
+                metric_name="mirrored_total",
+            )
 
 
 def _handle_translation_failure(
@@ -764,6 +818,11 @@ def _handle_translation_failure(
     prefix: str = "translation failed",
 ) -> bool:
     context.result.failed_total += 1
+    _record_source_bucket_metric(
+        context=context,
+        candidate=candidate,
+        metric_name="failed_total",
+    )
     failure_reason = _translation_failure_reason(exc)
     _record_translation_failure_metrics(
         context=context,
@@ -846,6 +905,35 @@ def _record_translation_failure_metrics(
         value=1,
         unit="count",
     )
+
+
+def _record_source_bucket_metric(
+    *,
+    context: TranslationBatchContext,
+    candidate: Any,
+    metric_name: str,
+    value: int | float = 1,
+    unit: str = "count",
+) -> None:
+    _record_run_metric(
+        repository=context.repository,
+        run_id=context.run_id,
+        name=f"pipeline.translate.source.{_source_bucket(candidate)}.{metric_name}",
+        value=value,
+        unit=unit,
+    )
+
+
+def _source_bucket(candidate: Any) -> str:
+    source_kind = _metric_suffix_token(str(getattr(candidate, "source_kind", "")))
+    granularity = str(getattr(candidate, "granularity", "") or "").strip().lower()
+    if source_kind in {"trend_synthesis", "trend_ideas"} and granularity:
+        return f"{source_kind}.{_metric_suffix_token(granularity)}"
+    return source_kind
+
+
+def _source_datetime_iso(value: Any) -> str | None:
+    return value.isoformat() if isinstance(value, datetime) else None
 
 
 def _translation_failure_reason(exc: Exception) -> str:

@@ -297,6 +297,11 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
             select(PassOutput).where(PassOutput.id == result.pass_output_id)
         ).one()
         assert row.status == PassStatus.SUCCEEDED.value
+        diagnostics = json.loads(row.diagnostics_json or "{}")
+        freshness = diagnostics["workflow_freshness"]
+        assert freshness["kind"] == "trend_ideas"
+        assert freshness["components"]["upstream_pass_output_id"] == upstream_pass_output_id
+        assert freshness["key"]
 
 
 def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
@@ -577,6 +582,11 @@ def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
         payload = TrendIdeasPayload.model_validate(json.loads(str(row.payload_json)))
         assert payload.title == "本期暂无想法"
         assert payload.summary_md == "本期没有保留想法。"
+        diagnostics = json.loads(row.diagnostics_json or "{}")
+        assert (
+            diagnostics["workflow_freshness"]["components"]["upstream_pass_output_id"]
+            == upstream_pass_output_id
+        )
 
 
 def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(

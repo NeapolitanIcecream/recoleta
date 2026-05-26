@@ -80,6 +80,49 @@ class WorkflowPlan:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowPlanDecision:
+    step_id: str
+    granularity: str | None
+    period_start: datetime | None
+    period_end: datetime | None
+    action: str
+    reason: str
+    expensive: bool
+    authority: str
+    anchor_date: date | None = None
+    freshness_key: str | None = None
+    source_hash: str | None = None
+    estimated_llm_calls: int | None = None
+    metadata: dict[str, Any] | None = None
+
+    def as_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "step_id": self.step_id,
+            "granularity": self.granularity,
+            "period_start": (
+                self.period_start.isoformat() if self.period_start is not None else None
+            ),
+            "period_end": (
+                self.period_end.isoformat() if self.period_end is not None else None
+            ),
+            "action": self.action,
+            "reason": self.reason,
+            "expensive": self.expensive,
+            "authority": self.authority,
+            "estimated_llm_calls": self.estimated_llm_calls,
+        }
+        if self.anchor_date is not None:
+            payload["anchor_date"] = self.anchor_date.isoformat()
+        if self.freshness_key is not None:
+            payload["freshness_key"] = self.freshness_key
+        if self.source_hash is not None:
+            payload["source_hash"] = self.source_hash
+        if self.metadata is not None:
+            payload["metadata"] = self.metadata
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowExecutionContext:
     repository: Any
     service: Any
@@ -101,7 +144,8 @@ class WorkflowExecutionContext:
     commit_message: str | None
     cname: str | None
     pages_config: str
-    force: bool
+    generation_force: bool
+    site_deploy_force: bool
     item_export_scope: str = "linked"
 
 

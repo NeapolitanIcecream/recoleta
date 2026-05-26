@@ -224,6 +224,9 @@ sources:
 # workflows:
 #   granularities:
 #     default:
+#       # Week/month workflows ensure lower-level windows by default. Fresh
+#       # expensive lower-level work is skipped automatically unless --force is
+#       # passed to the workflow command.
 #       recursive_lower_levels: true  # Default: true
 #       delivery_mode: all  # Allowed: all, local_only, none
 #       translation: auto  # Allowed: auto, off

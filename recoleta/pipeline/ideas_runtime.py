@@ -36,6 +36,7 @@ from recoleta.rag import ideas_agent
 from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
 from recoleta.trends import TrendPayload
 from recoleta.types import IdeasResult, utc_now
+from recoleta.workflow_freshness import build_trend_ideas_freshness
 
 
 @dataclass(frozen=True, slots=True)
@@ -845,6 +846,15 @@ def _ideas_status(payload: TrendIdeasPayload) -> PassStatus:
 
 
 def _run_ideas_pass_definition(request: IdeasPassDefinitionRequest) -> Any:
+    debug = dict(request.debug)
+    debug["workflow_freshness"] = build_trend_ideas_freshness(
+        settings=request.context.service.settings,
+        granularity=request.context.normalized_granularity,
+        period_start=request.context.period_start,
+        period_end=request.context.period_end,
+        upstream_pass_output_id=request.upstream_pass_output_id,
+        llm_model=request.context.llm_model,
+    )
     envelope = build_trend_ideas_pass_output(
         run_id=request.context.run_id,
         status=request.status,
@@ -862,7 +872,7 @@ def _run_ideas_pass_definition(request: IdeasPassDefinitionRequest) -> Any:
                 pass_output_id=request.upstream_pass_output_id,
             )
         ],
-        diagnostics=request.debug,
+        diagnostics=debug,
     )
     projection_context = IdeasProjectionContext(
         context=request.context,

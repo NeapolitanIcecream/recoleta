@@ -2185,6 +2185,53 @@ def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     assert payload["arxiv_pool_pre_sync"]["sync"]["requested_windows_total"] == 14
 
 
+def test_fleet_workflow_dry_run_skips_pool_pre_sync_and_marks_children_dry_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest_path, _pool_path = _write_pool_fleet_manifest(tmp_path)
+    child_modes: list[tuple[str, bool, bool]] = []
+
+    import recoleta.cli.fleet as fleet_module
+
+    def fake_pre_sync(plan):  # type: ignore[no-untyped-def]
+        raise AssertionError(f"dry-run must not pre-sync {plan}")
+
+    def fake_child_payload(*, request):  # type: ignore[no-untyped-def]
+        child_modes.append((request.instance.name, request.dry_run, request.force))
+        return {
+            "instance": request.instance.name,
+            "config_path": str(request.instance.config_path),
+            "mode": "dry_run",
+            "planned_expensive_steps": 2,
+        }
+
+    monkeypatch.setattr(fleet_module, "run_fleet_arxiv_pool_pre_sync", fake_pre_sync)
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        fake_child_payload,
+    )
+
+    payload = execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="week",
+        command="fleet run week",
+        anchor_date="2026-04-27",
+        dry_run=True,
+        force=True,
+        json_output=False,
+    )
+
+    assert child_modes == [
+        ("embodied_ai", True, True),
+        ("software", True, True),
+    ]
+    assert payload["mode"] == "dry_run"
+    assert payload["arxiv_pool_pre_sync"] == {"status": "skipped", "reason": "dry_run"}
+    assert payload["planned_expensive_steps"] == 4
+
+
 def test_fleet_workflow_skip_ingest_skips_pool_pre_sync_but_still_gates_analysis(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

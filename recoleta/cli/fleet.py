@@ -100,6 +100,33 @@ class FleetGranularityChildRequest:
     anchor_date: str | None
     include: str | None
     skip: str | None
+    dry_run: bool = False
+    force: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class FleetGranularityWorkflowRequest:
+    manifest_path: Path
+    workflow_name: str
+    command: str
+    anchor_date: str | None = None
+    include: str | None = None
+    skip: str | None = None
+    dry_run: bool = False
+    force: bool = False
+    json_output: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class FleetGranularityChildBatchRequest:
+    manifest: Any
+    workflow_name: str
+    command: str
+    anchor_date: str | None
+    include: str | None
+    skip: str | None
+    dry_run: bool = False
+    force: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -437,70 +464,93 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
     return payload
 
 
-def execute_fleet_granularity_workflow(
-    *,
-    manifest_path: Path,
-    workflow_name: str,
-    command: str,
-    anchor_date: str | None = None,
-    include: str | None = None,
-    skip: str | None = None,
-    json_output: bool = False,
-) -> dict[str, Any]:
-    include_steps = _parse_step_list(include)
-    skip_steps = _parse_step_list(skip)
+def execute_fleet_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
+    request = _fleet_granularity_workflow_request(kwargs)
+    include_steps = _parse_step_list(request.include)
+    skip_steps = _parse_step_list(request.skip)
     _validate_step_overrides(
-        workflow_name=workflow_name,
+        workflow_name=request.workflow_name,
         include_steps=include_steps,
         skip_steps=skip_steps,
     )
+    if request.dry_run:
+        payload = _fleet_granularity_dry_run_payload(request)
+        if request.json_output:
+            cli._emit_json(payload)
+            return payload
+        console = cli._runtime_symbols()["Console"]()
+        console.print(
+            f"[cyan]{request.command} dry-run[/cyan] "
+            f"instances={len(payload['children'])} "
+            f"planned_expensive_steps={payload['planned_expensive_steps']}"
+        )
+        return payload
     context = _fleet_granularity_readiness_context(
-        manifest_path=manifest_path,
-        workflow_name=workflow_name,
-        command=command,
-        anchor_date=anchor_date,
+        manifest_path=request.manifest_path,
+        workflow_name=request.workflow_name,
+        command=request.command,
+        anchor_date=request.anchor_date,
         include_steps=include_steps,
         skip_steps=skip_steps,
     )
     if _fleet_granularity_readiness_should_block(context):
         payload = _fleet_granularity_blocked_payload(
             context=context,
-            command=command,
-            workflow_name=workflow_name,
+            command=request.command,
+            workflow_name=request.workflow_name,
         )
         _emit_fleet_granularity_blocked(
             payload=payload,
-            command=command,
-            json_output=json_output,
+            command=request.command,
+            json_output=request.json_output,
         )
         raise cli.typer.Exit(code=1)
 
     children = _fleet_granularity_child_payloads(
-        manifest=context.manifest,
-        workflow_name=workflow_name,
-        command=command,
-        anchor_date=anchor_date,
-        include=include,
-        skip=skip,
+        FleetGranularityChildBatchRequest(
+            manifest=context.manifest,
+            workflow_name=request.workflow_name,
+            command=request.command,
+            anchor_date=request.anchor_date,
+            include=request.include,
+            skip=request.skip,
+            force=request.force,
+        )
     )
     payload = {
         "status": "ok",
-        "command": command,
+        "command": request.command,
         "manifest_path": str(context.manifest.manifest_path),
-        "workflow_name": workflow_name,
+        "workflow_name": request.workflow_name,
         "arxiv_pool_pre_sync": context.arxiv_pool_pre_sync,
         "arxiv_pool_readiness": context.arxiv_pool_readiness,
         "children": children,
     }
-    if json_output:
+    if request.json_output:
         cli._emit_json(payload)
         return payload
     console = cli._runtime_symbols()["Console"]()
     console.print(
-        f"[green]{command} completed[/green] "
-        f"instances={len(children)} workflow={workflow_name}"
+        f"[green]{request.command} completed[/green] "
+        f"instances={len(children)} workflow={request.workflow_name}"
     )
     return payload
+
+
+def _fleet_granularity_workflow_request(
+    kwargs: dict[str, Any],
+) -> FleetGranularityWorkflowRequest:
+    return FleetGranularityWorkflowRequest(
+        manifest_path=Path(kwargs["manifest_path"]),
+        workflow_name=str(kwargs["workflow_name"]),
+        command=str(kwargs["command"]),
+        anchor_date=kwargs.get("anchor_date"),
+        include=kwargs.get("include"),
+        skip=kwargs.get("skip"),
+        dry_run=bool(kwargs.get("dry_run", False)),
+        force=bool(kwargs.get("force", False)),
+        json_output=bool(kwargs.get("json_output", False)),
+    )
 
 
 def _fleet_granularity_readiness_context(
@@ -647,27 +697,52 @@ def _emit_fleet_granularity_blocked(
 
 
 def _fleet_granularity_child_payloads(
-    *,
-    manifest: Any,
-    workflow_name: str,
-    command: str,
-    anchor_date: str | None,
-    include: str | None,
-    skip: str | None,
+    request: FleetGranularityChildBatchRequest,
 ) -> list[dict[str, Any]]:
     return [
         _fleet_granularity_child_payload(
             request=FleetGranularityChildRequest(
                 instance=instance,
-                workflow_name=workflow_name,
-                command=command,
-                anchor_date=anchor_date,
-                include=include,
-                skip=skip,
+                workflow_name=request.workflow_name,
+                command=request.command,
+                anchor_date=request.anchor_date,
+                include=request.include,
+                skip=request.skip,
+                dry_run=request.dry_run,
+                force=request.force,
             )
         )
-        for instance in manifest.instances
+        for instance in request.manifest.instances
     ]
+
+
+def _fleet_granularity_dry_run_payload(
+    request: FleetGranularityWorkflowRequest,
+) -> dict[str, Any]:
+    manifest = load_fleet_manifest(request.manifest_path)
+    children = _fleet_granularity_child_payloads(
+        FleetGranularityChildBatchRequest(
+            manifest=manifest,
+            workflow_name=request.workflow_name,
+            command=request.command,
+            anchor_date=request.anchor_date,
+            include=request.include,
+            skip=request.skip,
+            dry_run=True,
+            force=request.force,
+        )
+    )
+    planned_total = sum(int(child.get("planned_expensive_steps") or 0) for child in children)
+    return {
+        "status": "ok",
+        "mode": "dry_run",
+        "command": request.command,
+        "manifest_path": str(manifest.manifest_path),
+        "workflow_name": request.workflow_name,
+        "planned_expensive_steps": planned_total,
+        "arxiv_pool_pre_sync": {"status": "skipped", "reason": "dry_run"},
+        "children": children,
+    }
 
 
 def _fleet_granularity_target_period(
@@ -1034,6 +1109,8 @@ def _fleet_granularity_child_payload(
         anchor_date=request.anchor_date,
         include=request.include,
         skip=request.skip,
+        dry_run=request.dry_run,
+        force=request.force,
         json_output=False,
         config_path=request.instance.config_path,
         emit_output=False,

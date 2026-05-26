@@ -12,6 +12,11 @@ from recoleta.cli.arxiv_pool_readiness import (
 )
 from recoleta.cli import workflow_models as _workflow_models
 from recoleta.cli.workflow_models import WorkflowExecutionContext
+from recoleta.cli.workflow_planner import (
+    decision_payloads,
+    plan_workflow_execution,
+    planned_expensive_steps,
+)
 from recoleta.cli.workflow_runner import (
     GranularityPlanRequest,
     WorkflowLoopRequest,
@@ -93,6 +98,7 @@ class _ManagedWorkflowLoopRequest:
     runtime: _ManagedWorkflowRuntime
     plan: Any
     execution_context: WorkflowExecutionContext
+    planner_decisions: list[Any] | None
     json_output: bool
     on_translate_failure: str
     failure_messages: _WorkflowFailureMessages
@@ -118,6 +124,20 @@ class _GranularityContextRequest:
     anchor_date: Any
     include_steps: list[str]
     skip_steps: list[str]
+    generation_force: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _GranularityDryRunRequest:
+    workflow_name: str
+    command: str
+    anchor_date: Any
+    include_steps: list[str]
+    skip_steps: list[str]
+    generation_force: bool
+    json_output: bool
+    emit_output: bool
+    config_path: Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +145,7 @@ class _GranularityWorkflowContext:
     plan: Any
     execution_context: WorkflowExecutionContext
     on_translate_failure: str
+    planner_decisions: list[Any]
     arxiv_pool_readiness: dict[str, Any] | None = None
     blocked_payload: dict[str, Any] | None = None
 
@@ -231,6 +252,17 @@ def _begin_managed_workflow(
     )
 
 
+def _build_dry_run_runtime(
+    *,
+    config_path: Any,
+) -> tuple[Any, Any, Any, Any]:
+    settings, repository, service = cli._build_runtime(config_path=config_path)
+    console = cli._runtime_symbols()["Console"](
+        stderr=bool(getattr(settings, "log_json", False))
+    )
+    return settings, repository, service, console
+
+
 def _workflow_loop_request(
     request: _ManagedWorkflowLoopRequest,
 ) -> WorkflowLoopRequest:
@@ -239,6 +271,7 @@ def _workflow_loop_request(
         heartbeat_monitor=request.runtime.heartbeat_monitor,
         plan=request.plan,
         execution_context=request.execution_context,
+        planner_decisions=request.planner_decisions,
         json_output=request.json_output,
         on_translate_failure=request.on_translate_failure,
     )
@@ -436,7 +469,16 @@ def _granularity_workflow_context(
         commit_message=None,
         cname=None,
         pages_config="auto",
-        force=True,
+        generation_force=bool(request.generation_force),
+        site_deploy_force=False,
+    )
+    planner_decisions = plan_workflow_execution(
+        plan=plan,
+        repository=request.runtime.repository,
+        settings=request.runtime.settings,
+        generation_force=bool(request.generation_force),
+        translate_include=list(policy.translate_include),
+        translate_granularities=translate_granularities,
     )
     arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
         settings=request.runtime.settings,
@@ -452,9 +494,85 @@ def _granularity_workflow_context(
         plan=plan,
         execution_context=execution_context,
         on_translate_failure=str(policy.on_translate_failure or "fail"),
+        planner_decisions=planner_decisions,
         arxiv_pool_readiness=arxiv_pool_readiness,
         blocked_payload=blocked_payload,
     )
+
+
+def _granularity_dry_run_payload(
+    *,
+    command: str,
+    plan: Any,
+    planner_decisions: list[Any],
+    arxiv_pool_readiness: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "mode": "dry_run",
+        "command": command,
+        "operation_kind": plan.operation_kind,
+        "target_granularity": plan.target_granularity,
+        "target_period_start": cli._isoformat_or_none(plan.target_period_start),
+        "target_period_end": cli._isoformat_or_none(plan.target_period_end),
+        "requested_steps": plan.requested_steps,
+        "skipped_steps": plan.skipped_steps,
+        "planned_expensive_steps": planned_expensive_steps(planner_decisions),
+        "plan": decision_payloads(planner_decisions),
+        "arxiv_pool_readiness": _public_arxiv_pool_readiness(arxiv_pool_readiness),
+    }
+
+
+def _execute_granularity_dry_run(
+    request: _GranularityDryRunRequest,
+) -> dict[str, Any]:
+    settings, repository, _service, console = _build_dry_run_runtime(
+        config_path=request.config_path
+    )
+    plan = _build_granularity_plan(
+        request=GranularityPlanRequest(
+            workflow_name=request.workflow_name,
+            command=request.command,
+            anchor_date=request.anchor_date,
+            settings=settings,
+            include_steps=request.include_steps,
+            skip_steps=request.skip_steps,
+        )
+    )
+    policy = settings.workflow_policy_for_granularity(plan.target_granularity or "day")
+    translate_granularities = _granularity_stack(
+        target_granularity=plan.target_granularity or "day",
+        recursive_lower_levels=bool(policy.recursive_lower_levels),
+    )
+    planner_decisions = plan_workflow_execution(
+        plan=plan,
+        repository=repository,
+        settings=settings,
+        generation_force=request.generation_force,
+        translate_include=list(policy.translate_include),
+        translate_granularities=translate_granularities,
+    )
+    arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
+        settings=settings,
+        plan=plan,
+    )
+    payload = _granularity_dry_run_payload(
+        command=request.command,
+        plan=plan,
+        planner_decisions=planner_decisions,
+        arxiv_pool_readiness=arxiv_pool_readiness,
+    )
+    if request.json_output:
+        if request.emit_output:
+            cli._emit_json(payload)
+        return payload
+    if request.emit_output:
+        console.print(
+            f"[cyan]{request.command} dry-run[/cyan] "
+            f"planned_expensive_steps={payload['planned_expensive_steps']} "
+            f"steps={len(planner_decisions)}"
+        )
+    return payload
 
 
 def _granularity_workflow_payload(
@@ -463,6 +581,7 @@ def _granularity_workflow_payload(
     runtime: _ManagedWorkflowRuntime,
     plan: Any,
     outcome: _WorkflowLoopOutcome,
+    planner_decisions: list[Any],
     arxiv_pool_readiness: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return granularity_workflow_payload(
@@ -475,6 +594,7 @@ def _granularity_workflow_payload(
             billing_metrics_by_step=outcome.billing_metrics_by_step,
             terminal_state=outcome.terminal_state,
             step_results=outcome.step_results,
+            planner_decisions=planner_decisions,
             arxiv_pool_readiness=_public_arxiv_pool_readiness(
                 arxiv_pool_readiness
             ),
@@ -588,7 +708,8 @@ def _deploy_workflow_context(
             commit_message=request.commit_message,
             cname=request.cname,
             pages_config=request.pages_config,
-            force=request.force,
+            generation_force=False,
+            site_deploy_force=request.force,
             item_export_scope=request.item_export_scope,
         ),
         on_translate_failure=str(
@@ -669,6 +790,7 @@ def _execute_and_emit_managed_workflow(
             runtime=request.runtime,
             plan=context.plan,
             execution_context=context.execution_context,
+            planner_decisions=getattr(context, "planner_decisions", None),
             json_output=bool(request.kwargs.get("json_output", False)),
             on_translate_failure=context.on_translate_failure,
             failure_messages=request.failure_messages,
@@ -818,6 +940,20 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
         workflow_name=workflow_name,
         kwargs=kwargs,
     )
+    if bool(kwargs.get("dry_run", False)):
+        return _execute_granularity_dry_run(
+            _GranularityDryRunRequest(
+                workflow_name=workflow_name,
+                command=command,
+                anchor_date=kwargs.get("anchor_date"),
+                include_steps=include_steps,
+                skip_steps=skip_steps,
+                generation_force=bool(kwargs.get("force", False)),
+                json_output=bool(kwargs.get("json_output", False)),
+                emit_output=bool(kwargs.get("emit_output", True)),
+                config_path=kwargs.get("config_path"),
+            )
+        )
     runtime = _begin_managed_workflow(
         command=command,
         log_module=f"cli.workflow.{workflow_name}",
@@ -836,6 +972,7 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                     anchor_date=kwargs.get("anchor_date"),
                     include_steps=include_steps,
                     skip_steps=skip_steps,
+                    generation_force=bool(kwargs.get("force", False)),
                 )
             ),
             payload_builder=lambda context, outcome: _granularity_workflow_payload(
@@ -843,6 +980,7 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                 runtime=runtime,
                 plan=context.plan,
                 outcome=outcome,
+                planner_decisions=context.planner_decisions,
                 arxiv_pool_readiness=context.arxiv_pool_readiness,
             ),
             failure_messages=_GRANULARITY_FAILURE_MESSAGES,
