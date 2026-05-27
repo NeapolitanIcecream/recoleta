@@ -65,6 +65,10 @@ IDEA_TO_TREND_STEP = {
     STEP_IDEAS_WEEK: STEP_TRENDS_WEEK,
     STEP_IDEAS_MONTH: STEP_TRENDS_MONTH,
 }
+AGGREGATE_TREND_SOURCE_STEP = {
+    STEP_TRENDS_WEEK: STEP_TRENDS_DAY,
+    STEP_TRENDS_MONTH: STEP_TRENDS_WEEK,
+}
 PLANNED_RUN_ACTIONS = {"run", "repair", "force"}
 
 TREND_SYNTHESIS_PASS_KIND = "trend_synthesis"
@@ -1049,7 +1053,8 @@ def _run_generation_when_upstream_is_planned(
 ) -> list[WorkflowPlanDecision]:
     analyze_updated = _run_analyze_when_ingest_is_planned(decisions)
     trend_updated = _run_trends_when_analyze_is_planned(analyze_updated)
-    return _run_ideas_when_trends_are_planned(trend_updated)
+    aggregate_updated = _run_aggregate_trends_when_sources_are_planned(trend_updated)
+    return _run_ideas_when_trends_are_planned(aggregate_updated)
 
 
 def _run_analyze_when_ingest_is_planned(
@@ -1102,6 +1107,76 @@ def _planned_analyze_windows(
         for decision in decisions
         if decision.step_id == STEP_ANALYZE and decision.action in PLANNED_RUN_ACTIONS
     }
+
+
+def _run_aggregate_trends_when_sources_are_planned(
+    decisions: list[WorkflowPlanDecision],
+) -> list[WorkflowPlanDecision]:
+    updated = decisions
+    for aggregate_step in (STEP_TRENDS_WEEK, STEP_TRENDS_MONTH):
+        updated = _run_aggregate_trend_when_source_is_planned(
+            decisions=updated,
+            aggregate_step=aggregate_step,
+        )
+    return updated
+
+
+def _run_aggregate_trend_when_source_is_planned(
+    *,
+    decisions: list[WorkflowPlanDecision],
+    aggregate_step: str,
+) -> list[WorkflowPlanDecision]:
+    source_windows = _planned_trend_source_windows(
+        decisions=decisions,
+        source_step=AGGREGATE_TREND_SOURCE_STEP[aggregate_step],
+    )
+    updated: list[WorkflowPlanDecision] = []
+    for decision in decisions:
+        if _aggregate_trend_has_planned_source(
+            decision=decision,
+            aggregate_step=aggregate_step,
+            source_windows=source_windows,
+        ):
+            updated.append(
+                _reactivate_generation_decision(decision, "upstream_trend_planned")
+            )
+            continue
+        updated.append(decision)
+    return updated
+
+
+def _planned_trend_source_windows(
+    *,
+    decisions: list[WorkflowPlanDecision],
+    source_step: str,
+) -> list[tuple[datetime, datetime]]:
+    return [
+        (decision.period_start, decision.period_end)
+        for decision in decisions
+        if decision.step_id == source_step
+        and decision.action in PLANNED_RUN_ACTIONS
+        and decision.period_start is not None
+        and decision.period_end is not None
+    ]
+
+
+def _aggregate_trend_has_planned_source(
+    *,
+    decision: WorkflowPlanDecision,
+    aggregate_step: str,
+    source_windows: list[tuple[datetime, datetime]],
+) -> bool:
+    if decision.step_id != aggregate_step or decision.action != "skip":
+        return False
+    return any(
+        _decision_periods_overlap(
+            left_start=decision.period_start,
+            left_end=decision.period_end,
+            right_start=source_start,
+            right_end=source_end,
+        )
+        for source_start, source_end in source_windows
+    )
 
 
 def _run_ideas_when_trends_are_planned(

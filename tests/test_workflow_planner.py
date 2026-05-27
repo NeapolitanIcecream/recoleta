@@ -428,6 +428,34 @@ def test_planner_reruns_trends_and_ideas_when_analyze_is_planned() -> None:
     assert ideas_decision.reason == "upstream_trend_planned"
 
 
+def test_planner_cascades_lower_level_trend_reruns_to_aggregate_trends() -> None:
+    source_day = date(2026, 3, 18)
+    source_week = date(2026, 3, 16)
+    source_month = date(2026, 3, 1)
+
+    decisions = plan_workflow_execution(
+        plan=_month_plan(),
+        repository=_ReadOnlyPlannerRepo(missing_days={source_day}),
+        settings=_Settings(),
+    )
+
+    day_trend = _decision_for(decisions, "trends:day", source_day)
+    week_trend = _decision_for(decisions, "trends:week", source_week)
+    week_ideas = _decision_for(decisions, "ideas:week", source_week)
+    month_trend = _decision_for(decisions, "trends:month", source_month)
+    month_ideas = _decision_for(decisions, "ideas:month", source_month)
+
+    assert day_trend.action == "run"
+    assert week_trend.action == "run"
+    assert week_trend.reason == "upstream_trend_planned"
+    assert week_ideas.action == "run"
+    assert week_ideas.reason == "upstream_trend_planned"
+    assert month_trend.action == "run"
+    assert month_trend.reason == "upstream_trend_planned"
+    assert month_ideas.action == "run"
+    assert month_ideas.reason == "upstream_trend_planned"
+
+
 def test_planner_is_read_only() -> None:
     repository = _ReadOnlyPlannerRepo()
 
@@ -706,6 +734,19 @@ def _week_translation_plan():
             command="run week",
             anchor_date="2026-03-16",
             settings=_TranslationSettings(),
+            include_steps=[],
+            skip_steps=[],
+        )
+    )
+
+
+def _month_plan():
+    return build_granularity_plan(
+        request=GranularityPlanRequest(
+            workflow_name="month",
+            command="run month",
+            anchor_date="2026-03-16",
+            settings=_Settings(),
             include_steps=[],
             skip_steps=[],
         )
