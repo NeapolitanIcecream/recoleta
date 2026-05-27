@@ -445,6 +445,26 @@ def test_planner_runs_publish_when_analyze_is_planned() -> None:
     assert publish_decision.reason == "upstream_analyze_planned"
 
 
+def test_generation_force_does_not_force_analyze_without_reprocess_path() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan_without_ingest(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=_Settings(),
+        generation_force=True,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "no_candidate_items"
+    assert trend_decision.action == "force"
+    assert ideas_decision.action == "force"
+
+
 def test_planner_cascades_lower_level_trend_reruns_to_aggregate_trends() -> None:
     source_day = date(2026, 3, 18)
     source_week = date(2026, 3, 16)
@@ -779,6 +799,19 @@ def _day_plan():
             settings=_Settings(),
             include_steps=[],
             skip_steps=[],
+        )
+    )
+
+
+def _day_plan_without_ingest():
+    return build_granularity_plan(
+        request=GranularityPlanRequest(
+            workflow_name="day",
+            command="run day",
+            anchor_date="2026-03-16",
+            settings=_Settings(),
+            include_steps=[],
+            skip_steps=["ingest"],
         )
     )
 
