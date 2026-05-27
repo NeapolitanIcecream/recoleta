@@ -1047,12 +1047,20 @@ def _run_downstream_when_upstream_is_planned(
 def _run_generation_when_upstream_is_planned(
     decisions: list[WorkflowPlanDecision],
 ) -> list[WorkflowPlanDecision]:
+    analyze_updated = _run_analyze_when_ingest_is_planned(decisions)
+    trend_updated = _run_trends_when_analyze_is_planned(analyze_updated)
+    return _run_ideas_when_trends_are_planned(trend_updated)
+
+
+def _run_analyze_when_ingest_is_planned(
+    decisions: list[WorkflowPlanDecision],
+) -> list[WorkflowPlanDecision]:
     ingest_run_windows = {
         (decision.period_start, decision.period_end)
         for decision in decisions
         if decision.step_id == STEP_INGEST and decision.action in PLANNED_RUN_ACTIONS
     }
-    analyze_updated: list[WorkflowPlanDecision] = []
+    updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if (
             decision.step_id == STEP_ANALYZE
@@ -1060,39 +1068,45 @@ def _run_generation_when_upstream_is_planned(
             and decision.reason == "no_candidate_items"
             and (decision.period_start, decision.period_end) in ingest_run_windows
         ):
-            analyze_updated.append(
-                replace(
-                    decision,
-                    action="run",
-                    reason="upstream_ingest_planned",
-                    estimated_llm_calls=None,
-                )
+            updated.append(
+                _reactivate_generation_decision(decision, "upstream_ingest_planned")
             )
             continue
-        analyze_updated.append(decision)
+        updated.append(decision)
+    return updated
 
-    analyze_run_windows = {
-        (decision.granularity, decision.period_start, decision.period_end)
-        for decision in analyze_updated
-        if decision.step_id == STEP_ANALYZE and decision.action in PLANNED_RUN_ACTIONS
-    }
-    trend_updated: list[WorkflowPlanDecision] = []
-    for decision in analyze_updated:
+
+def _run_trends_when_analyze_is_planned(
+    decisions: list[WorkflowPlanDecision],
+) -> list[WorkflowPlanDecision]:
+    analyze_run_windows = _planned_analyze_windows(decisions)
+    updated: list[WorkflowPlanDecision] = []
+    for decision in decisions:
         if _trend_has_planned_analyze(
             decision=decision,
             analyze_run_windows=analyze_run_windows,
         ):
-            trend_updated.append(
-                replace(
-                    decision,
-                    action="run",
-                    reason="upstream_analyze_planned",
-                    estimated_llm_calls=None,
-                )
+            updated.append(
+                _reactivate_generation_decision(decision, "upstream_analyze_planned")
             )
             continue
-        trend_updated.append(decision)
+        updated.append(decision)
+    return updated
 
+
+def _planned_analyze_windows(
+    decisions: list[WorkflowPlanDecision],
+) -> set[tuple[str | None, datetime | None, datetime | None]]:
+    return {
+        (decision.granularity, decision.period_start, decision.period_end)
+        for decision in decisions
+        if decision.step_id == STEP_ANALYZE and decision.action in PLANNED_RUN_ACTIONS
+    }
+
+
+def _run_ideas_when_trends_are_planned(
+    decisions: list[WorkflowPlanDecision],
+) -> list[WorkflowPlanDecision]:
     trend_run_windows = {
         (
             decision.step_id,
@@ -1100,27 +1114,34 @@ def _run_generation_when_upstream_is_planned(
             decision.period_start,
             decision.period_end,
         )
-        for decision in trend_updated
+        for decision in decisions
         if decision.step_id in TREND_STEPS
         and decision.action in PLANNED_RUN_ACTIONS
     }
-    upstream_updated: list[WorkflowPlanDecision] = []
-    for decision in trend_updated:
+    updated: list[WorkflowPlanDecision] = []
+    for decision in decisions:
         if _idea_has_planned_trend(
             decision=decision,
             trend_run_windows=trend_run_windows,
         ):
-            upstream_updated.append(
-                replace(
-                    decision,
-                    action="run",
-                    reason="upstream_trend_planned",
-                    estimated_llm_calls=None,
-                )
+            updated.append(
+                _reactivate_generation_decision(decision, "upstream_trend_planned")
             )
             continue
-        upstream_updated.append(decision)
-    return upstream_updated
+        updated.append(decision)
+    return updated
+
+
+def _reactivate_generation_decision(
+    decision: WorkflowPlanDecision,
+    reason: str,
+) -> WorkflowPlanDecision:
+    return replace(
+        decision,
+        action="run",
+        reason=reason,
+        estimated_llm_calls=None,
+    )
 
 
 def _trend_has_planned_analyze(
