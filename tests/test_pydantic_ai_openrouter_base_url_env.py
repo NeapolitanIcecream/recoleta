@@ -46,7 +46,8 @@ def test_build_pydantic_ai_model_openrouter_accepts_recoleta_llm_connection() ->
         ),
     )
 
-    assert isinstance(model, OpenRouterModel)
+    assert isinstance(model, OpenAIChatModel)
+    assert model.model_name == "openrouter/anthropic/claude-3-5-sonnet"
     assert str(model.base_url).rstrip("/") == "http://openrouter.local/api/v1"
 
 
@@ -60,4 +61,19 @@ def test_build_pydantic_ai_model_openai_accepts_recoleta_llm_connection() -> Non
     )
 
     assert isinstance(model, OpenAIChatModel)
+    assert model.model_name == "openai/gpt-4o-mini"
+    assert str(model.base_url).rstrip("/") == "http://llm.local/v1"
+
+
+def test_build_pydantic_ai_model_anthropic_uses_recoleta_llm_connection() -> None:
+    model = build_pydantic_ai_model(
+        "anthropic/claude-3-5-sonnet-20241022",
+        llm_connection=LLMConnectionConfig(
+            api_key="sk-recoleta-test",
+            base_url="http://llm.local/v1/",
+        ),
+    )
+
+    assert isinstance(model, OpenAIChatModel)
+    assert model.model_name == "anthropic/claude-3-5-sonnet-20241022"
     assert str(model.base_url).rstrip("/") == "http://llm.local/v1"

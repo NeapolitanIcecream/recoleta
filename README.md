@@ -363,6 +363,12 @@ RECOLETA_LLM_API_KEY="sk-replace-me"
 ENV
 ```
 
+`RECOLETA_LLM_API_KEY` and `RECOLETA_LLM_BASE_URL` are used by both LiteLLM
+calls and Pydantic AI RAG/trends/ideas agents. When `RECOLETA_LLM_BASE_URL` is
+set, Pydantic AI calls use that OpenAI-compatible endpoint and pass
+`llm_model` through in the configured LiteLLM-style form, such as
+`openai/gpt-5.4` or `anthropic/claude-3-5-sonnet-20241022`.
+
 Run the default UTC-day workflow:
 
 ```bash

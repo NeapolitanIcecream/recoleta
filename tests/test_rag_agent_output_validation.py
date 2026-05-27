@@ -10,11 +10,87 @@ import pytest
 from pydantic_ai import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.rag.agent import TrendAgentDeps, build_trend_agent
+import recoleta.rag.ideas_agent as ideas_agent_module
 from recoleta.rag.ideas_agent import IdeasAgentDeps, build_trend_ideas_agent
+import recoleta.rag.pydantic_ai_model as pydantic_ai_model_module
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.trends import TrendPayload
 from tests.spec_support import _build_runtime
+
+
+def _never_called_function_model() -> FunctionModel:
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        _ = messages, info
+        raise AssertionError("agent construction test should not call the model")
+
+    return FunctionModel(model_fn)
+
+
+def test_trend_agent_uses_shared_model_factory_with_llm_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = LLMConnectionConfig(
+        api_key="sk-recoleta-test",
+        base_url="http://llm.local/v1/",
+    )
+    calls: list[tuple[str, LLMConnectionConfig | None]] = []
+
+    def fake_build_pydantic_ai_model(
+        llm_model: str, *, llm_connection: LLMConnectionConfig | None = None
+    ) -> FunctionModel:
+        calls.append((llm_model, llm_connection))
+        return _never_called_function_model()
+
+    monkeypatch.setattr(
+        pydantic_ai_model_module,
+        "build_pydantic_ai_model",
+        fake_build_pydantic_ai_model,
+    )
+
+    build_trend_agent(
+        llm_model="anthropic/claude-3-5-sonnet-20241022",
+        llm_connection=connection,
+    )
+
+    assert calls == [("anthropic/claude-3-5-sonnet-20241022", connection)]
+
+
+def test_ideas_agents_use_shared_model_factory_with_llm_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = LLMConnectionConfig(
+        api_key="sk-recoleta-test",
+        base_url="http://llm.local/v1/",
+    )
+    calls: list[tuple[str, LLMConnectionConfig | None]] = []
+
+    def fake_build_pydantic_ai_model(
+        llm_model: str, *, llm_connection: LLMConnectionConfig | None = None
+    ) -> FunctionModel:
+        calls.append((llm_model, llm_connection))
+        return _never_called_function_model()
+
+    monkeypatch.setattr(
+        ideas_agent_module,
+        "build_pydantic_ai_model",
+        fake_build_pydantic_ai_model,
+    )
+
+    build_trend_ideas_agent(
+        llm_model="anthropic/claude-3-5-sonnet-20241022",
+        llm_connection=connection,
+    )
+    ideas_agent_module._build_trend_ideas_title_agent(
+        llm_model="openrouter/anthropic/claude-3-5-sonnet",
+        llm_connection=connection,
+    )
+
+    assert calls == [
+        ("anthropic/claude-3-5-sonnet-20241022", connection),
+        ("openrouter/anthropic/claude-3-5-sonnet", connection),
+    ]
 
 
 def test_trend_agent_validates_typed_output(

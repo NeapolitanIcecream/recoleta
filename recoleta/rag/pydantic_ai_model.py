@@ -48,19 +48,43 @@ def _split_provider(llm_model: str) -> tuple[str, str | None]:
     return "", None
 
 
+def _openai_compatible_model_name(llm_model: str) -> str:
+    normalized = str(llm_model or "").strip()
+    if ":" in normalized:
+        provider, rest = normalized.split(":", 1)
+        provider = provider.strip()
+        rest = rest.strip()
+        if provider and rest:
+            return f"{provider}/{rest}"
+    return normalized
+
+
 def build_pydantic_ai_model(
     llm_model: str, *, llm_connection: LLMConnectionConfig | None = None
 ) -> Any:
     """Build a PydanticAI model (or model-id string) from Recoleta's LLM config.
 
-    Design goal: keep PydanticAI on native providers, but ensure OpenRouter base URL
-    is configurable via environment variables to match the rest of the project.
+    Design goal: route configured Recoleta LLM base URLs through one
+    OpenAI-compatible PydanticAI provider while preserving provider-native
+    fallbacks when no Recoleta base URL is configured.
     """
 
     normalized = str(llm_model or "").strip()
     if not normalized:
         raise ValueError("llm_model must not be empty")
     llm_connection = llm_connection or LLMConnectionConfig()
+
+    if llm_connection.base_url is not None:
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        return OpenAIChatModel(
+            _openai_compatible_model_name(normalized),
+            provider=OpenAIProvider(
+                base_url=llm_connection.base_url,
+                api_key=llm_connection.api_key,
+            ),
+        )
 
     provider, rest = _split_provider(normalized)
     if provider.lower() == "openrouter":
@@ -89,9 +113,7 @@ def build_pydantic_ai_model(
             provider = _EnvOpenRouterProvider()
         return OpenRouterModel(rest, provider=provider)
 
-    if provider.lower() == "openai" and (
-        llm_connection.api_key is not None or llm_connection.base_url is not None
-    ):
+    if provider.lower() == "openai" and llm_connection.api_key is not None:
         if not rest:
             raise ValueError(
                 "OpenAI model must be in the form 'openai/<model>' or 'openai:<model>'"
