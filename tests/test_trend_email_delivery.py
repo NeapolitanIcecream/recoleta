@@ -454,6 +454,32 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     assert manifest["primary_page_url"] == entry.primary_page_url
 
 
+def test_build_trend_email_preview_renders_outlook_safe_cta_buttons(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    entry = _preview_entry(result)
+    assert isinstance(entry, trend_email_module.TrendEmailPreviewEntryResult)
+
+    html_body = entry.html_path.read_text(encoding="utf-8")
+    assert html_body.count("<v:roundrect") == 2
+    assert html_body.count("<!--[if mso]>") == 2
+    assert html_body.count("<!--[if !mso]><!-->") == 2
+    assert 'arcsize="50%"' in html_body
+    assert 'fillcolor="#f7fbff"' in html_body
+    assert 'fillcolor="#16538c"' in html_body
+    assert "mso-hide:all" in html_body
+    assert html_body.count("Open on site") == 2
+    assert html_body.count("Open trend page") == 2
+
+
 def test_build_trend_email_preview_writes_multi_granularity_batch_in_config_order(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

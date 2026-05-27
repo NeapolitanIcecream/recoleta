@@ -626,6 +626,43 @@ def _render_meta_rows(bundle: _TrendEmailBundle) -> list[tuple[str, str]]:
     return rows
 
 
+def _render_email_button(
+    *,
+    url: str,
+    label: str,
+    background: str,
+    foreground: str,
+    width: int,
+    height: int = 40,
+    margin_right: int = 0,
+) -> str:
+    url_attr = html.escape(url, quote=True)
+    label_html = html.escape(label)
+    margin_style = f"margin-right:{margin_right}px;" if margin_right else ""
+    anchor_style = (
+        f"display:inline-block;background:{background};color:{foreground};"
+        "text-decoration:none;font:600 14px/1 Arial,sans-serif;"
+        "padding:12px 18px;border-radius:999px;"
+        f"{margin_style}mso-hide:all"
+    )
+    return (
+        "<!--[if mso]>"
+        '<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" '
+        'xmlns:w="urn:schemas-microsoft-com:office:word" '
+        f'href="{url_attr}" '
+        f'style="height:{height}px;v-text-anchor:middle;width:{width}px;" '
+        f'arcsize="50%" stroke="f" fillcolor="{background}">'
+        "<w:anchorlock/>"
+        f'<center style="color:{foreground};font-family:Arial,sans-serif;'
+        f'font-size:14px;font-weight:600;">{label_html}</center>'
+        "</v:roundrect>"
+        "<![endif]-->"
+        "<!--[if !mso]><!-->"
+        f"<a href='{url_attr}' style='{anchor_style}'>{label_html}</a>"
+        "<!--<![endif]-->"
+    )
+
+
 def _render_cluster_card(cluster: _RenderedCluster) -> str:
     evidence_html = ""
     if cluster.evidence:
@@ -700,7 +737,7 @@ def _render_html_email(*, bundle: _TrendEmailBundle, settings: Settings) -> str:
         f"<div style='font:600 11px/1.4 Arial,sans-serif;color:#d2e6fb;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px'>{html.escape((bundle.instance + ' · ') if bundle.instance else '')}{html.escape(bundle.granularity.title())} trends · {html.escape(bundle.period_token)}</div>"
         f"<h1 style='margin:0 0 14px;font:600 34px/1.12 Georgia,Times New Roman,serif;color:#ffffff'>{html.escape(bundle.title)}</h1>"
         f"<div style='font:400 16px/1.7 Arial,sans-serif;color:#dbe9f6;margin:0 0 20px'>{html.escape(bundle.overview_text[:180])}</div>"
-        f"<a href='{html.escape(bundle.primary_page_url, quote=True)}' style='display:inline-block;background:#f7fbff;color:#10273f;text-decoration:none;font:600 14px/1 Arial,sans-serif;padding:12px 18px;border-radius:999px'>Open on site</a>"
+        f"{_render_email_button(url=bundle.primary_page_url, label='Open on site', background='#f7fbff', foreground='#10273f', width=128)}"
         "</td></tr></table></td></tr>"
         "<tr><td style='padding:0 0 16px'>"
         "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;border:1px solid #d7e2ec;border-radius:18px;background:#ffffff'>"
@@ -716,7 +753,7 @@ def _render_html_email(*, bundle: _TrendEmailBundle, settings: Settings) -> str:
         "<tr><td style='padding:4px 0 0'>"
         "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse'>"
         "<tr><td style='padding:0 0 10px'>"
-        f"<a href='{html.escape(bundle.primary_page_url, quote=True)}' style='display:inline-block;background:#16538c;color:#ffffff;text-decoration:none;font:600 14px/1 Arial,sans-serif;padding:12px 18px;border-radius:999px;margin-right:10px'>Open trend page</a>"
+        f"{_render_email_button(url=bundle.primary_page_url, label='Open trend page', background='#16538c', foreground='#ffffff', width=158, margin_right=10)}"
         "</td></tr>"
         "<tr><td style='font:400 13px/1.7 Arial,sans-serif;color:#4f647a'>"
         f"<a href='{html.escape(_public_url(settings=settings, relative_path=trends_index_relative_path), quote=True)}' style='color:#16538c;text-decoration:none'>Open trends index</a>"

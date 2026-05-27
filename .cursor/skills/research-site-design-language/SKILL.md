@@ -21,6 +21,7 @@ Use this skill when changing site visuals, UI copy, badges, card hierarchy, sect
 - First-contact promo cards should show the shape of the produced artifact with nested surfaces or grouped sub-sections, not just a flat stack of left-aligned copy and pills.
 - Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.
 - Favor dense, scannable structure over marketing-style flourish. Comparative content should read like an analysis surface, not a landing page.
+- Manual trend email CTAs should use Outlook-safe VML fallbacks for branded buttons; variable-height card surfaces may degrade to square bordered blocks in Outlook rather than using fragile nested VML containers.
 - Reader-facing research surfaces must present finished writing, not the model's internal worksheet. Analysis structure may guide generation, but the public page should show only the final prose and supporting evidence.
 - Keep reader-facing block shapes sparse. Prefer a small repeated primitive such as `title`, `content`, and `evidence` over field-by-field cards that expose internal methodology labels.
 - Do not expose prompt-method labels such as `Best bet`, `Alternate`, `Thesis`, `Anti-thesis`, `Why now`, `What changed`, `Validation next step`, `Top shifts`, or `Counter-signal` as public section chrome unless product direction explicitly reinstates them.
