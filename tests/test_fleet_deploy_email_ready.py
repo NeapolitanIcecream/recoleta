@@ -143,6 +143,36 @@ def test_fleet_run_deploy_refreshes_canonical_site_and_email_link_map(
     assert payload["site"]["output_dir"] == str(site_dir)
 
 
+def test_fleet_run_deploy_skip_site_build_leaves_canonical_site_unbuilt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_runtime_env(monkeypatch)
+    manifest_path, _trend_note_path = _write_email_enabled_fleet(tmp_path)
+    _fake_successful_deploy(monkeypatch, tmp_path)
+    execute_fleet_deploy_workflow = recoleta.cli._import_symbol(
+        "recoleta.cli.fleet",
+        attr_name="execute_fleet_deploy_workflow",
+    )
+
+    payload = execute_fleet_deploy_workflow(
+        manifest_path=manifest_path,
+        command="fleet run deploy",
+        include=None,
+        skip="site-build",
+        repo_dir=tmp_path / "site-repo",
+        json_output=True,
+    )
+
+    site_dir = manifest_path.parent / "site"
+    artifact_path = email_links_artifact_path(site_output_dir=site_dir)
+    assert payload["site"]["status"] == "skipped"
+    assert payload["site"]["reason"] == "site-build skipped"
+    assert payload["site"]["output_dir"] == str(site_dir)
+    assert not site_dir.exists()
+    assert not artifact_path.exists()
+
+
 def test_fleet_email_preview_resolves_page_after_deploy_without_manual_site_build(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

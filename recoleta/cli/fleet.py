@@ -31,6 +31,7 @@ from recoleta.cli.site_support import (
 from recoleta.cli.translate import run_translate_run_command
 from recoleta.cli.workflows import (
     STEP_INGEST,
+    STEP_SITE_BUILD,
     STEP_TRANSLATE,
     _parse_step_list,
     _validate_step_overrides,
@@ -1097,13 +1098,9 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
             item_export_scope=request.item_export_scope,
         )
     )
-    site_payload = _build_fleet_site_artifacts(
-        manifest_path=manifest.manifest_path,
-        output_dir=None,
-        limit=None,
-        default_language_code=None,
-        item_export_scope=request.item_export_scope,
-        command_name=f"{request.command} site build",
+    site_payload = _fleet_deploy_local_site_payload(
+        request=request,
+        manifest=manifest,
     )
     payload = {
         "status": "ok",
@@ -1117,14 +1114,58 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
         cli._emit_json(payload)
         return payload
     console = cli._runtime_symbols()["Console"]()
+    site_segment = (
+        "site=skipped"
+        if payload["site"].get("status") == "skipped"
+        else f"site={payload['site']['output_dir']}"
+    )
     console.print(
         f"[green]{request.command} completed[/green] "
         f"instances={len(child_results)} "
         f"branch={payload['deployment']['branch']} "
         f"remote={payload['deployment']['remote']} "
-        f"site={payload['site']['output_dir']}"
+        f"{site_segment}"
     )
     return payload
+
+
+def _fleet_deploy_local_site_payload(
+    *,
+    request: FleetDeployRequest,
+    manifest: Any,
+) -> dict[str, Any]:
+    command_name = f"{request.command} site build"
+    if STEP_SITE_BUILD in request.skip_steps:
+        return _skipped_fleet_site_build_payload(
+            manifest_path=manifest.manifest_path,
+            item_export_scope=request.item_export_scope,
+            command_name=command_name,
+        )
+    return _build_fleet_site_artifacts(
+        manifest_path=manifest.manifest_path,
+        output_dir=None,
+        limit=None,
+        default_language_code=None,
+        item_export_scope=request.item_export_scope,
+        command_name=command_name,
+    )
+
+
+def _skipped_fleet_site_build_payload(
+    *,
+    manifest_path: Path,
+    item_export_scope: str,
+    command_name: str,
+) -> dict[str, Any]:
+    output_dir = _fleet_site_output_dir(manifest_path, None)
+    return {
+        "status": "skipped",
+        "reason": "site-build skipped",
+        "command": command_name,
+        "manifest_path": str(manifest_path),
+        "output_dir": str(output_dir),
+        "item_export_scope": normalize_item_export_scope(item_export_scope),
+    }
 
 
 def _fleet_granularity_child_payload(
