@@ -248,17 +248,48 @@ def _resolve_fleet_instance(*, manifest: Any, value: str) -> Any:
 def run_fleet_site_build_command(**kwargs: Any) -> dict[str, Any]:
     command_name = str(kwargs.get("command_name", "fleet site build"))
     manifest_path = Path(kwargs["manifest_path"])
-    manifest, input_dirs = _fleet_input_dirs(manifest_path)
-    resolved_output_dir = _fleet_site_output_dir(
-        manifest.manifest_path, kwargs.get("output_dir")
+    payload = _build_fleet_site_artifacts(
+        manifest_path=manifest_path,
+        output_dir=kwargs.get("output_dir"),
+        limit=kwargs.get("limit"),
+        default_language_code=kwargs.get("default_language_code"),
+        item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+        command_name=command_name,
     )
+    if bool(kwargs.get("json_output", False)):
+        cli._emit_json(payload)
+        return payload
+    manifest = load_fleet_manifest(manifest_path)
+    console = cli._runtime_symbols()["Console"]()
+    console.print(
+        f"[green]{command_name} completed[/green] "
+        + " ".join(
+            fleet_site_segments(
+                manifest=manifest,
+                site_manifest=payload["manifest"],
+                output_dir=Path(str(payload["output_dir"])),
+            )
+        )
+    )
+    return payload
+
+
+def _build_fleet_site_artifacts(
+    *,
+    manifest_path: Path,
+    output_dir: Path | None,
+    limit: int | None,
+    default_language_code: str | None,
+    item_export_scope: str,
+    command_name: str,
+) -> dict[str, Any]:
+    manifest, input_dirs = _fleet_input_dirs(manifest_path)
+    resolved_output_dir = _fleet_site_output_dir(manifest.manifest_path, output_dir)
     resolved_default_language_code = _fleet_default_language(
         manifest,
-        kwargs.get("default_language_code"),
+        default_language_code,
     )
-    normalized_item_export_scope = normalize_item_export_scope(
-        str(kwargs.get("item_export_scope", "linked"))
-    )
+    normalized_item_export_scope = normalize_item_export_scope(item_export_scope)
     export_trend_static_site = cli._import_symbol(
         "recoleta.site",
         attr_name="export_trend_static_site",
@@ -266,13 +297,13 @@ def run_fleet_site_build_command(**kwargs: Any) -> dict[str, Any]:
     export_kwargs: dict[str, Any] = {
         "input_dir": input_dirs,
         "output_dir": resolved_output_dir,
-        "limit": kwargs.get("limit"),
+        "limit": limit,
         "default_language_code": resolved_default_language_code,
     }
     if normalized_item_export_scope != "linked":
         export_kwargs["item_export_scope"] = normalized_item_export_scope
     manifest_result_path = export_trend_static_site(**export_kwargs)
-    payload = fleet_site_payload(
+    return fleet_site_payload(
         context=FleetSitePayloadContext(
             command_name=command_name,
             manifest=manifest,
@@ -284,21 +315,6 @@ def run_fleet_site_build_command(**kwargs: Any) -> dict[str, Any]:
             site_manifest=load_manifest(manifest_result_path),
         )
     )
-    if bool(kwargs.get("json_output", False)):
-        cli._emit_json(payload)
-        return payload
-    console = cli._runtime_symbols()["Console"]()
-    console.print(
-        f"[green]{command_name} completed[/green] "
-        + " ".join(
-            fleet_site_segments(
-                manifest=manifest,
-                site_manifest=payload["manifest"],
-                output_dir=resolved_output_dir,
-            )
-        )
-    )
-    return payload
 
 
 def run_fleet_site_serve_command(**kwargs: Any) -> None:
@@ -1067,25 +1083,35 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
         include_steps=request.include_steps,
         skip_steps=request.skip_steps,
     )
+    deployment_payload = _deploy_fleet_site(
+        context=FleetSiteDeployContext(
+            manifest=manifest,
+            child_results=child_results,
+            repo_dir=request.repo_dir,
+            remote=request.remote,
+            branch=request.branch,
+            commit_message=request.commit_message,
+            cname=request.cname,
+            pages_config=request.pages_config,
+            force=request.force,
+            item_export_scope=request.item_export_scope,
+        )
+    )
+    site_payload = _build_fleet_site_artifacts(
+        manifest_path=manifest.manifest_path,
+        output_dir=None,
+        limit=None,
+        default_language_code=None,
+        item_export_scope=request.item_export_scope,
+        command_name=f"{request.command} site build",
+    )
     payload = {
         "status": "ok",
         "command": request.command,
         "manifest_path": str(manifest.manifest_path),
         "children": child_results,
-        "deployment": _deploy_fleet_site(
-            context=FleetSiteDeployContext(
-                manifest=manifest,
-                child_results=child_results,
-                repo_dir=request.repo_dir,
-                remote=request.remote,
-                branch=request.branch,
-                commit_message=request.commit_message,
-                cname=request.cname,
-                pages_config=request.pages_config,
-                force=request.force,
-                item_export_scope=request.item_export_scope,
-            )
-        ),
+        "deployment": deployment_payload,
+        "site": site_payload,
     }
     if request.json_output:
         cli._emit_json(payload)
@@ -1095,7 +1121,8 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
         f"[green]{request.command} completed[/green] "
         f"instances={len(child_results)} "
         f"branch={payload['deployment']['branch']} "
-        f"remote={payload['deployment']['remote']}"
+        f"remote={payload['deployment']['remote']} "
+        f"site={payload['site']['output_dir']}"
     )
     return payload
 
