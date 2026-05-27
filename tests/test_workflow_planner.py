@@ -428,6 +428,23 @@ def test_planner_reruns_trends_and_ideas_when_analyze_is_planned() -> None:
     assert ideas_decision.reason == "upstream_trend_planned"
 
 
+def test_planner_runs_publish_when_analyze_is_planned() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_AnalyzeCandidatesRepo(),
+        settings=_Settings(),
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    publish_decision = _decision_for(decisions, "publish", source_day)
+
+    assert analyze_decision.action == "run"
+    assert publish_decision.action == "run"
+    assert publish_decision.reason == "upstream_analyze_planned"
+
+
 def test_planner_cascades_lower_level_trend_reruns_to_aggregate_trends() -> None:
     source_day = date(2026, 3, 18)
     source_week = date(2026, 3, 16)

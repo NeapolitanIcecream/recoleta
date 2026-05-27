@@ -1052,7 +1052,8 @@ def _run_generation_when_upstream_is_planned(
     decisions: list[WorkflowPlanDecision],
 ) -> list[WorkflowPlanDecision]:
     analyze_updated = _run_analyze_when_ingest_is_planned(decisions)
-    trend_updated = _run_trends_when_analyze_is_planned(analyze_updated)
+    publish_updated = _run_publish_when_analyze_is_planned(analyze_updated)
+    trend_updated = _run_trends_when_analyze_is_planned(publish_updated)
     aggregate_updated = _run_aggregate_trends_when_sources_are_planned(trend_updated)
     return _run_ideas_when_trends_are_planned(aggregate_updated)
 
@@ -1074,7 +1075,25 @@ def _run_analyze_when_ingest_is_planned(
             and (decision.period_start, decision.period_end) in ingest_run_windows
         ):
             updated.append(
-                _reactivate_generation_decision(decision, "upstream_ingest_planned")
+                _reactivate_planned_decision(decision, "upstream_ingest_planned")
+            )
+            continue
+        updated.append(decision)
+    return updated
+
+
+def _run_publish_when_analyze_is_planned(
+    decisions: list[WorkflowPlanDecision],
+) -> list[WorkflowPlanDecision]:
+    analyze_run_windows = _planned_analyze_windows(decisions)
+    updated: list[WorkflowPlanDecision] = []
+    for decision in decisions:
+        if _publish_has_planned_analyze(
+            decision=decision,
+            analyze_run_windows=analyze_run_windows,
+        ):
+            updated.append(
+                _reactivate_planned_decision(decision, "upstream_analyze_planned")
             )
             continue
         updated.append(decision)
@@ -1092,7 +1111,7 @@ def _run_trends_when_analyze_is_planned(
             analyze_run_windows=analyze_run_windows,
         ):
             updated.append(
-                _reactivate_generation_decision(decision, "upstream_analyze_planned")
+                _reactivate_planned_decision(decision, "upstream_analyze_planned")
             )
             continue
         updated.append(decision)
@@ -1138,7 +1157,7 @@ def _run_aggregate_trend_when_source_is_planned(
             source_windows=source_windows,
         ):
             updated.append(
-                _reactivate_generation_decision(decision, "upstream_trend_planned")
+                _reactivate_planned_decision(decision, "upstream_trend_planned")
             )
             continue
         updated.append(decision)
@@ -1158,6 +1177,24 @@ def _planned_trend_source_windows(
         and decision.period_start is not None
         and decision.period_end is not None
     ]
+
+
+def _publish_has_planned_analyze(
+    *,
+    decision: WorkflowPlanDecision,
+    analyze_run_windows: set[tuple[str | None, datetime | None, datetime | None]],
+) -> bool:
+    if (
+        decision.step_id != STEP_PUBLISH
+        or decision.action != "skip"
+        or decision.reason != "no_publish_candidates"
+    ):
+        return False
+    return (
+        decision.granularity,
+        decision.period_start,
+        decision.period_end,
+    ) in analyze_run_windows
 
 
 def _aggregate_trend_has_planned_source(
@@ -1200,14 +1237,14 @@ def _run_ideas_when_trends_are_planned(
             trend_run_windows=trend_run_windows,
         ):
             updated.append(
-                _reactivate_generation_decision(decision, "upstream_trend_planned")
+                _reactivate_planned_decision(decision, "upstream_trend_planned")
             )
             continue
         updated.append(decision)
     return updated
 
 
-def _reactivate_generation_decision(
+def _reactivate_planned_decision(
     decision: WorkflowPlanDecision,
     reason: str,
 ) -> WorkflowPlanDecision:
