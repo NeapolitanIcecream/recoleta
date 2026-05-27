@@ -164,6 +164,41 @@ class _FakeRepo:
         return [metric for metric in self.metrics if metric.run_id == run_id]
 
 
+class _DayCompletePlannerRepo(_FakeRepo):
+    def list_items_for_llm_analysis(self, **_kwargs) -> list[object]:  # type: ignore[no-untyped-def]
+        return []
+
+    def list_items_for_publish(self, **_kwargs) -> list[object]:  # type: ignore[no-untyped-def]
+        return []
+
+    def get_latest_pass_output(self, **kwargs):  # type: ignore[no-untyped-def]
+        if kwargs.get("granularity") != "day":
+            return None
+        pass_kind = str(kwargs.get("pass_kind") or "")
+        if pass_kind not in {"trend_synthesis", "trend_ideas"}:
+            return None
+        period_start = kwargs["period_start"]
+        row_id = period_start.toordinal() * 10
+        if pass_kind == "trend_ideas":
+            row_id += 1
+        return SimpleNamespace(
+            id=row_id,
+            status=kwargs.get("status") or "succeeded",
+            diagnostics_json="{}",
+            input_refs_json="[]",
+        )
+
+    def list_documents(self, **kwargs):  # type: ignore[no-untyped-def]
+        if kwargs.get("granularity") != "day":
+            return []
+        return [SimpleNamespace(id=1)]
+
+    def list_document_chunks_in_period(self, **kwargs):  # type: ignore[no-untyped-def]
+        if kwargs.get("granularity") != "day":
+            return []
+        return [SimpleNamespace(id=1)]
+
+
 type _ServiceCall = tuple[str, tuple[object, ...]]
 
 
@@ -618,6 +653,118 @@ def test_run_week_executes_recursive_day_and_week_synthesis_workflow(
         and update.get("skipped_steps") == ["translate"]
         for update in fake_repo.updated
     )
+
+
+def test_run_week_skips_complete_day_level_expensive_work(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _DayCompletePlannerRepo()
+    fake_service = _FakeService()
+    site_build_calls: list[int] = []
+
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.site" and attr_name == "export_trend_static_site":
+
+            def _fake_site_build(
+                *, input_dir, output_dir, default_language_code=None, limit=None
+            ):  # type: ignore[no-untyped-def]
+                _ = (input_dir, default_language_code, limit)
+                site_build_calls.append(1)
+                manifest_path = Path(output_dir) / "manifest.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    '{"trends_total": 1, "ideas_total": 1, "topics_total": 1}',
+                    encoding="utf-8",
+                )
+                return manifest_path
+
+            return _fake_site_build
+        return None
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "week", "--date", "2026-03-16", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert len(site_build_calls) == 1
+    assert [call for call in fake_service.calls if call[0] == "prepare"] == []
+    assert [call for call in fake_service.calls if call[0] == "analyze"] == []
+    assert [
+        call
+        for call in fake_service.calls
+        if call[0] == "trends" and call[1][1] == "day"
+    ] == []
+    assert [
+        call
+        for call in fake_service.calls
+        if call[0] == "ideas" and call[1][1] == "day"
+    ] == []
+    assert [
+        call
+        for call in fake_service.calls
+        if call[0] == "trends" and call[1][1] == "week"
+    ]
+    assert [
+        call
+        for call in fake_service.calls
+        if call[0] == "ideas" and call[1][1] == "week"
+    ]
+    day_plan = [
+        item
+        for item in payload["plan"]
+        if item["granularity"] == "day"
+        and item["step_id"] in {"analyze", "trends:day", "ideas:day"}
+    ]
+    assert {item["action"] for item in day_plan} == {"skip"}
+    assert payload["planned_expensive_steps"] == 2
+
+
+def test_run_day_dry_run_emits_plan_without_managed_run_or_service_calls(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path)
+    fake_repo = _DayCompletePlannerRepo()
+    fake_service = _FakeService()
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda *, config_path=None, db_path=None: (  # noqa: ARG005
+            fake_settings,
+            fake_repo,
+            fake_service,
+        ),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--dry-run", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["mode"] == "dry_run"
+    assert payload["target_granularity"] == "day"
+    assert payload["planned_expensive_steps"] == 0
+    assert fake_service.calls == []
+    assert fake_repo.updated == []
+    assert fake_repo.finished == []
 
 
 def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_build_succeeds(

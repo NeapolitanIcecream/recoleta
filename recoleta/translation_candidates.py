@@ -28,6 +28,7 @@ class CandidateWindowRequest:
     period_start: datetime | None = None
     period_end: datetime | None = None
     all_history: bool = True
+    materialize_missing_idea_projections: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class IncrementalCandidatesRequest:
     period_start: datetime | None = None
     period_end: datetime | None = None
     all_history: bool = True
+    materialize_missing_idea_projections: bool = True
 
 
 def normalize_utc_datetime(value: datetime | None) -> datetime | None:
@@ -327,6 +329,9 @@ def _window_request(request: IncrementalCandidatesRequest) -> CandidateWindowReq
         period_start=request.period_start,
         period_end=request.period_end,
         all_history=request.all_history,
+        materialize_missing_idea_projections=(
+            request.materialize_missing_idea_projections
+        ),
     )
 
 
@@ -539,6 +544,8 @@ def _extend_backfilled_idea_candidates(
     seen_windows: set[WindowKey],
     request: CandidateWindowRequest,
 ) -> None:
+    if not request.materialize_missing_idea_projections:
+        return
     normalized_limit = _normalized_limit(request.limit)
     for row in _latest_idea_pass_outputs(request):
         window_key = _window_key(row)

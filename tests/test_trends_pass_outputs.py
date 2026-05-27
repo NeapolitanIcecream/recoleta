@@ -134,6 +134,11 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         assert pass_output is not None
         canonical_payload = json.loads(pass_output.payload_json)
         assert "doc_id" in str(canonical_payload.get("overview_md") or "")
+        diagnostics = json.loads(pass_output.diagnostics_json or "{}")
+        freshness = diagnostics["workflow_freshness"]
+        assert freshness["kind"] == "trend_synthesis"
+        assert freshness["components"]["granularity"] == "day"
+        assert freshness["key"]
 
         trend_doc = session.exec(
             select(Document).where(Document.doc_type == "trend")

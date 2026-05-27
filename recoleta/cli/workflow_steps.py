@@ -386,7 +386,7 @@ def _execute_site_deploy_step(
             commit_message=context.commit_message,
             cname=context.cname,
             pages_config=context.pages_config,
-            force=context.force,
+            force=context.site_deploy_force,
             item_export_scope=context.item_export_scope,
         )
     )

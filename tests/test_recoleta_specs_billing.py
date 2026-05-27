@@ -114,3 +114,41 @@ def test_billing_summary_includes_translation_rag_sync_and_doctor_components() -
     assert summary["components"]["doctor_llm"]["calls"] == 1
     assert summary["total_cost_usd"] == 0.01592
     assert "by_scope" not in summary
+
+
+def test_billing_summary_groups_translation_cost_by_source_bucket() -> None:
+    metrics = [
+        _metric("pipeline.translate.llm_requests_total", 2),
+        _metric("pipeline.translate.llm_input_tokens_total", 300),
+        _metric("pipeline.translate.llm_output_tokens_total", 120),
+        _metric("pipeline.translate.estimated_cost_usd", 0.03, "usd"),
+        _metric("pipeline.translate.source.trend_synthesis.day.llm_requests_total", 1),
+        _metric(
+            "pipeline.translate.source.trend_synthesis.day.llm_input_tokens_total", 100
+        ),
+        _metric(
+            "pipeline.translate.source.trend_synthesis.day.llm_output_tokens_total", 40
+        ),
+        _metric(
+            "pipeline.translate.source.trend_synthesis.day.estimated_cost_usd",
+            0.01,
+            "usd",
+        ),
+        _metric("pipeline.translate.source.trend_ideas.week.llm_requests_total", 1),
+        _metric("pipeline.translate.source.trend_ideas.week.llm_input_tokens_total", 200),
+        _metric("pipeline.translate.source.trend_ideas.week.llm_output_tokens_total", 80),
+        _metric(
+            "pipeline.translate.source.trend_ideas.week.estimated_cost_usd",
+            0.02,
+            "usd",
+        ),
+    ]
+
+    summary = summarize_billing_metrics(metrics)
+
+    assert summary is not None
+    by_source = summary["translation_by_source"]
+    assert by_source["trend_synthesis.day"]["calls"] == 1
+    assert by_source["trend_synthesis.day"]["cost_usd"] == 0.01
+    assert by_source["trend_ideas.week"]["input_tokens"] == 200
+    assert summary["total_cost_usd"] == 0.03

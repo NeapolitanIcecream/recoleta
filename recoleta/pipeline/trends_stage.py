@@ -25,6 +25,7 @@ from recoleta.pipeline.pass_runner import (
     run_pass_definition,
 )
 from recoleta.passes import TREND_SYNTHESIS_PASS_KIND, build_trend_synthesis_pass_output
+from recoleta.workflow_freshness import build_trend_synthesis_freshness
 from recoleta.ports import TrendStageRepositoryPort
 from recoleta.publish import (
     build_telegram_trend_document_caption,
@@ -2259,6 +2260,14 @@ class _TrendStageRunner:
         context: _TrendProjectionContext,
     ) -> Any:
         trend_synthesis_diagnostics: dict[str, Any] = {
+            "workflow_freshness": build_trend_synthesis_freshness(
+                settings=self.service.settings,
+                granularity=state.normalized_granularity,
+                period_start=state.period_start,
+                period_end=state.period_end,
+                llm_model=self.request.llm_model,
+                repository=self.service.repository,
+            ),
             "context_packs": {
                 "overview_pack_md": generation.overview_pack_md,
                 "history_pack_md": generation.history_pack_md,

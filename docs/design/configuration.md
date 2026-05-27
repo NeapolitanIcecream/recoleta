@@ -360,7 +360,9 @@ Choose one:
 Workflow policy:
 
 - `WORKFLOWS.granularities.default`
-  - `recursive_lower_levels` (default `true`)
+  - `recursive_lower_levels` (default `true`). Week and month workflows include
+    lower-level windows by default, but execution is planner-driven: fresh
+    expensive lower-level work is skipped unless the operator passes `--force`.
   - `delivery_mode`: `all|local_only|none` (default `all`)
   - `translation`: `auto|off` (default `auto`)
   - `translate_include`: any of `items|trends|ideas` (default all three)
@@ -368,6 +370,17 @@ Workflow policy:
   - `on_translate_failure`: `fail|partial_success|skip` (default `partial_success`)
 - `WORKFLOWS.granularities.day|week|month`: optional overrides for the same fields
 - `WORKFLOWS.deploy`: translation/site-build policy for `run deploy` and `daemon` deploy jobs
+
+CLI controls:
+
+- `recoleta run day|week|month --dry-run --json` and the fleet equivalents emit
+  the ensure plan without creating run rows, metrics, pass outputs, localized
+  outputs, documents, site files, or deliveries.
+- `--force` on `run day|week|month` and `fleet run day|week|month` is a content
+  regeneration control. It is separate from `run deploy --force`, which remains
+  a Git deployment force-push control.
+- `--include` and `--skip` are advanced repair controls. They remain available
+  for compatibility, but normal week/month operation should rely on the planner.
 
 Daemon schedules:
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from functools import partial
 import time
 from types import SimpleNamespace
+from typing import Any
 
 import recoleta.translation as translation_module
 import recoleta.translation_runtime as translation_runtime
@@ -36,6 +38,15 @@ class _FakeRepository:
         return self.localized_outputs.get(
             (source_kind, source_record_id, language_code)
         )
+
+    def upsert_localized_output(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        self.localized_outputs[
+            (
+                kwargs["source_kind"],
+                kwargs["source_record_id"],
+                kwargs["language_code"],
+            )
+        ] = SimpleNamespace(**kwargs)
 
 
 class _FakeProviderFailures:
@@ -72,6 +83,13 @@ class _FakeLog:
 
     def warning(self, *args, **kwargs) -> None:
         _ = (args, kwargs)
+
+
+def _metric_values(metrics: list[SimpleNamespace]) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for metric in metrics:
+        values[metric.name] = values.get(metric.name, 0.0) + float(metric.value)
+    return values
 
 
 class _FakeFuture:
@@ -137,7 +155,7 @@ def _batch_context(
 
 
 def test_translation_parallelism_uses_settings_cap() -> None:
-    settings = SimpleNamespace(translation_parallelism=12)
+    settings: Any = SimpleNamespace(translation_parallelism=12)
 
     assert translation_module._translation_parallelism(1, settings=settings) == 1
     assert translation_module._translation_parallelism(6, settings=settings) == 6
@@ -378,7 +396,7 @@ def test_run_translation_batch_records_result_totals() -> None:
         ),
     )
 
-    metric_values = {metric.name: metric.value for metric in repository.metrics}
+    metric_values = _metric_values(repository.metrics)
     assert result.scanned_total == 2
     assert result.translated_total == 1
     assert result.mirrored_total == 0
@@ -387,6 +405,9 @@ def test_run_translation_batch_records_result_totals() -> None:
     assert metric_values["pipeline.translate.translated_total"] == 1
     assert metric_values["pipeline.translate.mirrored_total"] == 0
     assert metric_values["pipeline.translate.skipped_total"] == 1
+    assert metric_values["pipeline.translate.source.analysis.scanned_total"] == 2
+    assert metric_values["pipeline.translate.source.analysis.skipped_total"] == 1
+    assert metric_values["pipeline.translate.source.analysis.translated_total"] == 1
     assert metric_values["pipeline.translate.llm_max_attempts"] == 5
 
 
@@ -416,9 +437,61 @@ def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -
         ),
     )
 
-    metric_values = {metric.name: metric.value for metric in repository.metrics}
+    metric_values = _metric_values(repository.metrics)
     assert status == "skipped"
     assert prepared is None
     assert (
         metric_values["pipeline.translate.skipped_total.up_to_date_source_hash"] == 1
     )
+
+
+def test_persist_completed_translation_task_records_source_bucket_diagnostics_and_cost() -> None:
+    repository = _FakeRepository()
+    candidate = SimpleNamespace(
+        source_kind="trend_synthesis",
+        source_record_id=7,
+        granularity="week",
+        period_start=datetime(2026, 3, 16, tzinfo=UTC),
+        period_end=datetime(2026, 3, 23, tzinfo=UTC),
+    )
+
+    translation_runtime.persist_completed_translation_task(
+        translation_runtime.PersistTaskRequest(
+            repository=repository,
+            task=SimpleNamespace(
+                candidate=candidate,
+                target=SimpleNamespace(code="zh-CN"),
+                source_hash="hash-week",
+                context={"hybrid_status": "skipped"},
+            ),
+            completed=SimpleNamespace(
+                translated_payload={"title": "翻译"},
+                debug={
+                    "usage": {
+                        "requests": 1,
+                        "input_tokens": 20,
+                        "output_tokens": 8,
+                    },
+                    "estimated_cost_usd": 0.002,
+                },
+                duration_ms=12,
+            ),
+            context_assist="direct",
+            source_language_code="en",
+            run_id="run-translation",
+        ),
+        translation_runtime.PersistTaskDeps(
+            record_translation_llm_metrics_fn=translation_module._record_translation_llm_metrics,
+        ),
+    )
+
+    metric_values = _metric_values(repository.metrics)
+    assert metric_values["pipeline.translate.source.trend_synthesis.week.llm_requests_total"] == 1
+    assert metric_values["pipeline.translate.source.trend_synthesis.week.llm_input_tokens_total"] == 20
+    assert metric_values["pipeline.translate.source.trend_synthesis.week.llm_output_tokens_total"] == 8
+    assert metric_values["pipeline.translate.source.trend_synthesis.week.estimated_cost_usd"] == 0.002
+    output = repository.localized_outputs[("trend_synthesis", 7, "zh-CN")]
+    assert output.diagnostics["source_kind"] == "trend_synthesis"
+    assert output.diagnostics["source_granularity"] == "week"
+    assert output.diagnostics["source_period_start"] == "2026-03-16T00:00:00+00:00"
+    assert output.diagnostics["source_period_end"] == "2026-03-23T00:00:00+00:00"

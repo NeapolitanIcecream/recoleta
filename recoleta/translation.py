@@ -146,6 +146,7 @@ class IncrementalCandidatesCompatRequest:
     period_start: datetime | None = None
     period_end: datetime | None = None
     all_history: bool = True
+    materialize_missing_idea_projections: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,6 +320,9 @@ def coerce_incremental_candidates_request(
         period_start=legacy_kwargs.get("period_start"),
         period_end=legacy_kwargs.get("period_end"),
         all_history=bool(legacy_kwargs.get("all_history", True)),
+        materialize_missing_idea_projections=bool(
+            legacy_kwargs.get("materialize_missing_idea_projections", True)
+        ),
     )
 
 
@@ -536,6 +540,9 @@ def _incremental_candidates(
             period_start=normalized_request.period_start,
             period_end=normalized_request.period_end,
             all_history=normalized_request.all_history,
+            materialize_missing_idea_projections=(
+                normalized_request.materialize_missing_idea_projections
+            ),
         )
     )
 
@@ -626,6 +633,7 @@ def _record_translation_llm_metrics(
     run_id: str,
     debug: dict[str, Any] | None,
     duration_ms: int,
+    candidate: TranslationCandidate | None = None,
 ) -> None:
     usage = debug.get("usage") if isinstance(debug, dict) else None
     if isinstance(usage, dict):
@@ -642,11 +650,27 @@ def _record_translation_llm_metrics(
                     value=float(value),
                     unit="count",
                 )
+                _record_translation_source_metric(
+                    repository=repository,
+                    run_id=run_id,
+                    candidate=candidate,
+                    metric_name=metric_name.removeprefix("pipeline.translate."),
+                    value=float(value),
+                    unit="count",
+                )
     cost_usd = debug.get("estimated_cost_usd") if isinstance(debug, dict) else None
     if isinstance(cost_usd, (int, float)):
         repository.record_metric(
             run_id=run_id,
             name="pipeline.translate.estimated_cost_usd",
+            value=float(cost_usd),
+            unit="usd",
+        )
+        _record_translation_source_metric(
+            repository=repository,
+            run_id=run_id,
+            candidate=candidate,
+            metric_name="estimated_cost_usd",
             value=float(cost_usd),
             unit="usd",
         )
@@ -657,6 +681,14 @@ def _record_translation_llm_metrics(
             value=1,
             unit="count",
         )
+        _record_translation_source_metric(
+            repository=repository,
+            run_id=run_id,
+            candidate=candidate,
+            metric_name="cost_missing_total",
+            value=1,
+            unit="count",
+        )
     # This is cumulative task work, not the top-level workflow translate step wall-time.
     repository.record_metric(
         run_id=run_id,
@@ -664,6 +696,43 @@ def _record_translation_llm_metrics(
         value=float(max(0, int(duration_ms))),
         unit="ms",
     )
+
+
+def _record_translation_source_metric(
+    *,
+    repository: Any,
+    run_id: str,
+    candidate: TranslationCandidate | None,
+    metric_name: str,
+    value: int | float,
+    unit: str,
+) -> None:
+    if candidate is None:
+        return
+    repository.record_metric(
+        run_id=run_id,
+        name=f"pipeline.translate.source.{_translation_source_bucket(candidate)}.{metric_name}",
+        value=float(value),
+        unit=unit,
+    )
+
+
+def _translation_source_bucket(candidate: TranslationCandidate) -> str:
+    source_kind = _metric_suffix_token(candidate.source_kind)
+    if source_kind in {"trend_synthesis", "trend_ideas"} and candidate.granularity:
+        return f"{source_kind}.{_metric_suffix_token(candidate.granularity)}"
+    return source_kind
+
+
+def _metric_suffix_token(value: str) -> str:
+    cleaned = [
+        char.lower() if char.isalnum() else "_"
+        for char in str(value or "").strip()
+    ]
+    normalized = "".join(cleaned).strip("_")
+    while "__" in normalized:
+        normalized = normalized.replace("__", "_")
+    return normalized or "unknown"
 
 
 def _persist_completed_translation_task(

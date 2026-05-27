@@ -60,6 +60,7 @@ Run from the repo root:
 ```bash
 uv run recoleta fleet run day --manifest /path/to/fleet.yaml
 uv run recoleta fleet run week --manifest /path/to/fleet.yaml
+uv run recoleta fleet run week --manifest /path/to/fleet.yaml --dry-run --json
 uv run recoleta fleet run deploy --manifest /path/to/fleet.yaml
 ```
 
@@ -72,6 +73,11 @@ uv run recoleta fleet run week --manifest /path/to/fleet.yaml --date 2026-03-22
 
 `fleet run day` defaults to the latest complete UTC day. Use an explicit date
 for replays and backlog repair.
+
+`fleet run day|week|month` uses ensure/backfill semantics. A weekly run still
+checks every child and every lower-level window, but fresh day-level expensive
+work is skipped automatically. Use `--dry-run --json` to inspect the per-child
+plan before a replay. Use `--force` only for deliberate regeneration.
 
 ## Development rules
 
@@ -200,18 +206,20 @@ results in the repo as source files.
 
 ## Safe replay pattern
 
-For a fully settled historical window, prefer replaying only the stages that
-need it. For example, if W12 already has item and analysis data, you can replay
-the weekly layer without ingesting current upstream state:
+For a fully settled historical window, start with the declarative workflow and
+inspect the plan:
 
 ```bash
 uv run recoleta fleet run week \
   --manifest /path/to/fleet.yaml \
   --date 2026-03-22 \
-  --skip ingest,analyze,publish,trends:day,ideas:day,translate,site-build
+  --dry-run --json
 ```
 
-For a true missing day with no corpus, run the full day workflow instead.
+If the plan shows the expected skips, run the same command without `--dry-run`.
+Use `--skip` only as an advanced repair override when you need to suppress a
+specific step despite planner output. For a true missing day with no corpus, run
+the full day workflow instead.
 
 ## Deploy smoke
 

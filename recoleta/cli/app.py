@@ -563,7 +563,17 @@ def run_now(
     skip: str | None = typer.Option(
         None,
         "--skip",
-        help="Optionally skip preset-optional steps: publish, translate, site-build.",
+        help="Advanced repair control: skip selected workflow steps.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Inspect the ensure plan without creating run rows or executing steps.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
     json_output: bool = typer.Option(
         False,
@@ -577,6 +587,8 @@ def run_now(
         command="run now",
         include=include,
         skip=skip,
+        dry_run=dry_run,
+        force=force,
         json_output=json_output,
     )
 
@@ -596,7 +608,17 @@ def run_day(
     skip: str | None = typer.Option(
         None,
         "--skip",
-        help="Optionally skip preset-optional steps: publish, translate, site-build.",
+        help="Advanced repair control: skip selected workflow steps.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Inspect the ensure plan without creating run rows or executing steps.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
     json_output: bool = typer.Option(
         False,
@@ -611,6 +633,8 @@ def run_day(
         anchor_date=anchor_date,
         include=include,
         skip=skip,
+        dry_run=dry_run,
+        force=force,
         json_output=json_output,
     )
 
@@ -630,7 +654,17 @@ def run_week(
     skip: str | None = typer.Option(
         None,
         "--skip",
-        help="Optionally skip preset-optional steps: publish, translate, site-build.",
+        help="Advanced repair control: skip selected workflow steps.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Inspect the ensure plan without creating run rows or executing steps.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
     json_output: bool = typer.Option(
         False,
@@ -645,6 +679,8 @@ def run_week(
         anchor_date=anchor_date,
         include=include,
         skip=skip,
+        dry_run=dry_run,
+        force=force,
         json_output=json_output,
     )
 
@@ -664,7 +700,17 @@ def run_month(
     skip: str | None = typer.Option(
         None,
         "--skip",
-        help="Optionally skip preset-optional steps: publish, translate, site-build.",
+        help="Advanced repair control: skip selected workflow steps.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Inspect the ensure plan without creating run rows or executing steps.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
     json_output: bool = typer.Option(
         False,
@@ -679,6 +725,8 @@ def run_month(
         anchor_date=anchor_date,
         include=include,
         skip=skip,
+        dry_run=dry_run,
+        force=force,
         json_output=json_output,
     )
 
@@ -780,6 +828,8 @@ def fleet_run_day(
     ),
     include: str | None = typer.Option(None, "--include"),
     skip: str | None = typer.Option(None, "--skip"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    force: bool = typer.Option(False, "--force/--no-force"),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Run the full UTC-day workflow for every child instance."""
@@ -790,6 +840,8 @@ def fleet_run_day(
         anchor_date=anchor_date,
         include=include,
         skip=skip,
+        dry_run=dry_run,
+        force=force,
         json_output=json_output,
     )
 
@@ -813,6 +865,8 @@ def fleet_run_week(
     ),
     include: str | None = typer.Option(None, "--include"),
     skip: str | None = typer.Option(None, "--skip"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    force: bool = typer.Option(False, "--force/--no-force"),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Run the full ISO-week workflow for every child instance."""
@@ -823,6 +877,8 @@ def fleet_run_week(
         anchor_date=anchor_date,
         include=include,
         skip=skip,
+        dry_run=dry_run,
+        force=force,
         json_output=json_output,
     )
 
@@ -846,6 +902,8 @@ def fleet_run_month(
     ),
     include: str | None = typer.Option(None, "--include"),
     skip: str | None = typer.Option(None, "--skip"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    force: bool = typer.Option(False, "--force/--no-force"),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Run the full month workflow for every child instance."""
@@ -856,6 +914,8 @@ def fleet_run_month(
         anchor_date=anchor_date,
         include=include,
         skip=skip,
+        dry_run=dry_run,
+        force=force,
         json_output=json_output,
     )
 

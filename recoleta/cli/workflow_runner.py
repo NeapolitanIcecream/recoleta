@@ -24,8 +24,10 @@ from recoleta.cli.workflow_models import (
     WorkflowExecutionContext,
     WorkflowInvocation,
     WorkflowPlan,
+    WorkflowPlanDecision,
     WorkflowStepResult,
 )
+from recoleta.cli.workflow_planner import decision_payloads, planned_expensive_steps
 from recoleta.cli.workflow_steps import (
     execute_step,
     localization_targets_configured,
@@ -55,6 +57,7 @@ class WorkflowLoopRequest:
     heartbeat_monitor: Any
     plan: WorkflowPlan
     execution_context: WorkflowExecutionContext
+    planner_decisions: list[WorkflowPlanDecision] | None
     json_output: bool
     on_translate_failure: str
 
@@ -69,6 +72,8 @@ class WorkflowPayloadContext:
     billing_metrics_by_step: dict[str, list[Any]]
     terminal_state: str
     step_results: list[WorkflowStepResult]
+    planner_decisions: list[WorkflowPlanDecision] | None = None
+    mode: str = "execute"
     arxiv_pool_readiness: dict[str, Any] | None = None
 
 
@@ -341,7 +346,16 @@ def execute_workflow_loop(
     terminal_state = RUN_TERMINAL_STATE_SUCCEEDED_CLEAN
     step_results: list[WorkflowStepResult] = []
     with cli._graceful_shutdown_signals(), stdout_guard(enabled=request.json_output):
-        for invocation in request.plan.invocations:
+        for index, invocation in enumerate(request.plan.invocations):
+            planner_decision = _planner_decision_for_index(
+                decisions=request.planner_decisions,
+                index=index,
+            )
+            if planner_decision is not None and planner_decision.action == "skip":
+                step_results.append(
+                    _skipped_step_result(planner_decision=planner_decision)
+                )
+                continue
             step_started = time.perf_counter()
             try:
                 step_payload = execute_step(
@@ -537,6 +551,27 @@ def _ok_step_result(
     )
 
 
+def _planner_decision_for_index(
+    *,
+    decisions: list[WorkflowPlanDecision] | None,
+    index: int,
+) -> WorkflowPlanDecision | None:
+    if decisions is None or index < 0 or index >= len(decisions):
+        return None
+    return decisions[index]
+
+
+def _skipped_step_result(
+    *, planner_decision: WorkflowPlanDecision
+) -> WorkflowStepResult:
+    return WorkflowStepResult(
+        step_id=planner_decision.step_id,
+        status="skipped",
+        duration_ms=0,
+        payload=planner_decision.as_payload(),
+    )
+
+
 def finalize_workflow_success(
     *,
     repository: Any,
@@ -578,6 +613,7 @@ def granularity_workflow_payload(*, context: WorkflowPayloadContext) -> dict[str
         "status": (
             "ok" if context.terminal_state != RUN_TERMINAL_STATE_FAILED else "error"
         ),
+        "mode": context.mode,
         "command": context.command,
         "run_id": context.run_id,
         "operation_kind": context.plan.operation_kind,
@@ -592,6 +628,11 @@ def granularity_workflow_payload(*, context: WorkflowPayloadContext) -> dict[str
         "terminal_state": context.terminal_state,
         "steps": [step_result.as_payload() for step_result in context.step_results],
     }
+    if context.planner_decisions is not None:
+        payload["planned_expensive_steps"] = planned_expensive_steps(
+            context.planner_decisions
+        )
+        payload["plan"] = decision_payloads(context.planner_decisions)
     if context.arxiv_pool_readiness is not None:
         payload["arxiv_pool_readiness"] = context.arxiv_pool_readiness
     return payload
