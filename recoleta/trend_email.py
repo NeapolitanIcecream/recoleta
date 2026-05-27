@@ -633,9 +633,9 @@ def _render_email_button(
     background: str,
     foreground: str,
     width: int,
-    height: int = 40,
     margin_right: int = 0,
 ) -> str:
+    height = 40
     url_attr = html.escape(url, quote=True)
     label_html = html.escape(label)
     margin_style = f"margin-right:{margin_right}px;" if margin_right else ""
