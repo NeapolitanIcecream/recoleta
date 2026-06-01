@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
 
 from recoleta.pipeline import PipelineService
-from recoleta.trends import TrendPayload, month_period_bounds, week_period_bounds
+from recoleta.trends import TrendPayload, month_period_bounds
 from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
-def test_trends_month_backfill_generates_missing_weekly_trends(
+def test_trends_month_backfill_does_not_generate_missing_weekly_trends(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Spec: month trends can backfill missing weekly trends automatically."""
+    """Spec: direct month trends do not bypass workflow lower-level backfill gates."""
 
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
@@ -85,24 +85,16 @@ def test_trends_month_backfill_generates_missing_weekly_trends(
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
-    _ = service.trends(
-        run_id="run-month-backfill-1",
-        granularity="month",
-        anchor_date=anchor,
-        llm_model="test/fake-model",
-        backfill=True,
-        backfill_mode="missing",
-    )
-    assert calls["month"] >= 1
-
-    expected_week_starts: list[date] = []
-    cursor = month_start.date()
-    while True:
-        week_start, _week_end = week_period_bounds(cursor)
-        if week_start >= month_end:
-            break
-        expected_week_starts.append(week_start.date())
-        cursor = (week_start + timedelta(days=7)).date()
+    with pytest.raises(RuntimeError, match="required source materialization failed"):
+        _ = service.trends(
+            run_id="run-month-backfill-1",
+            granularity="month",
+            anchor_date=anchor,
+            llm_model="test/fake-model",
+            backfill=True,
+            backfill_mode="missing",
+        )
+    assert calls == {"day": 0, "week": 0, "month": 0}
 
     week_docs = repository.list_documents(
         doc_type="trend",
@@ -113,10 +105,10 @@ def test_trends_month_backfill_generates_missing_weekly_trends(
         limit=100,
     )
     week_starts = {doc.period_start.date() for doc in week_docs if doc.period_start}
-    assert week_starts == set(expected_week_starts)
+    assert week_starts == set()
 
 
-def test_trends_month_source_ensure_generates_required_lower_level_trends_without_backfill(
+def test_trends_month_source_ensure_fails_without_required_lower_level_pass_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -159,15 +151,14 @@ def test_trends_month_source_ensure_generates_required_lower_level_trends_withou
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
-    result = service.trends(
-        run_id="run-month-source-ensure-1",
-        granularity="month",
-        anchor_date=anchor,
-        llm_model="test/fake-model",
-        reuse_existing_corpus=True,
-    )
-
-    assert result.granularity == "month"
+    with pytest.raises(RuntimeError, match="required source materialization failed"):
+        _ = service.trends(
+            run_id="run-month-source-ensure-1",
+            granularity="month",
+            anchor_date=anchor,
+            llm_model="test/fake-model",
+            reuse_existing_corpus=True,
+        )
 
     week_docs = repository.list_documents(
         doc_type="trend",
@@ -177,17 +168,7 @@ def test_trends_month_source_ensure_generates_required_lower_level_trends_withou
         order_by="event_asc",
         limit=100,
     )
-    day_docs = repository.list_documents(
-        doc_type="trend",
-        granularity="day",
-        period_start=month_start,
-        period_end=month_end,
-        order_by="event_asc",
-        limit=100,
-    )
-
-    assert week_docs
-    assert day_docs
+    assert week_docs == []
 
     metric_values = {
         str(getattr(metric, "name", "")): float(getattr(metric, "value", 0.0))
@@ -195,13 +176,7 @@ def test_trends_month_source_ensure_generates_required_lower_level_trends_withou
     }
     assert (
         metric_values[
-            "pipeline.trends.source_materialization.materialized_total.trend_day"
-        ]
-        == 1.0
-    )
-    assert (
-        metric_values[
-            "pipeline.trends.source_materialization.materialized_total.trend_week"
+            "pipeline.trends.source_materialization.failed_total.trend_week"
         ]
         == 1.0
     )

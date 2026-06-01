@@ -198,8 +198,6 @@ def _build_trends_command(window: EvalWindow) -> str:
         "--date",
         window.anchor_date,
     ]
-    if window.granularity in {"week", "month"}:
-        parts.append("--backfill")
     return " ".join(parts)
 
 

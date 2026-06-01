@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -12,7 +12,13 @@ import pytest
 
 from recoleta.rag import agent as rag_agent
 from recoleta.rag.vector_store import LanceVectorStore
-from recoleta.trends import TrendPayload, semantic_search_summaries_in_period
+from recoleta.trends import (
+    TrendPayload,
+    day_period_bounds,
+    persist_trend_payload,
+    semantic_search_summaries_in_period,
+    week_period_bounds,
+)
 from recoleta.pipeline.service import PipelineService
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
@@ -226,11 +232,11 @@ def test_semantic_search_emits_doc_type_duration_metrics(
     assert "pipeline.trends.semantic_search.trend.duration_ms" in metric_names
 
 
-def test_week_trends_emit_backfill_progress_logs_and_stage_duration_metrics(
+def test_week_trends_emit_synthesis_logs_and_stage_duration_metrics(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Spec: week trends emit backfill progress logs and phase duration metrics."""
+    """Spec: week trends emit synthesis logs and phase duration metrics."""
 
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
@@ -246,6 +252,27 @@ def test_week_trends_emit_backfill_progress_logs_and_stage_duration_metrics(
         analyzer=FakeAnalyzer(),
         telegram_sender=FakeTelegramSender(),
     )
+    anchor = date(2026, 3, 16)
+    week_start, _week_end = week_period_bounds(anchor)
+    for offset in range(7):
+        day_start, day_end = day_period_bounds(
+            (week_start + timedelta(days=offset)).date()
+        )
+        _ = persist_trend_payload(
+            repository=repository,
+            granularity="day",
+            period_start=day_start,
+            period_end=day_end,
+            payload=TrendPayload(
+                title=f"Daily Trend {offset}",
+                granularity="day",
+                period_start=day_start.isoformat(),
+                period_end=day_end.isoformat(),
+                overview_md=f"- daily {offset}",
+                topics=["day"],
+                clusters=[],
+            ),
+        )
 
     import recoleta.trends as trends_module
 
@@ -281,7 +308,7 @@ def test_week_trends_emit_backfill_progress_logs_and_stage_duration_metrics(
         result = service.trends(
             run_id="run-week-observability",
             granularity="week",
-            anchor_date=date(2026, 3, 16),
+            anchor_date=anchor,
             llm_model="test/fake-model",
             backfill=True,
             backfill_mode="missing",
@@ -300,6 +327,5 @@ def test_week_trends_emit_backfill_progress_logs_and_stage_duration_metrics(
     assert "pipeline.trends.generate.duration_ms" in metric_names
 
     output = stream.getvalue()
-    assert "Trends backfill progress" in output
     assert "Trends synthesis starting" in output
     assert "Trends synthesis completed" in output

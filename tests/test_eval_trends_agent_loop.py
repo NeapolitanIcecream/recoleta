@@ -73,7 +73,7 @@ def test_build_eval_manifest_includes_trends_commands_and_artifacts(
     )
     assert (
         manifest["windows"][1]["commands"]["trends"]
-        == "uv run recoleta trends --granularity week --date 2026-03-05 --backfill"
+        == "uv run recoleta trends --granularity week --date 2026-03-05"
     )
 
 
@@ -106,9 +106,10 @@ def test_render_eval_manifest_md_includes_window_rows(tmp_path: Path) -> None:
     assert "# trends agent eval manifest" in report
     assert "month-agents" in report
     assert (
-        "uv run recoleta trends --granularity month --date 2026-03-12 --backfill"
+        "uv run recoleta trends --granularity month --date 2026-03-12"
         in report
     )
+    assert "--backfill" not in report
 
 
 def test_render_eval_runbook_sh_includes_window_commands(tmp_path: Path) -> None:
@@ -132,9 +133,10 @@ def test_render_eval_runbook_sh_includes_window_commands(tmp_path: Path) -> None
     assert "#!/usr/bin/env bash" in runbook
     assert 'mkdir -p "' in runbook
     assert (
-        "uv run recoleta trends --granularity week --date 2026-03-05 --backfill"
+        "uv run recoleta trends --granularity week --date 2026-03-05"
         in runbook
     )
+    assert "--backfill" not in runbook
     assert 'tee "' in runbook
 
 

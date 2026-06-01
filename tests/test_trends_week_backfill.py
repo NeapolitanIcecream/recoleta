@@ -11,11 +11,11 @@ from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
-def test_trends_week_backfill_generates_missing_daily_trends_and_writes_notes(
+def test_trends_week_backfill_does_not_generate_missing_daily_trends(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Spec: week trends can backfill missing daily trends automatically."""
+    """Spec: direct week trends do not bypass workflow lower-level backfill gates."""
 
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
@@ -85,18 +85,18 @@ def test_trends_week_backfill_generates_missing_daily_trends_and_writes_notes(
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
-    _ = service.trends(
-        run_id="run-week-backfill-1",
-        granularity="week",
-        anchor_date=anchor,
-        llm_model="test/fake-model",
-        backfill=True,
-        backfill_mode="missing",
-    )
-    assert calls["week"] == 1
-    assert calls["day"] == 1
+    with pytest.raises(RuntimeError, match="required source materialization failed"):
+        _ = service.trends(
+            run_id="run-week-backfill-1",
+            granularity="week",
+            anchor_date=anchor,
+            llm_model="test/fake-model",
+            backfill=True,
+            backfill_mode="missing",
+        )
+    assert calls["week"] == 0
+    assert calls["day"] == 0
 
-    # Backfilled daily trends exist in the DB and were written as notes.
     day_docs = repository.list_documents(
         doc_type="trend",
         granularity="day",
@@ -105,7 +105,7 @@ def test_trends_week_backfill_generates_missing_daily_trends_and_writes_notes(
         order_by="event_asc",
         limit=50,
     )
-    assert len(day_docs) == 7
+    assert day_docs == []
 
     week_docs = repository.list_documents(
         doc_type="trend",
@@ -115,27 +115,14 @@ def test_trends_week_backfill_generates_missing_daily_trends_and_writes_notes(
         order_by="event_asc",
         limit=10,
     )
-    assert len(week_docs) == 1
-
-    trends_dir = (tmp_path / "md" / "Trends").resolve()
-    assert trends_dir.exists()
-
-    for i in range(7):
-        day = anchor.fromordinal(anchor.toordinal() + i)
-        matches = list(trends_dir.glob(f"day--{day.isoformat()}--*.md"))
-        assert len(matches) == 1
-
-    iso = week_start.isocalendar()
-    token = f"{iso.year}-W{iso.week:02d}"
-    week_matches = list(trends_dir.glob(f"week--{token}--*.md"))
-    assert len(week_matches) == 1
+    assert week_docs == []
 
 
-def test_trends_week_backfill_emits_failure_metric_when_a_day_generation_fails(
+def test_trends_week_source_materialization_fails_when_day_generation_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Spec: backfill continues on day failure and records an aggregate metric."""
+    """Spec: lower-level source generation failures stop the parent synthesis."""
 
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
@@ -199,18 +186,22 @@ def test_trends_week_backfill_emits_failure_metric_when_a_day_generation_fails(
 
     monkeypatch.setattr(trends_stage_mod._TrendStageRunner, "_index_items_for_period", _fail_once)
 
-    _ = service.trends(
-        run_id="run-week-backfill-fail-1",
-        granularity="week",
-        anchor_date=anchor,
-        llm_model="test/fake-model",
-        backfill=True,
-        backfill_mode="missing",
-    )
+    with pytest.raises(RuntimeError, match="required source materialization failed"):
+        _ = service.trends(
+            run_id="run-week-backfill-fail-1",
+            granularity="week",
+            anchor_date=anchor,
+            llm_model="test/fake-model",
+            backfill=True,
+            backfill_mode="missing",
+        )
 
     metrics = repository.list_metrics(run_id="run-week-backfill-fail-1")
     totals = {m.name: float(m.value) for m in metrics}
-    assert totals.get("pipeline.trends.backfill.failed_total", 0.0) == 1.0
+    assert (
+        totals.get("pipeline.trends.source_materialization.failed_total.trend_day", 0.0)
+        == 1.0
+    )
 
 
 def test_trends_week_backfill_fails_when_required_item_source_materialization_fails(

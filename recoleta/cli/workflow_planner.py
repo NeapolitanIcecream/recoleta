@@ -6,6 +6,7 @@ from datetime import date, datetime
 from typing import Any, Sequence
 
 from recoleta.cli.workflow_models import (
+    GRANULARITY_ORDER,
     STEP_ANALYZE,
     STEP_IDEAS_DAY,
     STEP_IDEAS_MONTH,
@@ -74,6 +75,9 @@ TREND_SYNTHESIS_PASS_KIND = "trend_synthesis"
 TREND_IDEAS_PASS_KIND = "trend_ideas"
 PASS_STATUS_SUCCEEDED = "succeeded"
 PASS_STATUS_SUPPRESSED = "suppressed"
+GRANULARITY_RANK = {
+    granularity: index for index, granularity in enumerate(GRANULARITY_ORDER)
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +89,7 @@ class _InspectionRequest:
     generation_force: bool
     translate_include: list[str] | None
     translate_granularities: list[str] | None
+    lower_level_task_sets: dict[str, "_LowerLevelTaskSetState"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +98,14 @@ class _DecisionContext:
     granularity: str | None
     period_start: datetime | None
     period_end: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class _LowerLevelTaskSetState:
+    granularity: str
+    untouched: bool
+    reason: str
+    evidence: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +164,10 @@ def plan_workflow_execution(
     translate_include: list[str] | None = None,
     translate_granularities: list[str] | None = None,
 ) -> list[WorkflowPlanDecision]:
+    lower_level_task_sets = _inspect_lower_level_task_sets(
+        plan=plan,
+        repository=repository,
+    )
     inspected = [
         _inspect_invocation(
             _InspectionRequest(
@@ -161,12 +178,13 @@ def plan_workflow_execution(
                 generation_force=generation_force,
                 translate_include=translate_include,
                 translate_granularities=translate_granularities,
+                lower_level_task_sets=lower_level_task_sets,
             )
         )
         for invocation in plan.invocations
     ]
-    decisions = _skip_complete_ingest_windows(inspected)
-    return _run_downstream_when_upstream_is_planned(decisions)
+    decisions = _skip_complete_ingest_windows(inspected, plan=plan)
+    return _run_downstream_when_upstream_is_planned(decisions, plan=plan)
 
 
 def planned_expensive_steps(decisions: list[WorkflowPlanDecision]) -> int:
@@ -209,12 +227,26 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             settings=request.settings,
         )
     if invocation.step_id in TREND_STEPS:
+        if _is_lower_level_generation_context(context=context, plan=request.plan):
+            return _inspect_lower_level_trend_output(
+                context=context,
+                task_set_state=request.lower_level_task_sets.get(
+                    str(context.granularity or "")
+                ),
+            )
         return _inspect_trend_output(
             context=context,
             repository=request.repository,
             settings=request.settings,
         )
     if invocation.step_id in IDEA_STEPS:
+        if _is_lower_level_generation_context(context=context, plan=request.plan):
+            return _inspect_lower_level_ideas_output(
+                context=context,
+                task_set_state=request.lower_level_task_sets.get(
+                    str(context.granularity or "")
+                ),
+            )
         return _inspect_ideas_output(
             context=context,
             repository=request.repository,
@@ -234,6 +266,230 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
         reason="not_inspected",
         authority=_authority_for_step(invocation.step_id),
     )
+
+
+def _is_lower_level_generation_context(
+    *,
+    context: _DecisionContext,
+    plan: WorkflowPlan,
+) -> bool:
+    return _is_lower_level_granularity(
+        granularity=context.granularity,
+        target_granularity=plan.target_granularity,
+    )
+
+
+def _is_lower_level_generation_decision(
+    *,
+    decision: WorkflowPlanDecision,
+    plan: WorkflowPlan,
+) -> bool:
+    if decision.step_id not in TREND_STEPS and decision.step_id not in IDEA_STEPS:
+        return False
+    return _is_lower_level_granularity(
+        granularity=decision.granularity,
+        target_granularity=plan.target_granularity,
+    )
+
+
+def _is_lower_level_granularity(
+    *,
+    granularity: str | None,
+    target_granularity: str | None,
+) -> bool:
+    if granularity is None or target_granularity is None:
+        return False
+    granularity_rank = GRANULARITY_RANK.get(str(granularity or "").strip().lower())
+    target_rank = GRANULARITY_RANK.get(
+        str(target_granularity or "").strip().lower()
+    )
+    if granularity_rank is None or target_rank is None:
+        return False
+    return granularity_rank < target_rank
+
+
+def _inspect_lower_level_task_sets(
+    *,
+    plan: WorkflowPlan,
+    repository: Any,
+) -> dict[str, _LowerLevelTaskSetState]:
+    states: dict[str, _LowerLevelTaskSetState] = {}
+    for granularity in _lower_level_granularities_for_plan(plan):
+        evidence = _lower_level_task_set_evidence(
+            plan=plan,
+            repository=repository,
+            granularity=granularity,
+        )
+        if evidence is None:
+            states[granularity] = _LowerLevelTaskSetState(
+                granularity=granularity,
+                untouched=True,
+                reason="missing_lower_level_task_set",
+            )
+            continue
+        states[granularity] = _LowerLevelTaskSetState(
+            granularity=granularity,
+            untouched=False,
+            reason=(
+                "lower_level_task_set_inspection_unavailable"
+                if evidence == "inspection_unavailable"
+                else "existing_lower_level_task_set"
+            ),
+            evidence=evidence,
+        )
+    return states
+
+
+def _lower_level_granularities_for_plan(plan: WorkflowPlan) -> list[str]:
+    granularities: set[str] = set()
+    for invocation in plan.invocations:
+        if invocation.step_id not in TREND_STEPS and invocation.step_id not in IDEA_STEPS:
+            continue
+        context = _invocation_context(invocation=invocation, plan=plan)
+        if _is_lower_level_generation_context(context=context, plan=plan):
+            granularities.add(str(context.granularity or ""))
+    return sorted(
+        (granularity for granularity in granularities if granularity),
+        key=lambda value: GRANULARITY_RANK.get(value, 999),
+    )
+
+
+def _lower_level_task_set_evidence(
+    *,
+    plan: WorkflowPlan,
+    repository: Any,
+    granularity: str,
+) -> str | None:
+    windows = _lower_level_windows_for_plan(plan=plan, granularity=granularity)
+    inspection_unavailable = False
+    for period_start, period_end in windows:
+        evidence = _lower_level_window_evidence(
+            repository=repository,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        if evidence is None:
+            continue
+        if evidence == "inspection_unavailable":
+            inspection_unavailable = True
+            continue
+        return evidence
+    return "inspection_unavailable" if inspection_unavailable else None
+
+
+def _lower_level_windows_for_plan(
+    *,
+    plan: WorkflowPlan,
+    granularity: str,
+) -> list[tuple[datetime, datetime]]:
+    windows: list[tuple[datetime, datetime]] = []
+    seen: set[tuple[datetime, datetime]] = set()
+    for invocation in plan.invocations:
+        if invocation.step_id not in TREND_STEPS and invocation.step_id not in IDEA_STEPS:
+            continue
+        context = _invocation_context(invocation=invocation, plan=plan)
+        if (
+            context.granularity != granularity
+            or context.period_start is None
+            or context.period_end is None
+        ):
+            continue
+        key = (context.period_start, context.period_end)
+        if key in seen:
+            continue
+        seen.add(key)
+        windows.append(key)
+    return windows
+
+
+def _lower_level_window_evidence(
+    *,
+    repository: Any,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+) -> str | None:
+    evidence = _lower_level_pass_output_evidence(
+        repository=repository,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    if evidence is not None:
+        return evidence
+    return _lower_level_document_evidence(
+        repository=repository,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
+def _lower_level_pass_output_evidence(
+    *,
+    repository: Any,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+) -> str | None:
+    getter = getattr(repository, "get_latest_pass_output", None)
+    if not callable(getter):
+        return "inspection_unavailable"
+    for pass_kind in (TREND_SYNTHESIS_PASS_KIND, TREND_IDEAS_PASS_KIND):
+        try:
+            row = getter(
+                pass_kind=pass_kind,
+                status=None,
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+            )
+        except Exception:
+            return "inspection_unavailable"
+        if row is not None:
+            return f"pass_output:{pass_kind}"
+    return None
+
+
+def _lower_level_document_evidence(
+    *,
+    repository: Any,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+) -> str | None:
+    list_documents = getattr(repository, "list_documents", None)
+    if not callable(list_documents):
+        return "inspection_unavailable"
+    for doc_type in ("trend", "idea"):
+        try:
+            rows = list_documents(
+                doc_type=doc_type,
+                granularity=granularity,
+                period_start=period_start,
+                period_end=period_end,
+                limit=1,
+            )
+        except Exception:
+            return "inspection_unavailable"
+        if _has_any(rows):
+            return f"document:{doc_type}"
+    return None
+
+
+def _lower_level_task_set_metadata(
+    state: _LowerLevelTaskSetState,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "lower_level_task_set": {
+            "granularity": state.granularity,
+            "untouched": state.untouched,
+        }
+    }
+    if state.evidence is not None:
+        metadata["lower_level_task_set"]["evidence"] = state.evidence
+    return metadata
 
 
 def _inspect_analyze(
@@ -373,6 +629,36 @@ def _inspect_trend_output(
     )
 
 
+def _inspect_lower_level_trend_output(
+    *,
+    context: _DecisionContext,
+    task_set_state: _LowerLevelTaskSetState | None,
+) -> WorkflowPlanDecision:
+    granularity = context.granularity
+    period_start = context.period_start
+    period_end = context.period_end
+    if granularity is None or period_start is None or period_end is None:
+        return _pass_output_unavailable_decision(context)
+    if task_set_state is None:
+        return _pass_output_unavailable_decision(context)
+    if task_set_state.untouched:
+        return _decision(
+            context=context,
+            action="run",
+            reason=task_set_state.reason,
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
+    return _decision(
+        context=context,
+        action="skip",
+        reason=task_set_state.reason,
+        authority="pass_outputs",
+        estimated_llm_calls=0,
+        metadata=_lower_level_task_set_metadata(task_set_state),
+    )
+
+
 def _inspect_ideas_output(
     *,
     context: _DecisionContext,
@@ -445,6 +731,36 @@ def _inspect_ideas_output(
                 else "fresh_pass_output"
             ),
         )
+    )
+
+
+def _inspect_lower_level_ideas_output(
+    *,
+    context: _DecisionContext,
+    task_set_state: _LowerLevelTaskSetState | None,
+) -> WorkflowPlanDecision:
+    granularity = context.granularity
+    period_start = context.period_start
+    period_end = context.period_end
+    if granularity is None or period_start is None or period_end is None:
+        return _pass_output_unavailable_decision(context)
+    if task_set_state is None:
+        return _pass_output_unavailable_decision(context)
+    if task_set_state.untouched:
+        return _decision(
+            context=context,
+            action="run",
+            reason=task_set_state.reason,
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
+    return _decision(
+        context=context,
+        action="skip",
+        reason=task_set_state.reason,
+        authority="pass_outputs",
+        estimated_llm_calls=0,
+        metadata=_lower_level_task_set_metadata(task_set_state),
     )
 
 
@@ -1007,6 +1323,8 @@ def _triage_required(settings: Any) -> bool:
 
 def _skip_complete_ingest_windows(
     decisions: list[WorkflowPlanDecision],
+    *,
+    plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     content_runs_by_window: set[tuple[datetime | None, datetime | None]] = set()
     content_decisions_by_window: set[tuple[datetime | None, datetime | None]] = set()
@@ -1015,7 +1333,10 @@ def _skip_complete_ingest_windows(
             continue
         key = (decision.period_start, decision.period_end)
         content_decisions_by_window.add(key)
-        if decision.action in {*PLANNED_RUN_ACTIONS, "blocked"}:
+        if (
+            decision.action in {*PLANNED_RUN_ACTIONS, "blocked"}
+            and not _is_lower_level_generation_decision(decision=decision, plan=plan)
+        ):
             content_runs_by_window.add(key)
 
     updated: list[WorkflowPlanDecision] = []
@@ -1042,19 +1363,32 @@ def _skip_complete_ingest_windows(
 
 def _run_downstream_when_upstream_is_planned(
     decisions: list[WorkflowPlanDecision],
+    *,
+    plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
-    upstream_updated = _run_generation_when_upstream_is_planned(decisions)
+    upstream_updated = _run_generation_when_upstream_is_planned(
+        decisions,
+        plan=plan,
+    )
     return _run_translation_when_generation_is_planned(upstream_updated)
 
 
 def _run_generation_when_upstream_is_planned(
     decisions: list[WorkflowPlanDecision],
+    *,
+    plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     analyze_updated = _run_analyze_when_ingest_is_planned(decisions)
     publish_updated = _run_publish_when_analyze_is_planned(analyze_updated)
-    trend_updated = _run_trends_when_analyze_is_planned(publish_updated)
-    aggregate_updated = _run_aggregate_trends_when_sources_are_planned(trend_updated)
-    return _run_ideas_when_trends_are_planned(aggregate_updated)
+    trend_updated = _run_trends_when_analyze_is_planned(
+        publish_updated,
+        plan=plan,
+    )
+    aggregate_updated = _run_aggregate_trends_when_sources_are_planned(
+        trend_updated,
+        plan=plan,
+    )
+    return _run_ideas_when_trends_are_planned(aggregate_updated, plan=plan)
 
 
 def _run_analyze_when_ingest_is_planned(
@@ -1101,6 +1435,8 @@ def _run_publish_when_analyze_is_planned(
 
 def _run_trends_when_analyze_is_planned(
     decisions: list[WorkflowPlanDecision],
+    *,
+    plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     analyze_run_windows = _planned_analyze_windows(decisions)
     updated: list[WorkflowPlanDecision] = []
@@ -1108,6 +1444,7 @@ def _run_trends_when_analyze_is_planned(
         if _trend_has_planned_analyze(
             decision=decision,
             analyze_run_windows=analyze_run_windows,
+            plan=plan,
         ):
             updated.append(
                 _reactivate_planned_decision(decision, "upstream_analyze_planned")
@@ -1129,12 +1466,15 @@ def _planned_analyze_windows(
 
 def _run_aggregate_trends_when_sources_are_planned(
     decisions: list[WorkflowPlanDecision],
+    *,
+    plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     updated = decisions
     for aggregate_step in (STEP_TRENDS_WEEK, STEP_TRENDS_MONTH):
         updated = _run_aggregate_trend_when_source_is_planned(
             decisions=updated,
             aggregate_step=aggregate_step,
+            plan=plan,
         )
     return updated
 
@@ -1143,6 +1483,7 @@ def _run_aggregate_trend_when_source_is_planned(
     *,
     decisions: list[WorkflowPlanDecision],
     aggregate_step: str,
+    plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     source_windows = _planned_trend_source_windows(
         decisions=decisions,
@@ -1154,6 +1495,7 @@ def _run_aggregate_trend_when_source_is_planned(
             decision=decision,
             aggregate_step=aggregate_step,
             source_windows=source_windows,
+            plan=plan,
         ):
             updated.append(
                 _reactivate_planned_decision(decision, "upstream_trend_planned")
@@ -1201,8 +1543,11 @@ def _aggregate_trend_has_planned_source(
     decision: WorkflowPlanDecision,
     aggregate_step: str,
     source_windows: list[tuple[datetime, datetime]],
+    plan: WorkflowPlan,
 ) -> bool:
     if decision.step_id != aggregate_step or decision.action != "skip":
+        return False
+    if _is_lower_level_generation_decision(decision=decision, plan=plan):
         return False
     return any(
         _decision_periods_overlap(
@@ -1217,6 +1562,8 @@ def _aggregate_trend_has_planned_source(
 
 def _run_ideas_when_trends_are_planned(
     decisions: list[WorkflowPlanDecision],
+    *,
+    plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     trend_run_windows = {
         (
@@ -1234,6 +1581,7 @@ def _run_ideas_when_trends_are_planned(
         if _idea_has_planned_trend(
             decision=decision,
             trend_run_windows=trend_run_windows,
+            plan=plan,
         ):
             updated.append(
                 _reactivate_planned_decision(decision, "upstream_trend_planned")
@@ -1259,8 +1607,11 @@ def _trend_has_planned_analyze(
     *,
     decision: WorkflowPlanDecision,
     analyze_run_windows: set[tuple[str | None, datetime | None, datetime | None]],
+    plan: WorkflowPlan,
 ) -> bool:
     if decision.step_id not in TREND_STEPS or decision.action != "skip":
+        return False
+    if _is_lower_level_generation_decision(decision=decision, plan=plan):
         return False
     return (
         decision.granularity,
@@ -1273,9 +1624,12 @@ def _idea_has_planned_trend(
     *,
     decision: WorkflowPlanDecision,
     trend_run_windows: set[tuple[str, str | None, datetime | None, datetime | None]],
+    plan: WorkflowPlan,
 ) -> bool:
     matching_trend_step = IDEA_TO_TREND_STEP.get(decision.step_id)
     if matching_trend_step is None or decision.action != "skip":
+        return False
+    if _is_lower_level_generation_decision(decision=decision, plan=plan):
         return False
     return (
         matching_trend_step,
