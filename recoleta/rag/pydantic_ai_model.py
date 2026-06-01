@@ -59,6 +59,79 @@ def _openai_compatible_model_name(llm_model: str) -> str:
     return normalized
 
 
+def _required_model_name(llm_model: str) -> str:
+    normalized = str(llm_model or "").strip()
+    if not normalized:
+        raise ValueError("llm_model must not be empty")
+    return normalized
+
+
+def _build_openai_compatible_model(
+    model_name: str,
+    *,
+    llm_connection: LLMConnectionConfig,
+) -> Any:
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    return OpenAIChatModel(
+        model_name,
+        provider=OpenAIProvider(
+            base_url=llm_connection.base_url,
+            api_key=llm_connection.api_key,
+        ),
+    )
+
+
+def _build_openrouter_provider(llm_connection: LLMConnectionConfig) -> Any:
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    class _EnvOpenRouterProvider(OpenRouterProvider):
+        @property
+        def base_url(self) -> str:  # type: ignore[override]
+            if llm_connection.base_url:
+                return llm_connection.base_url.rstrip("/")
+            # Keep compatibility with common OpenRouter env names used in OpenAI-compatible stacks.
+            env_url = _non_empty_env("OPENROUTER_API_BASE", "OPENROUTER_BASE_URL")
+            if env_url:
+                return env_url.rstrip("/")
+            return super().base_url
+
+    if llm_connection.api_key is not None:
+        return _EnvOpenRouterProvider(api_key=llm_connection.api_key)
+    return _EnvOpenRouterProvider()
+
+
+def _build_openrouter_model(
+    rest: str | None,
+    *,
+    llm_connection: LLMConnectionConfig,
+) -> Any:
+    if not rest:
+        raise ValueError(
+            "OpenRouter model must be in the form 'openrouter/<provider>/<model>'"
+        )
+
+    from pydantic_ai.models.openrouter import OpenRouterModel
+
+    return OpenRouterModel(
+        rest,
+        provider=_build_openrouter_provider(llm_connection),
+    )
+
+
+def _build_openai_model_with_api_key(
+    rest: str | None,
+    *,
+    llm_connection: LLMConnectionConfig,
+) -> Any:
+    if not rest:
+        raise ValueError(
+            "OpenAI model must be in the form 'openai/<model>' or 'openai:<model>'"
+        )
+    return _build_openai_compatible_model(rest, llm_connection=llm_connection)
+
+
 def build_pydantic_ai_model(
     llm_model: str, *, llm_connection: LLMConnectionConfig | None = None
 ) -> Any:
@@ -69,65 +142,20 @@ def build_pydantic_ai_model(
     fallbacks when no Recoleta base URL is configured.
     """
 
-    normalized = str(llm_model or "").strip()
-    if not normalized:
-        raise ValueError("llm_model must not be empty")
+    normalized = _required_model_name(llm_model)
     llm_connection = llm_connection or LLMConnectionConfig()
 
     if llm_connection.base_url is not None:
-        from pydantic_ai.models.openai import OpenAIChatModel
-        from pydantic_ai.providers.openai import OpenAIProvider
-
-        return OpenAIChatModel(
+        return _build_openai_compatible_model(
             _openai_compatible_model_name(normalized),
-            provider=OpenAIProvider(
-                base_url=llm_connection.base_url,
-                api_key=llm_connection.api_key,
-            ),
+            llm_connection=llm_connection,
         )
 
     provider, rest = _split_provider(normalized)
     if provider.lower() == "openrouter":
-        if not rest:
-            raise ValueError(
-                "OpenRouter model must be in the form 'openrouter/<provider>/<model>'"
-            )
-
-        from pydantic_ai.models.openrouter import OpenRouterModel
-        from pydantic_ai.providers.openrouter import OpenRouterProvider
-
-        class _EnvOpenRouterProvider(OpenRouterProvider):
-            @property
-            def base_url(self) -> str:  # type: ignore[override]
-                if llm_connection.base_url:
-                    return llm_connection.base_url.rstrip("/")
-                # Keep compatibility with common OpenRouter env names used in OpenAI-compatible stacks.
-                env_url = _non_empty_env("OPENROUTER_API_BASE", "OPENROUTER_BASE_URL")
-                if env_url:
-                    return env_url.rstrip("/")
-                return super().base_url
-
-        if llm_connection.api_key is not None:
-            provider = _EnvOpenRouterProvider(api_key=llm_connection.api_key)
-        else:
-            provider = _EnvOpenRouterProvider()
-        return OpenRouterModel(rest, provider=provider)
+        return _build_openrouter_model(rest, llm_connection=llm_connection)
 
     if provider.lower() == "openai" and llm_connection.api_key is not None:
-        if not rest:
-            raise ValueError(
-                "OpenAI model must be in the form 'openai/<model>' or 'openai:<model>'"
-            )
-
-        from pydantic_ai.models.openai import OpenAIChatModel
-        from pydantic_ai.providers.openai import OpenAIProvider
-
-        return OpenAIChatModel(
-            rest,
-            provider=OpenAIProvider(
-                base_url=llm_connection.base_url,
-                api_key=llm_connection.api_key,
-            ),
-        )
+        return _build_openai_model_with_api_key(rest, llm_connection=llm_connection)
 
     return normalize_pydantic_ai_model_id(normalized)
