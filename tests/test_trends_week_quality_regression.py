@@ -51,22 +51,25 @@ def test_trends_week_published_markdown_locks_reader_facing_quality(
     anchor = date(2026, 3, 5)
     week_start, week_end = week_period_bounds(anchor)
 
-    day_start, day_end = day_period_bounds(week_start.date())
-    _ = persist_trend_payload(
-        repository=repository,
-        granularity="day",
-        period_start=day_start,
-        period_end=day_end,
-        payload=TrendPayload(
-            title="Daily Trend",
+    for offset in range(7):
+        day_start, day_end = day_period_bounds(
+            (week_start + timedelta(days=offset)).date()
+        )
+        _ = persist_trend_payload(
+            repository=repository,
             granularity="day",
-            period_start=day_start.isoformat(),
-            period_end=day_end.isoformat(),
-            overview_md="- daily",
-            topics=["agents"],
-            clusters=[],
-        ),
-    )
+            period_start=day_start,
+            period_end=day_end,
+            payload=TrendPayload(
+                title=f"Daily Trend {offset}",
+                granularity="day",
+                period_start=day_start.isoformat(),
+                period_end=day_end.isoformat(),
+                overview_md=f"- daily {offset}",
+                topics=["agents"],
+                clusters=[],
+            ),
+        )
 
     titles = [
         "Robometer: Scaling reward models via trajectory comparisons",

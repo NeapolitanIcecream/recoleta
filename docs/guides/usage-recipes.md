@@ -24,17 +24,18 @@ What to know:
 
 - `run now` means "run the current UTC day end to end".
 - `run day`, `run week`, and `run month` are ensure/backfill commands. They
-  inspect existing state, run missing or stale work, and skip fresh expensive
+  inspect existing state, run missing work, and skip completed expensive
   generation.
 - With the default `recursive_lower_levels: true`, `run week` ensures the seven
   day windows plus the week window, and `run month` ensures day, week, and
-  month windows. Fresh day-level trends and ideas are not regenerated just
-  because you run the week.
+  month windows. Lower-level trends and ideas are generated only when that
+  lower-granularity trend/idea task set has never run in the parent window.
+  Existing daily outputs are not regenerated just because you run the week.
 - Use `--dry-run --json` before a replay when you want the exact plan, skip
   reasons, and planned expensive-step count without creating run rows or
   calling providers.
-- Use `--force` only when you intentionally want to regenerate expensive
-  content for the selected workflow windows.
+- Use `--force` when you intentionally want to regenerate expensive content for
+  the selected workflow windows, including lower-level trend and idea windows.
 - Use `--include` and `--skip` as advanced repair controls when you need to
   override the planner for selected steps.
 
@@ -494,6 +495,12 @@ What to know:
   need fresh derived rows for that window.
 - `repair outputs` is the safer path when the database is already correct and
   only Markdown, PDF, or site output drifted.
+- Week and month workflows do not regenerate lower-level trends or ideas just
+  to repair missing documents, Markdown, PDFs, or site files. They also do not
+  fill individual missing lower-level windows once that lower-granularity task
+  set has any prior trend or idea evidence. Use `repair outputs` for projection
+  repair, or run the specific lower-level workflow with `--force` when the
+  canonical pass output itself should change.
 
 ## Maintain or reset a workspace
 

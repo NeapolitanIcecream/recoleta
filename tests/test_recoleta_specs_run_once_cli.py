@@ -164,6 +164,16 @@ class _FakeRepo:
         return [metric for metric in self.metrics if metric.run_id == run_id]
 
 
+class _UntouchedTrendIdeaRepo(_FakeRepo):
+    def get_latest_pass_output(self, **_kwargs):  # type: ignore[no-untyped-def]
+        return None
+
+    def list_documents(self, **kwargs):  # type: ignore[no-untyped-def]
+        if kwargs.get("doc_type") in {"trend", "idea"}:
+            return []
+        return []
+
+
 class _DayCompletePlannerRepo(_FakeRepo):
     def list_items_for_llm_analysis(self, **_kwargs) -> list[object]:  # type: ignore[no-untyped-def]
         return []
@@ -551,7 +561,7 @@ def test_run_week_executes_recursive_day_and_week_synthesis_workflow(
     runner = CliRunner()
     tmp_path: Path = configured_env
     fake_settings = _FakeSettings(tmp_path=tmp_path)
-    fake_repo = _FakeRepo()
+    fake_repo = _UntouchedTrendIdeaRepo()
     fake_service = _FakeService()
     site_build_calls: list[tuple[str, str]] = []
 
@@ -1523,7 +1533,7 @@ def test_run_month_executes_recursive_day_week_and_month_synthesis_workflow(
     runner = CliRunner()
     tmp_path: Path = configured_env
     fake_settings = _FakeSettings(tmp_path=tmp_path)
-    fake_repo = _FakeRepo()
+    fake_repo = _UntouchedTrendIdeaRepo()
     fake_service = _FakeService()
     site_build_calls: list[tuple[str, str]] = []
 

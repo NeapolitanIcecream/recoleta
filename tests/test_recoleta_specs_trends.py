@@ -1673,6 +1673,23 @@ def test_week_trends_treat_empty_daily_trends_as_empty_corpus(
 
     anchor = date(2026, 3, 5)
     week_start, week_end = week_period_bounds(anchor)
+    for offset in range(7):
+        day_start, day_end = day_period_bounds(
+            (week_start + timedelta(days=offset)).date()
+        )
+        empty_payload = build_empty_trend_payload(
+            granularity="day",
+            period_start=day_start,
+            period_end=day_end,
+            output_language=settings.llm_output_language,
+        )
+        _ = persist_trend_payload(
+            repository=repository,
+            granularity="day",
+            period_start=day_start,
+            period_end=day_end,
+            payload=empty_payload,
+        )
 
     result: TrendResult = service.trends(
         run_id="run-trend-week-empty-nested",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,28 @@ from recoleta.trends import (
     week_period_bounds,
 )
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
+
+
+def _seed_daily_trends_for_week(*, repository: Any, week_start: Any) -> None:
+    for offset in range(7):
+        day_start, day_end = day_period_bounds(
+            (week_start + timedelta(days=offset)).date()
+        )
+        _ = persist_trend_payload(
+            repository=repository,
+            granularity="day",
+            period_start=day_start,
+            period_end=day_end,
+            payload=TrendPayload(
+                title=f"Daily Trend {offset}",
+                granularity="day",
+                period_start=day_start.isoformat(),
+                period_end=day_end.isoformat(),
+                overview_md=f"- daily {offset}",
+                topics=["agents"],
+                clusters=[],
+            ),
+        )
 
 
 def test_trends_pipeline_injects_overview_pack_and_rag_sources_when_enabled(
@@ -47,23 +69,8 @@ def test_trends_pipeline_injects_overview_pack_and_rag_sources_when_enabled(
     week_start, week_end = week_period_bounds(anchor)
     previous_week_start, previous_week_end = week_period_bounds(date(2026, 2, 26))
 
-    # Ensure weekly corpus isn't empty (weekly trends read daily trend docs by default).
-    day_start, day_end = day_period_bounds(week_start.date())
-    _ = persist_trend_payload(
-        repository=repository,
-        granularity="day",
-        period_start=day_start,
-        period_end=day_end,
-        payload=TrendPayload(
-            title="Daily Trend",
-            granularity="day",
-            period_start=day_start.isoformat(),
-            period_end=day_end.isoformat(),
-            overview_md="- daily",
-            topics=["agents"],
-            clusters=[],
-        ),
-    )
+    # Ensure weekly corpus is complete; direct week trends do not generate daily sources.
+    _seed_daily_trends_for_week(repository=repository, week_start=week_start)
     _ = persist_trend_payload(
         repository=repository,
         granularity="week",
@@ -160,22 +167,7 @@ def test_trends_debug_artifact_captures_context_packs_when_history_enabled(
     week_start, week_end = week_period_bounds(anchor)
     previous_week_start, previous_week_end = week_period_bounds(date(2026, 2, 26))
 
-    day_start, day_end = day_period_bounds(week_start.date())
-    _ = persist_trend_payload(
-        repository=repository,
-        granularity="day",
-        period_start=day_start,
-        period_end=day_end,
-        payload=TrendPayload(
-            title="Daily Trend",
-            granularity="day",
-            period_start=day_start.isoformat(),
-            period_end=day_end.isoformat(),
-            overview_md="- daily",
-            topics=["agents"],
-            clusters=[],
-        ),
-    )
+    _seed_daily_trends_for_week(repository=repository, week_start=week_start)
     _ = persist_trend_payload(
         repository=repository,
         granularity="week",

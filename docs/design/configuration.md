@@ -361,8 +361,11 @@ Workflow policy:
 
 - `WORKFLOWS.granularities.default`
   - `recursive_lower_levels` (default `true`). Week and month workflows include
-    lower-level windows by default, but execution is planner-driven: fresh
-    expensive lower-level work is skipped unless the operator passes `--force`.
+    lower-level windows by default, but recursive lower-level generation is a
+    first-run task-set gate. If any lower-level trend or idea pass output or
+    document exists for that lower granularity in the parent window, the
+    workflow skips recursive generation for that whole lower granularity. Use
+    `--force` for intentional regeneration.
   - `delivery_mode`: `all|local_only|none` (default `all`)
   - `translation`: `auto|off` (default `auto`)
   - `translate_include`: any of `items|trends|ideas` (default all three)
@@ -377,8 +380,9 @@ CLI controls:
   the ensure plan without creating run rows, metrics, pass outputs, localized
   outputs, documents, site files, or deliveries.
 - `--force` on `run day|week|month` and `fleet run day|week|month` is a content
-  regeneration control. It is separate from `run deploy --force`, which remains
-  a Git deployment force-push control.
+  regeneration control for the selected workflow windows, including recursive
+  lower-level trend and idea windows. It is separate from `run deploy --force`,
+  which remains a Git deployment force-push control.
 - `--include` and `--skip` are advanced repair controls. They remain available
   for compatibility, but normal week/month operation should rely on the planner.
 

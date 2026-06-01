@@ -359,22 +359,26 @@ def test_week_trends_reuse_existing_corpus_skips_prepare_and_analyze(
 
     anchor = date(2026, 3, 5)
     week_start, week_end = week_period_bounds(anchor)
-    day_start, day_end = day_period_bounds(week_start.date())
-    _ = persist_trend_payload(
-        repository=repository,
-        granularity="day",
-        period_start=day_start,
-        period_end=day_end,
-        payload=TrendPayload(
-            title="Seed Daily Trend",
+    _ = week_end
+    for offset in range(7):
+        day_start, day_end = day_period_bounds(
+            (week_start + timedelta(days=offset)).date()
+        )
+        _ = persist_trend_payload(
+            repository=repository,
             granularity="day",
-            period_start=day_start.isoformat(),
-            period_end=day_end.isoformat(),
-            overview_md="- daily",
-            topics=["agents"],
-            clusters=[],
-        ),
-    )
+            period_start=day_start,
+            period_end=day_end,
+            payload=TrendPayload(
+                title=f"Seed Daily Trend {offset}",
+                granularity="day",
+                period_start=day_start.isoformat(),
+                period_end=day_end.isoformat(),
+                overview_md=f"- daily {offset}",
+                topics=["agents"],
+                clusters=[],
+            ),
+        )
 
     monkeypatch.setattr(service, "prepare", _raise_if_called)
     monkeypatch.setattr(service, "analyze", _raise_if_called)
@@ -435,9 +439,16 @@ def test_week_trends_reuse_existing_corpus_skips_prepare_and_analyze(
     )
     assert (
         metric_values[
-            "pipeline.trends.source_materialization.materialized_total.trend_day"
+            "pipeline.trends.source_materialization.already_ready_total.trend_day"
         ]
         == 1.0
+    )
+    assert (
+        metric_values.get(
+            "pipeline.trends.source_materialization.materialized_total.trend_day",
+            0.0,
+        )
+        == 0.0
     )
 
 

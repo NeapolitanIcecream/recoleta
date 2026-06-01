@@ -73,11 +73,15 @@ class _ReadOnlyPlannerRepo:
         *,
         missing_days: set[date] | None = None,
         missing_trend_windows: set[tuple[str, date]] | None = None,
+        missing_idea_windows: set[tuple[str, date]] | None = None,
+        untouched_task_sets: set[str] | None = None,
         source_hashes: dict[tuple[str, date], str] | None = None,
         stored_source_hashes: dict[tuple[str, date], str] | None = None,
     ) -> None:
         self.missing_days = set(missing_days or set())
         self.missing_trend_windows = set(missing_trend_windows or set())
+        self.missing_idea_windows = set(missing_idea_windows or set())
+        self.untouched_task_sets = set(untouched_task_sets or set())
         self.source_hashes = dict(source_hashes or {})
         self.stored_source_hashes = dict(stored_source_hashes or self.source_hashes)
         self.write_calls: list[str] = []
@@ -97,11 +101,13 @@ class _ReadOnlyPlannerRepo:
         period_end = kwargs["period_end"]
         if granularity == "day" and period_start.date() in self.missing_days:
             return None
-        if (granularity, period_start.date()) in self.missing_trend_windows:
-            return None
         pass_kind = kwargs["pass_kind"]
         status = kwargs.get("status")
         if pass_kind == "trend_synthesis":
+            if granularity in self.untouched_task_sets:
+                return None
+            if (granularity, period_start.date()) in self.missing_trend_windows:
+                return None
             freshness = build_trend_synthesis_freshness(
                 settings=_Settings(),
                 granularity=granularity,
@@ -116,6 +122,10 @@ class _ReadOnlyPlannerRepo:
                 input_refs_json="[]",
             )
         if pass_kind == "trend_ideas":
+            if granularity in self.untouched_task_sets:
+                return None
+            if (granularity, period_start.date()) in self.missing_idea_windows:
+                return None
             upstream_id = _stable_pass_output_id(
                 granularity, period_start, "trend_synthesis"
             )
@@ -143,12 +153,30 @@ class _ReadOnlyPlannerRepo:
         return None
 
     def list_documents(self, **kwargs: Any) -> list[Any]:
-        if kwargs["granularity"] == "day" and kwargs["period_start"].date() in self.missing_days:
+        doc_type = str(kwargs["doc_type"])
+        granularity = kwargs["granularity"]
+        period_start = kwargs["period_start"]
+        if granularity == "day" and period_start.date() in self.missing_days:
+            return []
+        if doc_type in {"trend", "idea"} and granularity in self.untouched_task_sets:
+            return []
+        if doc_type == "trend" and (granularity, period_start.date()) in self.missing_trend_windows:
+            return []
+        if doc_type == "idea" and (granularity, period_start.date()) in self.missing_idea_windows:
             return []
         return [SimpleNamespace(id=1)]
 
     def list_document_chunks_in_period(self, **kwargs: Any) -> list[Any]:
-        if kwargs["granularity"] == "day" and kwargs["period_start"].date() in self.missing_days:
+        granularity = kwargs["granularity"]
+        period_start = kwargs["period_start"]
+        doc_type = str(kwargs["doc_type"])
+        if granularity == "day" and period_start.date() in self.missing_days:
+            return []
+        if doc_type in {"trend", "idea"} and granularity in self.untouched_task_sets:
+            return []
+        if doc_type == "trend" and (granularity, period_start.date()) in self.missing_trend_windows:
+            return []
+        if doc_type == "idea" and (granularity, period_start.date()) in self.missing_idea_windows:
             return []
         return [SimpleNamespace(id=1)]
 
@@ -242,12 +270,16 @@ class _TranslationPlannerRepo(_ReadOnlyPlannerRepo):
         existing_hashes: dict[tuple[str, int, str], str],
         missing_days: set[date] | None = None,
         missing_trend_windows: set[tuple[str, date]] | None = None,
+        missing_idea_windows: set[tuple[str, date]] | None = None,
+        untouched_task_sets: set[str] | None = None,
         source_hashes: dict[tuple[str, date], str] | None = None,
         stored_source_hashes: dict[tuple[str, date], str] | None = None,
     ) -> None:
         super().__init__(
             missing_days=missing_days,
             missing_trend_windows=missing_trend_windows,
+            missing_idea_windows=missing_idea_windows,
+            untouched_task_sets=untouched_task_sets,
             source_hashes=source_hashes,
             stored_source_hashes=stored_source_hashes,
         )
@@ -336,6 +368,26 @@ class _MixedStatusIdeasRepo(_ReadOnlyPlannerRepo):
         )
 
 
+class _DocumentOnlyLowerLevelRepo(_ReadOnlyPlannerRepo):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        if (
+            kwargs["granularity"] == "day"
+            and kwargs["pass_kind"] in {"trend_synthesis", "trend_ideas"}
+        ):
+            return None
+        return super().get_latest_pass_output(**kwargs)
+
+    def list_documents(self, **kwargs: Any) -> list[Any]:
+        if kwargs["granularity"] == "day" and kwargs["doc_type"] in {"trend", "idea"}:
+            return (
+                [SimpleNamespace(id=1)]
+                if kwargs["doc_type"] == "trend"
+                and kwargs["period_start"].date() == date(2026, 3, 16)
+                else []
+            )
+        return super().list_documents(**kwargs)
+
+
 def test_planner_skips_complete_day_level_work_for_week() -> None:
     plan = _week_plan()
     decisions = plan_workflow_execution(
@@ -354,13 +406,40 @@ def test_planner_skips_complete_day_level_work_for_week() -> None:
     assert len(daily_expensive) == 21
     assert {decision.action for decision in daily_expensive} == {"skip"}
     assert {decision.reason for decision in daily_expensive} <= {
-        "fresh_pass_output",
+        "existing_lower_level_task_set",
         "no_candidate_items",
     }
     assert all(decision.authority for decision in decisions)
 
 
-def test_planner_runs_only_missing_day_windows() -> None:
+def test_week_planner_backfills_day_task_set_only_when_untouched() -> None:
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_ReadOnlyPlannerRepo(untouched_task_sets={"day"}),
+        settings=_Settings(),
+    )
+
+    day_generation = [
+        decision
+        for decision in decisions
+        if decision.granularity == "day"
+        and decision.step_id in {"trends:day", "ideas:day"}
+    ]
+    ingest_decision = _decision_for(decisions, "ingest", date(2026, 3, 16))
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+
+    assert len(day_generation) == 14
+    assert {decision.action for decision in day_generation} == {"run"}
+    assert {decision.reason for decision in day_generation} == {
+        "missing_lower_level_task_set"
+    }
+    assert ingest_decision.action == "skip"
+    assert ingest_decision.reason == "downstream_complete"
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "no_candidate_items"
+
+
+def test_week_planner_does_not_backfill_missing_day_after_task_set_ran() -> None:
     missing_day = date(2026, 3, 18)
     plan = _week_plan()
     decisions = plan_workflow_execution(
@@ -384,15 +463,111 @@ def test_planner_runs_only_missing_day_windows() -> None:
         and decision.step_id in {"analyze", "trends:day", "ideas:day"}
     ]
 
-    assert {decision.action for decision in missing_day_decisions} == {"run"}
+    assert _decision_for(decisions, "ingest", missing_day).action == "run"
+    assert _decision_for(decisions, "analyze", missing_day).action == "run"
+    assert {
+        decision.action
+        for decision in missing_day_decisions
+        if decision.step_id in {"trends:day", "ideas:day"}
+    } == {"skip"}
+    assert {
+        decision.reason
+        for decision in missing_day_decisions
+        if decision.step_id in {"trends:day", "ideas:day"}
+    } == {"existing_lower_level_task_set"}
     assert {decision.action for decision in other_day_expensive} == {"skip"}
 
 
-def test_planner_runs_analyze_when_planned_ingest_may_create_candidates() -> None:
-    missing_day = date(2026, 3, 18)
+def test_week_planner_skips_existing_lower_level_outputs_when_sources_changed() -> None:
+    source_day = date(2026, 3, 16)
 
     decisions = plan_workflow_execution(
         plan=_week_plan(),
+        repository=_ReadOnlyPlannerRepo(
+            source_hashes={("item", source_day): "source-hash-new"},
+            stored_source_hashes={("item", source_day): "source-hash-old"},
+        ),
+        settings=_Settings(),
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+
+    assert trend_decision.action == "skip"
+    assert trend_decision.reason == "existing_lower_level_task_set"
+    assert ideas_decision.action == "skip"
+    assert ideas_decision.reason == "existing_lower_level_task_set"
+
+
+def test_week_planner_skips_lower_level_task_set_when_artifact_exists() -> None:
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_DocumentOnlyLowerLevelRepo(),
+        settings=_Settings(),
+    )
+
+    day_generation = [
+        decision
+        for decision in decisions
+        if decision.granularity == "day"
+        and decision.step_id in {"trends:day", "ideas:day"}
+    ]
+
+    assert day_generation
+    assert {decision.action for decision in day_generation} == {"skip"}
+    assert {decision.reason for decision in day_generation} == {
+        "existing_lower_level_task_set"
+    }
+
+
+def test_week_planner_skips_missing_lower_level_idea_after_task_set_ran() -> None:
+    source_day = date(2026, 3, 18)
+
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_ReadOnlyPlannerRepo(
+            missing_idea_windows={("day", source_day)},
+        ),
+        settings=_Settings(),
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    ingest_decision = _decision_for(decisions, "ingest", source_day)
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    publish_decision = _decision_for(decisions, "publish", source_day)
+
+    assert trend_decision.action == "skip"
+    assert trend_decision.reason == "existing_lower_level_task_set"
+    assert ideas_decision.action == "skip"
+    assert ideas_decision.reason == "existing_lower_level_task_set"
+    assert ingest_decision.action == "skip"
+    assert ingest_decision.reason == "downstream_complete"
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "no_candidate_items"
+    assert publish_decision.action == "skip"
+    assert publish_decision.reason == "no_publish_candidates"
+
+
+def test_week_planner_treats_suppressed_lower_level_ideas_as_existing() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_MixedStatusIdeasRepo(),
+        settings=_Settings(),
+    )
+
+    decision = _decision_for(decisions, "ideas:day", source_day)
+    assert decision.action == "skip"
+    assert decision.reason == "existing_lower_level_task_set"
+
+
+def test_planner_runs_analyze_when_planned_ingest_may_create_candidates() -> None:
+    missing_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
         repository=_NoCurrentAnalysisCandidatesRepo(missing_days={missing_day}),
         settings=_Settings(),
     )
@@ -465,14 +640,33 @@ def test_generation_force_does_not_force_analyze_without_reprocess_path() -> Non
     assert ideas_decision.action == "force"
 
 
-def test_planner_cascades_lower_level_trend_reruns_to_aggregate_trends() -> None:
+def test_generation_force_overrides_existing_lower_level_task_sets() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=_Settings(),
+        generation_force=True,
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+
+    assert trend_decision.action == "force"
+    assert trend_decision.reason == "generation_force"
+    assert ideas_decision.action == "force"
+    assert ideas_decision.reason == "generation_force"
+
+
+def test_month_planner_does_not_rerun_existing_week_when_day_is_generated() -> None:
     source_day = date(2026, 3, 18)
     source_week = date(2026, 3, 16)
     source_month = date(2026, 3, 1)
 
     decisions = plan_workflow_execution(
         plan=_month_plan(),
-        repository=_ReadOnlyPlannerRepo(missing_days={source_day}),
+        repository=_ReadOnlyPlannerRepo(untouched_task_sets={"day"}),
         settings=_Settings(),
     )
 
@@ -483,10 +677,31 @@ def test_planner_cascades_lower_level_trend_reruns_to_aggregate_trends() -> None
     month_ideas = _decision_for(decisions, "ideas:month", source_month)
 
     assert day_trend.action == "run"
+    assert day_trend.reason == "missing_lower_level_task_set"
+    assert week_trend.action == "skip"
+    assert week_trend.reason == "existing_lower_level_task_set"
+    assert week_ideas.action == "skip"
+    assert week_ideas.reason == "existing_lower_level_task_set"
+    assert month_trend.action == "skip"
+    assert month_ideas.action == "skip"
+
+
+def test_month_planner_reruns_target_when_direct_week_source_is_generated() -> None:
+    source_week = date(2026, 3, 16)
+    source_month = date(2026, 3, 1)
+
+    decisions = plan_workflow_execution(
+        plan=_month_plan(),
+        repository=_ReadOnlyPlannerRepo(untouched_task_sets={"week"}),
+        settings=_Settings(),
+    )
+
+    week_trend = _decision_for(decisions, "trends:week", source_week)
+    month_trend = _decision_for(decisions, "trends:month", source_month)
+    month_ideas = _decision_for(decisions, "ideas:month", source_month)
+
     assert week_trend.action == "run"
-    assert week_trend.reason == "upstream_trend_planned"
-    assert week_ideas.action == "run"
-    assert week_ideas.reason == "upstream_trend_planned"
+    assert week_trend.reason == "missing_lower_level_task_set"
     assert month_trend.action == "run"
     assert month_trend.reason == "upstream_trend_planned"
     assert month_ideas.action == "run"
