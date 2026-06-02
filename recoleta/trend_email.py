@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 import hashlib
 import html
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -626,6 +627,18 @@ def _render_meta_rows(bundle: _TrendEmailBundle) -> list[tuple[str, str]]:
     return rows
 
 
+def _email_excerpt(value: str, *, limit: int = 220) -> str:
+    collapsed = " ".join(str(value or "").split()).strip()
+    collapsed = re.sub(r"\s+([,.;:!?])", r"\1", collapsed)
+    collapsed = re.sub(r"\s+([，。；：！？）】》])", r"\1", collapsed)
+    if len(collapsed) <= limit:
+        return collapsed
+    boundary = collapsed.rfind(" ", 0, limit)
+    if boundary < max(80, limit // 2):
+        boundary = limit
+    return collapsed[:boundary].rstrip() + "…"
+
+
 def _render_email_button(
     *,
     url: str,
@@ -736,7 +749,7 @@ def _render_html_email(*, bundle: _TrendEmailBundle, settings: Settings) -> str:
         "<tr><td style='padding:30px 32px'>"
         f"<div style='font:600 11px/1.4 Arial,sans-serif;color:#d2e6fb;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px'>{html.escape((bundle.instance + ' · ') if bundle.instance else '')}{html.escape(bundle.granularity.title())} trends · {html.escape(bundle.period_token)}</div>"
         f"<h1 style='margin:0 0 14px;font:600 34px/1.12 Georgia,Times New Roman,serif;color:#ffffff'>{html.escape(bundle.title)}</h1>"
-        f"<div style='font:400 16px/1.7 Arial,sans-serif;color:#dbe9f6;margin:0 0 20px'>{html.escape(bundle.overview_text[:180])}</div>"
+        f"<div style='font:400 16px/1.7 Arial,sans-serif;color:#dbe9f6;margin:0 0 20px'>{html.escape(_email_excerpt(bundle.overview_text))}</div>"
         f"{_render_email_button(url=bundle.primary_page_url, label='Open on site', background='#f7fbff', foreground='#10273f', width=128)}"
         "</td></tr></table></td></tr>"
         "<tr><td style='padding:0 0 16px'>"

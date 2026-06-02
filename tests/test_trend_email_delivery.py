@@ -5,9 +5,10 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Callable, TypedDict
+from typing import Any, Callable, TypedDict
 from unittest.mock import ANY
 
+from bs4 import BeautifulSoup
 import pytest
 from typer.testing import CliRunner
 
@@ -181,6 +182,7 @@ def _write_email_fixture(
     tmp_path: Path,
     instance: str | None = None,
     granularities: tuple[str, ...] = ("day",),
+    overview_md: str | None = None,
 ) -> EmailFixture:
     output_dir = tmp_path / "notes"
     repository = Repository(db_path=tmp_path / "recoleta.db")
@@ -244,8 +246,11 @@ def _write_email_fixture(
             period_end=period_end,
             run_id="run-trend-email",
             overview_md=(
-                "Agent workflows are getting more production-ready with "
-                f"[grounded notes]({relative_item_href})."
+                overview_md
+                or (
+                    "Agent workflows are getting more production-ready with "
+                    f"[grounded notes]({relative_item_href})."
+                )
             ),
             topics=["agents", "tooling"],
             clusters=[
@@ -288,7 +293,7 @@ def _write_email_fixture(
     }
 
 
-def _preview_entry(result: object, granularity: str | None = None) -> object:
+def _preview_entry(result: object, granularity: str | None = None) -> Any:
     results = list(getattr(result, "results"))
     if granularity is None:
         assert len(results) == 1
@@ -299,7 +304,7 @@ def _preview_entry(result: object, granularity: str | None = None) -> object:
     raise AssertionError(f"missing preview entry for granularity={granularity}")
 
 
-def _send_entry(result: object, granularity: str | None = None) -> object:
+def _send_entry(result: object, granularity: str | None = None) -> Any:
     results = list(getattr(result, "results"))
     if granularity is None:
         assert len(results) == 1
@@ -452,6 +457,61 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
     assert manifest["content_hash"] == entry.content_hash
     assert manifest["primary_page_url"] == entry.primary_page_url
+
+
+def test_build_trend_email_preview_marks_truncated_hero_overview_with_ellipsis(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    overview = (
+        "Agent workflows are increasingly shaped by repository-scale execution, "
+        "tool-mediated verification, and delivery controls that keep longer "
+        "engineering tasks grounded in observable progress. The strongest signal "
+        "this window is that agent systems are moving from isolated prompt demos "
+        "toward release paths where evidence, retries, and operator review are "
+        "part of the default loop."
+    )
+    fixture = _write_email_fixture(tmp_path=tmp_path, overview_md=overview)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    entry = _preview_entry(result)
+
+    html_body = entry.html_path.read_text(encoding="utf-8")
+    soup = BeautifulSoup(html_body, "html.parser")
+    hero_title = soup.find("h1")
+    assert hero_title is not None
+    assert hero_title.get_text(strip=True) == "Agent systems day"
+    hero_excerpt = hero_title.find_next_sibling("div")
+    assert hero_excerpt is not None
+    assert hero_excerpt.get_text(strip=True).endswith("…")
+    assert overview in soup.get_text(" ", strip=True)
+
+
+def test_build_trend_email_preview_keeps_short_hero_overview_unmarked(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    entry = _preview_entry(result)
+
+    html_body = entry.html_path.read_text(encoding="utf-8")
+    soup = BeautifulSoup(html_body, "html.parser")
+    hero_title = soup.find("h1")
+    assert hero_title is not None
+    assert hero_title.get_text(strip=True) == "Agent systems day"
+    hero_excerpt = hero_title.find_next_sibling("div")
+    assert hero_excerpt is not None
+    assert hero_excerpt.get_text(strip=True).endswith(".")
 
 
 def test_build_trend_email_preview_renders_outlook_safe_cta_buttons(
@@ -1383,7 +1443,7 @@ def test_run_email_send_command_json_emits_batch_payload_and_non_zero_exit_on_pr
         error="mixed_batch_state",
         with_artifacts=False,
     )
-    captured_payload: dict[str, object] = {}
+    captured_payload: dict[str, Any] = {}
 
     monkeypatch.setattr(cli_email_module, "load_runtime", lambda request: runtime)
     monkeypatch.setattr(
