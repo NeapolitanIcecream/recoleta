@@ -97,13 +97,13 @@ def install_fake_huldra(monkeypatch: Any) -> ModuleType:
     package = ModuleType("huldra")
     client_module = ModuleType("huldra.client")
     models_module = ModuleType("huldra.models")
-    client_module.HuldraClient = _UnconfiguredFakeHuldraClient
-    models_module.ArxivRequest = FakeHuldraArxivRequest
-    models_module.ArxivPaper = FakeHuldraArxivPaper
-    models_module.ArxivResult = FakeHuldraArxivResult
-    models_module.CachePolicy = FakeHuldraCachePolicy
-    models_module.ReadinessMode = FakeHuldraReadinessMode
-    models_module.HuldraMaintenanceResult = FakeHuldraMaintenanceResult
+    setattr(client_module, "HuldraClient", _UnconfiguredFakeHuldraClient)
+    setattr(models_module, "ArxivRequest", FakeHuldraArxivRequest)
+    setattr(models_module, "ArxivPaper", FakeHuldraArxivPaper)
+    setattr(models_module, "ArxivResult", FakeHuldraArxivResult)
+    setattr(models_module, "CachePolicy", FakeHuldraCachePolicy)
+    setattr(models_module, "ReadinessMode", FakeHuldraReadinessMode)
+    setattr(models_module, "HuldraMaintenanceResult", FakeHuldraMaintenanceResult)
     package.client = client_module  # type: ignore[attr-defined]
     package.models = models_module  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "huldra", package)

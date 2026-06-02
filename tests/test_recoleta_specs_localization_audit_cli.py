@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+from typing import Any, cast
 
 from typer.testing import CliRunner
 
@@ -321,13 +322,15 @@ def test_inspect_localization_json_orders_capped_storage_issue_samples(
     _write_empty_site_manifest(site_root)
     _write_site_link_map(site_root)
 
-    def run_payload() -> dict[str, object]:
+    def run_payload() -> dict[str, Any]:
         result = runner.invoke(
             recoleta.cli.app,
             ["inspect", "localization", "--sample-limit", "3", "--json"],
         )
         assert result.exit_code == 0
-        return json.loads(result.stdout)
+        payload = json.loads(result.stdout)
+        assert isinstance(payload, dict)
+        return cast(dict[str, Any], payload)
 
     first_payload = run_payload()
     second_payload = run_payload()

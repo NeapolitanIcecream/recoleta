@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import desc, func, or_
 from sqlmodel import Session, select
@@ -419,21 +419,28 @@ def _latest_workflow_run_for_granularity(
     granularity: str,
 ) -> Run | None:
     operation_kind = f"workflow.run.{granularity}"
+    run_command = cast(Any, Run.command)
+    run_finished_at = cast(Any, Run.finished_at)
+    run_granularity = cast(Any, Run.granularity)
+    run_id = cast(Any, Run.id)
+    run_operation_kind = cast(Any, Run.operation_kind)
+    run_started_at = cast(Any, Run.started_at)
+    run_status = cast(Any, Run.status)
     return session.exec(
         select(Run)
         .where(
-            Run.status == RUN_STATUS_SUCCEEDED,
-            Run.granularity == granularity,
+            run_status == RUN_STATUS_SUCCEEDED,
+            run_granularity == granularity,
             or_(
-                Run.operation_kind == operation_kind,
-                Run.command.like(f"run {granularity}%"),
-                Run.command.like(f"fleet run {granularity}%"),
+                run_operation_kind == operation_kind,
+                run_command.like(f"run {granularity}%"),
+                run_command.like(f"fleet run {granularity}%"),
             ),
         )
         .order_by(
-            desc(Run.finished_at),
-            desc(Run.started_at),
-            desc(Run.id),
+            desc(run_finished_at),
+            desc(run_started_at),
+            desc(run_id),
         )
         .limit(1)
     ).first()
@@ -479,11 +486,11 @@ def _latest_derived_period_end(
             PassOutput.status == RUN_STATUS_SUCCEEDED,
         ),
     )
-    candidates = [
-        cli._normalize_utc_datetime(value)
-        for value in (document_period_end, pass_output_period_end)
-        if value is not None
-    ]
+    candidates: list[datetime] = []
+    for value in (document_period_end, pass_output_period_end):
+        normalized = cli._normalize_utc_datetime(value)
+        if normalized is not None:
+            candidates.append(normalized)
     if not candidates:
         return None
     return max(candidates)
@@ -574,13 +581,17 @@ def _latest_successful_run_summary(
     *,
     session: Session,
 ) -> tuple[str | None, datetime | None]:
+    run_finished_at = cast(Any, Run.finished_at)
+    run_id = cast(Any, Run.id)
+    run_started_at = cast(Any, Run.started_at)
+    run_status = cast(Any, Run.status)
     latest_successful_run = session.exec(
         select(Run)
-        .where(Run.status == RUN_STATUS_SUCCEEDED)
+        .where(run_status == RUN_STATUS_SUCCEEDED)
         .order_by(
-            desc(Run.finished_at),
-            desc(Run.started_at),
-            desc(Run.id),
+            desc(run_finished_at),
+            desc(run_started_at),
+            desc(run_id),
         )
         .limit(1)
     ).first()

@@ -7,6 +7,35 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-02
+
+### Added
+
+- Idempotent ensure/backfill planning for `recoleta run day|week|month` and
+  the matching fleet workflows.
+- Dry-run JSON plan output for day, week, and month workflows, including step
+  decisions, skip reasons, and planned expensive-step counts.
+
+### Changed
+
+- Week and month workflows now skip recursive lower-granularity trend and idea
+  generation when that lower-granularity task set already exists in the parent
+  window. Use `--force` for intentional regeneration.
+- Pydantic AI RAG, trend, and idea agents now use `RECOLETA_LLM_API_KEY` and
+  `RECOLETA_LLM_BASE_URL` consistently with the LiteLLM-backed stages.
+- The `huldra` optional extra now installs the `huldra-arxiv` package from the
+  pinned Huldra repository revision.
+
+### Fixed
+
+- Fleet deploy refreshes the email-ready site before manual trend email
+  delivery.
+- Manual trend email calls to action render more reliably in Outlook.
+- Manual trend email summary excerpts now show when the text was truncated.
+- Lower-granularity trend backfill now fills only untouched lower-level outputs
+  instead of regenerating existing daily or weekly trend work during a parent
+  window replay.
+
 ## [0.3.0] - 2026-05-22
 
 ### Added
