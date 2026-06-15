@@ -308,6 +308,46 @@ def test_legacy_translate_help_no_longer_exposes_scope_option() -> None:
             {"command_name": "run translate"},
         ),
         (
+            [
+                "run",
+                "translate",
+                "--granularity",
+                "day",
+                "--date",
+                "2026-03-16",
+                "--force",
+            ],
+            "run_translate_run_command",
+            {
+                "command_name": "run translate",
+                "granularity": "day",
+                "date": "2026-03-16",
+                "force": True,
+            },
+        ),
+        (
+            [
+                "stage",
+                "translate",
+                "run",
+                "--period-start",
+                "2026-03-16",
+                "--period-end",
+                "2026-03-17",
+            ],
+            "run_translate_run_command",
+            {
+                "command_name": "stage translate run",
+                "period_start": "2026-03-16",
+                "period_end": "2026-03-17",
+            },
+        ),
+        (
+            ["run", "translate", "--all-history"],
+            "run_translate_run_command",
+            {"command_name": "run translate", "all_history": True},
+        ),
+        (
             ["run", "email", "preview"],
             "run_email_preview_command",
             {"command_name": "run email preview", "granularities": []},
