@@ -240,41 +240,16 @@ class RunStoreMixin:
     def record_workflow_step_receipt(
         self,
         *,
-        run_id: str,
-        step_id: str,
-        granularity: str | None,
-        period_start: datetime | None,
-        period_end: datetime | None,
-        config_fingerprint: str,
-        requested_limit: int | None,
-        selected_total: int,
-        processed_total: int,
-        failed_total: int,
-        status: str = "succeeded",
-        details: dict[str, Any] | None = None,
+        request: WorkflowStepReceiptWriteRequest | None = None,
+        **legacy_kwargs: Any,
     ) -> WorkflowStepReceipt | None:
-        normalized_run_id = str(run_id or "").strip()
-        normalized_step_id = str(step_id or "").strip()
-        normalized_config_fingerprint = str(config_fingerprint or "").strip()
-        if not normalized_run_id or not normalized_step_id or not normalized_config_fingerprint:
-            return None
-        receipt = WorkflowStepReceipt(
-            run_id=normalized_run_id,
-            step_id=normalized_step_id,
-            granularity=_normalized_optional_text(granularity),
-            period_start=period_start,
-            period_end=period_end,
-            config_fingerprint=normalized_config_fingerprint,
-            requested_limit=(
-                int(requested_limit) if requested_limit is not None else None
-            ),
-            selected_total=max(0, int(selected_total or 0)),
-            processed_total=max(0, int(processed_total or 0)),
-            failed_total=max(0, int(failed_total or 0)),
-            status=_normalized_optional_text(status) or "succeeded",
-            details_json=_normalized_json(details if isinstance(details, dict) else {})
-            or "{}",
+        normalized_request = coerce_workflow_step_receipt_write_request(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
         )
+        receipt = workflow_step_receipt_from_write_request(normalized_request)
+        if receipt is None:
+            return None
         with Session(self.engine) as session:
             session.add(receipt)
             self._commit(session)
@@ -284,16 +259,15 @@ class RunStoreMixin:
     def get_latest_workflow_step_receipt(
         self,
         *,
-        step_id: str,
-        granularity: str | None,
-        period_start: datetime | None,
-        period_end: datetime | None,
-        config_fingerprint: str,
-        min_selected_total: int = 0,
-        status: str = "succeeded",
+        request: WorkflowStepReceiptQuery | None = None,
+        **legacy_kwargs: Any,
     ) -> WorkflowStepReceipt | None:
-        normalized_step_id = str(step_id or "").strip()
-        normalized_config_fingerprint = str(config_fingerprint or "").strip()
+        query = coerce_workflow_step_receipt_query(
+            request=request,
+            legacy_kwargs=legacy_kwargs,
+        )
+        normalized_step_id = str(query.step_id or "").strip()
+        normalized_config_fingerprint = str(query.config_fingerprint or "").strip()
         if not normalized_step_id or not normalized_config_fingerprint:
             return None
         with Session(self.engine) as session:
@@ -302,15 +276,15 @@ class RunStoreMixin:
                 .where(
                     WorkflowStepReceipt.step_id == normalized_step_id,
                     WorkflowStepReceipt.granularity
-                    == _normalized_optional_text(granularity),
-                    WorkflowStepReceipt.period_start == period_start,
-                    WorkflowStepReceipt.period_end == period_end,
+                    == _normalized_optional_text(query.granularity),
+                    WorkflowStepReceipt.period_start == query.period_start,
+                    WorkflowStepReceipt.period_end == query.period_end,
                     WorkflowStepReceipt.config_fingerprint
                     == normalized_config_fingerprint,
                     WorkflowStepReceipt.status
-                    == (_normalized_optional_text(status) or "succeeded"),
+                    == (_normalized_optional_text(query.status) or "succeeded"),
                     WorkflowStepReceipt.selected_total
-                    >= max(0, int(min_selected_total or 0)),
+                    >= _nonnegative_int(query.min_selected_total),
                 )
                 .order_by(
                     desc(cast(Any, WorkflowStepReceipt.created_at)),
@@ -319,6 +293,33 @@ class RunStoreMixin:
                 .limit(1)
             )
             return session.exec(statement).first()
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowStepReceiptWriteRequest:
+    run_id: str
+    step_id: str
+    granularity: str | None
+    period_start: datetime | None
+    period_end: datetime | None
+    config_fingerprint: str
+    requested_limit: int | None
+    selected_total: int
+    processed_total: int
+    failed_total: int
+    status: str = "succeeded"
+    details: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowStepReceiptQuery:
+    step_id: str
+    granularity: str | None
+    period_start: datetime | None
+    period_end: datetime | None
+    config_fingerprint: str
+    min_selected_total: int = 0
+    status: str = "succeeded"
 
 
 @dataclass(frozen=True, slots=True)
@@ -434,6 +435,82 @@ def _window_diagnostic_identity(
         )
     except Exception:
         return None
+
+
+def coerce_workflow_step_receipt_write_request(
+    *,
+    request: WorkflowStepReceiptWriteRequest | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> WorkflowStepReceiptWriteRequest:
+    if request is not None:
+        return request
+    return WorkflowStepReceiptWriteRequest(
+        run_id=legacy_kwargs["run_id"],
+        step_id=legacy_kwargs["step_id"],
+        granularity=legacy_kwargs["granularity"],
+        period_start=legacy_kwargs["period_start"],
+        period_end=legacy_kwargs["period_end"],
+        config_fingerprint=legacy_kwargs["config_fingerprint"],
+        requested_limit=legacy_kwargs["requested_limit"],
+        selected_total=legacy_kwargs["selected_total"],
+        processed_total=legacy_kwargs["processed_total"],
+        failed_total=legacy_kwargs["failed_total"],
+        status=legacy_kwargs.get("status", "succeeded"),
+        details=legacy_kwargs.get("details"),
+    )
+
+
+def workflow_step_receipt_from_write_request(
+    request: WorkflowStepReceiptWriteRequest,
+) -> WorkflowStepReceipt | None:
+    normalized_run_id = str(request.run_id or "").strip()
+    normalized_step_id = str(request.step_id or "").strip()
+    normalized_config_fingerprint = str(request.config_fingerprint or "").strip()
+    if not normalized_run_id or not normalized_step_id or not normalized_config_fingerprint:
+        return None
+    return WorkflowStepReceipt(
+        run_id=normalized_run_id,
+        step_id=normalized_step_id,
+        granularity=_normalized_optional_text(request.granularity),
+        period_start=request.period_start,
+        period_end=request.period_end,
+        config_fingerprint=normalized_config_fingerprint,
+        requested_limit=_optional_int(request.requested_limit),
+        selected_total=_nonnegative_int(request.selected_total),
+        processed_total=_nonnegative_int(request.processed_total),
+        failed_total=_nonnegative_int(request.failed_total),
+        status=_normalized_optional_text(request.status) or "succeeded",
+        details_json=_normalized_json(
+            request.details if isinstance(request.details, dict) else {}
+        )
+        or "{}",
+    )
+
+
+def coerce_workflow_step_receipt_query(
+    *,
+    request: WorkflowStepReceiptQuery | None = None,
+    legacy_kwargs: dict[str, Any],
+) -> WorkflowStepReceiptQuery:
+    if request is not None:
+        return request
+    return WorkflowStepReceiptQuery(
+        step_id=legacy_kwargs["step_id"],
+        granularity=legacy_kwargs["granularity"],
+        period_start=legacy_kwargs["period_start"],
+        period_end=legacy_kwargs["period_end"],
+        config_fingerprint=legacy_kwargs["config_fingerprint"],
+        min_selected_total=legacy_kwargs.get("min_selected_total", 0),
+        status=legacy_kwargs.get("status", "succeeded"),
+    )
+
+
+def _optional_int(value: int | None) -> int | None:
+    return int(value) if value is not None else None
+
+
+def _nonnegative_int(value: int | None) -> int:
+    return max(0, int(value or 0))
 
 
 def coerce_update_run_context_request(
