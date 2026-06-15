@@ -36,8 +36,13 @@ What to know:
   calling providers.
 - Use `--force` when you intentionally want to regenerate expensive content for
   the selected workflow windows, including lower-level trend and idea windows.
+  It does not reanalyze already-budgeted item backlog.
 - Use `--include` and `--skip` as advanced repair controls when you need to
   override the planner for selected steps.
+- Analyze planning is budget-based: after a day window consumes the configured
+  `ANALYZE_LIMIT`, later workflows report remaining eligible items as backlog
+  metadata. Use `stage analyze --date ... --limit ...` or raise
+  `ANALYZE_LIMIT` when you intentionally want to process more of that backlog.
 
 After a successful run, check:
 

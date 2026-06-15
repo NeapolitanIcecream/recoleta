@@ -137,6 +137,8 @@ class IngestResult:
 class AnalyzeResult:
     processed: int = 0
     failed: int = 0
+    selected_total: int = 0
+    effective_limit: int | None = None
 
 
 @dataclass(slots=True)

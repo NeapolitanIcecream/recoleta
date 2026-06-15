@@ -122,10 +122,44 @@ def _mirror_analyzed_item(
     session.add(item)
 
 
+def _llm_analysis_candidate_states(*, triage_required: bool) -> list[str]:
+    states = [ITEM_STATE_RETRYABLE_FAILED]
+    if triage_required:
+        states.append(ITEM_STATE_TRIAGED)
+    else:
+        states.append(ITEM_STATE_ENRICHED)
+    return states
+
+
 class AnalysisStoreMixin:
     engine: Any
 
     def _commit(self, session: Session) -> None: ...
+
+    def count_items_for_llm_analysis_by_state(
+        self,
+        *,
+        triage_required: bool,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+    ) -> dict[str, int]:
+        states = _llm_analysis_candidate_states(triage_required=triage_required)
+        with Session(self.engine) as session:
+            event_at = func.coalesce(
+                cast(Any, Item.published_at), cast(Any, Item.created_at)
+            )
+            statement = select(Item.state, func.count()).where(
+                cast(Any, Item.state).in_(states)
+            )
+            if period_start is not None and period_end is not None:
+                statement = statement.where(
+                    event_at >= period_start, event_at < period_end
+                )
+            statement = statement.group_by(cast(Any, Item.state))
+            return {
+                str(state): int(total or 0)
+                for state, total in session.exec(statement).all()
+            }
 
     def list_items_for_llm_analysis(
         self,
@@ -135,11 +169,7 @@ class AnalysisStoreMixin:
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> list[Item]:
-        states = [ITEM_STATE_RETRYABLE_FAILED]
-        if triage_required:
-            states.append(ITEM_STATE_TRIAGED)
-        else:
-            states.append(ITEM_STATE_ENRICHED)
+        states = _llm_analysis_candidate_states(triage_required=triage_required)
 
         with Session(self.engine) as session:
             event_at = func.coalesce(

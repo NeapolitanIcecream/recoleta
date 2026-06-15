@@ -27,6 +27,7 @@ class _Policy:
 
 
 class _Settings:
+    analyze_limit = 8
     triage_enabled = False
     topics: list[str] = []
     min_relevance_score = 0.0
@@ -65,6 +66,11 @@ class _TranslationSettings(_Settings):
 
     def localization_target_codes(self) -> list[str]:
         return ["zh-cn"]
+
+
+class _TriageSettings(_Settings):
+    triage_enabled = True
+    topics = ["software agents"]
 
 
 class _ReadOnlyPlannerRepo:
@@ -261,6 +267,35 @@ class _NoCurrentAnalysisCandidatesRepo(_ReadOnlyPlannerRepo):
 class _AnalyzeCandidatesRepo(_ReadOnlyPlannerRepo):
     def list_items_for_llm_analysis(self, **_kwargs: Any) -> list[Any]:
         return [SimpleNamespace(id=1)]
+
+
+class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
+    def __init__(self, *, selected_total: int) -> None:
+        super().__init__()
+        self.selected_total = selected_total
+        self.receipt_requests: list[dict[str, Any]] = []
+
+    def get_latest_workflow_step_receipt(self, **kwargs: Any) -> Any | None:
+        self.receipt_requests.append(dict(kwargs))
+        if kwargs["step_id"] != "analyze":
+            return None
+        if kwargs["granularity"] != "day":
+            return None
+        if str(kwargs.get("config_fingerprint") or "") != "fp-test":
+            return None
+        if self.selected_total < int(kwargs.get("min_selected_total") or 0):
+            return None
+        return SimpleNamespace(
+            id=1,
+            run_id="run-analyze-budget",
+            requested_limit=self.selected_total,
+            selected_total=self.selected_total,
+            processed_total=self.selected_total,
+            failed_total=0,
+        )
+
+    def count_items_for_llm_analysis_by_state(self, **_kwargs: Any) -> dict[str, int]:
+        return {"triaged": 3, "retryable_failed": 1}
 
 
 class _TranslationPlannerRepo(_ReadOnlyPlannerRepo):
@@ -580,6 +615,78 @@ def test_planner_runs_analyze_when_planned_ingest_may_create_candidates() -> Non
     assert trend_decision.action == "run"
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "upstream_ingest_planned"
+
+
+def test_planner_skips_analyze_when_budget_was_satisfied_with_backlog() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _TriageSettings()
+    repo = _AnalyzeBudgetReceiptRepo(selected_total=settings.analyze_limit)
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=repo,
+        settings=settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+    assert analyze_decision.estimated_llm_calls == 0
+    assert analyze_decision.metadata == {
+        "analyze_budget": {
+            "configured_limit": 8,
+            "receipt_run_id": "run-analyze-budget",
+            "receipt_selected_total": 8,
+            "receipt_requested_limit": 8,
+            "receipt_processed_total": 8,
+            "receipt_failed_total": 0,
+        },
+        "candidate_backlog": {
+            "present": True,
+            "total": 4,
+            "by_state": {"retryable_failed": 1, "triaged": 3},
+        },
+    }
+
+
+def test_planner_runs_analyze_when_budget_increases_above_receipt() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _TriageSettings()
+    settings.analyze_limit = 10
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=_AnalyzeBudgetReceiptRepo(selected_total=8),
+        settings=settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "candidate_items"
+
+
+def test_week_planner_trusts_day_analyze_budget_receipts() -> None:
+    settings = _TriageSettings()
+
+    decisions = plan_workflow_execution(
+        plan=_week_analyze_only_plan(settings=settings),
+        repository=_AnalyzeBudgetReceiptRepo(selected_total=settings.analyze_limit),
+        settings=settings,
+    )
+
+    day_analyze_decisions = [
+        decision
+        for decision in decisions
+        if decision.step_id == "analyze" and decision.granularity == "day"
+    ]
+
+    assert len(day_analyze_decisions) == 7
+    assert {decision.action for decision in day_analyze_decisions} == {"skip"}
+    assert {decision.reason for decision in day_analyze_decisions} == {
+        "analyze_budget_satisfied"
+    }
 
 
 def test_planner_reruns_trends_and_ideas_when_analyze_is_planned() -> None:
@@ -1027,6 +1134,39 @@ def _day_plan_without_ingest():
             settings=_Settings(),
             include_steps=[],
             skip_steps=["ingest"],
+        )
+    )
+
+
+def _day_analyze_only_plan(*, settings):
+    return build_granularity_plan(
+        request=GranularityPlanRequest(
+            workflow_name="day",
+            command="run day",
+            anchor_date="2026-03-16",
+            settings=settings,
+            include_steps=[],
+            skip_steps=["ingest", "publish", "trends:day", "ideas:day"],
+        )
+    )
+
+
+def _week_analyze_only_plan(*, settings):
+    return build_granularity_plan(
+        request=GranularityPlanRequest(
+            workflow_name="week",
+            command="run week",
+            anchor_date="2026-03-16",
+            settings=settings,
+            include_steps=[],
+            skip_steps=[
+                "ingest",
+                "publish",
+                "trends:day",
+                "ideas:day",
+                "trends:week",
+                "ideas:week",
+            ],
         )
     )
 

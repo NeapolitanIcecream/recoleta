@@ -274,6 +274,8 @@ def _execute_analyze_step(
     return {
         "processed": int(getattr(result, "processed", 0) or 0),
         "failed": int(getattr(result, "failed", 0) or 0),
+        "selected_total": int(getattr(result, "selected_total", 0) or 0),
+        "effective_limit": getattr(result, "effective_limit", context.analyze_limit),
     }
 
 

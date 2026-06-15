@@ -501,6 +501,7 @@ def _inspect_analyze(
     list_items = getattr(repository, "list_items_for_llm_analysis", None)
     period_start = context.period_start
     period_end = context.period_end
+    triage_required = _triage_required(settings)
     if not callable(list_items) or period_start is None or period_end is None:
         return _decision(
             context=context,
@@ -511,7 +512,7 @@ def _inspect_analyze(
     try:
         items = list_items(
             limit=1,
-            triage_required=_triage_required(settings),
+            triage_required=triage_required,
             period_start=period_start,
             period_end=period_end,
         )
@@ -529,6 +530,31 @@ def _inspect_analyze(
             reason="no_candidate_items",
             authority="item_state",
             estimated_llm_calls=0,
+        )
+    configured_limit = _configured_analyze_limit(settings)
+    receipt = _latest_analyze_budget_receipt(
+        context=context,
+        repository=repository,
+        settings=settings,
+        configured_limit=configured_limit,
+    )
+    if receipt is not None:
+        return _decision(
+            context=context,
+            action="skip",
+            reason="analyze_budget_satisfied",
+            authority="workflow_step_receipts",
+            estimated_llm_calls=0,
+            metadata=_analyze_budget_metadata(
+                receipt=receipt,
+                configured_limit=configured_limit,
+                backlog=_candidate_backlog_metadata(
+                    repository=repository,
+                    triage_required=triage_required,
+                    period_start=period_start,
+                    period_end=period_end,
+                ),
+            ),
         )
     return _decision(
         context=context,
@@ -1319,6 +1345,121 @@ def _triage_required(settings: Any) -> bool:
     return bool(getattr(settings, "triage_enabled", False)) and bool(
         getattr(settings, "topics", [])
     )
+
+
+def _configured_analyze_limit(settings: Any) -> int:
+    try:
+        value = int(getattr(settings, "analyze_limit", 100) or 100)
+    except Exception:
+        return 100
+    return max(1, value)
+
+
+def _settings_fingerprint(settings: Any) -> str:
+    safe_fingerprint = getattr(settings, "safe_fingerprint", None)
+    if not callable(safe_fingerprint):
+        return ""
+    try:
+        return str(safe_fingerprint() or "")
+    except Exception:
+        return ""
+
+
+def _latest_analyze_budget_receipt(
+    *,
+    context: _DecisionContext,
+    repository: Any,
+    settings: Any,
+    configured_limit: int,
+) -> Any | None:
+    getter = getattr(repository, "get_latest_workflow_step_receipt", None)
+    fingerprint = _settings_fingerprint(settings)
+    if (
+        not callable(getter)
+        or not fingerprint
+        or context.period_start is None
+        or context.period_end is None
+    ):
+        return None
+    try:
+        return getter(
+            step_id=STEP_ANALYZE,
+            granularity=context.granularity,
+            period_start=context.period_start,
+            period_end=context.period_end,
+            config_fingerprint=fingerprint,
+            min_selected_total=configured_limit,
+            status="succeeded",
+        )
+    except Exception:
+        return None
+
+
+def _candidate_backlog_metadata(
+    *,
+    repository: Any,
+    triage_required: bool,
+    period_start: datetime,
+    period_end: datetime,
+) -> dict[str, Any]:
+    counter = getattr(repository, "count_items_for_llm_analysis_by_state", None)
+    if not callable(counter):
+        return {"present": True}
+    try:
+        raw_counts = counter(
+            triage_required=triage_required,
+            period_start=period_start,
+            period_end=period_end,
+        )
+    except Exception:
+        return {"present": True}
+    if not isinstance(raw_counts, dict):
+        return {"present": True}
+    counts: dict[str, int] = {}
+    for state, total in sorted(raw_counts.items(), key=lambda item: str(item[0])):
+        try:
+            normalized_total = int(total or 0)
+        except Exception:
+            continue
+        if normalized_total > 0:
+            counts[str(state)] = normalized_total
+    total = sum(counts.values())
+    return {
+        "present": total > 0,
+        "total": total,
+        "by_state": counts,
+    }
+
+
+def _analyze_budget_metadata(
+    *,
+    receipt: Any,
+    configured_limit: int,
+    backlog: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "analyze_budget": {
+            "configured_limit": configured_limit,
+            "receipt_run_id": str(getattr(receipt, "run_id", "") or ""),
+            "receipt_selected_total": int(getattr(receipt, "selected_total", 0) or 0),
+            "receipt_requested_limit": _optional_int_attr(
+                receipt, "requested_limit"
+            ),
+            "receipt_processed_total": int(getattr(receipt, "processed_total", 0) or 0),
+            "receipt_failed_total": int(getattr(receipt, "failed_total", 0) or 0),
+        },
+        "candidate_backlog": backlog,
+    }
+
+
+def _optional_int_attr(row: Any, attr_name: str) -> int | None:
+    value = getattr(row, attr_name, None)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
 
 
 def _skip_complete_ingest_windows(

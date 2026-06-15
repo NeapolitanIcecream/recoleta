@@ -17,6 +17,7 @@ from recoleta.models import (
     RUN_STATUS_SUCCEEDED,
     RUN_TERMINAL_STATE_FAILED,
     RUN_TERMINAL_STATE_SUCCEEDED_CLEAN,
+    WorkflowStepReceipt,
 )
 from recoleta.types import MetricPoint, utc_now
 
@@ -235,6 +236,89 @@ class RunStoreMixin:
                 .order_by(cast(Any, Metric.id))
             )
             return list(session.exec(statement))
+
+    def record_workflow_step_receipt(
+        self,
+        *,
+        run_id: str,
+        step_id: str,
+        granularity: str | None,
+        period_start: datetime | None,
+        period_end: datetime | None,
+        config_fingerprint: str,
+        requested_limit: int | None,
+        selected_total: int,
+        processed_total: int,
+        failed_total: int,
+        status: str = "succeeded",
+        details: dict[str, Any] | None = None,
+    ) -> WorkflowStepReceipt | None:
+        normalized_run_id = str(run_id or "").strip()
+        normalized_step_id = str(step_id or "").strip()
+        normalized_config_fingerprint = str(config_fingerprint or "").strip()
+        if not normalized_run_id or not normalized_step_id or not normalized_config_fingerprint:
+            return None
+        receipt = WorkflowStepReceipt(
+            run_id=normalized_run_id,
+            step_id=normalized_step_id,
+            granularity=_normalized_optional_text(granularity),
+            period_start=period_start,
+            period_end=period_end,
+            config_fingerprint=normalized_config_fingerprint,
+            requested_limit=(
+                int(requested_limit) if requested_limit is not None else None
+            ),
+            selected_total=max(0, int(selected_total or 0)),
+            processed_total=max(0, int(processed_total or 0)),
+            failed_total=max(0, int(failed_total or 0)),
+            status=_normalized_optional_text(status) or "succeeded",
+            details_json=_normalized_json(details if isinstance(details, dict) else {})
+            or "{}",
+        )
+        with Session(self.engine) as session:
+            session.add(receipt)
+            self._commit(session)
+            session.refresh(receipt)
+            return receipt
+
+    def get_latest_workflow_step_receipt(
+        self,
+        *,
+        step_id: str,
+        granularity: str | None,
+        period_start: datetime | None,
+        period_end: datetime | None,
+        config_fingerprint: str,
+        min_selected_total: int = 0,
+        status: str = "succeeded",
+    ) -> WorkflowStepReceipt | None:
+        normalized_step_id = str(step_id or "").strip()
+        normalized_config_fingerprint = str(config_fingerprint or "").strip()
+        if not normalized_step_id or not normalized_config_fingerprint:
+            return None
+        with Session(self.engine) as session:
+            statement = (
+                select(WorkflowStepReceipt)
+                .where(
+                    WorkflowStepReceipt.step_id == normalized_step_id,
+                    WorkflowStepReceipt.granularity
+                    == _normalized_optional_text(granularity),
+                    WorkflowStepReceipt.period_start == period_start,
+                    WorkflowStepReceipt.period_end == period_end,
+                    WorkflowStepReceipt.config_fingerprint
+                    == normalized_config_fingerprint,
+                    WorkflowStepReceipt.status
+                    == (_normalized_optional_text(status) or "succeeded"),
+                    WorkflowStepReceipt.selected_total
+                    >= max(0, int(min_selected_total or 0)),
+                )
+                .order_by(
+                    desc(cast(Any, WorkflowStepReceipt.created_at)),
+                    desc(cast(Any, WorkflowStepReceipt.id)),
+                )
+                .limit(1)
+            )
+            return session.exec(statement).first()
 
 
 @dataclass(frozen=True, slots=True)

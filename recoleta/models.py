@@ -58,6 +58,25 @@ class Run(SQLModel, table=True):
     config_fingerprint: str = Field(max_length=128)
 
 
+class WorkflowStepReceipt(SQLModel, table=True):
+    __tablename__ = "workflow_step_receipts"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(foreign_key="runs.id", index=True, max_length=64)
+    step_id: str = Field(max_length=64, index=True)
+    granularity: str | None = Field(default=None, max_length=16, index=True)
+    period_start: datetime | None = Field(default=None, index=True)
+    period_end: datetime | None = Field(default=None, index=True)
+    config_fingerprint: str = Field(max_length=128, index=True)
+    requested_limit: int | None = Field(default=None)
+    selected_total: int = Field(default=0)
+    processed_total: int = Field(default=0)
+    failed_total: int = Field(default=0)
+    status: str = Field(default="succeeded", max_length=32, index=True)
+    details_json: str = Field(default="{}", sa_type=Text)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+
+
 class WorkspaceLease(SQLModel, table=True):
     __tablename__ = "workspace_leases"  # pyright: ignore[reportAssignmentType,reportIncompatibleVariableOverride]
 

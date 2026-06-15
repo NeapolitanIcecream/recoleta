@@ -381,8 +381,14 @@ CLI controls:
   outputs, documents, site files, or deliveries.
 - `--force` on `run day|week|month` and `fleet run day|week|month` is a content
   regeneration control for the selected workflow windows, including recursive
-  lower-level trend and idea windows. It is separate from `run deploy --force`,
-  which remains a Git deployment force-push control.
+  lower-level trend and idea windows. It does not reprocess analyze backlog
+  after a day window has already consumed its configured `ANALYZE_LIMIT`. It is
+  separate from `run deploy --force`, which remains a Git deployment force-push
+  control.
+- Analyze workflow planning is budget-based. Remaining `triaged` or
+  `retryable_failed` items are backlog metadata once a matching analyze budget
+  receipt exists for the day window and config. Run `stage analyze --date ...`
+  or increase `ANALYZE_LIMIT` to intentionally process more backlog.
 - `--include` and `--skip` are advanced repair controls. They remain available
   for compatibility, but normal week/month operation should rely on the planner.
 
