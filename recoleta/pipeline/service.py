@@ -148,6 +148,7 @@ class _AnalyzePersistResult:
 @dataclass(slots=True)
 class _AnalyzeMetricBuildRequest:
     analyze_result: AnalyzeResult
+    selected_total: int
     llm_calls_total: int
     llm_errors_total: int
     missing_content_total: int
@@ -953,6 +954,11 @@ class PipelineService:
             MetricPoint(
                 name="pipeline.analyze.failed_total",
                 value=request.analyze_result.failed,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.analyze.selected_total",
+                value=request.selected_total,
                 unit="count",
             ),
             MetricPoint(

@@ -129,6 +129,45 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     )
 
 
+def test_analyze_records_budget_receipt(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="budget-receipt-item",
+        canonical_url="https://example.com/budget-receipt-item",
+        title="Budget Receipt Item",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-analyze-budget-receipt", drafts=[draft], limit=10)
+    result = service.analyze(run_id="run-analyze-budget-receipt", limit=10)
+
+    receipt = repository.get_latest_workflow_step_receipt(
+        step_id="analyze",
+        granularity="day",
+        period_start=None,
+        period_end=None,
+        config_fingerprint=settings.safe_fingerprint(),
+        min_selected_total=1,
+    )
+
+    assert result.selected_total == 1
+    assert result.effective_limit == 10
+    assert receipt is not None
+    assert receipt.run_id == "run-analyze-budget-receipt"
+    assert receipt.selected_total == 1
+    assert receipt.requested_limit == 10
+    assert receipt.processed_total == 1
+    assert receipt.failed_total == 0
+
+
 def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,

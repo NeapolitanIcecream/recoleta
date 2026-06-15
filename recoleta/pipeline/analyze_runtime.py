@@ -115,6 +115,7 @@ class AnalyzeBatchResult:
     state_rows_total: int
     parallelism: int
     work_items_total: int
+    selected_total: int
 
 
 def _configured_llm_tokens(*, service: Any) -> tuple[str, str]:
@@ -439,10 +440,18 @@ def execute_analyze(
             period_start=period_start,
             period_end=period_end,
         )
+        context.analyze_result.selected_total = batch_result.selected_total
+        context.analyze_result.effective_limit = context.effective_limit
         _record_analyze_metrics(
             context=context,
             batch_result=batch_result,
             sql_diag=sql_diag,
+        )
+        _record_analyze_budget_receipt(
+            context=context,
+            batch_result=batch_result,
+            period_start=period_start,
+            period_end=period_end,
         )
     context.log.info(
         "Analyze completed with processed={} failed={} missing_content={}",
@@ -564,6 +573,7 @@ def _run_analyze_batch(
         state_rows_total=state_rows_total,
         parallelism=parallelism,
         work_items_total=len(work_items),
+        selected_total=len(items),
     )
 
 
@@ -576,6 +586,7 @@ def _record_analyze_metrics(
     metric_points = context.service._build_analyze_metric_points(
         request=SimpleNamespace(
             analyze_result=context.analyze_result,
+            selected_total=batch_result.selected_total,
             llm_calls_total=batch_result.work_items_total,
             llm_errors_total=batch_result.counters.llm_errors_total,
             missing_content_total=batch_result.missing_content_total,
@@ -600,6 +611,53 @@ def _record_analyze_metrics(
         ),
     )
     context.service._record_metrics_batch(run_id=context.run_id, metrics=metric_points)
+
+
+def _record_analyze_budget_receipt(
+    *,
+    context: AnalyzeExecutionContext,
+    batch_result: AnalyzeBatchResult,
+    period_start: Any,
+    period_end: Any,
+) -> None:
+    recorder = getattr(context.service.repository, "record_workflow_step_receipt", None)
+    if not callable(recorder):
+        return
+    try:
+        recorder(
+            run_id=context.run_id,
+            step_id="analyze",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            config_fingerprint=_settings_fingerprint(context.service.settings),
+            requested_limit=context.effective_limit,
+            selected_total=batch_result.selected_total,
+            processed_total=context.analyze_result.processed,
+            failed_total=context.analyze_result.failed,
+            status="succeeded",
+            details={
+                "triage_required": context.triage_required,
+                "llm_calls_total": batch_result.work_items_total,
+                "missing_content_total": batch_result.missing_content_total,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        context.log.warning(
+            "Analyze budget receipt record failed error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
+
+
+def _settings_fingerprint(settings: Any) -> str:
+    safe_fingerprint = getattr(settings, "safe_fingerprint", None)
+    if not callable(safe_fingerprint):
+        return ""
+    try:
+        return str(safe_fingerprint() or "")
+    except Exception:
+        return ""
 
 
 def _increment_counter(counter: dict[str, int], token: str) -> None:
