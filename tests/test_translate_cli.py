@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import UTC, datetime
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -72,7 +73,14 @@ def _run_translate_json_with_result(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     result: object,
-) -> tuple[dict[str, Any], _FakeRepository, object, list[dict[str, object]]]:
+    command_kwargs: dict[str, object] | None = None,
+) -> tuple[
+    dict[str, Any],
+    _FakeRepository,
+    object,
+    list[dict[str, object]],
+    list[dict[str, object]],
+]:
     class _WorkspaceLeaseLostError(Exception):
         pass
 
@@ -80,6 +88,7 @@ def _run_translate_json_with_result(
     fake_settings = SimpleNamespace(log_json=False)
     fake_console = _FakeConsole()
     materialize_calls: list[dict[str, object]] = []
+    translation_calls: list[dict[str, object]] = []
 
     def _fake_runtime_symbols() -> dict[str, object]:
         return {"WorkspaceLeaseLostError": _WorkspaceLeaseLostError}
@@ -111,7 +120,7 @@ def _run_translate_json_with_result(
         )
 
     def _fake_run_translation(**kwargs: Any) -> object:
-        _ = kwargs
+        translation_calls.append(dict(kwargs))
         return result
 
     def _fake_materialize_localized_projections(
@@ -135,20 +144,24 @@ def _run_translate_json_with_result(
         _fake_materialize_localized_projections,
     )
 
-    translate_cli.run_translate_run_command(
-        db_path=None,
-        config_path=None,
-        granularity="week",
-        include="items,trends",
-        limit=3,
-        force=False,
-        context_assist="direct",
-        json_output=True,
-        command_name="run translate",
-    )
+    base_kwargs: dict[str, object] = {
+        "db_path": None,
+        "config_path": None,
+        "granularity": "week",
+        "include": "items,trends",
+        "limit": 3,
+        "force": False,
+        "context_assist": "direct",
+        "json_output": True,
+        "command_name": "run translate",
+    }
+    if command_kwargs is not None:
+        base_kwargs.update(command_kwargs)
+
+    translate_cli.run_translate_run_command(**base_kwargs)
 
     payload: dict[str, Any] = json.loads(capsys.readouterr().out)
-    return payload, fake_repo, fake_settings, materialize_calls
+    return payload, fake_repo, fake_settings, materialize_calls, translation_calls
 
 
 def _assert_translate_json_payload(
@@ -190,7 +203,7 @@ def test_translate_run_json_reports_ok_when_outputs_are_clean(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     result = _translation_result(failed_total=0, aborted=False)
-    payload, fake_repo, fake_settings, materialize_calls = (
+    payload, fake_repo, fake_settings, materialize_calls, _translation_calls = (
         _run_translate_json_with_result(
             tmp_path=tmp_path,
             monkeypatch=monkeypatch,
@@ -220,7 +233,7 @@ def test_translate_run_json_reports_partial_failure_when_outputs_fail(
     """Regression: non-aborted translation failures must not emit status=ok."""
 
     result = _translation_result(failed_total=1, aborted=False)
-    payload, fake_repo, fake_settings, materialize_calls = (
+    payload, fake_repo, fake_settings, materialize_calls, _translation_calls = (
         _run_translate_json_with_result(
             tmp_path=tmp_path,
             monkeypatch=monkeypatch,
@@ -252,7 +265,7 @@ def test_translate_run_json_reports_aborted_when_translation_aborts(
         aborted=True,
         abort_reason="translation aborted",
     )
-    payload, fake_repo, fake_settings, materialize_calls = (
+    payload, fake_repo, fake_settings, materialize_calls, _translation_calls = (
         _run_translate_json_with_result(
             tmp_path=tmp_path,
             monkeypatch=monkeypatch,
@@ -272,3 +285,149 @@ def test_translate_run_json_reports_aborted_when_translation_aborts(
         expected_abort_reason="translation aborted",
         expected_materialized=False,
     )
+
+
+def test_translate_run_force_rejects_unbounded_history_without_explicit_all_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Regression: forced standalone translate reruns must not scan history implicitly."""
+
+    runtime_calls: list[object] = []
+
+    def _fake_load_runtime(*, request: object) -> object:
+        runtime_calls.append(request)
+        raise AssertionError("runtime should not load for invalid forced scope")
+
+    monkeypatch.setattr(translate_cli, "load_runtime", _fake_load_runtime)
+
+    with pytest.raises(translate_cli.cli.typer.Exit) as exc_info:
+        translate_cli.run_translate_run_command(
+            db_path=None,
+            config_path=None,
+            granularity="day",
+            include="items,trends,ideas",
+            limit=None,
+            force=True,
+            all_history=False,
+            context_assist="direct",
+            json_output=True,
+            command_name="run translate",
+        )
+
+    payload: dict[str, Any] = json.loads(capsys.readouterr().out)
+    assert exc_info.value.exit_code == 2
+    assert payload["status"] == "error"
+    assert "--force" in payload["error"]
+    assert "--all-history" in payload["error"]
+    assert "--granularity is not a date filter" in payload["error"]
+    assert runtime_calls == []
+
+
+def test_translate_run_force_with_date_uses_bounded_granularity_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = _translation_result(failed_total=0, aborted=False)
+
+    payload, fake_repo, _fake_settings, _materialize_calls, translation_calls = (
+        _run_translate_json_with_result(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+            result=result,
+            command_kwargs={
+                "granularity": "week",
+                "force": True,
+                "date": "2026-03-18",
+            },
+        )
+    )
+
+    assert len(translation_calls) == 1
+    assert translation_calls[0]["force"] is True
+    assert translation_calls[0]["all_history"] is False
+    assert translation_calls[0]["period_start"] == datetime(2026, 3, 16, tzinfo=UTC)
+    assert translation_calls[0]["period_end"] == datetime(2026, 3, 23, tzinfo=UTC)
+    assert payload["all_history"] is False
+    assert payload["period_start"] == "2026-03-16T00:00:00+00:00"
+    assert payload["period_end"] == "2026-03-23T00:00:00+00:00"
+    assert fake_repo.updated == [
+        {
+            "run_id": "run-translate",
+            "scope": "default",
+            "granularity": "week",
+            "period_start": datetime(2026, 3, 16, tzinfo=UTC),
+            "period_end": datetime(2026, 3, 23, tzinfo=UTC),
+        }
+    ]
+
+
+def test_translate_run_force_all_history_allows_unbounded_rerun(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = _translation_result(failed_total=0, aborted=False)
+
+    payload, _fake_repo, _fake_settings, _materialize_calls, translation_calls = (
+        _run_translate_json_with_result(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+            result=result,
+            command_kwargs={
+                "granularity": "day",
+                "force": True,
+                "all_history": True,
+            },
+        )
+    )
+
+    assert len(translation_calls) == 1
+    assert translation_calls[0]["force"] is True
+    assert translation_calls[0]["all_history"] is True
+    assert translation_calls[0]["period_start"] is None
+    assert translation_calls[0]["period_end"] is None
+    assert payload["all_history"] is True
+    assert payload["period_start"] is None
+    assert payload["period_end"] is None
+
+
+def test_translate_run_rejects_all_history_with_bounded_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime_calls: list[object] = []
+
+    def _fake_load_runtime(*, request: object) -> object:
+        runtime_calls.append(request)
+        raise AssertionError("runtime should not load for invalid translate scope")
+
+    monkeypatch.setattr(translate_cli, "load_runtime", _fake_load_runtime)
+
+    with pytest.raises(translate_cli.cli.typer.Exit) as exc_info:
+        translate_cli.run_translate_run_command(
+            db_path=None,
+            config_path=None,
+            granularity="day",
+            include="items,trends,ideas",
+            limit=None,
+            force=True,
+            date="2026-03-16",
+            all_history=True,
+            context_assist="direct",
+            json_output=True,
+            command_name="run translate",
+        )
+
+    payload: dict[str, Any] = json.loads(capsys.readouterr().out)
+    assert exc_info.value.exit_code == 2
+    assert payload == {
+        "status": "error",
+        "error": "--all-history cannot be combined with --date or --period-start/--period-end",
+    }
+    assert runtime_calls == []
