@@ -365,6 +365,48 @@ def test_translate_run_force_with_date_uses_bounded_granularity_window(
     ]
 
 
+def test_translate_run_force_with_date_defaults_to_day_granularity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Regression: default dated force reruns must not include week/month trend docs."""
+
+    result = _translation_result(failed_total=0, aborted=False)
+
+    payload, fake_repo, _fake_settings, _materialize_calls, translation_calls = (
+        _run_translate_json_with_result(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+            result=result,
+            command_kwargs={
+                "granularity": None,
+                "force": True,
+                "date": "2026-03-18",
+            },
+        )
+    )
+
+    assert len(translation_calls) == 1
+    assert translation_calls[0]["granularity"] == "day"
+    assert translation_calls[0]["all_history"] is False
+    assert translation_calls[0]["period_start"] == datetime(2026, 3, 18, tzinfo=UTC)
+    assert translation_calls[0]["period_end"] == datetime(2026, 3, 19, tzinfo=UTC)
+    assert payload["granularity"] == "day"
+    assert payload["period_start"] == "2026-03-18T00:00:00+00:00"
+    assert payload["period_end"] == "2026-03-19T00:00:00+00:00"
+    assert fake_repo.updated == [
+        {
+            "run_id": "run-translate",
+            "scope": "default",
+            "granularity": "day",
+            "period_start": datetime(2026, 3, 18, tzinfo=UTC),
+            "period_end": datetime(2026, 3, 19, tzinfo=UTC),
+        }
+    ]
+
+
 def test_translate_run_force_all_history_allows_unbounded_rerun(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

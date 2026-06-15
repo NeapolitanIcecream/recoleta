@@ -77,9 +77,35 @@ class TranslateSessionContext:
 
 @dataclass(frozen=True, slots=True)
 class TranslateRunScope:
+    granularity: str | None
     period_start: datetime | None
     period_end: datetime | None
     all_history: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TranslateRunScopeRequest:
+    date: Any
+    period_start: Any
+    period_end: Any
+    granularity: Any
+    force: bool
+    all_history: bool
+    json_output: bool
+    command_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class TranslateScopeRaw:
+    date: str
+    period_start: str
+    period_end: str
+
+
+@dataclass(frozen=True, slots=True)
+class TranslateScopeErrorContext:
+    command_name: str
+    json_output: bool
 
 
 def _load_settings_for_translate(
@@ -106,20 +132,22 @@ def _load_settings_for_translate(
 
 def run_translate_run_command(**kwargs: Any) -> None:
     scope = _resolve_translate_run_scope(
-        date=kwargs.get("date"),
-        period_start=kwargs.get("period_start"),
-        period_end=kwargs.get("period_end"),
-        granularity=kwargs.get("granularity"),
-        force=bool(kwargs.get("force", False)),
-        all_history=bool(kwargs.get("all_history", False)),
-        json_output=bool(kwargs.get("json_output", False)),
-        command_name=str(kwargs.get("command_name", "translate run")),
+        TranslateRunScopeRequest(
+            date=kwargs.get("date"),
+            period_start=kwargs.get("period_start"),
+            period_end=kwargs.get("period_end"),
+            granularity=kwargs.get("granularity"),
+            force=bool(kwargs.get("force", False)),
+            all_history=bool(kwargs.get("all_history", False)),
+            json_output=bool(kwargs.get("json_output", False)),
+            command_name=str(kwargs.get("command_name", "translate run")),
+        )
     )
     _run_translate_command(
         request=TranslateCommandRequest(
             db_path=kwargs.get("db_path"),
             config_path=kwargs.get("config_path"),
-            granularity=kwargs.get("granularity"),
+            granularity=scope.granularity,
             include=str(kwargs["include"]),
             period_start=scope.period_start,
             period_end=scope.period_end,
@@ -337,102 +365,145 @@ def _execute_translate_runner(*, request: TranslateRunnerRequest) -> Any:
         )
 
 
-def _resolve_translate_run_scope(
+def _resolve_translate_run_scope(request: TranslateRunScopeRequest) -> TranslateRunScope:
+    raw = _raw_translate_scope(request)
+    error_context = TranslateScopeErrorContext(
+        command_name=request.command_name,
+        json_output=request.json_output,
+    )
+    _validate_translate_scope_flags(
+        raw=raw,
+        all_history=request.all_history,
+        error_context=error_context,
+    )
+    requested_granularity = _normalized_translate_granularity(request.granularity)
+    resolved_period_start, resolved_period_end = _translate_scope_window(
+        raw=raw,
+        granularity=requested_granularity,
+        error_context=error_context,
+    )
+    has_window = _has_translate_window(resolved_period_start, resolved_period_end)
+    _validate_translate_force_scope(
+        force=request.force,
+        all_history=request.all_history,
+        has_window=has_window,
+        error_context=error_context,
+    )
+    return TranslateRunScope(
+        granularity=_resolved_scope_granularity(raw=raw, granularity=requested_granularity),
+        period_start=resolved_period_start,
+        period_end=resolved_period_end,
+        all_history=request.all_history or not has_window,
+    )
+
+
+def _raw_translate_scope(request: TranslateRunScopeRequest) -> TranslateScopeRaw:
+    return TranslateScopeRaw(
+        date=str(request.date or "").strip(),
+        period_start=str(request.period_start or "").strip(),
+        period_end=str(request.period_end or "").strip(),
+    )
+
+
+def _validate_translate_force_scope(
     *,
-    date: Any,
-    period_start: Any,
-    period_end: Any,
-    granularity: Any,
     force: bool,
     all_history: bool,
-    json_output: bool,
-    command_name: str,
-) -> TranslateRunScope:
-    raw_date = str(date or "").strip()
-    raw_period_start = str(period_start or "").strip()
-    raw_period_end = str(period_end or "").strip()
-    has_date = bool(raw_date)
-    has_period_bound = bool(raw_period_start or raw_period_end)
-    if all_history and (has_date or has_period_bound):
-        _fail_translate_scope(
-            command_name=command_name,
-            json_output=json_output,
-            message="--all-history cannot be combined with --date or --period-start/--period-end",
-        )
-    if has_date and has_period_bound:
-        _fail_translate_scope(
-            command_name=command_name,
-            json_output=json_output,
-            message="--date cannot be combined with --period-start/--period-end",
-        )
-    if bool(raw_period_start) != bool(raw_period_end):
-        _fail_translate_scope(
-            command_name=command_name,
-            json_output=json_output,
-            message="--period-start and --period-end must be provided together",
-        )
-    resolved_period_start: datetime | None = None
-    resolved_period_end: datetime | None = None
-    if has_date:
-        resolved_period_start, resolved_period_end = _date_translate_window(
-            raw_date=raw_date,
-            granularity=granularity,
-            command_name=command_name,
-            json_output=json_output,
-        )
-    elif has_period_bound:
-        resolved_period_start = _parse_translate_period_bound(
-            value=raw_period_start,
-            option_name="--period-start",
-            command_name=command_name,
-            json_output=json_output,
-        )
-        resolved_period_end = _parse_translate_period_bound(
-            value=raw_period_end,
-            option_name="--period-end",
-            command_name=command_name,
-            json_output=json_output,
-        )
-        if resolved_period_start >= resolved_period_end:
-            _fail_translate_scope(
-                command_name=command_name,
-                json_output=json_output,
-                message="--period-start must be before --period-end",
-            )
-    has_window = resolved_period_start is not None or resolved_period_end is not None
+    has_window: bool,
+    error_context: TranslateScopeErrorContext,
+) -> None:
     if force and not has_window and not all_history:
         _fail_translate_scope(
-            command_name=command_name,
-            json_output=json_output,
+            command_name=error_context.command_name,
+            json_output=error_context.json_output,
             message=(
                 "--force requires --date or --period-start/--period-end; "
                 "use --all-history to force a full historical rerun. "
                 "--granularity is not a date filter."
             ),
         )
-    return TranslateRunScope(
-        period_start=resolved_period_start,
-        period_end=resolved_period_end,
-        all_history=all_history or not has_window,
+
+
+def _has_translate_window(
+    period_start: datetime | None,
+    period_end: datetime | None,
+) -> bool:
+    return period_start is not None or period_end is not None
+
+
+def _resolved_scope_granularity(
+    *,
+    raw: TranslateScopeRaw,
+    granularity: str | None,
+) -> str | None:
+    if raw.date:
+        return granularity or "day"
+    return granularity
+
+
+def _validate_translate_scope_flags(
+    *,
+    raw: TranslateScopeRaw,
+    all_history: bool,
+    error_context: TranslateScopeErrorContext,
+) -> None:
+    has_date = bool(raw.date)
+    has_period_bound = bool(raw.period_start or raw.period_end)
+    if all_history and (has_date or has_period_bound):
+        _fail_translate_scope(
+            command_name=error_context.command_name,
+            json_output=error_context.json_output,
+            message="--all-history cannot be combined with --date or --period-start/--period-end",
+        )
+    if has_date and has_period_bound:
+        _fail_translate_scope(
+            command_name=error_context.command_name,
+            json_output=error_context.json_output,
+            message="--date cannot be combined with --period-start/--period-end",
+        )
+    if bool(raw.period_start) != bool(raw.period_end):
+        _fail_translate_scope(
+            command_name=error_context.command_name,
+            json_output=error_context.json_output,
+            message="--period-start and --period-end must be provided together",
+        )
+
+
+def _translate_scope_window(
+    *,
+    raw: TranslateScopeRaw,
+    granularity: str | None,
+    error_context: TranslateScopeErrorContext,
+) -> tuple[datetime | None, datetime | None]:
+    if raw.date:
+        return _date_translate_window(
+            raw_date=raw.date,
+            granularity=granularity,
+            error_context=error_context,
+        )
+    if not raw.period_start and not raw.period_end:
+        return None, None
+    return _period_translate_window(
+        raw=raw,
+        error_context=error_context,
     )
 
 
 def _date_translate_window(
     *,
     raw_date: str,
-    granularity: Any,
-    command_name: str,
-    json_output: bool,
+    granularity: str | None,
+    error_context: TranslateScopeErrorContext,
 ) -> tuple[datetime, datetime]:
     try:
         anchor = cli._parse_anchor_date_option(raw_date)
     except Exception:
         _fail_translate_scope(
-            command_name=command_name,
-            json_output=json_output,
+            command_name=error_context.command_name,
+            json_output=error_context.json_output,
             message="invalid --date: expected YYYY-MM-DD or YYYYMMDD",
         )
-    normalized_granularity = str(granularity or "").strip().lower() or "day"
+    normalized_granularity = granularity or "day"
     if normalized_granularity == "day":
         return day_period_bounds(anchor)
     if normalized_granularity == "week":
@@ -440,18 +511,45 @@ def _date_translate_window(
     if normalized_granularity == "month":
         return month_period_bounds(anchor)
     _fail_translate_scope(
-        command_name=command_name,
-        json_output=json_output,
+        command_name=error_context.command_name,
+        json_output=error_context.json_output,
         message="--date requires --granularity to be day, week, or month",
     )
+
+
+def _period_translate_window(
+    *,
+    raw: TranslateScopeRaw,
+    error_context: TranslateScopeErrorContext,
+) -> tuple[datetime, datetime]:
+    resolved_period_start = _parse_translate_period_bound(
+        value=raw.period_start,
+        option_name="--period-start",
+        error_context=error_context,
+    )
+    resolved_period_end = _parse_translate_period_bound(
+        value=raw.period_end,
+        option_name="--period-end",
+        error_context=error_context,
+    )
+    if resolved_period_start >= resolved_period_end:
+        _fail_translate_scope(
+            command_name=error_context.command_name,
+            json_output=error_context.json_output,
+            message="--period-start must be before --period-end",
+        )
+    return resolved_period_start, resolved_period_end
+
+
+def _normalized_translate_granularity(granularity: Any) -> str | None:
+    return str(granularity or "").strip().lower() or None
 
 
 def _parse_translate_period_bound(
     *,
     value: str,
     option_name: str,
-    command_name: str,
-    json_output: bool,
+    error_context: TranslateScopeErrorContext,
 ) -> datetime:
     raw = str(value or "").strip()
     try:
@@ -461,8 +559,8 @@ def _parse_translate_period_bound(
             parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except Exception:
         _fail_translate_scope(
-            command_name=command_name,
-            json_output=json_output,
+            command_name=error_context.command_name,
+            json_output=error_context.json_output,
             message=f"invalid {option_name}: expected ISO date or datetime",
         )
     if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
