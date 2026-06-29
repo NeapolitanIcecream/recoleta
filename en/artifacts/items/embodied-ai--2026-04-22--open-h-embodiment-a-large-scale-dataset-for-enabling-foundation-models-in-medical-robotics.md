@@ -1,0 +1,259 @@
+---
+source: arxiv
+url: http://arxiv.org/abs/2604.21017v1
+published_at: '2026-04-22T19:05:17'
+authors:
+- Open-H-Embodiment Consortium
+- ':'
+- Nigel Nelson
+- Juo-Tung Chen
+- Jesse Haworth
+- Xinhao Chen
+- Lukas Zbinden
+- Dianye Huang
+- Alaa Eldin Abdelaal
+- Alberto Arezzo
+- Ayberk Acar
+- Farshid Alambeigi
+- Carlo Alberto Ammirati
+- Yunke Ao
+- Pablo David Aranda Rodriguez
+- Soofiyan Atar
+- Mattia Ballo
+- Noah Barnes
+- Federica Barontini
+- Filip Binkiewicz
+- Peter Black
+- Sebastian Bodenstedt
+- Leonardo Borgioli
+- Nikola Budjak
+- "Benjamin Calm\xE9"
+- Fabio Carrillo
+- Nicola Cavalcanti
+- Changwei Chen
+- Haoxin Chen
+- Sihang Chen
+- Qihan Chen
+- Zhongyu Chen
+- Ziyang Chen
+- Shing Shin Cheng
+- Meiqing Cheng
+- Min Cheng
+- Zih-Yun Sarah Chiu
+- Xiangyu Chu
+- Camilo Correa-Gallego
+- Giulio Dagnino
+- Anton Deguet
+- Jacob Delgado
+- Jonathan C. DeLong
+- Kaizhong Deng
+- Alexander Dimitrakakis
+- Qingpeng Ding
+- Hao Ding
+- Giovanni Distefano
+- Daniel Donoho
+- Anqing Duan
+- Marco Esposito
+- Shane Farritor
+- Jad Fayad
+- Zahi Fayad
+- Mario Ferradosa
+- Filippo Filicori
+- Chelsea Finn
+- "Philipp F\xFCrnstahl"
+- Jiawei Ge
+- Stamatia Giannarou
+- Xavier Giralt Ludevid
+- Frederic Giraud
+- Aditya Amit Godbole
+- Ken Goldberg
+- Antony Goldenberg
+- Diego Granero Marana
+- Xiaoqing Guo
+- "Tam\xE1s Haidegger"
+- Evan Hailey
+- Pascal Hansen
+- Ziyi Hao
+- Kush Hari
+- Kengo Hayashi
+- Jonathon Hawkins
+- Shelby Haworth
+- Ortrun Hellig
+- S. Duke Herrell
+- Zhouyang Hong
+- Andrew Howe
+- Junlei Hu
+- Ria Jain
+- Mohammad Rafiee Javazm
+- Howard Ji
+- Rui Ji
+- Jianmin Ji
+- Zhongliang Jiang
+- Dominic Jones
+- Jeffrey Jopling
+- Britton Jordan
+- Ran Ju
+- Michael Kam
+- Luoyao Kang
+- Fausto Kang
+- Siddhartha Kapuria
+- Peter Kazanzides
+- Sonika Kiehler
+- Ethan Kilmer
+- Ji Woong
+- Kim
+- "Przemys\u0142aw Korzeniowski"
+- Chandra Kuchi
+- Nithesh Kumar
+- Alan Kuntz
+- Federico Lavagno
+- Yu Chung Lee
+- Hao-Chih Lee
+- Hang Li
+- Zhen Li
+- Xiao Liang
+- Xinxin Lin
+- Jinsong Lin
+- Chang Liu
+- Fei Liu
+- Pei Liu
+- Yun-hui Liu
+- Wanli Liuchen
+- "Eszter Luk\xE1cs"
+- Sareena Mann
+- Miles Mannas
+- Brett Marinelli
+- Sabina Martyniak
+- Francesco Marzola
+- Lorenzo Mazza
+- Xueyan Mei
+- Maria Clara Morais
+- Luigi Muratore
+- Chetan Reddy Narayanaswamy
+- "Micha\u0142 Naskr\u0119t"
+- David Navarro-Alarcon
+- Cyrus Neary
+- Chi Kit Ng
+- Christopher Nguan
+- David Noonan
+- Ki Hwan Oh
+- Tom Christian Olesch
+- Allison M. Okamura
+- Justin Opfermann
+- Matteo Pescio
+- Doan Xuan Viet Pham
+- Tito Porras
+- Hongliang Ren
+- Ariel Rodriguez Jimenez
+- Ferdinando Rodriguez y Baena
+- Septimiu E. Salcudean
+- Asmitha Sathya
+- Preethi Satish
+- Lalithkumar Seenivasan
+- Jiaqi Shao
+- Yiqing Shen
+- Yu Sheng
+- Lucy XiaoYang Shi
+- "Zoe Soul\xE9"
+- Stefanie Speidel
+- Mingwu Su
+- Jianhao Su
+- Idris Sunmola
+- "Krist\xF3f Tak\xE1cs"
+- Yunxi Tang
+- Patrick Thornycroft
+- Yu Tian
+- Jordan Thompson
+- Mehmet K. Turkcan
+- Mathias Unberath
+- Pietro Valdastri
+- Carlos Vives
+- Quan Vuong
+- Martin Wagner
+- Farong Wang
+- Wei Wang
+- Lidian Wang
+- Chung-Pang Wang
+- Guankun Wang
+- Junyi Wang
+- Erqi Wang
+- Ziyi Wang
+- Tanner Watts
+- Wolfgang Wein
+- Yimeng Wu
+- Zijian Wu
+- Hongjun Wu
+- Luohong Wu
+- Jie Ying Wu
+- Junlin Wu
+- Victoria Wu
+- Kaixuan Wu
+- "Mateusz W\xF3jcikowski"
+- Yunye Xiao
+- Nan Xiao
+- Wenxuan Xie
+- Hao Yang
+- Tianqi Yang
+- Yinuo Yang
+- Menglong Ye
+- Ryan S. Yeung
+- Nural Yilmaz
+- Chim Ho Yin
+- Michael Yip
+- Rayan Younis
+- Chenhao Yu
+- Sayem Nazmuz Zaman
+- Milos Zefran
+- Han Zhang
+- Yuelin Zhang
+- Yidong Zhang
+- Yanyong Zhang
+- Xuyang Zhang
+- Yameng Zhang
+- Joyce Zhang
+- Ning Zhong
+- Peng Zhou
+- Haoying Zhou
+- Xiuli Zuo
+- Nassir Navab
+- Mahdi Azizian
+- Sean D. Huver
+- Axel Krieger
+topics:
+- medical-robotics
+- vision-language-action
+- world-model
+- surgical-robotics
+- robot-datasets
+relevance_score: 0.94
+run_id: materialize-outputs
+language_code: en
+---
+
+# Open-H-Embodiment: A Large-Scale Dataset for Enabling Foundation Models in Medical Robotics
+
+## Summary
+Open-H-Embodiment is a large open medical robotics dataset built to support foundation models across many robot platforms and tasks. The paper uses it to train a surgical vision-language-action policy and an action-conditioned world model, then shows gains on suturing and cross-platform evaluation.
+
+## Problem
+- Medical robot learning lacks large open datasets with synchronized video and robot kinematics, which blocks foundation-model training in surgery and related healthcare tasks.
+- Earlier datasets are small and narrow: JIGSAWS has about 3 hours, Expanded CRCD about 7 hours, SutureBot about 6 hours, and ImitateCholec about 20 hours, each on a single platform.
+- This matters because surgical policies need to handle deformable tissue, long task sequences, and strict error tolerance, and general robot VLAs trained on non-medical data have performed poorly on surgical benchmarks.
+
+## Approach
+- The authors build **Open-H-Embodiment**, a cross-embodiment dataset with **770 hours**, **124,019 episodes**, **119 datasets**, **49+ institutions**, **20 robot platforms**, and **33 task families**. Each dataset pairs video with synchronized kinematics.
+- The dataset covers surgery, robotic ultrasound, and endoscopy across simulation, benchtop, ex vivo, in vivo, and clinical settings. It includes major systems such as **da Vinci**, **dVRK**, **Versius**, **MIRA**, **BiTrack**, and **Maestro**.
+- They post-train NVIDIA's **GR00T-N1.6** on Open-H to create **GR00T-H**, described as the first open foundation vision-language-action model for medical robotics.
+- They also fine-tune **Cosmos-Predict 2.5** into **Cosmos-H-Surgical-Simulator**, a **2B-parameter** action-conditioned world model that takes one frame plus kinematic actions and predicts future surgical video across **nine robotic platforms** from one checkpoint.
+
+## Results
+- **Dataset scale:** Open-H has **770 hours** versus prior public surgical kinematic datasets at about **3h, 7h, 6h, and 20h**. It spans **20 platforms**; prior listed datasets each span **1 platform**.
+- **End-to-end suturing (SutureBot):** **GR00T-H completed 5/20 trials (25%)**. **ACT, GR00T-N1.6, and LingBot-VA each completed 0/20**. At the throw stage, GR00T-H retained **12/20** trials versus **4/20** for ACT, **4/20** for GR00T-N1.6, and **1/20** for LingBot-VA.
+- **Out-of-distribution generalization (unseen wound + lighting shift):** GR00T-H reached **54% average subtask success**, compared with **30%** for GR00T-N1.6 and **5%** for ACT. On pickup and handover, it scored **70% vs. 40%** for GR00T-N1.6; on throw and extract, **42.5% vs. 5%**.
+- **Data efficiency on SutureBot:** with **33%** of fine-tuning data (about **2h**), GR00T-H and ACT were both about **47%** average success, while GR00T-N1.6 was about **20%**. With **100%** data (about **6h**), GR00T-H reached about **73%**, ACT about **50%**, and GR00T-N1.6 about **37%**.
+- **Cross-embodiment evaluation:** GR00T-H beat the base GR00T-N1.6 across **dVRK-Si, Versius, and MIRA**, with the paper reporting a statistically significant gain in overall average success (**p < 0.001**). Training data for these platform tests included **5.2 hours** on Versius, **22 minutes** on MIRA, and **6 hours** on dVRK-Si.
+- **Ex vivo suturing on pork belly:** GR00T-H achieved **64% average success across 29 subtasks** (**n=290 total, 10 trials per subtask**). Several subtasks hit **10/10**, including needle pickup, set-down needle, and all three knot-tying steps, while cutting subtasks were weaker at **2/10** and **3/10**.
+- **World model:** the paper claims the first multi-embodiment surgical action-conditioned world model, trained on data from **9 platforms** and **32 datasets**. It reports evaluation with **L1** and **SSIM** over **72 generated frames** and **3 seeds**, but the excerpt does not provide the actual numeric metric values.
+
+## Link
+- [http://arxiv.org/abs/2604.21017v1](http://arxiv.org/abs/2604.21017v1)

@@ -1,0 +1,52 @@
+---
+source: arxiv
+url: http://arxiv.org/abs/2604.02375v1
+published_at: '2026-03-31T21:38:28'
+authors:
+- Cormac Guerin
+- Frank Guerin
+topics:
+- llm-agents
+- tool-use
+- agent-execution
+- security-gating
+- parallel-planning
+relevance_score: 0.94
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# KAIJU: An Executive Kernel for Intent-Gated Execution of LLM Agents
+
+## Summary
+## 总结
+KAIJU 是一种面向 LLM 代理的执行层架构，它把规划和工具执行分开，并加入一个外部意图门控来授权工具调用。论文认为，这样可以减少上下文增长，支持并行执行，还能阻止一些 ReAct 风格代理仅靠提示词无法避免的故障和安全问题。
+
+## 问题
+- ReAct 风格的工具代理会在多个轮次中累积完整历史，带来二次级别的 token 增长：论文给出的总成本是 $O(n^{2}k)$，一个 7 工具任务大约需要 63K tokens，一个 18 工具任务大约需要 250K tokens。
+- 模型在每一轮都保留对工具使用的控制，所以在工具失败或只拿到部分结果后，可能提前停下、回退到参数化知识，或者转而询问用户，而不是把任务做完。
+- 安全规则通常写在提示词里，或者依赖模型侧防护；论文认为这些方式对幻觉、提示注入、上下文溢出和自适应攻击都很弱。
+
+## 方法
+- KAIJU 把代理拆成推理层和执行层。LLM 先一次性规划依赖图，然后由执行内核负责调度、依赖解析、工具分发、失败恢复和最终结果流转。
+- 核心安全机制是 Intent-Gated Execution（IGX）。每次工具调用都会根据四个变量检查：范围、意图、影响，以及来自外部权限方的批准。
+- 当依赖关系允许时，执行层会并行运行工具，并用 `param_refs` 把早先节点的输出注入后续工具参数，不需要完整的顺序推理循环。
+- 系统在执行中通过三种模式自适应：在依赖波次边界使用 Reflect，每完成 N 个节点后使用 nReflect，每个节点配观察器时使用 Orchestrator。
+- 工具调用失败后，会触发一个有范围限制的微型规划器，添加替代节点，例如用新参数重试、换用其他工具，或者跳过，同时保持失败节点不可变，便于审计。
+
+## 结果
+- 在论文的运行示例中，带并行函数调用的 ReAct 基线用了 9 次 LLM 调用、14 次工具执行和 64.5 秒。
+- 在同一查询上，KAIJU 的 Reflect 模式用了 4 次 LLM 调用、10 次工具执行和 41.8 秒，按墙钟时间算比 ReAct 运行快约 1.54 倍。
+- 论文称，在简单查询上会因为规划开销带来延迟惩罚，在中等复杂度上会收敛，而在需要并行收集数据的计算型查询上有结构性优势。
+- 论文写道，token 复杂度从 ReAct 的 $O(n^{2}k)$ 改为 Reflect 模式下的 $O(nkd)$，在 Orchestrator 模式下改为 $O(nk)$，其中 $d$ 是依赖深度。
+- 相比先前的 DAG 执行工作，论文说 LLM Compiler 在顺序 ReAct 上报告过最高 3.7 倍加速，而作者在顺序 ReAct 对比中观察到类似收益，在复杂查询上约 7 倍，在高度复杂查询上最高 18 倍。摘录没有给出这些数字对应的基准表或数据集细节。
+- 还有几项主张属于结构性结论，而不是基准测试结果：模型不会看到门控拒绝，被阻止的工具对模型是隐藏的，授权在编译后的代码里强制执行，而不是靠提示词指令。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [http://arxiv.org/abs/2604.02375v1](http://arxiv.org/abs/2604.02375v1)

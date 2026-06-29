@@ -1,0 +1,59 @@
+---
+source: arxiv
+url: https://arxiv.org/abs/2606.20517v1
+published_at: '2026-06-18T17:35:57'
+authors:
+- Maria Ivanova
+- Pavel Zadorozhny
+- Rodion Levichev
+- Ivan Petrov
+- Adamenko Pavel
+- Ivan Lopatin
+- Alexey Kutalev
+- Dmitrii Babaev
+topics:
+- code-generation-benchmark
+- multilingual-code
+- livecodebench
+- llm-evaluation
+- pass-at-1
+- code-intelligence
+relevance_score: 0.86
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# Multi-LCB: Extending LiveCodeBench to Multiple Programming Languages
+
+## Summary
+## 摘要
+Multi-LCB 将 LiveCodeBench 的代码生成评测从 Python 扩展到 12 种编程语言，同时保留 LCB 的按发布日期过滤和隐藏测试协议。论文显示，Python 分数可能很难估计模型在其他语言中的表现。
+
+## 问题
+- LiveCodeBench 广泛用于代码生成评测，但它只测试 Python，因此会漏掉 C++、Java、Rust、Go、JavaScript 和软件开发中其他语言的失败情况。
+- 只评测 Python 可能掩盖 Python 过拟合和特定语言的数据泄漏。
+- 跨语言比较很重要，因为同一个算法任务可能暴露不同的编译器、类型系统、运行时和语法错误。
+
+## 方法
+- Multi-LCB 复用 LCB 来自 LeetCode、AtCoder 和 Codeforces 的代码生成任务池，包括用于污染感知过滤的发布日期。
+- 它用 12 种语言评测相同任务：Python、C++、C#、Java、Rust、Go、TypeScript、JavaScript、Ruby、PHP、Kotlin 和 Scala。
+- AtCoder 和 Codeforces 任务已经使用 STDIN/STDOUT，因此其测试可以直接传入评测器。
+- LeetCode 函数式任务被转换为 STDIN/STDOUT 格式，包括公开样例和隐藏测试，因此一个评测器可以运行所有语言。
+- 模型接收指定目标语言的零样本提示，随后生成的程序会在沙盒容器中编译或解释运行，并用 Pass@1 计分。
+
+## 结果
+- 研究评测了 24 个 LLM，参数规模从 7B 到 685B，覆盖 12 种语言，使用 10 次运行的平均 Pass@1。
+- GPT-OSS-120B (Medium) 在摘录中报告的平均分最高：12 种语言的 Pass@1 为 67.8 ± 5.9，其中 Python 为 71.1 ± 2.1，C++ 为 72.3 ± 1.9，Java 为 70.4 ± 3.0，Scala 为 54.1 ± 3.0。
+- Qwen3-235B-A22B-Thinking-2507 在 Python 和 C++ 上高于 GPT-OSS-120B (Medium)，分别为 74.0 ± 3.7 和 75.8 ± 2.4，但它的平均分为 64.0 ± 9.4，因为它在 Rust 中降至 47.7 ± 2.8，在 Ruby 中降至 49.4 ± 3.2，在 Go 中降至 56.7 ± 2.0。
+- DeepSeek-R1-0528 报告的平均 Pass@1 为 63.1 ± 3.8，其中 Python 为 66.3 ± 2.0，C++ 为 68.0 ± 1.6，Java 为 67.8 ± 1.8，Go 为 55.0 ± 3.0。
+- OpenReasoning-Nemotron-32B 显示出很大的 Python 与其他语言差距：Python 为 64.4 ± 3.6，C++ 为 44.2 ± 5.2，Go 为 11.5 ± 4.2，JavaScript 为 10.8 ± 6.9，Rust 为 2.8 ± 1.5，平均为 22.7 ± 18.5。
+- 作者人工检查了约 500 个任务，并报告转换后的任务没有依赖语言的差异；他们还声称发现了特定语言污染的证据，但摘录没有给出污染率指标。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [https://arxiv.org/abs/2606.20517v1](https://arxiv.org/abs/2606.20517v1)

@@ -1,0 +1,64 @@
+---
+source: arxiv
+url: http://arxiv.org/abs/2604.04539v1
+published_at: '2026-04-06T09:03:41'
+authors:
+- Donghu Kim
+- Youngdo Lee
+- Minho Park
+- Kinam Kim
+- I Made Aswin Nahendra
+- Takuma Seno
+- Sehee Min
+- Daniel Palenicek
+- Florian Vogt
+- Danica Kragic
+- Jan Peters
+- Jaegul Choo
+- Hojoon Lee
+topics:
+- off-policy-rl
+- soft-actor-critic
+- high-dimensional-control
+- sim-to-real
+- humanoid-locomotion
+- dexterous-manipulation
+relevance_score: 0.81
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# FlashSAC: Fast and Stable Off-Policy Reinforcement Learning for High-Dimensional Robot Control
+
+## Summary
+## 摘要
+FlashSAC 是一种用于高维机器人控制的离策略强化学习方法，目标是在训练更快、保持稳定的同时，达到或超过 PPO。论文声称，它在灵巧操作、类人机器人行走，以及从仿真到真实的类人行走任务上收益最大。
+
+## 问题
+- 标准的同策略强化学习方法，比如 PPO，虽然稳定，但会丢弃过去的数据；当机器人任务的状态和动作空间很大，或者仿真成本很高时，效率就会很低。
+- 标准的离策略方法可以复用回放数据，但在高维控制中往往训练缓慢且不稳定，因为通过 bootstrap 的价值更新会让 critic 误差不断累积。
+- 这对现代机器人学习任务很重要，例如灵巧手、类人机器人和基于视觉的控制，因为仿真训练和仿真到真实训练都需要足够广的数据覆盖和更短的实际运行时间。
+
+## 方法
+- FlashSAC 基于 Soft Actor-Critic，并改了训练方式：它使用大量并行模拟器、较大的回放缓冲区、更大的 actor/critic 网络、大 batch，以及每单位新数据很少的梯度更新。
+- 核心思路是用更高的数据吞吐量和更大的模型，换掉频繁更新。在 GPU 设置下，它使用 1024 个并行环境、最多 1000 万条 transition 的回放缓冲区、250 万参数的 6 层 actor 和 critic 网络、batch size 2048，以及 2/1024 的更新与数据比。
+- 为了让 critic 在 bootstrap 条件下保持稳定，论文对多个范数做了约束：对特征做 RMS 归一化、在激活前做 batch normalization、用 cross-batch value prediction 让当前和目标 Q 值共享 batch 统计量，并在更新后把权重投影到有界范数。
+- 它还使用带自适应奖励缩放的分布式 critic，把回报目标限制在固定支持范围内，减少对噪声目标的敏感性。
+- 在探索方面，它使用基于动作标准差的统一熵目标（`σ_tgt = 0.15`），以及一种简单的时间相关探索方法，叫做 noise repetition，即把采样到的噪声保持随机步数。
+
+## 结果
+- 论文在 10 个模拟器上的 60 多个任务上评估了 FlashSAC，覆盖低维和高维状态控制、基于视觉的控制，以及仿真到真实的类人机器人行走。
+- 在 25 个基于 GPU 的状态控制任务上，离策略方法训练 5000 万个环境步，而 PPO 训练 2 亿个环境步；论文称这大约用了 FlashSAC 3 倍的算力。
+- 在灵巧操作和类人机器人行走等高维 GPU 任务上，论文声称 FlashSAC 的最终回报持续高于 PPO，而且用时更少。摘要里把这作为定性结论，没有给出每个任务的精确回报数值。
+- 在低维 GPU 任务上，FlashSAC 被报告为和 PPO 大致相当，在部分任务上略有提升。
+- 与 FastTD3 相比，论文声称 FlashSAC 更稳定，并且能在 FastTD3 经常失败或表现较差的任务上收敛，其中类人机器人行走上的提升最大。
+- 在 Unitree G1 的仿真到真实类人行走任务中，论文声称训练时间从 PPO 的数小时降到 FlashSAC 的几分钟。摘要没有给出精确的分钟数，也没有给出真实世界表现的量化表格。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [http://arxiv.org/abs/2604.04539v1](http://arxiv.org/abs/2604.04539v1)

@@ -1,0 +1,57 @@
+---
+source: arxiv
+url: https://arxiv.org/abs/2604.26892v1
+published_at: '2026-04-29T17:01:01'
+authors:
+- Carol Hanna
+- Karine Even-Mendoza
+- W. B. Langdon
+- "Mar Zamorano L\xF3pez"
+- Justyna Petke
+- Federica Sarro
+topics:
+- hot-fixing
+- autonomous-coding-agents
+- software-maintenance
+- code-intelligence
+- human-ai-collaboration
+- empirical-software-engineering
+relevance_score: 0.84
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# Hot Fixing in the Wild
+
+## Summary
+## 摘要
+本文衡量了 GitHub 紧急修复与常规缺陷修复的差异，以及自主编码代理在紧急修复中的行为。研究基于 Hao-Li/AIDev 数据集，在超过 61,000 个仓库中分析了与问题关联的 PR。
+
+## 问题
+- 紧急修复很重要，因为它们处理的是生产故障，团队常常会在时间压力下减少评审、测试和协作，以更快恢复服务。
+- GitHub 的 issue 标签对紧急程度和严重性给出的信号并不一致，所以大规模研究紧急修复需要其他线索。
+- 编码代理现在会在真实项目中提交 PR，但它们在生产紧急修复中的行为还缺少直接测量。
+
+## 方法
+- 作者用三个本地 LLM 对 GitHub issue 的关键程度做一次性提示分类：Llama 3.2、Qwen2.5-3B-Instruct 和 Phi-4-mini。
+- 他们加入了两个时间过滤条件：PR 必须在 issue 创建后 12 小时内开启，且 PR 必须在创建后 24 小时内关闭。
+- 四名评审者手动检查了 20% 被 LLM 标记为紧急修复的样本，在需要时结合 issue 文本、PR 文本和仓库上下文。
+- 研究将 AIDev 中的 issue 与 PR 关联，比较了紧急修复和常规缺陷修复在贡献者数量、提交数、评审者数量、变更文件数、变更行数、测试文件修改和合并率上的差异。
+- 作者按作者类型把紧急修复 PR 分为人类和机器人两类，并把 PR 文本与词袋词云进行比较。
+
+## 结果
+- 时间过滤把 Llama3.2 标记的关键 issue 从 1,348 个降到 269 个，Phi-4-mini 从 425 个降到 105 个，Qwen 从 148 个降到 33 个；仅靠紧急措辞会产生很多无法通过动作时间检查的候选项。
+- 人工验证显示，LLM 与人工的一致性总体为 0.37；在抽样案例中，Qwen 与评审者完全一致，Phi-4-mini 的一致率约为 50%，Llama3.2 的不一致率为 49%。
+- 紧急修复比常规修复更小。按 Qwen 标签，紧急修复 PR 平均有 2.7 次提交、3.9 个文件、25.7 行新增和 9.3 行删除；常规 PR 平均有 4.9 次提交、27.7 个文件、90 行新增和 54.4 行删除。
+- 紧急修复涉及的人更少：紧急修复的贡献者数为 1 到 5 人，常规修复为 1 到 13 人；评审者数在紧急修复中最多为 5 人，常规修复中最多为 16 人。
+- 紧急修复更少修改测试：Qwen 标签下的紧急修复中，29.73% 的 PR 包含测试修改，而常规 PR 为 54.42%，差距为 24.69 个百分点。
+- 紧急修复更常合并：Qwen 标签下的紧急修复合并率为 70.27%，常规 PR 为 45.30%；机器人紧急修复的合并率接近人工修复，例如在 Qwen 下分别为 66.67% 和 70.97%。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [https://arxiv.org/abs/2604.26892v1](https://arxiv.org/abs/2604.26892v1)

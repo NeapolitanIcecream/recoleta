@@ -1,0 +1,51 @@
+---
+kind: ideas
+granularity: day
+period_start: '2026-04-21T00:00:00'
+period_end: '2026-04-22T00:00:00'
+run_id: materialize-outputs
+status: succeeded
+topics:
+- code-llm-evaluation
+- program-repair
+- test-generation
+- gui-code
+- agent-governance
+tags:
+- recoleta/ideas
+- topic/code-llm-evaluation
+- topic/program-repair
+- topic/test-generation
+- topic/gui-code
+- topic/agent-governance
+language_code: zh-CN
+---
+
+# 可执行行为门槛
+
+## Summary
+行为检查已经具体到足以改变编码工作流。最近最清楚的三个动作是：把运行时轨迹收集加到自动修复里，把交互试玩加到 GUI 代码生成里，以及在提交报告前用可执行测试筛查 API 文档漂移。
+
+## 自动程序修复中的运行时轨迹收集
+Bug-fixing agents can add a debugging pass before patch generation. The useful change is simple: when a failing test and stack trace do not explain the fault, instrument the suspect function, run the reduced failing test, and feed the runtime state back into the repair loop. DebugRepair reports 295 correct fixes on Defects4J with DeepSeek-V3 and a 51.3% average gain over each backbone model’s vanilla setting across five additional models. The paper also includes two guardrails that matter for production use: it strips the failing test down to the minimal failure-triggering context, and it checks that inserted debug statements do not change the original logic, with an AST-based fallback when LLM-written instrumentation breaks compilation.
+
+This is a concrete build for teams already running automated patch suggestions in CI or issue triage. A cheap first check is to take bugs that your current repair flow marks as unresolved after one or two attempts, then compare plain retrying against a trace-collection step that captures key variable values and branch states before asking for the next patch. The practical payoff is fewer patches that only suppress the visible failure and more patches that address the actual runtime condition behind it.
+
+### Evidence
+- [DebugRepair: Enhancing LLM-Based Automated Program Repair via Self-Directed Debugging](../Inbox/2026-04-21--debugrepair-enhancing-llm-based-automated-program-repair-via-self-directed-debugging.md): Reports runtime-trace-guided repair approach, safety checks for instrumentation, and benchmark gains including 295 correct fixes on Defects4J and 51.3% average improvement.
+
+## 生成式 GUI 代码的交互试玩测试
+GUI 代码生成在合并前需要一个交互测试门槛。编译成功和单元测试会漏掉事件顺序错误、陈旧状态，以及只在真实使用时才出现的逻辑问题。PlayCoder 用 Play@k 给这个差距加了一个明确指标：生成的候选代码里，至少有一个要能端到端正常交互。文中报告的 Python 结果里，Claude-Sonnet-4 从 18.6% Exec@3 降到 9.9% Play@3，GPT-5 从 17.5% Exec@3 降到 6.9% Play@3。论文里的 PlayTester 代理会用面向任务的试玩流程驱动界面，检查行为违规，然后再用这些轨迹修订代码。
+
+这类流程最直接的变化，适合生成内部小工具、仪表盘前端或简单游戏的团队。可以在编译和单元测试之外，加一个可回放的交互脚本和一个可玩性检查。先选一个用户关键路径，比如创建、编辑、保存或过关流程；即使测试通过，只要界面进入了错误状态，就让运行失败。这个方案比完整的浏览器自动化基础设施更窄，但它对应的是论文里暴露的失败模式：代码可运行，使用时还是会坏掉。
+
+### Evidence
+- [PlayCoder: Making LLM-Generated GUI Code Playable](../Inbox/2026-04-21--playcoder-making-llm-generated-gui-code-playable.md): Defines Play@k, describes automated GUI playtesting, and quantifies the drop from executable code to playable behavior for GPT-5 and Claude-Sonnet-4.
+
+## 针对变更 API 方法的可执行文档检查
+API 文档审查可以从文本比对转向可执行检查。Cascade 先把方法文档转成测试，把这些测试跑在当前代码上，然后在发出报告前再问一个问题：如果用同一份文档重新生成代码，它会通过那些失败测试，而且不会破坏已经通过的测试吗？这道双重筛查针对的是文档-代码不一致工具最主要的落地障碍，也就是误报带来的审查时间浪费。在额外的 Java、C# 和 Rust 仓库中，Cascade 找到了 13 个此前未知的不一致，其中 10 个后来被开发者修复。
+
+一个实用场景是 SDK 和内部库的发布审查，方法注释和示例会随着行为变化而漂移。做法很直接：针对受影响的方法，从 API 文档生成测试；在标记不匹配前，要求当前代码失败、重生成代码通过；只把这些案例交给维护者。一个便宜的验证办法，是拿最近一批和文档相关的提交来跑，看看有多少告警对应的是后来已经被开发者修正的变化。这样文档维护者面对的是围绕可执行不一致的更窄队列，而不是措辞差异。
+
+### Evidence
+- [CASCADE: Detecting Inconsistencies between Code and Documentation with Automatic Test Generation](../Inbox/2026-04-21--cascade-detecting-inconsistencies-between-code-and-documentation-with-automatic-test-generation.md): Explains the fail-on-original, pass-on-regenerated execution check and reports 13 new inconsistencies found across repositories, with 10 later fixed.

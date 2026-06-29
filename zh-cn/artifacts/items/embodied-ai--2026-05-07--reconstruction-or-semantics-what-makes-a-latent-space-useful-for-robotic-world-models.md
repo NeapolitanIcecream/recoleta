@@ -1,0 +1,55 @@
+---
+source: arxiv
+url: https://arxiv.org/abs/2605.06388v1
+published_at: '2026-05-07T15:05:26'
+authors:
+- Nilaksh
+- Saurav Jha
+- Artem Zholus
+- Sarath Chandar
+topics:
+- robot-world-models
+- latent-diffusion
+- semantic-latents
+- policy-evaluation
+- robot-planning
+- bridgev2
+relevance_score: 0.91
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# Reconstruction or Semantics? What Makes a Latent Space Useful for Robotic World Models
+
+## Summary
+## 总结
+论文发现，在规划和策略评估任务中，来自 V-JEPA 2.1、Web-DINO 和 SigLIP 2 的语义潜变量，比用于像素重建的潜变量更适合机器人扩散世界模型。重建型 VAE 可以生成更好的像素，但对控制真正有用的是潜空间里与动作和任务相关的结构。
+
+## 问题
+- 机器人世界模型用于在真实硬件上执行前测试动作序列和策略，所以它们的预测需要保留物体状态、接触、几何和任务进度。
+- 潜空间扩散世界模型常用为图像重建训练的 VAE 式潜变量，这类潜变量可能像素指标很好，但会丢失控制所需的信号。
+- 论文要回答的是，在真实机器人操作数据上，哪种潜空间最适合动作条件潜扩散世界模型。
+
+## 方法
+- 作者在 BridgeV2 上训练动作条件 DiT 潜扩散世界模型。BridgeV2 包含约 6 万条 WidowX 250 演示，覆盖 13 类任务，带有 RGB 观测、7 自由度动作和语言指令。
+- 他们固定数据集、转移模型、优化器、历史长度和动作条件，只改变编码器、可选适配器和解码路径。
+- 他们比较了重建编码器 SD3 VAE（D=16）、VA-VAE（D=32）和 Cosmos（D=16），以及语义编码器 V-JEPA 2.1（D=1024）、Web-DINO（D=1024）和 SigLIP 2（D=1152）。
+- 对于语义编码器，他们测试原生高维潜变量和通过 S-VAE 压缩到 d=96 的潜变量，并在需要时使用宽 DDT head 和随维度调整的噪声调度偏移。
+- 评估覆盖视觉保真度、CEM 规划误差、世界模型内部的 OpenVLA-7B rollout、分布外物体和指令测试、逆动力学动作恢复，以及 SOAR 成功分类。
+
+## 结果
+- 在 DiT-S 策略 rollout 中，V-JEPA 2.1_96 的共识成功率最高，为 0.362 ± 0.038；相比之下，VAE 为 0.169 ± 0.030，VA-VAE 为 0.175 ± 0.030，Cosmos 为 0.244 ± 0.034。
+- SigLIP 2_96 在分布外子集中的报告分布内成功率最高，为 0.625 ± 0.054；在干扰项分布外成功率上也最高，为 0.588 ± 0.055。VAE 在同样指标上的结果分别为 0.375 ± 0.054 和 0.287 ± 0.051。
+- CEM 动作恢复更偏向语义潜变量：SigLIP 2 的 k=1 误差最低，为 0.082 ± 0.006；V-JEPA 2.1 的 k=4 误差最低，为 0.424 ± 0.014。VAE 分别为 0.111 ± 0.009 和 0.612 ± 0.023。
+- 在编码器潜变量上的逆动力学动作恢复中，V-JEPA 2.1 的 Pearson r 在 k=1 时达到 0.829，在 k=4 时达到 0.865；VAE 分别为 0.507 和 0.478。
+- 在生成的世界模型潜变量上，V-JEPA 2.1 保持了列出的 DiT-S 编码器中最高的 IDM 相关性，k=1 时 r=0.781，k=4 时 r=0.840；VAE 分别为 r=0.476 和 r=0.464。
+- 在 SOAR 全视频成功分类中，SigLIP 2 的世界模型潜变量准确率最好，为 0.823，领先于 V-JEPA 2.1 的 0.789、Web-DINO 的 0.788、VA-VAE 的 0.744、Cosmos 的 0.723 和 VAE 的 0.716。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [https://arxiv.org/abs/2605.06388v1](https://arxiv.org/abs/2605.06388v1)

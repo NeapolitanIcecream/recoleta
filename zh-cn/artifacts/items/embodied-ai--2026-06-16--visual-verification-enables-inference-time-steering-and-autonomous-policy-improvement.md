@@ -1,0 +1,51 @@
+---
+source: arxiv
+url: https://arxiv.org/abs/2606.18247v1
+published_at: '2026-06-16T17:59:04'
+authors:
+- Mingtong Zhang
+- Dhruv Shah
+topics:
+- vision-language-action
+- robot-policy-steering
+- robot-self-improvement
+- visual-verification
+- robot-data-scaling
+- manipulation
+relevance_score: 0.93
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# Visual Verification Enables Inference-time Steering and Autonomous Policy Improvement
+
+## Summary
+## 摘要
+VERITAS 让机器人策略采样多个短动作片段，在执行前用视觉方式评分，然后用成功的已验证执行轨迹进行后续训练。论文称，这种方法在测试时提高了成功率，并且无需新的人类演示也能带来策略提升。
+
+## 问题
+- 机器人基础策略依赖成本高的人类演示，因此部署后改进速度慢、成本高。
+- 已部署的机器人需要在运行时选择更安全、更符合任务的动作，并把自身成功试验转化为训练数据。
+
+## 方法
+- 预训练随机机器人策略，例如 π0-Bridge、π0-DROID 或 π0.5-DROID，根据当前图像和语言指令生成 N 个候选动作片段。
+- 视觉验证器为每个片段评分，机器人执行得分最高的候选片段。
+- 在主要验证器中，VLM 根据初始图像和指令一次性生成像素空间路标点；候选末端执行器运动被投影到图像中，并按其到该轨迹的距离评分。
+- 成功的已验证执行轨迹会被记录，并用于对原始策略进行行为克隆微调。
+
+## 结果
+- 在 3 个策略和 1160 个评估 episode 中，推理时验证在仿真中平均将成功率提高 12.6%，在真实部署中提高 35%，且未进行策略微调。
+- 在仿真中，VERITAS 使用 π0-Bridge 在 4 个操作任务上测试，每个任务变体平均进行 10 次试验，所有验证器变体都优于基础策略；论文称它们的平均表现也超过 V-GPS。
+- 在真实 DROID 实验中，论文对每个策略评估 2 个任务，每个任务 50 条执行轨迹，并报告 π0-DROID 和 π0.5-DROID 都有提升。
+- 使用已验证的自生成轨迹进行离线微调后，仿真性能相对基础策略平均提高 10%。
+- 论文称，在真实环境中，用已验证执行轨迹进行后训练的效率与人类专家演示相当；少至 20 条已验证轨迹，在 20,000 步微调后即可改变行为。
+- 运行时设置包括 N = 5 个采样片段、15 Hz 控制，以及在一次性 VLM 轨迹生成后低于 1 ms 的几何验证开销。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [https://arxiv.org/abs/2606.18247v1](https://arxiv.org/abs/2606.18247v1)

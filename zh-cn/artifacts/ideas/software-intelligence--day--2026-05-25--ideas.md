@@ -1,0 +1,65 @@
+---
+kind: ideas
+granularity: day
+period_start: '2026-05-25T00:00:00'
+period_end: '2026-05-26T00:00:00'
+run_id: materialize-outputs
+status: succeeded
+topics:
+- coding agents
+- repository reasoning
+- agent memory
+- software verification
+- prompt injection
+- AI security
+tags:
+- recoleta/ideas
+- topic/coding-agents
+- topic/repository-reasoning
+- topic/agent-memory
+- topic/software-verification
+- topic/prompt-injection
+- topic/ai-security
+language_code: zh-CN
+---
+
+# Coding Agent Control Layers
+
+## Summary
+可复用的安装记忆、仓库结构检查和提示注入命令测试，已经适合在编码代理工作流里做小规模试验。共同模式很简单：保持主编码模型不变，在它已经在做的工作外面加一层窄控制层，再衡量这一层是否提高通过率、文件选择或命令安全性。
+
+## Repository setup memory with container rollback and independent pass/fail checks
+在许多仓库里使用编码代理的团队，可以先把失败的安装修复保存成结构化记录，再在后续安装运行中检索这些记录。一个有用的记录应包括错误文本、包或工具链信号、修复命令、仓库类型，以及后续的通过或失败结果。代理应在可丢弃的容器快照中尝试检索到的修复，回滚失败的安装，并把最终判定和执行修复的代理分开。
+
+SETUPX把这套流程做成了具体实现。它的 eXPerience Units 保存安装信号、自然语言指导、可执行操作和遥测；检索结合了相似度、历史成功率和 LLM 重排序器；Docker 快照支持回滚；Prosecutor-Judge 检查把失败证据和最终判定分开。在 EnvBench 的 100 个 Python 仓库上，带记忆的 SETUPX 报告 92% 的通过率，比不带记忆的版本高 10 个百分点。CODESKILL 也指向同样的操作方向，面向更广的编码任务：带触发条件和操作步骤的紧凑 Markdown 技能，提高了冻结编码策略在 EnvBench、SWE-Bench Verified 和 Terminal-Bench 2 上的平均成功率。
+
+一个低成本试验可以只放在 CI 或开发者上手阶段的仓库初始化环节。通过条件很明确：文档里的命令和测试能在干净容器里运行，修复历史可以复用，破坏性的依赖修改可以回滚。
+
+### Evidence
+- [SetupX: Can LLM Agents Learn from Past Failures in Functionality-Correct Code Repository Setup?](../Inbox/2026-05-25--setupx-can-llm-agents-learn-from-past-failures-in-functionality-correct-code-repository-setup.md): SETUPX describes XPUs, Docker rollback, Prosecutor-Judge verification, and the 92% pass rate with a 10-point memory gain.
+- [SetupX: Can LLM Agents Learn from Past Failures in Functionality-Correct Code Repository Setup?](../Inbox/2026-05-25--setupx-can-llm-agents-learn-from-past-failures-in-functionality-correct-code-repository-setup.md): The paper abstract defines the XPU representation, LIFO Docker snapshot stack, and Prosecutor-Judge Verification Protocol.
+- [CODESKILL: Learning Self-Evolving Skills for Coding Agents](../Inbox/2026-05-25--codeskill-learning-self-evolving-skills-for-coding-agents.md): CODESKILL reports compact skill-bank management and pass-rate gains for frozen coding agents.
+
+## Repository-structure pre-pass for multi-file issue fixes
+编码代理的评估应该检查，代理在改代码之前是否找到了能解释问题的文件。一个实用流程是，对提到导入、运行时目标、配置常量、生成文件或跨模块行为的问题单，先做一次仓库结构预处理。这个预处理应在修复开始前，产出一张简短的图，列出可能的调用路径、重导出、配置来源和测试。
+
+RepoMirage 说明了为什么这件事值得测试。它保持 SWE-Bench Verified 的问题行为不变，然后通过依赖路径间接化、运行时目标遮蔽和常量外置来改变相关上下文的呈现方式。在八个模型上，平均解决率从 66.80% 降到 49.78%，而访问的文件数从 4.77 增到 13.24。在 RepoMirage-Extend 上，平均成功率是 25.25%，其中多文件问题解决率为 17.86%，代理链恢复率为 17.19%。文件访问分析还显示，已解决案例里的搜索范围很窄：GPT-5 在 53.8% 的已解决案例里只看了一个文件，在 88.0% 的案例里不超过三个文件。
+
+最先落地的地方是内部基准门禁。拿一组真实问题单，加入保持行为不变的扰动，把常量移走、遮蔽运行时目标，或插入代理链，然后对比有无结构预处理时代理的结果。一个有用的指标是，代理在两种布局下是否识别出相同的任务相关文件。
+
+### Evidence
+- [RepoMirage: Probing Repository Context Reasoning in Code Agents with Perturbations](../Inbox/2026-05-25--repomirage-probing-repository-context-reasoning-in-code-agents-with-perturbations.md): RepoMirage reports the perturbation method, file-access findings, score drops, and low results on explicit multi-file tasks.
+- [RepoMirage: Probing Repository Context Reasoning in Code Agents with Perturbations](../Inbox/2026-05-25--repomirage-probing-repository-context-reasoning-in-code-agents-with-perturbations.md): The abstract defines repository context reasoning and describes the large drop on RepoMirage-Extend.
+- [RepoMirage: Probing Repository Context Reasoning in Code Agents with Perturbations](../Inbox/2026-05-25--repomirage-probing-repository-context-reasoning-in-code-agents-with-perturbations.md): The paper explains why issue resolution often requires tracing calling relationships and execution constraints across files.
+
+## Prompt-injection regression tests for coding assistant shell commands
+安全团队可以把编码助手当作带开发者权限的命令执行器来测试。具体测试方法是：在正常仓库里植入被污染的编码规则文件、技能文件、MCP 配置或文档注释，分配普通开发任务，并记录助手触碰的每一条 shell 命令、文件编辑、网络访问和凭据路径。
+
+AIShellJack 提供了一个起点测试设计。该研究把被污染的编码规则文件加入正常任务，并在五个真实代码库上测量了 Cursor v1.2.2 和 GitHub Copilot v1.102。314 个载荷覆盖 70 种 MITRE ATT&CK 技术，报告的攻击成功率在 41% 到 84% 之间。论文还梳理了仓库文件之外的注入来源，包括共享技能、MCP 服务器、IDE 设置、网站、API 和消息工具。文中提到的漏洞包括在信任对话框出现之前就执行，或绕过命令允许列表的情况。
+
+一个有用的内部控制是回归套件：当助手执行与用户任务无关的命令、读取凭据文件、修改认证文件、建立持久化，或向未批准端点发送数据时，这个套件应当失败。这个套件应在工具升级和模型后端变化时运行，因为风险在整个助手工作流里，不只在模型回复里。
+
+### Evidence
+- [How Agentic AI Coding Assistants Become the Attacker's Shell](../Inbox/2026-05-25--how-agentic-ai-coding-assistants-become-the-attacker-s-shell.md): The AIShellJack summary reports the payload set, tested tools, attack success rates, MITRE coverage, injection sources, and CVE evidence.
+- [How Agentic AI Coding Assistants Become the Attacker's Shell](../Inbox/2026-05-25--how-agentic-ai-coding-assistants-become-the-attacker-s-shell.md): The paper gives concrete CVE examples and explains that hidden markdown in an imported skill file can trigger credential exfiltration.
+- [How Agentic AI Coding Assistants Become the Attacker's Shell](../Inbox/2026-05-25--how-agentic-ai-coding-assistants-become-the-attacker-s-shell.md): The paper explains why autonomous command execution, file editing, and network access increase the impact of prompt injection.

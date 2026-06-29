@@ -1,0 +1,55 @@
+---
+kind: ideas
+granularity: day
+period_start: '2026-04-20T00:00:00'
+period_end: '2026-04-21T00:00:00'
+run_id: materialize-outputs
+status: succeeded
+topics:
+- kotlin-multiplatform
+- cross-platform-mobile
+- shared-business-logic
+- engineering-roi
+tags:
+- recoleta/ideas
+- topic/kotlin-multiplatform
+- topic/cross-platform-mobile
+- topic/shared-business-logic
+- topic/engineering-roi
+language_code: zh-CN
+---
+
+# Cross-client shared application logic
+
+## Summary
+现有证据支持范围较窄的 KMP 采用动作，这些动作和移动端重复逻辑、多客户端复用，以及更快的 web 扩展有关。来源是一篇由 JetBrains 发布、基于案例陈述的文章，所以最可信的是范围明确的试点和内部共享模块，并配有清楚的前后对比检查，而不是大规模重写的说法。
+
+## KMP pilot for shared business rules and data models
+针对业务规则、计算和数据模型做一个 KMP 试点，是已经分别发布 iOS 和 Android 应用、又一直碰到重复实现工作的团队，最清楚的近期检验方式。这个范围的理由很直接：一个共享的 Kotlin 模块可以承载经常变化的逻辑，而每个平台继续保留自己的原生 UI 和各自的集成点。来源材料反复把这种模式当作实际起点，并且在逻辑密集的领域给出了约 75% 的共享预期。
+
+当产品团队已经感受到平台漂移时，这个试点最容易成立，例如定价规则、资格检查、内容门控、同步逻辑，或其他必须在两个应用里表现一致的功能。它宣称的好处是更快达到功能一致，以及减少重复测试，因为规则实现只放在一个地方。这里的证据仍然来自厂商关联的案例和轶事，所以最便宜的验证方法很窄：选一个规则密集的功能，只把共享核心迁到 KMP，拿交付时间、缺陷数量和一致性问题去对比最近一次分别开发的功能。
+
+### Evidence
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Summary identifies KMP shared business logic with native UI as the main adoption pattern and recommends a pilot in logic-heavy areas with about 75% sharing potential.
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Chunk explains that subsequent platforms connect shared data models and logic to native UI, with consistency and synchronized launches as the operational benefit.
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Chunk explicitly recommends starting with pure business logic such as calculations, data models, and business rules.
+
+## Shared identity and entitlement SDK across mobile and web clients
+跨平台的身份或策略 SDK，适合那些运营多个消费者应用、并且在每个平台上反复重做登录、权限或账户状态逻辑的公司。文章给了一个直接例子：一家全国性媒体公司为 Android、iOS 和 web 构建了一个 KMP Identity SDK，团队规模只有通常用于平台专属项目的一半。这让可复用的内部 SDK，比大范围移动端重写更有说服力。
+
+实际目标是做一个一次维护会话状态、令牌处理、权限检查、账户规则和相关模型的包，然后向各个客户端暴露原生绑定。这适合有多个品牌应用、订阅产品，或需要与移动端行为保持一致的 web 入口的组织。第一步验证要小而可量化：把一个共享的认证或权限库交给一个 iOS 应用、一个 Android 应用和一个 web 客户端，然后统计避免了多少重复修复，以及发布协调花了多少时间。
+
+### Evidence
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Chunk reports high logic sharing at Forbes and cites web delivery after mobile, supporting reuse of shared core logic across clients.
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Chunk cites a national media company building a KMP Identity SDK across Android, iOS, and web with a smaller team, which directly supports an internal SDK use case.
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Summary states that KMP use extends beyond mobile to web while keeping native UI layers.
+
+## Web fallback path built on shared mobile domain logic
+面向移动优先产品的 web 兜底路径，是一种具体的采用变化，适合那些可能需要在很短时间内把现有应用流程暴露到 web 上的团队。文章给了两个可用信号。Duolingo 据称用同一套 KMP 代码库，把 Adventures 从 Android 扩展到 iOS，再扩展到 web，而且后续工作量低得多；另一家公司据称通过 JavaScript 调用已经实现并测试过的代码，在三周内把一个移动应用改到了 web。
+
+这指向一个具体的构建选择：把领域逻辑、校验规则和核心流程放在共享的 KMP 模块里，这样浏览器客户端在产品、合作方或分发需求变化时就能直接调用。受监管的发布路径、事件驱动的上线，或依赖应用商店的业务，会最先在意这一点。低成本测试是把一个现有移动流程通过共享模块暴露到 web 上，然后看重用核心逻辑之后还剩多少平台专属代码。
+
+### Evidence
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Chunk gives Duolingo's reported engineer-month comparison for extending an Android implementation to iOS and web using the same KMP codebase.
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Chunk reports a three-week retargeting to web by calling already implemented and tested KMP code from JavaScript.
+- [Helping Decision-Makers Say Yes to Kotlin Multiplatform (KMP)](../Inbox/2026-04-20--helping-decision-makers-say-yes-to-kotlin-multiplatform-kmp.md): Summary states that shared logic can cover iOS, Android, and sometimes web.
