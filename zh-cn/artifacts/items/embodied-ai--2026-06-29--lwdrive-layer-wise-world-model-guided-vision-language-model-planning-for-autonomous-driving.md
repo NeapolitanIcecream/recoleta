@@ -1,0 +1,58 @@
+---
+source: arxiv
+url: https://arxiv.org/abs/2606.29879v1
+published_at: '2026-06-29T07:17:13'
+authors:
+- Chen Yang
+- Yuhao Wei
+- Ze Xu
+- Ziheng Zou
+- Shuang Liang
+- Delin Ouyang
+- Lingfeng Qi
+- Jie Li
+- Guofa Li
+topics:
+- autonomous-driving
+- vision-language-action
+- world-model
+- trajectory-planning
+- bev-planning
+- coarse-to-fine-refinement
+relevance_score: 0.56
+run_id: materialize-outputs
+language_code: zh-CN
+---
+
+# LWDrive: Layer-Wise World-Model-Guided Vision-Language Model Planning for Autonomous Driving
+
+## Summary
+## 摘要
+LWDrive 是一种自动驾驶规划器，它将 VLM 轨迹转换为候选集合，再用经过世界模型监督的 VLM 特征和 BEV 几何信息进行细化。
+
+## 问题
+- 直接用 VLM 解码轨迹可以给出有用的驾驶意图，但输出对于车道级几何、障碍物约束和时间一致性可能过于粗略。
+- 单阶段 VLM 特征融合只使用一次语义信息，因此后续轨迹修正难以充分访问 VLM 的逐层表示。
+- 这很关键，因为闭环驾驶规划既需要高层意图，也需要在多视角场景约束下准确且具有未来感知能力的运动。
+
+## 方法
+- 系统将 Qwen2.5-VL-3B 适配到以自车为中心的驾驶场景，并训练它根据当前视觉观测、自车状态、导航和动作查询预测粗轨迹。
+- 训练期间，世界模型头在 VAE 潜空间中学习未来帧预测。这会推动 VLM 隐藏状态编码场景动态，同时推理时不需要未来帧。
+- Foresight Cascade Planner 根据动作查询特征、自车状态和可学习的 proposal embeddings 初始化多条候选轨迹。
+- 在选定的 VLM 层中，Bridge Attention 将 proposal memory、action-query memory、自车状态上下文和 VLM foresight features 注入每个候选轨迹。
+- BEV 细化用多视角当前帧 BEV 特征将每个候选轨迹落到场景几何上，并预测轨迹残差更新；随后 score head 选择最佳候选作为结果。
+
+## 结果
+- 在 NAVSIM 上，LWDrive 使用 4 个摄像头报告的 PDMS 为 92.0，高于 iPad 的 91.7、DriveWorld-VLA 的 91.3、Hydra-MDP++ 的 91.0，低于人类驾驶员参考值 94.8。
+- NAVSIM 组件分数为 NC 98.8、DAC 98.4、TTC 96.2、Comfort 99.8、Ego Progress 87.3。
+- 在 NAVSIM-v2 上，LWDrive 报告的 EPDMS 为 89.6，高于 DriveWorld-VLA 的 86.8、DriveVLA-W0 的 86.1 和 DiffusionDrive 的 84.5；human-agent 参考值为 90.3。
+- NAVSIM-v2 组件分数为 NC 98.8、DAC 98.4、DDC 99.0、TLC 99.7、EP 90.3、TTC 98.6、LK 96.3、HC 97.9、EC 73.3。
+
+## Problem
+
+## Approach
+
+## Results
+
+## Link
+- [https://arxiv.org/abs/2606.29879v1](https://arxiv.org/abs/2606.29879v1)
