@@ -1,0 +1,66 @@
+---
+kind: ideas
+granularity: day
+period_start: '2026-07-01T00:00:00'
+period_end: '2026-07-02T00:00:00'
+run_id: materialize-outputs
+status: succeeded
+topics:
+- coding agents
+- software engineering
+- runtime diagnosis
+- enterprise adoption
+- agent security
+- agent skills
+- token costs
+tags:
+- recoleta/ideas
+- topic/coding-agents
+- topic/software-engineering
+- topic/runtime-diagnosis
+- topic/enterprise-adoption
+- topic/agent-security
+- topic/agent-skills
+- topic/token-costs
+language_code: zh-CN
+---
+
+# 编码代理运营控制
+
+## Summary
+编码代理的采用现在需要围绕三个具体工作流设置运营控制：缺陷修复、企业推出和本地工具执行。实际做法是：在生成补丁前要求运行时证据，把 token 支出连接到团队级产出和留存，并用本地审批限制具备命令能力的桌面连接器。
+
+## 面向缺陷修复代理的补丁前运行时诊断包
+缺陷修复代理在编辑代码前需要一条可执行的证据链。一个可落地的工作流可以包装现有代理：把 issue 解析为预期行为，为每个行为生成一个定向的缺陷复现测试，在调试器下运行每个失败测试，并把诊断包附加到代理提示中。诊断包应包括疑似故障位置、失败症状、传播路径、观察到的运行时值，以及预期补丁影响。
+
+SWE-Doctor 是具体参照。它报告在 SWE-bench Verified 上的平均解决率为 75.7%，在 SWE-bench Pro 上为 59.4%；相比基线代理，它在 SWE-bench Pro 上提升了 8.0 到 8.9 个百分点。它的初步研究也说明，简单走“生成一个失败测试，再让代理修复”的路径可能表现更差：在一项包含 100 个 issue 的 SWE-bench Verified 研究中，直接使用高级 BRT 生成器解决的 issue 少于原始 mini-SWE-agent。
+
+团队无需改变整个开发流程即可测试这一做法。可以在最近一批已关闭缺陷上运行这个包装器，将补丁接受率、评审返工和回归失败与当前代理路径对比，并检查诊断包是否把评审者指向了他们手动处理时使用的同一批文件和运行时事实。
+
+### Evidence
+- [SWE-Doctor: Guiding Software Engineering Agents with Runtime Diagnosis from Multi-Faceted Bug Reproduction Tests](../Inbox/2026-07-01--swe-doctor-guiding-software-engineering-agents-with-runtime-diagnosis-from-multi-faceted-bug-reproduction-tests.md): 概述 SWE-Doctor 的工作流、初步 BRT 研究，以及报告的 SWE-bench 结果。
+- [SWE-Doctor: Guiding Software Engineering Agents with Runtime Diagnosis from Multi-Faceted Bug Reproduction Tests](../Inbox/2026-07-01--swe-doctor-guiding-software-engineering-agents-with-runtime-diagnosis-from-multi-faceted-bug-reproduction-tests.md): 确认多方面 BRT 和基于运行时的诊断方法，以及主要解决率。
+
+## 与 CLI 代理留存和 pull request 结果绑定的团队级 token 预算
+企业推出编码代理时，需要一个在团队层面连接成本、采用率、留存率和工程产出的仪表盘。更有用的计量单位是每个活跃用户、留存用户、已合并 pull request 和评审后被接受变更对应的 token 支出；同时需要异常增长告警，以及团队能在预算耗尽前看到的上限。
+
+Microsoft 的现场研究提供了一个实用的测量模板。该研究用开发者遥测跟踪 Claude Code 和 GitHub Copilot CLI 的使用情况，对首次使用和留存建模，并估计采用者合并的 pull request 比其反事实情况多约 24%。同一项研究提醒，已合并 PR 只是价值的代理指标，因此支出视图应与评审结果、缺陷信号和服务归属数据放在一起。
+
+Meta 的内部 token 控制显示了这一工作流背后的成本压力。报告称，员工在约 30 天内消耗了 73.7 万亿个 token，随后 Meta 建立了集中式 AI Gateway 仪表盘、实时支出告警，并计划设置正式 token 预算。推出团队可以先做一个小版本：按周提供团队视图，展示 token 支出、活跃用户、14 天留存、已合并 PR、评审返工，以及与代理编写变更相关的事故。
+
+### Evidence
+- [Adoption and Impact of Command-Line AI Coding Agents: A Study of Microsoft's Early 2026 Rollout of Claude Code and GitHub Copilot CLI](../Inbox/2026-07-01--adoption-and-impact-of-command-line-ai-coding-agents-a-study-of-microsoft-s-early-2026-rollout-of-claude-code-and-github-copilot-cli.md): 提供 Microsoft 遥测结果，涵盖试用、留存、社交接触，以及采用者合并的 pull request 约增加 24%。
+- [Meta caps internal AI token spending](../Inbox/2026-07-01--meta-caps-internal-ai-token-spending.md): 描述 Meta 的 token 用量、计划中的 AI Gateway 仪表盘、支出告警和 token 预算。
+- [Adoption and Impact of Command-Line AI Coding Agents: A Study of Microsoft's Early 2026 Rollout of Claude Code and GitHub Copilot CLI](../Inbox/2026-07-01--adoption-and-impact-of-command-line-ai-coding-agents-a-study-of-microsoft-s-early-2026-rollout-of-claude-code-and-github-copilot-cli.md): 确认企业对 token 支出每年可能达到数百万美元的担忧，以及研究使用 pull request 作为产出指标。
+
+## 面向 MCP 和具备命令能力桌面工具的本地审批门
+桌面 AI 应用在让同步偏好、技能或 MCP 连接器运行 shell、文件、浏览器或网络工具之前，需要本地审批门。审批门应把权限绑定到工作站会话，显示具体工具和命令类别，并在账号级指令改变或出现新连接器时要求新的本地批准。
+
+Claude Desktop 红队报告给出了操作边界。Pentera Labs 描述了一条攻击路径：受攻陷的收件箱或 Claude 账号允许攻击者修改已同步的 Claude 偏好。这些偏好到达 Claude Desktop 后，会检查 Desktop Commander 或类似 MCP 连接器等具备命令能力的工具，然后把本机作为执行目标。报告没有给出成功率，因此稳妥的结论更窄：同步的账号设置可以触达具有工作站访问权限的本地工具。
+
+Toolnexus 显示这个边界还会继续扩大。一个小型 Python 运行时可以通过一个接口加载 MCP 服务器、本地技能、Python 函数、HTTP 端点、内置 `bash`、`read`、`write`、`edit` 和 `apply_patch` 工具，以及对等代理卡片。采用这类运行时的团队应清点具备命令能力的工具，分离只读权限和写入/执行权限，并记录每一次工具调用的来源账号设置、提示、连接器和本地审批事件。
+
+### Evidence
+- [Red teamers turned Claude Desktop into a double agent to do their evil bidding](../Inbox/2026-07-01--red-teamers-turned-claude-desktop-into-a-double-agent-to-do-their-evil-bidding.md): 概述通过同步偏好和具备命令能力的本地工具攻击 Claude Desktop 的路径。
+- [Red teamers turned Claude Desktop into a double agent to do their evil bidding](../Inbox/2026-07-01--red-teamers-turned-claude-desktop-into-a-double-agent-to-do-their-evil-bidding.md): 确认前提条件包括受攻陷的收件箱和已安装 Claude Desktop，以及跨设备账号同步。
+- [Show HN: Toolnexus for Python – MCP, agent skills,a2a for any LLM](../Inbox/2026-07-01--show-hn-toolnexus-for-python-mcp-agent-skills-a2a-for-any-llm.md): 列出 Toolnexus 统一的工具面，包括 MCP、本地技能、HTTP 端点、shell/文件工具、指标和 A2A 代理。
