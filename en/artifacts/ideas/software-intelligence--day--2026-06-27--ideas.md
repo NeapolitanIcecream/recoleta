@@ -36,8 +36,8 @@ Frontend teams can give coding agents visual feedback without opening the whole 
 This fits work where the agent already edits code but cannot verify visual state, such as CSS changes, empty states, responsive layouts, and browser-only errors. The safety boundary is concrete: the tool exposes screenshot capture through a Chrome extension and local WebSocket daemon, while clicks, typing, script injection, and browser actions stay outside the interface. A useful team check is whether the agent can close more frontend issues with screenshot evidence attached to the PR, without adding new permission prompts beyond startup approval.
 
 ### Evidence
-- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-coding-agents-see-your-browser.md): The summary identifies the target workflow, the read-only security model, the CLI commands, and the lack of benchmark data.
-- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-coding-agents-see-your-browser.md): The source text describes the Chrome extension, WebSocket daemon, `peeked` commands, startup connection step, and claim that the agent can only take screenshots.
+- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): The summary identifies the target workflow, the read-only security model, the CLI commands, and the lack of benchmark data.
+- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): The source text describes the Chrome extension, WebSocket daemon, `peeked` commands, startup connection step, and claim that the agent can only take screenshots.
 
 ## Token budgets for production AI-dependent workflows
 Teams running AI features in production should treat token use as an operating cost with budgets, alerts, and refactoring tickets. The useful unit is a deployed workflow, such as support triage, document extraction, or code review assistance, measured by cost per completed job and failure rate.

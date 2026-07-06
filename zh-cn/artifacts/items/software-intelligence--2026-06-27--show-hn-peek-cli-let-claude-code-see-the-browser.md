@@ -3,7 +3,7 @@ source: hn
 url: https://github.com/puffinsoft/peek-cli
 published_at: '2026-06-27T22:50:37'
 authors:
-- BeverlyHills001
+- ReactRocks
 topics:
 - coding-agents
 - browser-screenshots
@@ -15,7 +15,7 @@ run_id: materialize-outputs
 language_code: zh-CN
 ---
 
-# Show HN: Peek-CLI: let coding agents see your browser
+# Show HN: Peek-CLI: Let Claude Code See the Browser
 
 ## Summary
 ## 摘要

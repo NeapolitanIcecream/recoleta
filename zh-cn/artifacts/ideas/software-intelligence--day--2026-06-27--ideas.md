@@ -32,8 +32,8 @@ language_code: zh-CN
 这适合智能体已经能编辑代码、但无法验证视觉状态的工作，例如 CSS 修改、空状态、响应式布局和只在浏览器中出现的错误。安全边界很具体：该工具通过 Chrome 扩展和本地 WebSocket 守护进程暴露截图捕获能力，而点击、输入、脚本注入和浏览器操作都不在接口范围内。团队可以检查一个实用指标：在启动批准之外不增加新权限提示的情况下，智能体能否在 PR 中附上截图证据，并关闭更多前端问题。
 
 ### Evidence
-- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-coding-agents-see-your-browser.md): 摘要说明了目标工作流、只读安全模型、CLI 命令，以及缺少基准数据这一点。
-- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-coding-agents-see-your-browser.md): 来源文本描述了 Chrome 扩展、WebSocket 守护进程、`peeked` 命令、启动时连接步骤，以及智能体只能截图的说法。
+- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): 摘要说明了目标工作流、只读安全模型、CLI 命令，以及缺少基准数据这一点。
+- [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): 来源文本描述了 Chrome 扩展、WebSocket 守护进程、`peeked` 命令、启动时连接步骤，以及智能体只能截图的说法。
 
 ## 生产环境中依赖 AI 的工作流的 token 预算
 在生产环境运行 AI 功能的团队，应把 token 使用量当作运营成本来管理，配套预算、告警和重构工单。合适的计量单位是已部署的工作流，例如支持分诊、文档抽取或代码评审辅助，并按每个已完成任务的成本和失败率衡量。
