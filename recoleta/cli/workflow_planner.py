@@ -24,6 +24,7 @@ from recoleta.cli.workflow_models import (
     WorkflowPlanDecision,
 )
 from recoleta.config import resolve_stage_llm_model
+from recoleta.models import ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED
 from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
 from recoleta.workflow_freshness import (
     analyze_budget_config_fingerprint_candidates,
@@ -72,6 +73,13 @@ AGGREGATE_TREND_SOURCE_STEP = {
     STEP_TRENDS_MONTH: STEP_TRENDS_WEEK,
 }
 PLANNED_RUN_ACTIONS = {"run", "repair", "force"}
+ANALYZE_MODEL_REFRESH_REASON = "stale_analysis_model"
+UPSTREAM_ANALYZE_MODEL_REFRESH_REASON = "upstream_analyze_model_refresh"
+UPSTREAM_TREND_MODEL_REFRESH_REASON = "upstream_trend_model_refresh"
+TREND_MODEL_REFRESH_REASONS = {
+    UPSTREAM_ANALYZE_MODEL_REFRESH_REASON,
+    UPSTREAM_TREND_MODEL_REFRESH_REASON,
+}
 
 TREND_SYNTHESIS_PASS_KIND = "trend_synthesis"
 TREND_IDEAS_PASS_KIND = "trend_ideas"
@@ -562,6 +570,17 @@ def _inspect_analyze(
             authority="item_state",
             estimated_llm_calls=0,
         )
+    backlog = _candidate_backlog_metadata(
+        repository=repository,
+        triage_required=triage_required,
+        period_start=period_start,
+        period_end=period_end,
+        llm_model=effective_llm_model,
+    )
+    model_refresh_pending = _analysis_model_refresh_pending(
+        items=items,
+        backlog=backlog,
+    )
     configured_limit = _configured_analyze_limit(settings)
     receipt = _latest_analyze_budget_receipt(
         context=context,
@@ -580,19 +599,17 @@ def _inspect_analyze(
             metadata=_analyze_budget_metadata(
                 receipt=receipt,
                 configured_limit=configured_limit,
-                backlog=_candidate_backlog_metadata(
-                    repository=repository,
-                    triage_required=triage_required,
-                    period_start=period_start,
-                    period_end=period_end,
-                    llm_model=effective_llm_model,
-                ),
+                backlog=backlog,
             ),
         )
     return _decision(
         context=context,
         action="run",
-        reason="candidate_items",
+        reason=(
+            ANALYZE_MODEL_REFRESH_REASON
+            if model_refresh_pending
+            else "candidate_items"
+        ),
         authority="item_state",
     )
 
@@ -1623,6 +1640,24 @@ def _candidate_backlog_metadata(
     }
 
 
+def _analysis_model_refresh_pending(
+    *,
+    items: Any,
+    backlog: dict[str, Any],
+) -> bool:
+    by_state = backlog.get("by_state")
+    if isinstance(by_state, dict) and any(
+        int(by_state.get(state) or 0) > 0
+        for state in (ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED)
+    ):
+        return True
+    return any(
+        getattr(item, "state", None)
+        in {ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED}
+        for item in items
+    )
+
+
 def _analyze_budget_metadata(
     *,
     receipt: Any,
@@ -1772,15 +1807,22 @@ def _run_trends_when_analyze_is_planned(
     plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     analyze_run_windows = _planned_analyze_windows(decisions)
+    analyze_model_refresh_windows = _planned_analyze_model_refresh_windows(decisions)
     updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if _trend_has_planned_analyze(
             decision=decision,
             analyze_run_windows=analyze_run_windows,
+            analyze_model_refresh_windows=analyze_model_refresh_windows,
             plan=plan,
         ):
+            reason = (
+                UPSTREAM_ANALYZE_MODEL_REFRESH_REASON
+                if _is_lower_level_generation_decision(decision=decision, plan=plan)
+                else "upstream_analyze_planned"
+            )
             updated.append(
-                _reactivate_planned_decision(decision, "upstream_analyze_planned")
+                _reactivate_planned_decision(decision, reason)
             )
             continue
         updated.append(decision)
@@ -1794,6 +1836,18 @@ def _planned_analyze_windows(
         (decision.granularity, decision.period_start, decision.period_end)
         for decision in decisions
         if decision.step_id == STEP_ANALYZE and decision.action in PLANNED_RUN_ACTIONS
+    }
+
+
+def _planned_analyze_model_refresh_windows(
+    decisions: list[WorkflowPlanDecision],
+) -> set[tuple[str | None, datetime | None, datetime | None]]:
+    return {
+        (decision.granularity, decision.period_start, decision.period_end)
+        for decision in decisions
+        if decision.step_id == STEP_ANALYZE
+        and decision.action in PLANNED_RUN_ACTIONS
+        and decision.reason == ANALYZE_MODEL_REFRESH_REASON
     }
 
 
@@ -1822,16 +1876,27 @@ def _run_aggregate_trend_when_source_is_planned(
         decisions=decisions,
         source_step=AGGREGATE_TREND_SOURCE_STEP[aggregate_step],
     )
+    model_refresh_source_windows = _planned_trend_source_windows(
+        decisions=decisions,
+        source_step=AGGREGATE_TREND_SOURCE_STEP[aggregate_step],
+        reasons=TREND_MODEL_REFRESH_REASONS,
+    )
     updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if _aggregate_trend_has_planned_source(
             decision=decision,
             aggregate_step=aggregate_step,
             source_windows=source_windows,
+            model_refresh_source_windows=model_refresh_source_windows,
             plan=plan,
         ):
+            reason = (
+                UPSTREAM_TREND_MODEL_REFRESH_REASON
+                if _is_lower_level_generation_decision(decision=decision, plan=plan)
+                else "upstream_trend_planned"
+            )
             updated.append(
-                _reactivate_planned_decision(decision, "upstream_trend_planned")
+                _reactivate_planned_decision(decision, reason)
             )
             continue
         updated.append(decision)
@@ -1842,12 +1907,14 @@ def _planned_trend_source_windows(
     *,
     decisions: list[WorkflowPlanDecision],
     source_step: str,
+    reasons: set[str] | None = None,
 ) -> list[tuple[datetime, datetime]]:
     return [
         (decision.period_start, decision.period_end)
         for decision in decisions
         if decision.step_id == source_step
         and decision.action in PLANNED_RUN_ACTIONS
+        and (reasons is None or decision.reason in reasons)
         and decision.period_start is not None
         and decision.period_end is not None
     ]
@@ -1876,12 +1943,16 @@ def _aggregate_trend_has_planned_source(
     decision: WorkflowPlanDecision,
     aggregate_step: str,
     source_windows: list[tuple[datetime, datetime]],
+    model_refresh_source_windows: list[tuple[datetime, datetime]],
     plan: WorkflowPlan,
 ) -> bool:
     if decision.step_id != aggregate_step or decision.action != "skip":
         return False
-    if _is_lower_level_generation_decision(decision=decision, plan=plan):
-        return False
+    candidate_windows = (
+        model_refresh_source_windows
+        if _is_lower_level_generation_decision(decision=decision, plan=plan)
+        else source_windows
+    )
     return any(
         _decision_periods_overlap(
             left_start=decision.period_start,
@@ -1889,7 +1960,7 @@ def _aggregate_trend_has_planned_source(
             right_start=source_start,
             right_end=source_end,
         )
-        for source_start, source_end in source_windows
+        for source_start, source_end in candidate_windows
     )
 
 
@@ -1909,15 +1980,42 @@ def _run_ideas_when_trends_are_planned(
         if decision.step_id in TREND_STEPS
         and decision.action in PLANNED_RUN_ACTIONS
     }
+    model_refresh_trend_run_windows = {
+        (
+            decision.step_id,
+            decision.granularity,
+            decision.period_start,
+            decision.period_end,
+        )
+        for decision in decisions
+        if decision.step_id in TREND_STEPS
+        and decision.action in PLANNED_RUN_ACTIONS
+        and (
+            decision.reason in TREND_MODEL_REFRESH_REASONS
+            or (
+                decision.reason == "stale_freshness"
+                and _is_lower_level_generation_decision(
+                    decision=decision,
+                    plan=plan,
+                )
+            )
+        )
+    }
     updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if _idea_has_planned_trend(
             decision=decision,
             trend_run_windows=trend_run_windows,
+            model_refresh_trend_run_windows=model_refresh_trend_run_windows,
             plan=plan,
         ):
+            reason = (
+                UPSTREAM_TREND_MODEL_REFRESH_REASON
+                if _is_lower_level_generation_decision(decision=decision, plan=plan)
+                else "upstream_trend_planned"
+            )
             updated.append(
-                _reactivate_planned_decision(decision, "upstream_trend_planned")
+                _reactivate_planned_decision(decision, reason)
             )
             continue
         updated.append(decision)
@@ -1940,36 +2038,44 @@ def _trend_has_planned_analyze(
     *,
     decision: WorkflowPlanDecision,
     analyze_run_windows: set[tuple[str | None, datetime | None, datetime | None]],
+    analyze_model_refresh_windows: set[
+        tuple[str | None, datetime | None, datetime | None]
+    ],
     plan: WorkflowPlan,
 ) -> bool:
     if decision.step_id not in TREND_STEPS or decision.action != "skip":
         return False
-    if _is_lower_level_generation_decision(decision=decision, plan=plan):
-        return False
-    return (
+    window = (
         decision.granularity,
         decision.period_start,
         decision.period_end,
-    ) in analyze_run_windows
+    )
+    if _is_lower_level_generation_decision(decision=decision, plan=plan):
+        return window in analyze_model_refresh_windows
+    return window in analyze_run_windows
 
 
 def _idea_has_planned_trend(
     *,
     decision: WorkflowPlanDecision,
     trend_run_windows: set[tuple[str, str | None, datetime | None, datetime | None]],
+    model_refresh_trend_run_windows: set[
+        tuple[str, str | None, datetime | None, datetime | None]
+    ],
     plan: WorkflowPlan,
 ) -> bool:
     matching_trend_step = IDEA_TO_TREND_STEP.get(decision.step_id)
     if matching_trend_step is None or decision.action != "skip":
         return False
-    if _is_lower_level_generation_decision(decision=decision, plan=plan):
-        return False
-    return (
+    window = (
         matching_trend_step,
         decision.granularity,
         decision.period_start,
         decision.period_end,
-    ) in trend_run_windows
+    )
+    if _is_lower_level_generation_decision(decision=decision, plan=plan):
+        return window in model_refresh_trend_run_windows
+    return window in trend_run_windows
 
 
 def _run_translation_when_generation_is_planned(

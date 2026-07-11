@@ -441,6 +441,7 @@ def _handle_persist_failures(request: AnalyzePersistFailureRequest) -> None:
             request.failure_context,
             item_id=failed_persist.analysis.item_id,
             exc=failed_persist.error,
+            preserve_item_state=not failed_persist.analysis.mirror_item_state,
         )
 
 

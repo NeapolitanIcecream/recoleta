@@ -109,6 +109,7 @@ class _AnalyzeWorkItem:
     user_topics: list[str]
     content_text: str
     mirror_item_state: bool
+    preserve_item_state: bool
 
 
 @dataclass(slots=True)

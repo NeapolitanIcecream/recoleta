@@ -307,8 +307,16 @@ class _ModelStaleAnalysisRepo(_ReadOnlyPlannerRepo):
         llm_model = kwargs.get("llm_model")
         self.requested_models.append(llm_model)
         if llm_model == "gpt-override":
-            return [SimpleNamespace(id=1)]
+            return [SimpleNamespace(id=1, state="analyzed")]
         return []
+
+    def count_items_for_llm_analysis_by_state(
+        self,
+        **kwargs: Any,
+    ) -> dict[str, int]:
+        if kwargs.get("llm_model") == "gpt-override":
+            return {"analyzed": 1}
+        return {}
 
 
 class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
@@ -718,8 +726,44 @@ def test_planner_runs_analyze_for_stale_model_candidate() -> None:
 
     analyze_decision = _decision_for(decisions, "analyze", source_day)
     assert analyze_decision.action == "run"
-    assert analyze_decision.reason == "candidate_items"
+    assert analyze_decision.reason == "stale_analysis_model"
     assert repo.requested_models == ["gpt-override"]
+
+
+def test_month_planner_propagates_analyze_model_refresh_through_lower_levels() -> None:
+    source_day = date(2026, 3, 16)
+    source_week = date(2026, 3, 16)
+    source_month = date(2026, 3, 1)
+    settings = _Settings()
+    settings.analyze_llm_model = "gpt-override"
+
+    decisions = plan_workflow_execution(
+        plan=_month_plan(),
+        repository=_ModelStaleAnalysisRepo(),
+        settings=settings,
+    )
+
+    assert _decision_for(decisions, "analyze", source_day).reason == (
+        "stale_analysis_model"
+    )
+    assert _decision_for(decisions, "trends:day", source_day).reason == (
+        "upstream_analyze_model_refresh"
+    )
+    assert _decision_for(decisions, "ideas:day", source_day).reason == (
+        "upstream_trend_model_refresh"
+    )
+    assert _decision_for(decisions, "trends:week", source_week).reason == (
+        "upstream_trend_model_refresh"
+    )
+    assert _decision_for(decisions, "ideas:week", source_week).reason == (
+        "upstream_trend_model_refresh"
+    )
+    assert _decision_for(decisions, "trends:month", source_month).reason == (
+        "upstream_trend_planned"
+    )
+    assert _decision_for(decisions, "ideas:month", source_month).reason == (
+        "upstream_trend_planned"
+    )
 
 
 def test_planner_skips_analyze_when_budget_was_satisfied_with_backlog() -> None:
