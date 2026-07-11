@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from recoleta.config import Settings
+from recoleta.config import Settings, resolve_stage_llm_model
 
 
 def test_settings_loads_without_obsidian_or_telegram_when_markdown_only(
@@ -79,6 +80,22 @@ def test_settings_loads_translation_llm_max_attempts_from_env(
     assert settings.translation_llm_max_attempts == 5
 
 
+def test_settings_loads_stage_llm_models_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANALYZE_LLM_MODEL", "test/analyze-mini")
+    monkeypatch.setenv("TRENDS_LLM_MODEL", "test/trends-large")
+    monkeypatch.setenv("IDEAS_LLM_MODEL", "test/ideas-large")
+    monkeypatch.setenv("TRANSLATION_LLM_MODEL", "test/translation-mini")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.analyze_llm_model == "test/analyze-mini"
+    assert settings.trends_llm_model == "test/trends-large"
+    assert settings.ideas_llm_model == "test/ideas-large"
+    assert settings.translation_llm_model == "test/translation-mini"
+
+
 def test_settings_treats_empty_backup_output_dir_env_as_unset(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -91,6 +108,17 @@ def test_settings_treats_empty_backup_output_dir_env_as_unset(
     settings = Settings()  # pyright: ignore[reportCallIssue]
 
     assert settings.backup_output_dir is None
+
+
+def test_settings_treats_blank_stage_llm_model_env_as_unset(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANALYZE_LLM_MODEL", "   ")
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.analyze_llm_model is None
+    assert resolve_stage_llm_model(settings, stage="analyze") == settings.llm_model
 
 
 def test_settings_rejects_configured_source_without_enabled(
@@ -503,6 +531,91 @@ def test_settings_loads_from_config_file_and_env(
     assert settings.llm_model == "openai/gpt-4o-mini"
     assert settings.topics == ["agents"]
     assert settings.sources.rss.feeds == ["https://example.com/feed.xml"]
+
+
+def test_settings_loads_stage_llm_models_from_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'recoleta_db_path: "{tmp_path / "recoleta.db"}"',
+                'llm_model: "test/global"',
+                'analyze_llm_model: "test/analyze-mini"',
+                'trends_llm_model: "test/trends-large"',
+                'ideas_llm_model: "test/ideas-large"',
+                'translation_llm_model: "test/translation-mini"',
+                "publish_targets:",
+                "  - markdown",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.llm_model == "test/global"
+    assert settings.analyze_llm_model == "test/analyze-mini"
+    assert settings.trends_llm_model == "test/trends-large"
+    assert settings.ideas_llm_model == "test/ideas-large"
+    assert settings.translation_llm_model == "test/translation-mini"
+
+
+def test_resolve_stage_llm_model_uses_override_before_stage_and_global() -> None:
+    settings = SimpleNamespace(
+        llm_model="test/global",
+        analyze_llm_model="test/analyze-stage",
+    )
+
+    assert (
+        resolve_stage_llm_model(
+            settings,
+            stage="analyze",
+            override=" test/explicit ",
+        )
+        == "test/explicit"
+    )
+
+
+def test_resolve_stage_llm_model_uses_stage_specific_fallback() -> None:
+    settings = SimpleNamespace(
+        llm_model="test/global",
+        trends_llm_model=" test/trends-stage ",
+    )
+
+    assert resolve_stage_llm_model(settings, stage="trends") == "test/trends-stage"
+
+
+def test_resolve_stage_llm_model_uses_global_fallback_for_blank_stage_value() -> None:
+    settings = SimpleNamespace(
+        llm_model="test/global",
+        ideas_llm_model=" ",
+    )
+
+    assert resolve_stage_llm_model(settings, stage="ideas") == "test/global"
+
+
+def test_resolve_stage_llm_model_rejects_blank_override() -> None:
+    settings = SimpleNamespace(llm_model="test/global")
+
+    with pytest.raises(ValueError, match="override must not be empty"):
+        resolve_stage_llm_model(settings, stage="translation", override=" ")
+
+
+def test_resolve_stage_llm_model_rejects_unknown_stage() -> None:
+    settings = SimpleNamespace(llm_model="test/global")
+
+    with pytest.raises(ValueError, match="stage must be one of"):
+        resolve_stage_llm_model(settings, stage="publish")
+
+
+def test_resolve_stage_llm_model_requires_global_fallback() -> None:
+    settings = SimpleNamespace(llm_model="", analyze_llm_model=None)
+
+    with pytest.raises(ValueError, match="llm_model must not be empty"):
+        resolve_stage_llm_model(settings, stage="analyze")
 
 
 def test_settings_loads_backup_output_dir_from_config_file(

@@ -157,6 +157,7 @@ def test_trends_cli_prints_billing_report_by_default(
     assert "Billing report" in result.stdout
     assert fake_repo.finished == [("run-1", True)]
     assert fake_service.calls and fake_service.calls[0]["run_id"] == "run-1"
+    assert fake_service.calls[0]["llm_model"] == "openai/gpt-4o-mini"
 
 
 def test_trends_cli_emits_json_output_with_billing_summary(

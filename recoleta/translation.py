@@ -15,7 +15,7 @@ from recoleta.analyzer import (
     _get_completion,
     _resolve_response_cost_usd,
 )
-from recoleta.config import LocalizationConfig, Settings
+from recoleta.config import LocalizationConfig, Settings, resolve_stage_llm_model
 from recoleta.llm_connection import LLMConnectionConfig
 from recoleta.models import Document
 from recoleta.storage.common import _to_json
@@ -156,6 +156,7 @@ class PrepareTranslationTaskCompatRequest:
     candidate: TranslationCandidate
     target: TranslationTarget
     context_assist: str
+    llm_model: str
     force: bool
     run_id: str | None = None
 
@@ -167,6 +168,7 @@ class PersistTranslationTaskCompatRequest:
     completed: _CompletedTranslationTask
     context_assist: str
     source_language_code: str
+    llm_model: str
     run_id: str | None = None
 
 
@@ -189,6 +191,7 @@ class TranslateCandidateCompatRequest:
 class RunTranslationRequest:
     repository: Any
     settings: Settings
+    llm_model: str | None = None
     granularity: str | None = None
     include: str | list[str] | None = None
     limit: int | None = None
@@ -204,6 +207,7 @@ class RunTranslationRequest:
 class RunTranslationBackfillRequest:
     repository: Any
     settings: Settings
+    llm_model: str | None = None
     granularity: str | None = None
     include: str | list[str] | None = None
     limit: int | None = None
@@ -339,6 +343,7 @@ def coerce_prepare_translation_task_request(
         candidate=legacy_kwargs["candidate"],
         target=legacy_kwargs["target"],
         context_assist=legacy_kwargs["context_assist"],
+        llm_model=legacy_kwargs["llm_model"],
         force=bool(legacy_kwargs["force"]),
         run_id=legacy_kwargs.get("run_id"),
     )
@@ -357,6 +362,7 @@ def coerce_persist_translation_task_request(
         completed=legacy_kwargs["completed"],
         context_assist=legacy_kwargs["context_assist"],
         source_language_code=legacy_kwargs["source_language_code"],
+        llm_model=legacy_kwargs["llm_model"],
         run_id=legacy_kwargs.get("run_id"),
     )
 
@@ -393,6 +399,7 @@ def coerce_run_translation_request(
     return RunTranslationRequest(
         repository=legacy_kwargs["repository"],
         settings=legacy_kwargs["settings"],
+        llm_model=legacy_kwargs.get("llm_model"),
         granularity=legacy_kwargs.get("granularity"),
         include=legacy_kwargs.get("include"),
         limit=legacy_kwargs.get("limit"),
@@ -415,6 +422,7 @@ def coerce_run_translation_backfill_request(
     return RunTranslationBackfillRequest(
         repository=legacy_kwargs["repository"],
         settings=legacy_kwargs["settings"],
+        llm_model=legacy_kwargs.get("llm_model"),
         granularity=legacy_kwargs.get("granularity"),
         include=legacy_kwargs.get("include"),
         limit=legacy_kwargs.get("limit"),
@@ -591,6 +599,7 @@ def _prepare_translation_task(
             candidate=normalized_request.candidate,
             target=normalized_request.target,
             context_assist=normalized_request.context_assist,
+            llm_model=normalized_request.llm_model,
             force=normalized_request.force,
             run_id=normalized_request.run_id,
         ),
@@ -751,6 +760,7 @@ def _persist_completed_translation_task(
             completed=normalized_request.completed,
             context_assist=normalized_request.context_assist,
             source_language_code=normalized_request.source_language_code,
+            llm_model=normalized_request.llm_model,
             run_id=normalized_request.run_id,
         ),
         PersistTaskDeps(
@@ -810,11 +820,14 @@ def _translation_localization(
     return localization
 
 
-def _resolved_translation_model(*, settings: Settings) -> str:
-    llm_model = str(settings.llm_model or "").strip()
-    if not llm_model:
-        raise ValueError("llm_model must not be empty")
-    return llm_model
+def _resolved_translation_model(
+    *, settings: Settings, llm_model: str | None
+) -> str:
+    return resolve_stage_llm_model(
+        settings,
+        stage="translation",
+        override=llm_model,
+    )
 
 
 def _translation_targets(
@@ -977,7 +990,10 @@ def run_translation(
     normalized_granularity = _normalized_translation_granularity(
         normalized_request.granularity
     )
-    llm_model = _resolved_translation_model(settings=normalized_request.settings)
+    llm_model = _resolved_translation_model(
+        settings=normalized_request.settings,
+        llm_model=normalized_request.llm_model,
+    )
     source_language_code = str(localization.source_language_code).strip()
     return _runtime_run_translation_batch(
         _translation_batch_context(
@@ -1034,7 +1050,10 @@ def run_translation_backfill(
     normalized_granularity = _normalized_translation_granularity(
         normalized_request.granularity
     )
-    llm_model = _resolved_translation_model(settings=normalized_request.settings)
+    llm_model = _resolved_translation_model(
+        settings=normalized_request.settings,
+        llm_model=normalized_request.llm_model,
+    )
     source_language_code = _backfill_source_language_code(
         legacy_source_language=normalized_request.legacy_source_language,
         localization=localization,

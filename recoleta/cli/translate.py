@@ -164,6 +164,7 @@ def run_translate_run_command(**kwargs: Any) -> None:
                 "period_start": scope.period_start,
                 "period_end": scope.period_end,
                 "all_history": scope.all_history,
+                "llm_model": kwargs.get("model"),
             },
             json_fields={
                 "period_start": _datetime_isoformat(scope.period_start),
@@ -193,6 +194,7 @@ def run_translate_backfill_command(**kwargs: Any) -> None:
                 "limit": kwargs.get("limit"),
                 "force": bool(kwargs.get("force", False)),
                 "context_assist": kwargs["context_assist"],
+                "llm_model": kwargs.get("model"),
                 "legacy_source_language": kwargs.get("legacy_source_language"),
                 "emit_mirror_targets": bool(kwargs.get("emit_mirror_targets", False)),
                 "all_history": bool(kwargs.get("all_history", False)),

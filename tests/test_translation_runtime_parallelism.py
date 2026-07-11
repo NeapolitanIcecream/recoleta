@@ -419,7 +419,7 @@ def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -
     status, prepared = translation_runtime.prepare_translation_task(
         translation_runtime.PrepareTaskRequest(
             repository=repository,
-            settings=SimpleNamespace(),
+            settings=SimpleNamespace(llm_model="test/model"),
             candidate=SimpleNamespace(
                 source_kind="analysis",
                 source_record_id=42,
@@ -427,6 +427,7 @@ def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -
             ),
             target=SimpleNamespace(code="zh-CN"),
             context_assist="direct",
+            llm_model="test/model",
             force=False,
             run_id="run-translation",
         ),
@@ -443,6 +444,39 @@ def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -
     assert (
         metric_values["pipeline.translate.skipped_total.up_to_date_source_hash"] == 1
     )
+
+
+def test_prepare_translation_task_reruns_when_model_changes() -> None:
+    repository = _FakeRepository()
+    repository.localized_outputs[("analysis", 42, "zh-CN")] = SimpleNamespace(
+        source_hash="same-hash",
+        diagnostics={"llm_model": "test/old-model"},
+    )
+
+    status, prepared = translation_runtime.prepare_translation_task(
+        translation_runtime.PrepareTaskRequest(
+            repository=repository,
+            settings=SimpleNamespace(llm_model="test/default-model"),
+            candidate=SimpleNamespace(
+                source_kind="analysis",
+                source_record_id=42,
+                payload={"title": "same payload"},
+            ),
+            target=SimpleNamespace(code="zh-CN"),
+            context_assist="direct",
+            llm_model="test/new-model",
+            force=False,
+            run_id="run-translation",
+        ),
+        translation_runtime.PrepareTaskDeps(
+            payload_hash_fn=lambda _payload: "same-hash",
+            candidate_context_fn=lambda **_kwargs: {},
+            task_factory=lambda **kwargs: kwargs,
+        ),
+    )
+
+    assert status == "pending"
+    assert prepared is not None
 
 
 def test_persist_completed_translation_task_records_source_bucket_diagnostics_and_cost() -> None:
@@ -478,6 +512,7 @@ def test_persist_completed_translation_task_records_source_bucket_diagnostics_an
             ),
             context_assist="direct",
             source_language_code="en",
+            llm_model="test/translation-model",
             run_id="run-translation",
         ),
         translation_runtime.PersistTaskDeps(
@@ -492,6 +527,7 @@ def test_persist_completed_translation_task_records_source_bucket_diagnostics_an
     assert metric_values["pipeline.translate.source.trend_synthesis.week.estimated_cost_usd"] == 0.002
     output = repository.localized_outputs[("trend_synthesis", 7, "zh-CN")]
     assert output.diagnostics["source_kind"] == "trend_synthesis"
+    assert output.diagnostics["llm_model"] == "test/translation-model"
     assert output.diagnostics["source_granularity"] == "week"
     assert output.diagnostics["source_period_start"] == "2026-03-16T00:00:00+00:00"
     assert output.diagnostics["source_period_end"] == "2026-03-23T00:00:00+00:00"

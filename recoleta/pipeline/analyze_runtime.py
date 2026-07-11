@@ -7,9 +7,15 @@ from typing import Any
 
 from loguru import logger
 
-from recoleta.models import ITEM_STATE_FAILED, ITEM_STATE_RETRYABLE_FAILED
+from recoleta.config import resolve_stage_llm_model
+from recoleta.models import (
+    ITEM_STATE_FAILED,
+    ITEM_STATE_PUBLISHED,
+    ITEM_STATE_RETRYABLE_FAILED,
+)
 from recoleta.pipeline.metrics import metric_token
 from recoleta.types import AnalysisWrite, AnalyzeResult, ItemStateUpdate
+from recoleta.workflow_freshness import analyze_budget_config_fingerprint
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +26,7 @@ class AnalyzeLoadRequest:
     triage_required: bool
     period_start: Any
     period_end: Any
+    llm_model: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +109,7 @@ class AnalyzeExecutionContext:
     analyze_result: AnalyzeResult
     configured_provider_token: str
     configured_model_token: str
+    llm_model: str
     include_debug: bool
     write_and_record_artifact: Any
 
@@ -118,14 +126,14 @@ class AnalyzeBatchResult:
     selected_total: int
 
 
-def _configured_llm_tokens(*, service: Any) -> tuple[str, str]:
+def _configured_llm_tokens(*, llm_model: str) -> tuple[str, str]:
     configured_provider = (
-        service.settings.llm_model.split("/", 1)[0]
-        if "/" in service.settings.llm_model
+        llm_model.split("/", 1)[0]
+        if "/" in llm_model
         else "unknown"
     )
     return metric_token(configured_provider, max_len=24), metric_token(
-        service.settings.llm_model
+        llm_model
     )
 
 
@@ -158,6 +166,7 @@ def _load_analyze_items(request: AnalyzeLoadRequest) -> list[Any]:
         triage_required=request.triage_required,
         period_start=request.period_start,
         period_end=request.period_end,
+        llm_model=request.llm_model,
     )
     items, candidate_counts, deferred_counts = (
         request.service._rebalance_items_by_source(
@@ -187,6 +196,7 @@ def _prepare_analyze_work(
             request.log.warning("Analyze skipped: item has no id")
             continue
         item_id = int(raw_item_id)
+        preserve_item_state = getattr(item, "state", None) == ITEM_STATE_PUBLISHED
         content_text = request.service._load_stored_content_for_analysis(item=item)
         if content_text:
             work_items.append(
@@ -196,18 +206,20 @@ def _prepare_analyze_work(
                     canonical_url=item.canonical_url,
                     user_topics=list(request.service.settings.topics),
                     content_text=content_text,
-                    mirror_item_state=True,
+                    mirror_item_state=not preserve_item_state,
+                    preserve_item_state=preserve_item_state,
                 )
             )
             continue
         missing_content_total += 1
         request.analyze_result.failed += 1
-        state_updates.append(
-            ItemStateUpdate(
-                item_id=item_id,
-                state=ITEM_STATE_RETRYABLE_FAILED,
+        if not preserve_item_state:
+            state_updates.append(
+                ItemStateUpdate(
+                    item_id=item_id,
+                    state=ITEM_STATE_RETRYABLE_FAILED,
+                )
             )
-        )
         if request.include_debug:
             request.write_and_record_artifact(
                 item_id=item_id,
@@ -244,6 +256,7 @@ def _record_analyze_failure(
     *,
     item_id: int,
     exc: Exception,
+    preserve_item_state: bool = False,
 ) -> None:
     context.analyze_result.failed += 1
     context.counters.llm_errors_total += 1
@@ -257,16 +270,17 @@ def _record_analyze_failure(
     )
     sanitized_error = context.service._sanitize_error_message(str(exc))
     classification = context.service._classify_exception(exc)
-    context.state_updates.append(
-        ItemStateUpdate(
-            item_id=item_id,
-            state=(
-                ITEM_STATE_RETRYABLE_FAILED
-                if classification.get("retryable") is True
-                else ITEM_STATE_FAILED
-            ),
+    if not preserve_item_state:
+        context.state_updates.append(
+            ItemStateUpdate(
+                item_id=item_id,
+                state=(
+                    ITEM_STATE_RETRYABLE_FAILED
+                    if classification.get("retryable") is True
+                    else ITEM_STATE_FAILED
+                ),
+            )
         )
-    )
     context.write_and_record_artifact(
         item_id=item_id,
         kind="error_context",
@@ -312,7 +326,12 @@ def _process_analyze_outcomes(
                 )
             )
         except Exception as exc:  # noqa: BLE001
-            _record_analyze_failure(failure_context, item_id=item_id, exc=exc)
+            _record_analyze_failure(
+                failure_context,
+                item_id=item_id,
+                exc=exc,
+                preserve_item_state=outcome.work_item.preserve_item_state,
+            )
     return AnalyzeOutcomeProcessing(
         analysis_writes=analysis_writes,
         state_updates=state_updates,
@@ -422,6 +441,7 @@ def _handle_persist_failures(request: AnalyzePersistFailureRequest) -> None:
             request.failure_context,
             item_id=failed_persist.analysis.item_id,
             exc=failed_persist.error,
+            preserve_item_state=not failed_persist.analysis.mirror_item_state,
         )
 
 
@@ -430,10 +450,16 @@ def execute_analyze(
     *,
     run_id: str,
     limit: int | None = None,
+    llm_model: str | None = None,
     period_start: Any = None,
     period_end: Any = None,
 ) -> AnalyzeResult:
-    context = _build_analyze_context(service=service, run_id=run_id, limit=limit)
+    context = _build_analyze_context(
+        service=service,
+        run_id=run_id,
+        limit=limit,
+        llm_model=llm_model,
+    )
     with service.repository.sql_diagnostics() as sql_diag:
         batch_result = _run_analyze_batch(
             context=context,
@@ -467,9 +493,15 @@ def _build_analyze_context(
     service: Any,
     run_id: str,
     limit: int | None,
+    llm_model: str | None,
 ) -> AnalyzeExecutionContext:
+    effective_llm_model = resolve_stage_llm_model(
+        service.settings,
+        stage="analyze",
+        override=llm_model,
+    )
     configured_provider_token, configured_model_token = _configured_llm_tokens(
-        service=service
+        llm_model=effective_llm_model
     )
     log = logger.bind(module="pipeline.analyze", run_id=run_id)
     include_debug = (
@@ -487,6 +519,7 @@ def _build_analyze_context(
         analyze_result=AnalyzeResult(),
         configured_provider_token=configured_provider_token,
         configured_model_token=configured_model_token,
+        llm_model=effective_llm_model,
         include_debug=include_debug,
         write_and_record_artifact=_build_analyze_artifact_writer(
             service=service,
@@ -510,6 +543,7 @@ def _run_analyze_batch(
             triage_required=context.triage_required,
             period_start=period_start,
             period_end=period_end,
+            llm_model=context.llm_model,
         )
     )
     work_items, state_updates, missing_content_total = _prepare_analyze_work(
@@ -526,6 +560,7 @@ def _run_analyze_batch(
         work_items=work_items,
         include_debug=context.include_debug,
         description="Analyzing items",
+        llm_model=context.llm_model,
     )
     processed_outcomes = _process_analyze_outcomes(
         AnalyzeOutcomeRequest(
@@ -630,7 +665,10 @@ def _record_analyze_budget_receipt(
             granularity="day",
             period_start=period_start,
             period_end=period_end,
-            config_fingerprint=_settings_fingerprint(context.service.settings),
+            config_fingerprint=analyze_budget_config_fingerprint(
+                context.service.settings,
+                llm_model=context.llm_model,
+            ),
             requested_limit=context.effective_limit,
             selected_total=batch_result.selected_total,
             processed_total=context.analyze_result.processed,
@@ -648,16 +686,6 @@ def _record_analyze_budget_receipt(
             type(exc).__name__,
             str(exc),
         )
-
-
-def _settings_fingerprint(settings: Any) -> str:
-    safe_fingerprint = getattr(settings, "safe_fingerprint", None)
-    if not callable(safe_fingerprint):
-        return ""
-    try:
-        return str(safe_fingerprint() or "")
-    except Exception:
-        return ""
 
 
 def _increment_counter(counter: dict[str, int], token: str) -> None:

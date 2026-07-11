@@ -13,6 +13,7 @@ from recoleta.cli.arxiv_pool_readiness import (
 from recoleta.cli import workflow_models as _workflow_models
 from recoleta.cli.workflow_models import WorkflowExecutionContext
 from recoleta.cli.workflow_planner import (
+    WorkflowPlanningOptions,
     decision_payloads,
     plan_workflow_execution,
     planned_expensive_steps,
@@ -124,6 +125,7 @@ class _GranularityContextRequest:
     anchor_date: Any
     include_steps: list[str]
     skip_steps: list[str]
+    llm_model: str | None
     generation_force: bool = False
 
 
@@ -134,6 +136,7 @@ class _GranularityDryRunRequest:
     anchor_date: Any
     include_steps: list[str]
     skip_steps: list[str]
+    llm_model: str | None
     generation_force: bool
     json_output: bool
     emit_output: bool
@@ -156,6 +159,7 @@ class _DeployContextRequest:
     command: str
     include_steps: list[str]
     skip_steps: list[str]
+    llm_model: str | None
     repo_dir: Any
     remote: str
     branch: str
@@ -459,6 +463,7 @@ def _granularity_workflow_context(
         on_translate_failure=str(policy.on_translate_failure or "fail"),
         translate_include=list(policy.translate_include),
         translate_granularities=translate_granularities,
+        llm_model=request.llm_model,
         delivery_mode=policy.delivery_mode,
         publish_requested_explicitly=STEP_PUBLISH in request.include_steps,
         analyze_limit=analyze_limit,
@@ -476,9 +481,12 @@ def _granularity_workflow_context(
         plan=plan,
         repository=request.runtime.repository,
         settings=request.runtime.settings,
-        generation_force=bool(request.generation_force),
-        translate_include=list(policy.translate_include),
-        translate_granularities=translate_granularities,
+        options=WorkflowPlanningOptions(
+            generation_force=bool(request.generation_force),
+            llm_model=request.llm_model,
+            translate_include=list(policy.translate_include),
+            translate_granularities=translate_granularities,
+        ),
     )
     arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
         settings=request.runtime.settings,
@@ -548,9 +556,12 @@ def _execute_granularity_dry_run(
         plan=plan,
         repository=repository,
         settings=settings,
-        generation_force=request.generation_force,
-        translate_include=list(policy.translate_include),
-        translate_granularities=translate_granularities,
+        options=WorkflowPlanningOptions(
+            generation_force=request.generation_force,
+            llm_model=request.llm_model,
+            translate_include=list(policy.translate_include),
+            translate_granularities=translate_granularities,
+        ),
     )
     arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
         settings=settings,
@@ -698,6 +709,7 @@ def _deploy_workflow_context(
                 request.runtime.settings.workflows.deploy.translate_include
             ),
             translate_granularities=None,
+            llm_model=request.llm_model,
             delivery_mode=None,
             publish_requested_explicitly=False,
             analyze_limit=None,
@@ -949,6 +961,7 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                 include_steps=include_steps,
                 skip_steps=skip_steps,
                 generation_force=bool(kwargs.get("force", False)),
+                llm_model=kwargs.get("model"),
                 json_output=bool(kwargs.get("json_output", False)),
                 emit_output=bool(kwargs.get("emit_output", True)),
                 config_path=kwargs.get("config_path"),
@@ -972,6 +985,7 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                     anchor_date=kwargs.get("anchor_date"),
                     include_steps=include_steps,
                     skip_steps=skip_steps,
+                    llm_model=kwargs.get("model"),
                     generation_force=bool(kwargs.get("force", False)),
                 )
             ),
@@ -1010,6 +1024,7 @@ def execute_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
                     command=command,
                     include_steps=include_steps,
                     skip_steps=skip_steps,
+                    llm_model=kwargs.get("model"),
                     repo_dir=kwargs.get("repo_dir"),
                     remote=str(kwargs.get("remote", "origin")),
                     branch=str(kwargs.get("branch", "gh-pages")),

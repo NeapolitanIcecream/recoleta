@@ -90,6 +90,7 @@ class FleetDeployRequest:
     pages_config: str
     force: bool
     item_export_scope: str
+    llm_model: str | None
     json_output: bool
 
 
@@ -101,6 +102,7 @@ class FleetGranularityChildRequest:
     anchor_date: str | None
     include: str | None
     skip: str | None
+    llm_model: str | None = None
     dry_run: bool = False
     force: bool = False
 
@@ -113,6 +115,7 @@ class FleetGranularityWorkflowRequest:
     anchor_date: str | None = None
     include: str | None = None
     skip: str | None = None
+    llm_model: str | None = None
     dry_run: bool = False
     force: bool = False
     json_output: bool = False
@@ -126,6 +129,7 @@ class FleetGranularityChildBatchRequest:
     anchor_date: str | None
     include: str | None
     skip: str | None
+    llm_model: str | None = None
     dry_run: bool = False
     force: bool = False
 
@@ -531,6 +535,7 @@ def execute_fleet_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
             anchor_date=request.anchor_date,
             include=request.include,
             skip=request.skip,
+            llm_model=request.llm_model,
             force=request.force,
         )
     )
@@ -564,6 +569,7 @@ def _fleet_granularity_workflow_request(
         anchor_date=kwargs.get("anchor_date"),
         include=kwargs.get("include"),
         skip=kwargs.get("skip"),
+        llm_model=kwargs.get("model"),
         dry_run=bool(kwargs.get("dry_run", False)),
         force=bool(kwargs.get("force", False)),
         json_output=bool(kwargs.get("json_output", False)),
@@ -725,6 +731,7 @@ def _fleet_granularity_child_payloads(
                 anchor_date=request.anchor_date,
                 include=request.include,
                 skip=request.skip,
+                llm_model=request.llm_model,
                 dry_run=request.dry_run,
                 force=request.force,
             )
@@ -745,6 +752,7 @@ def _fleet_granularity_dry_run_payload(
             anchor_date=request.anchor_date,
             include=request.include,
             skip=request.skip,
+            llm_model=request.llm_model,
             dry_run=True,
             force=request.force,
         )
@@ -1075,6 +1083,7 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
         pages_config=str(kwargs.get("pages_config", "auto")),
         force=bool(kwargs.get("force", True)),
         item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+        llm_model=kwargs.get("model"),
         json_output=bool(kwargs.get("json_output", False)),
     )
     manifest = load_fleet_manifest(request.manifest_path)
@@ -1083,6 +1092,7 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
         command=request.command,
         include_steps=request.include_steps,
         skip_steps=request.skip_steps,
+        llm_model=request.llm_model,
     )
     deployment_payload = _deploy_fleet_site(
         context=FleetSiteDeployContext(
@@ -1177,6 +1187,7 @@ def _fleet_granularity_child_payload(
         anchor_date=request.anchor_date,
         include=request.include,
         skip=request.skip,
+        model=request.llm_model,
         dry_run=request.dry_run,
         force=request.force,
         json_output=False,
@@ -1194,6 +1205,7 @@ def _run_fleet_deploy_children(
     command: str,
     include_steps: list[str],
     skip_steps: list[str],
+    llm_model: str | None,
 ) -> list[dict[str, Any]]:
     child_results: list[dict[str, Any]] = []
     normalized_include = set(include_steps)
@@ -1214,6 +1226,7 @@ def _run_fleet_deploy_children(
                 limit=None,
                 force=False,
                 context_assist="direct",
+                model=llm_model,
                 json_output=False,
                 command_name=f"{command} translate --instance {instance.name}",
                 raise_on_abort=True,

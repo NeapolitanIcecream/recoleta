@@ -124,3 +124,35 @@ def test_ideas_cli_accepts_yyyymmdd_date_and_prints_status(
     assert fake_repo.finished == [("run-ideas", True)]
     assert fake_service.calls
     assert fake_service.calls[0]["anchor_date"] == date(2026, 3, 2)
+
+
+def test_ideas_cli_passes_model_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "ideas",
+            "--granularity",
+            "day",
+            "--date",
+            "20260302",
+            "--model",
+            "test/ideas-override",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_service.calls
+    assert fake_service.calls[0]["llm_model"] == "test/ideas-override"

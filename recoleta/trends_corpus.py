@@ -46,6 +46,7 @@ class IndexItemsAsDocumentsRequest:
     content_chunk_chars: int = 1200
     max_content_chunks_per_item: int = 8
     min_relevance_score: float = 0.0
+    llm_model: str | None = None
 
 
 @dataclass(slots=True)
@@ -157,6 +158,7 @@ def coerce_index_items_request(
             legacy_kwargs.get("max_content_chunks_per_item", 8)
         ),
         min_relevance_score=float(legacy_kwargs.get("min_relevance_score", 0.0)),
+        llm_model=legacy_kwargs.get("llm_model"),
     )
 
 
@@ -769,6 +771,7 @@ def index_items_as_documents_impl(
         period_start=request.period_start,
         period_end=request.period_end,
         limit=request.limit,
+        llm_model=request.llm_model,
     )
     pairs, filtered_out_total = trends_module._filter_pairs_by_min_relevance(
         pairs,

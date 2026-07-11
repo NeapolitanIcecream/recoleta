@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from recoleta.config import LLM_MODEL_CONFIG_FIELDS, resolve_stage_llm_model
 from recoleta.types import sha256_hex
 
 WORKFLOW_FRESHNESS_SCHEMA_VERSION = 1
@@ -33,6 +34,107 @@ def workflow_freshness_key(freshness: dict[str, Any] | None) -> str | None:
     return normalized or None
 
 
+def analyze_budget_config_fingerprint(
+    settings: Any,
+    *,
+    llm_model: str | None = None,
+) -> str:
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    payload = _safe_settings_payload(settings)
+    if payload is None:
+        return _legacy_analyze_budget_config_fingerprint(
+            settings,
+            llm_model=llm_model,
+        )
+    for field_name in LLM_MODEL_CONFIG_FIELDS:
+        payload.pop(field_name, None)
+    payload["effective_analyze_llm_model"] = effective_model
+    return sha256_hex(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
+def analyze_budget_config_fingerprint_candidates(
+    settings: Any,
+    *,
+    llm_model: str | None = None,
+) -> tuple[str, ...]:
+    fingerprints = (
+        analyze_budget_config_fingerprint(settings, llm_model=llm_model),
+        _legacy_analyze_budget_config_fingerprint(settings, llm_model=llm_model),
+        _pre_stage_model_analyze_budget_config_fingerprint(
+            settings,
+            llm_model=llm_model,
+        ),
+    )
+    return tuple(dict.fromkeys(value for value in fingerprints if value))
+
+
+def _legacy_analyze_budget_config_fingerprint(
+    settings: Any,
+    *,
+    llm_model: str | None,
+) -> str:
+    base_fingerprint = _settings_fingerprint(settings)
+    if not base_fingerprint:
+        return ""
+    configured_model = resolve_stage_llm_model(settings, stage="analyze")
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    if effective_model == configured_model:
+        return base_fingerprint
+    return sha256_hex(
+        json.dumps(
+            {
+                "settings_fingerprint": base_fingerprint,
+                "analyze_llm_model": effective_model,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
+def _pre_stage_model_analyze_budget_config_fingerprint(
+    settings: Any,
+    *,
+    llm_model: str | None,
+) -> str:
+    global_model = str(getattr(settings, "llm_model", "") or "").strip()
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    if not global_model or effective_model != global_model:
+        return ""
+    payload = _safe_settings_payload(settings)
+    if payload is None:
+        return ""
+    for field_name in LLM_MODEL_CONFIG_FIELDS - {"llm_model"}:
+        payload.pop(field_name, None)
+    return sha256_hex(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
 def build_trend_synthesis_freshness(
     *,
     settings: Any,
@@ -44,6 +146,7 @@ def build_trend_synthesis_freshness(
 ) -> dict[str, Any]:
     repository = options.get("repository")
     source_fingerprint = options.get("source_fingerprint")
+    analysis_model = options.get("analysis_model")
     components = _base_generation_components(
         kind="trend_synthesis",
         settings=settings,
@@ -51,6 +154,10 @@ def build_trend_synthesis_freshness(
         period_start=period_start,
         period_end=period_end,
         llm_model=llm_model,
+    )
+    components["analysis_model"] = (
+        str(analysis_model or "").strip()
+        or resolve_stage_llm_model(settings, stage="analyze")
     )
     if source_fingerprint is None and repository is not None:
         source_fingerprint = build_trend_source_fingerprint(
@@ -151,14 +258,51 @@ def _base_generation_components(
         "granularity": str(granularity or "").strip().lower(),
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
-        "settings_fingerprint": _settings_fingerprint(settings),
-        "llm_model": str(
-            llm_model or getattr(settings, "llm_model", "") or ""
-        ).strip(),
+        "settings_fingerprint": _settings_generation_fingerprint(settings),
+        "llm_model": resolve_stage_llm_model(
+            settings,
+            stage=_stage_for_generation_kind(kind),
+            override=llm_model,
+        ),
         "llm_output_language": str(
             getattr(settings, "llm_output_language", "") or ""
         ).strip(),
     }
+
+
+def _stage_for_generation_kind(kind: str) -> str:
+    normalized = str(kind or "").strip()
+    if normalized == "trend_synthesis":
+        return "trends"
+    if normalized == "trend_ideas":
+        return "ideas"
+    raise ValueError("generation kind must be one of: trend_synthesis, trend_ideas")
+
+
+def _settings_generation_fingerprint(settings: Any) -> str:
+    payload = _safe_settings_payload(settings)
+    if payload is not None:
+        for field_name in LLM_MODEL_CONFIG_FIELDS:
+            payload.pop(field_name, None)
+        serialized = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return sha256_hex(serialized)
+    return _settings_fingerprint(settings)
+
+
+def _safe_settings_payload(settings: Any) -> dict[str, Any] | None:
+    dumper = getattr(settings, "safe_model_dump", None)
+    if not callable(dumper):
+        return None
+    try:
+        payload = dumper()
+    except Exception:
+        return None
+    return dict(payload) if isinstance(payload, dict) else None
 
 
 def _settings_fingerprint(settings: Any) -> str:

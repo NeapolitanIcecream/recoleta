@@ -16,7 +16,7 @@ from recoleta.trends import (
     persist_trend_payload,
     week_period_bounds,
 )
-from recoleta.types import ItemDraft
+from recoleta.types import AnalysisResult, ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
@@ -218,6 +218,117 @@ def test_day_trends_reuse_existing_corpus_indexes_missing_item_documents(
     assert metric_values["pipeline.trends.index.skipped_total"] == 0.0
     assert metric_values["pipeline.trends.corpus.empty"] == 0.0
     assert metric_values["pipeline.trends.index.docs_upserted_total"] == 1.0
+
+
+def test_day_trends_reuse_existing_corpus_reindexes_for_analysis_model(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("ANALYZE_LLM_MODEL", "test/new-analysis-model")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=cast(Any, repository),
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    anchor = date(2026, 3, 5)
+    day_start, day_end = day_period_bounds(anchor)
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="reuse-analysis-model",
+        canonical_url="https://example.com/reuse-analysis-model",
+        title="Reuse Analysis Model",
+        authors=["Alice"],
+        published_at=datetime(2026, 3, 5, 1, 0, tzinfo=UTC),
+        raw_metadata={"source": "test"},
+    )
+    item, _ = repository.upsert_item(draft)
+    assert item.id is not None
+    item_id = int(item.id)
+    _ = repository.save_analysis(
+        item_id=item_id,
+        result=AnalysisResult(
+            model="test/old-analysis-model",
+            provider="test",
+            summary="Old analysis summary",
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.5,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    _ = index_items_as_documents(
+        repository=repository,
+        run_id="seed-old-analysis-corpus",
+        period_start=day_start,
+        period_end=day_end,
+        llm_model="test/old-analysis-model",
+    )
+    _ = repository.save_analysis(
+        item_id=item_id,
+        result=AnalysisResult(
+            model="test/new-analysis-model",
+            provider="test",
+            summary="New analysis summary",
+            topics=["agents"],
+            relevance_score=0.9,
+            novelty_score=0.5,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+
+    monkeypatch.setattr(service, "prepare", _raise_if_called)
+    monkeypatch.setattr(service, "analyze", _raise_if_called)
+
+    from recoleta.rag import agent as rag_agent
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        summary_rows = repository.list_document_chunk_index_rows_in_period(
+            doc_type="item",
+            kind="summary",
+            period_start=kwargs["period_start"],
+            period_end=kwargs["period_end"],
+            limit=10,
+        )
+        assert [row["text"] for row in summary_rows] == ["New analysis summary"]
+        return (
+            TrendPayload(
+                title="Day Trend",
+                granularity="day",
+                period_start=kwargs["period_start"].isoformat(),
+                period_end=kwargs["period_end"].isoformat(),
+                overview_md="- rebuilt for the new analysis model",
+                topics=["agents"],
+                clusters=[],
+            ),
+            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+        )
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+
+    result = service.trends(
+        run_id="run-reuse-new-analysis-model",
+        granularity="day",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+        reuse_existing_corpus=True,
+    )
+
+    assert result.title == "Day Trend"
+    metric_values = {
+        str(getattr(metric, "name", "")): float(getattr(metric, "value", 0.0))
+        for metric in repository.list_metrics(run_id="run-reuse-new-analysis-model")
+    }
+    assert metric_values["pipeline.trends.index.skipped_total"] == 0.0
     assert (
         metric_values[
             "pipeline.trends.source_materialization.checked_total.item"
@@ -286,9 +397,16 @@ def test_day_trends_non_reuse_reindexes_existing_item_documents(
     original_index = trends_stage_mod._TrendStageRunner._index_items_for_period
     index_calls = {"total": 0}
 
-    def _recording_index(self, *, period_start, period_end):  # type: ignore[no-untyped-def]
+    def _recording_index(  # type: ignore[no-untyped-def]
+        self, *, period_start, period_end, analysis_model
+    ):
         index_calls["total"] += 1
-        return original_index(self, period_start=period_start, period_end=period_end)
+        return original_index(
+            self,
+            period_start=period_start,
+            period_end=period_end,
+            analysis_model=analysis_model,
+        )
 
     monkeypatch.setattr(
         trends_stage_mod._TrendStageRunner,

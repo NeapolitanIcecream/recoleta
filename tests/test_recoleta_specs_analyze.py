@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 import threading
 import time
@@ -15,6 +16,7 @@ from recoleta.models import (
     ITEM_STATE_ENRICHED,
     ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
+    ITEM_STATE_PUBLISHED,
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
     Artifact,
@@ -24,6 +26,7 @@ from recoleta.models import (
 )
 from recoleta.pipeline.service import PipelineService
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
+from recoleta.workflow_freshness import analyze_budget_config_fingerprint
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
@@ -96,6 +99,288 @@ class _PartiallyInvalidPersistenceAnalyzer:
         )
 
 
+def test_analyze_uses_stage_specific_model_and_explicit_override(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path: Path = configured_env
+    artifacts_dir = tmp_path / "artifacts"
+    created_models: list[str] = []
+
+    class _RecordingLiteLLMAnalyzer:
+        def __init__(
+            self,
+            *,
+            model: str,
+            output_language: str | None = None,  # noqa: ARG002
+            content_max_chars: int = 5000,  # noqa: ARG002
+            llm_connection: object | None = None,  # noqa: ARG002
+        ) -> None:
+            self.model = model
+            created_models.append(model)
+
+        def analyze(
+            self,
+            *,
+            title: str,
+            canonical_url: str,
+            user_topics: list[str],
+            content: str | None = None,  # noqa: ARG002
+            include_debug: bool = False,
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            provider = self.model.split("/", 1)[0] if "/" in self.model else "test"
+            result = AnalysisResult(
+                model=self.model,
+                provider=provider,
+                summary=f"summary for {title}",
+                topics=user_topics[:2] or ["general"],
+                relevance_score=0.91,
+                novelty_score=0.42,
+                cost_usd=0.01,
+                latency_ms=1,
+                prompt_tokens=11,
+                completion_tokens=7,
+                total_tokens=18,
+            )
+            debug = (
+                AnalyzeDebug(
+                    request={"model": self.model, "canonical_url": canonical_url},
+                    response={"model": self.model, "summary": result.summary},
+                )
+                if include_debug
+                else None
+            )
+            return result, debug
+
+    monkeypatch.setenv("ANALYZE_LLM_MODEL", "test/analyze-stage-model")
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
+    monkeypatch.setattr(
+        "recoleta.pipeline.service.LiteLLMAnalyzer",
+        _RecordingLiteLLMAnalyzer,
+    )
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    first_draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-analyze-stage-model",
+        canonical_url="https://example.com/analyze-stage-model",
+        title="Analyze Stage Model",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-analyze-stage-model", drafts=[first_draft], limit=10)
+    first_result = service.analyze(run_id="run-analyze-stage-model", limit=10)
+    with Session(repository.engine) as session:
+        first_item = session.exec(
+            select(Item).where(
+                Item.source_item_id == "item-analyze-stage-model"
+            )
+        ).one()
+        first_item.state = ITEM_STATE_PUBLISHED
+        session.add(first_item)
+        session.commit()
+
+    second_draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-analyze-override-model",
+        canonical_url="https://example.com/analyze-override-model",
+        title="Analyze Override Model",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(
+        run_id="run-analyze-override-model",
+        drafts=[second_draft],
+        limit=10,
+    )
+    second_result = service.analyze(
+        run_id="run-analyze-override-model",
+        limit=10,
+        llm_model="test/analyze-override-model",
+    )
+
+    assert first_result.processed == 1
+    assert second_result.processed == 2
+    assert created_models == [
+        "test/analyze-stage-model",
+        "test/analyze-override-model",
+    ]
+    override_receipt = repository.get_latest_workflow_step_receipt(
+        step_id="analyze",
+        granularity="day",
+        period_start=None,
+        period_end=None,
+        config_fingerprint=analyze_budget_config_fingerprint(
+            settings,
+            llm_model="test/analyze-override-model",
+        ),
+        min_selected_total=1,
+    )
+    assert override_receipt is not None
+    assert override_receipt.run_id == "run-analyze-override-model"
+
+    with Session(repository.engine) as session:
+        analyses = list(session.exec(select(Analysis).order_by(cast(Any, Analysis.id))))
+        assert [analysis.model for analysis in analyses] == [
+            "test/analyze-override-model",
+            "test/analyze-override-model",
+        ]
+        items = list(session.exec(select(Item).order_by(cast(Any, Item.id))))
+        assert [item.state for item in items] == [
+            ITEM_STATE_PUBLISHED,
+            ITEM_STATE_ANALYZED,
+        ]
+        first_request_artifact = session.exec(
+            select(Artifact).where(
+                Artifact.run_id == "run-analyze-stage-model",
+                Artifact.kind == "llm_request",
+            )
+        ).one()
+        request_payload = json.loads(
+            (artifacts_dir / first_request_artifact.path).read_text(encoding="utf-8")
+        )
+        assert request_payload["model"] == "test/analyze-stage-model"
+    publish_candidates = repository.list_items_for_publish(
+        limit=10,
+        min_relevance_score=0.0,
+    )
+    assert [item.source_item_id for item, _analysis in publish_candidates] == [
+        "item-analyze-override-model"
+    ]
+
+    first_metrics = repository.list_metrics(run_id="run-analyze-stage-model")
+    second_metrics = repository.list_metrics(run_id="run-analyze-override-model")
+    assert any(
+        metric.name == "pipeline.analyze.llm_calls.model.test_analyze_stage_model"
+        for metric in first_metrics
+    )
+    assert any(
+        metric.name == "pipeline.analyze.llm_calls.model.test_analyze_override_model"
+        for metric in second_metrics
+    )
+
+
+def test_failed_model_refresh_preserves_published_state(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(should_fail=True),
+        telegram_sender=FakeTelegramSender(),
+    )
+    item, _inserted = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="published-refresh-failure",
+            canonical_url="https://example.com/published-refresh-failure",
+            title="Published refresh failure",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+    )
+    assert item.id is not None
+    repository.upsert_content(
+        item_id=item.id,
+        content_type="html_maintext",
+        text="Stored content",
+    )
+    repository.save_analysis(
+        item_id=item.id,
+        result=AnalysisResult(
+            model="test/old-model",
+            provider="test",
+            summary="Old summary",
+            topics=["agents"],
+            relevance_score=0.8,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    repository.mark_item_published(item_id=item.id)
+
+    result = service.analyze(
+        run_id="run-published-refresh-failure",
+        limit=10,
+        llm_model="test/new-model",
+    )
+
+    assert result.failed == 1
+    with Session(repository.engine) as session:
+        stored_item = session.get(Item, item.id)
+        stored_analysis = session.exec(
+            select(Analysis).where(Analysis.item_id == item.id)
+        ).one()
+        assert stored_item is not None
+        assert stored_item.state == ITEM_STATE_PUBLISHED
+        assert stored_analysis.model == "test/old-model"
+
+
+def test_persist_failure_during_model_refresh_preserves_published_state(
+    configured_env,
+) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=_PartiallyInvalidPersistenceAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    item, _inserted = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="published-refresh-persist-failure",
+            canonical_url="https://example.com/published-refresh-persist-failure",
+            title="Invalid Persistence During Model Refresh",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+    )
+    assert item.id is not None
+    repository.upsert_content(
+        item_id=item.id,
+        content_type="html_maintext",
+        text="Stored content",
+    )
+    repository.save_analysis(
+        item_id=item.id,
+        result=AnalysisResult(
+            model="test/old-model",
+            provider="test",
+            summary="Old summary",
+            topics=["agents"],
+            relevance_score=0.8,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    repository.mark_item_published(item_id=item.id)
+
+    result = service.analyze(
+        run_id="run-published-refresh-persist-failure",
+        limit=10,
+        llm_model="test/new-model",
+    )
+
+    assert result.failed == 1
+    with Session(repository.engine) as session:
+        stored_item = session.get(Item, item.id)
+        stored_analysis = session.exec(
+            select(Analysis).where(Analysis.item_id == item.id)
+        ).one()
+        assert stored_item is not None
+        assert stored_item.state == ITEM_STATE_PUBLISHED
+        assert stored_analysis.model == "test/old-model"
+
+
 def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -154,7 +439,7 @@ def test_analyze_records_budget_receipt(configured_env) -> None:
         granularity="day",
         period_start=None,
         period_end=None,
-        config_fingerprint=settings.safe_fingerprint(),
+        config_fingerprint=analyze_budget_config_fingerprint(settings),
         min_selected_total=1,
     )
 
@@ -771,6 +1056,67 @@ def test_repository_analysis_selection_prioritizes_recently_updated_retryables(
     )
     assert selection[0].source_item_id == "order-older"
     assert llm_selection[0].source_item_id == "order-older"
+
+
+@pytest.mark.parametrize(
+    "completed_state",
+    [ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED],
+)
+def test_repository_requeues_completed_analysis_for_model_change(
+    configured_env,
+    completed_state: str,
+) -> None:
+    _settings, repository = _build_runtime()
+    item, _inserted = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id=f"stale-model-{completed_state}",
+            canonical_url=f"https://example.com/stale-model-{completed_state}",
+            title="Stale model candidate",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+    )
+    assert item.id is not None
+    repository.save_analysis(
+        item_id=item.id,
+        result=AnalysisResult(
+            model="test/old-model",
+            provider="test",
+            summary="Old summary",
+            topics=["agents"],
+            relevance_score=0.8,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    if completed_state == ITEM_STATE_PUBLISHED:
+        with Session(repository.engine) as session:
+            stored_item = session.get(Item, item.id)
+            assert stored_item is not None
+            stored_item.state = ITEM_STATE_PUBLISHED
+            session.add(stored_item)
+            session.commit()
+
+    unchanged = repository.list_items_for_llm_analysis(
+        limit=10,
+        triage_required=False,
+        llm_model="test/old-model",
+    )
+    stale = repository.list_items_for_llm_analysis(
+        limit=10,
+        triage_required=False,
+        llm_model="test/new-model",
+    )
+    counts = repository.count_items_for_llm_analysis_by_state(
+        triage_required=False,
+        llm_model="test/new-model",
+    )
+
+    assert unchanged == []
+    assert [candidate.id for candidate in stale] == [item.id]
+    assert counts == {completed_state: 1}
 
 
 def test_analyze_with_semantic_triage_prioritizes_high_similarity_items(

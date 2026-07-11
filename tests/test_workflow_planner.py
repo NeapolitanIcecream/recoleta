@@ -9,9 +9,14 @@ import pytest
 
 from recoleta.cli import workflow_planner as workflow_planner_module
 from recoleta.cli.workflow_models import STEP_TRANSLATE
-from recoleta.cli.workflow_planner import plan_workflow_execution
+from recoleta.cli.workflow_planner import (
+    WorkflowPlanningOptions,
+    plan_workflow_execution,
+)
 from recoleta.cli.workflow_runner import GranularityPlanRequest, build_granularity_plan
+from recoleta.types import sha256_hex
 from recoleta.workflow_freshness import (
+    analyze_budget_config_fingerprint,
     build_trend_ideas_freshness,
     build_trend_synthesis_freshness,
 )
@@ -32,6 +37,10 @@ class _Settings:
     topics: list[str] = []
     min_relevance_score = 0.0
     llm_model = "gpt-test"
+    analyze_llm_model: str | None = None
+    trends_llm_model: str | None = None
+    ideas_llm_model: str | None = None
+    translation_llm_model: str | None = None
     llm_output_language = "English"
     workflows = SimpleNamespace()
     sources = SimpleNamespace(arxiv=SimpleNamespace(enabled=False))
@@ -71,6 +80,27 @@ class _TranslationSettings(_Settings):
 class _TriageSettings(_Settings):
     triage_enabled = True
     topics = ["software agents"]
+
+
+class _AnalyzeFingerprintSettings(_TriageSettings):
+    def __init__(self, *, trends_llm_model: str) -> None:
+        self.llm_model = "gpt-test"
+        self.analyze_llm_model = None
+        self.trends_llm_model = trends_llm_model
+        self.ideas_llm_model = None
+        self.translation_llm_model = None
+
+    def safe_model_dump(self) -> dict[str, object]:
+        return {
+            "analyze_limit": self.analyze_limit,
+            "triage_enabled": self.triage_enabled,
+            "topics": self.topics,
+            "llm_model": self.llm_model,
+            "analyze_llm_model": self.analyze_llm_model,
+            "trends_llm_model": self.trends_llm_model,
+            "ideas_llm_model": self.ideas_llm_model,
+            "translation_llm_model": self.translation_llm_model,
+        }
 
 
 class _ReadOnlyPlannerRepo:
@@ -269,10 +299,37 @@ class _AnalyzeCandidatesRepo(_ReadOnlyPlannerRepo):
         return [SimpleNamespace(id=1)]
 
 
+class _ModelStaleAnalysisRepo(_ReadOnlyPlannerRepo):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requested_models: list[str | None] = []
+
+    def list_items_for_llm_analysis(self, **kwargs: Any) -> list[Any]:
+        llm_model = kwargs.get("llm_model")
+        self.requested_models.append(llm_model)
+        if llm_model == "gpt-override":
+            return [SimpleNamespace(id=1, state="analyzed")]
+        return []
+
+    def count_items_for_llm_analysis_by_state(
+        self,
+        **kwargs: Any,
+    ) -> dict[str, int]:
+        if kwargs.get("llm_model") == "gpt-override":
+            return {"analyzed": 1}
+        return {}
+
+
 class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
-    def __init__(self, *, selected_total: int) -> None:
+    def __init__(
+        self,
+        *,
+        selected_total: int,
+        accepted_fingerprints: set[str] | None = None,
+    ) -> None:
         super().__init__()
         self.selected_total = selected_total
+        self.accepted_fingerprints = accepted_fingerprints or {"fp-test"}
         self.receipt_requests: list[dict[str, Any]] = []
 
     def get_latest_workflow_step_receipt(self, **kwargs: Any) -> Any | None:
@@ -281,7 +338,7 @@ class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
             return None
         if kwargs["granularity"] != "day":
             return None
-        if str(kwargs.get("config_fingerprint") or "") != "fp-test":
+        if str(kwargs.get("config_fingerprint") or "") not in self.accepted_fingerprints:
             return None
         if self.selected_total < int(kwargs.get("min_selected_total") or 0):
             return None
@@ -421,6 +478,31 @@ class _DocumentOnlyLowerLevelRepo(_ReadOnlyPlannerRepo):
                 else []
             )
         return super().list_documents(**kwargs)
+
+
+class _LegacyPassOutputRepo(_ReadOnlyPlannerRepo):
+    def __init__(self, *, legacy_pass_kinds: set[str]) -> None:
+        super().__init__()
+        self.legacy_pass_kinds = legacy_pass_kinds
+
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        row = super().get_latest_pass_output(**kwargs)
+        if row is not None and kwargs["pass_kind"] in self.legacy_pass_kinds:
+            row.diagnostics_json = "{}"
+        return row
+
+
+class _StaleLowerLevelIdeasRepo(_ReadOnlyPlannerRepo):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        row = super().get_latest_pass_output(**kwargs)
+        if (
+            row is not None
+            and kwargs["pass_kind"] == "trend_synthesis"
+            and kwargs["granularity"] == "day"
+            and kwargs["period_start"].date() == date(2026, 3, 16)
+        ):
+            row.id = int(row.id) + 1000
+        return row
 
 
 def test_planner_skips_complete_day_level_work_for_week() -> None:
@@ -584,6 +666,51 @@ def test_week_planner_skips_missing_lower_level_idea_after_task_set_ran() -> Non
     assert publish_decision.reason == "no_publish_candidates"
 
 
+def test_week_planner_reruns_lower_level_ideas_for_newer_trend_pass() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_StaleLowerLevelIdeasRepo(),
+        settings=_Settings(),
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert trend_decision.action == "skip"
+    assert ideas_decision.action == "run"
+    assert ideas_decision.reason == "stale_upstream_pass_output"
+
+
+@pytest.mark.parametrize(
+    ("settings_field", "workflow_model", "step_id"),
+    [
+        (None, "gpt-override", "trends:day"),
+        ("analyze_llm_model", None, "trends:day"),
+        ("trends_llm_model", None, "trends:day"),
+        ("ideas_llm_model", None, "ideas:day"),
+    ],
+)
+def test_week_planner_reruns_document_only_outputs_for_model_change(
+    settings_field: str | None,
+    workflow_model: str | None,
+    step_id: str,
+) -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    if settings_field is not None:
+        setattr(settings, settings_field, "gpt-stage-override")
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_DocumentOnlyLowerLevelRepo(),
+        settings=settings,
+        options=WorkflowPlanningOptions(llm_model=workflow_model),
+    )
+
+    decision = _decision_for(decisions, step_id, source_day)
+    assert decision.action == "run"
+
+
 def test_week_planner_treats_suppressed_lower_level_ideas_as_existing() -> None:
     source_day = date(2026, 3, 16)
 
@@ -615,6 +742,59 @@ def test_planner_runs_analyze_when_planned_ingest_may_create_candidates() -> Non
     assert trend_decision.action == "run"
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "upstream_ingest_planned"
+
+
+def test_planner_runs_analyze_for_stale_model_candidate() -> None:
+    source_day = date(2026, 3, 16)
+    repo = _ModelStaleAnalysisRepo()
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=_Settings()),
+        repository=repo,
+        settings=_Settings(),
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "stale_analysis_model"
+    assert repo.requested_models == ["gpt-override"]
+
+
+def test_month_planner_propagates_analyze_model_refresh_through_lower_levels() -> None:
+    source_day = date(2026, 3, 16)
+    source_week = date(2026, 3, 16)
+    source_month = date(2026, 3, 1)
+    settings = _Settings()
+    settings.analyze_llm_model = "gpt-override"
+
+    decisions = plan_workflow_execution(
+        plan=_month_plan(),
+        repository=_ModelStaleAnalysisRepo(),
+        settings=settings,
+    )
+
+    assert _decision_for(decisions, "analyze", source_day).reason == (
+        "stale_analysis_model"
+    )
+    assert _decision_for(decisions, "trends:day", source_day).reason == (
+        "stale_freshness"
+    )
+    assert _decision_for(decisions, "ideas:day", source_day).reason == (
+        "upstream_trend_model_refresh"
+    )
+    assert _decision_for(decisions, "trends:week", source_week).reason == (
+        "stale_freshness"
+    )
+    assert _decision_for(decisions, "ideas:week", source_week).reason == (
+        "upstream_trend_model_refresh"
+    )
+    assert _decision_for(decisions, "trends:month", source_month).reason == (
+        "stale_freshness"
+    )
+    assert _decision_for(decisions, "ideas:month", source_month).reason == (
+        "upstream_trend_planned"
+    )
 
 
 def test_planner_skips_analyze_when_budget_was_satisfied_with_backlog() -> None:
@@ -665,6 +845,91 @@ def test_planner_runs_analyze_when_budget_increases_above_receipt() -> None:
 
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "candidate_items"
+
+
+def test_planner_preserves_analyze_budget_when_other_stage_model_changes() -> None:
+    source_day = date(2026, 3, 16)
+    previous_settings = _AnalyzeFingerprintSettings(
+        trends_llm_model="gpt-trends-old"
+    )
+    current_settings = _AnalyzeFingerprintSettings(
+        trends_llm_model="gpt-trends-new"
+    )
+    previous_fingerprint = analyze_budget_config_fingerprint(previous_settings)
+    assert previous_fingerprint == analyze_budget_config_fingerprint(current_settings)
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=current_settings.analyze_limit,
+        accepted_fingerprints={previous_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=current_settings),
+        repository=repo,
+        settings=current_settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+
+
+def test_planner_accepts_pre_stage_model_analyze_budget_receipt() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _AnalyzeFingerprintSettings(
+        trends_llm_model="gpt-trends-new",
+    )
+    pre_upgrade_payload = settings.safe_model_dump()
+    for field_name in (
+        "analyze_llm_model",
+        "trends_llm_model",
+        "ideas_llm_model",
+        "translation_llm_model",
+    ):
+        pre_upgrade_payload.pop(field_name)
+    pre_upgrade_fingerprint = sha256_hex(
+        json.dumps(
+            pre_upgrade_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=settings.analyze_limit,
+        accepted_fingerprints={pre_upgrade_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=repo,
+        settings=settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+    assert any(
+        request["config_fingerprint"] == pre_upgrade_fingerprint
+        for request in repo.receipt_requests
+    )
+
+
+def test_planner_ignores_analyze_budget_receipt_for_workflow_model_override() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _TriageSettings()
+    repo = _AnalyzeBudgetReceiptRepo(selected_total=settings.analyze_limit)
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=repo,
+        settings=settings,
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "candidate_items"
+    assert repo.receipt_requests
+    assert repo.receipt_requests[0]["config_fingerprint"] != "fp-test"
 
 
 def test_week_planner_trusts_day_analyze_budget_receipts() -> None:
@@ -734,7 +999,7 @@ def test_generation_force_does_not_force_analyze_without_reprocess_path() -> Non
         plan=_day_plan_without_ingest(),
         repository=_ReadOnlyPlannerRepo(),
         settings=_Settings(),
-        generation_force=True,
+        options=WorkflowPlanningOptions(generation_force=True),
     )
 
     analyze_decision = _decision_for(decisions, "analyze", source_day)
@@ -754,7 +1019,7 @@ def test_generation_force_overrides_existing_lower_level_task_sets() -> None:
         plan=_week_plan(),
         repository=_ReadOnlyPlannerRepo(),
         settings=_Settings(),
-        generation_force=True,
+        options=WorkflowPlanningOptions(generation_force=True),
     )
 
     trend_decision = _decision_for(decisions, "trends:day", source_day)
@@ -868,8 +1133,10 @@ def test_planner_reports_translation_candidates_by_source_bucket(
         plan=_day_translation_plan(),
         repository=repo,
         settings=_TranslationSettings(),
-        translate_include=["trends", "ideas"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["trends", "ideas"],
+            translate_granularities=["day"],
+        ),
     )
 
     decision = _translation_decision(decisions)
@@ -912,8 +1179,10 @@ def test_planner_skips_translation_when_localized_outputs_are_fresh(
         plan=_day_translation_plan(),
         repository=repo,
         settings=_TranslationSettings(),
-        translate_include=["trends", "ideas"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["trends", "ideas"],
+            translate_granularities=["day"],
+        ),
     )
 
     decision = _translation_decision(decisions)
@@ -941,14 +1210,57 @@ def test_planner_runs_translation_when_week_outputs_are_planned(
             existing_hashes={},
         ),
         settings=_TranslationSettings(),
-        translate_include=["trends", "ideas"],
-        translate_granularities=["week"],
+        options=WorkflowPlanningOptions(
+            translate_include=["trends", "ideas"],
+            translate_granularities=["week"],
+        ),
     )
 
     assert _decision_for(decisions, "trends:week", date(2026, 3, 16)).action == "run"
     decision = _translation_decision(decisions)
     assert decision.action == "run"
     assert decision.reason == "upstream_generation_planned"
+
+
+def test_planner_reruns_translation_when_workflow_model_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = SimpleNamespace(
+        source_kind="trend_synthesis",
+        source_record_id=11,
+        payload={"title": "fresh trend"},
+        granularity="day",
+    )
+    monkeypatch.setattr(
+        workflow_planner_module,
+        "_translation_candidates_for_plan",
+        lambda **_kwargs: [candidate],
+    )
+    repo = _TranslationPlannerRepo(
+        existing_hashes={
+            (
+                "trend_synthesis",
+                11,
+                "zh-cn",
+            ): workflow_planner_module._translation_payload_hash(candidate)
+        }
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_translation_plan(),
+        repository=repo,
+        settings=_TranslationSettings(),
+        options=WorkflowPlanningOptions(
+            llm_model="gpt-translation-override",
+            translate_include=["trends"],
+            translate_granularities=["day"],
+        ),
+    )
+
+    decision = _translation_decision(decisions)
+    assert decision.action == "run"
+    assert decision.reason == "translation_candidates"
+    assert decision.estimated_llm_calls == 1
 
 
 def test_trend_planner_reruns_trend_and_ideas_when_source_hash_changes() -> None:
@@ -969,6 +1281,274 @@ def test_trend_planner_reruns_trend_and_ideas_when_source_hash_changes() -> None
     ideas_decision = _decision_for(decisions, "ideas:day", source_day)
     assert ideas_decision.action == "run"
     assert ideas_decision.reason == "upstream_trend_planned"
+
+
+def test_trend_planner_treats_workflow_model_override_as_stale_freshness() -> None:
+    source_day = date(2026, 3, 16)
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=_Settings(),
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    decision = _decision_for(decisions, "trends:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "stale_freshness"
+
+
+def test_trend_planner_treats_analysis_model_change_as_stale_freshness() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    settings.analyze_llm_model = "gpt-analyze-next"
+    decisions = plan_workflow_execution(
+        plan=_day_trends_only_plan(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=settings,
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    assert not any(decision.step_id == "analyze" for decision in decisions)
+    assert trend_decision.action == "run"
+    assert trend_decision.reason == "stale_freshness"
+
+
+def test_trend_planner_refreshes_legacy_output_for_workflow_model_override() -> None:
+    source_day = date(2026, 3, 16)
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(legacy_pass_kinds={"trend_synthesis"}),
+        settings=_Settings(),
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    decision = _decision_for(decisions, "trends:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "stale_freshness"
+
+
+def test_trend_planner_refreshes_legacy_output_for_analyze_model_change() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    settings.analyze_llm_model = "gpt-analyze-override"
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(legacy_pass_kinds={"trend_synthesis"}),
+        settings=settings,
+    )
+
+    decision = _decision_for(decisions, "trends:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "stale_freshness"
+
+
+def test_ideas_planner_refreshes_legacy_output_for_stage_model_change() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    settings.ideas_llm_model = "gpt-ideas-override"
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(legacy_pass_kinds={"trend_ideas"}),
+        settings=settings,
+    )
+
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert ideas_decision.action == "run"
+    assert ideas_decision.reason == "stale_freshness"
+
+
+def test_planner_preserves_legacy_outputs_under_global_model() -> None:
+    source_day = date(2026, 3, 16)
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(
+            legacy_pass_kinds={"trend_synthesis", "trend_ideas"}
+        ),
+        settings=_Settings(),
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert trend_decision.reason == "legacy_complete"
+    assert ideas_decision.reason == "legacy_complete"
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "lower_granularity", "source_date"),
+    [
+        ("week", "day", date(2026, 3, 16)),
+        ("month", "week", date(2026, 3, 16)),
+    ],
+)
+def test_recursive_planner_reruns_lower_level_outputs_when_workflow_model_changes(
+    workflow_name: str,
+    lower_granularity: str,
+    source_date: date,
+) -> None:
+    plan = _week_plan() if workflow_name == "week" else _month_plan()
+    decisions = plan_workflow_execution(
+        plan=plan,
+        repository=_ReadOnlyPlannerRepo(),
+        settings=_Settings(),
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    trend_decision = _decision_for(
+        decisions,
+        f"trends:{lower_granularity}",
+        source_date,
+    )
+    ideas_decision = _decision_for(
+        decisions,
+        f"ideas:{lower_granularity}",
+        source_date,
+    )
+
+    assert trend_decision.action == "run"
+    assert trend_decision.reason == "stale_freshness"
+    assert ideas_decision.action == "run"
+
+
+@pytest.mark.parametrize(
+    ("settings_field", "step_id"),
+    [
+        ("analyze_llm_model", "trends:day"),
+        ("trends_llm_model", "trends:day"),
+        ("ideas_llm_model", "ideas:day"),
+    ],
+)
+def test_week_planner_reruns_lower_level_output_when_stage_model_changes(
+    settings_field: str,
+    step_id: str,
+) -> None:
+    settings = _Settings()
+    setattr(settings, settings_field, "gpt-stage-override")
+
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=settings,
+    )
+
+    decision = _decision_for(decisions, step_id, date(2026, 3, 16))
+    assert decision.action == "run"
+
+
+class _FreshnessSettings:
+    def __init__(
+        self,
+        *,
+        llm_model: str = "test/global",
+        analyze_llm_model: str | None = None,
+        trends_llm_model: str | None = None,
+        ideas_llm_model: str | None = None,
+        translation_llm_model: str | None = None,
+    ) -> None:
+        self.llm_model = llm_model
+        self.analyze_llm_model = analyze_llm_model
+        self.trends_llm_model = trends_llm_model
+        self.ideas_llm_model = ideas_llm_model
+        self.translation_llm_model = translation_llm_model
+        self.llm_output_language = "English"
+
+    def safe_model_dump(self) -> dict[str, object]:
+        return {
+            "llm_model": self.llm_model,
+            "analyze_llm_model": self.analyze_llm_model,
+            "trends_llm_model": self.trends_llm_model,
+            "ideas_llm_model": self.ideas_llm_model,
+            "translation_llm_model": self.translation_llm_model,
+            "llm_output_language": self.llm_output_language,
+            "topics": ["agents"],
+        }
+
+    def safe_fingerprint(self) -> str:
+        return "full-config-fingerprint"
+
+
+def test_trend_freshness_ignores_unrelated_stage_specific_models() -> None:
+    period_start = datetime(2026, 3, 16, tzinfo=UTC)
+    period_end = datetime(2026, 3, 17, tzinfo=UTC)
+    base = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(
+            trends_llm_model="test/trends-stage",
+            translation_llm_model="test/translation-a",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+    unrelated_translation_change = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(
+            trends_llm_model="test/trends-stage",
+            translation_llm_model="test/translation-b",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+    effective_trends_change = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(trends_llm_model="test/trends-next"),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+    effective_analysis_change = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(
+            trends_llm_model="test/trends-stage",
+            analyze_llm_model="test/analyze-next",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    assert base["key"] == unrelated_translation_change["key"]
+    assert base["key"] != effective_trends_change["key"]
+    assert base["key"] != effective_analysis_change["key"]
+    assert base["components"]["llm_model"] == "test/trends-stage"
+    assert base["components"]["analysis_model"] == "test/global"
+    assert effective_trends_change["components"]["llm_model"] == "test/trends-next"
+    assert effective_analysis_change["components"]["analysis_model"] == (
+        "test/analyze-next"
+    )
+
+
+def test_ideas_freshness_ignores_unrelated_stage_specific_models() -> None:
+    period_start = datetime(2026, 3, 16, tzinfo=UTC)
+    period_end = datetime(2026, 3, 17, tzinfo=UTC)
+    base = build_trend_ideas_freshness(
+        settings=_FreshnessSettings(
+            ideas_llm_model="test/ideas-stage",
+            analyze_llm_model="test/analyze-a",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        upstream_pass_output_id=42,
+    )
+    unrelated_analyze_change = build_trend_ideas_freshness(
+        settings=_FreshnessSettings(
+            ideas_llm_model="test/ideas-stage",
+            analyze_llm_model="test/analyze-b",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        upstream_pass_output_id=42,
+    )
+    effective_ideas_change = build_trend_ideas_freshness(
+        settings=_FreshnessSettings(ideas_llm_model="test/ideas-next"),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        upstream_pass_output_id=42,
+    )
+
+    assert base["key"] == unrelated_analyze_change["key"]
+    assert base["key"] != effective_ideas_change["key"]
+    assert base["components"]["llm_model"] == "test/ideas-stage"
+    assert effective_ideas_change["components"]["llm_model"] == "test/ideas-next"
 
 
 def test_ideas_planner_prefers_newer_suppressed_output_over_older_success() -> None:
@@ -1004,8 +1584,10 @@ def test_translation_planner_sees_ideas_rerun_from_changed_trend_source(
             stored_source_hashes={("item", source_day): "source-hash-old"},
         ),
         settings=_TranslationSettings(),
-        translate_include=["ideas"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["ideas"],
+            translate_granularities=["day"],
+        ),
     )
 
     assert _decision_for(decisions, "trends:day", source_day).action == "run"
@@ -1032,8 +1614,10 @@ def test_translation_planner_sees_analyze_run_for_item_translation(
             missing_days={source_day},
         ),
         settings=_TranslationSettings(),
-        translate_include=["items"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["items"],
+            translate_granularities=["day"],
+        ),
     )
 
     assert _decision_for(decisions, "analyze", source_day).action == "run"
@@ -1134,6 +1718,19 @@ def _day_plan_without_ingest():
             settings=_Settings(),
             include_steps=[],
             skip_steps=["ingest"],
+        )
+    )
+
+
+def _day_trends_only_plan():
+    return build_granularity_plan(
+        request=GranularityPlanRequest(
+            workflow_name="day",
+            command="run day",
+            anchor_date="2026-03-16",
+            settings=_Settings(),
+            include_steps=[],
+            skip_steps=["ingest", "analyze", "publish", "ideas:day"],
         )
     )
 

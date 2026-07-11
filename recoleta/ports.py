@@ -52,6 +52,7 @@ class RepositoryPort(Protocol):
         triage_required: bool,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        llm_model: str | None = None,
     ) -> list[Item]: ...
 
     def get_latest_content(
@@ -225,6 +226,7 @@ class RepositoryPort(Protocol):
         period_end: datetime,
         limit: int,
         offset: int = 0,
+        llm_model: str | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def upsert_document_for_item(self, *, item: Item) -> Document: ...
@@ -357,6 +359,7 @@ class AnalysisRepositoryPort(Protocol):
         triage_required: bool,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        llm_model: str | None = None,
     ) -> list[Item]: ...
 
     def get_latest_content_texts(
@@ -473,6 +476,7 @@ class TrendRepositoryPort(Protocol):
         period_end: datetime,
         limit: int,
         offset: int = 0,
+        llm_model: str | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def upsert_document_for_item(self, *, item: Item) -> Document: ...

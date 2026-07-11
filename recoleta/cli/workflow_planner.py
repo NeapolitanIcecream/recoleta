@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from datetime import date, datetime
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 from recoleta.cli.workflow_models import (
     GRANULARITY_ORDER,
@@ -23,8 +23,11 @@ from recoleta.cli.workflow_models import (
     WorkflowPlan,
     WorkflowPlanDecision,
 )
+from recoleta.config import resolve_stage_llm_model
+from recoleta.models import ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED
 from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
 from recoleta.workflow_freshness import (
+    analyze_budget_config_fingerprint_candidates,
     build_trend_ideas_freshness,
     build_trend_synthesis_freshness,
     workflow_freshness_key,
@@ -70,6 +73,13 @@ AGGREGATE_TREND_SOURCE_STEP = {
     STEP_TRENDS_MONTH: STEP_TRENDS_WEEK,
 }
 PLANNED_RUN_ACTIONS = {"run", "repair", "force"}
+ANALYZE_MODEL_REFRESH_REASON = "stale_analysis_model"
+UPSTREAM_ANALYZE_MODEL_REFRESH_REASON = "upstream_analyze_model_refresh"
+UPSTREAM_TREND_MODEL_REFRESH_REASON = "upstream_trend_model_refresh"
+TREND_MODEL_REFRESH_REASONS = {
+    UPSTREAM_ANALYZE_MODEL_REFRESH_REASON,
+    UPSTREAM_TREND_MODEL_REFRESH_REASON,
+}
 
 TREND_SYNTHESIS_PASS_KIND = "trend_synthesis"
 TREND_IDEAS_PASS_KIND = "trend_ideas"
@@ -87,9 +97,18 @@ class _InspectionRequest:
     repository: Any
     settings: Any
     generation_force: bool
+    llm_model: str | None
     translate_include: list[str] | None
     translate_granularities: list[str] | None
     lower_level_task_sets: dict[str, "_LowerLevelTaskSetState"]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowPlanningOptions:
+    generation_force: bool = False
+    llm_model: str | None = None
+    translate_include: list[str] | None = None
+    translate_granularities: list[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +134,7 @@ class _PassOutputCompletionRequest:
     row: Any
     doc_type: str
     expected_freshness_key: str | None
+    refresh_legacy_output: bool = False
     projection_required: bool = True
     fallback_skip_reason: str = "fresh_pass_output"
 
@@ -137,6 +157,8 @@ class _TranslationScanRequest:
     include: list[str]
     granularities: list[str | None]
     source_language_code: str
+    llm_model: str
+    global_llm_model: str
     period_start: datetime | None
     period_end: datetime | None
     all_history: bool
@@ -160,10 +182,9 @@ def plan_workflow_execution(
     plan: WorkflowPlan,
     repository: Any,
     settings: Any,
-    generation_force: bool = False,
-    translate_include: list[str] | None = None,
-    translate_granularities: list[str] | None = None,
+    options: WorkflowPlanningOptions | None = None,
 ) -> list[WorkflowPlanDecision]:
+    resolved_options = options or WorkflowPlanningOptions()
     lower_level_task_sets = _inspect_lower_level_task_sets(
         plan=plan,
         repository=repository,
@@ -175,9 +196,10 @@ def plan_workflow_execution(
                 plan=plan,
                 repository=repository,
                 settings=settings,
-                generation_force=generation_force,
-                translate_include=translate_include,
-                translate_granularities=translate_granularities,
+                generation_force=resolved_options.generation_force,
+                llm_model=resolved_options.llm_model,
+                translate_include=resolved_options.translate_include,
+                translate_granularities=resolved_options.translate_granularities,
                 lower_level_task_sets=lower_level_task_sets,
             )
         )
@@ -219,6 +241,7 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             context=context,
             repository=request.repository,
             settings=request.settings,
+            llm_model=request.llm_model,
         )
     if invocation.step_id == STEP_PUBLISH:
         return _inspect_publish(
@@ -230,6 +253,9 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
         if _is_lower_level_generation_context(context=context, plan=request.plan):
             return _inspect_lower_level_trend_output(
                 context=context,
+                repository=request.repository,
+                settings=request.settings,
+                llm_model=request.llm_model,
                 task_set_state=request.lower_level_task_sets.get(
                     str(context.granularity or "")
                 ),
@@ -238,11 +264,15 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             context=context,
             repository=request.repository,
             settings=request.settings,
+            llm_model=request.llm_model,
         )
     if invocation.step_id in IDEA_STEPS:
         if _is_lower_level_generation_context(context=context, plan=request.plan):
             return _inspect_lower_level_ideas_output(
                 context=context,
+                repository=request.repository,
+                settings=request.settings,
+                llm_model=request.llm_model,
                 task_set_state=request.lower_level_task_sets.get(
                     str(context.granularity or "")
                 ),
@@ -251,6 +281,7 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             context=context,
             repository=request.repository,
             settings=request.settings,
+            llm_model=request.llm_model,
         )
     if invocation.step_id == STEP_TRANSLATE:
         return _inspect_translation(
@@ -259,6 +290,7 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             settings=request.settings,
             translate_include=request.translate_include,
             translate_granularities=request.translate_granularities,
+            llm_model=request.llm_model,
         )
     return _decision(
         context=context,
@@ -497,11 +529,17 @@ def _inspect_analyze(
     context: _DecisionContext,
     repository: Any,
     settings: Any,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     list_items = getattr(repository, "list_items_for_llm_analysis", None)
     period_start = context.period_start
     period_end = context.period_end
     triage_required = _triage_required(settings)
+    effective_llm_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
     if not callable(list_items) or period_start is None or period_end is None:
         return _decision(
             context=context,
@@ -515,6 +553,7 @@ def _inspect_analyze(
             triage_required=triage_required,
             period_start=period_start,
             period_end=period_end,
+            llm_model=effective_llm_model,
         )
     except Exception:
         return _decision(
@@ -531,12 +570,24 @@ def _inspect_analyze(
             authority="item_state",
             estimated_llm_calls=0,
         )
+    backlog = _candidate_backlog_metadata(
+        repository=repository,
+        triage_required=triage_required,
+        period_start=period_start,
+        period_end=period_end,
+        llm_model=effective_llm_model,
+    )
+    model_refresh_pending = _analysis_model_refresh_pending(
+        items=items,
+        backlog=backlog,
+    )
     configured_limit = _configured_analyze_limit(settings)
     receipt = _latest_analyze_budget_receipt(
         context=context,
         repository=repository,
         settings=settings,
         configured_limit=configured_limit,
+        llm_model=llm_model,
     )
     if receipt is not None:
         return _decision(
@@ -548,18 +599,17 @@ def _inspect_analyze(
             metadata=_analyze_budget_metadata(
                 receipt=receipt,
                 configured_limit=configured_limit,
-                backlog=_candidate_backlog_metadata(
-                    repository=repository,
-                    triage_required=triage_required,
-                    period_start=period_start,
-                    period_end=period_end,
-                ),
+                backlog=backlog,
             ),
         )
     return _decision(
         context=context,
         action="run",
-        reason="candidate_items",
+        reason=(
+            ANALYZE_MODEL_REFRESH_REASON
+            if model_refresh_pending
+            else "candidate_items"
+        ),
         authority="item_state",
     )
 
@@ -616,6 +666,7 @@ def _inspect_trend_output(
     context: _DecisionContext,
     repository: Any,
     settings: Any,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
     period_start = context.period_start
@@ -642,6 +693,12 @@ def _inspect_trend_output(
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
+        llm_model=llm_model,
+        analysis_model=resolve_stage_llm_model(
+            settings,
+            stage="analyze",
+            override=llm_model,
+        ),
         repository=repository,
     )
     return _classify_pass_output_completion(
@@ -651,6 +708,10 @@ def _inspect_trend_output(
             row=row,
             doc_type="trend",
             expected_freshness_key=workflow_freshness_key(expected),
+            refresh_legacy_output=_trend_change_requires_legacy_refresh(
+                settings=settings,
+                llm_model=llm_model,
+            ),
         )
     )
 
@@ -658,6 +719,9 @@ def _inspect_trend_output(
 def _inspect_lower_level_trend_output(
     *,
     context: _DecisionContext,
+    repository: Any,
+    settings: Any,
+    llm_model: str | None,
     task_set_state: _LowerLevelTaskSetState | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
@@ -672,6 +736,20 @@ def _inspect_lower_level_trend_output(
             context=context,
             action="run",
             reason=task_set_state.reason,
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
+    if _lower_level_model_is_stale(
+        context=context,
+        repository=repository,
+        settings=settings,
+        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+        llm_model=llm_model,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="stale_freshness",
             authority="pass_outputs",
             metadata=_lower_level_task_set_metadata(task_set_state),
         )
@@ -690,6 +768,7 @@ def _inspect_ideas_output(
     context: _DecisionContext,
     repository: Any,
     settings: Any,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
     period_start = context.period_start
@@ -727,8 +806,7 @@ def _inspect_ideas_output(
             reason="missing_pass_output",
             authority="pass_outputs",
         )
-    upstream_ref_id = _upstream_pass_output_id(row)
-    if upstream_ref_id is not None and upstream_ref_id != upstream_id:
+    if _pass_output_upstream_is_stale(row=row, upstream=upstream):
         return _decision(
             context=context,
             action="run",
@@ -741,6 +819,7 @@ def _inspect_ideas_output(
         period_start=period_start,
         period_end=period_end,
         upstream_pass_output_id=upstream_id,
+        llm_model=llm_model,
     )
     projection_required = str(getattr(row, "status", "") or "") != PASS_STATUS_SUPPRESSED
     return _classify_pass_output_completion(
@@ -750,6 +829,11 @@ def _inspect_ideas_output(
             row=row,
             doc_type="idea",
             expected_freshness_key=workflow_freshness_key(expected),
+            refresh_legacy_output=_model_change_requires_legacy_refresh(
+                settings=settings,
+                stage="ideas",
+                llm_model=llm_model,
+            ),
             projection_required=projection_required,
             fallback_skip_reason=(
                 "suppressed_ideas"
@@ -763,6 +847,9 @@ def _inspect_ideas_output(
 def _inspect_lower_level_ideas_output(
     *,
     context: _DecisionContext,
+    repository: Any,
+    settings: Any,
+    llm_model: str | None,
     task_set_state: _LowerLevelTaskSetState | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
@@ -780,6 +867,31 @@ def _inspect_lower_level_ideas_output(
             authority="pass_outputs",
             metadata=_lower_level_task_set_metadata(task_set_state),
         )
+    if _lower_level_ideas_upstream_is_stale(
+        context=context,
+        repository=repository,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="stale_upstream_pass_output",
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
+    if _lower_level_model_is_stale(
+        context=context,
+        repository=repository,
+        settings=settings,
+        pass_kind=TREND_IDEAS_PASS_KIND,
+        llm_model=llm_model,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="stale_freshness",
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
     return _decision(
         context=context,
         action="skip",
@@ -790,6 +902,142 @@ def _inspect_lower_level_ideas_output(
     )
 
 
+def _lower_level_ideas_upstream_is_stale(
+    *,
+    context: _DecisionContext,
+    repository: Any,
+) -> bool:
+    if not _decision_context_has_period(context):
+        return False
+    query = {
+        "granularity": cast(str, context.granularity),
+        "period_start": cast(datetime, context.period_start),
+        "period_end": cast(datetime, context.period_end),
+    }
+    upstream = _latest_pass_output(
+        repository=repository,
+        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+        statuses=[PASS_STATUS_SUCCEEDED],
+        **query,
+    )
+    row = _latest_pass_output(
+        repository=repository,
+        pass_kind=TREND_IDEAS_PASS_KIND,
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
+        **query,
+    )
+    return _pass_output_upstream_is_stale(row=row, upstream=upstream)
+
+
+def _lower_level_model_is_stale(
+    *,
+    context: _DecisionContext,
+    repository: Any,
+    settings: Any,
+    pass_kind: str,
+    llm_model: str | None,
+) -> bool:
+    if not _decision_context_has_period(context):
+        return False
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage=_stage_for_pass_kind(pass_kind),
+        override=llm_model,
+    )
+    row = _latest_pass_output(
+        repository=repository,
+        pass_kind=pass_kind,
+        statuses=_statuses_for_pass_kind(pass_kind),
+        granularity=cast(str, context.granularity),
+        period_start=cast(datetime, context.period_start),
+        period_end=cast(datetime, context.period_end),
+    )
+    if row is None:
+        generation_model_stale = _document_only_model_is_stale(
+            settings=settings,
+            effective_model=effective_model,
+            llm_model=llm_model,
+        )
+        if generation_model_stale or pass_kind != TREND_SYNTHESIS_PASS_KIND:
+            return generation_model_stale
+        return _document_only_model_is_stale(
+            settings=settings,
+            effective_model=resolve_stage_llm_model(
+                settings,
+                stage="analyze",
+                override=llm_model,
+            ),
+            llm_model=llm_model,
+        )
+    stored_model = _pass_output_llm_model(row)
+    if stored_model and stored_model != effective_model:
+        return True
+    if not stored_model:
+        global_model = str(getattr(settings, "llm_model", "") or "").strip()
+        if bool(global_model) and effective_model != global_model:
+            return True
+    if pass_kind != TREND_SYNTHESIS_PASS_KIND:
+        return False
+    effective_analysis_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    stored_analysis_model = _pass_output_freshness_component(
+        row,
+        "analysis_model",
+    )
+    if stored_analysis_model:
+        return stored_analysis_model != effective_analysis_model
+    return _document_only_model_is_stale(
+        settings=settings,
+        effective_model=effective_analysis_model,
+        llm_model=llm_model,
+    )
+
+
+def _decision_context_has_period(context: _DecisionContext) -> bool:
+    return (
+        context.granularity is not None
+        and context.period_start is not None
+        and context.period_end is not None
+    )
+
+
+def _stage_for_pass_kind(pass_kind: str) -> str:
+    return "trends" if pass_kind == TREND_SYNTHESIS_PASS_KIND else "ideas"
+
+
+def _statuses_for_pass_kind(pass_kind: str) -> list[str]:
+    if pass_kind == TREND_SYNTHESIS_PASS_KIND:
+        return [PASS_STATUS_SUCCEEDED]
+    return [PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED]
+
+
+def _document_only_model_is_stale(
+    *,
+    settings: Any,
+    effective_model: str,
+    llm_model: str | None,
+) -> bool:
+    if llm_model is not None:
+        return True
+    global_model = str(getattr(settings, "llm_model", "") or "").strip()
+    return bool(global_model) and effective_model != global_model
+
+
+def _pass_output_llm_model(row: Any) -> str:
+    return _pass_output_freshness_component(row, "llm_model")
+
+
+def _pass_output_freshness_component(row: Any, name: str) -> str:
+    freshness = _row_workflow_freshness(row) or {}
+    components = freshness.get("components")
+    if not isinstance(components, dict):
+        return ""
+    return str(components.get(name) or "").strip()
+
+
 def _inspect_translation(
     *,
     context: _DecisionContext,
@@ -797,6 +1045,7 @@ def _inspect_translation(
     settings: Any,
     translate_include: list[str] | None,
     translate_granularities: list[str] | None,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     targets = _translation_target_codes(settings)
     if not targets:
@@ -827,6 +1076,11 @@ def _inspect_translation(
     candidate_granularities = _normalized_translation_granularities(
         translate_granularities
     )
+    effective_llm_model = resolve_stage_llm_model(
+        settings,
+        stage="translation",
+        override=llm_model,
+    )
     try:
         scan = _scan_translation_plan(
             _TranslationScanRequest(
@@ -835,6 +1089,8 @@ def _inspect_translation(
                 include=include,
                 granularities=candidate_granularities,
                 source_language_code=source_language_code,
+                llm_model=effective_llm_model,
+                global_llm_model=str(getattr(settings, "llm_model", "") or ""),
                 period_start=context.period_start,
                 period_end=context.period_end,
                 all_history=context.period_start is None and context.period_end is None,
@@ -924,11 +1180,13 @@ def _scan_translation_candidate(
     summary["source_candidates"] += 1
     for target_code in request.targets:
         summary["scanned"] += 1
-        if _localized_output_matches_source_hash(
+        if _localized_output_matches_freshness(
             repository=request.repository,
             candidate=candidate,
             language_code=target_code,
             source_hash=source_hash,
+            llm_model=request.llm_model,
+            global_llm_model=request.global_llm_model,
         ):
             state.skipped_outputs += 1
             summary["skip"] += 1
@@ -956,6 +1214,13 @@ def _classify_pass_output_completion(
             freshness_key=row_freshness_key,
         )
     if projection_present is True:
+        if request.refresh_legacy_output:
+            return _decision(
+                context=request.context,
+                action="run",
+                reason="stale_freshness",
+                authority="pass_outputs",
+            )
         return _decision(
             context=request.context,
             action="skip",
@@ -968,6 +1233,35 @@ def _classify_pass_output_completion(
         action="run",
         reason="legacy_unverified",
         authority="pass_outputs",
+    )
+
+
+def _model_change_requires_legacy_refresh(
+    *,
+    settings: Any,
+    stage: str,
+    llm_model: str | None,
+) -> bool:
+    if llm_model is not None:
+        return True
+    effective_model = resolve_stage_llm_model(settings, stage=stage)
+    global_model = str(getattr(settings, "llm_model", "") or "").strip()
+    return bool(global_model) and effective_model != global_model
+
+
+def _trend_change_requires_legacy_refresh(
+    *,
+    settings: Any,
+    llm_model: str | None,
+) -> bool:
+    return _model_change_requires_legacy_refresh(
+        settings=settings,
+        stage="trends",
+        llm_model=llm_model,
+    ) or _model_change_requires_legacy_refresh(
+        settings=settings,
+        stage="analyze",
+        llm_model=llm_model,
     )
 
 
@@ -1227,21 +1521,28 @@ def _translation_summary_for_candidate(
     return summaries[key]
 
 
-def _localized_output_matches_source_hash(
+def _localized_output_matches_freshness(
     *,
     repository: Any,
     candidate: Any,
     language_code: str,
     source_hash: str,
+    llm_model: str,
+    global_llm_model: str,
 ) -> bool:
+    from recoleta.translation_runtime import localized_output_matches_freshness
+
     existing = repository.get_localized_output(
         source_kind=getattr(candidate, "source_kind", ""),
         source_record_id=int(getattr(candidate, "source_record_id") or 0),
         language_code=language_code,
     )
-    return (
-        existing is not None
-        and str(getattr(existing, "source_hash", "") or "") == source_hash
+    return localized_output_matches_freshness(
+        existing=existing,
+        source_hash=source_hash,
+        llm_model=llm_model,
+        global_llm_model=global_llm_model,
+        force=False,
     )
 
 
@@ -1321,6 +1622,16 @@ def _upstream_pass_output_id(row: Any) -> int | None:
     return None
 
 
+def _pass_output_upstream_is_stale(*, row: Any, upstream: Any) -> bool:
+    upstream_id = _row_id(upstream)
+    upstream_ref_id = _upstream_pass_output_id(row)
+    return (
+        upstream_id is not None
+        and upstream_ref_id is not None
+        and upstream_ref_id != upstream_id
+    )
+
+
 def _json_attr(row: Any, attr_name: str, *, default: Any) -> Any:
     raw = getattr(row, attr_name, None)
     if raw in (None, ""):
@@ -1355,44 +1666,42 @@ def _configured_analyze_limit(settings: Any) -> int:
     return max(1, value)
 
 
-def _settings_fingerprint(settings: Any) -> str:
-    safe_fingerprint = getattr(settings, "safe_fingerprint", None)
-    if not callable(safe_fingerprint):
-        return ""
-    try:
-        return str(safe_fingerprint() or "")
-    except Exception:
-        return ""
-
-
 def _latest_analyze_budget_receipt(
     *,
     context: _DecisionContext,
     repository: Any,
     settings: Any,
     configured_limit: int,
+    llm_model: str | None,
 ) -> Any | None:
     getter = getattr(repository, "get_latest_workflow_step_receipt", None)
-    fingerprint = _settings_fingerprint(settings)
+    fingerprints = analyze_budget_config_fingerprint_candidates(
+        settings,
+        llm_model=llm_model,
+    )
     if (
         not callable(getter)
-        or not fingerprint
+        or not fingerprints
         or context.period_start is None
         or context.period_end is None
     ):
         return None
-    try:
-        return getter(
-            step_id=STEP_ANALYZE,
-            granularity=context.granularity,
-            period_start=context.period_start,
-            period_end=context.period_end,
-            config_fingerprint=fingerprint,
-            min_selected_total=configured_limit,
-            status="succeeded",
-        )
-    except Exception:
-        return None
+    for fingerprint in fingerprints:
+        try:
+            receipt = getter(
+                step_id=STEP_ANALYZE,
+                granularity=context.granularity,
+                period_start=context.period_start,
+                period_end=context.period_end,
+                config_fingerprint=fingerprint,
+                min_selected_total=configured_limit,
+                status="succeeded",
+            )
+        except Exception:
+            return None
+        if receipt is not None:
+            return receipt
+    return None
 
 
 def _candidate_backlog_metadata(
@@ -1401,6 +1710,7 @@ def _candidate_backlog_metadata(
     triage_required: bool,
     period_start: datetime,
     period_end: datetime,
+    llm_model: str,
 ) -> dict[str, Any]:
     counter = getattr(repository, "count_items_for_llm_analysis_by_state", None)
     if not callable(counter):
@@ -1410,6 +1720,7 @@ def _candidate_backlog_metadata(
             triage_required=triage_required,
             period_start=period_start,
             period_end=period_end,
+            llm_model=llm_model,
         )
     except Exception:
         return {"present": True}
@@ -1429,6 +1740,24 @@ def _candidate_backlog_metadata(
         "total": total,
         "by_state": counts,
     }
+
+
+def _analysis_model_refresh_pending(
+    *,
+    items: Any,
+    backlog: dict[str, Any],
+) -> bool:
+    by_state = backlog.get("by_state")
+    if isinstance(by_state, dict) and any(
+        int(by_state.get(state) or 0) > 0
+        for state in (ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED)
+    ):
+        return True
+    return any(
+        getattr(item, "state", None)
+        in {ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED}
+        for item in items
+    )
 
 
 def _analyze_budget_metadata(
@@ -1580,15 +1909,22 @@ def _run_trends_when_analyze_is_planned(
     plan: WorkflowPlan,
 ) -> list[WorkflowPlanDecision]:
     analyze_run_windows = _planned_analyze_windows(decisions)
+    analyze_model_refresh_windows = _planned_analyze_model_refresh_windows(decisions)
     updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if _trend_has_planned_analyze(
             decision=decision,
             analyze_run_windows=analyze_run_windows,
+            analyze_model_refresh_windows=analyze_model_refresh_windows,
             plan=plan,
         ):
+            reason = (
+                UPSTREAM_ANALYZE_MODEL_REFRESH_REASON
+                if _is_lower_level_generation_decision(decision=decision, plan=plan)
+                else "upstream_analyze_planned"
+            )
             updated.append(
-                _reactivate_planned_decision(decision, "upstream_analyze_planned")
+                _reactivate_planned_decision(decision, reason)
             )
             continue
         updated.append(decision)
@@ -1602,6 +1938,18 @@ def _planned_analyze_windows(
         (decision.granularity, decision.period_start, decision.period_end)
         for decision in decisions
         if decision.step_id == STEP_ANALYZE and decision.action in PLANNED_RUN_ACTIONS
+    }
+
+
+def _planned_analyze_model_refresh_windows(
+    decisions: list[WorkflowPlanDecision],
+) -> set[tuple[str | None, datetime | None, datetime | None]]:
+    return {
+        (decision.granularity, decision.period_start, decision.period_end)
+        for decision in decisions
+        if decision.step_id == STEP_ANALYZE
+        and decision.action in PLANNED_RUN_ACTIONS
+        and decision.reason == ANALYZE_MODEL_REFRESH_REASON
     }
 
 
@@ -1630,16 +1978,27 @@ def _run_aggregate_trend_when_source_is_planned(
         decisions=decisions,
         source_step=AGGREGATE_TREND_SOURCE_STEP[aggregate_step],
     )
+    model_refresh_source_windows = _planned_trend_source_windows(
+        decisions=decisions,
+        source_step=AGGREGATE_TREND_SOURCE_STEP[aggregate_step],
+        reasons=TREND_MODEL_REFRESH_REASONS,
+    )
     updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if _aggregate_trend_has_planned_source(
             decision=decision,
             aggregate_step=aggregate_step,
             source_windows=source_windows,
+            model_refresh_source_windows=model_refresh_source_windows,
             plan=plan,
         ):
+            reason = (
+                UPSTREAM_TREND_MODEL_REFRESH_REASON
+                if _is_lower_level_generation_decision(decision=decision, plan=plan)
+                else "upstream_trend_planned"
+            )
             updated.append(
-                _reactivate_planned_decision(decision, "upstream_trend_planned")
+                _reactivate_planned_decision(decision, reason)
             )
             continue
         updated.append(decision)
@@ -1650,12 +2009,14 @@ def _planned_trend_source_windows(
     *,
     decisions: list[WorkflowPlanDecision],
     source_step: str,
+    reasons: set[str] | None = None,
 ) -> list[tuple[datetime, datetime]]:
     return [
         (decision.period_start, decision.period_end)
         for decision in decisions
         if decision.step_id == source_step
         and decision.action in PLANNED_RUN_ACTIONS
+        and (reasons is None or decision.reason in reasons)
         and decision.period_start is not None
         and decision.period_end is not None
     ]
@@ -1684,12 +2045,16 @@ def _aggregate_trend_has_planned_source(
     decision: WorkflowPlanDecision,
     aggregate_step: str,
     source_windows: list[tuple[datetime, datetime]],
+    model_refresh_source_windows: list[tuple[datetime, datetime]],
     plan: WorkflowPlan,
 ) -> bool:
     if decision.step_id != aggregate_step or decision.action != "skip":
         return False
-    if _is_lower_level_generation_decision(decision=decision, plan=plan):
-        return False
+    candidate_windows = (
+        model_refresh_source_windows
+        if _is_lower_level_generation_decision(decision=decision, plan=plan)
+        else source_windows
+    )
     return any(
         _decision_periods_overlap(
             left_start=decision.period_start,
@@ -1697,7 +2062,7 @@ def _aggregate_trend_has_planned_source(
             right_start=source_start,
             right_end=source_end,
         )
-        for source_start, source_end in source_windows
+        for source_start, source_end in candidate_windows
     )
 
 
@@ -1717,15 +2082,42 @@ def _run_ideas_when_trends_are_planned(
         if decision.step_id in TREND_STEPS
         and decision.action in PLANNED_RUN_ACTIONS
     }
+    model_refresh_trend_run_windows = {
+        (
+            decision.step_id,
+            decision.granularity,
+            decision.period_start,
+            decision.period_end,
+        )
+        for decision in decisions
+        if decision.step_id in TREND_STEPS
+        and decision.action in PLANNED_RUN_ACTIONS
+        and (
+            decision.reason in TREND_MODEL_REFRESH_REASONS
+            or (
+                decision.reason == "stale_freshness"
+                and _is_lower_level_generation_decision(
+                    decision=decision,
+                    plan=plan,
+                )
+            )
+        )
+    }
     updated: list[WorkflowPlanDecision] = []
     for decision in decisions:
         if _idea_has_planned_trend(
             decision=decision,
             trend_run_windows=trend_run_windows,
+            model_refresh_trend_run_windows=model_refresh_trend_run_windows,
             plan=plan,
         ):
+            reason = (
+                UPSTREAM_TREND_MODEL_REFRESH_REASON
+                if _is_lower_level_generation_decision(decision=decision, plan=plan)
+                else "upstream_trend_planned"
+            )
             updated.append(
-                _reactivate_planned_decision(decision, "upstream_trend_planned")
+                _reactivate_planned_decision(decision, reason)
             )
             continue
         updated.append(decision)
@@ -1748,36 +2140,44 @@ def _trend_has_planned_analyze(
     *,
     decision: WorkflowPlanDecision,
     analyze_run_windows: set[tuple[str | None, datetime | None, datetime | None]],
+    analyze_model_refresh_windows: set[
+        tuple[str | None, datetime | None, datetime | None]
+    ],
     plan: WorkflowPlan,
 ) -> bool:
     if decision.step_id not in TREND_STEPS or decision.action != "skip":
         return False
-    if _is_lower_level_generation_decision(decision=decision, plan=plan):
-        return False
-    return (
+    window = (
         decision.granularity,
         decision.period_start,
         decision.period_end,
-    ) in analyze_run_windows
+    )
+    if _is_lower_level_generation_decision(decision=decision, plan=plan):
+        return window in analyze_model_refresh_windows
+    return window in analyze_run_windows
 
 
 def _idea_has_planned_trend(
     *,
     decision: WorkflowPlanDecision,
     trend_run_windows: set[tuple[str, str | None, datetime | None, datetime | None]],
+    model_refresh_trend_run_windows: set[
+        tuple[str, str | None, datetime | None, datetime | None]
+    ],
     plan: WorkflowPlan,
 ) -> bool:
     matching_trend_step = IDEA_TO_TREND_STEP.get(decision.step_id)
     if matching_trend_step is None or decision.action != "skip":
         return False
-    if _is_lower_level_generation_decision(decision=decision, plan=plan):
-        return False
-    return (
+    window = (
         matching_trend_step,
         decision.granularity,
         decision.period_start,
         decision.period_end,
-    ) in trend_run_windows
+    )
+    if _is_lower_level_generation_decision(decision=decision, plan=plan):
+        return window in model_refresh_trend_run_windows
+    return window in trend_run_windows
 
 
 def _run_translation_when_generation_is_planned(

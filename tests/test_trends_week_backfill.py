@@ -178,11 +178,18 @@ def test_trends_week_source_materialization_fails_when_day_generation_fails(
     original_index = trends_stage_mod._TrendStageRunner._index_items_for_period
     state = {"raised": False}
 
-    def _fail_once(self, *, period_start, period_end):  # type: ignore[no-untyped-def]
+    def _fail_once(  # type: ignore[no-untyped-def]
+        self, *, period_start, period_end, analysis_model
+    ):
         if not state["raised"] and (period_end - period_start).days <= 1:
             state["raised"] = True
             raise RuntimeError("simulated day index failure")
-        return original_index(self, period_start=period_start, period_end=period_end)
+        return original_index(
+            self,
+            period_start=period_start,
+            period_end=period_end,
+            analysis_model=analysis_model,
+        )
 
     monkeypatch.setattr(trends_stage_mod._TrendStageRunner, "_index_items_for_period", _fail_once)
 
@@ -264,11 +271,18 @@ def test_trends_week_backfill_fails_when_required_item_source_materialization_fa
     original_index = trends_stage_mod._TrendStageRunner._index_items_for_period
     state = {"raised": False}
 
-    def _fail_week_index_once(self, *, period_start, period_end):  # type: ignore[no-untyped-def]
+    def _fail_week_index_once(  # type: ignore[no-untyped-def]
+        self, *, period_start, period_end, analysis_model
+    ):
         if not state["raised"] and (period_end - period_start).days > 1:
             state["raised"] = True
             raise RuntimeError("simulated week index failure")
-        return original_index(self, period_start=period_start, period_end=period_end)
+        return original_index(
+            self,
+            period_start=period_start,
+            period_end=period_end,
+            analysis_model=analysis_model,
+        )
 
     monkeypatch.setattr(
         trends_stage_mod._TrendStageRunner,

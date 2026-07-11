@@ -11,6 +11,7 @@ from typing import Any, Protocol, TypedDict, Unpack, cast
 import orjson
 from loguru import logger
 
+from recoleta.config import resolve_stage_llm_model
 from recoleta.delivery import TelegramSender
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
@@ -52,6 +53,7 @@ class TrendStageRequest:
     granularity: str = "day"
     anchor_date: date | None = None
     llm_model: str | None = None
+    analysis_llm_model: str | None = None
     backfill: bool = False
     backfill_mode: str = "missing"
     debug_pdf: bool = False
@@ -81,6 +83,7 @@ class _TrendStageState:
     corpus_doc_type: str
     corpus_granularity: str | None
     model: str
+    analysis_model: str
 
 
 @dataclass(slots=True)
@@ -225,6 +228,7 @@ class TrendStageService(Protocol):
         run_id: str,
         period_start: Any = None,
         period_end: Any = None,
+        llm_model: str | None = None,
     ) -> Any: ...
 
     @staticmethod
@@ -236,6 +240,7 @@ class _TrendStageRequestKwargs(TypedDict, total=False):
     granularity: str
     anchor_date: date | None
     llm_model: str | None
+    analysis_llm_model: str | None
     backfill: bool
     backfill_mode: str
     debug_pdf: bool
@@ -359,7 +364,16 @@ class _TrendStageRunner:
             normalized_granularity=normalized_granularity,
             anchor=anchor,
         )
-        model = self.request.llm_model or self.service.settings.llm_model
+        model = resolve_stage_llm_model(
+            self.service.settings,
+            stage="trends",
+            override=self.request.llm_model,
+        )
+        analysis_model = resolve_stage_llm_model(
+            self.service.settings,
+            stage="analyze",
+            override=self.request.analysis_llm_model,
+        )
         return _TrendStageState(
             include_debug=include_debug,
             normalized_granularity=normalized_granularity,
@@ -370,6 +384,7 @@ class _TrendStageRunner:
             corpus_doc_type=corpus_doc_type,
             corpus_granularity=corpus_granularity,
             model=model,
+            analysis_model=analysis_model,
         )
 
     def _normalize_granularity(self) -> str:
@@ -431,6 +446,7 @@ class _TrendStageRunner:
             run_id=self.request.run_id,
             period_start=period_start,
             period_end=period_end,
+            llm_model=self.request.analysis_llm_model,
         )
 
     def _index_items_for_period(
@@ -438,6 +454,7 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> dict[str, Any]:
         try:
             stats = trends.index_items_as_documents(
@@ -448,6 +465,7 @@ class _TrendStageRunner:
                 min_relevance_score=float(
                     getattr(self.service.settings, "min_relevance_score", 0.0) or 0.0
                 ),
+                llm_model=analysis_model,
             )
         except Exception as exc:
             failed_stats = {
@@ -635,11 +653,13 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> list[tuple[Any, Any]]:
         pairs = cast(Any, self.service.repository).list_analyzed_items_in_period(
             period_start=period_start,
             period_end=period_end,
             limit=2000,
+            llm_model=analysis_model,
         )
         pairs, _filtered_out_total = trends._filter_pairs_by_min_relevance(
             pairs,
@@ -654,10 +674,12 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> tuple[bool, int]:
         expected_item_ids = self._expected_item_ids_for_period(
             period_start=period_start,
             period_end=period_end,
+            analysis_model=analysis_model,
         )
         docs = self._item_documents_for_period(
             period_start=period_start,
@@ -676,6 +698,7 @@ class _TrendStageRunner:
                 period_start=period_start,
                 period_end=period_end,
                 expected_total=len(expected_item_ids),
+                analysis_model=analysis_model,
             ),
             len(expected_item_ids),
         )
@@ -685,10 +708,12 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> set[int]:
         pairs = self._filtered_item_pairs(
             period_start=period_start,
             period_end=period_end,
+            analysis_model=analysis_model,
         )
         item_ids: set[int] = set()
         for item, _analysis in pairs:
@@ -744,6 +769,7 @@ class _TrendStageRunner:
         period_start: Any,
         period_end: Any,
         expected_total: int,
+        analysis_model: str,
     ) -> bool:
         summary_doc_ids = self._item_chunk_doc_ids(
             kind="summary",
@@ -753,13 +779,17 @@ class _TrendStageRunner:
         )
         if not required_doc_ids <= summary_doc_ids:
             return False
-        meta_doc_ids = self._item_chunk_doc_ids(
+        meta_rows = self._item_chunk_rows(
             kind="meta",
             period_start=period_start,
             period_end=period_end,
             expected_total=expected_total,
         )
-        return required_doc_ids <= meta_doc_ids
+        meta_models = self._item_meta_models_by_doc_id(meta_rows)
+        return all(
+            meta_models.get(doc_id) == analysis_model
+            for doc_id in required_doc_ids
+        )
 
     def _item_chunk_doc_ids(
         self,
@@ -769,28 +799,68 @@ class _TrendStageRunner:
         period_end: Any,
         expected_total: int,
     ) -> set[int]:
-        rows = cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
+        rows = self._item_chunk_rows(
+            kind=kind,
+            period_start=period_start,
+            period_end=period_end,
+            expected_total=expected_total,
+        )
+        return {
+            doc_id
+            for row in rows
+            if (doc_id := self._positive_row_doc_id(row)) is not None
+        }
+
+    def _item_chunk_rows(
+        self,
+        *,
+        kind: str,
+        period_start: Any,
+        period_end: Any,
+        expected_total: int,
+    ) -> list[dict[str, Any]]:
+        return cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
             doc_type="item",
             kind=kind,
             period_start=period_start,
             period_end=period_end,
             limit=self._item_source_probe_limit(expected_total),
         )
-        doc_ids: set[int] = set()
+
+    def _item_meta_models_by_doc_id(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> dict[int, str]:
+        models: dict[int, str] = {}
         for row in rows:
-            try:
-                doc_id = int(row.get("doc_id") or 0)
-            except Exception:
+            doc_id = self._positive_row_doc_id(row)
+            if doc_id is None:
                 continue
-            if doc_id > 0:
-                doc_ids.add(doc_id)
-        return doc_ids
+            try:
+                payload = orjson.loads(str(row.get("text") or ""))
+            except orjson.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            model = str(payload.get("analysis_model") or "").strip()
+            if model:
+                models[doc_id] = model
+        return models
+
+    @staticmethod
+    def _positive_row_doc_id(row: dict[str, Any]) -> int | None:
+        try:
+            doc_id = int(row.get("doc_id") or 0)
+        except Exception:
+            return None
+        return doc_id if doc_id > 0 else None
 
     def _ensure_item_source(self, *, state: _TrendStageState) -> _SourceEnsureResult:
         if not self.request.reuse_existing_corpus:
             stats = self._index_items_for_period(
                 period_start=state.period_start,
                 period_end=state.period_end,
+                analysis_model=state.analysis_model,
             )
             return _SourceEnsureResult(
                 token="item",
@@ -802,6 +872,7 @@ class _TrendStageRunner:
         ready, docs_total = self._item_source_ready(
             period_start=state.period_start,
             period_end=state.period_end,
+            analysis_model=state.analysis_model,
         )
         if ready:
             return _SourceEnsureResult(
@@ -814,6 +885,7 @@ class _TrendStageRunner:
         stats = self._index_items_for_period(
             period_start=state.period_start,
             period_end=state.period_end,
+            analysis_model=state.analysis_model,
         )
         return _SourceEnsureResult(
             token="item",
@@ -2023,7 +2095,8 @@ class _TrendStageRunner:
                 granularity=state.normalized_granularity,
                 period_start=state.period_start,
                 period_end=state.period_end,
-                llm_model=self.request.llm_model,
+                llm_model=state.model,
+                analysis_model=state.analysis_model,
                 repository=self.service.repository,
             ),
             "context_packs": {

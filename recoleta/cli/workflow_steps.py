@@ -40,6 +40,7 @@ class TranslationStepRequest:
     settings: Any
     include: list[str]
     granularities: list[str] | None
+    llm_model: str | None
     period_start: datetime | None
     period_end: datetime | None
     all_history: bool
@@ -125,6 +126,7 @@ def run_translation_step(*, request: TranslationStepRequest) -> dict[str, Any]:
             settings=request.settings,
             granularity=granularity,
             include=normalized_include,
+            llm_model=request.llm_model,
             period_start=request.period_start,
             period_end=request.period_end,
             all_history=request.all_history,
@@ -268,6 +270,7 @@ def _execute_analyze_step(
         "analyze",
         run_id=context.run_id,
         limit=context.analyze_limit,
+        llm_model=context.llm_model,
         period_start=invocation.period_start,
         period_end=invocation.period_end,
     )
@@ -315,6 +318,8 @@ def _execute_trends_step(
         run_id=context.run_id,
         granularity=granularity,
         anchor_date=invocation.anchor_date,
+        llm_model=context.llm_model,
+        analysis_llm_model=context.llm_model,
         backfill=False,
         backfill_mode="missing",
         reuse_existing_corpus=True,
@@ -336,6 +341,7 @@ def _execute_ideas_step(
         run_id=context.run_id,
         granularity=granularity,
         anchor_date=invocation.anchor_date,
+        llm_model=context.llm_model,
     )
     return {
         "granularity": granularity,
@@ -353,6 +359,7 @@ def _execute_translate_step(
             settings=context.settings,
             include=context.translate_include,
             granularities=context.translate_granularities,
+            llm_model=context.llm_model,
             period_start=context.target_period_start,
             period_end=context.target_period_end,
             all_history=not (

@@ -177,6 +177,7 @@ def test_ideas_stage_requires_upstream_trend_synthesis_output(
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("IDEAS_LLM_MODEL", "test/ideas-stage-model")
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
@@ -210,6 +211,7 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("IDEAS_LLM_MODEL", "test/ideas-stage-model")
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
@@ -242,36 +244,43 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
 
     from recoleta.rag import ideas_agent
 
-    monkeypatch.setattr(
-        ideas_agent,
-        "generate_trend_ideas_payload",
-        lambda **_kwargs: (
+    def _fake_generate_ideas_payload(**kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["llm_model"] == "test/ideas-stage-model"
+        return (
             _ideas_payload(
                 period_start=period_start,
                 period_end=period_end,
                 evidence_doc_id=evidence_doc_id,
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
-        ),
-    )
-    monkeypatch.setattr(
-        ideas_agent,
-        "generate_trend_ideas_bundle_title",
-        lambda **_kwargs: (
+        )
+
+    def _fake_generate_bundle_title(**kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["llm_model"] == "test/ideas-stage-model"
+        return (
             "Verification-first agent rollout",
             {
                 "usage": {"requests": 1, "input_tokens": 8, "output_tokens": 4},
                 "estimated_cost_usd": 0.0,
                 "prompt_chars": 64,
             },
-        ),
+        )
+
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_payload",
+        _fake_generate_ideas_payload,
+    )
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_bundle_title",
+        _fake_generate_bundle_title,
     )
 
     result = service.ideas(
         run_id="run-ideas-stage",
         granularity="day",
         anchor_date=date(2026, 3, 2),
-        llm_model="test/fake-model",
     )
 
     assert result.status == PassStatus.SUCCEEDED.value
@@ -301,6 +310,7 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
         freshness = diagnostics["workflow_freshness"]
         assert freshness["kind"] == "trend_ideas"
         assert freshness["components"]["upstream_pass_output_id"] == upstream_pass_output_id
+        assert freshness["components"]["llm_model"] == "test/ideas-stage-model"
         assert freshness["key"]
 
 

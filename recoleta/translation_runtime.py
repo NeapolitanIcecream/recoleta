@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import FIRST_COMPLETED, wait
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import json
 import time
 from typing import Any, cast
 
@@ -14,6 +15,7 @@ class PrepareTaskRequest:
     candidate: Any
     target: Any
     context_assist: str
+    llm_model: str
     force: bool
     run_id: str | None
 
@@ -48,6 +50,7 @@ class PersistTaskRequest:
     completed: Any
     context_assist: str
     source_language_code: str
+    llm_model: str
     run_id: str | None
 
 
@@ -177,11 +180,16 @@ def prepare_translation_task(
     deps: PrepareTaskDeps,
 ) -> tuple[str, Any | None]:
     source_hash = deps.payload_hash_fn(request.candidate.payload)
-    if _has_up_to_date_localized_output(
-        repository=request.repository,
-        candidate=request.candidate,
+    existing = request.repository.get_localized_output(
+        source_kind=request.candidate.source_kind,
+        source_record_id=request.candidate.source_record_id,
         language_code=request.target.code,
+    )
+    if localized_output_matches_freshness(
+        existing=existing,
         source_hash=source_hash,
+        llm_model=request.llm_model,
+        global_llm_model=str(getattr(request.settings, "llm_model", "") or ""),
         force=request.force,
     ):
         _record_run_metric(
@@ -255,6 +263,7 @@ def persist_completed_translation_task(
         payload=request.completed.translated_payload,
         diagnostics={
             "context_assist": request.context_assist,
+            "llm_model": request.llm_model,
             "source_language_code": request.source_language_code,
             "target_language_code": request.task.target.code,
             "translated_at": datetime.now(tz=UTC).isoformat(),
@@ -284,6 +293,7 @@ def translate_candidate_into_language(
         candidate=request.candidate,
         target=request.target,
         context_assist=request.context_assist,
+        llm_model=request.llm_model,
         force=request.force,
         run_id=request.run_id,
     )
@@ -303,6 +313,7 @@ def translate_candidate_into_language(
         completed=completed,
         context_assist=request.context_assist,
         source_language_code=request.source_language_code,
+        llm_model=request.llm_model,
         run_id=request.run_id,
     )
     return "translated", True
@@ -426,6 +437,7 @@ def _prepare_batch_tasks(
                     candidate=candidate,
                     target=target,
                     context_assist=context.context_assist,
+                    llm_model=context.llm_model,
                     force=context.force,
                     run_id=context.run_id,
                 )
@@ -702,6 +714,7 @@ def _persist_completed_task(
         completed=completed,
         context_assist=context.context_assist,
         source_language_code=context.source_language_code,
+        llm_model=context.llm_model,
         run_id=context.run_id,
     )
     context.result.translated_total += 1
@@ -864,24 +877,38 @@ def _log_failure(request: FailureLogRequest) -> None:
     )
 
 
-def _has_up_to_date_localized_output(
+def localized_output_matches_freshness(
     *,
-    repository: Any,
-    candidate: Any,
-    language_code: str,
+    existing: Any | None,
     source_hash: str,
+    llm_model: str,
+    global_llm_model: str,
     force: bool,
 ) -> bool:
-    existing = repository.get_localized_output(
-        source_kind=candidate.source_kind,
-        source_record_id=candidate.source_record_id,
-        language_code=language_code,
-    )
-    return (
-        existing is not None
-        and str(getattr(existing, "source_hash", "") or "") == source_hash
-        and not force
-    )
+    if force or existing is None:
+        return False
+    if str(getattr(existing, "source_hash", "") or "") != source_hash:
+        return False
+    stored_model = localized_output_llm_model(existing)
+    if stored_model:
+        return stored_model == str(llm_model or "").strip()
+    return str(llm_model or "").strip() == str(global_llm_model or "").strip()
+
+
+def localized_output_llm_model(existing: Any) -> str:
+    diagnostics = getattr(existing, "diagnostics", None)
+    if isinstance(diagnostics, dict):
+        return str(diagnostics.get("llm_model") or "").strip()
+    raw = getattr(existing, "diagnostics_json", None)
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    return str(parsed.get("llm_model") or "").strip()
 
 
 def _record_translation_failure_metrics(

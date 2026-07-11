@@ -872,7 +872,11 @@ def test_ingest_deduplicates_near_duplicate_titles_by_merging_alternate_urls(
         assert "https://news.ycombinator.com/item?id=123" in metadata["alternate_urls"]
 
 
-def test_ingest_does_not_regress_state_for_analyzed_items(configured_env) -> None:
+def test_ingest_does_not_regress_state_for_analyzed_items(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
     settings, repository = _build_runtime()
     service = PipelineService(
         settings=settings,

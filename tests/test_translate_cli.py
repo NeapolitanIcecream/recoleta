@@ -152,6 +152,7 @@ def _run_translate_json_with_result(
         "limit": 3,
         "force": False,
         "context_assist": "direct",
+        "model": None,
         "json_output": True,
         "command_name": "run translate",
     }
@@ -473,3 +474,101 @@ def test_translate_run_rejects_all_history_with_bounded_window(
         "error": "--all-history cannot be combined with --date or --period-start/--period-end",
     }
     assert runtime_calls == []
+
+
+def test_translate_run_command_passes_model_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = _translation_result(failed_total=0, aborted=False)
+    _payload, _repo, _settings, _materialize_calls, translation_calls = (
+        _run_translate_json_with_result(
+            tmp_path=tmp_path,
+            monkeypatch=monkeypatch,
+            capsys=capsys,
+            result=result,
+            command_kwargs={"model": "test/translation-override"},
+        )
+    )
+
+    assert translation_calls
+    assert translation_calls[0]["llm_model"] == "test/translation-override"
+
+
+def test_translate_backfill_command_passes_model_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _WorkspaceLeaseLostError(Exception):
+        pass
+
+    fake_repo = _FakeRepository()
+    fake_settings = SimpleNamespace(log_json=False)
+    fake_console = _FakeConsole()
+    backfill_calls: list[dict[str, Any]] = []
+
+    def _fake_runtime_symbols() -> dict[str, object]:
+        return {"WorkspaceLeaseLostError": _WorkspaceLeaseLostError}
+
+    def _fake_load_runtime(*, request: object) -> object:
+        _ = request
+        return SimpleNamespace(
+            resolved_db_path=tmp_path / "recoleta.sqlite",
+            repository=fake_repo,
+            settings=fake_settings,
+            console=fake_console,
+        )
+
+    @contextmanager
+    def _fake_managed_run_for_settings(
+        *,
+        settings: object,
+        repository: object,
+        console: object,
+        command: str,
+        log_module: str,
+    ) -> Iterator[object]:
+        _ = (settings, repository, console, command, log_module)
+        yield SimpleNamespace(
+            run_id="run-translate-backfill",
+            owner_token="owner-token",
+            log=_FakeLog(),
+            heartbeat_monitor=_FakeHeartbeatMonitor(),
+        )
+
+    def _fake_run_translation_backfill(**kwargs: Any) -> object:
+        backfill_calls.append(dict(kwargs))
+        return _translation_result(failed_total=0, aborted=False)
+
+    monkeypatch.setattr(translate_cli.cli, "_runtime_symbols", _fake_runtime_symbols)
+    monkeypatch.setattr(translate_cli, "load_runtime", _fake_load_runtime)
+    monkeypatch.setattr(
+        translate_cli,
+        "managed_run_for_settings",
+        _fake_managed_run_for_settings,
+    )
+    monkeypatch.setattr(
+        translation_module,
+        "run_translation_backfill",
+        _fake_run_translation_backfill,
+    )
+
+    translate_cli.run_translate_backfill_command(
+        db_path=None,
+        config_path=None,
+        granularity="week",
+        include="items,trends",
+        limit=3,
+        force=False,
+        context_assist="direct",
+        model="test/translation-backfill-override",
+        legacy_source_language=None,
+        emit_mirror_targets=False,
+        all_history=False,
+        json_output=False,
+        command_name="stage translate backfill",
+    )
+
+    assert backfill_calls
+    assert backfill_calls[0]["llm_model"] == "test/translation-backfill-override"

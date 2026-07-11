@@ -90,6 +90,60 @@ _DEPRECATED_SCHEDULER_INTERVAL_KEYS = (
 )
 _ENV_FILE_ASSIGNMENT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
 _LANGUAGE_CODE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+_STAGE_LLM_MODEL_FIELDS = {
+    "analyze": "analyze_llm_model",
+    "trends": "trends_llm_model",
+    "ideas": "ideas_llm_model",
+    "translation": "translation_llm_model",
+}
+LLM_MODEL_CONFIG_FIELDS = frozenset({"llm_model", *_STAGE_LLM_MODEL_FIELDS.values()})
+
+
+def _normalize_model_name(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _stage_llm_model_value(settings: Any, *, stage: str) -> Any:
+    try:
+        if stage == "analyze":
+            return settings.analyze_llm_model
+        if stage == "trends":
+            return settings.trends_llm_model
+        if stage == "ideas":
+            return settings.ideas_llm_model
+        return settings.translation_llm_model
+    except AttributeError:
+        return None
+
+
+def resolve_stage_llm_model(
+    settings: Any,
+    *,
+    stage: str,
+    override: str | None = None,
+) -> str:
+    normalized_stage = str(stage or "").strip().lower()
+    field_name = _STAGE_LLM_MODEL_FIELDS.get(normalized_stage)
+    if field_name is None:
+        allowed = ", ".join(sorted(_STAGE_LLM_MODEL_FIELDS))
+        raise ValueError(f"stage must be one of: {allowed}")
+
+    if override is not None:
+        normalized_override = _normalize_model_name(override)
+        if not normalized_override:
+            raise ValueError(f"{normalized_stage} llm model override must not be empty")
+        return normalized_override
+
+    stage_model = _normalize_model_name(
+        _stage_llm_model_value(settings, stage=normalized_stage)
+    )
+    if stage_model:
+        return stage_model
+
+    fallback = _normalize_model_name(getattr(settings, "llm_model", None))
+    if not fallback:
+        raise ValueError("llm_model must not be empty")
+    return fallback
 
 
 def _normalize_publish_targets(values: list[str], *, field_name: str) -> list[str]:
@@ -694,6 +748,10 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "OBSIDIAN_VAULT_PATH": "obsidian_vault_path",
         "RECOLETA_DB_PATH": "recoleta_db_path",
         "LLM_MODEL": "llm_model",
+        "ANALYZE_LLM_MODEL": "analyze_llm_model",
+        "TRENDS_LLM_MODEL": "trends_llm_model",
+        "IDEAS_LLM_MODEL": "ideas_llm_model",
+        "TRANSLATION_LLM_MODEL": "translation_llm_model",
         "LLM_OUTPUT_LANGUAGE": "llm_output_language",
         "RECOLETA_LLM_BASE_URL": "llm_base_url",
         "ARXIV_POOL": "arxiv_pool",
@@ -1148,6 +1206,18 @@ class Settings(BaseSettings):
     )
     recoleta_db_path: Path = Field(validation_alias="RECOLETA_DB_PATH")
     llm_model: str = Field(validation_alias="LLM_MODEL")
+    analyze_llm_model: str | None = Field(
+        default=None, validation_alias="ANALYZE_LLM_MODEL"
+    )
+    trends_llm_model: str | None = Field(
+        default=None, validation_alias="TRENDS_LLM_MODEL"
+    )
+    ideas_llm_model: str | None = Field(
+        default=None, validation_alias="IDEAS_LLM_MODEL"
+    )
+    translation_llm_model: str | None = Field(
+        default=None, validation_alias="TRANSLATION_LLM_MODEL"
+    )
     llm_output_language: str | None = Field(
         default=None, validation_alias="LLM_OUTPUT_LANGUAGE"
     )
@@ -1538,6 +1608,24 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return _parse_str_list(value)
         return value
+
+    @field_validator(
+        "analyze_llm_model",
+        "trends_llm_model",
+        "ideas_llm_model",
+        "translation_llm_model",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_stage_llm_model(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+        if "\n" in normalized or "\r" in normalized:
+            raise ValueError("stage-specific LLM model values must be single-line")
+        return normalized
 
     @field_validator("llm_output_language", mode="before")
     @classmethod

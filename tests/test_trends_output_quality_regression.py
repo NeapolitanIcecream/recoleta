@@ -131,6 +131,7 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_evidence_links(
         granularity="day",
         anchor_date=date(2026, 3, 2),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
     matches = list((settings.markdown_output_dir / "Trends").glob("day--2026-03-02--trend--*.md"))
     assert len(matches) == 1
@@ -220,6 +221,7 @@ def test_trends_day_deduplicates_evidence_from_same_doc_across_chunks(
         granularity="day",
         anchor_date=date(2026, 3, 9),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
     matches = list((settings.markdown_output_dir / "Trends").glob("day--2026-03-09--trend--*.md"))
     assert len(matches) == 1
