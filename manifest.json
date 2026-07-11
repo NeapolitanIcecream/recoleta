@@ -6,6 +6,7 @@
       "en": {
         "archive": "archive.html",
         "idea_pages": [
+          "ideas/software-intelligence--day--2026-07-08--ideas.html",
           "ideas/embodied-ai--day--2026-07-07--ideas.html",
           "ideas/software-intelligence--day--2026-07-07--ideas.html",
           "ideas/embodied-ai--day--2026-07-06--ideas.html",
@@ -224,6 +225,12 @@
         "ideas_index": "ideas/index.html",
         "index": "index.html",
         "item_pages": [
+          "items/software-intelligence--2026-07-08--hijacking-defensive-cyber-ai-agents-for-remote-code-execution.html",
+          "items/software-intelligence--2026-07-08--rethinking-code-performance-benchmarks-for-llms.html",
+          "items/software-intelligence--2026-07-08--what-makes-a-good-bug-report-for-an-ai-agent.html",
+          "items/software-intelligence--2026-07-08--biased-or-personalized-the-impact-of-personal-information-on-ai-driven-development.html",
+          "items/software-intelligence--2026-07-08--mitigating-taint-style-vulnerabilities-in-mcp-servers-via-security-aware-tool-descriptions.html",
+          "items/software-intelligence--2026-07-08--progressive-crystallization-turning-agent-exploration-into-deterministic-lower-cost-workflows-in-production.html",
           "items/embodied-ai--2026-07-07--lift3d-vla-lifting-vla-models-to-3d-geometry-and-dynamics-aware-manipulation.html",
           "items/embodied-ai--2026-07-07--rynnworld-4d-4d-embodied-world-models-for-robotic-manipulation.html",
           "items/embodied-ai--2026-07-07--rynnworld-teleop-an-action-conditioned-world-model-for-digital-teleoperation.html",
@@ -1527,6 +1534,7 @@
           "topics/ai-generated-software.html",
           "topics/ai-governance.html",
           "topics/ai-operations.html",
+          "topics/ai-personalization.html",
           "topics/ai-product-due-diligence.html",
           "topics/ai-ready-docs.html",
           "topics/ai-reliability.html",
@@ -1551,6 +1559,7 @@
           "topics/browser-testing.html",
           "topics/browser-tooling.html",
           "topics/bug-localization.html",
+          "topics/bug-reports.html",
           "topics/bug-validation.html",
           "topics/c-to-rust-migration.html",
           "topics/cad-automation.html",
@@ -1790,6 +1799,7 @@
           "topics/policy-evaluation.html",
           "topics/procedural-memory.html",
           "topics/product-roadmap.html",
+          "topics/production-automation.html",
           "topics/program-analysis.html",
           "topics/program-generation.html",
           "topics/program-repair.html",
@@ -1900,6 +1910,7 @@
           "topics/software-analysis.html",
           "topics/software-architecture.html",
           "topics/software-assurance.html",
+          "topics/software-benchmarks.html",
           "topics/software-economics.html",
           "topics/software-engineering.html",
           "topics/software-engineering-agents.html",
@@ -1996,6 +2007,7 @@
         ],
         "topics_index": "topics/index.html",
         "trend_pages": [
+          "trends/software-intelligence--day--2026-07-08--trend--1801.html",
           "trends/embodied-ai--day--2026-07-07--trend--825.html",
           "trends/software-intelligence--day--2026-07-07--trend--1791.html",
           "trends/embodied-ai--day--2026-07-06--trend--811.html",
@@ -2216,6 +2228,7 @@
       "zh-cn": {
         "archive": "archive.html",
         "idea_pages": [
+          "ideas/software-intelligence--day--2026-07-08--ideas.html",
           "ideas/embodied-ai--day--2026-07-07--ideas.html",
           "ideas/software-intelligence--day--2026-07-07--ideas.html",
           "ideas/embodied-ai--day--2026-07-06--ideas.html",
@@ -2434,6 +2447,12 @@
         "ideas_index": "ideas/index.html",
         "index": "index.html",
         "item_pages": [
+          "items/software-intelligence--2026-07-08--hijacking-defensive-cyber-ai-agents-for-remote-code-execution.html",
+          "items/software-intelligence--2026-07-08--rethinking-code-performance-benchmarks-for-llms.html",
+          "items/software-intelligence--2026-07-08--what-makes-a-good-bug-report-for-an-ai-agent.html",
+          "items/software-intelligence--2026-07-08--biased-or-personalized-the-impact-of-personal-information-on-ai-driven-development.html",
+          "items/software-intelligence--2026-07-08--mitigating-taint-style-vulnerabilities-in-mcp-servers-via-security-aware-tool-descriptions.html",
+          "items/software-intelligence--2026-07-08--progressive-crystallization-turning-agent-exploration-into-deterministic-lower-cost-workflows-in-production.html",
           "items/embodied-ai--2026-07-07--lift3d-vla-lifting-vla-models-to-3d-geometry-and-dynamics-aware-manipulation.html",
           "items/embodied-ai--2026-07-07--rynnworld-4d-4d-embodied-world-models-for-robotic-manipulation.html",
           "items/embodied-ai--2026-07-07--rynnworld-teleop-an-action-conditioned-world-model-for-digital-teleoperation.html",
@@ -3744,6 +3763,7 @@
           "topics/ai-generated-software.html",
           "topics/ai-governance.html",
           "topics/ai-operations.html",
+          "topics/ai-personalization.html",
           "topics/ai-product-due-diligence.html",
           "topics/ai-ready-docs.html",
           "topics/ai-reliability.html",
@@ -3771,6 +3791,7 @@
           "topics/browser-testing.html",
           "topics/browser-tooling.html",
           "topics/bug-localization.html",
+          "topics/bug-reports.html",
           "topics/bug-validation.html",
           "topics/c-to-rust-migration.html",
           "topics/cad-automation.html",
@@ -4037,6 +4058,7 @@
           "topics/policy-evaluation.html",
           "topics/procedural-memory.html",
           "topics/product-roadmap.html",
+          "topics/production-automation.html",
           "topics/program-analysis.html",
           "topics/program-generation.html",
           "topics/program-repair.html",
@@ -4161,6 +4183,7 @@
           "topics/software-analysis.html",
           "topics/software-architecture.html",
           "topics/software-assurance.html",
+          "topics/software-benchmarks.html",
           "topics/software-economics.html",
           "topics/software-engineering.html",
           "topics/software-engineering-agents.html",
@@ -4266,6 +4289,7 @@
         ],
         "topics_index": "topics/index.html",
         "trend_pages": [
+          "trends/software-intelligence--day--2026-07-08--trend--1801.html",
           "trends/embodied-ai--day--2026-07-07--trend--825.html",
           "trends/software-intelligence--day--2026-07-07--trend--1791.html",
           "trends/embodied-ai--day--2026-07-06--trend--811.html",
@@ -4485,6 +4509,7 @@
       }
     },
     "idea_pages": [
+      "ideas/software-intelligence--day--2026-07-08--ideas.html",
       "ideas/embodied-ai--day--2026-07-07--ideas.html",
       "ideas/software-intelligence--day--2026-07-07--ideas.html",
       "ideas/embodied-ai--day--2026-07-06--ideas.html",
@@ -4703,6 +4728,12 @@
     "ideas_index": "ideas/index.html",
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-08--hijacking-defensive-cyber-ai-agents-for-remote-code-execution.html",
+      "items/software-intelligence--2026-07-08--rethinking-code-performance-benchmarks-for-llms.html",
+      "items/software-intelligence--2026-07-08--what-makes-a-good-bug-report-for-an-ai-agent.html",
+      "items/software-intelligence--2026-07-08--biased-or-personalized-the-impact-of-personal-information-on-ai-driven-development.html",
+      "items/software-intelligence--2026-07-08--mitigating-taint-style-vulnerabilities-in-mcp-servers-via-security-aware-tool-descriptions.html",
+      "items/software-intelligence--2026-07-08--progressive-crystallization-turning-agent-exploration-into-deterministic-lower-cost-workflows-in-production.html",
       "items/embodied-ai--2026-07-07--lift3d-vla-lifting-vla-models-to-3d-geometry-and-dynamics-aware-manipulation.html",
       "items/embodied-ai--2026-07-07--rynnworld-4d-4d-embodied-world-models-for-robotic-manipulation.html",
       "items/embodied-ai--2026-07-07--rynnworld-teleop-an-action-conditioned-world-model-for-digital-teleoperation.html",
@@ -6014,6 +6045,7 @@
       "topics/ai-generated-software.html",
       "topics/ai-governance.html",
       "topics/ai-operations.html",
+      "topics/ai-personalization.html",
       "topics/ai-product-due-diligence.html",
       "topics/ai-ready-docs.html",
       "topics/ai-reliability.html",
@@ -6038,6 +6070,7 @@
       "topics/browser-testing.html",
       "topics/browser-tooling.html",
       "topics/bug-localization.html",
+      "topics/bug-reports.html",
       "topics/bug-validation.html",
       "topics/c-to-rust-migration.html",
       "topics/cad-automation.html",
@@ -6277,6 +6310,7 @@
       "topics/policy-evaluation.html",
       "topics/procedural-memory.html",
       "topics/product-roadmap.html",
+      "topics/production-automation.html",
       "topics/program-analysis.html",
       "topics/program-generation.html",
       "topics/program-repair.html",
@@ -6387,6 +6421,7 @@
       "topics/software-analysis.html",
       "topics/software-architecture.html",
       "topics/software-assurance.html",
+      "topics/software-benchmarks.html",
       "topics/software-economics.html",
       "topics/software-engineering.html",
       "topics/software-engineering-agents.html",
@@ -6483,6 +6518,7 @@
     ],
     "topics_index": "topics/index.html",
     "trend_pages": [
+      "trends/software-intelligence--day--2026-07-08--trend--1801.html",
       "trends/embodied-ai--day--2026-07-07--trend--825.html",
       "trends/software-intelligence--day--2026-07-07--trend--1791.html",
       "trends/embodied-ai--day--2026-07-06--trend--811.html",
@@ -6700,11 +6736,11 @@
     ],
     "trends_index": "trends/index.html"
   },
-  "ideas_total": 214,
+  "ideas_total": 215,
   "item_export_scope": "linked",
-  "items_available_total": 6994,
-  "items_total": 1237,
-  "items_unreferenced_total": 5757,
+  "items_available_total": 7022,
+  "items_total": 1243,
+  "items_unreferenced_total": 5779,
   "language_codes": {
     "en": "en",
     "zh-cn": "zh-CN"
@@ -6713,6 +6749,6 @@
     "en",
     "zh-cn"
   ],
-  "topics_total": 528,
-  "trends_total": 214
+  "topics_total": 532,
+  "trends_total": 215
 }
