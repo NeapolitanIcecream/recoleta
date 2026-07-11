@@ -14,6 +14,7 @@ from recoleta.cli.workflow_planner import (
     plan_workflow_execution,
 )
 from recoleta.cli.workflow_runner import GranularityPlanRequest, build_granularity_plan
+from recoleta.types import sha256_hex
 from recoleta.workflow_freshness import (
     analyze_budget_config_fingerprint,
     build_trend_ideas_freshness,
@@ -840,6 +841,46 @@ def test_planner_preserves_analyze_budget_when_other_stage_model_changes() -> No
     analyze_decision = _decision_for(decisions, "analyze", source_day)
     assert analyze_decision.action == "skip"
     assert analyze_decision.reason == "analyze_budget_satisfied"
+
+
+def test_planner_accepts_pre_stage_model_analyze_budget_receipt() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _AnalyzeFingerprintSettings(
+        trends_llm_model="gpt-trends-new",
+    )
+    pre_upgrade_payload = settings.safe_model_dump()
+    for field_name in (
+        "analyze_llm_model",
+        "trends_llm_model",
+        "ideas_llm_model",
+        "translation_llm_model",
+    ):
+        pre_upgrade_payload.pop(field_name)
+    pre_upgrade_fingerprint = sha256_hex(
+        json.dumps(
+            pre_upgrade_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=settings.analyze_limit,
+        accepted_fingerprints={pre_upgrade_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=repo,
+        settings=settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+    assert any(
+        request["config_fingerprint"] == pre_upgrade_fingerprint
+        for request in repo.receipt_requests
+    )
 
 
 def test_planner_ignores_analyze_budget_receipt_for_workflow_model_override() -> None:

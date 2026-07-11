@@ -71,6 +71,10 @@ def analyze_budget_config_fingerprint_candidates(
     fingerprints = (
         analyze_budget_config_fingerprint(settings, llm_model=llm_model),
         _legacy_analyze_budget_config_fingerprint(settings, llm_model=llm_model),
+        _pre_stage_model_analyze_budget_config_fingerprint(
+            settings,
+            llm_model=llm_model,
+        ),
     )
     return tuple(dict.fromkeys(value for value in fingerprints if value))
 
@@ -98,6 +102,33 @@ def _legacy_analyze_budget_config_fingerprint(
                 "analyze_llm_model": effective_model,
             },
             ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
+def _pre_stage_model_analyze_budget_config_fingerprint(
+    settings: Any,
+    *,
+    llm_model: str | None,
+) -> str:
+    global_model = str(getattr(settings, "llm_model", "") or "").strip()
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    if not global_model or effective_model != global_model:
+        return ""
+    payload = _safe_settings_payload(settings)
+    if payload is None:
+        return ""
+    for field_name in LLM_MODEL_CONFIG_FIELDS - {"llm_model"}:
+        payload.pop(field_name, None)
+    return sha256_hex(
+        json.dumps(
+            payload,
             sort_keys=True,
             separators=(",", ":"),
         )
