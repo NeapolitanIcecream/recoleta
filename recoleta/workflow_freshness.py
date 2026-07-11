@@ -34,6 +34,35 @@ def workflow_freshness_key(freshness: dict[str, Any] | None) -> str | None:
     return normalized or None
 
 
+def analyze_budget_config_fingerprint(
+    settings: Any,
+    *,
+    llm_model: str | None = None,
+) -> str:
+    base_fingerprint = _settings_fingerprint(settings)
+    if not base_fingerprint:
+        return ""
+    configured_model = resolve_stage_llm_model(settings, stage="analyze")
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    if effective_model == configured_model:
+        return base_fingerprint
+    return sha256_hex(
+        json.dumps(
+            {
+                "settings_fingerprint": base_fingerprint,
+                "analyze_llm_model": effective_model,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
 def build_trend_synthesis_freshness(
     *,
     settings: Any,

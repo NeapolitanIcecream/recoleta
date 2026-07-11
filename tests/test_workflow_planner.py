@@ -591,6 +591,34 @@ def test_week_planner_skips_missing_lower_level_idea_after_task_set_ran() -> Non
     assert publish_decision.reason == "no_publish_candidates"
 
 
+@pytest.mark.parametrize(
+    ("settings_field", "workflow_model", "step_id"),
+    [
+        (None, "gpt-override", "trends:day"),
+        ("trends_llm_model", None, "trends:day"),
+        ("ideas_llm_model", None, "ideas:day"),
+    ],
+)
+def test_week_planner_reruns_document_only_outputs_for_model_change(
+    settings_field: str | None,
+    workflow_model: str | None,
+    step_id: str,
+) -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    if settings_field is not None:
+        setattr(settings, settings_field, "gpt-stage-override")
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_DocumentOnlyLowerLevelRepo(),
+        settings=settings,
+        options=WorkflowPlanningOptions(llm_model=workflow_model),
+    )
+
+    decision = _decision_for(decisions, step_id, source_day)
+    assert decision.action == "run"
+
+
 def test_week_planner_treats_suppressed_lower_level_ideas_as_existing() -> None:
     source_day = date(2026, 3, 16)
 
@@ -672,6 +700,25 @@ def test_planner_runs_analyze_when_budget_increases_above_receipt() -> None:
 
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "candidate_items"
+
+
+def test_planner_ignores_analyze_budget_receipt_for_workflow_model_override() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _TriageSettings()
+    repo = _AnalyzeBudgetReceiptRepo(selected_total=settings.analyze_limit)
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=repo,
+        settings=settings,
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "candidate_items"
+    assert repo.receipt_requests
+    assert repo.receipt_requests[0]["config_fingerprint"] != "fp-test"
 
 
 def test_week_planner_trusts_day_analyze_budget_receipts() -> None:

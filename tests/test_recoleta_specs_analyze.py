@@ -25,6 +25,7 @@ from recoleta.models import (
 )
 from recoleta.pipeline.service import PipelineService
 from recoleta.types import AnalysisResult, AnalyzeDebug, ItemDraft
+from recoleta.workflow_freshness import analyze_budget_config_fingerprint
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
 
@@ -201,6 +202,19 @@ def test_analyze_uses_stage_specific_model_and_explicit_override(
         "test/analyze-stage-model",
         "test/analyze-override-model",
     ]
+    override_receipt = repository.get_latest_workflow_step_receipt(
+        step_id="analyze",
+        granularity="day",
+        period_start=None,
+        period_end=None,
+        config_fingerprint=analyze_budget_config_fingerprint(
+            settings,
+            llm_model="test/analyze-override-model",
+        ),
+        min_selected_total=1,
+    )
+    assert override_receipt is not None
+    assert override_receipt.run_id == "run-analyze-override-model"
 
     with Session(repository.engine) as session:
         analyses = list(session.exec(select(Analysis).order_by(cast(Any, Analysis.id))))

@@ -11,6 +11,7 @@ from recoleta.config import resolve_stage_llm_model
 from recoleta.models import ITEM_STATE_FAILED, ITEM_STATE_RETRYABLE_FAILED
 from recoleta.pipeline.metrics import metric_token
 from recoleta.types import AnalysisWrite, AnalyzeResult, ItemStateUpdate
+from recoleta.workflow_freshness import analyze_budget_config_fingerprint
 
 
 @dataclass(frozen=True, slots=True)
@@ -646,7 +647,10 @@ def _record_analyze_budget_receipt(
             granularity="day",
             period_start=period_start,
             period_end=period_end,
-            config_fingerprint=_settings_fingerprint(context.service.settings),
+            config_fingerprint=analyze_budget_config_fingerprint(
+                context.service.settings,
+                llm_model=context.llm_model,
+            ),
             requested_limit=context.effective_limit,
             selected_total=batch_result.selected_total,
             processed_total=context.analyze_result.processed,
@@ -664,16 +668,6 @@ def _record_analyze_budget_receipt(
             type(exc).__name__,
             str(exc),
         )
-
-
-def _settings_fingerprint(settings: Any) -> str:
-    safe_fingerprint = getattr(settings, "safe_fingerprint", None)
-    if not callable(safe_fingerprint):
-        return ""
-    try:
-        return str(safe_fingerprint() or "")
-    except Exception:
-        return ""
 
 
 def _increment_counter(counter: dict[str, int], token: str) -> None:

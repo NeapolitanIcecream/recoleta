@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from datetime import date, datetime
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 from recoleta.cli.workflow_models import (
     GRANULARITY_ORDER,
@@ -26,6 +26,7 @@ from recoleta.cli.workflow_models import (
 from recoleta.config import resolve_stage_llm_model
 from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
 from recoleta.workflow_freshness import (
+    analyze_budget_config_fingerprint,
     build_trend_ideas_freshness,
     build_trend_synthesis_freshness,
     workflow_freshness_key,
@@ -229,6 +230,7 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             context=context,
             repository=request.repository,
             settings=request.settings,
+            llm_model=request.llm_model,
         )
     if invocation.step_id == STEP_PUBLISH:
         return _inspect_publish(
@@ -515,6 +517,7 @@ def _inspect_analyze(
     context: _DecisionContext,
     repository: Any,
     settings: Any,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     list_items = getattr(repository, "list_items_for_llm_analysis", None)
     period_start = context.period_start
@@ -555,6 +558,7 @@ def _inspect_analyze(
         repository=repository,
         settings=settings,
         configured_limit=configured_limit,
+        llm_model=llm_model,
     )
     if receipt is not None:
         return _decision(
@@ -854,42 +858,70 @@ def _lower_level_model_is_stale(
     pass_kind: str,
     llm_model: str | None,
 ) -> bool:
-    if (
-        context.granularity is None
-        or context.period_start is None
-        or context.period_end is None
-    ):
+    if not _decision_context_has_period(context):
         return False
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage=_stage_for_pass_kind(pass_kind),
+        override=llm_model,
+    )
     row = _latest_pass_output(
         repository=repository,
         pass_kind=pass_kind,
-        statuses=(
-            [PASS_STATUS_SUCCEEDED]
-            if pass_kind == TREND_SYNTHESIS_PASS_KIND
-            else [PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED]
-        ),
-        granularity=context.granularity,
-        period_start=context.period_start,
-        period_end=context.period_end,
+        statuses=_statuses_for_pass_kind(pass_kind),
+        granularity=cast(str, context.granularity),
+        period_start=cast(datetime, context.period_start),
+        period_end=cast(datetime, context.period_end),
     )
     if row is None:
-        return False
-    freshness = _row_workflow_freshness(row) or {}
-    components = freshness.get("components")
-    stored_model = (
-        str(components.get("llm_model") or "").strip()
-        if isinstance(components, dict)
-        else ""
-    )
-    effective_model = resolve_stage_llm_model(
-        settings,
-        stage=("trends" if pass_kind == TREND_SYNTHESIS_PASS_KIND else "ideas"),
-        override=llm_model,
-    )
+        return _document_only_model_is_stale(
+            settings=settings,
+            effective_model=effective_model,
+            llm_model=llm_model,
+        )
+    stored_model = _pass_output_llm_model(row)
     if stored_model:
         return stored_model != effective_model
     global_model = str(getattr(settings, "llm_model", "") or "").strip()
     return bool(global_model) and effective_model != global_model
+
+
+def _decision_context_has_period(context: _DecisionContext) -> bool:
+    return (
+        context.granularity is not None
+        and context.period_start is not None
+        and context.period_end is not None
+    )
+
+
+def _stage_for_pass_kind(pass_kind: str) -> str:
+    return "trends" if pass_kind == TREND_SYNTHESIS_PASS_KIND else "ideas"
+
+
+def _statuses_for_pass_kind(pass_kind: str) -> list[str]:
+    if pass_kind == TREND_SYNTHESIS_PASS_KIND:
+        return [PASS_STATUS_SUCCEEDED]
+    return [PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED]
+
+
+def _document_only_model_is_stale(
+    *,
+    settings: Any,
+    effective_model: str,
+    llm_model: str | None,
+) -> bool:
+    if llm_model is not None:
+        return True
+    global_model = str(getattr(settings, "llm_model", "") or "").strip()
+    return bool(global_model) and effective_model != global_model
+
+
+def _pass_output_llm_model(row: Any) -> str:
+    freshness = _row_workflow_freshness(row) or {}
+    components = freshness.get("components")
+    if not isinstance(components, dict):
+        return ""
+    return str(components.get("llm_model") or "").strip()
 
 
 def _inspect_translation(
@@ -1457,25 +1489,19 @@ def _configured_analyze_limit(settings: Any) -> int:
     return max(1, value)
 
 
-def _settings_fingerprint(settings: Any) -> str:
-    safe_fingerprint = getattr(settings, "safe_fingerprint", None)
-    if not callable(safe_fingerprint):
-        return ""
-    try:
-        return str(safe_fingerprint() or "")
-    except Exception:
-        return ""
-
-
 def _latest_analyze_budget_receipt(
     *,
     context: _DecisionContext,
     repository: Any,
     settings: Any,
     configured_limit: int,
+    llm_model: str | None,
 ) -> Any | None:
     getter = getattr(repository, "get_latest_workflow_step_receipt", None)
-    fingerprint = _settings_fingerprint(settings)
+    fingerprint = analyze_budget_config_fingerprint(
+        settings,
+        llm_model=llm_model,
+    )
     if (
         not callable(getter)
         or not fingerprint
