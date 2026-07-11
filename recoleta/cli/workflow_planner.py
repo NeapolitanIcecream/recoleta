@@ -126,6 +126,7 @@ class _PassOutputCompletionRequest:
     row: Any
     doc_type: str
     expected_freshness_key: str | None
+    refresh_legacy_output: bool = False
     projection_required: bool = True
     fallback_skip_reason: str = "fresh_pass_output"
 
@@ -678,6 +679,11 @@ def _inspect_trend_output(
             row=row,
             doc_type="trend",
             expected_freshness_key=workflow_freshness_key(expected),
+            refresh_legacy_output=_model_change_requires_legacy_refresh(
+                settings=settings,
+                stage="trends",
+                llm_model=llm_model,
+            ),
         )
     )
 
@@ -796,6 +802,11 @@ def _inspect_ideas_output(
             row=row,
             doc_type="idea",
             expected_freshness_key=workflow_freshness_key(expected),
+            refresh_legacy_output=_model_change_requires_legacy_refresh(
+                settings=settings,
+                stage="ideas",
+                llm_model=llm_model,
+            ),
             projection_required=projection_required,
             fallback_skip_reason=(
                 "suppressed_ideas"
@@ -1103,6 +1114,13 @@ def _classify_pass_output_completion(
             freshness_key=row_freshness_key,
         )
     if projection_present is True:
+        if request.refresh_legacy_output:
+            return _decision(
+                context=request.context,
+                action="run",
+                reason="stale_freshness",
+                authority="pass_outputs",
+            )
         return _decision(
             context=request.context,
             action="skip",
@@ -1116,6 +1134,19 @@ def _classify_pass_output_completion(
         reason="legacy_unverified",
         authority="pass_outputs",
     )
+
+
+def _model_change_requires_legacy_refresh(
+    *,
+    settings: Any,
+    stage: str,
+    llm_model: str | None,
+) -> bool:
+    if llm_model is not None:
+        return True
+    effective_model = resolve_stage_llm_model(settings, stage=stage)
+    global_model = str(getattr(settings, "llm_model", "") or "").strip()
+    return bool(global_model) and effective_model != global_model
 
 
 def _pass_output_projection_present(

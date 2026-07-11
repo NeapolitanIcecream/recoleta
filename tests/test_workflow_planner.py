@@ -430,6 +430,18 @@ class _DocumentOnlyLowerLevelRepo(_ReadOnlyPlannerRepo):
         return super().list_documents(**kwargs)
 
 
+class _LegacyPassOutputRepo(_ReadOnlyPlannerRepo):
+    def __init__(self, *, legacy_pass_kinds: set[str]) -> None:
+        super().__init__()
+        self.legacy_pass_kinds = legacy_pass_kinds
+
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        row = super().get_latest_pass_output(**kwargs)
+        if row is not None and kwargs["pass_kind"] in self.legacy_pass_kinds:
+            row.diagnostics_json = "{}"
+        return row
+
+
 def test_planner_skips_complete_day_level_work_for_week() -> None:
     plan = _week_plan()
     decisions = plan_workflow_execution(
@@ -1084,6 +1096,51 @@ def test_trend_planner_treats_workflow_model_override_as_stale_freshness() -> No
     decision = _decision_for(decisions, "trends:day", source_day)
     assert decision.action == "run"
     assert decision.reason == "stale_freshness"
+
+
+def test_trend_planner_refreshes_legacy_output_for_workflow_model_override() -> None:
+    source_day = date(2026, 3, 16)
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(legacy_pass_kinds={"trend_synthesis"}),
+        settings=_Settings(),
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    decision = _decision_for(decisions, "trends:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "stale_freshness"
+
+
+def test_ideas_planner_refreshes_legacy_output_for_stage_model_change() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    settings.ideas_llm_model = "gpt-ideas-override"
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(legacy_pass_kinds={"trend_ideas"}),
+        settings=settings,
+    )
+
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert ideas_decision.action == "run"
+    assert ideas_decision.reason == "stale_freshness"
+
+
+def test_planner_preserves_legacy_outputs_under_global_model() -> None:
+    source_day = date(2026, 3, 16)
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(
+            legacy_pass_kinds={"trend_synthesis", "trend_ideas"}
+        ),
+        settings=_Settings(),
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert trend_decision.reason == "legacy_complete"
+    assert ideas_decision.reason == "legacy_complete"
 
 
 @pytest.mark.parametrize(
