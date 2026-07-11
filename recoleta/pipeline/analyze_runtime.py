@@ -22,6 +22,7 @@ class AnalyzeLoadRequest:
     triage_required: bool
     period_start: Any
     period_end: Any
+    llm_model: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +162,7 @@ def _load_analyze_items(request: AnalyzeLoadRequest) -> list[Any]:
         triage_required=request.triage_required,
         period_start=request.period_start,
         period_end=request.period_end,
+        llm_model=request.llm_model,
     )
     items, candidate_counts, deferred_counts = (
         request.service._rebalance_items_by_source(
@@ -526,6 +528,7 @@ def _run_analyze_batch(
             triage_required=context.triage_required,
             period_start=period_start,
             period_end=period_end,
+            llm_model=context.llm_model,
         )
     )
     work_items, state_updates, missing_content_total = _prepare_analyze_work(

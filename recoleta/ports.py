@@ -52,6 +52,7 @@ class RepositoryPort(Protocol):
         triage_required: bool,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        llm_model: str | None = None,
     ) -> list[Item]: ...
 
     def get_latest_content(
@@ -357,6 +358,7 @@ class AnalysisRepositoryPort(Protocol):
         triage_required: bool,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        llm_model: str | None = None,
     ) -> list[Item]: ...
 
     def get_latest_content_texts(

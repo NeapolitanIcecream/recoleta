@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import desc, func
+from sqlalchemy import and_, desc, func, or_
 from sqlmodel import Session, select
 
 from recoleta.models import (
@@ -131,6 +131,23 @@ def _llm_analysis_candidate_states(*, triage_required: bool) -> list[str]:
     return states
 
 
+def _llm_analysis_candidate_filter(
+    *,
+    triage_required: bool,
+    llm_model: str | None,
+) -> tuple[Any, bool]:
+    states = _llm_analysis_candidate_states(triage_required=triage_required)
+    state_candidate = cast(Any, Item.state).in_(states)
+    normalized_model = str(llm_model or "").strip()
+    if not normalized_model:
+        return state_candidate, False
+    stale_model_candidate = and_(
+        cast(Any, Item.state).in_([ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED]),
+        cast(Any, Analysis.model) != normalized_model,
+    )
+    return or_(state_candidate, stale_model_candidate), True
+
+
 class AnalysisStoreMixin:
     engine: Any
 
@@ -142,15 +159,22 @@ class AnalysisStoreMixin:
         triage_required: bool,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        llm_model: str | None = None,
     ) -> dict[str, int]:
-        states = _llm_analysis_candidate_states(triage_required=triage_required)
+        candidate_filter, requires_analysis_join = _llm_analysis_candidate_filter(
+            triage_required=triage_required,
+            llm_model=llm_model,
+        )
         with Session(self.engine) as session:
             event_at = func.coalesce(
                 cast(Any, Item.published_at), cast(Any, Item.created_at)
             )
-            statement = select(Item.state, func.count()).where(
-                cast(Any, Item.state).in_(states)
-            )
+            statement = select(Item.state, func.count())
+            if requires_analysis_join:
+                statement = statement.outerjoin(
+                    Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id)
+                )
+            statement = statement.where(candidate_filter)
             if period_start is not None and period_end is not None:
                 statement = statement.where(
                     event_at >= period_start, event_at < period_end
@@ -168,14 +192,23 @@ class AnalysisStoreMixin:
         triage_required: bool,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        llm_model: str | None = None,
     ) -> list[Item]:
-        states = _llm_analysis_candidate_states(triage_required=triage_required)
+        candidate_filter, requires_analysis_join = _llm_analysis_candidate_filter(
+            triage_required=triage_required,
+            llm_model=llm_model,
+        )
 
         with Session(self.engine) as session:
             event_at = func.coalesce(
                 cast(Any, Item.published_at), cast(Any, Item.created_at)
             )
-            statement = select(Item).where(cast(Any, Item.state).in_(states))
+            statement = select(Item)
+            if requires_analysis_join:
+                statement = statement.outerjoin(
+                    Analysis, cast(Any, Analysis.item_id) == cast(Any, Item.id)
+                )
+            statement = statement.where(candidate_filter)
             if period_start is not None and period_end is not None:
                 statement = statement.where(
                     event_at >= period_start, event_at < period_end

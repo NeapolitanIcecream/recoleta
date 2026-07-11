@@ -16,6 +16,7 @@ from recoleta.models import (
     ITEM_STATE_ENRICHED,
     ITEM_STATE_FAILED,
     ITEM_STATE_INGESTED,
+    ITEM_STATE_PUBLISHED,
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
     Artifact,
@@ -197,7 +198,7 @@ def test_analyze_uses_stage_specific_model_and_explicit_override(
     )
 
     assert first_result.processed == 1
-    assert second_result.processed == 1
+    assert second_result.processed == 2
     assert created_models == [
         "test/analyze-stage-model",
         "test/analyze-override-model",
@@ -219,7 +220,7 @@ def test_analyze_uses_stage_specific_model_and_explicit_override(
     with Session(repository.engine) as session:
         analyses = list(session.exec(select(Analysis).order_by(cast(Any, Analysis.id))))
         assert [analysis.model for analysis in analyses] == [
-            "test/analyze-stage-model",
+            "test/analyze-override-model",
             "test/analyze-override-model",
         ]
         first_request_artifact = session.exec(
@@ -920,6 +921,67 @@ def test_repository_analysis_selection_prioritizes_recently_updated_retryables(
     )
     assert selection[0].source_item_id == "order-older"
     assert llm_selection[0].source_item_id == "order-older"
+
+
+@pytest.mark.parametrize(
+    "completed_state",
+    [ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED],
+)
+def test_repository_requeues_completed_analysis_for_model_change(
+    configured_env,
+    completed_state: str,
+) -> None:
+    _settings, repository = _build_runtime()
+    item, _inserted = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id=f"stale-model-{completed_state}",
+            canonical_url=f"https://example.com/stale-model-{completed_state}",
+            title="Stale model candidate",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+    )
+    assert item.id is not None
+    repository.save_analysis(
+        item_id=item.id,
+        result=AnalysisResult(
+            model="test/old-model",
+            provider="test",
+            summary="Old summary",
+            topics=["agents"],
+            relevance_score=0.8,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    if completed_state == ITEM_STATE_PUBLISHED:
+        with Session(repository.engine) as session:
+            stored_item = session.get(Item, item.id)
+            assert stored_item is not None
+            stored_item.state = ITEM_STATE_PUBLISHED
+            session.add(stored_item)
+            session.commit()
+
+    unchanged = repository.list_items_for_llm_analysis(
+        limit=10,
+        triage_required=False,
+        llm_model="test/old-model",
+    )
+    stale = repository.list_items_for_llm_analysis(
+        limit=10,
+        triage_required=False,
+        llm_model="test/new-model",
+    )
+    counts = repository.count_items_for_llm_analysis_by_state(
+        triage_required=False,
+        llm_model="test/new-model",
+    )
+
+    assert unchanged == []
+    assert [candidate.id for candidate in stale] == [item.id]
+    assert counts == {completed_state: 1}
 
 
 def test_analyze_with_semantic_triage_prioritizes_high_similarity_items(

@@ -298,6 +298,19 @@ class _AnalyzeCandidatesRepo(_ReadOnlyPlannerRepo):
         return [SimpleNamespace(id=1)]
 
 
+class _ModelStaleAnalysisRepo(_ReadOnlyPlannerRepo):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requested_models: list[str | None] = []
+
+    def list_items_for_llm_analysis(self, **kwargs: Any) -> list[Any]:
+        llm_model = kwargs.get("llm_model")
+        self.requested_models.append(llm_model)
+        if llm_model == "gpt-override":
+            return [SimpleNamespace(id=1)]
+        return []
+
+
 class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
     def __init__(
         self,
@@ -690,6 +703,23 @@ def test_planner_runs_analyze_when_planned_ingest_may_create_candidates() -> Non
     assert trend_decision.action == "run"
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "upstream_ingest_planned"
+
+
+def test_planner_runs_analyze_for_stale_model_candidate() -> None:
+    source_day = date(2026, 3, 16)
+    repo = _ModelStaleAnalysisRepo()
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=_Settings()),
+        repository=repo,
+        settings=_Settings(),
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "candidate_items"
+    assert repo.requested_models == ["gpt-override"]
 
 
 def test_planner_skips_analyze_when_budget_was_satisfied_with_backlog() -> None:

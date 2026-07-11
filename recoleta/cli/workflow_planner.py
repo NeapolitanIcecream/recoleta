@@ -527,6 +527,11 @@ def _inspect_analyze(
     period_start = context.period_start
     period_end = context.period_end
     triage_required = _triage_required(settings)
+    effective_llm_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
     if not callable(list_items) or period_start is None or period_end is None:
         return _decision(
             context=context,
@@ -540,6 +545,7 @@ def _inspect_analyze(
             triage_required=triage_required,
             period_start=period_start,
             period_end=period_end,
+            llm_model=effective_llm_model,
         )
     except Exception:
         return _decision(
@@ -579,6 +585,7 @@ def _inspect_analyze(
                     triage_required=triage_required,
                     period_start=period_start,
                     period_end=period_end,
+                    llm_model=effective_llm_model,
                 ),
             ),
         )
@@ -1584,6 +1591,7 @@ def _candidate_backlog_metadata(
     triage_required: bool,
     period_start: datetime,
     period_end: datetime,
+    llm_model: str,
 ) -> dict[str, Any]:
     counter = getattr(repository, "count_items_for_llm_analysis_by_state", None)
     if not callable(counter):
@@ -1593,6 +1601,7 @@ def _candidate_backlog_metadata(
             triage_required=triage_required,
             period_start=period_start,
             period_end=period_end,
+            llm_model=llm_model,
         )
     except Exception:
         return {"present": True}
