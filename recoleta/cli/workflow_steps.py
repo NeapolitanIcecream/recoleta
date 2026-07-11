@@ -319,6 +319,7 @@ def _execute_trends_step(
         granularity=granularity,
         anchor_date=invocation.anchor_date,
         llm_model=context.llm_model,
+        analysis_llm_model=context.llm_model,
         backfill=False,
         backfill_mode="missing",
         reuse_existing_corpus=True,

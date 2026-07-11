@@ -146,6 +146,7 @@ def build_trend_synthesis_freshness(
 ) -> dict[str, Any]:
     repository = options.get("repository")
     source_fingerprint = options.get("source_fingerprint")
+    analysis_model = options.get("analysis_model")
     components = _base_generation_components(
         kind="trend_synthesis",
         settings=settings,
@@ -153,6 +154,10 @@ def build_trend_synthesis_freshness(
         period_start=period_start,
         period_end=period_end,
         llm_model=llm_model,
+    )
+    components["analysis_model"] = (
+        str(analysis_model or "").strip()
+        or resolve_stage_llm_model(settings, stage="analyze")
     )
     if source_fingerprint is None and repository is not None:
         source_fingerprint = build_trend_source_fingerprint(

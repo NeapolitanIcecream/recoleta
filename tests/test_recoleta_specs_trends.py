@@ -88,6 +88,7 @@ def test_trends_day_indexes_items_and_persists_trend_document(
         granularity="day",
         anchor_date=anchor,
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
     assert result.doc_id > 0
     assert result.granularity == "day"
@@ -121,6 +122,7 @@ def test_trends_day_prepares_target_period_backlog_before_indexing(
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("ANALYZE_LLM_MODEL", "test/analyze-stage-model")
     monkeypatch.setenv("TOPICS", json.dumps(["agents"]))
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
@@ -177,14 +179,14 @@ def test_trends_day_prepares_target_period_backlog_before_indexing(
         llm_model=None,  # noqa: ANN001
     ) -> AnalyzeResult:
         _ = run_id, limit
-        assert llm_model == "test/fake-model"
+        assert llm_model is None
         assert isinstance(period_start, datetime)
         assert isinstance(period_end, datetime)
         period_calls.append(("analyze", period_start, period_end))
         repository.save_analysis(
             item_id=item_id_holder["item_id"],
             result=AnalysisResult(
-                model="test/fake-model",
+                model="test/analyze-stage-model",
                 provider="test",
                 summary="Summary for Target Period Item",
                 topics=["agents"],
@@ -832,6 +834,7 @@ def test_trends_text_search_can_find_summary_chunks(
         granularity="day",
         anchor_date=anchor,
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     hits = repository.search_chunks_text(
@@ -1707,6 +1710,7 @@ def test_trends_skips_llm_when_corpus_is_empty(
         granularity="day",
         anchor_date=utc_now().date(),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
     assert result.doc_id > 0
 
@@ -1767,6 +1771,7 @@ def test_week_trends_treat_empty_daily_trends_as_empty_corpus(
         granularity="week",
         anchor_date=anchor,
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -1909,6 +1914,7 @@ def test_week_trends_rerun_when_items_arrive_after_empty_daily_trends(
         granularity="week",
         anchor_date=anchor,
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0

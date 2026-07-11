@@ -140,6 +140,7 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         assert freshness["kind"] == "trend_synthesis"
         assert freshness["components"]["granularity"] == "day"
         assert freshness["components"]["llm_model"] == "test/trends-stage-model"
+        assert freshness["components"]["analysis_model"] == "test/fake-model"
         assert freshness["key"]
 
         trend_doc = session.exec(
@@ -236,6 +237,7 @@ def test_trends_backfills_cluster_evidence_before_publishing(
         granularity="day",
         anchor_date=date(2026, 3, 2),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -331,6 +333,7 @@ def test_trends_records_metric_when_pass_output_persist_fails(
         granularity="day",
         anchor_date=date(2026, 3, 3),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -421,6 +424,7 @@ def test_trends_records_projection_failure_metric_without_failing_stage(
         granularity="day",
         anchor_date=date(2026, 3, 4),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -500,6 +504,7 @@ def test_trends_records_obsidian_projection_metric_when_note_is_written(
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0

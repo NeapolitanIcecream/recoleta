@@ -694,6 +694,11 @@ def _inspect_trend_output(
         period_start=period_start,
         period_end=period_end,
         llm_model=llm_model,
+        analysis_model=resolve_stage_llm_model(
+            settings,
+            stage="analyze",
+            override=llm_model,
+        ),
         repository=repository,
     )
     return _classify_pass_output_completion(
@@ -703,9 +708,8 @@ def _inspect_trend_output(
             row=row,
             doc_type="trend",
             expected_freshness_key=workflow_freshness_key(expected),
-            refresh_legacy_output=_model_change_requires_legacy_refresh(
+            refresh_legacy_output=_trend_change_requires_legacy_refresh(
                 settings=settings,
-                stage="trends",
                 llm_model=llm_model,
             ),
         )
@@ -912,16 +916,47 @@ def _lower_level_model_is_stale(
         period_end=cast(datetime, context.period_end),
     )
     if row is None:
-        return _document_only_model_is_stale(
+        generation_model_stale = _document_only_model_is_stale(
             settings=settings,
             effective_model=effective_model,
             llm_model=llm_model,
         )
+        if generation_model_stale or pass_kind != TREND_SYNTHESIS_PASS_KIND:
+            return generation_model_stale
+        return _document_only_model_is_stale(
+            settings=settings,
+            effective_model=resolve_stage_llm_model(
+                settings,
+                stage="analyze",
+                override=llm_model,
+            ),
+            llm_model=llm_model,
+        )
     stored_model = _pass_output_llm_model(row)
-    if stored_model:
-        return stored_model != effective_model
-    global_model = str(getattr(settings, "llm_model", "") or "").strip()
-    return bool(global_model) and effective_model != global_model
+    if stored_model and stored_model != effective_model:
+        return True
+    if not stored_model:
+        global_model = str(getattr(settings, "llm_model", "") or "").strip()
+        if bool(global_model) and effective_model != global_model:
+            return True
+    if pass_kind != TREND_SYNTHESIS_PASS_KIND:
+        return False
+    effective_analysis_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    stored_analysis_model = _pass_output_freshness_component(
+        row,
+        "analysis_model",
+    )
+    if stored_analysis_model:
+        return stored_analysis_model != effective_analysis_model
+    return _document_only_model_is_stale(
+        settings=settings,
+        effective_model=effective_analysis_model,
+        llm_model=llm_model,
+    )
 
 
 def _decision_context_has_period(context: _DecisionContext) -> bool:
@@ -955,11 +990,15 @@ def _document_only_model_is_stale(
 
 
 def _pass_output_llm_model(row: Any) -> str:
+    return _pass_output_freshness_component(row, "llm_model")
+
+
+def _pass_output_freshness_component(row: Any, name: str) -> str:
     freshness = _row_workflow_freshness(row) or {}
     components = freshness.get("components")
     if not isinstance(components, dict):
         return ""
-    return str(components.get("llm_model") or "").strip()
+    return str(components.get(name) or "").strip()
 
 
 def _inspect_translation(
@@ -1171,6 +1210,22 @@ def _model_change_requires_legacy_refresh(
     effective_model = resolve_stage_llm_model(settings, stage=stage)
     global_model = str(getattr(settings, "llm_model", "") or "").strip()
     return bool(global_model) and effective_model != global_model
+
+
+def _trend_change_requires_legacy_refresh(
+    *,
+    settings: Any,
+    llm_model: str | None,
+) -> bool:
+    return _model_change_requires_legacy_refresh(
+        settings=settings,
+        stage="trends",
+        llm_model=llm_model,
+    ) or _model_change_requires_legacy_refresh(
+        settings=settings,
+        stage="analyze",
+        llm_model=llm_model,
+    )
 
 
 def _pass_output_projection_present(

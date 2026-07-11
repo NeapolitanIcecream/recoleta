@@ -217,6 +217,7 @@ class _TrendStageRequestKwargs(TypedDict, total=False):
     granularity: str
     anchor_date: date | None
     llm_model: str | None
+    analysis_llm_model: str | None
     backfill: bool
     backfill_mode: str
     debug_pdf: bool

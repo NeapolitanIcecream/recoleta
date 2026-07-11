@@ -264,6 +264,7 @@ class _FakeService:
         granularity: str,
         anchor_date: date | None = None,
         llm_model=None,
+        analysis_llm_model=None,
         backfill: bool = False,
         backfill_mode: str = "missing",
         reuse_existing_corpus: bool = False,
@@ -279,6 +280,7 @@ class _FakeService:
                     backfill_mode,
                     reuse_existing_corpus,
                     llm_model,
+                    analysis_llm_model,
                 ),
             )
         )
@@ -1386,6 +1388,7 @@ def test_run_day_model_override_flows_to_all_llm_workflow_steps(
     idea_calls = [call for call in fake_service.calls if call[0] == "ideas"]
     assert analyze_calls and analyze_calls[0][1][4] == "test/workflow-override"
     assert trend_calls and trend_calls[0][1][6] == "test/workflow-override"
+    assert trend_calls[0][1][7] == "test/workflow-override"
     assert idea_calls and idea_calls[0][1][3] == "test/workflow-override"
     assert translation_calls
     assert translation_calls[0]["llm_model"] == "test/workflow-override"

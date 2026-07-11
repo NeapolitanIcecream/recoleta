@@ -329,6 +329,7 @@ def test_trends_telegram_publish_sends_overview_caption_and_pdf_document(
         granularity="day",
         anchor_date=anchor,
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -427,6 +428,7 @@ def test_trends_telegram_publish_respects_daily_delivery_cap(
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -501,6 +503,7 @@ def test_publish_counts_trend_delivery_toward_telegram_daily_cap(
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
     publish_result = service.publish(
         run_id="run-trend-telegram-cap-shared-publish",
@@ -570,6 +573,7 @@ def test_trends_telegram_publish_debug_pdf_exports_preview_bundle(
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
         debug_pdf=True,
     )
 
@@ -646,6 +650,7 @@ def test_trends_telegram_publish_debug_pdf_failure_is_non_fatal(
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
         debug_pdf=True,
     )
 
@@ -723,12 +728,14 @@ def test_trends_telegram_publish_skips_duplicate_delivery_for_unchanged_period(
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
     second_result = service.trends(
         run_id="run-trend-telegram-dedupe-second",
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert first_result.doc_id > 0
@@ -769,6 +776,7 @@ def test_trends_empty_period_does_not_publish_telegram_message(
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -845,6 +853,7 @@ def test_trends_telegram_publish_uses_injected_sender_without_telegram_credentia
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -925,6 +934,7 @@ def test_trends_telegram_publish_records_failure_metric_when_document_send_fails
         granularity="day",
         anchor_date=date(2026, 3, 5),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0

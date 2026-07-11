@@ -76,6 +76,7 @@ def test_trends_stage_records_per_tool_metrics(
         granularity="day",
         anchor_date=date(2026, 3, 2),
         llm_model="test/fake-model",
+        analysis_llm_model="test/fake-model",
     )
 
     metric_values = {

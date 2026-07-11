@@ -657,6 +657,7 @@ def test_week_planner_skips_missing_lower_level_idea_after_task_set_ran() -> Non
     ("settings_field", "workflow_model", "step_id"),
     [
         (None, "gpt-override", "trends:day"),
+        ("analyze_llm_model", None, "trends:day"),
         ("trends_llm_model", None, "trends:day"),
         ("ideas_llm_model", None, "ideas:day"),
     ],
@@ -748,19 +749,19 @@ def test_month_planner_propagates_analyze_model_refresh_through_lower_levels() -
         "stale_analysis_model"
     )
     assert _decision_for(decisions, "trends:day", source_day).reason == (
-        "upstream_analyze_model_refresh"
+        "stale_freshness"
     )
     assert _decision_for(decisions, "ideas:day", source_day).reason == (
         "upstream_trend_model_refresh"
     )
     assert _decision_for(decisions, "trends:week", source_week).reason == (
-        "upstream_trend_model_refresh"
+        "stale_freshness"
     )
     assert _decision_for(decisions, "ideas:week", source_week).reason == (
         "upstream_trend_model_refresh"
     )
     assert _decision_for(decisions, "trends:month", source_month).reason == (
-        "upstream_trend_planned"
+        "stale_freshness"
     )
     assert _decision_for(decisions, "ideas:month", source_month).reason == (
         "upstream_trend_planned"
@@ -1267,6 +1268,22 @@ def test_trend_planner_treats_workflow_model_override_as_stale_freshness() -> No
     assert decision.reason == "stale_freshness"
 
 
+def test_trend_planner_treats_analysis_model_change_as_stale_freshness() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    settings.analyze_llm_model = "gpt-analyze-next"
+    decisions = plan_workflow_execution(
+        plan=_day_trends_only_plan(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=settings,
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    assert not any(decision.step_id == "analyze" for decision in decisions)
+    assert trend_decision.action == "run"
+    assert trend_decision.reason == "stale_freshness"
+
+
 def test_trend_planner_refreshes_legacy_output_for_workflow_model_override() -> None:
     source_day = date(2026, 3, 16)
     decisions = plan_workflow_execution(
@@ -1274,6 +1291,21 @@ def test_trend_planner_refreshes_legacy_output_for_workflow_model_override() -> 
         repository=_LegacyPassOutputRepo(legacy_pass_kinds={"trend_synthesis"}),
         settings=_Settings(),
         options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    decision = _decision_for(decisions, "trends:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "stale_freshness"
+
+
+def test_trend_planner_refreshes_legacy_output_for_analyze_model_change() -> None:
+    source_day = date(2026, 3, 16)
+    settings = _Settings()
+    settings.analyze_llm_model = "gpt-analyze-override"
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_LegacyPassOutputRepo(legacy_pass_kinds={"trend_synthesis"}),
+        settings=settings,
     )
 
     decision = _decision_for(decisions, "trends:day", source_day)
@@ -1351,6 +1383,7 @@ def test_recursive_planner_reruns_lower_level_outputs_when_workflow_model_change
 @pytest.mark.parametrize(
     ("settings_field", "step_id"),
     [
+        ("analyze_llm_model", "trends:day"),
         ("trends_llm_model", "trends:day"),
         ("ideas_llm_model", "ideas:day"),
     ],
@@ -1431,11 +1464,25 @@ def test_trend_freshness_ignores_unrelated_stage_specific_models() -> None:
         period_start=period_start,
         period_end=period_end,
     )
+    effective_analysis_change = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(
+            trends_llm_model="test/trends-stage",
+            analyze_llm_model="test/analyze-next",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
 
     assert base["key"] == unrelated_translation_change["key"]
     assert base["key"] != effective_trends_change["key"]
+    assert base["key"] != effective_analysis_change["key"]
     assert base["components"]["llm_model"] == "test/trends-stage"
+    assert base["components"]["analysis_model"] == "test/global"
     assert effective_trends_change["components"]["llm_model"] == "test/trends-next"
+    assert effective_analysis_change["components"]["analysis_model"] == (
+        "test/analyze-next"
+    )
 
 
 def test_ideas_freshness_ignores_unrelated_stage_specific_models() -> None:
@@ -1642,6 +1689,19 @@ def _day_plan_without_ingest():
             settings=_Settings(),
             include_steps=[],
             skip_steps=["ingest"],
+        )
+    )
+
+
+def _day_trends_only_plan():
+    return build_granularity_plan(
+        request=GranularityPlanRequest(
+            workflow_name="day",
+            command="run day",
+            anchor_date="2026-03-16",
+            settings=_Settings(),
+            include_steps=[],
+            skip_steps=["ingest", "analyze", "publish", "ideas:day"],
         )
     )
 

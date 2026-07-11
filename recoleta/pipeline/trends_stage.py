@@ -53,6 +53,7 @@ class TrendStageRequest:
     granularity: str = "day"
     anchor_date: date | None = None
     llm_model: str | None = None
+    analysis_llm_model: str | None = None
     backfill: bool = False
     backfill_mode: str = "missing"
     debug_pdf: bool = False
@@ -239,6 +240,7 @@ class _TrendStageRequestKwargs(TypedDict, total=False):
     granularity: str
     anchor_date: date | None
     llm_model: str | None
+    analysis_llm_model: str | None
     backfill: bool
     backfill_mode: str
     debug_pdf: bool
@@ -370,7 +372,7 @@ class _TrendStageRunner:
         analysis_model = resolve_stage_llm_model(
             self.service.settings,
             stage="analyze",
-            override=self.request.llm_model,
+            override=self.request.analysis_llm_model,
         )
         return _TrendStageState(
             include_debug=include_debug,
@@ -444,7 +446,7 @@ class _TrendStageRunner:
             run_id=self.request.run_id,
             period_start=period_start,
             period_end=period_end,
-            llm_model=self.request.llm_model,
+            llm_model=self.request.analysis_llm_model,
         )
 
     def _index_items_for_period(
@@ -2049,6 +2051,7 @@ class _TrendStageRunner:
                 period_start=state.period_start,
                 period_end=state.period_end,
                 llm_model=state.model,
+                analysis_model=state.analysis_model,
                 repository=self.service.repository,
             ),
             "context_packs": {
