@@ -9,7 +9,10 @@ import pytest
 
 from recoleta.cli import workflow_planner as workflow_planner_module
 from recoleta.cli.workflow_models import STEP_TRANSLATE
-from recoleta.cli.workflow_planner import plan_workflow_execution
+from recoleta.cli.workflow_planner import (
+    WorkflowPlanningOptions,
+    plan_workflow_execution,
+)
 from recoleta.cli.workflow_runner import GranularityPlanRequest, build_granularity_plan
 from recoleta.workflow_freshness import (
     build_trend_ideas_freshness,
@@ -738,7 +741,7 @@ def test_generation_force_does_not_force_analyze_without_reprocess_path() -> Non
         plan=_day_plan_without_ingest(),
         repository=_ReadOnlyPlannerRepo(),
         settings=_Settings(),
-        generation_force=True,
+        options=WorkflowPlanningOptions(generation_force=True),
     )
 
     analyze_decision = _decision_for(decisions, "analyze", source_day)
@@ -758,7 +761,7 @@ def test_generation_force_overrides_existing_lower_level_task_sets() -> None:
         plan=_week_plan(),
         repository=_ReadOnlyPlannerRepo(),
         settings=_Settings(),
-        generation_force=True,
+        options=WorkflowPlanningOptions(generation_force=True),
     )
 
     trend_decision = _decision_for(decisions, "trends:day", source_day)
@@ -872,8 +875,10 @@ def test_planner_reports_translation_candidates_by_source_bucket(
         plan=_day_translation_plan(),
         repository=repo,
         settings=_TranslationSettings(),
-        translate_include=["trends", "ideas"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["trends", "ideas"],
+            translate_granularities=["day"],
+        ),
     )
 
     decision = _translation_decision(decisions)
@@ -916,8 +921,10 @@ def test_planner_skips_translation_when_localized_outputs_are_fresh(
         plan=_day_translation_plan(),
         repository=repo,
         settings=_TranslationSettings(),
-        translate_include=["trends", "ideas"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["trends", "ideas"],
+            translate_granularities=["day"],
+        ),
     )
 
     decision = _translation_decision(decisions)
@@ -945,8 +952,10 @@ def test_planner_runs_translation_when_week_outputs_are_planned(
             existing_hashes={},
         ),
         settings=_TranslationSettings(),
-        translate_include=["trends", "ideas"],
-        translate_granularities=["week"],
+        options=WorkflowPlanningOptions(
+            translate_include=["trends", "ideas"],
+            translate_granularities=["week"],
+        ),
     )
 
     assert _decision_for(decisions, "trends:week", date(2026, 3, 16)).action == "run"
@@ -981,12 +990,72 @@ def test_trend_planner_treats_workflow_model_override_as_stale_freshness() -> No
         plan=_day_plan(),
         repository=_ReadOnlyPlannerRepo(),
         settings=_Settings(),
-        llm_model="gpt-override",
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
     )
 
     decision = _decision_for(decisions, "trends:day", source_day)
     assert decision.action == "run"
     assert decision.reason == "stale_freshness"
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "lower_granularity", "source_date"),
+    [
+        ("week", "day", date(2026, 3, 16)),
+        ("month", "week", date(2026, 3, 16)),
+    ],
+)
+def test_recursive_planner_reruns_lower_level_outputs_when_workflow_model_changes(
+    workflow_name: str,
+    lower_granularity: str,
+    source_date: date,
+) -> None:
+    plan = _week_plan() if workflow_name == "week" else _month_plan()
+    decisions = plan_workflow_execution(
+        plan=plan,
+        repository=_ReadOnlyPlannerRepo(),
+        settings=_Settings(),
+        options=WorkflowPlanningOptions(llm_model="gpt-override"),
+    )
+
+    trend_decision = _decision_for(
+        decisions,
+        f"trends:{lower_granularity}",
+        source_date,
+    )
+    ideas_decision = _decision_for(
+        decisions,
+        f"ideas:{lower_granularity}",
+        source_date,
+    )
+
+    assert trend_decision.action == "run"
+    assert trend_decision.reason == "stale_freshness"
+    assert ideas_decision.action == "run"
+
+
+@pytest.mark.parametrize(
+    ("settings_field", "step_id"),
+    [
+        ("trends_llm_model", "trends:day"),
+        ("ideas_llm_model", "ideas:day"),
+    ],
+)
+def test_week_planner_reruns_lower_level_output_when_stage_model_changes(
+    settings_field: str,
+    step_id: str,
+) -> None:
+    settings = _Settings()
+    setattr(settings, settings_field, "gpt-stage-override")
+
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=settings,
+    )
+
+    decision = _decision_for(decisions, step_id, date(2026, 3, 16))
+    assert decision.action == "run"
 
 
 class _FreshnessSettings:
@@ -1125,8 +1194,10 @@ def test_translation_planner_sees_ideas_rerun_from_changed_trend_source(
             stored_source_hashes={("item", source_day): "source-hash-old"},
         ),
         settings=_TranslationSettings(),
-        translate_include=["ideas"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["ideas"],
+            translate_granularities=["day"],
+        ),
     )
 
     assert _decision_for(decisions, "trends:day", source_day).action == "run"
@@ -1153,8 +1224,10 @@ def test_translation_planner_sees_analyze_run_for_item_translation(
             missing_days={source_day},
         ),
         settings=_TranslationSettings(),
-        translate_include=["items"],
-        translate_granularities=["day"],
+        options=WorkflowPlanningOptions(
+            translate_include=["items"],
+            translate_granularities=["day"],
+        ),
     )
 
     assert _decision_for(decisions, "analyze", source_day).action == "run"

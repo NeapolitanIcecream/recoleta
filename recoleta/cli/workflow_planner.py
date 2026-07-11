@@ -23,6 +23,7 @@ from recoleta.cli.workflow_models import (
     WorkflowPlan,
     WorkflowPlanDecision,
 )
+from recoleta.config import resolve_stage_llm_model
 from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
 from recoleta.workflow_freshness import (
     build_trend_ideas_freshness,
@@ -94,6 +95,14 @@ class _InspectionRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowPlanningOptions:
+    generation_force: bool = False
+    llm_model: str | None = None
+    translate_include: list[str] | None = None
+    translate_granularities: list[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _DecisionContext:
     invocation: WorkflowInvocation
     granularity: str | None
@@ -161,11 +170,9 @@ def plan_workflow_execution(
     plan: WorkflowPlan,
     repository: Any,
     settings: Any,
-    generation_force: bool = False,
-    llm_model: str | None = None,
-    translate_include: list[str] | None = None,
-    translate_granularities: list[str] | None = None,
+    options: WorkflowPlanningOptions | None = None,
 ) -> list[WorkflowPlanDecision]:
+    resolved_options = options or WorkflowPlanningOptions()
     lower_level_task_sets = _inspect_lower_level_task_sets(
         plan=plan,
         repository=repository,
@@ -177,10 +184,10 @@ def plan_workflow_execution(
                 plan=plan,
                 repository=repository,
                 settings=settings,
-                generation_force=generation_force,
-                llm_model=llm_model,
-                translate_include=translate_include,
-                translate_granularities=translate_granularities,
+                generation_force=resolved_options.generation_force,
+                llm_model=resolved_options.llm_model,
+                translate_include=resolved_options.translate_include,
+                translate_granularities=resolved_options.translate_granularities,
                 lower_level_task_sets=lower_level_task_sets,
             )
         )
@@ -233,6 +240,9 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
         if _is_lower_level_generation_context(context=context, plan=request.plan):
             return _inspect_lower_level_trend_output(
                 context=context,
+                repository=request.repository,
+                settings=request.settings,
+                llm_model=request.llm_model,
                 task_set_state=request.lower_level_task_sets.get(
                     str(context.granularity or "")
                 ),
@@ -247,6 +257,9 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
         if _is_lower_level_generation_context(context=context, plan=request.plan):
             return _inspect_lower_level_ideas_output(
                 context=context,
+                repository=request.repository,
+                settings=request.settings,
+                llm_model=request.llm_model,
                 task_set_state=request.lower_level_task_sets.get(
                     str(context.granularity or "")
                 ),
@@ -665,6 +678,9 @@ def _inspect_trend_output(
 def _inspect_lower_level_trend_output(
     *,
     context: _DecisionContext,
+    repository: Any,
+    settings: Any,
+    llm_model: str | None,
     task_set_state: _LowerLevelTaskSetState | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
@@ -679,6 +695,20 @@ def _inspect_lower_level_trend_output(
             context=context,
             action="run",
             reason=task_set_state.reason,
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
+    if _lower_level_model_is_stale(
+        context=context,
+        repository=repository,
+        settings=settings,
+        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+        llm_model=llm_model,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="stale_freshness",
             authority="pass_outputs",
             metadata=_lower_level_task_set_metadata(task_set_state),
         )
@@ -772,6 +802,9 @@ def _inspect_ideas_output(
 def _inspect_lower_level_ideas_output(
     *,
     context: _DecisionContext,
+    repository: Any,
+    settings: Any,
+    llm_model: str | None,
     task_set_state: _LowerLevelTaskSetState | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
@@ -789,6 +822,20 @@ def _inspect_lower_level_ideas_output(
             authority="pass_outputs",
             metadata=_lower_level_task_set_metadata(task_set_state),
         )
+    if _lower_level_model_is_stale(
+        context=context,
+        repository=repository,
+        settings=settings,
+        pass_kind=TREND_IDEAS_PASS_KIND,
+        llm_model=llm_model,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="stale_freshness",
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
     return _decision(
         context=context,
         action="skip",
@@ -797,6 +844,52 @@ def _inspect_lower_level_ideas_output(
         estimated_llm_calls=0,
         metadata=_lower_level_task_set_metadata(task_set_state),
     )
+
+
+def _lower_level_model_is_stale(
+    *,
+    context: _DecisionContext,
+    repository: Any,
+    settings: Any,
+    pass_kind: str,
+    llm_model: str | None,
+) -> bool:
+    if (
+        context.granularity is None
+        or context.period_start is None
+        or context.period_end is None
+    ):
+        return False
+    row = _latest_pass_output(
+        repository=repository,
+        pass_kind=pass_kind,
+        statuses=(
+            [PASS_STATUS_SUCCEEDED]
+            if pass_kind == TREND_SYNTHESIS_PASS_KIND
+            else [PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED]
+        ),
+        granularity=context.granularity,
+        period_start=context.period_start,
+        period_end=context.period_end,
+    )
+    if row is None:
+        return False
+    freshness = _row_workflow_freshness(row) or {}
+    components = freshness.get("components")
+    stored_model = (
+        str(components.get("llm_model") or "").strip()
+        if isinstance(components, dict)
+        else ""
+    )
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage=("trends" if pass_kind == TREND_SYNTHESIS_PASS_KIND else "ideas"),
+        override=llm_model,
+    )
+    if stored_model:
+        return stored_model != effective_model
+    global_model = str(getattr(settings, "llm_model", "") or "").strip()
+    return bool(global_model) and effective_model != global_model
 
 
 def _inspect_translation(

@@ -103,6 +103,19 @@ def _normalize_model_name(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _stage_llm_model_value(settings: Any, *, stage: str) -> Any:
+    try:
+        if stage == "analyze":
+            return settings.analyze_llm_model
+        if stage == "trends":
+            return settings.trends_llm_model
+        if stage == "ideas":
+            return settings.ideas_llm_model
+        return settings.translation_llm_model
+    except AttributeError:
+        return None
+
+
 def resolve_stage_llm_model(
     settings: Any,
     *,
@@ -121,7 +134,9 @@ def resolve_stage_llm_model(
             raise ValueError(f"{normalized_stage} llm model override must not be empty")
         return normalized_override
 
-    stage_model = _normalize_model_name(getattr(settings, field_name, None))
+    stage_model = _normalize_model_name(
+        _stage_llm_model_value(settings, stage=normalized_stage)
+    )
     if stage_model:
         return stage_model
 

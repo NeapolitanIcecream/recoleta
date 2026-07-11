@@ -13,6 +13,7 @@ from recoleta.cli.arxiv_pool_readiness import (
 from recoleta.cli import workflow_models as _workflow_models
 from recoleta.cli.workflow_models import WorkflowExecutionContext
 from recoleta.cli.workflow_planner import (
+    WorkflowPlanningOptions,
     decision_payloads,
     plan_workflow_execution,
     planned_expensive_steps,
@@ -480,10 +481,12 @@ def _granularity_workflow_context(
         plan=plan,
         repository=request.runtime.repository,
         settings=request.runtime.settings,
-        generation_force=bool(request.generation_force),
-        llm_model=request.llm_model,
-        translate_include=list(policy.translate_include),
-        translate_granularities=translate_granularities,
+        options=WorkflowPlanningOptions(
+            generation_force=bool(request.generation_force),
+            llm_model=request.llm_model,
+            translate_include=list(policy.translate_include),
+            translate_granularities=translate_granularities,
+        ),
     )
     arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
         settings=request.runtime.settings,
@@ -553,10 +556,12 @@ def _execute_granularity_dry_run(
         plan=plan,
         repository=repository,
         settings=settings,
-        generation_force=request.generation_force,
-        llm_model=request.llm_model,
-        translate_include=list(policy.translate_include),
-        translate_granularities=translate_granularities,
+        options=WorkflowPlanningOptions(
+            generation_force=request.generation_force,
+            llm_model=request.llm_model,
+            translate_include=list(policy.translate_include),
+            translate_granularities=translate_granularities,
+        ),
     )
     arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
         settings=settings,
