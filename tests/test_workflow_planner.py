@@ -492,6 +492,19 @@ class _LegacyPassOutputRepo(_ReadOnlyPlannerRepo):
         return row
 
 
+class _StaleLowerLevelIdeasRepo(_ReadOnlyPlannerRepo):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        row = super().get_latest_pass_output(**kwargs)
+        if (
+            row is not None
+            and kwargs["pass_kind"] == "trend_synthesis"
+            and kwargs["granularity"] == "day"
+            and kwargs["period_start"].date() == date(2026, 3, 16)
+        ):
+            row.id = int(row.id) + 1000
+        return row
+
+
 def test_planner_skips_complete_day_level_work_for_week() -> None:
     plan = _week_plan()
     decisions = plan_workflow_execution(
@@ -651,6 +664,22 @@ def test_week_planner_skips_missing_lower_level_idea_after_task_set_ran() -> Non
     assert analyze_decision.reason == "no_candidate_items"
     assert publish_decision.action == "skip"
     assert publish_decision.reason == "no_publish_candidates"
+
+
+def test_week_planner_reruns_lower_level_ideas_for_newer_trend_pass() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_week_plan(),
+        repository=_StaleLowerLevelIdeasRepo(),
+        settings=_Settings(),
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert trend_decision.action == "skip"
+    assert ideas_decision.action == "run"
+    assert ideas_decision.reason == "stale_upstream_pass_output"
 
 
 @pytest.mark.parametrize(

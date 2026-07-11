@@ -806,8 +806,7 @@ def _inspect_ideas_output(
             reason="missing_pass_output",
             authority="pass_outputs",
         )
-    upstream_ref_id = _upstream_pass_output_id(row)
-    if upstream_ref_id is not None and upstream_ref_id != upstream_id:
+    if _pass_output_upstream_is_stale(row=row, upstream=upstream):
         return _decision(
             context=context,
             action="run",
@@ -868,6 +867,17 @@ def _inspect_lower_level_ideas_output(
             authority="pass_outputs",
             metadata=_lower_level_task_set_metadata(task_set_state),
         )
+    if _lower_level_ideas_upstream_is_stale(
+        context=context,
+        repository=repository,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="stale_upstream_pass_output",
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
     if _lower_level_model_is_stale(
         context=context,
         repository=repository,
@@ -890,6 +900,33 @@ def _inspect_lower_level_ideas_output(
         estimated_llm_calls=0,
         metadata=_lower_level_task_set_metadata(task_set_state),
     )
+
+
+def _lower_level_ideas_upstream_is_stale(
+    *,
+    context: _DecisionContext,
+    repository: Any,
+) -> bool:
+    if not _decision_context_has_period(context):
+        return False
+    query = {
+        "granularity": cast(str, context.granularity),
+        "period_start": cast(datetime, context.period_start),
+        "period_end": cast(datetime, context.period_end),
+    }
+    upstream = _latest_pass_output(
+        repository=repository,
+        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+        statuses=[PASS_STATUS_SUCCEEDED],
+        **query,
+    )
+    row = _latest_pass_output(
+        repository=repository,
+        pass_kind=TREND_IDEAS_PASS_KIND,
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
+        **query,
+    )
+    return _pass_output_upstream_is_stale(row=row, upstream=upstream)
 
 
 def _lower_level_model_is_stale(
@@ -1583,6 +1620,16 @@ def _upstream_pass_output_id(row: Any) -> int | None:
             return None
         return value if value > 0 else None
     return None
+
+
+def _pass_output_upstream_is_stale(*, row: Any, upstream: Any) -> bool:
+    upstream_id = _row_id(upstream)
+    upstream_ref_id = _upstream_pass_output_id(row)
+    return (
+        upstream_id is not None
+        and upstream_ref_id is not None
+        and upstream_ref_id != upstream_id
+    )
 
 
 def _json_attr(row: Any, attr_name: str, *, default: Any) -> Any:
