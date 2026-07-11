@@ -148,6 +148,8 @@ class _TranslationScanRequest:
     include: list[str]
     granularities: list[str | None]
     source_language_code: str
+    llm_model: str
+    global_llm_model: str
     period_start: datetime | None
     period_end: datetime | None
     all_history: bool
@@ -279,6 +281,7 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             settings=request.settings,
             translate_include=request.translate_include,
             translate_granularities=request.translate_granularities,
+            llm_model=request.llm_model,
         )
     return _decision(
         context=context,
@@ -931,6 +934,7 @@ def _inspect_translation(
     settings: Any,
     translate_include: list[str] | None,
     translate_granularities: list[str] | None,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     targets = _translation_target_codes(settings)
     if not targets:
@@ -961,6 +965,11 @@ def _inspect_translation(
     candidate_granularities = _normalized_translation_granularities(
         translate_granularities
     )
+    effective_llm_model = resolve_stage_llm_model(
+        settings,
+        stage="translation",
+        override=llm_model,
+    )
     try:
         scan = _scan_translation_plan(
             _TranslationScanRequest(
@@ -969,6 +978,8 @@ def _inspect_translation(
                 include=include,
                 granularities=candidate_granularities,
                 source_language_code=source_language_code,
+                llm_model=effective_llm_model,
+                global_llm_model=str(getattr(settings, "llm_model", "") or ""),
                 period_start=context.period_start,
                 period_end=context.period_end,
                 all_history=context.period_start is None and context.period_end is None,
@@ -1058,11 +1069,13 @@ def _scan_translation_candidate(
     summary["source_candidates"] += 1
     for target_code in request.targets:
         summary["scanned"] += 1
-        if _localized_output_matches_source_hash(
+        if _localized_output_matches_freshness(
             repository=request.repository,
             candidate=candidate,
             language_code=target_code,
             source_hash=source_hash,
+            llm_model=request.llm_model,
+            global_llm_model=request.global_llm_model,
         ):
             state.skipped_outputs += 1
             summary["skip"] += 1
@@ -1361,21 +1374,28 @@ def _translation_summary_for_candidate(
     return summaries[key]
 
 
-def _localized_output_matches_source_hash(
+def _localized_output_matches_freshness(
     *,
     repository: Any,
     candidate: Any,
     language_code: str,
     source_hash: str,
+    llm_model: str,
+    global_llm_model: str,
 ) -> bool:
+    from recoleta.translation_runtime import localized_output_matches_freshness
+
     existing = repository.get_localized_output(
         source_kind=getattr(candidate, "source_kind", ""),
         source_record_id=int(getattr(candidate, "source_record_id") or 0),
         language_code=language_code,
     )
-    return (
-        existing is not None
-        and str(getattr(existing, "source_hash", "") or "") == source_hash
+    return localized_output_matches_freshness(
+        existing=existing,
+        source_hash=source_hash,
+        llm_model=llm_model,
+        global_llm_model=global_llm_model,
+        force=False,
     )
 
 

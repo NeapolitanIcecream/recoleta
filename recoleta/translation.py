@@ -156,6 +156,7 @@ class PrepareTranslationTaskCompatRequest:
     candidate: TranslationCandidate
     target: TranslationTarget
     context_assist: str
+    llm_model: str
     force: bool
     run_id: str | None = None
 
@@ -167,6 +168,7 @@ class PersistTranslationTaskCompatRequest:
     completed: _CompletedTranslationTask
     context_assist: str
     source_language_code: str
+    llm_model: str
     run_id: str | None = None
 
 
@@ -341,6 +343,7 @@ def coerce_prepare_translation_task_request(
         candidate=legacy_kwargs["candidate"],
         target=legacy_kwargs["target"],
         context_assist=legacy_kwargs["context_assist"],
+        llm_model=legacy_kwargs["llm_model"],
         force=bool(legacy_kwargs["force"]),
         run_id=legacy_kwargs.get("run_id"),
     )
@@ -359,6 +362,7 @@ def coerce_persist_translation_task_request(
         completed=legacy_kwargs["completed"],
         context_assist=legacy_kwargs["context_assist"],
         source_language_code=legacy_kwargs["source_language_code"],
+        llm_model=legacy_kwargs["llm_model"],
         run_id=legacy_kwargs.get("run_id"),
     )
 
@@ -595,6 +599,7 @@ def _prepare_translation_task(
             candidate=normalized_request.candidate,
             target=normalized_request.target,
             context_assist=normalized_request.context_assist,
+            llm_model=normalized_request.llm_model,
             force=normalized_request.force,
             run_id=normalized_request.run_id,
         ),
@@ -755,6 +760,7 @@ def _persist_completed_translation_task(
             completed=normalized_request.completed,
             context_assist=normalized_request.context_assist,
             source_language_code=normalized_request.source_language_code,
+            llm_model=normalized_request.llm_model,
             run_id=normalized_request.run_id,
         ),
         PersistTaskDeps(

@@ -453,7 +453,7 @@ def test_run_translation_creates_localized_outputs_for_all_surfaces(
         limit=1,
         llm_model="test/translation-override",
         context_assist="direct",
-        force=True,
+        force=False,
         run_id="run-translation-override",
     )
 

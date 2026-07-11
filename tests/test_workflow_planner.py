@@ -1011,6 +1011,47 @@ def test_planner_runs_translation_when_week_outputs_are_planned(
     assert decision.reason == "upstream_generation_planned"
 
 
+def test_planner_reruns_translation_when_workflow_model_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate = SimpleNamespace(
+        source_kind="trend_synthesis",
+        source_record_id=11,
+        payload={"title": "fresh trend"},
+        granularity="day",
+    )
+    monkeypatch.setattr(
+        workflow_planner_module,
+        "_translation_candidates_for_plan",
+        lambda **_kwargs: [candidate],
+    )
+    repo = _TranslationPlannerRepo(
+        existing_hashes={
+            (
+                "trend_synthesis",
+                11,
+                "zh-cn",
+            ): workflow_planner_module._translation_payload_hash(candidate)
+        }
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_translation_plan(),
+        repository=repo,
+        settings=_TranslationSettings(),
+        options=WorkflowPlanningOptions(
+            llm_model="gpt-translation-override",
+            translate_include=["trends"],
+            translate_granularities=["day"],
+        ),
+    )
+
+    decision = _translation_decision(decisions)
+    assert decision.action == "run"
+    assert decision.reason == "translation_candidates"
+    assert decision.estimated_llm_calls == 1
+
+
 def test_trend_planner_reruns_trend_and_ideas_when_source_hash_changes() -> None:
     source_day = date(2026, 3, 16)
     decisions = plan_workflow_execution(
