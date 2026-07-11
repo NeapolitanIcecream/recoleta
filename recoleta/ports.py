@@ -226,6 +226,7 @@ class RepositoryPort(Protocol):
         period_end: datetime,
         limit: int,
         offset: int = 0,
+        llm_model: str | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def upsert_document_for_item(self, *, item: Item) -> Document: ...
@@ -475,6 +476,7 @@ class TrendRepositoryPort(Protocol):
         period_end: datetime,
         limit: int,
         offset: int = 0,
+        llm_model: str | None = None,
     ) -> list[tuple[Item, Analysis]]: ...
 
     def upsert_document_for_item(self, *, item: Item) -> Document: ...

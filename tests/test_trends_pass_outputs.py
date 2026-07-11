@@ -58,7 +58,7 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
     monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
-    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
     monkeypatch.setenv("TRENDS_LLM_MODEL", "test/trends-stage-model")
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))

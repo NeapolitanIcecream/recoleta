@@ -359,6 +359,7 @@ class AnalysisStoreMixin:
         period_end: datetime,
         limit: int,
         offset: int = 0,
+        llm_model: str | None = None,
     ) -> list[tuple[Item, Analysis]]:
         normalized_limit = max(0, int(limit))
         normalized_offset = max(0, int(offset))
@@ -379,6 +380,9 @@ class AnalysisStoreMixin:
                     ),
                 )
             )
+            normalized_model = str(llm_model or "").strip()
+            if normalized_model:
+                statement = statement.where(Analysis.model == normalized_model)
             statement = (
                 statement.order_by(desc(cast(Any, event_at)), desc(cast(Any, Item.id)))
                 .offset(normalized_offset)

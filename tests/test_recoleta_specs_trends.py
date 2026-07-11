@@ -174,8 +174,10 @@ def test_trends_day_prepares_target_period_backlog_before_indexing(
         limit=None,  # noqa: ANN001
         period_start=None,  # noqa: ANN001
         period_end=None,  # noqa: ANN001
+        llm_model=None,  # noqa: ANN001
     ) -> AnalyzeResult:
         _ = run_id, limit
+        assert llm_model == "test/fake-model"
         assert isinstance(period_start, datetime)
         assert isinstance(period_end, datetime)
         period_calls.append(("analyze", period_start, period_end))
@@ -397,6 +399,75 @@ def test_index_items_as_documents_excludes_low_relevance_items(
         limit=10,
     )
     assert [str(getattr(doc, "title") or "") for doc in docs] == ["High Signal Paper"]
+
+
+def test_index_items_as_documents_excludes_other_analysis_models(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/new-model")
+
+    _, repository = _build_runtime()
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 2, tzinfo=UTC)
+    for source_item_id, model in [
+        ("trend-old-model", "test/old-model"),
+        ("trend-new-model", "test/new-model"),
+    ]:
+        item, _inserted = repository.upsert_item(
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id=source_item_id,
+                canonical_url=f"https://example.com/{source_item_id}",
+                title=source_item_id,
+                authors=["Alice"],
+                published_at=period_start,
+                raw_metadata={"source": "test"},
+            )
+        )
+        assert item.id is not None
+        repository.save_analysis(
+            item_id=item.id,
+            result=AnalysisResult(
+                model=model,
+                provider="test",
+                summary=f"Summary from {model}",
+                topics=["agents"],
+                relevance_score=0.9,
+                novelty_score=0.5,
+                cost_usd=0.0,
+                latency_ms=1,
+            ),
+        )
+
+    index_items_as_documents(
+        repository=repository,
+        run_id="run-trend-all-models",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    index_items_as_documents(
+        repository=repository,
+        run_id="run-trend-new-model-only",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+        llm_model="test/new-model",
+    )
+
+    docs = repository.list_documents(
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
+    assert [str(getattr(doc, "title") or "") for doc in docs] == [
+        "trend-new-model"
+    ]
 
 
 def test_index_items_as_documents_is_idempotent_for_item_meta_chunks(

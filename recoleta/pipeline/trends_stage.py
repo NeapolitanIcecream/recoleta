@@ -82,6 +82,7 @@ class _TrendStageState:
     corpus_doc_type: str
     corpus_granularity: str | None
     model: str
+    analysis_model: str
 
 
 @dataclass(slots=True)
@@ -226,6 +227,7 @@ class TrendStageService(Protocol):
         run_id: str,
         period_start: Any = None,
         period_end: Any = None,
+        llm_model: str | None = None,
     ) -> Any: ...
 
     @staticmethod
@@ -365,6 +367,11 @@ class _TrendStageRunner:
             stage="trends",
             override=self.request.llm_model,
         )
+        analysis_model = resolve_stage_llm_model(
+            self.service.settings,
+            stage="analyze",
+            override=self.request.llm_model,
+        )
         return _TrendStageState(
             include_debug=include_debug,
             normalized_granularity=normalized_granularity,
@@ -375,6 +382,7 @@ class _TrendStageRunner:
             corpus_doc_type=corpus_doc_type,
             corpus_granularity=corpus_granularity,
             model=model,
+            analysis_model=analysis_model,
         )
 
     def _normalize_granularity(self) -> str:
@@ -436,6 +444,7 @@ class _TrendStageRunner:
             run_id=self.request.run_id,
             period_start=period_start,
             period_end=period_end,
+            llm_model=self.request.llm_model,
         )
 
     def _index_items_for_period(
@@ -443,6 +452,7 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> dict[str, Any]:
         try:
             stats = trends.index_items_as_documents(
@@ -453,6 +463,7 @@ class _TrendStageRunner:
                 min_relevance_score=float(
                     getattr(self.service.settings, "min_relevance_score", 0.0) or 0.0
                 ),
+                llm_model=analysis_model,
             )
         except Exception as exc:
             failed_stats = {
@@ -640,11 +651,13 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> list[tuple[Any, Any]]:
         pairs = cast(Any, self.service.repository).list_analyzed_items_in_period(
             period_start=period_start,
             period_end=period_end,
             limit=2000,
+            llm_model=analysis_model,
         )
         pairs, _filtered_out_total = trends._filter_pairs_by_min_relevance(
             pairs,
@@ -659,10 +672,12 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> tuple[bool, int]:
         expected_item_ids = self._expected_item_ids_for_period(
             period_start=period_start,
             period_end=period_end,
+            analysis_model=analysis_model,
         )
         docs = self._item_documents_for_period(
             period_start=period_start,
@@ -690,10 +705,12 @@ class _TrendStageRunner:
         *,
         period_start: Any,
         period_end: Any,
+        analysis_model: str,
     ) -> set[int]:
         pairs = self._filtered_item_pairs(
             period_start=period_start,
             period_end=period_end,
+            analysis_model=analysis_model,
         )
         item_ids: set[int] = set()
         for item, _analysis in pairs:
@@ -796,6 +813,7 @@ class _TrendStageRunner:
             stats = self._index_items_for_period(
                 period_start=state.period_start,
                 period_end=state.period_end,
+                analysis_model=state.analysis_model,
             )
             return _SourceEnsureResult(
                 token="item",
@@ -807,6 +825,7 @@ class _TrendStageRunner:
         ready, docs_total = self._item_source_ready(
             period_start=state.period_start,
             period_end=state.period_end,
+            analysis_model=state.analysis_model,
         )
         if ready:
             return _SourceEnsureResult(
@@ -819,6 +838,7 @@ class _TrendStageRunner:
         stats = self._index_items_for_period(
             period_start=state.period_start,
             period_end=state.period_end,
+            analysis_model=state.analysis_model,
         )
         return _SourceEnsureResult(
             token="item",

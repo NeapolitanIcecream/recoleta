@@ -286,9 +286,16 @@ def test_day_trends_non_reuse_reindexes_existing_item_documents(
     original_index = trends_stage_mod._TrendStageRunner._index_items_for_period
     index_calls = {"total": 0}
 
-    def _recording_index(self, *, period_start, period_end):  # type: ignore[no-untyped-def]
+    def _recording_index(  # type: ignore[no-untyped-def]
+        self, *, period_start, period_end, analysis_model
+    ):
         index_calls["total"] += 1
-        return original_index(self, period_start=period_start, period_end=period_end)
+        return original_index(
+            self,
+            period_start=period_start,
+            period_end=period_end,
+            analysis_model=analysis_model,
+        )
 
     monkeypatch.setattr(
         trends_stage_mod._TrendStageRunner,
