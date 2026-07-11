@@ -177,6 +177,15 @@ def test_analyze_uses_stage_specific_model_and_explicit_override(
     )
     service.prepare(run_id="run-analyze-stage-model", drafts=[first_draft], limit=10)
     first_result = service.analyze(run_id="run-analyze-stage-model", limit=10)
+    with Session(repository.engine) as session:
+        first_item = session.exec(
+            select(Item).where(
+                Item.source_item_id == "item-analyze-stage-model"
+            )
+        ).one()
+        first_item.state = ITEM_STATE_PUBLISHED
+        session.add(first_item)
+        session.commit()
 
     second_draft = ItemDraft.from_values(
         source="rss",
@@ -223,6 +232,11 @@ def test_analyze_uses_stage_specific_model_and_explicit_override(
             "test/analyze-override-model",
             "test/analyze-override-model",
         ]
+        items = list(session.exec(select(Item).order_by(cast(Any, Item.id))))
+        assert [item.state for item in items] == [
+            ITEM_STATE_PUBLISHED,
+            ITEM_STATE_ANALYZED,
+        ]
         first_request_artifact = session.exec(
             select(Artifact).where(
                 Artifact.run_id == "run-analyze-stage-model",
@@ -233,6 +247,13 @@ def test_analyze_uses_stage_specific_model_and_explicit_override(
             (artifacts_dir / first_request_artifact.path).read_text(encoding="utf-8")
         )
         assert request_payload["model"] == "test/analyze-stage-model"
+    publish_candidates = repository.list_items_for_publish(
+        limit=10,
+        min_relevance_score=0.0,
+    )
+    assert [item.source_item_id for item, _analysis in publish_candidates] == [
+        "item-analyze-override-model"
+    ]
 
     first_metrics = repository.list_metrics(run_id="run-analyze-stage-model")
     second_metrics = repository.list_metrics(run_id="run-analyze-override-model")
@@ -244,6 +265,62 @@ def test_analyze_uses_stage_specific_model_and_explicit_override(
         metric.name == "pipeline.analyze.llm_calls.model.test_analyze_override_model"
         for metric in second_metrics
     )
+
+
+def test_failed_model_refresh_preserves_published_state(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(should_fail=True),
+        telegram_sender=FakeTelegramSender(),
+    )
+    item, _inserted = repository.upsert_item(
+        ItemDraft.from_values(
+            source="rss",
+            source_item_id="published-refresh-failure",
+            canonical_url="https://example.com/published-refresh-failure",
+            title="Published refresh failure",
+            authors=["Alice"],
+            raw_metadata={"source": "test"},
+        )
+    )
+    assert item.id is not None
+    repository.upsert_content(
+        item_id=item.id,
+        content_type="html_maintext",
+        text="Stored content",
+    )
+    repository.save_analysis(
+        item_id=item.id,
+        result=AnalysisResult(
+            model="test/old-model",
+            provider="test",
+            summary="Old summary",
+            topics=["agents"],
+            relevance_score=0.8,
+            novelty_score=0.4,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    repository.mark_item_published(item_id=item.id)
+
+    result = service.analyze(
+        run_id="run-published-refresh-failure",
+        limit=10,
+        llm_model="test/new-model",
+    )
+
+    assert result.failed == 1
+    with Session(repository.engine) as session:
+        stored_item = session.get(Item, item.id)
+        stored_analysis = session.exec(
+            select(Analysis).where(Analysis.item_id == item.id)
+        ).one()
+        assert stored_item is not None
+        assert stored_item.state == ITEM_STATE_PUBLISHED
+        assert stored_analysis.model == "test/old-model"
 
 
 def test_analyze_failure_emits_failure_metric(configured_env) -> None:

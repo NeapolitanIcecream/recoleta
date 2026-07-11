@@ -8,7 +8,11 @@ from typing import Any
 from loguru import logger
 
 from recoleta.config import resolve_stage_llm_model
-from recoleta.models import ITEM_STATE_FAILED, ITEM_STATE_RETRYABLE_FAILED
+from recoleta.models import (
+    ITEM_STATE_FAILED,
+    ITEM_STATE_PUBLISHED,
+    ITEM_STATE_RETRYABLE_FAILED,
+)
 from recoleta.pipeline.metrics import metric_token
 from recoleta.types import AnalysisWrite, AnalyzeResult, ItemStateUpdate
 from recoleta.workflow_freshness import analyze_budget_config_fingerprint
@@ -192,6 +196,7 @@ def _prepare_analyze_work(
             request.log.warning("Analyze skipped: item has no id")
             continue
         item_id = int(raw_item_id)
+        preserve_item_state = getattr(item, "state", None) == ITEM_STATE_PUBLISHED
         content_text = request.service._load_stored_content_for_analysis(item=item)
         if content_text:
             work_items.append(
@@ -201,18 +206,20 @@ def _prepare_analyze_work(
                     canonical_url=item.canonical_url,
                     user_topics=list(request.service.settings.topics),
                     content_text=content_text,
-                    mirror_item_state=True,
+                    mirror_item_state=not preserve_item_state,
+                    preserve_item_state=preserve_item_state,
                 )
             )
             continue
         missing_content_total += 1
         request.analyze_result.failed += 1
-        state_updates.append(
-            ItemStateUpdate(
-                item_id=item_id,
-                state=ITEM_STATE_RETRYABLE_FAILED,
+        if not preserve_item_state:
+            state_updates.append(
+                ItemStateUpdate(
+                    item_id=item_id,
+                    state=ITEM_STATE_RETRYABLE_FAILED,
+                )
             )
-        )
         if request.include_debug:
             request.write_and_record_artifact(
                 item_id=item_id,
@@ -249,6 +256,7 @@ def _record_analyze_failure(
     *,
     item_id: int,
     exc: Exception,
+    preserve_item_state: bool = False,
 ) -> None:
     context.analyze_result.failed += 1
     context.counters.llm_errors_total += 1
@@ -262,16 +270,17 @@ def _record_analyze_failure(
     )
     sanitized_error = context.service._sanitize_error_message(str(exc))
     classification = context.service._classify_exception(exc)
-    context.state_updates.append(
-        ItemStateUpdate(
-            item_id=item_id,
-            state=(
-                ITEM_STATE_RETRYABLE_FAILED
-                if classification.get("retryable") is True
-                else ITEM_STATE_FAILED
-            ),
+    if not preserve_item_state:
+        context.state_updates.append(
+            ItemStateUpdate(
+                item_id=item_id,
+                state=(
+                    ITEM_STATE_RETRYABLE_FAILED
+                    if classification.get("retryable") is True
+                    else ITEM_STATE_FAILED
+                ),
+            )
         )
-    )
     context.write_and_record_artifact(
         item_id=item_id,
         kind="error_context",
@@ -317,7 +326,12 @@ def _process_analyze_outcomes(
                 )
             )
         except Exception as exc:  # noqa: BLE001
-            _record_analyze_failure(failure_context, item_id=item_id, exc=exc)
+            _record_analyze_failure(
+                failure_context,
+                item_id=item_id,
+                exc=exc,
+                preserve_item_state=outcome.work_item.preserve_item_state,
+            )
     return AnalyzeOutcomeProcessing(
         analysis_writes=analysis_writes,
         state_updates=state_updates,
