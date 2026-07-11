@@ -303,7 +303,7 @@ def test_analyze_records_budget_receipt(configured_env) -> None:
         granularity="day",
         period_start=None,
         period_end=None,
-        config_fingerprint=settings.safe_fingerprint(),
+        config_fingerprint=analyze_budget_config_fingerprint(settings),
         min_selected_total=1,
     )
 

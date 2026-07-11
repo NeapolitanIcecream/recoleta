@@ -15,6 +15,7 @@ from recoleta.cli.workflow_planner import (
 )
 from recoleta.cli.workflow_runner import GranularityPlanRequest, build_granularity_plan
 from recoleta.workflow_freshness import (
+    analyze_budget_config_fingerprint,
     build_trend_ideas_freshness,
     build_trend_synthesis_freshness,
 )
@@ -78,6 +79,27 @@ class _TranslationSettings(_Settings):
 class _TriageSettings(_Settings):
     triage_enabled = True
     topics = ["software agents"]
+
+
+class _AnalyzeFingerprintSettings(_TriageSettings):
+    def __init__(self, *, trends_llm_model: str) -> None:
+        self.llm_model = "gpt-test"
+        self.analyze_llm_model = None
+        self.trends_llm_model = trends_llm_model
+        self.ideas_llm_model = None
+        self.translation_llm_model = None
+
+    def safe_model_dump(self) -> dict[str, object]:
+        return {
+            "analyze_limit": self.analyze_limit,
+            "triage_enabled": self.triage_enabled,
+            "topics": self.topics,
+            "llm_model": self.llm_model,
+            "analyze_llm_model": self.analyze_llm_model,
+            "trends_llm_model": self.trends_llm_model,
+            "ideas_llm_model": self.ideas_llm_model,
+            "translation_llm_model": self.translation_llm_model,
+        }
 
 
 class _ReadOnlyPlannerRepo:
@@ -277,9 +299,15 @@ class _AnalyzeCandidatesRepo(_ReadOnlyPlannerRepo):
 
 
 class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
-    def __init__(self, *, selected_total: int) -> None:
+    def __init__(
+        self,
+        *,
+        selected_total: int,
+        accepted_fingerprints: set[str] | None = None,
+    ) -> None:
         super().__init__()
         self.selected_total = selected_total
+        self.accepted_fingerprints = accepted_fingerprints or {"fp-test"}
         self.receipt_requests: list[dict[str, Any]] = []
 
     def get_latest_workflow_step_receipt(self, **kwargs: Any) -> Any | None:
@@ -288,7 +316,7 @@ class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
             return None
         if kwargs["granularity"] != "day":
             return None
-        if str(kwargs.get("config_fingerprint") or "") != "fp-test":
+        if str(kwargs.get("config_fingerprint") or "") not in self.accepted_fingerprints:
             return None
         if self.selected_total < int(kwargs.get("min_selected_total") or 0):
             return None
@@ -712,6 +740,32 @@ def test_planner_runs_analyze_when_budget_increases_above_receipt() -> None:
 
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "candidate_items"
+
+
+def test_planner_preserves_analyze_budget_when_other_stage_model_changes() -> None:
+    source_day = date(2026, 3, 16)
+    previous_settings = _AnalyzeFingerprintSettings(
+        trends_llm_model="gpt-trends-old"
+    )
+    current_settings = _AnalyzeFingerprintSettings(
+        trends_llm_model="gpt-trends-new"
+    )
+    previous_fingerprint = analyze_budget_config_fingerprint(previous_settings)
+    assert previous_fingerprint == analyze_budget_config_fingerprint(current_settings)
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=current_settings.analyze_limit,
+        accepted_fingerprints={previous_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=current_settings),
+        repository=repo,
+        settings=current_settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", source_day)
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
 
 
 def test_planner_ignores_analyze_budget_receipt_for_workflow_model_override() -> None:

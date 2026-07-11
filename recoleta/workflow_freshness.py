@@ -39,6 +39,47 @@ def analyze_budget_config_fingerprint(
     *,
     llm_model: str | None = None,
 ) -> str:
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    payload = _safe_settings_payload(settings)
+    if payload is None:
+        return _legacy_analyze_budget_config_fingerprint(
+            settings,
+            llm_model=llm_model,
+        )
+    for field_name in LLM_MODEL_CONFIG_FIELDS:
+        payload.pop(field_name, None)
+    payload["effective_analyze_llm_model"] = effective_model
+    return sha256_hex(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+
+
+def analyze_budget_config_fingerprint_candidates(
+    settings: Any,
+    *,
+    llm_model: str | None = None,
+) -> tuple[str, ...]:
+    fingerprints = (
+        analyze_budget_config_fingerprint(settings, llm_model=llm_model),
+        _legacy_analyze_budget_config_fingerprint(settings, llm_model=llm_model),
+    )
+    return tuple(dict.fromkeys(value for value in fingerprints if value))
+
+
+def _legacy_analyze_budget_config_fingerprint(
+    settings: Any,
+    *,
+    llm_model: str | None,
+) -> str:
     base_fingerprint = _settings_fingerprint(settings)
     if not base_fingerprint:
         return ""
@@ -203,24 +244,29 @@ def _stage_for_generation_kind(kind: str) -> str:
 
 
 def _settings_generation_fingerprint(settings: Any) -> str:
-    dumper = getattr(settings, "safe_model_dump", None)
-    if callable(dumper):
-        try:
-            payload = dumper()
-        except Exception:
-            payload = None
-        if isinstance(payload, dict):
-            normalized = dict(payload)
-            for field_name in LLM_MODEL_CONFIG_FIELDS:
-                normalized.pop(field_name, None)
-            serialized = json.dumps(
-                normalized,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            return sha256_hex(serialized)
+    payload = _safe_settings_payload(settings)
+    if payload is not None:
+        for field_name in LLM_MODEL_CONFIG_FIELDS:
+            payload.pop(field_name, None)
+        serialized = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return sha256_hex(serialized)
     return _settings_fingerprint(settings)
+
+
+def _safe_settings_payload(settings: Any) -> dict[str, Any] | None:
+    dumper = getattr(settings, "safe_model_dump", None)
+    if not callable(dumper):
+        return None
+    try:
+        payload = dumper()
+    except Exception:
+        return None
+    return dict(payload) if isinstance(payload, dict) else None
 
 
 def _settings_fingerprint(settings: Any) -> str:

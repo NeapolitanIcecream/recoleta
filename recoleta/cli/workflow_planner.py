@@ -26,7 +26,7 @@ from recoleta.cli.workflow_models import (
 from recoleta.config import resolve_stage_llm_model
 from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
 from recoleta.workflow_freshness import (
-    analyze_budget_config_fingerprint,
+    analyze_budget_config_fingerprint_candidates,
     build_trend_ideas_freshness,
     build_trend_synthesis_freshness,
     workflow_freshness_key,
@@ -1549,29 +1549,33 @@ def _latest_analyze_budget_receipt(
     llm_model: str | None,
 ) -> Any | None:
     getter = getattr(repository, "get_latest_workflow_step_receipt", None)
-    fingerprint = analyze_budget_config_fingerprint(
+    fingerprints = analyze_budget_config_fingerprint_candidates(
         settings,
         llm_model=llm_model,
     )
     if (
         not callable(getter)
-        or not fingerprint
+        or not fingerprints
         or context.period_start is None
         or context.period_end is None
     ):
         return None
-    try:
-        return getter(
-            step_id=STEP_ANALYZE,
-            granularity=context.granularity,
-            period_start=context.period_start,
-            period_end=context.period_end,
-            config_fingerprint=fingerprint,
-            min_selected_total=configured_limit,
-            status="succeeded",
-        )
-    except Exception:
-        return None
+    for fingerprint in fingerprints:
+        try:
+            receipt = getter(
+                step_id=STEP_ANALYZE,
+                granularity=context.granularity,
+                period_start=context.period_start,
+                period_end=context.period_end,
+                config_fingerprint=fingerprint,
+                min_selected_total=configured_limit,
+                status="succeeded",
+            )
+        except Exception:
+            return None
+        if receipt is not None:
+            return receipt
+    return None
 
 
 def _candidate_backlog_metadata(
