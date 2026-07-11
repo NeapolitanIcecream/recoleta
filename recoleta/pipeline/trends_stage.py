@@ -698,6 +698,7 @@ class _TrendStageRunner:
                 period_start=period_start,
                 period_end=period_end,
                 expected_total=len(expected_item_ids),
+                analysis_model=analysis_model,
             ),
             len(expected_item_ids),
         )
@@ -768,6 +769,7 @@ class _TrendStageRunner:
         period_start: Any,
         period_end: Any,
         expected_total: int,
+        analysis_model: str,
     ) -> bool:
         summary_doc_ids = self._item_chunk_doc_ids(
             kind="summary",
@@ -777,13 +779,17 @@ class _TrendStageRunner:
         )
         if not required_doc_ids <= summary_doc_ids:
             return False
-        meta_doc_ids = self._item_chunk_doc_ids(
+        meta_rows = self._item_chunk_rows(
             kind="meta",
             period_start=period_start,
             period_end=period_end,
             expected_total=expected_total,
         )
-        return required_doc_ids <= meta_doc_ids
+        meta_models = self._item_meta_models_by_doc_id(meta_rows)
+        return all(
+            meta_models.get(doc_id) == analysis_model
+            for doc_id in required_doc_ids
+        )
 
     def _item_chunk_doc_ids(
         self,
@@ -793,22 +799,61 @@ class _TrendStageRunner:
         period_end: Any,
         expected_total: int,
     ) -> set[int]:
-        rows = cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
+        rows = self._item_chunk_rows(
+            kind=kind,
+            period_start=period_start,
+            period_end=period_end,
+            expected_total=expected_total,
+        )
+        return {
+            doc_id
+            for row in rows
+            if (doc_id := self._positive_row_doc_id(row)) is not None
+        }
+
+    def _item_chunk_rows(
+        self,
+        *,
+        kind: str,
+        period_start: Any,
+        period_end: Any,
+        expected_total: int,
+    ) -> list[dict[str, Any]]:
+        return cast(Any, self.service.repository).list_document_chunk_index_rows_in_period(
             doc_type="item",
             kind=kind,
             period_start=period_start,
             period_end=period_end,
             limit=self._item_source_probe_limit(expected_total),
         )
-        doc_ids: set[int] = set()
+
+    def _item_meta_models_by_doc_id(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> dict[int, str]:
+        models: dict[int, str] = {}
         for row in rows:
-            try:
-                doc_id = int(row.get("doc_id") or 0)
-            except Exception:
+            doc_id = self._positive_row_doc_id(row)
+            if doc_id is None:
                 continue
-            if doc_id > 0:
-                doc_ids.add(doc_id)
-        return doc_ids
+            try:
+                payload = orjson.loads(str(row.get("text") or ""))
+            except orjson.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            model = str(payload.get("analysis_model") or "").strip()
+            if model:
+                models[doc_id] = model
+        return models
+
+    @staticmethod
+    def _positive_row_doc_id(row: dict[str, Any]) -> int | None:
+        try:
+            doc_id = int(row.get("doc_id") or 0)
+        except Exception:
+            return None
+        return doc_id if doc_id > 0 else None
 
     def _ensure_item_source(self, *, state: _TrendStageState) -> _SourceEnsureResult:
         if not self.request.reuse_existing_corpus:

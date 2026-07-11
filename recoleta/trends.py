@@ -360,6 +360,8 @@ def _item_meta_payload(*, item: Any, analysis: Any) -> dict[str, Any]:
         "title": str(getattr(item, "title", "") or "").strip() or None,
         "authors": _item_authors_list(item),
         "published_at": published_at_iso,
+        "analysis_model": str(getattr(analysis, "model", "") or "").strip()
+        or None,
         "relevance_score": _analysis_relevance_score(analysis),
         "novelty_score": _analysis_novelty_score(analysis),
     }
