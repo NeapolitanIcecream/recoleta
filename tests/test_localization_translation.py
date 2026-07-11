@@ -365,6 +365,7 @@ def test_run_translation_creates_localized_outputs_for_all_surfaces(
 ) -> None:
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("TRANSLATION_LLM_MODEL", "test/translation-stage-model")
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "English")
     monkeypatch.setenv(
         "LOCALIZATION",
@@ -380,12 +381,14 @@ def test_run_translation_creates_localized_outputs_for_all_surfaces(
     item_id, trend_doc_id, idea_doc_id, trend_payload, ideas_payload = (
         _seed_item_trend_and_idea(repository=repository)
     )
+    models_seen: list[str] = []
 
     def _fake_translate(*, request=None, **kwargs: Any) -> dict[str, Any]:
         normalized = translation_module.coerce_translate_structured_payload_request(
             request=request,
             legacy_kwargs=kwargs,
         )
+        models_seen.append(normalized.model)
         payload = dict(normalized.payload)
         payload["title"] = f"ZH {payload.get('title', '')}".strip()
         if "summary" in payload:
@@ -440,3 +443,19 @@ def test_run_translation_creates_localized_outputs_for_all_surfaces(
     assert "pipeline.translate.duration_ms" not in metric_names
     assert trend_payload.title == "Agent systems"
     assert ideas_payload.title == "Operator wedges"
+    assert models_seen == ["test/translation-stage-model"] * 3
+
+    models_seen.clear()
+    rerun_result = translation_module.run_translation(
+        repository=repository,
+        settings=settings,
+        include=["items"],
+        limit=1,
+        llm_model="test/translation-override",
+        context_assist="direct",
+        force=True,
+        run_id="run-translation-override",
+    )
+
+    assert rerun_result.translated_total == 1
+    assert models_seen == ["test/translation-override"]

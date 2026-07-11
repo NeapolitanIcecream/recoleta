@@ -41,10 +41,25 @@ Optional LLM behavior:
 
 - `RECOLETA_LLM_API_KEY`: Recoleta-scoped API key override for LiteLLM / PydanticAI calls (env-only).
 - `RECOLETA_LLM_BASE_URL`: Recoleta-scoped base URL override for OpenAI-compatible or OpenRouter endpoints.
+- `ANALYZE_LLM_MODEL`, `TRENDS_LLM_MODEL`, `IDEAS_LLM_MODEL`, and
+  `TRANSLATION_LLM_MODEL`: optional per-stage model overrides. In YAML/JSON
+  config files, use the lowercase keys `analyze_llm_model`,
+  `trends_llm_model`, `ideas_llm_model`, and `translation_llm_model`.
+  Blank values are treated as unset.
 - `LLM_OUTPUT_LANGUAGE`: canonical language label for newly generated LLM output such as item summaries, trend notes, and idea notes.
   - JSON keys remain English.
   - `topics` remain concise English tags for downstream allow/deny filtering.
   - Empty value means unset.
+
+Model resolution for LLM stages is:
+
+```text
+explicit CLI/request --model > stage-specific model > LLM_MODEL
+```
+
+`LLM_MODEL` remains required as the global fallback. `doctor` and
+`inspect llm` continue to probe the global model because they are not pipeline
+stages.
 
 ## Manual trend email (optional)
 

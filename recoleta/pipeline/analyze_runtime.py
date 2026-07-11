@@ -7,6 +7,7 @@ from typing import Any
 
 from loguru import logger
 
+from recoleta.config import resolve_stage_llm_model
 from recoleta.models import ITEM_STATE_FAILED, ITEM_STATE_RETRYABLE_FAILED
 from recoleta.pipeline.metrics import metric_token
 from recoleta.types import AnalysisWrite, AnalyzeResult, ItemStateUpdate
@@ -102,6 +103,7 @@ class AnalyzeExecutionContext:
     analyze_result: AnalyzeResult
     configured_provider_token: str
     configured_model_token: str
+    llm_model: str
     include_debug: bool
     write_and_record_artifact: Any
 
@@ -118,14 +120,14 @@ class AnalyzeBatchResult:
     selected_total: int
 
 
-def _configured_llm_tokens(*, service: Any) -> tuple[str, str]:
+def _configured_llm_tokens(*, llm_model: str) -> tuple[str, str]:
     configured_provider = (
-        service.settings.llm_model.split("/", 1)[0]
-        if "/" in service.settings.llm_model
+        llm_model.split("/", 1)[0]
+        if "/" in llm_model
         else "unknown"
     )
     return metric_token(configured_provider, max_len=24), metric_token(
-        service.settings.llm_model
+        llm_model
     )
 
 
@@ -430,10 +432,16 @@ def execute_analyze(
     *,
     run_id: str,
     limit: int | None = None,
+    llm_model: str | None = None,
     period_start: Any = None,
     period_end: Any = None,
 ) -> AnalyzeResult:
-    context = _build_analyze_context(service=service, run_id=run_id, limit=limit)
+    context = _build_analyze_context(
+        service=service,
+        run_id=run_id,
+        limit=limit,
+        llm_model=llm_model,
+    )
     with service.repository.sql_diagnostics() as sql_diag:
         batch_result = _run_analyze_batch(
             context=context,
@@ -467,9 +475,15 @@ def _build_analyze_context(
     service: Any,
     run_id: str,
     limit: int | None,
+    llm_model: str | None,
 ) -> AnalyzeExecutionContext:
+    effective_llm_model = resolve_stage_llm_model(
+        service.settings,
+        stage="analyze",
+        override=llm_model,
+    )
     configured_provider_token, configured_model_token = _configured_llm_tokens(
-        service=service
+        llm_model=effective_llm_model
     )
     log = logger.bind(module="pipeline.analyze", run_id=run_id)
     include_debug = (
@@ -487,6 +501,7 @@ def _build_analyze_context(
         analyze_result=AnalyzeResult(),
         configured_provider_token=configured_provider_token,
         configured_model_token=configured_model_token,
+        llm_model=effective_llm_model,
         include_debug=include_debug,
         write_and_record_artifact=_build_analyze_artifact_writer(
             service=service,
@@ -526,6 +541,7 @@ def _run_analyze_batch(
         work_items=work_items,
         include_debug=context.include_debug,
         description="Analyzing items",
+        llm_model=context.llm_model,
     )
     processed_outcomes = _process_analyze_outcomes(
         AnalyzeOutcomeRequest(

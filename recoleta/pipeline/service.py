@@ -20,7 +20,7 @@ from rich.progress import (
 )
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
-from recoleta.config import Settings
+from recoleta.config import Settings, resolve_stage_llm_model
 from recoleta.delivery import TelegramSender
 from recoleta.extract import (
     extract_arxiv_latex_source,
@@ -249,8 +249,13 @@ class PipelineService:
         self._scrub_secrets = tuple(dict.fromkeys(scrub_candidates))
         self._llm_connection = llm_connection_from_settings(settings)
         self._progress_console = get_rich_console()
+        self._analyzer_was_injected = analyzer is not None
+        self._default_analyze_llm_model = resolve_stage_llm_model(
+            settings,
+            stage="analyze",
+        )
         self.analyzer = analyzer or LiteLLMAnalyzer(
-            model=settings.llm_model,
+            model=self._default_analyze_llm_model,
             output_language=settings.llm_output_language,
             content_max_chars=settings.analyze_content_max_chars,
             llm_connection=self._llm_connection,
@@ -711,6 +716,7 @@ class PipelineService:
         work_items: list[_AnalyzeWorkItem],
         include_debug: bool,
         description: str,
+        llm_model: str | None = None,
     ) -> tuple[
         list[_AnalyzeCallSuccess | _AnalyzeCallFailure],
         _AnalyzeParallelismStats,
@@ -726,6 +732,7 @@ class PipelineService:
         active = 0
         max_inflight = 0
         lock = threading.Lock()
+        analyzer = self._analyzer_for_llm_model(llm_model=llm_model)
 
         def _invoke(
             work_item: _AnalyzeWorkItem,
@@ -735,7 +742,7 @@ class PipelineService:
                 active += 1
                 max_inflight = max(max_inflight, active)
             try:
-                return self.analyzer.analyze(
+                return analyzer.analyze(
                     title=work_item.title,
                     canonical_url=work_item.canonical_url,
                     user_topics=work_item.user_topics,
@@ -1080,6 +1087,7 @@ class PipelineService:
         *,
         run_id: str,
         limit: int | None = None,
+        llm_model: str | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ) -> AnalyzeResult:
@@ -1087,8 +1095,24 @@ class PipelineService:
             self,
             run_id=run_id,
             limit=limit,
+            llm_model=llm_model,
             period_start=period_start,
             period_end=period_end,
+        )
+
+    def _analyzer_for_llm_model(self, *, llm_model: str | None) -> Analyzer:
+        effective_model = resolve_stage_llm_model(
+            self.settings,
+            stage="analyze",
+            override=llm_model,
+        )
+        if self._analyzer_was_injected or effective_model == self._default_analyze_llm_model:
+            return self.analyzer
+        return LiteLLMAnalyzer(
+            model=effective_model,
+            output_language=self.settings.llm_output_language,
+            content_max_chars=self.settings.analyze_content_max_chars,
+            llm_connection=self._llm_connection,
         )
 
     def _resolve_analysis_limit(self, *, limit: int | None) -> int:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 import threading
 import time
@@ -94,6 +95,140 @@ class _PartiallyInvalidPersistenceAnalyzer:
             ),
             None,
         )
+
+
+def test_analyze_uses_stage_specific_model_and_explicit_override(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path: Path = configured_env
+    artifacts_dir = tmp_path / "artifacts"
+    created_models: list[str] = []
+
+    class _RecordingLiteLLMAnalyzer:
+        def __init__(
+            self,
+            *,
+            model: str,
+            output_language: str | None = None,  # noqa: ARG002
+            content_max_chars: int = 5000,  # noqa: ARG002
+            llm_connection: object | None = None,  # noqa: ARG002
+        ) -> None:
+            self.model = model
+            created_models.append(model)
+
+        def analyze(
+            self,
+            *,
+            title: str,
+            canonical_url: str,
+            user_topics: list[str],
+            content: str | None = None,  # noqa: ARG002
+            include_debug: bool = False,
+        ) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+            provider = self.model.split("/", 1)[0] if "/" in self.model else "test"
+            result = AnalysisResult(
+                model=self.model,
+                provider=provider,
+                summary=f"summary for {title}",
+                topics=user_topics[:2] or ["general"],
+                relevance_score=0.91,
+                novelty_score=0.42,
+                cost_usd=0.01,
+                latency_ms=1,
+                prompt_tokens=11,
+                completion_tokens=7,
+                total_tokens=18,
+            )
+            debug = (
+                AnalyzeDebug(
+                    request={"model": self.model, "canonical_url": canonical_url},
+                    response={"model": self.model, "summary": result.summary},
+                )
+                if include_debug
+                else None
+            )
+            return result, debug
+
+    monkeypatch.setenv("ANALYZE_LLM_MODEL", "test/analyze-stage-model")
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
+    monkeypatch.setattr(
+        "recoleta.pipeline.service.LiteLLMAnalyzer",
+        _RecordingLiteLLMAnalyzer,
+    )
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        telegram_sender=FakeTelegramSender(),
+    )
+
+    first_draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-analyze-stage-model",
+        canonical_url="https://example.com/analyze-stage-model",
+        title="Analyze Stage Model",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(run_id="run-analyze-stage-model", drafts=[first_draft], limit=10)
+    first_result = service.analyze(run_id="run-analyze-stage-model", limit=10)
+
+    second_draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-analyze-override-model",
+        canonical_url="https://example.com/analyze-override-model",
+        title="Analyze Override Model",
+        authors=["Alice"],
+        raw_metadata={"source": "test"},
+    )
+    service.prepare(
+        run_id="run-analyze-override-model",
+        drafts=[second_draft],
+        limit=10,
+    )
+    second_result = service.analyze(
+        run_id="run-analyze-override-model",
+        limit=10,
+        llm_model="test/analyze-override-model",
+    )
+
+    assert first_result.processed == 1
+    assert second_result.processed == 1
+    assert created_models == [
+        "test/analyze-stage-model",
+        "test/analyze-override-model",
+    ]
+
+    with Session(repository.engine) as session:
+        analyses = list(session.exec(select(Analysis).order_by(cast(Any, Analysis.id))))
+        assert [analysis.model for analysis in analyses] == [
+            "test/analyze-stage-model",
+            "test/analyze-override-model",
+        ]
+        first_request_artifact = session.exec(
+            select(Artifact).where(
+                Artifact.run_id == "run-analyze-stage-model",
+                Artifact.kind == "llm_request",
+            )
+        ).one()
+        request_payload = json.loads(
+            (artifacts_dir / first_request_artifact.path).read_text(encoding="utf-8")
+        )
+        assert request_payload["model"] == "test/analyze-stage-model"
+
+    first_metrics = repository.list_metrics(run_id="run-analyze-stage-model")
+    second_metrics = repository.list_metrics(run_id="run-analyze-override-model")
+    assert any(
+        metric.name == "pipeline.analyze.llm_calls.model.test_analyze_stage_model"
+        for metric in first_metrics
+    )
+    assert any(
+        metric.name == "pipeline.analyze.llm_calls.model.test_analyze_override_model"
+        for metric in second_metrics
+    )
 
 
 def test_analyze_failure_emits_failure_metric(configured_env) -> None:

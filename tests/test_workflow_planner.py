@@ -32,6 +32,10 @@ class _Settings:
     topics: list[str] = []
     min_relevance_score = 0.0
     llm_model = "gpt-test"
+    analyze_llm_model: str | None = None
+    trends_llm_model: str | None = None
+    ideas_llm_model: str | None = None
+    translation_llm_model: str | None = None
     llm_output_language = "English"
     workflows = SimpleNamespace()
     sources = SimpleNamespace(arxiv=SimpleNamespace(enabled=False))
@@ -969,6 +973,123 @@ def test_trend_planner_reruns_trend_and_ideas_when_source_hash_changes() -> None
     ideas_decision = _decision_for(decisions, "ideas:day", source_day)
     assert ideas_decision.action == "run"
     assert ideas_decision.reason == "upstream_trend_planned"
+
+
+def test_trend_planner_treats_workflow_model_override_as_stale_freshness() -> None:
+    source_day = date(2026, 3, 16)
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_ReadOnlyPlannerRepo(),
+        settings=_Settings(),
+        llm_model="gpt-override",
+    )
+
+    decision = _decision_for(decisions, "trends:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "stale_freshness"
+
+
+class _FreshnessSettings:
+    def __init__(
+        self,
+        *,
+        llm_model: str = "test/global",
+        analyze_llm_model: str | None = None,
+        trends_llm_model: str | None = None,
+        ideas_llm_model: str | None = None,
+        translation_llm_model: str | None = None,
+    ) -> None:
+        self.llm_model = llm_model
+        self.analyze_llm_model = analyze_llm_model
+        self.trends_llm_model = trends_llm_model
+        self.ideas_llm_model = ideas_llm_model
+        self.translation_llm_model = translation_llm_model
+        self.llm_output_language = "English"
+
+    def safe_model_dump(self) -> dict[str, object]:
+        return {
+            "llm_model": self.llm_model,
+            "analyze_llm_model": self.analyze_llm_model,
+            "trends_llm_model": self.trends_llm_model,
+            "ideas_llm_model": self.ideas_llm_model,
+            "translation_llm_model": self.translation_llm_model,
+            "llm_output_language": self.llm_output_language,
+            "topics": ["agents"],
+        }
+
+    def safe_fingerprint(self) -> str:
+        return "full-config-fingerprint"
+
+
+def test_trend_freshness_ignores_unrelated_stage_specific_models() -> None:
+    period_start = datetime(2026, 3, 16, tzinfo=UTC)
+    period_end = datetime(2026, 3, 17, tzinfo=UTC)
+    base = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(
+            trends_llm_model="test/trends-stage",
+            translation_llm_model="test/translation-a",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+    unrelated_translation_change = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(
+            trends_llm_model="test/trends-stage",
+            translation_llm_model="test/translation-b",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+    effective_trends_change = build_trend_synthesis_freshness(
+        settings=_FreshnessSettings(trends_llm_model="test/trends-next"),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    assert base["key"] == unrelated_translation_change["key"]
+    assert base["key"] != effective_trends_change["key"]
+    assert base["components"]["llm_model"] == "test/trends-stage"
+    assert effective_trends_change["components"]["llm_model"] == "test/trends-next"
+
+
+def test_ideas_freshness_ignores_unrelated_stage_specific_models() -> None:
+    period_start = datetime(2026, 3, 16, tzinfo=UTC)
+    period_end = datetime(2026, 3, 17, tzinfo=UTC)
+    base = build_trend_ideas_freshness(
+        settings=_FreshnessSettings(
+            ideas_llm_model="test/ideas-stage",
+            analyze_llm_model="test/analyze-a",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        upstream_pass_output_id=42,
+    )
+    unrelated_analyze_change = build_trend_ideas_freshness(
+        settings=_FreshnessSettings(
+            ideas_llm_model="test/ideas-stage",
+            analyze_llm_model="test/analyze-b",
+        ),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        upstream_pass_output_id=42,
+    )
+    effective_ideas_change = build_trend_ideas_freshness(
+        settings=_FreshnessSettings(ideas_llm_model="test/ideas-next"),
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        upstream_pass_output_id=42,
+    )
+
+    assert base["key"] == unrelated_analyze_change["key"]
+    assert base["key"] != effective_ideas_change["key"]
+    assert base["components"]["llm_model"] == "test/ideas-stage"
+    assert effective_ideas_change["components"]["llm_model"] == "test/ideas-next"
 
 
 def test_ideas_planner_prefers_newer_suppressed_output_over_older_success() -> None:

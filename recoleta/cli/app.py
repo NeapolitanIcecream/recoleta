@@ -51,11 +51,24 @@ from recoleta.cli.translate import (
     run_translate_run_command,
 )
 from recoleta.cli.trends import run_trends_command
-from recoleta.cli.workflows import (
-    execute_deploy_workflow,
-    execute_granularity_workflow,
-    run_daemon_start_command,
-)
+
+
+def execute_granularity_workflow(**kwargs: Any) -> Any:
+    from recoleta.cli.workflows import execute_granularity_workflow as impl
+
+    return impl(**kwargs)
+
+
+def execute_deploy_workflow(**kwargs: Any) -> Any:
+    from recoleta.cli.workflows import execute_deploy_workflow as impl
+
+    return impl(**kwargs)
+
+
+def run_daemon_start_command() -> Any:
+    from recoleta.cli.workflows import run_daemon_start_command as impl
+
+    return impl()
 
 
 def execute_fleet_granularity_workflow(**kwargs: Any) -> Any:
@@ -575,6 +588,11 @@ def run_now(
         "--force/--no-force",
         help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for all LLM stages in this workflow.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -589,6 +607,7 @@ def run_now(
         skip=skip,
         dry_run=dry_run,
         force=force,
+        model=model,
         json_output=json_output,
     )
 
@@ -620,6 +639,11 @@ def run_day(
         "--force/--no-force",
         help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for all LLM stages in this workflow.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -635,6 +659,7 @@ def run_day(
         skip=skip,
         dry_run=dry_run,
         force=force,
+        model=model,
         json_output=json_output,
     )
 
@@ -666,6 +691,11 @@ def run_week(
         "--force/--no-force",
         help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for all LLM stages in this workflow.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -681,6 +711,7 @@ def run_week(
         skip=skip,
         dry_run=dry_run,
         force=force,
+        model=model,
         json_output=json_output,
     )
 
@@ -712,6 +743,11 @@ def run_month(
         "--force/--no-force",
         help="Regenerate expensive content steps instead of reusing fresh outputs.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for all LLM stages in this workflow.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -727,6 +763,7 @@ def run_month(
         skip=skip,
         dry_run=dry_run,
         force=force,
+        model=model,
         json_output=json_output,
     )
 
@@ -786,6 +823,11 @@ def run_deploy(
         "--item-export-scope",
         help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for LLM stages in this workflow.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -805,6 +847,7 @@ def run_deploy(
         pages_config=pages_config,
         force=force,
         item_export_scope=item_export_scope,
+        model=model,
         json_output=json_output,
     )
 
@@ -830,6 +873,11 @@ def fleet_run_day(
     skip: str | None = typer.Option(None, "--skip"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     force: bool = typer.Option(False, "--force/--no-force"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for all LLM stages in each child workflow.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Run the full UTC-day workflow for every child instance."""
@@ -842,6 +890,7 @@ def fleet_run_day(
         skip=skip,
         dry_run=dry_run,
         force=force,
+        model=model,
         json_output=json_output,
     )
 
@@ -867,6 +916,11 @@ def fleet_run_week(
     skip: str | None = typer.Option(None, "--skip"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     force: bool = typer.Option(False, "--force/--no-force"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for all LLM stages in each child workflow.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Run the full ISO-week workflow for every child instance."""
@@ -879,6 +933,7 @@ def fleet_run_week(
         skip=skip,
         dry_run=dry_run,
         force=force,
+        model=model,
         json_output=json_output,
     )
 
@@ -904,6 +959,11 @@ def fleet_run_month(
     skip: str | None = typer.Option(None, "--skip"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     force: bool = typer.Option(False, "--force/--no-force"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for all LLM stages in each child workflow.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Run the full month workflow for every child instance."""
@@ -916,6 +976,7 @@ def fleet_run_month(
         skip=skip,
         dry_run=dry_run,
         force=force,
+        model=model,
         json_output=json_output,
     )
 
@@ -952,6 +1013,11 @@ def fleet_run_deploy(
         "--item-export-scope",
         help="Export only items linked from selected trend/idea pages by default. Use 'all' to restore the legacy full item export.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for LLM stages in each child deploy workflow.",
+    ),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Deploy the aggregate fleet static site."""
@@ -968,6 +1034,7 @@ def fleet_run_deploy(
         pages_config=pages_config,
         force=force,
         item_export_scope=item_export_scope,
+        model=model,
         json_output=json_output,
     )
 
@@ -1122,6 +1189,11 @@ def run_translate(
         "--context-assist",
         help="Translation context mode: none, direct, or hybrid.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for translation. Defaults to TRANSLATION_LLM_MODEL then LLM_MODEL.",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -1141,6 +1213,7 @@ def run_translate(
         force=force,
         all_history=all_history,
         context_assist=context_assist,
+        model=model,
         json_output=json_output,
         command_name="run translate",
     )
@@ -1746,9 +1819,19 @@ def stage_analyze(
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON output."
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for analysis. Defaults to ANALYZE_LLM_MODEL then LLM_MODEL.",
+    ),
 ) -> None:
     """Run the analyze stage primitive."""
-    run_analyze_command(limit=limit, anchor_date=anchor_date, json_output=json_output)
+    run_analyze_command(
+        limit=limit,
+        anchor_date=anchor_date,
+        model=model,
+        json_output=json_output,
+    )
 
 
 @stage_app.command("publish")
@@ -1782,7 +1865,7 @@ def stage_trends(
     model: str | None = typer.Option(
         None,
         "--model",
-        help="Override LLM model for trend generation. Defaults to LLM_MODEL.",
+        help="Override LLM model for trend generation. Defaults to TRENDS_LLM_MODEL then LLM_MODEL.",
     ),
     debug_pdf: bool = typer.Option(
         False,
@@ -1818,7 +1901,7 @@ def stage_ideas(
     model: str | None = typer.Option(
         None,
         "--model",
-        help="Override LLM model for ideas generation. Defaults to LLM_MODEL.",
+        help="Override LLM model for ideas generation. Defaults to IDEAS_LLM_MODEL then LLM_MODEL.",
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON output."
@@ -1899,6 +1982,11 @@ def stage_translate_run(
         "--context-assist",
         help="Translation context mode: none, direct, or hybrid.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for translation. Defaults to TRANSLATION_LLM_MODEL then LLM_MODEL.",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON output."
     ),
@@ -1916,6 +2004,7 @@ def stage_translate_run(
         force=force,
         all_history=all_history,
         context_assist=context_assist,
+        model=model,
         json_output=json_output,
         command_name="stage translate run",
     )
@@ -1967,6 +2056,11 @@ def stage_translate_backfill(
         "--context-assist",
         help="Translation context mode: none, direct, or hybrid.",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Override LLM model for translation backfill. Defaults to TRANSLATION_LLM_MODEL then LLM_MODEL.",
+    ),
     legacy_source_language: str | None = typer.Option(
         None,
         "--legacy-source-language",
@@ -1995,6 +2089,7 @@ def stage_translate_backfill(
         limit=limit,
         force=force,
         context_assist=context_assist,
+        model=model,
         legacy_source_language=legacy_source_language,
         emit_mirror_targets=emit_mirror_targets,
         all_history=all_history,
@@ -2439,8 +2534,16 @@ def analyze(
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON output."
     ),
+    model: str | None = typer.Option(
+        None, "--model", help="Override LLM model for analysis."
+    ),
 ) -> None:
-    run_analyze_command(limit=limit, anchor_date=anchor_date, json_output=json_output)
+    run_analyze_command(
+        limit=limit,
+        anchor_date=anchor_date,
+        model=model,
+        json_output=json_output,
+    )
 
 
 @app.command(hidden=True)
@@ -2467,7 +2570,9 @@ def trends(
         None, "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."
     ),
     model: str | None = typer.Option(
-        None, "--model", help="Override LLM model for trend generation."
+        None,
+        "--model",
+        help="Override LLM model for trend generation.",
     ),
     debug_pdf: bool = typer.Option(
         False,
@@ -2498,7 +2603,9 @@ def ideas(
         None, "--date", help="Anchor date in UTC (YYYY-MM-DD or YYYYMMDD)."
     ),
     model: str | None = typer.Option(
-        None, "--model", help="Override LLM model for ideas generation."
+        None,
+        "--model",
+        help="Override LLM model for ideas generation.",
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON output."

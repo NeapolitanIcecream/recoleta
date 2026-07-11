@@ -134,6 +134,7 @@ class WorkflowExecutionContext:
     on_translate_failure: str
     translate_include: list[str]
     translate_granularities: list[str] | None
+    llm_model: str | None
     delivery_mode: str | None
     publish_requested_explicitly: bool
     analyze_limit: int | None

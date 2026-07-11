@@ -79,14 +79,27 @@ class _FakeSettings:
 
 
 class _FakeService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
     def analyze(
         self,
         *,
         run_id: str,
         limit: int | None = None,
+        llm_model: str | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
     ):  # type: ignore[no-untyped-def]
+        self.calls.append(
+            {
+                "run_id": run_id,
+                "limit": limit,
+                "llm_model": llm_model,
+                "period_start": period_start,
+                "period_end": period_end,
+            }
+        )
         assert run_id == "run-analyze"
         assert limit == 3
         assert period_start == datetime(2026, 1, 2, tzinfo=UTC)
@@ -118,6 +131,40 @@ def test_analyze_cli_passes_target_day_window_to_analyze(
     assert "analyze completed processed=4 failed=1" in result.stdout
     assert "Billing report" in result.stdout
     assert fake_repo.finished == [("run-analyze", True)]
+
+
+def test_stage_analyze_cli_passes_model_override(
+    configured_env: Path,  # noqa: ARG001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    fake_settings = _FakeSettings()
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda: (fake_settings, fake_repo, fake_service),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "stage",
+            "analyze",
+            "--limit",
+            "3",
+            "--date",
+            "2026-01-02",
+            "--model",
+            "test/analyze-override",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_service.calls
+    assert fake_service.calls[0]["llm_model"] == "test/analyze-override"
 
 
 def test_analyze_cli_emits_json_output(

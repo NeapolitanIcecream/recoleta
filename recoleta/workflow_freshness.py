@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from recoleta.config import LLM_MODEL_CONFIG_FIELDS, resolve_stage_llm_model
 from recoleta.types import sha256_hex
 
 WORKFLOW_FRESHNESS_SCHEMA_VERSION = 1
@@ -151,14 +152,46 @@ def _base_generation_components(
         "granularity": str(granularity or "").strip().lower(),
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
-        "settings_fingerprint": _settings_fingerprint(settings),
-        "llm_model": str(
-            llm_model or getattr(settings, "llm_model", "") or ""
-        ).strip(),
+        "settings_fingerprint": _settings_generation_fingerprint(settings),
+        "llm_model": resolve_stage_llm_model(
+            settings,
+            stage=_stage_for_generation_kind(kind),
+            override=llm_model,
+        ),
         "llm_output_language": str(
             getattr(settings, "llm_output_language", "") or ""
         ).strip(),
     }
+
+
+def _stage_for_generation_kind(kind: str) -> str:
+    normalized = str(kind or "").strip()
+    if normalized == "trend_synthesis":
+        return "trends"
+    if normalized == "trend_ideas":
+        return "ideas"
+    raise ValueError("generation kind must be one of: trend_synthesis, trend_ideas")
+
+
+def _settings_generation_fingerprint(settings: Any) -> str:
+    dumper = getattr(settings, "safe_model_dump", None)
+    if callable(dumper):
+        try:
+            payload = dumper()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            normalized = dict(payload)
+            for field_name in LLM_MODEL_CONFIG_FIELDS:
+                normalized.pop(field_name, None)
+            serialized = json.dumps(
+                normalized,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            return sha256_hex(serialized)
+    return _settings_fingerprint(settings)
 
 
 def _settings_fingerprint(settings: Any) -> str:

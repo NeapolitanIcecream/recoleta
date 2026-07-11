@@ -59,6 +59,7 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setenv("TRENDS_LLM_MODEL", "test/trends-stage-model")
     monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "Chinese (Simplified)")
     monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
 
@@ -91,6 +92,7 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
     from recoleta.trends import TrendPayload
 
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["llm_model"] == "test/trends-stage-model"
         repo = kwargs["repository"]
         pstart = kwargs["period_start"]
         pend = kwargs["period_end"]
@@ -123,7 +125,6 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         run_id="run-trend-pass-output",
         granularity="day",
         anchor_date=date(2026, 3, 2),
-        llm_model="test/fake-model",
     )
 
     assert result.doc_id > 0
@@ -138,6 +139,7 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         freshness = diagnostics["workflow_freshness"]
         assert freshness["kind"] == "trend_synthesis"
         assert freshness["components"]["granularity"] == "day"
+        assert freshness["components"]["llm_model"] == "test/trends-stage-model"
         assert freshness["key"]
 
         trend_doc = session.exec(

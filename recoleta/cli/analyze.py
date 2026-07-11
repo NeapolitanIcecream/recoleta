@@ -10,6 +10,7 @@ def run_analyze_command(
     *,
     limit: int | None,
     anchor_date: str | None = None,
+    model: str | None = None,
     json_output: bool = False,
 ) -> None:
     symbols = cli._runtime_symbols()
@@ -29,6 +30,7 @@ def run_analyze_command(
             "analyze",
             run_id=run_id,
             limit=limit,
+            llm_model=model,
             period_start=period_start,
             period_end=period_end,
         ),

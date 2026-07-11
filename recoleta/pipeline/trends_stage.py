@@ -11,6 +11,7 @@ from typing import Any, Protocol, TypedDict, Unpack, cast
 import orjson
 from loguru import logger
 
+from recoleta.config import resolve_stage_llm_model
 from recoleta.delivery import TelegramSender
 from recoleta.models import (
     DELIVERY_CHANNEL_TELEGRAM,
@@ -359,7 +360,11 @@ class _TrendStageRunner:
             normalized_granularity=normalized_granularity,
             anchor=anchor,
         )
-        model = self.request.llm_model or self.service.settings.llm_model
+        model = resolve_stage_llm_model(
+            self.service.settings,
+            stage="trends",
+            override=self.request.llm_model,
+        )
         return _TrendStageState(
             include_debug=include_debug,
             normalized_granularity=normalized_granularity,
@@ -2023,7 +2028,7 @@ class _TrendStageRunner:
                 granularity=state.normalized_granularity,
                 period_start=state.period_start,
                 period_end=state.period_end,
-                llm_model=self.request.llm_model,
+                llm_model=state.model,
                 repository=self.service.repository,
             ),
             "context_packs": {

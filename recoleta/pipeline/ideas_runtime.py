@@ -10,6 +10,7 @@ from typing import Any, cast
 from loguru import logger
 
 from recoleta import trends
+from recoleta.config import resolve_stage_llm_model
 from recoleta.idea_projection import (
     IdeaProjectionRequest,
     persist_idea_document_projection,
@@ -50,7 +51,7 @@ class IdeasStageContext:
     period_end: datetime
     record_metric: Any
     include_debug: bool
-    llm_model: str | None
+    llm_model: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,12 +269,7 @@ def _empty_corpus_ideas_result(
 
 
 def _ideas_llm_model(*, request: IdeasGenerationRequest) -> str:
-    model = str(
-        request.context.llm_model or request.context.service.settings.llm_model or ""
-    ).strip()
-    if not model:
-        raise ValueError("llm_model must not be empty")
-    return model
+    return request.context.llm_model
 
 
 def _ideas_vector_store(*, request: IdeasGenerationRequest) -> LanceVectorStore:
@@ -740,7 +736,11 @@ def execute_ideas_stage(
         run_id=run_id,
         granularity=granularity,
         anchor_date=anchor_date,
-        llm_model=llm_model,
+        llm_model=resolve_stage_llm_model(
+            service.settings,
+            stage="ideas",
+            override=llm_model,
+        ),
     )
     upstream = _load_upstream_context(context)
     targets = _validate_ideas_targets(
@@ -822,6 +822,11 @@ def _build_ideas_stage_context(
         granularity=normalized_granularity,
         anchor=anchor,
     )
+    effective_llm_model = resolve_stage_llm_model(
+        service.settings,
+        stage="ideas",
+        override=llm_model,
+    )
     return IdeasStageContext(
         service=service,
         run_id=run_id,
@@ -835,7 +840,7 @@ def _build_ideas_stage_context(
             service.settings.write_debug_artifacts
             and service.settings.artifacts_dir is not None
         ),
-        llm_model=llm_model,
+        llm_model=effective_llm_model,
     )
 
 

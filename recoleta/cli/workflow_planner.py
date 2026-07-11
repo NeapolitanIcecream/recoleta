@@ -87,6 +87,7 @@ class _InspectionRequest:
     repository: Any
     settings: Any
     generation_force: bool
+    llm_model: str | None
     translate_include: list[str] | None
     translate_granularities: list[str] | None
     lower_level_task_sets: dict[str, "_LowerLevelTaskSetState"]
@@ -161,6 +162,7 @@ def plan_workflow_execution(
     repository: Any,
     settings: Any,
     generation_force: bool = False,
+    llm_model: str | None = None,
     translate_include: list[str] | None = None,
     translate_granularities: list[str] | None = None,
 ) -> list[WorkflowPlanDecision]:
@@ -176,6 +178,7 @@ def plan_workflow_execution(
                 repository=repository,
                 settings=settings,
                 generation_force=generation_force,
+                llm_model=llm_model,
                 translate_include=translate_include,
                 translate_granularities=translate_granularities,
                 lower_level_task_sets=lower_level_task_sets,
@@ -238,6 +241,7 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             context=context,
             repository=request.repository,
             settings=request.settings,
+            llm_model=request.llm_model,
         )
     if invocation.step_id in IDEA_STEPS:
         if _is_lower_level_generation_context(context=context, plan=request.plan):
@@ -251,6 +255,7 @@ def _inspect_invocation(request: _InspectionRequest) -> WorkflowPlanDecision:
             context=context,
             repository=request.repository,
             settings=request.settings,
+            llm_model=request.llm_model,
         )
     if invocation.step_id == STEP_TRANSLATE:
         return _inspect_translation(
@@ -616,6 +621,7 @@ def _inspect_trend_output(
     context: _DecisionContext,
     repository: Any,
     settings: Any,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
     period_start = context.period_start
@@ -642,6 +648,7 @@ def _inspect_trend_output(
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
+        llm_model=llm_model,
         repository=repository,
     )
     return _classify_pass_output_completion(
@@ -690,6 +697,7 @@ def _inspect_ideas_output(
     context: _DecisionContext,
     repository: Any,
     settings: Any,
+    llm_model: str | None,
 ) -> WorkflowPlanDecision:
     granularity = context.granularity
     period_start = context.period_start
@@ -741,6 +749,7 @@ def _inspect_ideas_output(
         period_start=period_start,
         period_end=period_end,
         upstream_pass_output_id=upstream_id,
+        llm_model=llm_model,
     )
     projection_required = str(getattr(row, "status", "") or "") != PASS_STATUS_SUPPRESSED
     return _classify_pass_output_completion(

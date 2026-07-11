@@ -95,6 +95,12 @@ class _FakeSettings:
         arxiv_readiness_gate: str = "strict",
     ) -> None:
         self.log_json = False
+        self.llm_model = "test/global-model"
+        self.analyze_llm_model = None
+        self.trends_llm_model = None
+        self.ideas_llm_model = None
+        self.translation_llm_model = None
+        self.llm_output_language = "English"
         self.publish_targets = ["markdown"]
         self.markdown_output_dir = tmp_path / "outputs"
         self.obsidian_vault_path = tmp_path / "vault"
@@ -231,10 +237,13 @@ class _FakeService:
         *,
         run_id: str,
         limit=None,
+        llm_model=None,
         period_start=None,
         period_end=None,
     ):
-        self.calls.append(("analyze", (run_id, limit, period_start, period_end)))
+        self.calls.append(
+            ("analyze", (run_id, limit, period_start, period_end, llm_model))
+        )
         return SimpleNamespace(processed=1, failed=0)
 
     def publish(  # type: ignore[no-untyped-def]
@@ -254,6 +263,7 @@ class _FakeService:
         run_id: str,
         granularity: str,
         anchor_date: date | None = None,
+        llm_model=None,
         backfill: bool = False,
         backfill_mode: str = "missing",
         reuse_existing_corpus: bool = False,
@@ -268,6 +278,7 @@ class _FakeService:
                     backfill,
                     backfill_mode,
                     reuse_existing_corpus,
+                    llm_model,
                 ),
             )
         )
@@ -294,8 +305,9 @@ class _FakeService:
         run_id: str,
         granularity: str,
         anchor_date: date | None = None,
+        llm_model=None,
     ):
-        self.calls.append(("ideas", (run_id, granularity, anchor_date)))
+        self.calls.append(("ideas", (run_id, granularity, anchor_date, llm_model)))
         if granularity == "week":
             period_start = datetime(2026, 3, 16, tzinfo=UTC)
             period_end = datetime(2026, 3, 23, tzinfo=UTC)
@@ -1305,6 +1317,78 @@ def test_run_day_allows_skipping_ingest_analyze_and_publish_for_downstream_repla
     assert translation_calls[0]["period_start"] == datetime(2026, 3, 16, tzinfo=UTC)
     assert translation_calls[0]["period_end"] == datetime(2026, 3, 17, tzinfo=UTC)
     assert fake_repo.finished == [("run-1", True, "succeeded_clean")]
+
+
+def test_run_day_model_override_flows_to_all_llm_workflow_steps(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(tmp_path=tmp_path, localization=_FakeLocalization())
+    fake_repo = _FakeRepo()
+    fake_service = _FakeService()
+    translation_calls: list[dict[str, object]] = []
+
+    def _override(module_name: str, attr_name: str | None):
+        if module_name == "recoleta.translation" and attr_name == "run_translation":
+
+            def _fake_translate(**kwargs):  # type: ignore[no-untyped-def]
+                translation_calls.append(dict(kwargs))
+                return SimpleNamespace(
+                    scanned_total=1,
+                    translated_total=1,
+                    mirrored_total=0,
+                    skipped_total=0,
+                    failed_total=0,
+                    aborted=False,
+                    abort_reason=None,
+                )
+
+            return _fake_translate
+        if (
+            module_name == "recoleta.translation"
+            and attr_name == "materialize_localized_projections"
+        ):
+
+            def _fake_materialize(**kwargs):  # type: ignore[no-untyped-def]
+                _ = kwargs
+
+            return _fake_materialize
+        return None
+
+    _install_workflow_runtime(
+        monkeypatch,
+        settings=fake_settings,
+        repository=fake_repo,
+        service=fake_service,
+        import_symbol_override=_override,
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "run",
+            "day",
+            "--date",
+            "2026-03-16",
+            "--skip",
+            "site-build",
+            "--model",
+            "test/workflow-override",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    analyze_calls = [call for call in fake_service.calls if call[0] == "analyze"]
+    trend_calls = [call for call in fake_service.calls if call[0] == "trends"]
+    idea_calls = [call for call in fake_service.calls if call[0] == "ideas"]
+    assert analyze_calls and analyze_calls[0][1][4] == "test/workflow-override"
+    assert trend_calls and trend_calls[0][1][6] == "test/workflow-override"
+    assert idea_calls and idea_calls[0][1][3] == "test/workflow-override"
+    assert translation_calls
+    assert translation_calls[0]["llm_model"] == "test/workflow-override"
 
 
 def test_run_week_allows_skipping_recursive_day_steps_for_settled_week_replay(
