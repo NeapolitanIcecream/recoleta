@@ -217,6 +217,8 @@ Recoleta data should be treated as four classes:
    - items
    - latest successful analyses
    - deliveries / trend deliveries
+   - canonical pass outputs
+   - workflow step receipts used for idempotency
 
 2. Rebuildable cache
    - document index and chunks
@@ -230,7 +232,7 @@ Recoleta data should be treated as four classes:
    - PDF debug bundles
 
 4. Operational history
-   - runs
+   - unreferenced runs
    - metrics
 
 #### Proposed default retention
@@ -242,6 +244,11 @@ These are starting defaults, not hard product commitments:
 - rebuildable caches: prune only through explicit cache-pruning mode
 
 Authoritative state should be kept until explicitly deleted or superseded by a clear policy.
+
+Run rows referenced by canonical pass outputs, workflow step receipts, or
+unexpired artifacts are retained as small provenance anchors. Their expired
+metrics are still pruned. This preserves referential integrity without treating
+the full run record as canonical history.
 
 One important consequence of the current rebuild policy:
 

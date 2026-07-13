@@ -717,9 +717,7 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
 
 def _max_iso_datetime(values: tuple[str | None, ...]) -> datetime | None:
     candidates = [
-        parsed
-        for value in values
-        if (parsed := _parse_iso_datetime(value)) is not None
+        parsed for value in values if (parsed := _parse_iso_datetime(value)) is not None
     ]
     if not candidates:
         return None
@@ -1074,6 +1072,7 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
     operational_result = request.repository.prune_operational_history_older_than(
         older_than=operational_cutoff,
         dry_run=request.dry_run,
+        artifact_older_than=debug_cutoff,
     )
     chunk_cache_result = _gc_chunk_cache_result(
         repository=request.repository,
@@ -1086,6 +1085,9 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
         "missing_paths": artifact_result.missing_paths,
         "run_rows": operational_result.run_rows,
         "metric_rows": operational_result.metric_rows,
+        "retained_run_rows": operational_result.retained_run_rows,
+        "retained_canonical_run_rows": operational_result.retained_canonical_run_rows,
+        "retained_artifact_run_rows": operational_result.retained_artifact_run_rows,
         "pdf_debug_deleted": _gc_filesystem_count(
             enabled=request.settings is not None,
             handler=lambda: cli._prune_expired_pdf_debug_dirs(
@@ -1130,12 +1132,15 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
 
 def log_gc_completion(*, log: Any, payload: dict[str, Any], dry_run: bool) -> None:
     log.info(
-        "GC completed artifact_rows={} artifact_paths={} missing_artifact_paths={} run_rows={} metric_rows={} pdf_debug_dirs={} document_chunks={} chunk_embeddings={} chunk_fts_rows={} lancedb_tables={} trend_pdfs={} site_outputs={} dry_run={}",
+        "GC completed artifact_rows={} artifact_paths={} missing_artifact_paths={} run_rows={} metric_rows={} retained_run_rows={} retained_canonical_run_rows={} retained_artifact_run_rows={} pdf_debug_dirs={} document_chunks={} chunk_embeddings={} chunk_fts_rows={} lancedb_tables={} trend_pdfs={} site_outputs={} dry_run={}",
         payload["artifact_rows"],
         payload["deleted_paths"],
         payload["missing_paths"],
         payload["run_rows"],
         payload["metric_rows"],
+        payload["retained_run_rows"],
+        payload["retained_canonical_run_rows"],
+        payload["retained_artifact_run_rows"],
         payload["pdf_debug_deleted"],
         payload["document_chunks"],
         payload["chunk_embeddings"],
@@ -1168,6 +1173,9 @@ def render_gc_summary(
         f"{counter_prefix}_missing_artifact_paths={payload['missing_paths']} "
         f"{counter_prefix}_runs={payload['run_rows']} "
         f"{counter_prefix}_metrics={payload['metric_rows']} "
+        f"retained_runs={payload['retained_run_rows']} "
+        f"retained_canonical_runs={payload['retained_canonical_run_rows']} "
+        f"retained_artifact_runs={payload['retained_artifact_run_rows']} "
         f"{counter_prefix}_pdf_debug_dirs={payload['pdf_debug_deleted']} "
         f"{counter_prefix}_document_chunks={payload['document_chunks']} "
         f"{counter_prefix}_chunk_embeddings={payload['chunk_embeddings']} "
@@ -1431,11 +1439,14 @@ def _mismatch_segment(freshness: dict[str, Any]) -> str:
     mismatches = freshness.get("mismatches", [])
     if not mismatches:
         return "none"
-    return " ".join(
-        str(mismatch.get("code") or "unknown")
-        for mismatch in mismatches
-        if isinstance(mismatch, dict)
-    ) or "none"
+    return (
+        " ".join(
+            str(mismatch.get("code") or "unknown")
+            for mismatch in mismatches
+            if isinstance(mismatch, dict)
+        )
+        or "none"
+    )
 
 
 def render_freshness_output(

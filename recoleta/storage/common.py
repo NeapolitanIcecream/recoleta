@@ -148,6 +148,9 @@ class ArtifactPruneResult:
 class OperationalPruneResult:
     run_rows: int = 0
     metric_rows: int = 0
+    retained_run_rows: int = 0
+    retained_canonical_run_rows: int = 0
+    retained_artifact_run_rows: int = 0
 
 
 @dataclass(frozen=True, slots=True)
