@@ -492,7 +492,7 @@ def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.service as pipeline_service
 
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -525,7 +525,7 @@ def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
             )
         return "<html><body><p>mock html</p></body></html>"
 
-    monkeypatch.setattr(pipeline, "fetch_url_html", flaky_fetch_url_html)
+    monkeypatch.setattr(pipeline_service, "fetch_url_html", flaky_fetch_url_html)
 
     service.enrich(run_id="run-retryable-enrich", limit=10)
 
@@ -1550,7 +1550,7 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     settings, repository = _build_runtime()
 
@@ -1593,13 +1593,13 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
     def fail_fetch_url_html(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("html fetch should not be used")
 
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fake_fetch_url_bytes)
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", fake_fetch_url_bytes)
     monkeypatch.setattr(
-        pipeline,
+        enrich_stage,
         "extract_pdf_text",
         lambda _bytes, **_: "mock pdf text",  # noqa: ARG005
     )
-    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fail_fetch_url_html)
 
     service = PipelineService(
         settings=settings,
@@ -1634,7 +1634,7 @@ def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.service as pipeline_service
 
     monkeypatch.setenv(
         "SOURCES",
@@ -1681,13 +1681,13 @@ def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
     def fail_fetch_url_html(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("html fetch should not be used")
 
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fake_fetch_url_bytes)
+    monkeypatch.setattr(pipeline_service, "fetch_url_bytes", fake_fetch_url_bytes)
     monkeypatch.setattr(
-        pipeline,
+        pipeline_service,
         "extract_arxiv_latex_source",
         lambda _bytes: "\\section{Intro}\nAgents are useful.",  # noqa: ARG005
     )
-    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(pipeline_service, "fetch_url_html", fail_fetch_url_html)
 
     service = PipelineService(
         settings=settings,
@@ -1723,7 +1723,7 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     monkeypatch.setenv(
         "SOURCES",
@@ -1770,18 +1770,18 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
     def fail_fetch_url_bytes(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("binary fetch should not be used")
 
-    monkeypatch.setattr(pipeline, "fetch_url_html", fake_fetch_url_html)
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fail_fetch_url_bytes)
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fake_fetch_url_html)
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", fail_fetch_url_bytes)
     monkeypatch.setattr(
-        pipeline,
+        enrich_stage,
         "extract_html_document_cleaned_with_references",
         lambda _html, **_: ("<main><p>clean html body</p></main>", None, {}),  # noqa: ARG005
     )
     monkeypatch.setattr(
-        pipeline, "extract_html_maintext", lambda _html: "clean text body"
+        enrich_stage, "extract_html_maintext", lambda _html: "clean text body"
     )  # noqa: ARG005
     monkeypatch.setattr(
-        pipeline,
+        enrich_stage,
         "convert_html_document_to_markdown",
         lambda _html, **_: ("clean html body", 3, None),  # noqa: ARG005
     )
@@ -1825,7 +1825,7 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     monkeypatch.setenv(
         "SOURCES",
@@ -1858,8 +1858,8 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
     def fail_if_binary_fetch_used(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("strict mode must not fallback to binary/pdf fetch")
 
-    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fail_if_binary_fetch_used)
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", fail_if_binary_fetch_used)
 
     service.enrich(run_id="run-arxiv-strict-failure", limit=10)
 

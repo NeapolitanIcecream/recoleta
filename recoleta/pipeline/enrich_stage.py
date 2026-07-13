@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Protocol, cast
@@ -17,6 +18,14 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from recoleta.extract import (
+    convert_html_document_to_markdown,
+    extract_html_document_cleaned_with_references,
+    extract_html_maintext,
+    extract_pdf_text,
+    fetch_url_bytes,
+    fetch_url_html,
+)
 from recoleta.pipeline.ingest_stage import RebalanceItemsRequest
 from recoleta.types import MetricPoint
 
@@ -490,7 +499,7 @@ def ensure_pdf_content(
         raise ValueError("missing pdf url")
 
     fetch_started = time.perf_counter()
-    pdf_bytes = _pipeline_fetch_url_bytes()(request.client, pdf_url)
+    pdf_bytes = fetch_url_bytes(request.client, pdf_url)
     if request.diag is not None:
         request.diag["fetch_ms"] = request.diag.get("fetch_ms", 0) + int(
             (time.perf_counter() - fetch_started) * 1000
@@ -501,7 +510,7 @@ def ensure_pdf_content(
 
     extract_started = time.perf_counter()
     pdf_diag: dict[str, Any] = {}
-    extracted_pdf = _pipeline_extract_pdf_text()(pdf_bytes, diag=pdf_diag)
+    extracted_pdf = extract_pdf_text(pdf_bytes, diag=pdf_diag)
     if request.diag is not None:
         request.diag["extract_ms"] = request.diag.get("extract_ms", 0) + int(
             (time.perf_counter() - extract_started) * 1000
@@ -984,7 +993,7 @@ class _EnrichStageRunner:
             stats.parallel_html_maintext_max_workers = (
                 self.html_maintext_max_concurrency if html_parallel_items else 0
             )
-            with _pipeline_progress()(
+            with Progress(
                 TextColumn("{task.description}"),
                 BarColumn(),
                 TaskProgressColumn(),
@@ -1092,14 +1101,14 @@ class _EnrichStageRunner:
             created_clients=[],
             created_lock=threading.Lock(),
         )
-        executor = _pipeline_thread_pool_executor()(max_workers=max_workers)
+        executor = ThreadPoolExecutor(max_workers=max_workers)
         futures = {
             executor.submit(self._parallel_worker, parallel_state, item): item
             for item in items
         }
         interrupted = False
         try:
-            for future in _pipeline_as_completed()(futures):
+            for future in as_completed(futures):
                 result = self._parallel_result(future)
                 self._consume_result(
                     _RunnerConsumeRequest(
@@ -1284,7 +1293,7 @@ class _EnrichStageRunner:
             if remaining <= 0:
                 break
             try:
-                _, not_done = _pipeline_wait()(futures, timeout=min(0.25, remaining))
+                _, not_done = wait(futures, timeout=min(0.25, remaining))
             except KeyboardInterrupt:
                 continue
             if not not_done:
@@ -1410,7 +1419,7 @@ class _ArxivHtmlDocumentContext:
         if callable(self.request.arxiv_html_throttle):
             self.request.arxiv_html_throttle()
         fetch_started = time.perf_counter()
-        html = _pipeline_fetch_url_html()(self.request.client, url)
+        html = fetch_url_html(self.request.client, url)
         if self.request.diag is not None:
             self.request.diag["fetch_ms"] = self.request.diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000
@@ -1434,7 +1443,7 @@ class _ArxivHtmlDocumentContext:
         )
         if markdown is not None:
             pending_upserts["html_document_md"] = markdown
-        extracted_maintext = _pipeline_extract_html_maintext()(html)
+        extracted_maintext = extract_html_maintext(html)
         if extracted_maintext is not None:
             pending_upserts["html_maintext"] = extracted_maintext
         self._log_cleanup_stats(stats=stats)
@@ -1487,7 +1496,7 @@ class _ArxivHtmlDocumentContext:
     ) -> tuple[str | None, str | None, dict[str, Any]]:
         cleanup_started = time.perf_counter()
         cleaned_document, references_html, stats = (
-            _pipeline_extract_html_document_cleaned_with_references()(html)
+            extract_html_document_cleaned_with_references(html)
         )
         cleanup_elapsed_ms = int((time.perf_counter() - cleanup_started) * 1000)
         if self.request.diag is not None:
@@ -1506,7 +1515,7 @@ class _ArxivHtmlDocumentContext:
         pending_upserts: dict[str, str],
         existing_document: bool,
     ) -> str | None:
-        markdown, elapsed_ms, error = _pipeline_convert_html_document_to_markdown()(
+        markdown, elapsed_ms, error = convert_html_document_to_markdown(
             html_document,
             diag=self.request.diag,
         )
@@ -1586,63 +1595,3 @@ def _build_arxiv_html_throttle(
     if arxiv_rps <= 0:
         return None
     return _ArxivHtmlRateLimiter(requests_per_second=arxiv_rps).acquire
-
-
-def _pipeline_progress() -> type[Progress]:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.Progress
-
-
-def _pipeline_thread_pool_executor() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.ThreadPoolExecutor
-
-
-def _pipeline_as_completed() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.as_completed
-
-
-def _pipeline_wait() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.wait
-
-
-def _pipeline_fetch_url_bytes() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.fetch_url_bytes
-
-
-def _pipeline_fetch_url_html() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.fetch_url_html
-
-
-def _pipeline_extract_pdf_text() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.extract_pdf_text
-
-
-def _pipeline_extract_html_maintext() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.extract_html_maintext
-
-
-def _pipeline_convert_html_document_to_markdown() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.convert_html_document_to_markdown
-
-
-def _pipeline_extract_html_document_cleaned_with_references() -> Any:
-    from recoleta import pipeline as pipeline_module
-
-    return pipeline_module.extract_html_document_cleaned_with_references

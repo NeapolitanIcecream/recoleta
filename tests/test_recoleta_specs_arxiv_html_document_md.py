@@ -58,10 +58,10 @@ def test_enrich_arxiv_html_document_writes_html_document_md(
         headers={"Content-Type": "text/html; charset=utf-8"},
     )
 
-    import recoleta.pipeline as pipeline_module
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     monkeypatch.setattr(
-        pipeline_module,
+        enrich_stage,
         "convert_html_document_to_markdown",
         lambda html, **_: ("# Title\n\nHello world.\n", 7, None),  # noqa: ARG005
     )
@@ -160,7 +160,7 @@ def test_enrich_arxiv_html_document_records_pandoc_warning_metrics(
         headers={"Content-Type": "text/html; charset=utf-8"},
     )
 
-    import recoleta.pipeline as pipeline_module
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     def fake_convert_html_document_to_markdown(
         html: str, **kwargs: object
@@ -174,7 +174,7 @@ def test_enrich_arxiv_html_document_records_pandoc_warning_metrics(
         return "# Title\n\nHello world.\n", 9, None
 
     monkeypatch.setattr(
-        pipeline_module,
+        enrich_stage,
         "convert_html_document_to_markdown",
         fake_convert_html_document_to_markdown,
     )
@@ -238,7 +238,7 @@ def test_enrich_arxiv_html_document_records_pandoc_failure_metric_without_failin
         headers={"Content-Type": "text/html; charset=utf-8"},
     )
 
-    import recoleta.pipeline as pipeline_module
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     def fake_convert_html_document_to_markdown(
         html: str, **kwargs: object
@@ -250,7 +250,7 @@ def test_enrich_arxiv_html_document_records_pandoc_failure_metric_without_failin
         return None, 11, "pandoc_convert_failed exit_code=64"
 
     monkeypatch.setattr(
-        pipeline_module,
+        enrich_stage,
         "convert_html_document_to_markdown",
         fake_convert_html_document_to_markdown,
     )
@@ -290,7 +290,7 @@ def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
     )
 
     import httpx
-    import recoleta.pipeline as pipeline_module
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     arxiv_id = "2345.6791v1"
 
@@ -299,12 +299,12 @@ def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
         response = httpx.Response(404, request=request, text="not found")
         raise httpx.HTTPStatusError("not found", request=request, response=response)
 
-    monkeypatch.setattr(pipeline_module, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fail_fetch_url_html)
     monkeypatch.setattr(
-        pipeline_module, "fetch_url_bytes", lambda *_args, **_kwargs: b"%PDF-1.7"
+        enrich_stage, "fetch_url_bytes", lambda *_args, **_kwargs: b"%PDF-1.7"
     )
     monkeypatch.setattr(
-        pipeline_module,
+        enrich_stage,
         "extract_pdf_text",
         lambda *_args, **_kwargs: "pdf recovered",
     )
@@ -361,7 +361,7 @@ def test_enrich_arxiv_html_document_reuses_existing_markdown_without_cleanup(
         ),
     )
 
-    import recoleta.pipeline as pipeline_module
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     arxiv_id = "3456.7890v1"
     _, repository, service = _build_service(configured_env)
@@ -394,7 +394,7 @@ def test_enrich_arxiv_html_document_reuses_existing_markdown_without_cleanup(
         raise AssertionError("cleanup should be skipped when html_document_md exists")
 
     monkeypatch.setattr(
-        pipeline_module,
+        enrich_stage,
         "extract_html_document_cleaned_with_references",
         fail_cleanup,
     )
