@@ -17,6 +17,7 @@ from recoleta.passes.trend_ideas import (
     build_trend_ideas_pass_output,
     build_trend_snapshot_pack_md,
     normalize_trend_ideas_payload,
+    normalize_trend_ideas_payload_with_stats,
 )
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "build_trend_snapshot_pack_md",
     "build_trend_synthesis_pass_output",
     "normalize_trend_ideas_payload",
+    "normalize_trend_ideas_payload_with_stats",
 ]

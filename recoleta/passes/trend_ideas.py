@@ -181,30 +181,97 @@ def normalize_trend_ideas_payload(
     payload: TrendIdeasPayload,
     *,
     max_ideas: int = 3,
+    min_distinct_docs: int = 1,
+    allowed_doc_ids: set[int] | None = None,
+    read_doc_ids: set[int] | None = None,
 ) -> TrendIdeasPayload:
+    normalized, _ = normalize_trend_ideas_payload_with_stats(
+        payload,
+        max_ideas=max_ideas,
+        min_distinct_docs=min_distinct_docs,
+        allowed_doc_ids=allowed_doc_ids,
+        read_doc_ids=read_doc_ids,
+    )
+    return normalized
+
+
+def normalize_trend_ideas_payload_with_stats(
+    payload: TrendIdeasPayload,
+    *,
+    max_ideas: int = 3,
+    min_distinct_docs: int = 1,
+    allowed_doc_ids: set[int] | None = None,
+    read_doc_ids: set[int] | None = None,
+) -> tuple[TrendIdeasPayload, dict[str, int]]:
+    normalized_max_ideas = max(0, int(max_ideas or 0))
+    normalized_min_docs = max(1, int(min_distinct_docs or 0))
+    normalized_allowed_doc_ids = (
+        {int(doc_id) for doc_id in allowed_doc_ids if int(doc_id) > 0}
+        if allowed_doc_ids is not None
+        else None
+    )
+    normalized_read_doc_ids = (
+        {int(doc_id) for doc_id in read_doc_ids if int(doc_id) > 0}
+        if read_doc_ids is not None
+        else None
+    )
+    stats = {
+        "candidates_total": 0,
+        "retained_total": 0,
+        "dropped_duplicate_title_total": 0,
+        "dropped_no_evidence_total": 0,
+        "dropped_non_item_ref_total": 0,
+        "dropped_unread_ref_total": 0,
+        "dropped_duplicate_doc_ref_total": 0,
+        "dropped_insufficient_distinct_docs_total": 0,
+        "dropped_over_limit_total": 0,
+        "max_ideas": normalized_max_ideas,
+        "min_distinct_docs": normalized_min_docs,
+    }
     seen_titles: set[str] = set()
     normalized_ideas: list[TrendIdea] = []
     for idea in payload.ideas or []:
+        stats["candidates_total"] += 1
         title_key = " ".join(str(idea.title or "").split()).strip().lower()
         if not title_key or title_key in seen_titles:
+            stats["dropped_duplicate_title_total"] += 1
             continue
-        seen_titles.add(title_key)
-        seen_refs: set[tuple[int, int]] = set()
+        if not list(idea.evidence_refs or []):
+            stats["dropped_no_evidence_total"] += 1
+            continue
+        seen_doc_ids: set[int] = set()
         evidence_refs: list[TrendIdeaEvidenceRef] = []
         for ref in idea.evidence_refs or []:
-            key = (int(ref.doc_id), int(ref.chunk_index))
-            if key in seen_refs:
+            doc_id = int(ref.doc_id)
+            if (
+                normalized_allowed_doc_ids is not None
+                and doc_id not in normalized_allowed_doc_ids
+            ):
+                stats["dropped_non_item_ref_total"] += 1
                 continue
-            seen_refs.add(key)
+            if (
+                normalized_read_doc_ids is not None
+                and doc_id not in normalized_read_doc_ids
+            ):
+                stats["dropped_unread_ref_total"] += 1
+                continue
+            if doc_id in seen_doc_ids:
+                stats["dropped_duplicate_doc_ref_total"] += 1
+                continue
+            seen_doc_ids.add(doc_id)
             evidence_refs.append(ref)
-        if not evidence_refs:
+        if len(evidence_refs) < normalized_min_docs:
+            stats["dropped_insufficient_distinct_docs_total"] += 1
             continue
+        if len(normalized_ideas) >= normalized_max_ideas:
+            stats["dropped_over_limit_total"] += 1
+            continue
+        seen_titles.add(title_key)
         normalized_ideas.append(
             idea.model_copy(update={"evidence_refs": evidence_refs})
         )
-        if len(normalized_ideas) >= max(0, int(max_ideas or 0)):
-            break
-    return payload.model_copy(update={"ideas": normalized_ideas})
+    stats["retained_total"] = len(normalized_ideas)
+    return payload.model_copy(update={"ideas": normalized_ideas}), stats
 
 
 def build_trend_snapshot_pack_md(
@@ -328,4 +395,5 @@ __all__ = [
     "build_trend_ideas_pass_output",
     "build_trend_snapshot_pack_md",
     "normalize_trend_ideas_payload",
+    "normalize_trend_ideas_payload_with_stats",
 ]

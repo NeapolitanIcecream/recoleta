@@ -15,6 +15,11 @@ from recoleta.idea_projection import (
     IdeaProjectionRequest,
     persist_idea_document_projection,
 )
+from recoleta.pipeline.ideas_quality import (
+    build_prior_ideas_pack_md,
+    item_document_ids,
+    successful_read_doc_ids,
+)
 from recoleta.pipeline.metrics import metric_token
 from recoleta.pipeline.pass_runner import (
     PassDefinition,
@@ -31,7 +36,7 @@ from recoleta.passes import (
     build_suppressed_trend_ideas_payload,
     build_trend_ideas_pass_output,
     build_trend_snapshot_pack_md,
-    normalize_trend_ideas_payload,
+    normalize_trend_ideas_payload_with_stats,
 )
 from recoleta.rag import ideas_agent
 from recoleta.rag.vector_store import LanceVectorStore, embedding_table_name
@@ -68,6 +73,8 @@ class IdeasGenerationRequest:
     trend_payload: TrendPayload
     trend_snapshot_pack_md: str
     upstream_empty_corpus: bool
+    prior_ideas_pack_md: str
+    prior_ideas_pack_stats: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +94,7 @@ class IdeasDebugArtifactRequest:
     upstream_pass_output_id: int
     status: PassStatus
     trend_snapshot_pack_md: str
+    prior_ideas_pack_md: str
     ideas_payload: TrendIdeasPayload
     debug: dict[str, Any]
 
@@ -264,6 +272,8 @@ def _empty_corpus_ideas_result(
             "tool_calls_total": 0,
             "tool_call_breakdown": {},
             "estimated_cost_usd": 0.0,
+            "prior_ideas_pack_chars": 0,
+            "prior_ideas_pack_stats": dict(request.prior_ideas_pack_stats),
         },
     )
 
@@ -311,6 +321,7 @@ def _primary_ideas_payload(
         period_end=request.context.period_end,
         trend_payload=request.trend_payload,
         trend_snapshot_pack_md=request.trend_snapshot_pack_md,
+        prior_ideas_pack_md=request.prior_ideas_pack_md,
         rag_sources=trends.rag_sources_for_granularity(
             request.context.normalized_granularity
         ),
@@ -318,9 +329,41 @@ def _primary_ideas_payload(
         metric_namespace=_trend_metric_name("pipeline.trends.pass.ideas"),
         llm_connection=request.context.service._llm_connection,
     )
+    normalized_debug = debug if isinstance(debug, dict) else {}
+    read_doc_ids, trace_stats = successful_read_doc_ids(debug=normalized_debug)
+    item_doc_ids = item_document_ids(
+        repository=request.context.service.repository,
+        doc_ids={
+            int(ref.doc_id)
+            for idea in list(payload.ideas or [])
+            for ref in list(idea.evidence_refs or [])
+        },
+    )
+    read_item_doc_ids = read_doc_ids & item_doc_ids
+    normalized_payload, normalization_stats = (
+        normalize_trend_ideas_payload_with_stats(
+            payload,
+            min_distinct_docs=2,
+            allowed_doc_ids=item_doc_ids,
+            read_doc_ids=read_item_doc_ids,
+        )
+    )
+    normalized_debug["normalization"] = normalization_stats
+    normalized_debug["evidence_quality_gate"] = {
+        "policy": "two_distinct_read_item_documents",
+        **trace_stats,
+        "read_doc_ids": sorted(read_item_doc_ids),
+        "read_doc_ids_total": len(read_item_doc_ids),
+    }
+    normalized_debug["prior_ideas_pack_stats"] = dict(
+        request.prior_ideas_pack_stats
+    )
+    normalized_debug.setdefault(
+        "prior_ideas_pack_chars", len(str(request.prior_ideas_pack_md or ""))
+    )
     return (
-        normalize_trend_ideas_payload(payload),
-        debug if isinstance(debug, dict) else {},
+        normalized_payload,
+        normalized_debug,
         request.context.service.settings.llm_output_language,
     )
 
@@ -638,10 +681,34 @@ def _record_ideas_usage_metrics(*, record_metric: Any, debug: dict[str, Any]) ->
             "trend_snapshot_pack_chars",
             "chars",
         ),
+        (
+            "pipeline.trends.pass.ideas.prior_ideas_pack.chars",
+            "prior_ideas_pack_chars",
+            "chars",
+        ),
     ):
         value = debug.get(debug_key)
         if isinstance(value, (int, float)):
             record_metric(name=metric_name, value=float(value), unit=unit)
+
+    normalization = debug.get("normalization")
+    if isinstance(normalization, dict):
+        for metric_suffix, debug_key in (
+            ("retained_total", "retained_total"),
+            ("dropped_non_item_ref_total", "dropped_non_item_ref_total"),
+            ("dropped_unread_ref_total", "dropped_unread_ref_total"),
+            (
+                "dropped_insufficient_distinct_docs_total",
+                "dropped_insufficient_distinct_docs_total",
+            ),
+        ):
+            value = normalization.get(debug_key)
+            if isinstance(value, (int, float)):
+                record_metric(
+                    name=f"pipeline.trends.pass.ideas.quality_gate.{metric_suffix}",
+                    value=float(value),
+                    unit="count",
+                )
 
     cost_usd = debug.get("estimated_cost_usd")
     if isinstance(cost_usd, (int, float)):
@@ -696,6 +763,7 @@ def _record_ideas_debug_artifact(
         "upstream_pass_output_id": normalized_request.upstream_pass_output_id,
         "status": normalized_request.status.value,
         "trend_snapshot_pack_md": normalized_request.trend_snapshot_pack_md,
+        "prior_ideas_pack_md": normalized_request.prior_ideas_pack_md,
         "payload": normalized_request.ideas_payload.model_dump(mode="json"),
         "debug": normalized_request.debug,
     }
@@ -765,12 +833,28 @@ def execute_ideas_stage(
         log=context.log,
         record_metric=context.record_metric,
     )
+    if upstream.upstream_empty_corpus:
+        prior_ideas_pack_md = ""
+        prior_ideas_pack_stats: dict[str, Any] = {
+            "status": "skipped_empty_corpus",
+            "chars": 0,
+            "retained_entries_total": 0,
+        }
+    else:
+        prior_ideas_pack_md, prior_ideas_pack_stats = build_prior_ideas_pack_md(
+            repository=service.repository,
+            granularity=context.normalized_granularity,
+            period_start=context.period_start,
+            period_end=context.period_end,
+        )
     payload, debug = _generate_ideas_payload(
         IdeasGenerationRequest(
             context=context,
             trend_payload=upstream.trend_payload,
             trend_snapshot_pack_md=upstream.trend_snapshot_pack_md,
             upstream_empty_corpus=upstream.upstream_empty_corpus,
+            prior_ideas_pack_md=prior_ideas_pack_md,
+            prior_ideas_pack_stats=prior_ideas_pack_stats,
         )
     )
     status = _ideas_status(payload)
@@ -802,6 +886,7 @@ def execute_ideas_stage(
             upstream_pass_output_id=upstream.upstream_pass_output_id,
             status=status,
             trend_snapshot_pack_md=upstream.trend_snapshot_pack_md,
+            prior_ideas_pack_md=prior_ideas_pack_md,
             ideas_payload=payload,
             debug=debug,
         )
@@ -869,6 +954,7 @@ def _ideas_status(payload: TrendIdeasPayload) -> PassStatus:
 
 def _run_ideas_pass_definition(request: IdeasPassDefinitionRequest) -> Any:
     debug = dict(request.debug)
+    debug.pop("raw_tool_trace", None)
     debug["workflow_freshness"] = build_trend_ideas_freshness(
         settings=request.context.service.settings,
         granularity=request.context.normalized_granularity,

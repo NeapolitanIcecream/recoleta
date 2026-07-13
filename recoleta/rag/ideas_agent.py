@@ -130,6 +130,7 @@ class TrendIdeasGenerationRequest:
     period_end: datetime
     trend_payload: TrendPayload
     trend_snapshot_pack_md: str
+    prior_ideas_pack_md: str | None = None
     output_language: str | None = None
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
@@ -164,6 +165,9 @@ def _coerce_trend_ideas_generation_request(
         period_end=values["period_end"],
         trend_payload=values["trend_payload"],
         trend_snapshot_pack_md=str(values["trend_snapshot_pack_md"]),
+        prior_ideas_pack_md=(
+            str(values.get("prior_ideas_pack_md") or "").strip() or None
+        ),
         rag_sources=values.get("rag_sources"),
         include_debug=bool(values.get("include_debug", False)),
         metric_namespace=str(
@@ -201,22 +205,24 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Return a TrendIdeasPayload."
     )
     base += (
-        " Look for concrete build, workflow, evaluation, or adoption changes that"
-        " the local evidence now makes credible: a buildable tool, a workflow"
-        " change, a missing support layer, or a newly practical applied direction."
+        " An idea is a non-obvious, evidence-backed hypothesis derived from a"
+        " combination, tension, or unresolved gap between at least two independent"
+        " item documents. Direct adoption or productization of one paper is not enough."
     )
     base += (
         " Avoid generic advice such as 'build an AI platform' or 'make an assistant'."
-        " Each idea must identify a concrete build, test, or adoption change for a"
-        " specific user or workflow during analysis."
+        " Each idea must name the specific user and job or workflow, explain the"
+        " cross-source novelty basis, and propose a concrete build or evaluation change."
     )
     base += (
         " Emit 0 to 3 ideas total, ordered by confidence and practical upside."
         " Use ordering to express priority; do not expose priority as tier labels."
     )
     base += (
-        " Every emitted idea must include at least one evidence_refs entry with"
-        " concrete doc_id and chunk_index values grounded in the local corpus."
+        " Every emitted idea must cite at least two distinct item doc_id values that"
+        " you actually inspected with get_doc, get_doc_bundle, or read_chunk."
+        " Multiple chunks from one document still count as one source. Search results"
+        " and trend documents may guide discovery but do not count as evidence."
     )
     base += (
         " If the evidence is too weak, return an empty ideas list and explain that"
@@ -248,9 +254,15 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " Use internal reasoning to judge whether a concrete case now has enough"
-        " evidence, who would care first, what cheap check would validate it, and what"
-        " would make it too weak to publish."
+        " evidence, who would care first, which source facts support it, what synthesis"
+        " or inference is new, and what would make it too weak to publish."
         " Do not expose those axes as separate reader-facing fields."
+    )
+    base += (
+        " In ordinary prose, separate source facts from your synthesis or inference."
+        " End with a cheap, falsifiable first test and an explicit kill threshold: a"
+        " measurable outcome that would cause the reader to stop or revise the idea."
+        " Do not invent a threshold that the evidence cannot motivate."
     )
     base += (
         " Do not use internal rubric labels in public prose. Convert those checks into"
@@ -272,6 +284,10 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     base += (
         " Use the supplied evidence pack as evidence and theme input, but do not mirror"
         " its title or summary phrasing. Write from the underlying evidence."
+    )
+    base += (
+        " When prior_ideas_pack_md is present, use it only to reject ideas that are"
+        " semantically the same as prior output. Never cite that pack as evidence."
     )
     base += (
         " Start with search_hybrid for broad discovery, then use get_doc_bundle"
@@ -308,10 +324,11 @@ def build_trend_ideas_prompt_payload(
     period_end: datetime,
     trend_payload: TrendPayload,
     trend_snapshot_pack_md: str,
+    prior_ideas_pack_md: str | None = None,
     rag_sources: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "task": "Draft up to three concrete short pieces from the supplied evidence pack.",
+        "task": "Propose up to three non-obvious, cross-source ideas from the supplied evidence pack.",
         "granularity": granularity,
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
@@ -320,6 +337,8 @@ def build_trend_ideas_prompt_payload(
         "trend_snapshot_pack_md": trend_snapshot_pack_md,
         "notes": _trend_ideas_prompt_notes(),
     }
+    if str(prior_ideas_pack_md or "").strip():
+        payload["prior_ideas_pack_md"] = str(prior_ideas_pack_md).strip()
     if rag_sources is not None:
         payload["rag_sources"] = rag_sources
     return payload
@@ -327,12 +346,13 @@ def build_trend_ideas_prompt_payload(
 
 def _trend_ideas_prompt_notes() -> list[str]:
     return [
-        "Use tools to verify and sharpen candidate ideas against the active local corpus.",
         "Prefer 0-3 ideas; omit weak ideas instead of filling the list.",
         "Use idea ordering to express priority; do not emit best-bet or alternate labels.",
         "During analysis, decide what concrete build, test, or workflow change the piece covers, who would care first, what new evidence supports it, and what cheap check would validate it.",
         "Name the concrete operational pain or adoption blocker directly instead of using generic platform language.",
-        "Use evidence_refs to point to the strongest supporting documents.",
+        "Use evidence_refs to cite at least two distinct item documents actually read for each idea; multiple chunks from one document count once.",
+        "Treat prior_ideas_pack_md only as a deduplication exclusion list; never cite it as evidence.",
+        "Each retained idea needs a specific user and job, a cross-source novelty basis, a falsifiable first test, and an observable kill threshold.",
         "Do not restate the trend summary as the final output.",
         "Do not let task labels or collection labels leak into public prose.",
         "Do not coin new umbrella terms or marketing-style labels.",
@@ -586,6 +606,7 @@ def generate_trend_ideas_payload(
             period_end=resolved_request.period_end,
             trend_payload=resolved_request.trend_payload,
             trend_snapshot_pack_md=resolved_request.trend_snapshot_pack_md,
+            prior_ideas_pack_md=resolved_request.prior_ideas_pack_md,
             rag_sources=resolved_request.rag_sources,
         ),
         ensure_ascii=False,
@@ -618,6 +639,9 @@ def generate_trend_ideas_payload(
         "prompt_chars": len(prompt),
         "trend_snapshot_pack_chars": len(
             str(resolved_request.trend_snapshot_pack_md or "")
+        ),
+        "prior_ideas_pack_chars": len(
+            str(resolved_request.prior_ideas_pack_md or "")
         ),
         "include_debug": bool(resolved_request.include_debug),
     }

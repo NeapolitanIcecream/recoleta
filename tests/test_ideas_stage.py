@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
 
@@ -57,12 +57,19 @@ def _persist_trend_synthesis_pass_output(
     return int(row.id)
 
 
-def _seed_item_document(*, repository, published_at: datetime) -> int:
+def _seed_item_document(
+    *, repository, published_at: datetime, source_item_id: str
+) -> int:
+    title = (
+        "Verifier Budget Calibration for Software Agents"
+        if source_item_id.endswith("-a")
+        else "Human Escalation Protocols in Repository Automation"
+    )
     draft = ItemDraft.from_values(
         source="rss",
-        source_item_id="ideas-evidence-paper",
-        canonical_url="https://example.com/ideas-evidence-paper",
-        title="Grounded Agent Runtime for Long-Horizon Evaluation",
+        source_item_id=source_item_id,
+        canonical_url=f"https://example.com/{source_item_id}",
+        title=title,
         authors=["Alice"],
         published_at=published_at,
     )
@@ -104,6 +111,58 @@ def _seed_item_document(*, repository, published_at: datetime) -> int:
     return int(doc.id)
 
 
+def _seed_item_documents(*, repository, published_at: datetime) -> tuple[int, int]:
+    return (
+        _seed_item_document(
+            repository=repository,
+            published_at=published_at,
+            source_item_id="ideas-evidence-paper-a",
+        ),
+        _seed_item_document(
+            repository=repository,
+            published_at=published_at,
+            source_item_id="ideas-evidence-paper-b",
+        ),
+    )
+
+
+def _read_trace(*doc_ids: int) -> dict[str, object]:
+    events: list[dict[str, object]] = []
+    for doc_id in doc_ids:
+        call_id = f"read-{doc_id}"
+        events.extend(
+            [
+                {
+                    "kind": "tool-call",
+                    "tool_name": "get_doc_bundle",
+                    "tool_call_id": call_id,
+                    "args": {"doc_id": doc_id},
+                },
+                {
+                    "kind": "tool-return",
+                    "tool_name": "get_doc_bundle",
+                    "tool_call_id": call_id,
+                    "content": {"bundle": {"doc": {"doc_id": doc_id}}},
+                },
+            ]
+        )
+    return {
+        "status": "captured",
+        "events": events,
+        "events_total": len(events),
+        "tool_calls_total": len(doc_ids),
+        "events_truncated": False,
+    }
+
+
+def _generation_debug(*doc_ids: int) -> dict[str, object]:
+    return {
+        "tool_calls_total": len(doc_ids),
+        "tool_call_breakdown": {"get_doc_bundle": len(doc_ids)},
+        "raw_tool_trace": _read_trace(*doc_ids),
+    }
+
+
 def _trend_payload(
     *, period_start: datetime, period_end: datetime, evidence_doc_id: int
 ) -> TrendPayload:
@@ -136,7 +195,7 @@ def _ideas_payload(
     *,
     period_start: datetime,
     period_end: datetime,
-    evidence_doc_id: int,
+    evidence_doc_ids: tuple[int, int],
     with_evidence: bool = True,
 ) -> TrendIdeasPayload:
     return TrendIdeasPayload.model_validate(
@@ -155,10 +214,11 @@ def _ideas_payload(
                     "evidence_refs": (
                         [
                             {
-                                "doc_id": evidence_doc_id,
+                                "doc_id": doc_id,
                                 "chunk_index": 0,
-                                "reason": "Shows grounded runtime traces for evaluation.",
+                                "reason": "Supports the cross-source runtime hypothesis.",
                             }
+                            for doc_id in evidence_doc_ids
                         ]
                         if with_evidence
                         else []
@@ -225,9 +285,27 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
 
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
-    evidence_doc_id = _seed_item_document(
+    evidence_doc_ids = _seed_item_documents(
         repository=repository,
         published_at=period_start + (period_end - period_start) / 2,
+    )
+    evidence_doc_id = evidence_doc_ids[0]
+    prior_doc = repository.upsert_document_for_idea(
+        granularity="day",
+        period_start=period_start - timedelta(days=1),
+        period_end=period_start,
+        title="Prior agent controls",
+    )
+    assert prior_doc.id is not None
+    repository.upsert_document_chunk(
+        doc_id=int(prior_doc.id),
+        chunk_index=1,
+        kind="content",
+        text_value=(
+            "Title: Earlier release gate\n"
+            "Content: Gate agent prompts before deployment."
+        ),
+        source_content_type="trend_idea",
     )
     upstream_pass_output_id = _persist_trend_synthesis_pass_output(
         repository=repository,
@@ -246,13 +324,14 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
 
     def _fake_generate_ideas_payload(**kwargs):  # type: ignore[no-untyped-def]
         assert kwargs["llm_model"] == "test/ideas-stage-model"
+        assert "Earlier release gate" in kwargs["prior_ideas_pack_md"]
         return (
             _ideas_payload(
                 period_start=period_start,
                 period_end=period_end,
-                evidence_doc_id=evidence_doc_id,
+                evidence_doc_ids=evidence_doc_ids,
             ),
-            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+            _generation_debug(*evidence_doc_ids),
         )
 
     def _fake_generate_bundle_title(**kwargs):  # type: ignore[no-untyped-def]
@@ -312,6 +391,16 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
         assert freshness["components"]["upstream_pass_output_id"] == upstream_pass_output_id
         assert freshness["components"]["llm_model"] == "test/ideas-stage-model"
         assert freshness["key"]
+        assert "raw_tool_trace" not in diagnostics
+        assert diagnostics["evidence_quality_gate"] == {
+            "policy": "two_distinct_read_item_documents",
+            "trace_status": "captured",
+            "trace_events_truncated": False,
+            "read_doc_ids": sorted(evidence_doc_ids),
+            "read_doc_ids_total": 2,
+        }
+        assert diagnostics["normalization"]["retained_total"] == 1
+        assert diagnostics["prior_ideas_pack_stats"]["retained_entries_total"] == 1
 
 
 def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
@@ -335,10 +424,11 @@ def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
 
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
-    evidence_doc_id = _seed_item_document(
+    evidence_doc_ids = _seed_item_documents(
         repository=repository,
         published_at=period_start + (period_end - period_start) / 2,
     )
+    evidence_doc_id = evidence_doc_ids[0]
     _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-normalize",
@@ -374,7 +464,12 @@ def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
                                     "doc_id": evidence_doc_id,
                                     "chunk_index": 0,
                                     "reason": "Shows grounded runtime traces for evaluation.",
-                                }
+                                },
+                                {
+                                    "doc_id": evidence_doc_ids[1],
+                                    "chunk_index": 0,
+                                    "reason": "Supplies an independent source.",
+                                },
                             ],
                         },
                         {
@@ -396,7 +491,7 @@ def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
                     ],
                 }
             ),
-            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+            _generation_debug(*evidence_doc_ids),
         ),
     )
     captured: dict[str, object] = {}
@@ -454,10 +549,11 @@ def test_ideas_stage_reuses_valid_primary_title_without_second_model_call(
     )
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
-    evidence_doc_id = _seed_item_document(
+    evidence_doc_ids = _seed_item_documents(
         repository=repository,
         published_at=period_start + (period_end - period_start) / 2,
     )
+    evidence_doc_id = evidence_doc_ids[0]
     _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-valid-title",
@@ -475,7 +571,7 @@ def test_ideas_stage_reuses_valid_primary_title_without_second_model_call(
     payload = _ideas_payload(
         period_start=period_start,
         period_end=period_end,
-        evidence_doc_id=evidence_doc_id,
+        evidence_doc_ids=evidence_doc_ids,
     ).model_copy(update={"title": "Verification-first agent rollout"})
     monkeypatch.setattr(
         ideas_agent,
@@ -487,7 +583,8 @@ def test_ideas_stage_reuses_valid_primary_title_without_second_model_call(
                 "estimated_cost_usd": 0.01,
                 "prompt_chars": 500,
                 "tool_calls_total": 0,
-                "tool_call_breakdown": {},
+                "tool_call_breakdown": {"get_doc_bundle": 2},
+                "raw_tool_trace": _read_trace(*evidence_doc_ids),
             },
         ),
     )
@@ -535,10 +632,11 @@ def test_ideas_stage_falls_back_to_primary_title_when_bundle_title_generation_fa
 
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
-    evidence_doc_id = _seed_item_document(
+    evidence_doc_ids = _seed_item_documents(
         repository=repository,
         published_at=period_start + (period_end - period_start) / 2,
     )
+    evidence_doc_id = evidence_doc_ids[0]
     _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-title-fallback",
@@ -561,9 +659,9 @@ def test_ideas_stage_falls_back_to_primary_title_when_bundle_title_generation_fa
             _ideas_payload(
                 period_start=period_start,
                 period_end=period_end,
-                evidence_doc_id=evidence_doc_id,
+                evidence_doc_ids=evidence_doc_ids,
             ),
-            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+            _generation_debug(*evidence_doc_ids),
         ),
     )
     monkeypatch.setattr(
@@ -611,10 +709,11 @@ def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
 
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
-    evidence_doc_id = _seed_item_document(
+    evidence_doc_ids = _seed_item_documents(
         repository=repository,
         published_at=period_start + (period_end - period_start) / 2,
     )
+    evidence_doc_id = evidence_doc_ids[0]
     upstream_pass_output_id = _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-ungrounded",
@@ -637,7 +736,7 @@ def test_ideas_stage_suppresses_ungrounded_ideas_without_evidence_refs(
             _ideas_payload(
                 period_start=period_start,
                 period_end=period_end,
-                evidence_doc_id=evidence_doc_id,
+                evidence_doc_ids=evidence_doc_ids,
                 with_evidence=False,
             ),
             {"tool_calls_total": 0, "tool_call_breakdown": {}},
@@ -700,10 +799,11 @@ def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
 
     period_start = datetime(2026, 3, 2, tzinfo=UTC)
     period_end = datetime(2026, 3, 3, tzinfo=UTC)
-    evidence_doc_id = _seed_item_document(
+    evidence_doc_ids = _seed_item_documents(
         repository=repository,
         published_at=period_start + (period_end - period_start) / 2,
     )
+    evidence_doc_id = evidence_doc_ids[0]
     _persist_trend_synthesis_pass_output(
         repository=repository,
         run_id="run-trend-upstream-obsidian",
@@ -726,9 +826,9 @@ def test_ideas_stage_respects_publish_targets_and_writes_obsidian_note(
             _ideas_payload(
                 period_start=period_start,
                 period_end=period_end,
-                evidence_doc_id=evidence_doc_id,
+                evidence_doc_ids=evidence_doc_ids,
             ),
-            {"tool_calls_total": 0, "tool_call_breakdown": {}},
+            _generation_debug(*evidence_doc_ids),
         ),
     )
     monkeypatch.setattr(
