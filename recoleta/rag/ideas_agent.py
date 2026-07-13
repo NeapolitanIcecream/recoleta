@@ -291,8 +291,11 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " semantically the same as prior output. Never cite that pack as evidence."
     )
     base += (
-        " Start with search_hybrid for broad discovery, then use get_doc_bundle"
-        " or read_chunk to confirm specific evidence before finalizing ideas."
+        " Start from the item doc_id values already listed in the supplied evidence"
+        " pack and inspect a diverse subset of normally 6 to 8 documents with"
+        " get_doc_bundle. Do not search again for material already listed there."
+        " Use search_hybrid only when the pack lacks enough independent evidence or"
+        " one complementary source is needed to test a concrete synthesis."
     )
     base += (
         " Do not let task language leak into public prose."

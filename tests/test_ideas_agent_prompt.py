@@ -31,6 +31,9 @@ def test_ideas_instructions_require_finished_prose_without_public_worksheet_fiel
     assert "Direct adoption or productization of one paper is not enough." in instructions
     assert "explicit kill threshold" in instructions
     assert "separate source facts from your synthesis or inference" in instructions
+    assert "normally 6 to 8 documents" in instructions
+    assert "Do not search again for material already listed there." in instructions
+    assert "Use search_hybrid only when the pack lacks enough independent evidence" in instructions
     assert "ideas[].content_md for the prose body" in instructions
     assert "Do not let task language leak into public prose." in instructions
     assert "the strongest notes" in instructions
