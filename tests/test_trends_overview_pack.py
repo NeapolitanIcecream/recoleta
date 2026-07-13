@@ -216,7 +216,8 @@ def test_overview_pack_week_prefers_structured_trend_payload_meta_chunks(
                         "title": "Loop closing",
                         "content_md": "Systems are getting more grounded.",
                         "evidence_refs": [
-                            {"doc_id": int(item_doc.id), "chunk_index": 0}
+                            {"doc_id": int(item_doc.id), "chunk_index": 0},
+                            {"doc_id": int(item_doc.id), "chunk_index": 1},
                         ],
                     }
                 ],
@@ -240,10 +241,11 @@ def test_overview_pack_week_prefers_structured_trend_payload_meta_chunks(
     assert "- title=Agent systems get tighter loops" in md
     assert "- must_read=[Must Read Paper](https://example.com/must-read)" in md
     assert "- cluster=Loop closing" in md
-    assert (
-        "- representative=[Representative Paper](https://example.com/meta-pack-item-1)"
-        in md
+    representative_line = (
+        f"- representative_doc_id={int(item_doc.id)} | "
+        "representative=[Representative Paper](https://example.com/meta-pack-item-1)"
     )
+    assert md.count(representative_line) == 1
 
 
 def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> None:

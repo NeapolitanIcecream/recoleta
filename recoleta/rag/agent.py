@@ -78,6 +78,8 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " When available, use trend documents (doc_type=trend) only to discover synthesis candidates and higher-level themes. "
+        "If the overview pack lists representative_doc_id values, inspect those item documents directly with get_doc_bundle "
+        "instead of searching again for the listed material. "
         "For every weekly or monthly candidate, then drill into the underlying item documents with get_doc_bundle; "
         "cite only item documents that you actually inspected, never a trend document or a search result you did not read. "
         "Do not force a Top-N must-read section; that workflow is legacy and should only appear if the prompt explicitly requires it."

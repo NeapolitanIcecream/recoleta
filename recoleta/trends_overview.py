@@ -160,7 +160,9 @@ def _cluster_name(cluster: dict[str, Any]) -> str:
     return _sanitize_inline_text(str(cluster.get("title") or "").strip())
 
 
-def _representative_link(*, repository: Any, rep: dict[str, Any]) -> str | None:
+def _representative_record(
+    *, repository: Any, rep: dict[str, Any]
+) -> tuple[int, str] | None:
     try:
         rep_doc_id = int(rep.get("doc_id") or 0)
     except Exception:
@@ -174,47 +176,47 @@ def _representative_link(*, repository: Any, rep: dict[str, Any]) -> str | None:
     rep_url = str(getattr(rep_doc, "canonical_url", "") or "").strip()
     if not rep_title or not rep_url:
         return None
-    return f"[{rep_title}]({rep_url})"
+    return rep_doc_id, f"[{rep_title}]({rep_url})"
 
 
-def _representative_links_for_cluster(
+def _representative_records_for_cluster(
     *,
     repository: Any,
     cluster: dict[str, Any],
-) -> list[str]:
+) -> list[tuple[int, str]]:
     reps = cluster.get("evidence_refs") or []
     if not isinstance(reps, list):
         return []
-    links: list[str] = []
+    records: list[tuple[int, str]] = []
     for rep in reps:
         if not isinstance(rep, dict):
             continue
-        link = _representative_link(repository=repository, rep=rep)
-        if link is not None:
-            links.append(link)
-    return links
+        record = _representative_record(repository=repository, rep=rep)
+        if record is not None:
+            records.append(record)
+    return records
 
 
-def _representative_links_and_clusters(
+def _representative_records_and_clusters(
     *,
     repository: Any,
     clusters: Any,
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[tuple[int, str]], list[str]]:
     if not isinstance(clusters, list):
         return [], []
     normalized_clusters = [cluster for cluster in clusters if isinstance(cluster, dict)]
     cluster_names = _dedup_strings(
         _cluster_name(cluster) for cluster in normalized_clusters
     )
-    representative_links = [
-        link
+    representative_records = [
+        record
         for cluster in normalized_clusters
-        for link in _representative_links_for_cluster(
+        for record in _representative_records_for_cluster(
             repository=repository,
             cluster=cluster,
         )
     ]
-    return representative_links, cluster_names
+    return representative_records, cluster_names
 
 
 def _dedup_strings(values: Any) -> list[str]:
@@ -250,7 +252,7 @@ def _summary_lines_from_meta_chunk(
     overview_md = clamp_trend_overview_markdown(
         str(payload.get("overview_md") or "").strip()
     )
-    representative_links, cluster_names = _representative_links_and_clusters(
+    representative_records, cluster_names = _representative_records_and_clusters(
         repository=repository,
         clusters=payload.get("clusters") or [],
     )
@@ -265,13 +267,16 @@ def _summary_lines_from_meta_chunk(
         lines.append(f"- must_read={link}")
     for cluster_name in cluster_names[:3]:
         lines.append(f"- cluster={cluster_name}")
-    seen_representatives: set[str] = set()
-    for representative_link in representative_links:
-        if representative_link in seen_representatives:
+    seen_representative_doc_ids: set[int] = set()
+    for representative_doc_id, representative_link in representative_records:
+        if representative_doc_id in seen_representative_doc_ids:
             continue
-        seen_representatives.add(representative_link)
-        lines.append(f"- representative={representative_link}")
-        if len(seen_representatives) >= 3:
+        seen_representative_doc_ids.add(representative_doc_id)
+        lines.append(
+            f"- representative_doc_id={representative_doc_id} | "
+            f"representative={representative_link}"
+        )
+        if len(seen_representative_doc_ids) >= 3:
             break
     return lines
 
