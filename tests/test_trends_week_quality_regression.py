@@ -16,7 +16,12 @@ from recoleta.trends import (
     week_period_bounds,
 )
 from recoleta.types import ItemDraft
-from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
+from tests.spec_support import (
+    FakeAnalyzer,
+    FakeTelegramSender,
+    _build_runtime,
+    captured_bundle_read_debug,
+)
 
 
 def test_trends_week_published_markdown_locks_reader_facing_quality(
@@ -158,7 +163,7 @@ def test_trends_week_published_markdown_locks_reader_facing_quality(
                 }
             ],
         }
-        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+        return TrendPayload.model_validate(payload), captured_bundle_read_debug(*doc_ids)
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 

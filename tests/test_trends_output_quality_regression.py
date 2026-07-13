@@ -10,7 +10,12 @@ from recoleta.pipeline import PipelineService
 from recoleta.publish import write_obsidian_trend_note
 from recoleta.trends import TrendPayload
 from recoleta.types import ItemDraft
-from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
+from tests.spec_support import (
+    FakeAnalyzer,
+    FakeTelegramSender,
+    _build_runtime,
+    captured_bundle_read_debug,
+)
 
 
 def test_write_obsidian_trend_note_renders_clusters_and_evidence_blocks(
@@ -122,7 +127,7 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_evidence_links(
                 }
             ],
         }
-        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+        return TrendPayload.model_validate(payload), captured_bundle_read_debug(doc_id)
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
@@ -212,7 +217,7 @@ def test_trends_day_deduplicates_evidence_from_same_doc_across_chunks(
                 }
             ],
         }
-        return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
+        return TrendPayload.model_validate(payload), captured_bundle_read_debug(doc_id)
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 

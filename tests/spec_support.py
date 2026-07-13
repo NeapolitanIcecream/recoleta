@@ -346,3 +346,38 @@ def _build_runtime() -> tuple[Settings, Repository]:
     repository = Repository(db_path=settings.recoleta_db_path)
     repository.init_schema()
     return settings, repository
+
+
+def captured_bundle_read_debug(*doc_ids: int) -> dict[str, Any]:
+    """Build the complete tool trace required by evidence-integrity tests."""
+
+    events: list[dict[str, Any]] = []
+    for doc_id in doc_ids:
+        tool_call_id = f"bundle-{doc_id}"
+        events.extend(
+            [
+                {
+                    "kind": "tool-call",
+                    "tool_name": "get_doc_bundle",
+                    "tool_call_id": tool_call_id,
+                    "args": {"doc_id": doc_id},
+                },
+                {
+                    "kind": "tool-return",
+                    "tool_name": "get_doc_bundle",
+                    "tool_call_id": tool_call_id,
+                    "content": {"bundle": {"doc": {"doc_id": doc_id}}},
+                },
+            ]
+        )
+    return {
+        "tool_calls_total": len(doc_ids),
+        "tool_call_breakdown": {"get_doc_bundle": len(doc_ids)},
+        "raw_tool_trace": {
+            "status": "captured",
+            "events": events,
+            "events_total": len(events),
+            "tool_calls_total": len(doc_ids),
+            "events_truncated": False,
+        },
+    }
