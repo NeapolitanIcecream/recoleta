@@ -659,12 +659,40 @@ def test_analyze_batches_persistence_to_reduce_sql_commits(
     ]
     service.prepare(run_id="run-analyze-batch", drafts=drafts, limit=10)
 
+    batch_calls: list[tuple[list[int], list[str]]] = []
+    load_batch = repository.get_latest_content_texts_for_items
+
+    def capture_content_batch(
+        *, item_ids: list[int], content_types: list[str]
+    ) -> dict[int, dict[str, str | None]]:
+        batch_calls.append((list(item_ids), list(content_types)))
+        return load_batch(item_ids=item_ids, content_types=content_types)
+
+    monkeypatch.setattr(
+        repository,
+        "get_latest_content_texts_for_items",
+        capture_content_batch,
+    )
+
+    def fail_itemwise_content_load(**_kwargs: Any) -> None:
+        raise AssertionError("analyze should load selected item content in one batch")
+
+    monkeypatch.setattr(
+        repository,
+        "get_latest_content",
+        fail_itemwise_content_load,
+    )
+
     with repository.sql_diagnostics() as sql_diag:
         result = service.analyze(run_id="run-analyze-batch", limit=4)
 
     assert result.processed == 4
     assert result.failed == 0
+    assert len(batch_calls) == 1
+    assert len(batch_calls[0][0]) == 4
+    assert batch_calls[0][1] == ["html_maintext"]
     assert sql_diag.queries_total > 0
+    assert sql_diag.queries_total <= 32
     assert sql_diag.commits_total > 0
     assert sql_diag.commits_total <= 4
 

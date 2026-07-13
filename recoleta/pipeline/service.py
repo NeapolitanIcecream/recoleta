@@ -1098,21 +1098,128 @@ class PipelineService:
         item_id = getattr(item, "id", None)
         if item_id is None:
             return None
-        normalized_item_id = int(item_id)
+        content_types = self._content_types_for_analysis(item=item)
+        batch_getter = getattr(self.repository, "get_latest_content_texts", None)
+        if callable(batch_getter):
+            try:
+                texts_by_type = cast(
+                    dict[str, str | None],
+                    batch_getter(
+                        item_id=int(item_id),
+                        content_types=content_types,
+                    ),
+                )
+            except NotImplementedError:
+                pass
+            else:
+                return self._first_stored_content(
+                    texts_by_type=texts_by_type,
+                    content_types=content_types,
+                )
+        return self._load_stored_content_for_analysis_itemwise(
+            item_id=int(item_id),
+            content_types=content_types,
+        )
+
+    def _load_stored_contents_for_analysis(
+        self, *, items: list[Any]
+    ) -> dict[int, str | None]:
+        items_by_id = {
+            int(item_id): item
+            for item in items
+            if (item_id := getattr(item, "id", None)) is not None
+            and int(item_id) > 0
+        }
+        if not items_by_id:
+            return {}
+        content_types_by_item_id = {
+            item_id: self._content_types_for_analysis(item=item)
+            for item_id, item in items_by_id.items()
+        }
+        content_types = list(
+            dict.fromkeys(
+                content_type
+                for item_content_types in content_types_by_item_id.values()
+                for content_type in item_content_types
+            )
+        )
+        batch_getter = getattr(
+            self.repository, "get_latest_content_texts_for_items", None
+        )
+        if callable(batch_getter):
+            try:
+                texts_by_item_id = cast(
+                    dict[int, dict[str, str | None]],
+                    batch_getter(
+                        item_ids=list(items_by_id),
+                        content_types=content_types,
+                    ),
+                )
+            except NotImplementedError:
+                pass
+            else:
+                return {
+                    item_id: self._first_stored_content(
+                        texts_by_type=texts_by_item_id.get(item_id, {}),
+                        content_types=content_types_by_item_id[item_id],
+                    )
+                    for item_id in items_by_id
+                }
+        return {
+            item_id: self._load_stored_content_for_analysis(item=item)
+            for item_id, item in items_by_id.items()
+        }
+
+    def _content_types_for_analysis(self, *, item: Any) -> list[str]:
         source = str(getattr(item, "source", "") or "").strip().lower()
         if source == "arxiv":
-            return self._load_arxiv_content_for_analysis(item_id=normalized_item_id)
+            return self._arxiv_content_types_for_analysis()
         if source == "openreview":
-            existing_pdf = self._get_latest_content_text(
-                item_id=normalized_item_id,
-                content_type="pdf_text",
+            return ["pdf_text", "html_maintext"]
+        return ["html_maintext"]
+
+    def _arxiv_content_types_for_analysis(self) -> list[str]:
+        method = self.settings.sources.arxiv.enrich_method
+        failure_mode = self.settings.sources.arxiv.enrich_failure_mode
+        primary_by_method = {
+            "pdf_text": "pdf_text",
+            "latex_source": "latex_source",
+            "html_document": "html_document_md",
+        }
+        content_types = [primary_by_method.get(method, "pdf_text")]
+        if failure_mode == "fallback":
+            content_types.extend(
+                (
+                    "pdf_text",
+                    "html_maintext",
+                    "html_document_md",
+                    "html_document",
+                    "latex_source",
+                )
             )
-            if existing_pdf is not None:
-                return existing_pdf
-        return self._get_latest_content_text(
-            item_id=normalized_item_id,
-            content_type="html_maintext",
-        )
+        return list(dict.fromkeys(content_types))
+
+    @staticmethod
+    def _first_stored_content(
+        *, texts_by_type: dict[str, str | None], content_types: list[str]
+    ) -> str | None:
+        for content_type in content_types:
+            text = texts_by_type.get(content_type)
+            if isinstance(text, str) and text:
+                return text
+        return None
+
+    def _load_stored_content_for_analysis_itemwise(
+        self, *, item_id: int, content_types: list[str]
+    ) -> str | None:
+        for content_type in content_types:
+            loaded = self._get_latest_content_text(
+                item_id=item_id,
+                content_type=content_type,
+            )
+            if loaded is not None:
+                return loaded
+        return None
 
     def _get_latest_content_text(
         self, *, item_id: int, content_type: str
@@ -1125,31 +1232,10 @@ class PipelineService:
         return existing_content.text
 
     def _load_arxiv_content_for_analysis(self, *, item_id: int) -> str | None:
-        method = self.settings.sources.arxiv.enrich_method
-        failure_mode = self.settings.sources.arxiv.enrich_failure_mode
-        primary_by_method = {
-            "pdf_text": "pdf_text",
-            "latex_source": "latex_source",
-            "html_document": "html_document_md",
-        }
-        content_types: list[str] = [primary_by_method.get(method, "pdf_text")]
-        if failure_mode == "fallback":
-            for candidate_type in (
-                "pdf_text",
-                "html_maintext",
-                "html_document_md",
-                "html_document",
-                "latex_source",
-            ):
-                if candidate_type not in content_types:
-                    content_types.append(candidate_type)
-        for content_type in content_types:
-            loaded = self._get_latest_content_text(
-                item_id=item_id, content_type=content_type
-            )
-            if loaded is not None:
-                return loaded
-        return None
+        return self._load_stored_content_for_analysis_itemwise(
+            item_id=item_id,
+            content_types=self._arxiv_content_types_for_analysis(),
+        )
 
     def _ensure_item_content(
         self,

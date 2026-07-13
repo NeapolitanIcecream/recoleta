@@ -189,6 +189,9 @@ def _prepare_analyze_work(
     work_items: list[Any] = []
     state_updates: list[ItemStateUpdate] = []
     missing_content_total = 0
+    content_by_item_id = request.service._load_stored_contents_for_analysis(
+        items=request.items
+    )
     for item in request.items:
         raw_item_id = getattr(item, "id", None)
         if raw_item_id is None:
@@ -197,7 +200,7 @@ def _prepare_analyze_work(
             continue
         item_id = int(raw_item_id)
         preserve_item_state = getattr(item, "state", None) == ITEM_STATE_PUBLISHED
-        content_text = request.service._load_stored_content_for_analysis(item=item)
+        content_text = content_by_item_id.get(item_id)
         if content_text:
             work_items.append(
                 SimpleNamespace(
