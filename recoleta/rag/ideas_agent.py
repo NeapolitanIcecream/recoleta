@@ -8,7 +8,7 @@ from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, field_validator
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext
 
 from recoleta.llm_costs import (
     estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens,
@@ -520,6 +520,29 @@ def build_trend_ideas_agent(
             granularity=granularity,
             limit=limit,
         )
+
+    @agent.output_validator
+    def require_distinct_evidence_documents(
+        payload: TrendIdeasPayload,
+    ) -> TrendIdeasPayload:
+        invalid_ideas: list[str] = []
+        for index, idea in enumerate(payload.ideas):
+            doc_ids = {
+                int(ref.doc_id)
+                for ref in idea.evidence_refs
+                if int(ref.doc_id) > 0
+            }
+            if len(doc_ids) < 2:
+                invalid_ideas.append(f"{index + 1} ({idea.title})")
+        if invalid_ideas:
+            invalid_list = ", ".join(invalid_ideas)
+            raise ModelRetry(
+                "Every emitted idea must include evidence_refs with at least two "
+                "different positive doc_id values. Add or deduplicate the references, "
+                "remove unsupported ideas, or return ideas=[] when the evidence is "
+                f"insufficient. Invalid ideas: {invalid_list}."
+            )
+        return payload
 
     return agent
 
