@@ -12,6 +12,11 @@ from recoleta.config import Settings
 from recoleta.models import ITEM_STATE_ANALYZED, Item
 from recoleta.pipeline.service import PipelineService
 from recoleta.sources import (
+    ArxivPullRequest,
+    FeedPullRequest,
+    HFDailyPapersPullRequest,
+    HNPullRequest,
+    OpenReviewPullRequest,
     SourcePullResult,
     SourcePullStateSnapshot,
     SourcePullStateUpdate,
@@ -78,13 +83,19 @@ def test_ingest_pulls_all_configured_sources_without_network(
     )
 
     monkeypatch.setattr(
-        source_connectors, "fetch_arxiv_drafts", lambda **_: [draft_arxiv]
+        source_connectors,
+        "fetch_arxiv_drafts",
+        lambda *, request, pool_backend=None: [draft_arxiv],  # noqa: ARG005
     )
     monkeypatch.setattr(
-        source_connectors, "fetch_openreview_drafts", lambda **_: [draft_openreview]
+        source_connectors,
+        "fetch_openreview_drafts",
+        lambda *, request: [draft_openreview],  # noqa: ARG005
     )
     monkeypatch.setattr(
-        source_connectors, "fetch_hf_daily_papers_drafts", lambda **_: [draft_hf]
+        source_connectors,
+        "fetch_hf_daily_papers_drafts",
+        lambda *, request: [draft_hf],  # noqa: ARG005
     )
 
     settings, repository = _build_runtime()
@@ -150,60 +161,46 @@ def test_ingest_passes_configured_source_pull_limits_to_connectors(
 
     calls: dict[str, object] = {}
 
-    def fake_fetch_hf_daily_papers_drafts(*, max_items: int = 50) -> list[ItemDraft]:
-        calls["hf_daily"] = max_items
+    def fake_fetch_hf_daily_papers_drafts(
+        *, request: HFDailyPapersPullRequest
+    ) -> list[ItemDraft]:
+        calls["hf_daily"] = request.max_items
         return []
 
-    def fake_fetch_hn_drafts(
-        *,
-        feed_urls: list[str],
-        max_items_per_feed: int = 50,
-        max_total_items: int | None = None,
-    ) -> list[ItemDraft]:
+    def fake_fetch_hn_drafts(*, request: HNPullRequest) -> list[ItemDraft]:
         calls["hn"] = {
-            "feed_urls": list(feed_urls),
-            "max_items_per_feed": max_items_per_feed,
-            "max_total_items": max_total_items,
+            "feed_urls": list(request.feed_urls),
+            "max_items_per_feed": request.max_items_per_feed,
+            "max_total_items": request.max_total_items,
         }
         return []
 
-    def fake_fetch_rss_drafts(
-        *,
-        feed_urls: list[str],
-        source: str,
-        max_items_per_feed: int = 50,
-        max_total_items: int | None = None,
-    ) -> list[ItemDraft]:
-        calls[source] = {
-            "feed_urls": list(feed_urls),
-            "max_items_per_feed": max_items_per_feed,
-            "max_total_items": max_total_items,
+    def fake_fetch_rss_drafts(*, request: FeedPullRequest) -> list[ItemDraft]:
+        calls[request.source] = {
+            "feed_urls": list(request.feed_urls),
+            "max_items_per_feed": request.max_items_per_feed,
+            "max_total_items": request.max_total_items,
         }
         return []
 
     def fake_fetch_arxiv_drafts(
-        *,
-        queries: list[str],
-        max_results_per_run: int = 50,
-        max_total_items: int | None = None,
+        *, request: ArxivPullRequest, pool_backend: Any | None = None
     ) -> list[ItemDraft]:
+        _ = pool_backend
         calls["arxiv"] = {
-            "queries": list(queries),
-            "max_results_per_run": max_results_per_run,
-            "max_total_items": max_total_items,
+            "queries": list(request.queries),
+            "max_results_per_run": request.max_results_per_run,
+            "max_total_items": request.max_total_items,
         }
         return []
 
     def fake_fetch_openreview_drafts(
-        *,
-        venues: list[str],
-        max_results_per_venue: int = 50,
-        max_total_items: int | None = None,
+        *, request: OpenReviewPullRequest
     ) -> list[ItemDraft]:
         calls["openreview"] = {
-            "venues": list(venues),
-            "max_results_per_venue": max_results_per_venue,
-            "max_total_items": max_total_items,
+            "venues": list(request.venues),
+            "max_results_per_venue": request.max_results_per_venue,
+            "max_total_items": request.max_total_items,
         }
         return []
 
@@ -298,78 +295,54 @@ def test_ingest_passes_target_period_to_connectors(
     calls: dict[str, dict[str, object]] = {}
 
     def fake_fetch_hf_daily_papers_drafts(
-        *,
-        max_items: int = 50,
-        period_start=None,
-        period_end=None,  # noqa: ANN001
+        *, request: HFDailyPapersPullRequest
     ) -> list[ItemDraft]:
         calls["hf_daily"] = {
-            "max_items": max_items,
-            "period_start": period_start,
-            "period_end": period_end,
+            "max_items": request.max_items,
+            "period_start": request.period_start,
+            "period_end": request.period_end,
         }
         return []
 
-    def fake_fetch_rss_drafts(
-        *,
-        feed_urls: list[str],
-        source: str,
-        max_items_per_feed: int = 50,
-        period_start=None,  # noqa: ANN001
-        period_end=None,  # noqa: ANN001
-    ) -> list[ItemDraft]:
-        calls[source] = {
-            "feed_urls": list(feed_urls),
-            "max_items_per_feed": max_items_per_feed,
-            "period_start": period_start,
-            "period_end": period_end,
+    def fake_fetch_rss_drafts(*, request: FeedPullRequest) -> list[ItemDraft]:
+        calls[request.source] = {
+            "feed_urls": list(request.feed_urls),
+            "max_items_per_feed": request.max_items_per_feed,
+            "period_start": request.period_start,
+            "period_end": request.period_end,
         }
         return []
 
-    def fake_fetch_hn_drafts(
-        *,
-        feed_urls: list[str],
-        max_items_per_feed: int = 50,
-        period_start=None,  # noqa: ANN001
-        period_end=None,  # noqa: ANN001
-        max_total_items: int | None = None,
-    ) -> list[ItemDraft]:
+    def fake_fetch_hn_drafts(*, request: HNPullRequest) -> list[ItemDraft]:
         calls["hn"] = {
-            "feed_urls": list(feed_urls),
-            "max_items_per_feed": max_items_per_feed,
-            "period_start": period_start,
-            "period_end": period_end,
-            "max_total_items": max_total_items,
+            "feed_urls": list(request.feed_urls),
+            "max_items_per_feed": request.max_items_per_feed,
+            "period_start": request.period_start,
+            "period_end": request.period_end,
+            "max_total_items": request.max_total_items,
         }
         return []
 
     def fake_fetch_arxiv_drafts(
-        *,
-        queries: list[str],
-        max_results_per_run: int = 50,
-        period_start=None,  # noqa: ANN001
-        period_end=None,  # noqa: ANN001
+        *, request: ArxivPullRequest, pool_backend: Any | None = None
     ) -> list[ItemDraft]:
+        _ = pool_backend
         calls["arxiv"] = {
-            "queries": list(queries),
-            "max_results_per_run": max_results_per_run,
-            "period_start": period_start,
-            "period_end": period_end,
+            "queries": list(request.queries),
+            "max_results_per_run": request.max_results_per_run,
+            "period_start": request.period_start,
+            "period_end": request.period_end,
         }
         return []
 
     def fake_fetch_openreview_drafts(
-        *,
-        venues: list[str],
-        max_results_per_venue: int = 50,
-        period_start=None,  # noqa: ANN001
-        period_end=None,  # noqa: ANN001
+        *, request: OpenReviewPullRequest
     ) -> list[ItemDraft]:
         calls["openreview"] = {
-            "venues": list(venues),
-            "max_results_per_venue": max_results_per_venue,
-            "period_start": period_start,
-            "period_end": period_end,
+            "venues": list(request.venues),
+            "max_results_per_venue": request.max_results_per_venue,
+            "period_start": request.period_start,
+            "period_end": request.period_end,
         }
         return []
 
@@ -430,14 +403,12 @@ def test_ingest_does_not_crash_on_source_failure_and_records_metric(
         title="Source Failure Still Ingests",
     )
 
-    def fake_fetch_hn_drafts(
-        *, feed_urls: list[str], max_items_per_feed: int = 50
-    ) -> list[ItemDraft]:  # noqa: ARG001
+    def fake_fetch_hn_drafts(*, request: HNPullRequest) -> list[ItemDraft]:
+        _ = request
         raise RuntimeError("simulated HN connector failure")
 
-    def fake_fetch_rss_drafts(
-        *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
-    ) -> list[ItemDraft]:  # noqa: ARG001
+    def fake_fetch_rss_drafts(*, request: FeedPullRequest) -> list[ItemDraft]:
+        _ = request
         return [draft_rss]
 
     monkeypatch.setattr(source_connectors, "fetch_hn_drafts", fake_fetch_hn_drafts)
@@ -496,7 +467,7 @@ def test_ingest_records_source_window_diagnostics(
     monkeypatch.setattr(
         source_connectors,
         "fetch_arxiv_drafts",
-        lambda **_: SourcePullResult(
+        lambda *, request, pool_backend=None: SourcePullResult(  # noqa: ARG005
             drafts=[draft],
             filtered_out_total=7,
             in_window_total=1,
@@ -583,13 +554,11 @@ def test_ingest_injects_huldra_pool_backend_without_local_pool_store(
 
     def fake_fetch_arxiv_drafts(
         *,
-        request,
-        pool_backend=None,  # noqa: ANN001
-        **legacy_kwargs: Any,
+        request: ArxivPullRequest,
+        pool_backend: Any | None = None,
     ) -> SourcePullResult:
         calls["request"] = request
         calls["pool_backend"] = pool_backend
-        calls["legacy_pool_db_path"] = legacy_kwargs.get("pool_db_path")
         return SourcePullResult()
 
     monkeypatch.setattr(
@@ -612,7 +581,6 @@ def test_ingest_injects_huldra_pool_backend_without_local_pool_store(
     assert calls["pool_backend"] is sentinel_backend
     assert calls["request"].mode == "pool"
     assert calls["request"].pool_db_path is None
-    assert calls["legacy_pool_db_path"] is None
 
 
 def test_ingest_persists_source_pull_state_between_runs(
@@ -652,13 +620,12 @@ def test_ingest_persists_source_pull_state_between_runs(
     )
     phases = {"count": 0}
 
-    def fake_fetch_arxiv_drafts(  # type: ignore[no-untyped-def]
+    def fake_fetch_arxiv_drafts(
         *,
-        queries,
-        pull_state_lookup=None,
-        **kwargs,
-    ):
-        _ = queries, kwargs
+        request: ArxivPullRequest,
+        pool_backend: Any | None = None,
+    ) -> list[ItemDraft] | SourcePullResult:
+        _ = pool_backend
         phases["count"] += 1
         if phases["count"] == 1:
             return SourcePullResult(
@@ -671,8 +638,8 @@ def test_ingest_persists_source_pull_state_between_runs(
                     )
                 ],
             )
-        assert pull_state_lookup is not None
-        restored = pull_state_lookup("query", "cat:cs.AI")
+        assert request.pull_state_lookup is not None
+        restored = request.pull_state_lookup("query", "cat:cs.AI")
         assert restored == SourcePullStateSnapshot(
             scope_kind="query",
             scope_key="cat:cs.AI",
@@ -740,9 +707,8 @@ def test_ingest_progress_starts_before_source_pull_and_sets_total(
 
     monkeypatch.setattr(pipeline_module, "Progress", FakeProgress, raising=False)
 
-    def fake_fetch_hn_drafts(
-        *, feed_urls: list[str], max_items_per_feed: int = 50
-    ) -> list[ItemDraft]:  # noqa: ARG001
+    def fake_fetch_hn_drafts(*, request: HNPullRequest) -> list[ItemDraft]:
+        _ = request
         timeline.append("source_pull_hn")
         return [
             ItemDraft.from_values(
@@ -753,16 +719,14 @@ def test_ingest_progress_starts_before_source_pull_and_sets_total(
             )
         ]
 
-    def fake_fetch_rss_drafts(
-        *, feed_urls: list[str], source: str, max_items_per_feed: int = 50
-    ) -> list[ItemDraft]:  # noqa: ARG001
-        timeline.append(f"source_pull_{source}")
+    def fake_fetch_rss_drafts(*, request: FeedPullRequest) -> list[ItemDraft]:
+        timeline.append(f"source_pull_{request.source}")
         return [
             ItemDraft.from_values(
-                source=source,
-                source_item_id=f"{source}-1",
-                canonical_url=f"https://example.com/{source}-1",
-                title=f"{source} item",
+                source=request.source,
+                source_item_id=f"{request.source}-1",
+                canonical_url=f"https://example.com/{request.source}-1",
+                title=f"{request.source} item",
             )
         ]
 

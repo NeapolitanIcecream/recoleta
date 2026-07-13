@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator, TypedDict, Unpack
+from typing import Any, Iterator
 
 import arxiv  # noqa: F401
 import httpx
@@ -125,60 +125,6 @@ class HNPullRequest:
     max_total_items: int | None = None
     pull_state_lookup: PullStateLookup | None = None
     include_stats: bool = False
-
-
-class _HFDailyPapersPullRequestKwargs(TypedDict, total=False):
-    max_items: int
-    period_start: datetime | None
-    period_end: datetime | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
-
-
-class _ArxivPullRequestKwargs(TypedDict, total=False):
-    queries: list[str]
-    max_results_per_run: int
-    period_start: datetime | None
-    period_end: datetime | None
-    max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
-    mode: str
-    pool_db_path: Path | None
-    pool_maturity_lag_days: int
-    pool_readiness_gate: str
-    pool_allow_immature_windows: bool
-
-
-class _OpenReviewPullRequestKwargs(TypedDict, total=False):
-    venues: list[str]
-    max_results_per_venue: int
-    period_start: datetime | None
-    period_end: datetime | None
-    max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
-
-
-class _FeedPullRequestKwargs(TypedDict, total=False):
-    feed_urls: list[str]
-    source: str
-    max_items_per_feed: int
-    period_start: datetime | None
-    period_end: datetime | None
-    max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
-
-
-class _HNPullRequestKwargs(TypedDict, total=False):
-    feed_urls: list[str]
-    max_items_per_feed: int
-    period_start: datetime | None
-    period_end: datetime | None
-    max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
 
 
 def _should_retry_httpx(exc: BaseException) -> bool:
@@ -365,13 +311,11 @@ def _paper_info_to_draft(
 
 def fetch_hf_daily_papers_drafts(
     *,
-    request: HFDailyPapersPullRequest | None = None,
-    **legacy_kwargs: Unpack[_HFDailyPapersPullRequestKwargs],
+    request: HFDailyPapersPullRequest,
 ) -> list[ItemDraft] | SourcePullResult:
-    normalized_request = request or HFDailyPapersPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_hf_daily_papers
 
-    return pull_hf_daily_papers(normalized_request)
+    return pull_hf_daily_papers(request)
 
 
 def _format_arxiv_datetime(value: datetime) -> str:
@@ -396,44 +340,36 @@ def _arxiv_query_with_period(
 
 def fetch_arxiv_drafts(
     *,
-    request: ArxivPullRequest | None = None,
+    request: ArxivPullRequest,
     pool_backend: Any | None = None,
-    **legacy_kwargs: Unpack[_ArxivPullRequestKwargs],
 ) -> list[ItemDraft] | SourcePullResult:
-    normalized_request = request or ArxivPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_arxiv_drafts
 
-    return pull_arxiv_drafts(normalized_request, pool_backend=pool_backend)
+    return pull_arxiv_drafts(request, pool_backend=pool_backend)
 
 
 def fetch_openreview_drafts(
     *,
-    request: OpenReviewPullRequest | None = None,
-    **legacy_kwargs: Unpack[_OpenReviewPullRequestKwargs],
+    request: OpenReviewPullRequest,
 ) -> list[ItemDraft] | SourcePullResult:
-    normalized_request = request or OpenReviewPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_openreview_drafts
 
-    return pull_openreview_drafts(normalized_request)
+    return pull_openreview_drafts(request)
 
 
 def fetch_rss_drafts(
     *,
-    request: FeedPullRequest | None = None,
-    **legacy_kwargs: Unpack[_FeedPullRequestKwargs],
+    request: FeedPullRequest,
 ) -> list[ItemDraft] | SourcePullResult:
-    normalized_request = request or FeedPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_rss_drafts
 
-    return pull_rss_drafts(normalized_request)
+    return pull_rss_drafts(request)
 
 
 def fetch_hn_drafts(
     *,
-    request: HNPullRequest | None = None,
-    **legacy_kwargs: Unpack[_HNPullRequestKwargs],
+    request: HNPullRequest,
 ) -> list[ItemDraft] | SourcePullResult:
-    normalized_request = request or HNPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_hn_drafts
 
-    return pull_hn_drafts(normalized_request)
+    return pull_hn_drafts(request)

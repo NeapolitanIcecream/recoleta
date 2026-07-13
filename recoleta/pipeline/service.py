@@ -42,8 +42,6 @@ from recoleta.pipeline import metrics as pipeline_metrics
 from recoleta.pipeline.ingest_stage import (
     IngestStageRequest,
     RebalanceItemsRequest,
-    SourcePullStageRequest,
-    pull_source_drafts as run_source_pull_stage,
     rebalance_items_by_source as rebalance_stage_items_by_source,
     run_ingest_stage,
 )
@@ -284,32 +282,6 @@ class PipelineService:
         return len("".join(str(text or "").split()))
 
     @staticmethod
-    def _empty_source_pull_stats() -> dict[str, dict[str, int]]:
-        return {
-            source_name: {
-                "drafts_total": 0,
-                "pull_failed_total": 0,
-                "pull_duration_ms": 0,
-                "filtered_out_total": 0,
-                "in_window_total": 0,
-                "missing_published_at_total": 0,
-                "deduped_total": 0,
-                "deferred_total": 0,
-                "not_modified_total": 0,
-                "oldest_published_at_unix": 0,
-                "newest_published_at_unix": 0,
-                "inserted_total": 0,
-                "updated_total": 0,
-                "pool_drafts_total": 0,
-                "pool_window_unavailable_total": 0,
-                "pool_window_immature_total": 0,
-                "pool_window_immature_allowed_total": 0,
-                "pool_window_analysis_ready_total": 0,
-            }
-            for source_name in _SOURCE_DIAGNOSTIC_NAMES
-        }
-
-    @staticmethod
     def _invoke_callable_with_supported_kwargs(fn: Any, **kwargs: Any) -> Any:
         try:
             signature = inspect.signature(fn)
@@ -329,10 +301,6 @@ class PipelineService:
             }
         )
         return fn(**filtered_kwargs)
-
-    @staticmethod
-    def _invoke_source_pull(fn: Any, **kwargs: Any) -> Any:
-        return PipelineService._invoke_callable_with_supported_kwargs(fn, **kwargs)
 
     def _invoke_repository_method(self, method_name: str, /, **kwargs: Any) -> Any:
         method = getattr(self.repository, method_name)
@@ -388,14 +356,6 @@ class PipelineService:
             run_id=run_id,
             diagnostics=diagnostics,
         )
-
-    @staticmethod
-    def _normalize_source_pull_result(raw: Any) -> sources.SourcePullResult:
-        if isinstance(raw, sources.SourcePullResult):
-            return raw
-        if raw is None:
-            return sources.SourcePullResult()
-        return sources.SourcePullResult(drafts=list(raw or []))
 
     @staticmethod
     def _new_source_enrich_bucket() -> dict[str, Any]:
@@ -1387,15 +1347,6 @@ class PipelineService:
             anchor_date=anchor_date,
             llm_model=llm_model,
         )
-
-    def _pull_source_drafts(
-        self,
-        *,
-        request: SourcePullStageRequest | None = None,
-        **legacy_kwargs: Any,
-    ) -> tuple[list[ItemDraft], int, dict[str, dict[str, int]]]:
-        normalized_request = request or SourcePullStageRequest(**legacy_kwargs)
-        return run_source_pull_stage(self, normalized_request)
 
     def _write_debug_artifact(
         self,

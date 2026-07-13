@@ -4,7 +4,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from loguru import logger
 from rich.progress import (
@@ -41,26 +41,30 @@ class RebalanceItemsRequest:
     limit: int
 
 
+_SourcePullRequest = (
+    sources.HFDailyPapersPullRequest
+    | sources.HNPullRequest
+    | sources.FeedPullRequest
+    | sources.ArxivPullRequest
+    | sources.OpenReviewPullRequest
+)
+_SourcePullFetcher = Callable[..., list[ItemDraft] | sources.SourcePullResult]
+_NO_POOL_BACKEND = object()
+_SOURCE_NAMES = ("arxiv", "hn", "hf_daily", "openreview", "rss")
+
+
+@dataclass(slots=True, frozen=True)
+class _ConfiguredSourcePull:
+    source_name: str
+    fetcher: _SourcePullFetcher
+    request: _SourcePullRequest
+    pool_backend: Any = _NO_POOL_BACKEND
+
+
 class IngestStageService(Protocol):
     repository: Any
     settings: Any
     _progress_console: Any
-
-    @staticmethod
-    def _empty_source_pull_stats() -> dict[str, dict[str, int]]: ...
-
-    @staticmethod
-    def _invoke_source_pull(fn: Any, **kwargs: Any) -> Any: ...
-
-    @staticmethod
-    def _normalize_source_pull_result(raw: Any) -> sources.SourcePullResult: ...
-
-    def _pull_source_drafts(
-        self,
-        *,
-        request: SourcePullStageRequest | None = None,
-        **legacy_kwargs: Any,
-    ) -> tuple[list[ItemDraft], int, dict[str, dict[str, int]]]: ...
 
     def _lookup_source_pull_state(
         self,
@@ -188,7 +192,7 @@ class _IngestStageRunner:
         self.started = time.perf_counter()
         self.result = IngestResult()
         self.source_failures_total = 0
-        self.source_stats = service._empty_source_pull_stats()
+        self.source_stats = _empty_source_pull_stats()
         self.source_drafts = request.drafts
 
     def run(self) -> IngestResult:
@@ -212,13 +216,14 @@ class _IngestStageRunner:
     def _load_source_drafts(self) -> None:
         if self.source_drafts is None:
             self.source_drafts, self.source_failures_total, self.source_stats = (
-                self.service._pull_source_drafts(
-                    request=SourcePullStageRequest(
+                pull_source_drafts(
+                    self.service,
+                    SourcePullStageRequest(
                         run_id=self.request.run_id,
                         log=self.log,
                         period_start=self.request.period_start,
                         period_end=self.request.period_end,
-                    )
+                    ),
                 )
             )
             return
@@ -319,20 +324,15 @@ class _SourcePullRunner:
         self.request = request
         self.drafts: list[ItemDraft] = []
         self.source_failures_total = 0
-        self.source_stats = service._empty_source_pull_stats()
+        self.source_stats = _empty_source_pull_stats()
 
     def run(self) -> tuple[list[ItemDraft], int, dict[str, dict[str, int]]]:
-        for source_name, fn, source_request, legacy_kwargs in self._configured_pulls():
-            self._pull_source(
-                source_name=source_name,
-                fn=fn,
-                source_request=source_request,
-                legacy_kwargs=legacy_kwargs,
-            )
+        for configured_pull in self._configured_pulls():
+            self._pull_source(configured_pull)
         return self.drafts, self.source_failures_total, self.source_stats
 
-    def _configured_pulls(self) -> list[tuple[str, Any, Any, dict[str, Any]]]:
-        configured: list[tuple[str, Any, Any, dict[str, Any]]] = []
+    def _configured_pulls(self) -> list[_ConfiguredSourcePull]:
+        configured: list[_ConfiguredSourcePull] = []
         for configured_pull in (
             self._hf_daily_pull(),
             self._hn_pull(),
@@ -344,7 +344,7 @@ class _SourcePullRunner:
                 configured.append(configured_pull)
         return configured
 
-    def _hf_daily_pull(self) -> tuple[str, Any, Any, dict[str, Any]] | None:
+    def _hf_daily_pull(self) -> _ConfiguredSourcePull | None:
         settings = self.service.settings.sources.hf_daily
         if not settings.enabled:
             return None
@@ -355,20 +355,13 @@ class _SourcePullRunner:
             pull_state_lookup=self._pull_state_lookup("hf_daily"),
             include_stats=True,
         )
-        return (
-            "hf_daily",
-            sources.fetch_hf_daily_papers_drafts,
-            source_request,
-            {
-                "max_items": source_request.max_items,
-                "period_start": source_request.period_start,
-                "period_end": source_request.period_end,
-                "pull_state_lookup": source_request.pull_state_lookup,
-                "include_stats": source_request.include_stats,
-            },
+        return _ConfiguredSourcePull(
+            source_name="hf_daily",
+            fetcher=sources.fetch_hf_daily_papers_drafts,
+            request=source_request,
         )
 
-    def _hn_pull(self) -> tuple[str, Any, Any, dict[str, Any]] | None:
+    def _hn_pull(self) -> _ConfiguredSourcePull | None:
         settings = self.service.settings.sources.hn
         hn_urls = _deduped_values(settings.rss_urls) if settings.enabled else []
         if not hn_urls:
@@ -382,22 +375,13 @@ class _SourcePullRunner:
             pull_state_lookup=self._pull_state_lookup("hn"),
             include_stats=True,
         )
-        return (
-            "hn",
-            sources.fetch_hn_drafts,
-            source_request,
-            {
-                "feed_urls": source_request.feed_urls,
-                "max_items_per_feed": source_request.max_items_per_feed,
-                "period_start": source_request.period_start,
-                "period_end": source_request.period_end,
-                "max_total_items": source_request.max_total_items,
-                "pull_state_lookup": source_request.pull_state_lookup,
-                "include_stats": source_request.include_stats,
-            },
+        return _ConfiguredSourcePull(
+            source_name="hn",
+            fetcher=sources.fetch_hn_drafts,
+            request=source_request,
         )
 
-    def _rss_pull(self) -> tuple[str, Any, Any, dict[str, Any]] | None:
+    def _rss_pull(self) -> _ConfiguredSourcePull | None:
         settings = self.service.settings.sources.rss
         rss_urls = _deduped_values(settings.feeds) if settings.enabled else []
         if not rss_urls:
@@ -412,23 +396,13 @@ class _SourcePullRunner:
             pull_state_lookup=self._pull_state_lookup("rss"),
             include_stats=True,
         )
-        return (
-            "rss",
-            sources.fetch_rss_drafts,
-            source_request,
-            {
-                "feed_urls": source_request.feed_urls,
-                "source": source_request.source,
-                "max_items_per_feed": source_request.max_items_per_feed,
-                "period_start": source_request.period_start,
-                "period_end": source_request.period_end,
-                "max_total_items": source_request.max_total_items,
-                "pull_state_lookup": source_request.pull_state_lookup,
-                "include_stats": source_request.include_stats,
-            },
+        return _ConfiguredSourcePull(
+            source_name="rss",
+            fetcher=sources.fetch_rss_drafts,
+            request=source_request,
         )
 
-    def _arxiv_pull(self) -> tuple[str, Any, Any, dict[str, Any]] | None:
+    def _arxiv_pull(self) -> _ConfiguredSourcePull | None:
         settings = self.service.settings.sources.arxiv
         arxiv_queries = _deduped_values(settings.queries) if settings.enabled else []
         if not arxiv_queries:
@@ -464,28 +438,14 @@ class _SourcePullRunner:
             pool_readiness_gate=str(pool_settings.readiness_gate),
             pool_allow_immature_windows=bool(pool_settings.allow_immature_windows),
         )
-        return (
-            "arxiv",
-            sources.fetch_arxiv_drafts,
-            source_request,
-            {
-                "queries": source_request.queries,
-                "max_results_per_run": source_request.max_results_per_run,
-                "period_start": source_request.period_start,
-                "period_end": source_request.period_end,
-                "max_total_items": source_request.max_total_items,
-                "pull_state_lookup": source_request.pull_state_lookup,
-                "include_stats": source_request.include_stats,
-                "mode": source_request.mode,
-                "pool_db_path": source_request.pool_db_path,
-                "pool_maturity_lag_days": source_request.pool_maturity_lag_days,
-                "pool_readiness_gate": source_request.pool_readiness_gate,
-                "pool_allow_immature_windows": source_request.pool_allow_immature_windows,
-                "pool_backend": pool_backend,
-            },
+        return _ConfiguredSourcePull(
+            source_name="arxiv",
+            fetcher=sources.fetch_arxiv_drafts,
+            request=source_request,
+            pool_backend=pool_backend,
         )
 
-    def _openreview_pull(self) -> tuple[str, Any, Any, dict[str, Any]] | None:
+    def _openreview_pull(self) -> _ConfiguredSourcePull | None:
         settings = self.service.settings.sources.openreview
         openreview_venues = _deduped_values(settings.venues) if settings.enabled else []
         if not openreview_venues:
@@ -499,38 +459,25 @@ class _SourcePullRunner:
             pull_state_lookup=self._pull_state_lookup("openreview"),
             include_stats=True,
         )
-        return (
-            "openreview",
-            sources.fetch_openreview_drafts,
-            source_request,
-            {
-                "venues": source_request.venues,
-                "max_results_per_venue": source_request.max_results_per_venue,
-                "period_start": source_request.period_start,
-                "period_end": source_request.period_end,
-                "max_total_items": source_request.max_total_items,
-                "pull_state_lookup": source_request.pull_state_lookup,
-                "include_stats": source_request.include_stats,
-            },
+        return _ConfiguredSourcePull(
+            source_name="openreview",
+            fetcher=sources.fetch_openreview_drafts,
+            request=source_request,
         )
 
-    def _pull_source(
-        self,
-        *,
-        source_name: str,
-        fn: Any,
-        source_request: Any,
-        legacy_kwargs: dict[str, Any],
-    ) -> None:
+    def _pull_source(self, configured_pull: _ConfiguredSourcePull) -> None:
+        source_name = configured_pull.source_name
         started = time.perf_counter()
         bucket = _ensure_source_pull_bucket(self.source_stats, source_name)
         try:
-            raw_result = self.service._invoke_source_pull(
-                fn,
-                request=source_request,
-                **legacy_kwargs,
-            )
-            pull_result = self.service._normalize_source_pull_result(raw_result)
+            if configured_pull.pool_backend is _NO_POOL_BACKEND:
+                raw_result = configured_pull.fetcher(request=configured_pull.request)
+            else:
+                raw_result = configured_pull.fetcher(
+                    request=configured_pull.request,
+                    pool_backend=configured_pull.pool_backend,
+                )
+            pull_result = _normalize_source_pull_result(raw_result)
             self._merge_pull_result(
                 source_name=source_name, bucket=bucket, pull_result=pull_result
             )
@@ -614,6 +561,18 @@ def _deduped_values(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def _empty_source_pull_stats() -> dict[str, dict[str, int]]:
+    return {source_name: _new_source_pull_bucket() for source_name in _SOURCE_NAMES}
+
+
+def _normalize_source_pull_result(raw: Any) -> sources.SourcePullResult:
+    if isinstance(raw, sources.SourcePullResult):
+        return raw
+    if raw is None:
+        return sources.SourcePullResult()
+    return sources.SourcePullResult(drafts=list(raw))
+
+
 def _pipeline_progress() -> type[Progress]:
     from recoleta import pipeline as pipeline_module
 
@@ -629,28 +588,32 @@ def _ensure_source_pull_bucket(
         normalized = "unknown"
     bucket = source_stats.get(normalized)
     if bucket is None:
-        bucket = {
-            "drafts_total": 0,
-            "pull_failed_total": 0,
-            "pull_duration_ms": 0,
-            "filtered_out_total": 0,
-            "in_window_total": 0,
-            "missing_published_at_total": 0,
-            "deduped_total": 0,
-            "deferred_total": 0,
-            "not_modified_total": 0,
-            "oldest_published_at_unix": 0,
-            "newest_published_at_unix": 0,
-            "inserted_total": 0,
-            "updated_total": 0,
-            "pool_drafts_total": 0,
-            "pool_window_unavailable_total": 0,
-            "pool_window_immature_total": 0,
-            "pool_window_immature_allowed_total": 0,
-            "pool_window_analysis_ready_total": 0,
-        }
+        bucket = _new_source_pull_bucket()
         source_stats[normalized] = bucket
     return bucket
+
+
+def _new_source_pull_bucket() -> dict[str, int]:
+    return {
+        "drafts_total": 0,
+        "pull_failed_total": 0,
+        "pull_duration_ms": 0,
+        "filtered_out_total": 0,
+        "in_window_total": 0,
+        "missing_published_at_total": 0,
+        "deduped_total": 0,
+        "deferred_total": 0,
+        "not_modified_total": 0,
+        "oldest_published_at_unix": 0,
+        "newest_published_at_unix": 0,
+        "inserted_total": 0,
+        "updated_total": 0,
+        "pool_drafts_total": 0,
+        "pool_window_unavailable_total": 0,
+        "pool_window_immature_total": 0,
+        "pool_window_immature_allowed_total": 0,
+        "pool_window_analysis_ready_total": 0,
+    }
 
 
 def _merge_published_at_bucket(
