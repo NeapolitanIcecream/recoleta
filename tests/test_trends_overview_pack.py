@@ -82,6 +82,20 @@ def test_overview_pack_week_includes_7_day_entries_with_placeholders(
     assert "- overview=overview-0" in md
     assert "- overview=overview-3" in md
 
+    final_entry_start = md.index(f"### day {expected_dates[-1]}")
+    capped_md, capped_stats = build_overview_pack_md(
+        repository,
+        plan,
+        overview_pack_max_chars=len(md) - 1,
+        item_overview_top_k=20,
+        item_overview_item_max_chars=200,
+    )
+    assert capped_md == md[:final_entry_start]
+    assert capped_stats.get("truncated") is True
+    assert capped_stats.get("entries_total") == 7
+    assert capped_stats.get("entries_included") == 6
+    assert capped_stats.get("entries_dropped") == 1
+
 
 def test_overview_pack_week_marks_missing_chunk_when_trend_doc_has_no_summary_chunk(
     configured_env,
@@ -289,29 +303,48 @@ def test_overview_pack_day_item_top_k_and_per_item_max_chars(configured_env) -> 
     )
     assert plan.overview_pack_strategy == "item_top_k"
 
+    item_max_chars = 220
     md, stats = build_overview_pack_md(
         repository,
         plan,
         overview_pack_max_chars=10_000,
         item_overview_top_k=2,
-        item_overview_item_max_chars=5,
+        item_overview_item_max_chars=item_max_chars,
     )
     assert stats.get("truncated") is False
+    assert stats.get("item_selected_total") == 2
+    assert stats.get("item_budget_dropped_total") == 0
+    assert stats.get("item_truncated_total") == 2
 
     assert "title=Item Newest" in md
     assert "title=Item Middle" in md
     assert "title=Item Oldest" not in md
 
-    item_lines = [line for line in md.splitlines() if line.startswith("### item rank=")]
-    assert len(item_lines) == 2
-    for line in md.splitlines():
-        if not any(
-            line.startswith(prefix)
-            for prefix in ("- summary=", "- problem=", "- approach=", "- results=")
-        ):
-            continue
-        value = line.split("=", 1)[1].strip()
-        assert len(value) <= 5
+    item_starts = [
+        index for index in range(len(md)) if md.startswith("### item rank=", index)
+    ]
+    assert len(item_starts) == 2
+    item_ends = [*item_starts[1:], len(md)]
+    item_blocks = [
+        md[start:end] for start, end in zip(item_starts, item_ends, strict=True)
+    ]
+    assert all(len(block) <= item_max_chars for block in item_blocks)
+    assert all("- doc_id=" in block for block in item_blocks)
+    assert all(" | chunk_index=0\n" in block for block in item_blocks)
+    assert all(block.endswith("\n") for block in item_blocks)
+
+    one_char_short_md, short_stats = build_overview_pack_md(
+        repository,
+        plan,
+        overview_pack_max_chars=len(md) - 1,
+        item_overview_top_k=2,
+        item_overview_item_max_chars=item_max_chars,
+    )
+    assert one_char_short_md == md[: item_starts[1]]
+    assert short_stats.get("truncated") is True
+    assert short_stats.get("entries_total") == 2
+    assert short_stats.get("entries_included") == 1
+    assert short_stats.get("entries_dropped") == 1
 
 
 def test_overview_pack_day_uses_materialized_item_docs_only(
@@ -456,7 +489,7 @@ def test_overview_pack_day_item_top_k_deduplicates_duplicate_urls(
     assert md.count("url=https://example.com/overview-item-dup-b") == 1
 
 
-def test_overview_pack_truncation_sets_stats_flag(configured_env) -> None:
+def test_overview_pack_global_cap_drops_incomplete_item(configured_env) -> None:
     _ = configured_env
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -499,13 +532,16 @@ def test_overview_pack_truncation_sets_stats_flag(configured_env) -> None:
     )
     assert len(full_md) > 80
 
+    item_start = full_md.index("### item rank=1")
     truncated_md, stats = build_overview_pack_md(
         repository,
         plan,
-        overview_pack_max_chars=80,
+        overview_pack_max_chars=len(full_md) - 1,
         item_overview_top_k=1,
         item_overview_item_max_chars=200,
     )
     assert stats.get("truncated") is True
-    assert len(truncated_md) == 80
-    assert truncated_md == full_md[:80]
+    assert stats.get("entries_included") == 0
+    assert stats.get("entries_dropped") == 1
+    assert truncated_md == full_md[:item_start]
+    assert truncated_md.endswith("\n")

@@ -53,18 +53,6 @@ def _sanitize_inline_text(value: str) -> str:
     return normalized.replace("|", "\\|")
 
 
-def _summary_field_line(
-    sections: dict[str, str],
-    *,
-    field_name: str,
-    max_chars: int,
-) -> str:
-    raw = _sanitize_inline_text(str(sections.get(field_name) or ""))
-    if max_chars > 0:
-        raw = raw[:max_chars]
-    return raw
-
-
 def _extract_markdown_links(value: str, *, limit: int) -> list[str]:
     links: list[str] = []
     seen: set[str] = set()
@@ -86,6 +74,86 @@ def _truncate_chars(value: str, *, max_chars: int) -> tuple[str, bool]:
     if len(value) <= cap:
         return value, False
     return value[:cap], True
+
+
+def _allocate_field_chars(values: list[str], *, max_chars: int) -> list[int]:
+    """Distribute a shared character budget without starving shorter fields."""
+
+    allocations = [0] * len(values)
+    remaining = max(0, int(max_chars))
+    active = [index for index, value in enumerate(values) if value]
+    while remaining > 0 and active:
+        share = max(1, remaining // len(active))
+        next_active: list[int] = []
+        for index in active:
+            if remaining <= 0:
+                break
+            available = len(values[index]) - allocations[index]
+            take = min(available, share, remaining)
+            allocations[index] += take
+            remaining -= take
+            if allocations[index] < len(values[index]):
+                next_active.append(index)
+        active = next_active
+    return allocations
+
+
+def _bounded_field_value(value: str, *, allocated_chars: int) -> tuple[str, bool]:
+    cap = max(0, int(allocated_chars))
+    if len(value) <= cap:
+        return value, False
+    if cap <= 0:
+        return "", bool(value)
+    if cap == 1:
+        return "…", True
+    return f"{value[: cap - 1]}…", True
+
+
+def _markdown_units(lines: list[str]) -> list[tuple[list[str], bool]]:
+    """Group heading-led entries while keeping preamble lines independently usable."""
+
+    units: list[tuple[list[str], bool]] = []
+    entry_lines: list[str] = []
+    for line in lines:
+        if line.startswith("### "):
+            if entry_lines:
+                units.append((entry_lines, True))
+            entry_lines = [line]
+            continue
+        if entry_lines:
+            entry_lines.append(line)
+        else:
+            units.append(([line], False))
+    if entry_lines:
+        units.append((entry_lines, True))
+    return units
+
+
+def _render_complete_markdown(
+    lines: list[str], *, max_chars: int
+) -> tuple[str, bool, int, int]:
+    """Render only complete lines and heading-led entries within the hard cap."""
+
+    units = _markdown_units(lines)
+    entry_total = sum(1 for _, is_entry in units if is_entry)
+    entry_included = 0
+    rendered: list[str] = []
+    rendered_chars = 0
+    cap = max(0, int(max_chars))
+    for unit_lines, is_entry in units:
+        unit = "\n".join(unit_lines).rstrip() + "\n"
+        if rendered_chars + len(unit) > cap:
+            break
+        rendered.append(unit)
+        rendered_chars += len(unit)
+        if is_entry:
+            entry_included += 1
+    return (
+        "".join(rendered),
+        len(rendered) < len(units),
+        entry_total,
+        entry_included,
+    )
 
 
 def _cluster_name(cluster: dict[str, Any]) -> str:
@@ -502,20 +570,67 @@ def _item_candidate_lines(
     rank: int,
     candidate: dict[str, Any],
     item_max_chars: int,
-) -> list[str]:
+) -> tuple[list[str], bool]:
     payload = candidate["meta"]
     title = _sanitize_inline_text(str(payload.get("title") or "")) or "(untitled)"
     url = _sanitize_inline_text(str(payload.get("canonical_url") or "")) or "-"
     sections = extract_item_summary_sections(str(candidate["summary_text"] or ""))
-    return [
-        f"### item rank={rank}",
-        f"- title={title}",
-        f"- url={url}",
-        f"- summary={_summary_field_line(sections, field_name='summary', max_chars=item_max_chars)}",
-        f"- problem={_summary_field_line(sections, field_name='problem', max_chars=item_max_chars)}",
-        f"- approach={_summary_field_line(sections, field_name='approach', max_chars=item_max_chars)}",
-        f"- results={_summary_field_line(sections, field_name='results', max_chars=item_max_chars)}",
+    field_names = ["title", "url", "summary", "problem", "approach", "results"]
+    field_values = [
+        title,
+        url,
+        *[
+            _sanitize_inline_text(str(sections.get(field_name) or ""))
+            for field_name in field_names[2:]
+        ],
     ]
+    fixed_lines = [
+        f"### item rank={rank}",
+        f"- doc_id={int(candidate['doc_id'])} | chunk_index=0",
+        *[f"- {field_name}=" for field_name in field_names],
+    ]
+    fixed_chars = len("\n".join(fixed_lines).rstrip() + "\n")
+    if fixed_chars > item_max_chars:
+        return [], True
+
+    available_chars = item_max_chars - fixed_chars
+    metadata_values = field_values[:2]
+    metadata_budget_values = [
+        value[:preferred_cap]
+        for value, preferred_cap in zip(metadata_values, (96, 240), strict=True)
+    ]
+    metadata_allocations = _allocate_field_chars(
+        metadata_budget_values,
+        max_chars=available_chars,
+    )
+    remaining_chars = available_chars - sum(metadata_allocations)
+    summary_allocations = _allocate_field_chars(
+        field_values[2:],
+        max_chars=remaining_chars,
+    )
+    allocations = [*metadata_allocations, *summary_allocations]
+    bounded_values: list[str] = []
+    truncated = False
+    for value, allocation in zip(field_values, allocations, strict=True):
+        bounded_value, field_truncated = _bounded_field_value(
+            value,
+            allocated_chars=allocation,
+        )
+        bounded_values.append(bounded_value)
+        truncated = truncated or field_truncated
+    lines = [
+        fixed_lines[0],
+        fixed_lines[1],
+        *[
+            f"- {field_name}={field_value}"
+            for field_name, field_value in zip(
+                field_names,
+                bounded_values,
+                strict=True,
+            )
+        ],
+    ]
+    return lines, truncated
 
 
 def _item_top_k_lines(
@@ -527,7 +642,12 @@ def _item_top_k_lines(
 ) -> list[str]:
     top_k = max(0, int(request.item_overview_top_k))
     item_max_chars = max(0, int(request.item_overview_item_max_chars))
+    stats["item_max_chars"] = item_max_chars
     if top_k <= 0:
+        stats["item_selected_total"] = 0
+        stats["item_rendered_total"] = 0
+        stats["item_budget_dropped_total"] = 0
+        stats["item_truncated_total"] = 0
         return ["- items_total=0 | selected=0"]
     candidate_limit = _item_candidate_limit(top_k)
     summary_rows = request.repository.list_document_chunk_index_rows_in_period(
@@ -558,14 +678,23 @@ def _item_top_k_lines(
     lines = [
         f"- items_total={len(candidates)} | selected={len(selected)} | top_k={top_k}"
     ]
+    item_budget_dropped_total = 0
+    item_truncated_total = 0
     for rank, candidate in enumerate(selected, start=1):
-        lines.extend(
-            _item_candidate_lines(
-                rank=rank,
-                candidate=candidate,
-                item_max_chars=item_max_chars,
-            )
+        item_lines, item_truncated = _item_candidate_lines(
+            rank=rank,
+            candidate=candidate,
+            item_max_chars=item_max_chars,
         )
+        if not item_lines:
+            item_budget_dropped_total += 1
+            continue
+        item_truncated_total += int(item_truncated)
+        lines.extend(item_lines)
+    stats["item_selected_total"] = len(selected)
+    stats["item_rendered_total"] = len(selected) - item_budget_dropped_total
+    stats["item_budget_dropped_total"] = item_budget_dropped_total
+    stats["item_truncated_total"] = item_truncated_total
     return lines
 
 
@@ -602,9 +731,14 @@ def build_overview_pack_md_impl(
         )
     else:
         lines.append(f"- unsupported_strategy={strategy or '(empty)'}")
-    md = "\n".join(lines).rstrip() + "\n"
-    md, truncated = _truncate_chars(md, max_chars=request.overview_pack_max_chars)
+    md, truncated, entries_total, entries_included = _render_complete_markdown(
+        lines,
+        max_chars=request.overview_pack_max_chars,
+    )
     stats["truncated"] = bool(truncated)
     stats["chars"] = len(md)
     stats["max_chars"] = int(request.overview_pack_max_chars)
+    stats["entries_total"] = entries_total
+    stats["entries_included"] = entries_included
+    stats["entries_dropped"] = entries_total - entries_included
     return md, stats
