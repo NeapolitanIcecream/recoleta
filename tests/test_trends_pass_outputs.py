@@ -174,7 +174,7 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
     assert re.search(r"(?<![\w])doc_id\s*[:=#-]?\s*\d+", markdown) is None
 
 
-def test_trends_backfills_cluster_evidence_before_publishing(
+def test_trends_never_backfills_evidence_and_limits_single_source_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -216,10 +216,20 @@ def test_trends_backfills_cluster_evidence_before_publishing(
             "topics": ["agents"],
             "clusters": [
                 {
-                    "title": "Grounding",
-                    "content_md": "Grounding moved from demo copy to cited evidence.",
+                    "title": "Unsupported",
+                    "content_md": "This cluster has no evidence supplied by the agent.",
                     "evidence_refs": [],
-                }
+                },
+                {
+                    "title": "Grounding",
+                    "content_md": "This is explicitly grounded in the only source.",
+                    "evidence_refs": [{"doc_id": evidence_doc_id, "chunk_index": 0}],
+                },
+                {
+                    "title": "Repeated framing",
+                    "content_md": "A second cluster cannot manufacture a trend.",
+                    "evidence_refs": [{"doc_id": evidence_doc_id, "chunk_index": 0}],
+                },
             ],
         }
         return TrendPayload.model_validate(payload), {"tool_calls_total": 0}
@@ -227,8 +237,7 @@ def test_trends_backfills_cluster_evidence_before_publishing(
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
     def _fake_search_chunks_text(**kwargs):  # type: ignore[no-untyped-def]
-        assert kwargs["doc_type"] == "item"
-        return [{"doc_id": evidence_doc_id, "chunk_index": 0}]
+        pytest.fail(f"post-generation evidence search must not run: {kwargs}")
 
     monkeypatch.setattr(repository, "search_chunks_text", _fake_search_chunks_text)
 
@@ -248,15 +257,25 @@ def test_trends_backfills_cluster_evidence_before_publishing(
         assert pass_output is not None
         payload = json.loads(pass_output.payload_json)
         cluster = payload["clusters"][0]
+        assert len(payload["clusters"]) == 1
+        assert cluster["title"].startswith("单源信号：")
         evidence_refs = cluster["evidence_refs"]
         assert len(evidence_refs) == 1
         assert evidence_refs[0]["doc_id"] == evidence_doc_id
         assert evidence_refs[0]["chunk_index"] == 0
 
         diagnostics = json.loads(pass_output.diagnostics_json or "{}")
+        assert "context_packs" not in diagnostics
+        assert "context_pack_stats" in diagnostics
         rep_enforcement = diagnostics["rep_enforcement"]
-        assert rep_enforcement["backfilled_total"] == 1
-        assert rep_enforcement["failed_clusters_total"] == 0
+        assert rep_enforcement["backfilled_total"] == 0
+        assert rep_enforcement["failed_clusters_total"] == 2
+        assert rep_enforcement["dropped_insufficient_support_total"] == 1
+        assert rep_enforcement["dropped_single_source_excess_total"] == 1
+        assert rep_enforcement["single_source_mode_total"] == 1
+        assert rep_enforcement["retained_clusters_total"] == 1
+        assert rep_enforcement["read_trace_enforced_total"] == 0
+        assert rep_enforcement["read_trace_unavailable_total"] == 1
 
     trend_note = (
         settings.markdown_output_dir
@@ -266,6 +285,215 @@ def test_trends_backfills_cluster_evidence_before_publishing(
     markdown = trend_note.read_text(encoding="utf-8")
     assert "#### Evidence" in markdown
     assert "[Grounding Paper](" in markdown
+
+
+def test_trends_keep_only_distinct_item_sources_read_by_agent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("LLM_OUTPUT_LANGUAGE", "English")
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    doc_1, doc_2, doc_3 = [
+        _seed_item_document(
+            repository=repository,
+            published_at=period_start.replace(hour=index),
+            source_item_id=f"trend-evidence-{index}",
+            title=title,
+        )
+        for index, title in enumerate(
+            ("Graph verifier", "Robot world models", "Compiler fuzzing"),
+            start=1,
+        )
+    ]
+    non_item_doc = repository.upsert_document_for_trend(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        title="Discovery-only trend",
+    )
+    assert non_item_doc.id is not None
+    non_item_doc_id = int(non_item_doc.id)
+    assert len({doc_1, doc_2, doc_3}) == 3
+    assert (
+        len(
+            repository.list_documents(
+                doc_type="item",
+                period_start=period_start,
+                period_end=period_end,
+                limit=10,
+            )
+        )
+        == 3
+    )
+    from recoleta.pipeline.trends_stage import TrendStageRequest, _TrendStageRunner
+    from recoleta.trends import TrendPayload
+
+    payload = TrendPayload.model_validate(
+        {
+            "title": "Evidence integrity",
+            "granularity": "day",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overview_md": "Only evidence inspected by the agent can survive.",
+            "topics": ["agents"],
+            "clusters": [
+                {
+                    "title": "Duplicate chunks",
+                    "content_md": "Two chunks from one paper are still one source.",
+                    "evidence_refs": [
+                        {"doc_id": doc_1, "chunk_index": 0},
+                        {"doc_id": doc_1, "chunk_index": 1},
+                    ],
+                },
+                {
+                    "title": "Independent support",
+                    "content_md": "Two inspected papers support this signal.",
+                    "evidence_refs": [
+                        {"doc_id": doc_1, "chunk_index": 0},
+                        {"doc_id": doc_2, "chunk_index": 0},
+                    ],
+                },
+                {
+                    "title": "Unread source",
+                    "content_md": "A real but unread paper cannot support the output.",
+                    "evidence_refs": [
+                        {"doc_id": doc_1, "chunk_index": 0},
+                        {"doc_id": doc_3, "chunk_index": 0},
+                    ],
+                },
+                {
+                    "title": "Trend-document citation",
+                    "content_md": "A synthesis document is not primary evidence.",
+                    "evidence_refs": [
+                        {"doc_id": doc_1, "chunk_index": 0},
+                        {"doc_id": non_item_doc_id, "chunk_index": 0},
+                    ],
+                },
+                {
+                    "title": "No references",
+                    "content_md": "Search must not attach evidence after generation.",
+                    "evidence_refs": [],
+                },
+            ],
+        }
+    )
+    events = [
+        {
+            "kind": "tool-call",
+            "tool_name": "read_chunk",
+            "tool_call_id": "read-1",
+            "args": {"doc_id": doc_1, "chunk_index": 0},
+        },
+        {
+            "kind": "tool-return",
+            "tool_name": "read_chunk",
+            "tool_call_id": "read-1",
+            "content": {"chunk": {"doc_id": doc_1, "chunk_index": 0}},
+        },
+        {
+            "kind": "tool-call",
+            "tool_name": "get_doc_bundle",
+            "tool_call_id": "bundle-2",
+            "args": {"doc_id": doc_2, "content_limit": 2},
+        },
+        {
+            "kind": "tool-return",
+            "tool_name": "get_doc_bundle",
+            "tool_call_id": "bundle-2",
+            "content": {
+                "bundle": {
+                    "doc": {"doc_id": doc_2},
+                    "text": "RAW_TRACE_SENTINEL" * 2000,
+                }
+            },
+        },
+        {
+            "kind": "tool-call",
+            "tool_name": "get_doc",
+            "tool_call_id": "metadata-3",
+            "args": {"doc_id": doc_3},
+        },
+        {
+            "kind": "tool-call",
+            "tool_name": "get_doc_bundle",
+            "tool_call_id": "failed-bundle-3",
+            "args": {"doc_id": doc_3, "content_limit": 2},
+        },
+        {
+            "kind": "tool-return",
+            "tool_name": "get_doc_bundle",
+            "tool_call_id": "failed-bundle-3",
+            "content": {"error": "document read failed"},
+        },
+    ]
+    debug = {
+        "usage": {"requests": 1, "input_tokens": 100, "output_tokens": 50},
+        "tool_calls_total": 4,
+        "tool_call_breakdown": {
+            "get_doc": 1,
+            "get_doc_bundle": 2,
+            "read_chunk": 1,
+        },
+        "raw_tool_trace": {
+            "status": "captured",
+            "events": events,
+            "events_total": len(events),
+            "tool_calls_total": 4,
+            "events_truncated": False,
+        },
+    }
+    runner = _TrendStageRunner(
+        service=service,
+        request=TrendStageRequest(
+            run_id="run-trend-evidence-integrity",
+            granularity="day",
+            anchor_date=date(2026, 3, 2),
+            llm_model="test/fake-model",
+            reuse_existing_corpus=True,
+        ),
+    )
+    state = runner._prepare_state()
+
+    stats = runner._enforce_cluster_evidence_refs(
+        payload=payload,
+        state=state,
+        debug=debug,
+    )
+
+    assert stats["item_corpus_docs_total"] == 3
+    assert [cluster.title for cluster in payload.clusters] == ["Independent support"]
+    assert [ref.doc_id for ref in payload.clusters[0].evidence_refs] == [doc_1, doc_2]
+    assert stats["backfilled_total"] == 0
+    assert stats["dropped_duplicate_doc_total"] == 1
+    assert stats["dropped_unread_total"] == 1
+    assert stats["dropped_non_item_total"] == 1
+    assert stats["dropped_insufficient_support_total"] == 4
+    assert stats["retained_clusters_total"] == 1
+    assert stats["read_trace_enforced_total"] == 1
+
+    compact_debug = runner._compact_persisted_debug(debug)
+    assert compact_debug["evidence_reads"] == {
+        "trace_enforced": True,
+        "trace_status": "captured",
+        "trace_events_truncated": False,
+        "item_doc_ids": [doc_1, doc_2],
+        "item_docs_total": 2,
+    }
+    compact_json = json.dumps(compact_debug)
+    assert "raw_tool_trace" not in compact_debug
+    assert "RAW_TRACE_SENTINEL" not in compact_json
+    assert len(compact_json) < 2_000
 
 
 def test_trends_records_metric_when_pass_output_persist_fails(

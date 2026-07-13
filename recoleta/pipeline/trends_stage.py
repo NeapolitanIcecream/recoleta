@@ -103,9 +103,7 @@ class _TrendGenerationArtifacts:
     evolution_normalization_stats: dict[str, int] | None = None
     evolution_suppressed_without_history: bool = False
     plan: trends.TrendGenerationPlan | None = None
-    rep_dropped_non_item_total: int = 0
-    rep_backfilled_total: int = 0
-    rep_failed_clusters_total: int = 0
+    rep_stats: dict[str, int] | None = None
 
 
 @dataclass(slots=True)
@@ -1331,6 +1329,10 @@ class _TrendStageRunner:
             ranking_n,
             rep_source_doc_type,
         ) = self._build_overview_pack(state, plan)
+        if rag_sources is None:
+            rag_sources = trends.rag_sources_for_granularity(
+                state.normalized_granularity
+            )
         history_pack_md, history_pack_stats, evolution_max_signals = (
             self._build_history_pack(state, plan)
         )
@@ -1373,7 +1375,11 @@ class _TrendStageRunner:
             evolution_normalization_stats=evolution_normalization_stats,
             evolution_suppressed_without_history=evolution_suppressed_without_history,
         )
-        rep_stats = self._record_rep_enforcement(payload=payload, state=state)
+        rep_stats = self._record_rep_enforcement(
+            payload=payload,
+            state=state,
+            debug=debug,
+        )
         return self._generation_artifacts_from_payload(
             _TrendArtifactsRequest(
                 payload=payload,
@@ -1405,8 +1411,13 @@ class _TrendStageRunner:
         *,
         payload: Any,
         state: _TrendStageState,
+        debug: dict[str, Any] | None,
     ) -> dict[str, int]:
-        rep_stats = self._enforce_cluster_evidence_refs(payload=payload, state=state)
+        rep_stats = self._enforce_cluster_evidence_refs(
+            payload=payload,
+            state=state,
+            debug=debug,
+        )
         self._record_rep_metrics(rep_stats)
         return rep_stats
 
@@ -1512,9 +1523,7 @@ class _TrendStageRunner:
             evolution_normalization_stats=request.evolution_normalization_stats,
             evolution_suppressed_without_history=request.evolution_suppressed_without_history,
             plan=request.plan,
-            rep_dropped_non_item_total=int(request.rep_stats["dropped_non_item_total"]),
-            rep_backfilled_total=int(request.rep_stats["backfilled_total"]),
-            rep_failed_clusters_total=int(request.rep_stats["failed_clusters_total"]),
+            rep_stats=dict(request.rep_stats),
         )
 
     def _build_generation_plan(
@@ -1804,68 +1813,253 @@ class _TrendStageRunner:
         *,
         payload: Any,
         state: _TrendStageState,
+        debug: dict[str, Any] | None,
     ) -> dict[str, int]:
+        configured_min = max(
+            1,
+            int(
+                getattr(
+                    self.service.settings,
+                    "trends_rep_min_per_cluster",
+                    2,
+                )
+                or 2
+            ),
+        )
+        active_item_doc_ids = self._active_item_doc_ids(state=state)
+        read_item_doc_ids = self._read_item_doc_ids_from_debug(debug)
+        trace_status, trace_truncated = self._raw_tool_trace_metadata(debug)
+        enforce_read_trace = read_item_doc_ids is not None
+        single_source_mode = len(active_item_doc_ids) == 1
+        effective_min = 1 if single_source_mode else configured_min
         doc_type_cache: dict[int, str | None] = {}
-        max_refs = 6
+        max_refs = max(6, configured_min)
         totals = {
             "dropped_non_item_total": 0,
+            "dropped_out_of_corpus_total": 0,
+            "dropped_unread_total": 0,
+            "dropped_duplicate_doc_total": 0,
+            "dropped_invalid_ref_total": 0,
             "backfilled_total": 0,
             "failed_clusters_total": 0,
+            "dropped_insufficient_support_total": 0,
+            "dropped_single_source_excess_total": 0,
+            "retained_clusters_total": 0,
+            "item_corpus_docs_total": len(active_item_doc_ids),
+            "configured_min_distinct_docs": configured_min,
+            "effective_min_distinct_docs": effective_min,
+            "read_trace_captured_total": 1 if trace_status == "captured" else 0,
+            "read_trace_enforced_total": 1 if enforce_read_trace else 0,
+            "read_trace_unavailable_total": 0 if enforce_read_trace else 1,
+            "read_trace_truncated_total": 1 if trace_truncated else 0,
+            "read_item_docs_total": len(read_item_doc_ids or set()),
+            "single_source_mode_total": 1 if single_source_mode else 0,
         }
+        retained_clusters: list[Any] = []
         for cluster in list(getattr(payload, "clusters", []) or []):
-            cleaned, dropped_total = self._clean_cluster_evidence_refs(
+            cleaned, clean_stats = self._clean_cluster_evidence_refs(
                 cluster=cluster,
+                active_item_doc_ids=active_item_doc_ids,
+                read_item_doc_ids=read_item_doc_ids,
                 doc_type_cache=doc_type_cache,
                 max_refs=max_refs,
             )
-            totals["dropped_non_item_total"] += dropped_total
+            for key, value in clean_stats.items():
+                totals[key] += value
             cluster.evidence_refs = cleaned
-            if cluster.evidence_refs:
-                continue
-            backfilled = self._backfill_item_evidence_refs_text(
-                cluster=cluster,
-                state=state,
-                limit=max_refs,
-            )
-            if not backfilled:
-                backfilled = self._backfill_item_evidence_refs_semantic(
-                    cluster=cluster,
-                    state=state,
-                    limit=max_refs,
-                )
-            if backfilled:
-                cluster.evidence_refs = backfilled[:max_refs]
-                totals["backfilled_total"] += 1
-            else:
-                cluster.evidence_refs = []
+            if len(cleaned) < effective_min:
                 totals["failed_clusters_total"] += 1
+                totals["dropped_insufficient_support_total"] += 1
+                continue
+            if single_source_mode and retained_clusters:
+                totals["failed_clusters_total"] += 1
+                totals["dropped_single_source_excess_total"] += 1
+                continue
+            if single_source_mode:
+                self._mark_single_source_signal(cluster)
+            retained_clusters.append(cluster)
+        payload.clusters = retained_clusters
+        totals["retained_clusters_total"] = len(retained_clusters)
         return totals
+
+    def _active_item_doc_ids(self, *, state: _TrendStageState) -> set[int]:
+        docs = cast(Any, self.service.repository).list_documents(
+            doc_type="item",
+            period_start=state.period_start,
+            period_end=state.period_end,
+            order_by="event_desc",
+            limit=2000,
+        )
+        doc_ids: set[int] = set()
+        for doc in docs:
+            try:
+                doc_id = int(getattr(doc, "id"))
+            except Exception:
+                continue
+            if doc_id > 0:
+                doc_ids.add(doc_id)
+        return doc_ids
+
+    @staticmethod
+    def _raw_tool_trace_metadata(
+        debug: dict[str, Any] | None,
+    ) -> tuple[str, bool]:
+        if not isinstance(debug, dict):
+            return "missing", False
+        trace = debug.get("raw_tool_trace")
+        if not isinstance(trace, dict):
+            return "missing", False
+        status = str(trace.get("status") or "unknown").strip().lower() or "unknown"
+        return status, bool(trace.get("events_truncated"))
+
+    @classmethod
+    def _read_item_doc_ids_from_debug(
+        cls,
+        debug: dict[str, Any] | None,
+    ) -> set[int] | None:
+        if not isinstance(debug, dict):
+            return None
+        trace = debug.get("raw_tool_trace")
+        if not isinstance(trace, dict):
+            return None
+        if str(trace.get("status") or "").strip().lower() != "captured":
+            return None
+        if bool(trace.get("events_truncated")):
+            return None
+        events = trace.get("events")
+        if not isinstance(events, list):
+            return None
+        calls: dict[str, tuple[str, int]] = {}
+        doc_ids: set[int] = set()
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            tool_name = str(event.get("tool_name") or "").strip()
+            if tool_name not in {
+                "get_doc_bundle",
+                "read_chunk",
+            }:
+                continue
+            tool_call_id = str(event.get("tool_call_id") or "").strip()
+            if not tool_call_id:
+                continue
+            kind = str(event.get("kind") or "").strip()
+            if kind == "tool-call":
+                args = cls._tool_trace_mapping(event.get("args"))
+                if args is None:
+                    continue
+                try:
+                    doc_id = int(args.get("doc_id") or 0)
+                except Exception:
+                    continue
+                if doc_id > 0:
+                    calls[tool_call_id] = (tool_name, doc_id)
+                continue
+            if kind != "tool-return":
+                continue
+            call = calls.get(tool_call_id)
+            if call is None or call[0] != tool_name:
+                continue
+            returned_doc_id = cls._returned_read_doc_id(
+                tool_name=tool_name,
+                content=event.get("content"),
+            )
+            if returned_doc_id is not None and returned_doc_id == call[1]:
+                doc_ids.add(returned_doc_id)
+        return doc_ids
+
+    @staticmethod
+    def _tool_trace_mapping(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            return value
+        if not isinstance(value, (str, bytes)):
+            return None
+        try:
+            parsed = orjson.loads(value)
+        except Exception:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @classmethod
+    def _returned_read_doc_id(cls, *, tool_name: str, content: Any) -> int | None:
+        mapping = cls._tool_trace_mapping(content)
+        if mapping is None:
+            return None
+        if tool_name == "get_doc_bundle":
+            bundle = mapping.get("bundle")
+            nested = bundle.get("doc") if isinstance(bundle, dict) else None
+        elif tool_name == "read_chunk":
+            nested = mapping.get("chunk")
+        else:
+            return None
+        if not isinstance(nested, dict):
+            return None
+        try:
+            doc_id = int(nested.get("doc_id") or 0)
+        except Exception:
+            return None
+        return doc_id if doc_id > 0 else None
+
+    def _mark_single_source_signal(self, cluster: Any) -> None:
+        title = str(getattr(cluster, "title", "") or "").strip()
+        normalized_title = title.casefold()
+        if "single-source" in normalized_title or "单源" in title:
+            return
+        output_language = str(
+            getattr(self.service.settings, "llm_output_language", "") or ""
+        )
+        chinese_output = (
+            output_language.lower().startswith("zh")
+            or "chinese" in output_language.lower()
+            or "中文" in output_language
+        )
+        marker = "单源信号" if chinese_output else "Single-source signal"
+        separator = "：" if chinese_output else ": "
+        cluster.title = f"{marker}{separator}{title}"
 
     def _clean_cluster_evidence_refs(
         self,
         *,
         cluster: Any,
+        active_item_doc_ids: set[int],
+        read_item_doc_ids: set[int] | None,
         doc_type_cache: dict[int, str | None],
         max_refs: int,
-    ) -> tuple[list[Any], int]:
+    ) -> tuple[list[Any], dict[str, int]]:
         cleaned: list[Any] = []
-        dropped_non_item_total = 0
-        seen_ref_keys: set[tuple[int, int]] = set()
+        stats = {
+            "dropped_non_item_total": 0,
+            "dropped_out_of_corpus_total": 0,
+            "dropped_unread_total": 0,
+            "dropped_duplicate_doc_total": 0,
+            "dropped_invalid_ref_total": 0,
+        }
+        seen_doc_ids: set[int] = set()
         for ref in list(getattr(cluster, "evidence_refs", []) or []):
             ref_key = self._evidence_ref_key(ref)
             if ref_key is None:
+                stats["dropped_invalid_ref_total"] += 1
                 continue
             doc_id_int, chunk_index_int = ref_key
-            doc_type = self._doc_type_for_doc_id(
-                doc_id_value=doc_id_int,
-                doc_type_cache=doc_type_cache,
-            )
-            if doc_type != "item":
-                dropped_non_item_total += 1
+            if doc_id_int not in active_item_doc_ids:
+                doc_type = self._doc_type_for_doc_id(
+                    doc_id_value=doc_id_int,
+                    doc_type_cache=doc_type_cache,
+                )
+                key = (
+                    "dropped_non_item_total"
+                    if doc_type != "item"
+                    else "dropped_out_of_corpus_total"
+                )
+                stats[key] += 1
                 continue
-            if ref_key in seen_ref_keys:
+            if read_item_doc_ids is not None and doc_id_int not in read_item_doc_ids:
+                stats["dropped_unread_total"] += 1
                 continue
-            seen_ref_keys.add(ref_key)
+            if doc_id_int in seen_doc_ids:
+                stats["dropped_duplicate_doc_total"] += 1
+                continue
+            seen_doc_ids.add(doc_id_int)
             cleaned.append(
                 trends.TrendEvidenceRef(
                     doc_id=doc_id_int,
@@ -1873,7 +2067,7 @@ class _TrendStageRunner:
                     reason=getattr(ref, "reason", None),
                 )
             )
-        return cleaned[:max_refs], dropped_non_item_total
+        return cleaned[:max_refs], stats
 
     def _doc_type_for_doc_id(
         self,
@@ -1894,163 +2088,6 @@ class _TrendStageRunner:
         return doc_type_cache.get(normalized_doc_id)
 
     @staticmethod
-    def _cluster_evidence_queries(cluster: Any) -> list[str]:
-        title = str(getattr(cluster, "title", "") or "").strip()
-        content = str(getattr(cluster, "content_md", "") or "").strip()
-        candidates = [f"{title} {content}".strip(), title, content]
-        queries: list[str] = []
-        seen_queries: set[str] = set()
-        for candidate in candidates:
-            normalized = " ".join(str(candidate or "").split()).strip()
-            if not normalized:
-                continue
-            if len(normalized) > 400:
-                normalized = normalized[:400].rsplit(" ", 1)[0].strip() or normalized[:400]
-            if normalized in seen_queries:
-                continue
-            seen_queries.add(normalized)
-            queries.append(normalized)
-        return queries
-
-    def _backfill_item_evidence_refs_text(
-        self,
-        *,
-        cluster: Any,
-        state: _TrendStageState,
-        limit: int,
-    ) -> list[Any]:
-        evidence_refs: list[Any] = []
-        seen: set[tuple[int, int]] = set()
-        for query in self._cluster_evidence_queries(cluster):
-            rows = self._text_search_rows(query=query, state=state, limit=limit)
-            self._append_text_evidence_refs(
-                rows=rows,
-                evidence_refs=evidence_refs,
-                seen=seen,
-                limit=limit,
-            )
-            if len(evidence_refs) >= limit:
-                return evidence_refs
-        return evidence_refs
-
-    def _text_search_rows(
-        self,
-        *,
-        query: str,
-        state: _TrendStageState,
-        limit: int,
-    ) -> list[Any]:
-        try:
-            return cast(Any, self.service.repository).search_chunks_text(
-                query=query,
-                doc_type="item",
-                period_start=state.period_start,
-                period_end=state.period_end,
-                limit=limit,
-            )
-        except Exception:
-            return []
-
-    def _append_text_evidence_refs(
-        self,
-        *,
-        rows: list[Any],
-        evidence_refs: list[Any],
-        seen: set[tuple[int, int]],
-        limit: int,
-    ) -> None:
-        for row in rows or []:
-            ref = self._row_to_evidence_ref(row)
-            if ref is None:
-                continue
-            ref_key = self._evidence_ref_key(ref)
-            if ref_key is None or ref_key in seen:
-                continue
-            seen.add(ref_key)
-            evidence_refs.append(ref)
-            if len(evidence_refs) >= limit:
-                return
-
-    def _row_to_evidence_ref(self, row: Any) -> Any | None:
-        if not isinstance(row, dict):
-            return None
-        raw_doc_id = row.get("doc_id")
-        raw_chunk_index = row.get("chunk_index")
-        if raw_doc_id is None or raw_chunk_index is None:
-            return None
-        try:
-            doc_id_int = int(raw_doc_id)
-            chunk_index_int = int(raw_chunk_index)
-        except Exception:
-            return None
-        if doc_id_int <= 0 or chunk_index_int < 0:
-            return None
-        return trends.TrendEvidenceRef(doc_id=doc_id_int, chunk_index=chunk_index_int)
-
-    def _backfill_item_evidence_refs_semantic(
-        self,
-        *,
-        cluster: Any,
-        state: _TrendStageState,
-        limit: int,
-    ) -> list[Any]:
-        queries = self._cluster_evidence_queries(cluster)
-        if not queries:
-            return []
-        try:
-            hits = trends.semantic_search_summaries_in_period(
-                repository=cast(Any, self.service.repository),
-                lancedb_dir=self.service.settings.rag_lancedb_dir,
-                run_id=self.request.run_id,
-                doc_type="item",
-                period_start=state.period_start,
-                period_end=state.period_end,
-                query=queries[0],
-                embedding_model=self.service.settings.trends_embedding_model,
-                embedding_dimensions=self.service.settings.trends_embedding_dimensions,
-                max_batch_inputs=self.service.settings.trends_embedding_batch_max_inputs,
-                max_batch_chars=self.service.settings.trends_embedding_batch_max_chars,
-                embedding_failure_mode=getattr(
-                    self.service.settings,
-                    "trends_embedding_failure_mode",
-                    "continue",
-                ),
-                embedding_max_errors=int(
-                    getattr(self.service.settings, "trends_embedding_max_errors", 0)
-                    or 0
-                ),
-                limit=limit,
-                metric_namespace=self.metric_namespace,
-                llm_connection=self.service._llm_connection,
-            )
-        except Exception:
-            return []
-        evidence_refs: list[Any] = []
-        seen: set[tuple[int, int]] = set()
-        for hit in hits or []:
-            ref = self._semantic_hit_to_evidence_ref(hit)
-            if ref is None:
-                continue
-            ref_key = self._evidence_ref_key(ref)
-            if ref_key is None or ref_key in seen:
-                continue
-            seen.add(ref_key)
-            evidence_refs.append(ref)
-            if len(evidence_refs) >= limit:
-                break
-        return evidence_refs
-
-    def _semantic_hit_to_evidence_ref(self, hit: Any) -> Any | None:
-        try:
-            doc_id_int = int(getattr(hit, "doc_id"))
-            chunk_index_int = int(getattr(hit, "chunk_index"))
-        except Exception:
-            return None
-        if doc_id_int <= 0 or chunk_index_int < 0:
-            return None
-        return trends.TrendEvidenceRef(doc_id=doc_id_int, chunk_index=chunk_index_int)
-
-    @staticmethod
     def _evidence_ref_key(ref: Any) -> tuple[int, int] | None:
         try:
             doc_id_int = int(getattr(ref, "doc_id"))
@@ -2062,25 +2099,55 @@ class _TrendStageRunner:
         return doc_id_int, chunk_index_int
 
     def _record_rep_metrics(self, rep_stats: dict[str, int]) -> None:
-        for metric_name, key in (
-            (
-                "pipeline.trends.rep_enforcement.dropped_non_item_total",
-                "dropped_non_item_total",
-            ),
-            (
-                "pipeline.trends.rep_enforcement.backfilled_total",
-                "backfilled_total",
-            ),
-            (
-                "pipeline.trends.rep_enforcement.failed_clusters_total",
-                "failed_clusters_total",
-            ),
-        ):
+        for key, value in sorted(rep_stats.items()):
             self.record_metric(
-                name=metric_name,
-                value=rep_stats[key],
+                name=f"pipeline.trends.rep_enforcement.{key}",
+                value=value,
                 unit="count",
             )
+
+    def _compact_persisted_debug(
+        self,
+        debug: dict[str, Any],
+    ) -> dict[str, Any]:
+        compact: dict[str, Any] = {}
+        usage = debug.get("usage")
+        if isinstance(usage, dict):
+            compact["usage"] = {
+                str(key): value
+                for key, value in usage.items()
+                if isinstance(value, (int, float)) or value is None
+            }
+        for key in (
+            "estimated_cost_usd",
+            "tool_calls_total",
+            "prompt_chars",
+            "overview_pack_chars",
+            "history_pack_chars",
+            "empty_corpus",
+        ):
+            if key not in debug:
+                continue
+            value = debug.get(key)
+            if isinstance(value, (bool, int, float)) or value is None:
+                compact[key] = value
+        tool_breakdown = debug.get("tool_call_breakdown")
+        if isinstance(tool_breakdown, dict):
+            compact["tool_call_breakdown"] = {
+                str(key): value
+                for key, value in tool_breakdown.items()
+                if isinstance(value, (int, float))
+            }
+        read_doc_ids = self._read_item_doc_ids_from_debug(debug)
+        trace_status, trace_truncated = self._raw_tool_trace_metadata(debug)
+        compact["evidence_reads"] = {
+            "trace_enforced": read_doc_ids is not None,
+            "trace_status": trace_status,
+            "trace_events_truncated": trace_truncated,
+            "item_doc_ids": sorted(read_doc_ids or set()),
+            "item_docs_total": len(read_doc_ids or set()),
+        }
+        return compact
 
     def _run_pass_execution(
         self,
@@ -2089,6 +2156,10 @@ class _TrendStageRunner:
         generation: _TrendGenerationArtifacts,
         context: _TrendProjectionContext,
     ) -> Any:
+        rep_enforcement = dict(generation.rep_stats or {})
+        rep_enforcement.setdefault("dropped_non_item_total", 0)
+        rep_enforcement.setdefault("backfilled_total", 0)
+        rep_enforcement.setdefault("failed_clusters_total", 0)
         trend_synthesis_diagnostics: dict[str, Any] = {
             "workflow_freshness": build_trend_synthesis_freshness(
                 settings=self.service.settings,
@@ -2099,9 +2170,9 @@ class _TrendStageRunner:
                 analysis_model=state.analysis_model,
                 repository=self.service.repository,
             ),
-            "context_packs": {
-                "overview_pack_md": generation.overview_pack_md,
-                "history_pack_md": generation.history_pack_md,
+            "context_pack_stats": {
+                "overview_pack_chars": len(str(generation.overview_pack_md or "")),
+                "history_pack_chars": len(str(generation.history_pack_md or "")),
             },
             "overview_pack_stats": generation.overview_pack_stats,
             "history_pack_stats": generation.history_pack_stats,
@@ -2111,14 +2182,12 @@ class _TrendStageRunner:
                 "suppressed_without_history": False,
                 "normalization": generation.evolution_normalization_stats or {},
             },
-            "rep_enforcement": {
-                "dropped_non_item_total": generation.rep_dropped_non_item_total,
-                "backfilled_total": generation.rep_backfilled_total,
-                "failed_clusters_total": generation.rep_failed_clusters_total,
-            },
+            "rep_enforcement": rep_enforcement,
         }
         if isinstance(generation.debug, dict):
-            trend_synthesis_diagnostics["debug"] = generation.debug
+            trend_synthesis_diagnostics["debug"] = self._compact_persisted_debug(
+                generation.debug
+            )
         trend_synthesis_envelope = build_trend_synthesis_pass_output(
             run_id=self.request.run_id,
             granularity=state.normalized_granularity,

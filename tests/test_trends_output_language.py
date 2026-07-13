@@ -15,14 +15,34 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "keep topics as concise English tags" in instructions
     assert "under 200 Chinese characters or 200 words" in instructions
     assert "do not add a Topics/主题 section inside overview_md" in instructions
-    assert "The public output should contain only overview_md and 1 to 4 cluster blocks" in instructions
-    assert "Each cluster must include at least one evidence_refs entry" in instructions
+    assert (
+        "The public output should contain only overview_md and 0 to 4 cluster blocks"
+        in instructions
+    )
+    assert "at least two distinct item doc_id values" in instructions
+    assert "multiple chunks from one document still count as one source" in instructions
     assert "direct editorial judgment, not a topic inventory" in instructions
     assert "at most three named systems, papers, or benchmarks" in instructions
-    assert "Do not leave raw prev_n tokens in title, overview_md, or clusters[].content_md" in instructions
-    assert "Do not frame change as 'from X to Y'" in instructions
-    assert "Do not narrate the period as a move, turn, push, or shift away from an older framing." in instructions
-    assert "'the result does not say X; it says Y'" in instructions
+    assert (
+        "Do not leave raw prev_n tokens in title, overview_md, or clusters[].content_md"
+        in instructions
+    )
+    assert (
+        "A trend is an evidence-backed period delta, not a topic digest" in instructions
+    )
+    assert (
+        "continued momentum, or no material change are all valid findings"
+        in instructions
+    )
+    assert (
+        "Never infer a move, turn, push, or shift from the current window alone"
+        in instructions
+    )
+    assert "it is valid to publish no clusters" in instructions
+    assert (
+        "drill into the underlying item documents with get_doc_bundle" in instructions
+    )
+    assert "cite only item documents that you actually inspected" in instructions
     assert "Do not use negative parallelism" in instructions
     assert "Avoid false suspense" in instructions
     assert "Avoid fractal summaries" in instructions

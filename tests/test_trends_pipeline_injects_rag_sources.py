@@ -41,6 +41,66 @@ def _seed_daily_trends_for_week(*, repository: Any, week_start: Any) -> None:
         )
 
 
+def test_week_trends_expose_item_evidence_when_overview_pack_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    monkeypatch.setenv("TRENDS_SELF_SIMILAR_ENABLED", "false")
+    monkeypatch.setenv("TRENDS_PEER_HISTORY_ENABLED", "false")
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    anchor = date(2026, 3, 5)
+    week_start, week_end = week_period_bounds(anchor)
+    _seed_daily_trends_for_week(repository=repository, week_start=week_start)
+    captured: dict[str, Any] = {}
+
+    import recoleta.trends as trends_mod
+
+    def _fake_generate_trend_via_tools(**kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return (
+            TrendPayload(
+                title="Weekly Trend",
+                granularity="week",
+                period_start=week_start.isoformat(),
+                period_end=week_end.isoformat(),
+                overview_md="No evidence-qualified cluster.",
+                topics=[],
+                clusters=[],
+            ),
+            {"tool_calls_total": 0},
+        )
+
+    monkeypatch.setattr(
+        trends_mod, "generate_trend_via_tools", _fake_generate_trend_via_tools
+    )
+
+    service.trends(
+        run_id="run-week-item-evidence-corpus",
+        granularity="week",
+        anchor_date=anchor,
+        llm_model="test/fake-model",
+    )
+
+    assert captured["corpus_doc_type"] == "trend"
+    assert captured["corpus_granularity"] == "day"
+    assert captured["rag_sources"] == [
+        {"doc_type": "item", "granularity": None},
+        {"doc_type": "trend", "granularity": "day"},
+    ]
+
+
 def test_trends_pipeline_injects_overview_pack_and_rag_sources_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

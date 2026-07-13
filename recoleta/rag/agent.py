@@ -76,8 +76,9 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "then use get_doc_bundle to inspect promising evidence bundles before falling back to get_doc or read_chunk."
     )
     base += (
-        " When available, use trend documents (doc_type=trend) for synthesis and higher-level themes, "
-        "and use item documents (doc_type=item) for concrete citations and grounded evidence. "
+        " When available, use trend documents (doc_type=trend) only to discover synthesis candidates and higher-level themes. "
+        "For every weekly or monthly candidate, then drill into the underlying item documents with get_doc_bundle; "
+        "cite only item documents that you actually inspected, never a trend document or a search result you did not read. "
         "Do not force a Top-N must-read section; that workflow is legacy and should only appear if the prompt explicitly requires it."
     )
     base += (
@@ -100,24 +101,28 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Avoid repetitive phrasing across overview and clusters; each section should add new value."
     )
     base += (
-        " State the current emphasis directly."
-        " Do not narrate the period as a move, turn, push, or shift away from an"
-        " older framing."
-        " Do not frame change as 'from X to Y', 'less about X and more about Y',"
-        " 'not X but Y', 'shifting from', 'turns from', 'rather than',"
-        " 'instead of', 'away from X and toward Y', 'the result does not say X; it says Y',"
-        " or similar contrast formulas."
+        " A trend is an evidence-backed period delta, not a topic digest. "
+        "When same-granularity history is available, compare the current evidence with it and state the supported result: "
+        "a new or stronger signal, a weakening signal, continued momentum, or no material change are all valid findings. "
+        "Never infer a move, turn, push, or shift from the current window alone. "
+        "When history is absent or too weak for a longitudinal claim, describe the result as a current signal, "
+        "not as change over time; it is valid to publish no clusters when no evidence-qualified trend exists. "
+        "Avoid formulaic 'from X to Y', 'less X and more Y', and 'not X but Y' contrasts unless the supplied history "
+        "and current item evidence directly establish that comparison."
     )
     base += (
         " Use any history change, contradictory evidence, or representative examples as internal analysis tools, "
         "but do not expose them as separate reader-facing sections. "
-        "The public output should contain only overview_md and 1 to 4 cluster blocks."
+        "The public output should contain only overview_md and 0 to 4 cluster blocks."
     )
     base += (
         " Each cluster block must be a finished short note, not a worksheet. "
         "Use clusters[].title for a literal topic label, clusters[].content_md for the prose body, "
         "and clusters[].evidence_refs for grounded supporting references. "
-        "Each cluster must include at least one evidence_refs entry with concrete doc_id and chunk_index values."
+        "Each cluster must cite at least two distinct item doc_id values with concrete chunk_index values; "
+        "multiple chunks from one document still count as one source. "
+        "If the active corpus contains only one item document, emit at most one cluster and clearly label it as a "
+        "single-source signal rather than a trend. If the evidence cannot meet these rules, omit the cluster."
     )
     base = f"{base}\n\n{reader_facing_ai_tropes_prompt()}"
     if not output_language:
