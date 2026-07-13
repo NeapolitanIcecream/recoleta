@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from recoleta.config import Settings
 from recoleta.models import Item
 from recoleta.pipeline import PipelineService
+from recoleta.pipeline.analyze_runtime import _load_stored_contents_for_analysis
 from recoleta.storage import Repository
 from recoleta.types import ItemDraft
 
@@ -129,8 +130,8 @@ def test_load_arxiv_content_prefers_html_document_md_for_analysis(
         item_id=int(item.id), content_type="html_document_md", text="# md preferred"
     )
 
-    loaded = service._load_arxiv_content_for_analysis(item_id=int(item.id))  # noqa: SLF001
-    assert loaded == "# md preferred"
+    loaded = _load_stored_contents_for_analysis(service=service, items=[item])
+    assert loaded[int(item.id)] == "# md preferred"
 
 
 def test_enrich_arxiv_html_document_records_pandoc_warning_metrics(
