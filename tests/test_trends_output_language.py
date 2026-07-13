@@ -46,6 +46,8 @@ def test_trend_agent_instructions_include_output_language() -> None:
         "overview pack lists representative_doc_id values" in instructions
         and "instead of searching again" in instructions
     )
+    assert "normally 6 to 10 representative item documents" in instructions
+    assert "do not fetch every listed representative" in instructions
     assert "Use get_doc only for metadata" in instructions
     assert "cite only item documents that you actually inspected" in instructions
     assert "Do not use negative parallelism" in instructions
