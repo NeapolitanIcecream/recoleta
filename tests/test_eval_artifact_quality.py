@@ -245,6 +245,96 @@ def test_evaluate_databases_survives_bad_payloads_and_reads_legacy_trend_refs(
     assert group["row_diagnostics"]["legacy_ref_fields_used"] == 1
 
 
+def test_newer_suppressed_output_replaces_older_succeeded_artifact(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "suppressed.db"
+    connection = _create_db(db_path)
+    _insert_output(
+        connection,
+        row_id=1,
+        pass_kind="trend_ideas",
+        granularity="day",
+        period_start="2026-04-06T00:00:00+00:00",
+        period_end="2026-04-07T00:00:00+00:00",
+        payload={
+            "ideas": [
+                {
+                    "title": "Stale idea",
+                    "evidence_refs": [_ref(10, 0), _ref(20, 0)],
+                }
+            ]
+        },
+    )
+    _insert_output(
+        connection,
+        row_id=2,
+        pass_kind="trend_ideas",
+        granularity="day",
+        period_start="2026-04-06T00:00:00+00:00",
+        period_end="2026-04-07T00:00:00+00:00",
+        payload={"ideas": []},
+        status="suppressed",
+    )
+    connection.commit()
+    connection.close()
+
+    report = quality.evaluate_databases(db_paths=[db_path])
+
+    group = report["groups"][0]
+    assert group["artifact_counts"]["idea_payloads"] == 1
+    assert group["artifact_counts"]["valid_idea_payloads"] == 1
+    assert group["idea_support"]["units_total"] == 0
+    assert group["row_diagnostics"]["terminal_pass_outputs"] == 2
+    assert group["row_diagnostics"]["succeeded_pass_outputs"] == 1
+    assert group["row_diagnostics"]["suppressed_pass_outputs"] == 1
+    assert group["row_diagnostics"]["canonical_suppressed_outputs"] == 1
+    assert group["row_diagnostics"]["superseded_terminal_outputs"] == 1
+    assert group["row_diagnostics"]["superseded_succeeded_outputs"] == 1
+
+
+def test_newer_failed_output_does_not_replace_older_succeeded_artifact(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "failed.db"
+    connection = _create_db(db_path)
+    _insert_output(
+        connection,
+        row_id=1,
+        pass_kind="trend_ideas",
+        granularity="day",
+        period_start="2026-04-06T00:00:00+00:00",
+        period_end="2026-04-07T00:00:00+00:00",
+        payload={
+            "ideas": [
+                {
+                    "title": "Last successful idea",
+                    "evidence_refs": [_ref(10, 0), _ref(20, 0)],
+                }
+            ]
+        },
+    )
+    _insert_output(
+        connection,
+        row_id=2,
+        pass_kind="trend_ideas",
+        granularity="day",
+        period_start="2026-04-06T00:00:00+00:00",
+        period_end="2026-04-07T00:00:00+00:00",
+        payload={"ideas": []},
+        status="failed",
+    )
+    connection.commit()
+    connection.close()
+
+    report = quality.evaluate_databases(db_paths=[db_path])
+
+    group = report["groups"][0]
+    assert group["idea_units"][0]["title"] == "Last successful idea"
+    assert group["row_diagnostics"]["canonical_succeeded_outputs"] == 1
+    assert group["row_diagnostics"]["non_terminal_filtered"] == 1
+
+
 def test_main_writes_json_report_and_prints_readable_summary(
     tmp_path: Path, capsys
 ) -> None:

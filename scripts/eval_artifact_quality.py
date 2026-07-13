@@ -16,6 +16,7 @@ _PASS_KIND_TO_ARTIFACT = {
     "trend_synthesis": "trend",
     "trend_ideas": "idea",
 }
+_CANONICAL_TERMINAL_STATUSES = frozenset({"succeeded", "suppressed"})
 _UNIT_FIELD = {"trend": "clusters", "idea": "ideas"}
 _DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.5
 _LEXICAL_SHINGLE_SIZE = 3
@@ -29,6 +30,7 @@ class _PassOutputRow:
     scope: str
     pass_output_id: int
     pass_kind: str
+    status: str
     granularity: str
     period_start: str
     period_end: str
@@ -96,10 +98,18 @@ def _empty_diagnostics() -> Counter[str]:
     return Counter(
         {
             "relevant_pass_outputs_seen": 0,
+            "terminal_pass_outputs": 0,
+            "suppressed_pass_outputs": 0,
+            "non_terminal_filtered": 0,
             "non_succeeded_filtered": 0,
             "succeeded_pass_outputs": 0,
             "canonical_pass_outputs": 0,
+            "canonical_succeeded_outputs": 0,
+            "canonical_suppressed_outputs": 0,
+            "superseded_terminal_outputs": 0,
             "superseded_succeeded_outputs": 0,
+            "superseded_suppressed_outputs": 0,
+            "suppressed_units_ignored": 0,
             "malformed_payloads": 0,
             "non_object_payloads": 0,
             "missing_units_list": 0,
@@ -148,10 +158,15 @@ def _read_database(
         scope = str(row["scope"] or "default").strip() or "default"
         diagnostics = diagnostics_by_scope[scope]
         diagnostics["relevant_pass_outputs_seen"] += 1
-        if str(row["status"] or "").strip().lower() != "succeeded":
+        status = str(row["status"] or "").strip().lower()
+        if status not in _CANONICAL_TERMINAL_STATUSES:
+            diagnostics["non_terminal_filtered"] += 1
+            # Compatibility alias retained for existing report consumers. It now
+            # means a row whose status is ineligible for canonical selection.
             diagnostics["non_succeeded_filtered"] += 1
             continue
-        diagnostics["succeeded_pass_outputs"] += 1
+        diagnostics["terminal_pass_outputs"] += 1
+        diagnostics[f"{status}_pass_outputs"] += 1
         key = (
             scope,
             str(row["pass_kind"]),
@@ -160,16 +175,19 @@ def _read_database(
             str(row["period_end"] or ""),
         )
         if key in seen_keys:
-            diagnostics["superseded_succeeded_outputs"] += 1
+            diagnostics["superseded_terminal_outputs"] += 1
+            diagnostics[f"superseded_{status}_outputs"] += 1
             continue
         seen_keys.add(key)
         diagnostics["canonical_pass_outputs"] += 1
+        diagnostics[f"canonical_{status}_outputs"] += 1
         records_by_scope[scope].append(
             _PassOutputRow(
                 database=str(resolved),
                 scope=scope,
                 pass_output_id=int(row["id"]),
                 pass_kind=str(row["pass_kind"]),
+                status=status,
                 granularity=key[2],
                 period_start=key[3],
                 period_end=key[4],
@@ -290,6 +308,9 @@ def _parse_artifact_row(
     raw_units = payload.get(_UNIT_FIELD[artifact_kind])
     if not isinstance(raw_units, list):
         diagnostics["missing_units_list"] += 1
+        return artifact_kind, True, []
+    if row.status == "suppressed":
+        diagnostics["suppressed_units_ignored"] += len(raw_units)
         return artifact_kind, True, []
     units: list[_ArtifactUnit] = []
     for unit_index, raw_unit in enumerate(raw_units, start=1):
@@ -640,9 +661,28 @@ def evaluate_databases(
         "inputs": resolved_paths,
         "methodology": {
             "canonical_selection": (
-                "Latest succeeded pass_output per database, scope, pass_kind, "
-                "granularity, period_start, and period_end; newer rows supersede reruns."
+                "Latest succeeded or suppressed pass_output per database, scope, "
+                "pass_kind, granularity, period_start, and period_end. Newer eligible "
+                "terminal rows supersede reruns; failed, started, and unknown statuses "
+                "are filtered before selection and cannot shadow an older terminal row."
             ),
+            "status_semantics": {
+                "canonical_terminal_statuses": sorted(
+                    _CANONICAL_TERMINAL_STATUSES
+                ),
+                "suppressed_artifact": (
+                    "A suppressed row contributes one valid canonical payload and zero "
+                    "artifact units, even if its stored units list is unexpectedly non-empty."
+                ),
+                "filtered_statuses": (
+                    "Every status other than succeeded or suppressed is ineligible for "
+                    "canonical selection."
+                ),
+                "compatibility_diagnostic": (
+                    "non_succeeded_filtered is retained as an alias of "
+                    "non_terminal_filtered; suppressed rows are not filtered."
+                ),
+            },
             "source_unit": (
                 "A source is one distinct positive doc_id. Multiple chunks from the "
                 "same document never increase source breadth."
@@ -686,6 +726,15 @@ def render_summary(report: dict[str, Any], *, output_path: Path | None) -> str:
             f"Databases: {aggregate['databases_total']} | "
             f"scopes: {aggregate['groups_total']} | "
             f"canonical outputs: {aggregate['canonical_pass_outputs']}"
+        ),
+        (
+            "Canonical status: "
+            f"{aggregate['row_diagnostics'].get('canonical_succeeded_outputs', 0)} "
+            "succeeded | "
+            f"{aggregate['row_diagnostics'].get('canonical_suppressed_outputs', 0)} "
+            "suppressed | "
+            f"{aggregate['row_diagnostics'].get('non_terminal_filtered', 0)} "
+            "ineligible filtered"
         ),
         (
             f"Trends: {artifact_counts.get('trend_payloads', 0)} payloads / "
