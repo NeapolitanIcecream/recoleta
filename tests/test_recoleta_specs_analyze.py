@@ -8,6 +8,7 @@ import time
 from typing import Any, cast
 
 import pytest
+from litellm.exceptions import RateLimitError
 from sqlmodel import Session, select
 
 from recoleta.models import (
@@ -96,6 +97,15 @@ class _PartiallyInvalidPersistenceAnalyzer:
                 latency_ms=1,
             ),
             None,
+        )
+
+
+class _RateLimitedAnalyzer:
+    def analyze(self, **_kwargs: Any) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+        raise RateLimitError(
+            "rate limited",
+            llm_provider="openai",
+            model="openai/gpt-4o-mini",
         )
 
 
@@ -412,6 +422,30 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     assert any(
         metric.name == "pipeline.analyze.parallelism.requested" for metric in metrics
     )
+
+
+def test_analyze_exhausted_provider_error_remains_retryable(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=_RateLimitedAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-transient-provider-error",
+        canonical_url="https://example.com/transient-provider-error",
+        title="Transient Provider Error",
+    )
+    service.prepare(run_id="run-transient-provider-error", drafts=[draft], limit=1)
+
+    result = service.analyze(run_id="run-transient-provider-error", limit=1)
+
+    assert result.failed == 1
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+    assert item.state == ITEM_STATE_RETRYABLE_FAILED
 
 
 def test_analyze_records_budget_receipt(configured_env) -> None:

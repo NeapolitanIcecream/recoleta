@@ -13,6 +13,7 @@ from tenacity.wait import wait_base, wait_exponential_jitter
 
 from recoleta.llm_costs import extract_measured_cost_usd, resolve_cost_usd
 from recoleta.llm_connection import LLMConnectionConfig
+from recoleta.llm_errors import is_retryable_llm_error
 from recoleta.observability import collect_environment_secrets, scrub_secrets
 from recoleta.item_summary import normalize_item_summary_markdown
 from recoleta.prompt_style import reader_facing_ai_tropes_prompt
@@ -70,23 +71,7 @@ def _sanitize_error_message(message: str, *, max_len: int = 400) -> str:
 
 
 def _should_retry_llm(exc: BaseException) -> bool:
-    try:
-        import litellm
-    except Exception:
-        return isinstance(exc, _AnalyzeRetryableError)
-
-    candidates = (
-        getattr(litellm, "RateLimitError", None),
-        getattr(litellm, "ServiceUnavailableError", None),
-        getattr(litellm, "Timeout", None),
-        getattr(litellm, "APIError", None),
-    )
-    retryable_types = tuple(
-        candidate for candidate in candidates if isinstance(candidate, type)
-    )
-    if retryable_types and isinstance(exc, retryable_types):
-        return True
-    return isinstance(exc, _AnalyzeRetryableError)
+    return isinstance(exc, _AnalyzeRetryableError) or is_retryable_llm_error(exc)
 
 
 class _LiteLLMWait(wait_base):

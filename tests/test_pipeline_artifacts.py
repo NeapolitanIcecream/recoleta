@@ -1,8 +1,22 @@
 from __future__ import annotations
 
 import httpx
+from litellm.exceptions import RateLimitError
 
 from recoleta.pipeline.artifacts import classify_exception, summarize_artifact_payload
+
+
+def test_classify_exception_marks_exhausted_llm_rate_limit_as_retryable() -> None:
+    exc = RateLimitError(
+        "rate limited",
+        llm_provider="openai",
+        model="openai/gpt-4o-mini",
+    )
+
+    assert classify_exception(exc) == {
+        "error_category": "llm_transient",
+        "retryable": True,
+    }
 
 
 def test_classify_exception_marks_http_401_as_retryable_auth_failure() -> None:
