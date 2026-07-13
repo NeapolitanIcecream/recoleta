@@ -437,7 +437,10 @@ def _finalize_ideas_bundle_title(
     output_language: str | None,
 ) -> tuple[TrendIdeasPayload, dict[str, Any]]:
     title = str(normalized_payload.title or "").strip()
-    rewrite_reason = ideas_agent.bundle_title_rewrite_reason(title)
+    rewrite_reason = ideas_agent.bundle_title_rewrite_reason(
+        title,
+        source_title=str(request.trend_payload.title or ""),
+    )
     if rewrite_reason is None:
         return (
             normalized_payload,

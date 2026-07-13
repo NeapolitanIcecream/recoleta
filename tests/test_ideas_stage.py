@@ -451,7 +451,7 @@ def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
         lambda **_kwargs: (
             TrendIdeasPayload.model_validate(
                 {
-                    "title": "Should be replaced",
+                    "title": "Canonical Trend",
                     "granularity": "day",
                     "period_start": period_start.isoformat(),
                     "period_end": period_end.isoformat(),

@@ -157,6 +157,12 @@ def test_bundle_title_validation_unwraps_nested_json_string() -> None:
 
 def test_bundle_title_quality_gate_only_rewrites_invalid_titles() -> None:
     assert bundle_title_rewrite_reason("Verification-first agent rollout") is None
+    assert (
+        bundle_title_rewrite_reason(
+            "Canonical Trend", source_title="canonical trend"
+        )
+        == "copied_source_title"
+    )
     assert bundle_title_rewrite_reason("Ideas: why now?") == "punctuation"
     assert bundle_title_rewrite_reason(
         "Unnormalized title that should be replaced"

@@ -75,7 +75,9 @@ def _normalize_bundle_title_value(value: str) -> str:
     return normalized
 
 
-def bundle_title_rewrite_reason(value: str) -> str | None:
+def bundle_title_rewrite_reason(
+    value: str, *, source_title: str | None = None
+) -> str | None:
     """Return a bounded reason when a generated bundle title needs repair."""
 
     raw = str(value or "")
@@ -94,6 +96,9 @@ def bundle_title_rewrite_reason(value: str) -> str | None:
         return "generic_label"
     if _BUNDLE_TITLE_PLACEHOLDER_RE.search(normalized):
         return "placeholder"
+    normalized_source_title = _normalize_bundle_title_value(source_title or "")
+    if normalized_source_title and normalized.casefold() == normalized_source_title.casefold():
+        return "copied_source_title"
     return None
 
 
