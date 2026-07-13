@@ -37,35 +37,17 @@ Repository-level coding agents need rebuildable projects, real tests, and long t
 
 Long-run evaluation follows the same emphasis. EdgeBench measures agents over 134 real-world tasks, including 36 systems and software engineering tasks, with about 38,000 hours of interaction. It reports that 12-hour learning curves fit a log-sigmoid form with mean R² = 0.998. EvoAgentBench adds a procedure-transfer test: every test task shares at least one verified Ability with a training task, yet automatic memory methods still show mixed gains and some large negative-transfer cases.
 
-#### Evidence
-- [KAT-Coder-V2.5 Technical Report](../Inbox/2026-07-06--kat-coder-v2-5-technical-report.md): KAT-Coder-V2.5 training pipeline, executable environment construction, and benchmark claims.
-- [EdgeBench: Unveiling Scaling Laws of Learning from Real-World Environments](../Inbox/2026-07-06--edgebench-unveiling-scaling-laws-of-learning-from-real-world-environments.md): EdgeBench task design, long-run agent interaction, and learning-curve results.
-- [EvoAgentBench: Benchmarking Agent Self-Evolution via Ability Transfer](../Inbox/2026-07-06--evoagentbench-benchmarking-agent-self-evolution-via-ability-transfer.md): EvoAgentBench ability-transfer construction and mixed automatic-transfer results.
-
 ### Open-source evidence exposes integration costs
 The GitHub-facing studies add measurements that matter to maintainers. One study links 13,360 AI chat sessions to repository histories across 1,240 open-source repositories. Code Writing accounts for 34.7% of sessions, and the paper reports no broad deterioration in observable code-quality signals or pull-request merge rates after AI adoption. Survey responses still flag a social cost: developers see other people’s AI-generated code as harder to maintain than their own.
 
 Concurrent agent pull requests create a clearer operational burden. In AIDev-pop, exact temporal overlap appears in 40.2% of repositories with agent-authored pull requests, covering 79.4% of agent PRs. Merge replay finds textual conflicts in 19.8% of same-agent pairs and 41.7% of cross-agent pairs. A related mutation-taxonomy paper shows that performance-labeled agent PRs are rare, under 1% of AIDev-pop, but their diff patterns vary by agent and optimization target.
-
-#### Evidence
-- [From Conversation to Contribution: Characterizing Coding Agent in Open-Source Software](../Inbox/2026-07-06--from-conversation-to-contribution-characterizing-coding-agent-in-open-source-software.md): Large-scale OSS chat-log linkage, contribution effects, and developer survey results.
-- [AI Agent Pull Requests on GitHub: Frequency, Structure, and Merge Conflict Rates](../Inbox/2026-07-06--ai-agent-pull-requests-on-github-frequency-structure-and-merge-conflict-rates.md): Co-active agent pull request frequency and merge-conflict rates.
-- [What Do AI Agents Actually Change? An Empirical Taxonomy of Mutation Patterns in Performance-Improving Pull Requests](../Inbox/2026-07-06--what-do-ai-agents-actually-change-an-empirical-taxonomy-of-mutation-patterns-in-performance-improving-pull-requests.md): Mutation taxonomy for performance-improving agent pull requests.
 
 ### Agent internals and team design become measurable variables
 Several papers treat agent behavior as something that can be probed or configured, not just scored at the end. Latent Programming Horizons collects 22,714 repair trajectories and 22.4 million hidden-state vectors. Linear probes decode current correctness and partial correctness above chance, with best AUC around 0.83–0.84 on Qwen3.6-35B-A3B. Future-label signals stay above chance for about 25 steps.
 
 Team structure also gets measured. The pm4aa prototype mines GitHub event logs to derive project-specific roles and constraints, then generates a LangGraph application. On Commitizen, it assigns 589 users to 8 roles and builds a 5-agent proof of concept. A separate study of personality and emotion prompts finds that profile choice changes code-generation pass@1 by 7.1 to 11.3 percentage points across models, while fear and high-conscientiousness prompts increase revision activity and token use without consistent performance gains.
 
-#### Evidence
-- [Latent Programming Horizons in Coding Agents](../Inbox/2026-07-06--latent-programming-horizons-in-coding-agents.md): Hidden-state probing of coding agents during multi-step repair.
-- [Using Process Mining to Generate AI Agents from Software Engineering Process Records](../Inbox/2026-07-06--using-process-mining-to-generate-ai-agents-from-software-engineering-process-records.md): Process-mining pipeline for deriving software-engineering agent roles from repository records.
-- [Agents with Feelings? Personality and Emotion in Multi-Agent Software Teams](../Inbox/2026-07-06--agents-with-feelings-personality-and-emotion-in-multi-agent-software-teams.md): Measured effects of personality and emotion profiles in multi-agent software teams.
-
 ### Tool-connected agents need stricter data boundaries
 Security evidence focuses on trust boundaries inside tool responses. The agent data injection paper shows that attackers can place delimiters, JSON-like structure, tags, or spoofed metadata inside untrusted content so a large language model reads it as trusted agent data. The attack applies to web agents through fake UI identifiers and to coding agents through spoofed GitHub issue comments or fake tool responses.
 
 The reported success rates are high enough to affect deployment decisions. Probabilistic delimiter injection reaches 31.3%–43.3% attack success on JSON data across 6 models, and DOM-style data reaches 33.3%–100.0%. Against cited defenses, instruction injection reaches only 0.0%–0.7%, while agent data injection reaches up to 50.0%. The authors report arbitrary click attacks on Claude in Chrome, Antigravity, and Nanobrowser, plus remote code execution and supply-chain paths on Claude Code, Codex, and Gemini CLI.
-
-#### Evidence
-- [Agent Data Injection Attacks are Realistic Threats to AI Agents](../Inbox/2026-07-06--agent-data-injection-attacks-are-realistic-threats-to-ai-agents.md): Definition, method, attack settings, and reported success rates for agent data injection.

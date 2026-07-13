@@ -42,8 +42,8 @@ The need is concrete. One proof of concept modified a local `geopy` repository w
 MCP servers show the same class of failure at tool boundaries. SpellSmith’s MCP study found 43 taint-style cases among 53 vulnerability reports, with most triggered during tool invocation. Its mitigation rewrites tool descriptions with security guidance and adds a reflection step before final execution. A practical first test is to run existing agents against a small repo fixture with benign-looking README guidance that asks for a script execution, then repeat with the gate enabled and check whether the agent can still inspect code while losing the path to automatic execution.
 
 ### Evidence
-- [Hijacking Defensive Cyber AI Agents for Remote Code Execution](../Inbox/2026-07-08--hijacking-defensive-cyber-ai-agents-for-remote-code-execution.md): Documents the repository-based remote code execution proof of concept against Claude Code and Codex auto-approved modes.
-- [Mitigating Taint-Style Vulnerabilities in MCP Servers via Security-Aware Tool Descriptions](../Inbox/2026-07-08--mitigating-taint-style-vulnerabilities-in-mcp-servers-via-security-aware-tool-descriptions.md): Reports that most collected MCP server vulnerabilities were taint-style issues and describes security-aware tool descriptions plus pre-invocation reflection.
+- Document 1794: Documents the repository-based remote code execution proof of concept against Claude Code and Codex auto-approved modes.
+- Document 1799: Reports that most collected MCP server vulnerabilities were taint-style issues and describes security-aware tool descriptions plus pre-invocation reflection.
 
 ## Promotion rules that convert verified incident-agent traces into playbooks
 Ops teams using agents for incident triage should keep successful agent traces as automation material. A buildable version records tool-call order, branch conditions, schemas, dependencies, parameters, and human-approval points after each verified incident run. Recurring patterns can then be promoted into a hybrid playbook after repeated safe success, and into deterministic execution after higher consistency, regression tests, and human review.
@@ -53,7 +53,7 @@ The payoff is cost and repeatability on recurring incidents. In the reported clo
 The cheap adoption check is one incident family, such as a known network alarm or routine service degradation. Capture 20 to 30 successful agent runs, cluster the action sequences, and generate one candidate playbook with explicit demotion rules for failed checks, safety violations, or acceptance-test regressions. The team learns whether the trace data is complete enough before committing to a broader incident automation program.
 
 ### Evidence
-- [Progressive Crystallization: Turning Agent Exploration into Deterministic, Lower-Cost Workflows in Production](../Inbox/2026-07-08--progressive-crystallization-turning-agent-exploration-into-deterministic-lower-cost-workflows-in-production.md): Describes trace extraction, promotion and demotion criteria, execution types, and production results for cloud network incident handling.
+- Document 1800: Describes trace extraction, promotion and demotion criteria, execution types, and production results for cloud network incident handling.
 
 ## Issue templates that collect executable evidence for repair agents
 Engineering teams assigning bugs to repair agents should update issue templates to request agent-useful fields: a minimal reproduction script, expected behavior, observed error, relevant source snippet or API contract, suspected file or module, and any proposed fix direction. The template should also discourage long narrative reports that mix speculation, history, and unrelated discussion into the initial task.
@@ -63,4 +63,4 @@ The evidence points to specific fields. In 433 SWE-bench Verified issues attempt
 A small pilot can measure the change without altering the whole tracker. Route a subset of new bugs through the revised template, run the same repair agent on matched old-style and new-style reports, and compare valid patch rate, time to first plausible patch, and number of repository-search steps. If reporters cannot provide a fix suggestion, the template can ask for the failing invariant or the file most likely to own the behavior.
 
 ### Evidence
-- [What Makes a Good Bug Report for an AI Agent?](../Inbox/2026-07-08--what-makes-a-good-bug-report-for-an-ai-agent.md): Reports the SWE-bench Verified study linking fix suggestions, reproduction scripts, source-code hints, localization, and shorter reports with repair-agent success.
+- Document 1797: Reports the SWE-bench Verified study linking fix suggestions, reproduction scripts, source-code hints, localization, and shorter reports with repair-agent success.

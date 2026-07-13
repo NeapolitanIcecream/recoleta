@@ -21,37 +21,37 @@ tags:
 language_code: zh-CN
 ---
 
-# 编码代理的仓库控制
+# 编码代理仓库控制措施
 
 ## Summary
-仓库所有者可以在编码代理已经造成运维负担的位置增加控制：重叠的拉取请求、混合信任级别的工具数据，以及漏掉长时间仓库工作的评估。证据支持在现有 GitHub 和 CI 工作流中加入小规模、可测试的变更。
+仓库所有者可以在编码代理已经造成运维负担的环节增加控制措施：重叠的拉取请求、混合信任级别的工具数据，以及遗漏长期仓库工作的评估。现有证据支持在 GitHub 和 CI 工作流中进行小范围、可测试的改动。
 
 ## 并发代理拉取请求的合并前冲突检查
-使用编码代理的维护者应在评审前增加一个队列或检查，重放仍处于打开状态、由代理创建的拉取请求之间的合并。这个检查可以对同时活跃的 PR 对运行 `git merge-tree`，发布冲突摘要，并阻止触及相同源文件的低优先级代理 PR，直到第一个 PR 合入或关闭。
+使用编码代理的维护者应在审查前增加队列或检查，重放处于开放状态且由代理创建的拉取请求之间的合并操作。该检查可以对同时活跃的 PR 两两运行 `git merge-tree`，发布冲突摘要，并阻止修改相同源文件的低优先级代理 PR，直到第一个 PR 合并或关闭。
 
-GitHub 数据已经显示了这种运维负担。在 AIDev-pop 中，40.2% 的含代理 PR 仓库出现了精确时间重叠，覆盖了 79.4% 的代理 PR。合并重放发现，同一代理 PR 对的文本冲突率为 19.8%，跨代理 PR 对为 41.7%，大多数冲突文件是源代码。一个简单的初始测试是：在代理会打开多个 PR 的仓库中运行该检查两周，然后把冲突评论、CI 重跑次数和维护者 rebase 工作量与前两周对比。
+GitHub 数据显示了这一运维负担。在 AIDev-pop 中，带有代理创建 PR 的仓库中有 40.2% 出现了精确的时间重叠，这些重叠涉及 79.4% 的代理 PR。合并重放发现，同一代理 PR 对中有 19.8% 存在文本冲突，跨代理 PR 对中有 41.7% 存在文本冲突，发生冲突的文件大多是源代码。首次测试可以从两周开始：在代理会打开多个 PR 的仓库中运行该检查，再将冲突评论、CI 重跑次数和维护者执行 rebase 的工作量与此前两周进行比较。
 
 ### Evidence
-- [AI Agent Pull Requests on GitHub: Frequency, Structure, and Merge Conflict Rates](../Inbox/2026-07-06--ai-agent-pull-requests-on-github-frequency-structure-and-merge-conflict-rates.md): 报告 AIDev-pop 中代理创建的拉取请求的重叠率，以及合并重放冲突率。
-- [AI Agent Pull Requests on GitHub: Frequency, Structure, and Merge Conflict Rates](../Inbox/2026-07-06--ai-agent-pull-requests-on-github-frequency-structure-and-merge-conflict-rates.md): 说明抽样合并重放结果，并指出大多数冲突来自源代码变更。
-- [From Conversation to Contribution: Characterizing Coding Agent in Open-Source Software](../Inbox/2026-07-06--from-conversation-to-contribution-characterizing-coding-agent-in-open-source-software.md): 显示维护者认为他人生成的 AI 代码更难维护，即使可观察的仓库信号没有普遍变差。
+- Document 1776: 报告了 AIDev-pop 中代理创建拉取请求的重叠率，以及合并重放的冲突率。
+- Document 1776: 说明了抽样合并重放的结果，并指出大多数冲突来自源代码变更。
+- Document 1759: 显示维护者认为他人生成的 AI 代码更难维护，即使可观察到的仓库指标整体没有恶化。
 
 ## 编码代理使用的 GitHub 评论和工具响应的类型化信任边界
-在 issue、拉取请求和 CI 输出上运行编码代理的团队，应把每个外部文本字段都视为不可信数据，并为可信元数据使用单独的类型化封套。一个可行做法是构建工具响应适配器：作者、资源 ID、工具名和执行历史通过解析器拥有的字段传递，而评论、日志、网页文本和模型可见摘录保留为带引号的数据。同一个适配器还应拒绝或转义不可信字段中的类 JSON 分隔符、伪造标签、仿冒工具输出块和复制的 UI 标识符。
+在 issue、拉取请求和 CI 输出上运行编码代理的团队，应将每个外部文本字段视为不可信数据，并为可信元数据设置单独的类型化封装。一个可行的实现是工具响应适配器：将作者、资源 ID、工具名称和执行历史传入由解析器管理的字段，同时将评论、日志、网页文本和模型可见的摘录保留为带引号的数据。该适配器还应拒绝或转义不可信字段中的类 JSON 分隔符、伪造标签、冒充工具输出的代码块，以及复制的界面标识符。
 
-这项控制应放在代理运行时中，不能只写在提示词规则里。agent data injection 论文显示，攻击者可以把分隔符、类 JSON 结构、标签或仿冒元数据放进不可信内容中，让模型把它读成可信的代理数据。报告的攻击包括针对编码代理的仿冒 GitHub issue 评论和伪造工具响应，并在 Claude Code、Codex 和 Gemini CLI 上展示了远程代码执行和供应链攻击路径。一个低成本验证步骤是：用论文中的分隔符和元数据仿冒案例重放测试团队自己的 GitHub issue 读取器和 PR 评审工具；如果不可信文本能改变可信字段，就让构建失败。
-
-### Evidence
-- [Agent Data Injection Attacks are Realistic Threats to AI Agents](../Inbox/2026-07-06--agent-data-injection-attacks-are-realistic-threats-to-ai-agents.md): 定义 agent data injection，描述仿冒 GitHub 评论和伪造工具响应，并报告攻击成功率。
-- [Agent Data Injection Attacks are Realistic Threats to AI Agents](../Inbox/2026-07-06--agent-data-injection-attacks-are-realistic-threats-to-ai-agents.md): 报告编码代理上的远程代码执行和供应链攻击路径，并指出可信数据与不可信数据之间缺少隔离。
-- [Agent Data Injection Attacks are Realistic Threats to AI Agents](../Inbox/2026-07-06--agent-data-injection-attacks-are-realistic-threats-to-ai-agents.md): 解释代理输入中可信元数据与不可信内容的区别。
-
-## 带重建验证和长时程进度日志的仓库代理评估运行
-选择编码代理的工程团队，应把候选代理放进可重建的仓库沙箱中运行，用真实测试、隐藏评测检查和多小时工作进度日志来评估。评估应记录代理是否搜索了正确文件、定位了故障、生成了补丁、完成了验证、在失败后恢复，并在卡住时给出诚实状态。可以先从五到十个已有已知修复和测试用例的内部 bug 开始。
-
-几项新结果指向同一种评估形态。KAT-Coder-V2.5 报告称，AutoBuilder 将可执行环境构建成功率从 16.5% 提高到 57.2%，并按探索、定位、补丁质量、验证、恢复和诚实度筛选轨迹。EdgeBench 在 12 小时可执行任务上测量代理，并发现早期进度可以以高拟合度预测后续表现。EvoAgentBench 通过把任务连接到可复用的搜索、调试和验证流程来加入迁移检查，而当前自动记忆方法仍出现负迁移案例。一张有用的内部评分卡应包括环境重建成功率、通过/失败结果、首次有效测试耗时、失败补丁后的恢复情况，以及任何已存流程是否帮助或伤害后续任务。
+这项隔离应放在代理运行时中，不能只依赖提示词规则。关于代理数据注入的论文显示，攻击者可以在不可信内容中放入分隔符、类 JSON 结构、标签或伪造的元数据，使模型将其读取为可信的代理数据。论文报告的攻击包括伪造 GitHub issue 评论和针对编码代理的虚假工具响应，并在 Claude Code、Codex 和 Gemini CLI 上展示了远程代码执行和供应链攻击路径。一次低成本的验证可以重放论文中的分隔符注入和元数据伪造案例，测试团队自己的 GitHub issue 读取器和 PR 审查工具；如果不可信文本能够修改可信字段，就让构建失败。
 
 ### Evidence
-- [KAT-Coder-V2.5 Technical Report](../Inbox/2026-07-06--kat-coder-v2-5-technical-report.md): 描述可执行环境构建、轨迹筛选，以及报告的 AutoBuilder 成功率提升。
-- [EdgeBench: Unveiling Scaling Laws of Learning from Real-World Environments](../Inbox/2026-07-06--edgebench-unveiling-scaling-laws-of-learning-from-real-world-environments.md): 描述 12 小时可执行任务、进度曲线和长时程代理评估设计。
-- [EvoAgentBench: Benchmarking Agent Self-Evolution via Ability Transfer](../Inbox/2026-07-06--evoagentbench-benchmarking-agent-self-evolution-via-ability-transfer.md): 描述通过 Ability 单元进行流程迁移测试，并报告自动迁移结果不一且存在负迁移案例。
+- Document 1770: 定义了代理数据注入，描述了伪造的 GitHub 评论和虚假工具响应，并报告了攻击成功率。
+- Document 1770: 报告了针对编码代理的远程代码执行和供应链攻击路径，并指出可信数据与不可信数据之间缺少隔离。
+- Document 1770: 解释了代理输入中可信元数据与不可信内容的区别。
+
+## 带重建验证和长期进度日志的仓库代理评估运行
+选择编码代理的工程团队，应在可重建的仓库沙箱中运行候选代理，配合真实测试、隐藏评测检查，以及覆盖数小时工作的进度日志。评估应记录代理是否搜索了正确的文件、定位了故障、生成了补丁、完成了验证、在失败后恢复，并在停滞时如实报告状态。可以先从五到十个已有已知修复方案和测试用例的内部缺陷开始。
+
+几项新结果指向相同的评估方式。KAT-Coder-V2.5 报告称，AutoBuilder 将可执行环境构建成功率从 16.5% 提高到 57.2%，并按探索、定位、补丁质量、验证、恢复和诚实性筛选轨迹。EdgeBench 在 12 小时可执行任务上评估代理，发现早期进度可以较好地预测后续表现。EvoAgentBench 通过可复用的搜索、调试和验证过程连接任务，增加了迁移检查；现有自动记忆方法仍会出现负迁移。内部评分表应包括环境重建成功率、通过或失败结果、首次有效测试所需时间、补丁失败后的恢复情况，以及存储的过程对后续任务产生了帮助还是阻碍。
+
+### Evidence
+- Document 1775: 描述了可执行环境构建、轨迹筛选，以及 AutoBuilder 成功率提升的报告结果。
+- Document 1768: 描述了 12 小时可执行任务、进度曲线和长时间运行的代理评估设计。
+- Document 1766: 描述了通过 Ability 单元进行的过程迁移测试，并报告了自动迁移效果不一且存在负迁移的案例。

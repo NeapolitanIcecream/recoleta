@@ -23,47 +23,29 @@ tags:
 language_code: zh-CN
 ---
 
-# 编码智能体正被当作仓库协作者来测量，而不只是代码生成器
+# 编码代理正被当作仓库协作者评测，而不只是代码生成器
 
 ## Overview
-当天最有力的证据把编码智能体视为在真实工作流中训练、行动并失败的仓库参与者。KAT-Coder-V2.5、EvoAgentBench 和 EdgeBench 重视可执行环境、长时程运行和可复用过程；GitHub 研究补充了维护者面对的成本。
+当天最有力的证据把编码代理视为在真实工作流中训练、行动并失败的仓库参与者。KAT-Coder-V2.5、EvoAgentBench 和 EdgeBench 重视可执行环境、长时间运行和可复用程序；GitHub 研究则补充了维护者面临的成本。
 
 ## Clusters
 
-### 可执行仓库训练和长时程评测
-仓库级编码智能体需要可重建的项目、真实测试和长轨迹。KAT-Coder-V2.5 报告称，AutoBuilder 将可执行环境构建成功率从 16.5% 提高到 57.2%，并在 12 种语言中生成了超过 100,000 个可验证环境。它的训练流水线还按探索、定位、补丁质量、验证、恢复和诚实性筛选轨迹。
+### 可执行仓库训练与长期评测
+仓库级编码代理需要可重建的项目、真实测试和长轨迹。KAT-Coder-V2.5 报告称，AutoBuilder 将可执行环境构建成功率从 16.5% 提升到 57.2%，并在 12 种语言中生成了超过 100,000 个可验证环境。其训练流程还会根据探索、本地化、补丁质量、验证、恢复和诚实性筛选轨迹。
 
-长时程评测也采用同样的重点。EdgeBench 用 134 个真实任务评测智能体，其中包括 36 个系统与软件工程任务，交互时长约 38,000 小时。它报告称，12 小时学习曲线符合 log-sigmoid 形式，平均 R² = 0.998。EvoAgentBench 加入了过程迁移测试：每个测试任务都与一个训练任务共享至少一个已验证的 Ability，但自动记忆方法仍显示出不稳定的收益，并出现了一些较大的负迁移案例。
-
-#### Evidence
-- [KAT-Coder-V2.5 Technical Report](../Inbox/2026-07-06--kat-coder-v2-5-technical-report.md): KAT-Coder-V2.5 的训练流水线、可执行环境构建和基准测试主张。
-- [EdgeBench: Unveiling Scaling Laws of Learning from Real-World Environments](../Inbox/2026-07-06--edgebench-unveiling-scaling-laws-of-learning-from-real-world-environments.md): EdgeBench 的任务设计、长时程智能体交互和学习曲线结果。
-- [EvoAgentBench: Benchmarking Agent Self-Evolution via Ability Transfer](../Inbox/2026-07-06--evoagentbench-benchmarking-agent-self-evolution-via-ability-transfer.md): EvoAgentBench 的 Ability 迁移构造和自动迁移的混合结果。
+长期评测也采用相同的重点。EdgeBench 在 134 个真实世界任务上评测代理，其中包括 36 个系统与软件工程任务，交互时长约 38,000 小时。报告称，12 小时学习曲线符合对数 sigmoid 形式，平均 R² = 0.998。EvoAgentBench 增加了程序迁移测试：每个测试任务都至少与一个训练任务共享一种经过验证的 Ability，但自动记忆方法带来的收益仍不稳定，且有些案例出现明显的负迁移。
 
 ### 开源证据揭示集成成本
-面向 GitHub 的研究补充了维护者关心的测量结果。一项研究把 13,360 次 AI 聊天会话与 1,240 个开源仓库的历史记录关联起来。Code Writing 占会话的 34.7%；论文报告称，采用 AI 后，可观测的代码质量信号或拉取请求合并率没有出现大范围恶化。问卷回复仍指出一种社会成本：开发者认为他人生成的 AI 代码比自己生成的 AI 代码更难维护。
+面向 GitHub 的研究增加了维护者关心的指标。一项研究将 13,360 次 AI 聊天会话与 1,240 个开源仓库的历史记录关联起来。Code Writing 占会话总数的 34.7%，论文报告称，采用 AI 后，可观察到的代码质量信号或拉取请求合并率没有出现普遍下降。调查回答仍显示出社会层面的成本：开发者认为维护他人生成的 AI 代码比维护自己编写的代码更困难。
 
-并发的智能体拉取请求造成了更明确的操作负担。在 AIDev-pop 中，带有智能体作者拉取请求的仓库里有 40.2% 出现精确时间重叠，覆盖 79.4% 的智能体 PR。合并回放发现，同一智能体配对有 19.8% 出现文本冲突，跨智能体配对为 41.7%。一篇相关的变异分类论文显示，带性能标签的智能体 PR 很少，占 AIDev-pop 不到 1%，但它们的差异模式会随智能体和优化目标变化。
+代理同时提交拉取请求会带来更明确的运维负担。在 AIDev-pop 中，40.2% 的包含代理作者拉取请求的仓库出现了精确的时间重叠，涉及 79.4% 的代理 PR。合并重放显示，同一代理的 PR 对中有 19.8% 出现文本冲突，跨代理 PR 对中则有 41.7% 出现文本冲突。一篇相关的变更分类论文显示，标注为性能改进的代理 PR 很少，在 AIDev-pop 中占比低于 1%，但其差异模式会随代理和优化目标变化。
 
-#### Evidence
-- [From Conversation to Contribution: Characterizing Coding Agent in Open-Source Software](../Inbox/2026-07-06--from-conversation-to-contribution-characterizing-coding-agent-in-open-source-software.md): 大规模 OSS 聊天日志关联、贡献影响和开发者调查结果。
-- [AI Agent Pull Requests on GitHub: Frequency, Structure, and Merge Conflict Rates](../Inbox/2026-07-06--ai-agent-pull-requests-on-github-frequency-structure-and-merge-conflict-rates.md): 共同活跃的智能体拉取请求频率和合并冲突率。
-- [What Do AI Agents Actually Change? An Empirical Taxonomy of Mutation Patterns in Performance-Improving Pull Requests](../Inbox/2026-07-06--what-do-ai-agents-actually-change-an-empirical-taxonomy-of-mutation-patterns-in-performance-improving-pull-requests.md): 面向性能改进型智能体拉取请求的变异分类。
+### 代理内部机制和团队设计成为可测量变量
+多篇论文把代理行为当作可以探测或配置的对象，而不只是最终评分的结果。Latent Programming Horizons 收集了 22,714 条修复轨迹和 2,240 万个隐藏状态向量。线性探针能够以高于随机水平的准确度解码当前正确性和部分正确性；在 Qwen3.6-35B-A3B 上，最佳 AUC 约为 0.83–0.84。未来标签信号在约 25 个步骤内保持高于随机水平。
 
-### 智能体内部状态和团队设计成为可测变量
-多篇论文把智能体行为视为可探测或可配置的对象，而非只在末尾打分。Latent Programming Horizons 收集了 22,714 条修复轨迹和 2,240 万个隐藏状态向量。线性探针解码当前正确性和部分正确性的表现高于随机水平，在 Qwen3.6-35B-A3B 上最佳 AUC 约为 0.83–0.84。未来标签信号在约 25 步内保持高于随机水平。
+团队结构也开始接受测量。pm4aa 原型从 GitHub 事件日志中提取特定项目的角色和约束，然后生成 LangGraph 应用。在 Commitizen 上，它将 589 名用户分配到 8 个角色，并构建了一个由 5 个代理组成的概念验证系统。另一项关于人格和情绪提示的研究发现，在不同模型中，配置文件选择会使代码生成 pass@1 改变 7.1 到 11.3 个百分点；恐惧和高责任心提示会增加修订活动和 token 使用量，但没有带来稳定的性能提升。
 
-团队结构也开始被测量。pm4aa 原型挖掘 GitHub 事件日志，以推导项目特定角色和约束，然后生成一个 LangGraph 应用。在 Commitizen 上，它将 589 名用户分配到 8 个角色，并构建了一个 5 智能体概念验证。另一项关于人格和情绪提示的研究发现，配置选择会让不同模型的代码生成 pass@1 变化 7.1 到 11.3 个百分点；恐惧提示和高尽责性提示会增加修订活动和 token 使用量，但没有带来稳定的性能收益。
+### 连接工具的代理需要更严格的数据边界
+安全证据集中在工具响应内部的信任边界。关于代理数据注入的论文显示，攻击者可以在不可信内容中放入分隔符、类似 JSON 的结构、标签或伪造元数据，使大语言模型将其当作可信的代理数据来读取。这种攻击适用于网页代理，例如通过伪造 UI 标识符发起攻击；也适用于编码代理，例如通过伪造 GitHub issue 评论或虚假工具响应发起攻击。
 
-#### Evidence
-- [Latent Programming Horizons in Coding Agents](../Inbox/2026-07-06--latent-programming-horizons-in-coding-agents.md): 多步修复过程中对编码智能体隐藏状态的探测。
-- [Using Process Mining to Generate AI Agents from Software Engineering Process Records](../Inbox/2026-07-06--using-process-mining-to-generate-ai-agents-from-software-engineering-process-records.md): 从仓库记录推导软件工程智能体角色的过程挖掘流水线。
-- [Agents with Feelings? Personality and Emotion in Multi-Agent Software Teams](../Inbox/2026-07-06--agents-with-feelings-personality-and-emotion-in-multi-agent-software-teams.md): 多智能体软件团队中人格和情绪配置的测量效果。
-
-### 连接工具的智能体需要更严格的数据边界
-安全证据集中在工具响应内部的信任边界。关于智能体数据注入的论文显示，攻击者可以把分隔符、类 JSON 结构、标签或伪造元数据放入不可信内容，使大语言模型把它读作可信的智能体数据。该攻击可通过伪造 UI 标识符作用于 Web 智能体，也可通过伪造 GitHub issue 评论或伪造工具响应作用于编码智能体。
-
-报告的成功率已经高到会影响部署决策。在 6 个模型上，概率式分隔符注入对 JSON 数据的攻击成功率达到 31.3%–43.3%，DOM 风格数据达到 33.3%–100.0%。面对论文引用的防御方法，指令注入只达到 0.0%–0.7%，而智能体数据注入最高达到 50.0%。作者报告了针对 Chrome、Antigravity 和 Nanobrowser 中 Claude 的任意点击攻击，以及针对 Claude Code、Codex 和 Gemini CLI 的远程代码执行与供应链路径。
-
-#### Evidence
-- [Agent Data Injection Attacks are Realistic Threats to AI Agents](../Inbox/2026-07-06--agent-data-injection-attacks-are-realistic-threats-to-ai-agents.md): 智能体数据注入的定义、方法、攻击设置和报告的成功率。
+报告的成功率已经足以影响部署决策。在 6 个模型上，针对 JSON 数据的概率分隔符注入攻击成功率达到 31.3%–43.3%，针对 DOM 样式数据的攻击成功率达到 33.3%–100.0%。面对论文引用的防御措施，指令注入成功率只有 0.0%–0.7%，代理数据注入成功率则最高达到 50.0%。作者报告了针对 Claude in Chrome、Antigravity 和 Nanobrowser 的任意点击攻击，以及针对 Claude Code、Codex 和 Gemini CLI 的远程代码执行和供应链攻击路径。

@@ -68,7 +68,7 @@ Certified sensing clocks add a third sensor-facing thread. A frozen 3D VN-JEPA w
 
 #### Evidence
 - [Human-Centric Transferable Tactile Pre-Training for Dexterous Robotic Manipulation](../Inbox/2026-07-01--human-centric-transferable-tactile-pre-training-for-dexterous-robotic-manipulation.md): TTP summary provides H-Tac scale, tactile-action pretraining design, and limits of reported downstream metrics.
-- [Finding a Needle in the Haystack: Querying Physical AI Data with Daft](../Inbox/2026-07-01--finding-a-needle-in-the-haystack-querying-physical-ai-data-with-daft.md): Daft summary describes per-frame EgoDex retrieval with text embeddings and hand-pose geometry.
+- [Finding a Needle in the Haystack: Querying Physical AI Data with Daft](../Inbox/2026-07-01--querying-physical-ai-data-with-daft.md): Daft summary describes per-frame EgoDex retrieval with text embeddings and hand-pose geometry.
 - [Certified World Models as Sensing Clocks: Drift-Aware Deadlines for Active Perception](../Inbox/2026-07-01--certified-world-models-as-sensing-clocks-drift-aware-deadlines-for-active-perception.md): Certified world-model summary reports drift-aware sensing deadlines and held-out interval violation results.
 
 ### Deployment work targets domain changes and shared GPU use

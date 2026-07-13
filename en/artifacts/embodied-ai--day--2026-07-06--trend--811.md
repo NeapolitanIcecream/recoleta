@@ -39,33 +39,17 @@ Several papers train Vision-Language-Action models, or VLAs, to carry a compact 
 
 The reported gains are strongest where the task requires generalization rather than only imitation. CAC-VLA reports 98.3% average success on LIBERO and 89.5% on LIBERO-Plus supervised fine-tuning. GeoMoLa reports 84.7% average success on single-view RLBench across 10 tasks and 166 variations, ahead of RVT2 at 80.4%. InternVLA-A1.5 claims the best overall results across six simulation benchmarks, although the available excerpt does not include exact benchmark tables.
 
-#### Evidence
-- [InternVLA-A1.5: Unifying Understanding, Latent Foresight, and Action for Compositional Generalization](../Inbox/2026-07-06--internvla-a1-5-unifying-understanding-latent-foresight-and-action-for-compositional-generalization.md): Summary describes InternVLA-A1.5 foresight tokens, training with a frozen video generator, real-time inference, data scale, and six-benchmark claim.
-- [CAC-VLA: Context-Gated Action Conditioning for Vision-Language-Action Models](../Inbox/2026-07-06--cac-vla-context-gated-action-conditioning-for-vision-language-action-models.md): Summary gives CAC-VLA latent-action conditioning mechanism and LIBERO / LIBERO-Plus results.
-- [Geometry-Aware Motion Latents for Learning Robust Manipulation Policies](../Inbox/2026-07-06--geometry-aware-motion-latents-for-learning-robust-manipulation-policies.md): Summary gives GeoMoLa geometry-aware motion latents and RLBench success rates.
-
 ### Long-horizon control with constrained subtasks
 Long tasks are being handled with explicit subtask state and bounded skill vocabularies. Cortex uses a high-level vision-language model to maintain text memory and emit subtasks for a lower-level VLA. Its planner is restricted to 32 canonical manipulation primitives, with templates and reachability-aware annotations so the low-level policy receives executable commands.
 
 DSWAM uses a related split. Its default path is a World Action Model executor that predicts dual-arm action chunks. A vision-language planner is activated when coarse household commands need decomposition. In real folding tests under the matched DeMaVLA setup, DSWAM raises success from 92.5% to 96.3% and reduces average completion time from 2'18" to 1'44". Cortex reports 65% success on 14-step real-world chemistry tasks and 55% on 14-step washing tasks, where the cited end-to-end baselines score 0%.
-
-#### Evidence
-- [Cortex: A Bidirectionally Aligned Embodied Agent Framework for Long-horizon Manipulation](../Inbox/2026-07-06--cortex-a-bidirectionally-aligned-embodied-agent-framework-for-long-horizon-manipulation.md): Summary details Cortex's subtask memory, 32 primitives, training annotations, and real-world chemistry and washing results.
-- [DSWAM: A Dual-System World Action Foundation Model for Fine-Grained Robot Manipulation](../Inbox/2026-07-06--dswam-a-dual-system-world-action-foundation-model-for-fine-grained-robot-manipulation.md): Summary details DSWAM's executor-planner design, matched DeMaVLA folding comparison, and RoboTwin bimanual results.
 
 ### Deployment gaps: camera pose and scene-specific data
 Two papers target failures that appear after a trained policy leaves its original setup. CamVLA addresses camera movement. It predicts the end-effector action in the camera frame, estimates a 6-DoF hand-eye transform from one RGB image, and converts the action into the robot base frame. On RLBench unseen viewpoints, π0 improves from 33.2% to 51.4% mean success with CamVLA. In real Franka tests, π0 + CamVLA also keeps higher success at 5°, 10°, and 15° camera offsets.
 
 PRISM addresses the lack of scene-matched demonstrations. From one target-scene image and an instruction, it builds varied simulated “digital cousin” scenes, plans trajectories, and trains policies on the generated data. In sim-to-sim tests with 400 trajectories per task, PRISM reaches 98.0% on LIBERO for “Put milk in basket” with π0.5, compared with 48.0% for X-Sim and 14.0% for RoboTwin 2.0.
 
-#### Evidence
-- [From Fixed to Free Cameras: Calibration-Free View-Robust Vision-Language-Action Model](../Inbox/2026-07-06--from-fixed-to-free-cameras-calibration-free-view-robust-vision-language-action-model.md): Summary gives CamVLA's camera-frame action design, single-image pose estimation, and viewpoint results.
-- [PRISM: Personalized Robotic Dataset Generation via Image-based Scene and Motion Synthesis](../Inbox/2026-07-06--prism-personalized-robotic-dataset-generation-via-image-based-scene-and-motion-synthesis.md): Summary gives PRISM's single-image dataset generation pipeline and sim-to-sim performance comparisons.
-
 ### Deformable-object world models need touch and dense 3D tracking
 Deform360 adds a data-heavy line of work to the same control problem. It collects 198 deformable objects across 1,980 interaction sequences with 41 synchronized cameras and tactile-equipped grippers. The dataset includes cloth-like, rope-like, and volumetric objects, with 13 manipulation primitive types across 17 categories.
 
 The key contribution is the paired sensing. The pipeline reconstructs per-frame geometry, tracks up to 1,600 points per view, lifts tracks into 3D, and refines them with tactile contact consistency. The summary reports a Chamfer distance error of 2.71×10^-5 m² for visuotactile tracking, versus 1.41×10^-4 m² for visual-only tracking. Visual-to-contact prediction reaches 88.67% mean accuracy across 36 filtered views. This gives future robot world models a concrete benchmark for contact-rich deformable manipulation.
-
-#### Evidence
-- [Deform360: A Massive Multi-view Visuotactile Dataset for Deformable World Models](../Inbox/2026-07-06--deform360-a-massive-multi-view-visuotactile-dataset-for-deformable-world-models.md): Summary gives Deform360 dataset scale, sensing setup, tracking pipeline, and quantitative tracking/contact results.
