@@ -31,6 +31,37 @@ def _seed_idea_document(
         )
 
 
+def _seed_idea_pass_state(
+    *, repository, period_start: datetime, period_end: datetime, status: str
+) -> None:
+    trend = repository.create_pass_output(
+        run_id=f"run-trend-{period_start.date()}-{status}",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload={},
+    )
+    assert trend.id is not None
+    repository.create_pass_output(
+        run_id=f"run-ideas-{period_start.date()}-{status}",
+        pass_kind="trend_ideas",
+        status=status,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload={},
+        input_refs=[
+            {
+                "ref_kind": "pass_output",
+                "pass_kind": "trend_synthesis",
+                "pass_output_id": trend.id,
+            }
+        ],
+    )
+
+
 def test_prior_ideas_pack_uses_only_bounded_previous_same_granularity_windows(
     configured_env,
 ) -> None:
@@ -122,3 +153,93 @@ def test_prior_ideas_pack_includes_current_lower_level_and_respects_char_budget(
     assert stats["budget_omitted_total"] > 0
     assert stats["entry_text_truncated_total"] > 0
     assert stats["truncated"] is True
+
+
+def test_prior_ideas_pack_excludes_documents_with_latest_suppressed_output(
+    configured_env,
+) -> None:
+    _ = configured_env
+    _, repository = _build_runtime()
+    period_start = datetime(2026, 3, 10, tzinfo=UTC)
+    prior_start = period_start - timedelta(days=1)
+    _seed_idea_document(
+        repository=repository,
+        granularity="day",
+        period_start=prior_start,
+        period_end=period_start,
+        entries=[("Retired idea", "This must no longer suppress future ideation.")],
+    )
+    for status in ("succeeded", "suppressed"):
+        repository.create_pass_output(
+            run_id=f"run-prior-{status}",
+            pass_kind="trend_ideas",
+            status=status,
+            granularity="day",
+            period_start=prior_start,
+            period_end=period_start,
+            payload={"ideas": []},
+        )
+
+    pack_md, stats = build_prior_ideas_pack_md(
+        repository=repository,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_start + timedelta(days=1),
+    )
+
+    assert "Retired idea" not in pack_md
+    assert stats["retained_entries_total"] == 0
+    assert stats["suppressed_entries_omitted_total"] == 1
+
+
+def test_prior_ideas_pack_pages_past_suppressed_rows(
+    configured_env,
+) -> None:
+    _ = configured_env
+    _, repository = _build_runtime()
+    period_start = datetime(2026, 3, 9, tzinfo=UTC)
+    period_end = period_start + timedelta(days=7)
+    suppressed_start = period_start + timedelta(days=5)
+    suppressed_end = suppressed_start + timedelta(days=1)
+    _seed_idea_document(
+        repository=repository,
+        granularity="day",
+        period_start=suppressed_start,
+        period_end=suppressed_end,
+        entries=[
+            (f"Retired concept {index}", "This row must be skipped.")
+            for index in range(13)
+        ],
+    )
+    _seed_idea_pass_state(
+        repository=repository,
+        period_start=suppressed_start,
+        period_end=suppressed_end,
+        status="suppressed",
+    )
+    valid_start = period_start + timedelta(days=1)
+    valid_end = valid_start + timedelta(days=1)
+    _seed_idea_document(
+        repository=repository,
+        granularity="day",
+        period_start=valid_start,
+        period_end=valid_end,
+        entries=[("Still useful", "This active idea should survive pagination.")],
+    )
+    _seed_idea_pass_state(
+        repository=repository,
+        period_start=valid_start,
+        period_end=valid_end,
+        status="succeeded",
+    )
+
+    pack_md, stats = build_prior_ideas_pack_md(
+        repository=repository,
+        granularity="week",
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+    assert "Still useful" in pack_md
+    assert "Retired concept" not in pack_md
+    assert stats["suppressed_entries_omitted_total"] == 13

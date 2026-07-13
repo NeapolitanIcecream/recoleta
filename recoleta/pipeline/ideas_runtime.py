@@ -20,14 +20,21 @@ from recoleta.pipeline.ideas_quality import (
     item_document_ids,
 )
 from recoleta.pipeline.metrics import metric_token
+from recoleta.pass_output_selection import latest_canonical_pass_output
 from recoleta.pipeline.pass_runner import (
     PassDefinition,
     PassPersistSpec,
     ProjectionSpec,
     run_pass_definition,
 )
-from recoleta.rag.evidence_reads import successful_evidence_read_doc_ids
+from recoleta.presentation import (
+    remove_note_projection_artifacts,
+    resolve_presentation_language_code,
+)
+from recoleta.publish.idea_notes import resolve_ideas_note_path
+from recoleta.rag.evidence_reads import successful_evidence_read_refs
 from recoleta.passes import (
+    SUPPRESSION_PROJECTION_COMPLETE_KEY,
     PassInputRef,
     PassStatus,
     TREND_SYNTHESIS_PASS_KIND,
@@ -62,6 +69,7 @@ class IdeasStageContext:
 @dataclass(frozen=True, slots=True)
 class IdeasUpstreamResult:
     upstream_pass_output_id: int
+    upstream_status: PassStatus
     upstream_empty_corpus: bool
     trend_payload: TrendPayload
     trend_snapshot_pack_md: str
@@ -72,6 +80,7 @@ class IdeasGenerationRequest:
     context: IdeasStageContext
     trend_payload: TrendPayload
     trend_snapshot_pack_md: str
+    upstream_status: PassStatus
     upstream_empty_corpus: bool
     prior_ideas_pack_md: str
     prior_ideas_pack_stats: dict[str, Any]
@@ -168,9 +177,9 @@ def _build_metric_recorder(*, service: Any, run_id: str):
 
 
 def _load_upstream_context(context: IdeasStageContext) -> IdeasUpstreamResult:
-    upstream = context.service.repository.get_latest_pass_output(
+    upstream = latest_canonical_pass_output(
+        repository=context.service.repository,
         pass_kind=TREND_SYNTHESIS_PASS_KIND,
-        status=PassStatus.SUCCEEDED.value,
         granularity=context.normalized_granularity,
         period_start=context.period_start,
         period_end=context.period_end,
@@ -194,18 +203,38 @@ def _load_upstream_context(context: IdeasStageContext) -> IdeasUpstreamResult:
         )
 
     upstream_pass_output_id = int(getattr(upstream, "id"))
-    upstream_empty_corpus = _trend_pass_output_has_empty_corpus(upstream)
+    try:
+        upstream_status = PassStatus(str(getattr(upstream, "status", "") or ""))
+    except ValueError as exc:
+        raise RuntimeError(
+            "Unsupported trend_synthesis pass output status "
+            f"for pass_output_id={upstream_pass_output_id}"
+        ) from exc
+    if upstream_status == PassStatus.FAILED:
+        raise RuntimeError(
+            "Latest trend_synthesis pass output failed "
+            f"for pass_output_id={upstream_pass_output_id}"
+        )
+    upstream_empty_corpus = (
+        upstream_status == PassStatus.SUCCEEDED
+        and _trend_pass_output_has_empty_corpus(upstream)
+    )
     trend_payload = _load_trend_payload_from_pass_output(upstream)
-    trend_snapshot_pack_md = build_trend_snapshot_pack_md(
-        trend_payload=trend_payload,
-        upstream_pass_output_id=upstream_pass_output_id,
+    trend_snapshot_pack_md = (
+        build_trend_snapshot_pack_md(
+            trend_payload=trend_payload,
+            upstream_pass_output_id=upstream_pass_output_id,
+        )
+        if upstream_status == PassStatus.SUCCEEDED
+        else ""
     )
     context.log.bind(upstream_pass_output_id=upstream_pass_output_id)
     return IdeasUpstreamResult(
-        upstream_pass_output_id,
-        upstream_empty_corpus,
-        trend_payload,
-        trend_snapshot_pack_md,
+        upstream_pass_output_id=upstream_pass_output_id,
+        upstream_status=upstream_status,
+        upstream_empty_corpus=upstream_empty_corpus,
+        trend_payload=trend_payload,
+        trend_snapshot_pack_md=trend_snapshot_pack_md,
     )
 
 
@@ -228,6 +257,8 @@ def _validate_ideas_targets(*, service: Any, log: Any, record_metric: Any) -> se
 def _generate_ideas_payload(
     request: IdeasGenerationRequest,
 ) -> tuple[TrendIdeasPayload, dict[str, Any]]:
+    if request.upstream_status == PassStatus.SUPPRESSED:
+        return _suppressed_upstream_ideas_result(request=request)
     if request.upstream_empty_corpus:
         return _empty_corpus_ideas_result(request=request)
 
@@ -268,6 +299,34 @@ def _empty_corpus_ideas_result(
         ),
         {
             "empty_corpus": True,
+            "usage": {"requests": 0, "input_tokens": 0, "output_tokens": 0},
+            "tool_calls_total": 0,
+            "tool_call_breakdown": {},
+            "estimated_cost_usd": 0.0,
+            "prior_ideas_pack_chars": 0,
+            "prior_ideas_pack_stats": dict(request.prior_ideas_pack_stats),
+        },
+    )
+
+
+def _suppressed_upstream_ideas_result(
+    *, request: IdeasGenerationRequest
+) -> tuple[TrendIdeasPayload, dict[str, Any]]:
+    request.context.record_metric(
+        name="pipeline.trends.pass.ideas.upstream_suppressed_total",
+        value=1,
+        unit="count",
+    )
+    return (
+        build_suppressed_trend_ideas_payload(
+            granularity=request.context.normalized_granularity,
+            period_start=request.context.period_start,
+            period_end=request.context.period_end,
+            output_language=request.context.service.settings.llm_output_language,
+        ),
+        {
+            "upstream_suppressed": True,
+            "suppression_reason": "upstream_trend_suppressed",
             "usage": {"requests": 0, "input_tokens": 0, "output_tokens": 0},
             "tool_calls_total": 0,
             "tool_call_breakdown": {},
@@ -330,9 +389,7 @@ def _primary_ideas_payload(
         llm_connection=request.context.service._llm_connection,
     )
     normalized_debug = debug if isinstance(debug, dict) else {}
-    read_doc_ids, trace_stats = successful_evidence_read_doc_ids(
-        debug=normalized_debug
-    )
+    read_refs, trace_stats = successful_evidence_read_refs(debug=normalized_debug)
     item_doc_ids = item_document_ids(
         repository=request.context.service.repository,
         doc_ids={
@@ -341,25 +398,38 @@ def _primary_ideas_payload(
             for ref in list(idea.evidence_refs or [])
         },
     )
-    read_item_doc_ids = read_doc_ids & item_doc_ids
-    normalized_payload, normalization_stats = (
-        normalize_trend_ideas_payload_with_stats(
-            payload,
-            min_distinct_docs=2,
-            allowed_doc_ids=item_doc_ids,
-            read_doc_ids=read_item_doc_ids,
-        )
+    read_item_refs = {ref for ref in read_refs if ref[0] in item_doc_ids}
+    read_item_doc_ids = {doc_id for doc_id, _ in read_item_refs}
+    normalized_payload, normalization_stats = normalize_trend_ideas_payload_with_stats(
+        payload,
+        min_distinct_docs=2,
+        allowed_doc_ids=item_doc_ids,
+        read_refs=read_item_refs,
     )
+    dropped_ideas = max(
+        0,
+        int(normalization_stats.get("candidates_total", 0))
+        - int(normalization_stats.get("retained_total", 0)),
+    )
+    if dropped_ideas > 0 and normalized_payload.ideas:
+        normalized_payload = normalized_payload.model_copy(
+            update={
+                "title": "",
+                "summary_md": _retained_ideas_summary(normalized_payload),
+            }
+        )
+        normalization_stats["outer_fields_rebuilt_total"] = 1
+    else:
+        normalization_stats["outer_fields_rebuilt_total"] = 0
     normalized_debug["normalization"] = normalization_stats
     normalized_debug["evidence_quality_gate"] = {
-        "policy": "two_distinct_read_item_documents",
+        "policy": "two_distinct_item_documents_with_exact_read_chunks",
         **trace_stats,
         "read_doc_ids": sorted(read_item_doc_ids),
         "read_doc_ids_total": len(read_item_doc_ids),
+        "read_refs": [list(ref) for ref in sorted(read_item_refs)],
     }
-    normalized_debug["prior_ideas_pack_stats"] = dict(
-        request.prior_ideas_pack_stats
-    )
+    normalized_debug["prior_ideas_pack_stats"] = dict(request.prior_ideas_pack_stats)
     normalized_debug.setdefault(
         "prior_ideas_pack_chars", len(str(request.prior_ideas_pack_md or ""))
     )
@@ -399,6 +469,64 @@ def _bundle_title_candidate_ideas(
     ]
 
 
+def _retained_ideas_summary(payload: TrendIdeasPayload) -> str:
+    lines: list[str] = []
+    for idea in list(payload.ideas or []):
+        content = " ".join(str(idea.content_md or "").split()).strip()
+        if len(content) > 180:
+            content = content[:179].rstrip() + "…"
+        lines.append(f"- **{str(idea.title or '').strip()}** — {content}")
+    return "\n".join(lines)
+
+
+def _deterministic_bundle_title(
+    *,
+    payload: TrendIdeasPayload,
+    source_title: str,
+    output_language: str | None,
+) -> str:
+    for idea in list(payload.ideas or []):
+        candidate = " ".join(
+            str(idea.title or "")
+            .replace(":", " ")
+            .replace("：", " ")
+            .replace("?", " ")
+            .replace("？", " ")
+            .split()
+        )[:96].rstrip()
+        if (
+            ideas_agent.bundle_title_rewrite_reason(
+                candidate,
+                source_title=source_title,
+            )
+            is None
+        ):
+            return candidate
+    language_code = resolve_presentation_language_code(
+        output_language=output_language,
+    )
+    raw_output_language = str(output_language or "").casefold()
+    is_chinese = (
+        str(language_code or "").lower().startswith("zh")
+        or "chinese" in raw_output_language
+        or "中文" in raw_output_language
+    )
+    candidates = (
+        ["跨来源研究路径", "证据驱动的研究路径"]
+        if is_chinese
+        else ["Cross-source research paths", "Validated research paths"]
+    )
+    return next(
+        candidate
+        for candidate in candidates
+        if ideas_agent.bundle_title_rewrite_reason(
+            candidate,
+            source_title=source_title,
+        )
+        is None
+    )
+
+
 def _bundle_title_fallback_debug(
     *,
     request: IdeasGenerationRequest,
@@ -412,7 +540,7 @@ def _bundle_title_fallback_debug(
         unit="count",
     )
     request.context.log.warning(
-        "Ideas bundle title generation failed; using primary payload title "
+        "Ideas bundle title generation failed; using deterministic title "
         "run_id={} granularity={} period_start={} error_type={} error={}",
         request.context.run_id,
         request.context.normalized_granularity,
@@ -421,6 +549,7 @@ def _bundle_title_fallback_debug(
         sanitized_error,
     )
     return {
+        "quality_gate": "fallback_generation_error",
         "fallback_used": True,
         "fallback_title": title,
         "error_type": type(exc).__name__,
@@ -437,9 +566,10 @@ def _finalize_ideas_bundle_title(
     output_language: str | None,
 ) -> tuple[TrendIdeasPayload, dict[str, Any]]:
     title = str(normalized_payload.title or "").strip()
+    source_title = str(request.trend_payload.title or "")
     rewrite_reason = ideas_agent.bundle_title_rewrite_reason(
         title,
-        source_title=str(request.trend_payload.title or ""),
+        source_title=source_title,
     )
     if rewrite_reason is None:
         return (
@@ -456,16 +586,41 @@ def _finalize_ideas_bundle_title(
         )
     title_debug: dict[str, Any] = {}
     try:
-        title, title_debug = ideas_agent.generate_trend_ideas_bundle_title(
+        generated_title, title_debug = ideas_agent.generate_trend_ideas_bundle_title(
             llm_model=model,
             summary_md=normalized_payload.summary_md,
             ideas=_bundle_title_candidate_ideas(normalized_payload=normalized_payload),
             output_language=output_language,
             llm_connection=request.context.service._llm_connection,
         )
-        title_debug["quality_gate"] = "rewritten"
+        invalid_rewrite_reason = ideas_agent.bundle_title_rewrite_reason(
+            generated_title,
+            source_title=source_title,
+        )
+        if invalid_rewrite_reason is None:
+            title = generated_title
+            title_debug["quality_gate"] = "rewritten"
+        else:
+            title = _deterministic_bundle_title(
+                payload=normalized_payload,
+                source_title=source_title,
+                output_language=output_language,
+            )
+            title_debug["quality_gate"] = "fallback_invalid_rewrite"
+            title_debug["invalid_rewrite_reason"] = invalid_rewrite_reason
+            title_debug["fallback_title"] = title
+            request.context.record_metric(
+                name="pipeline.trends.pass.ideas.bundle_title_invalid_total",
+                value=1,
+                unit="count",
+            )
         title_debug["rewrite_reason"] = rewrite_reason
     except Exception as exc:
+        title = _deterministic_bundle_title(
+            payload=normalized_payload,
+            source_title=source_title,
+            output_language=output_language,
+        )
         title_debug = _bundle_title_fallback_debug(
             request=request,
             title=title,
@@ -537,10 +692,86 @@ def _ideas_projection_specs(
     context: IdeasProjectionContext,
     pass_output_id: int,
 ) -> list[ProjectionSpec]:
+    if context.status == PassStatus.SUPPRESSED:
+        return _suppressed_ideas_projection_specs(
+            context=context,
+            pass_output_id=pass_output_id,
+        )
     return [
         _ideas_document_projection_spec(context=context, pass_output_id=pass_output_id),
         _ideas_markdown_projection_spec(context=context, pass_output_id=pass_output_id),
         _ideas_obsidian_projection_spec(context=context, pass_output_id=pass_output_id),
+    ]
+
+
+def _remove_ideas_note_projection(*, note_path: Path) -> Path:
+    return remove_note_projection_artifacts(note_path=note_path)
+
+
+def _suppressed_ideas_projection_specs(
+    *,
+    context: IdeasProjectionContext,
+    pass_output_id: int,
+) -> list[ProjectionSpec]:
+    settings = context.context.service.settings
+    markdown_note_path = resolve_ideas_note_path(
+        note_dir=Path(settings.markdown_output_dir).expanduser().resolve() / "Ideas",
+        granularity=context.context.normalized_granularity,
+        period_start=context.context.period_start,
+    )
+    obsidian_vault_path = settings.obsidian_vault_path
+    obsidian_note_path = (
+        resolve_ideas_note_path(
+            note_dir=(obsidian_vault_path / settings.obsidian_base_folder / "Ideas"),
+            granularity=context.context.normalized_granularity,
+            period_start=context.context.period_start,
+        )
+        if obsidian_vault_path is not None
+        else None
+    )
+    warning_context = {"pass_output_id": pass_output_id}
+    sanitize_error = context.context.service._sanitize_error_message
+    return [
+        ProjectionSpec(
+            name="markdown_cleanup",
+            enabled=True,
+            metric_base=(
+                "pipeline.trends.projection.ideas_markdown_suppressed_cleanup"
+            ),
+            log=context.context.log.bind(
+                module=("pipeline.trends.projection.ideas_markdown_suppressed_cleanup")
+            ),
+            failure_message=(
+                "Suppressed ideas markdown cleanup failed "
+                "pass_output_id={pass_output_id} error_type={error_type} "
+                "error={error}"
+            ),
+            execute=lambda: _remove_ideas_note_projection(note_path=markdown_note_path),
+            warning_context=warning_context,
+            sanitize_error=sanitize_error,
+            reraise=False,
+        ),
+        ProjectionSpec(
+            name="obsidian_cleanup",
+            enabled=obsidian_note_path is not None,
+            metric_base=(
+                "pipeline.trends.projection.ideas_obsidian_suppressed_cleanup"
+            ),
+            log=context.context.log.bind(
+                module=("pipeline.trends.projection.ideas_obsidian_suppressed_cleanup")
+            ),
+            failure_message=(
+                "Suppressed ideas obsidian cleanup failed "
+                "pass_output_id={pass_output_id} error_type={error_type} "
+                "error={error}"
+            ),
+            execute=lambda: _remove_ideas_note_projection(
+                note_path=cast(Path, obsidian_note_path)
+            ),
+            warning_context=warning_context,
+            sanitize_error=sanitize_error,
+            reraise=False,
+        ),
     ]
 
 
@@ -654,50 +885,73 @@ def _ideas_obsidian_projection_spec(
     )
 
 
-def _record_ideas_usage_metrics(*, record_metric: Any, debug: dict[str, Any]) -> None:
-    usage = debug.get("usage")
-    if isinstance(usage, dict):
-        requests = usage.get("requests")
-        input_tokens = usage.get("input_tokens")
-        output_tokens = usage.get("output_tokens")
-        if isinstance(requests, (int, float)):
-            record_metric(
-                name="pipeline.trends.pass.ideas.llm_requests_total",
-                value=float(requests),
-                unit="count",
-            )
-        if isinstance(input_tokens, (int, float)):
-            record_metric(
-                name="pipeline.trends.pass.ideas.llm_input_tokens_total",
-                value=float(input_tokens),
-                unit="count",
-            )
-        if isinstance(output_tokens, (int, float)):
-            record_metric(
-                name="pipeline.trends.pass.ideas.llm_output_tokens_total",
-                value=float(output_tokens),
-                unit="count",
-            )
-
-    for metric_name, debug_key, unit in (
-        ("pipeline.trends.pass.ideas.prompt_chars", "prompt_chars", "chars"),
-        (
-            "pipeline.trends.pass.ideas.snapshot_pack.chars",
-            "trend_snapshot_pack_chars",
-            "chars",
-        ),
-        (
-            "pipeline.trends.pass.ideas.prior_ideas_pack.chars",
-            "prior_ideas_pack_chars",
-            "chars",
-        ),
-    ):
-        value = debug.get(debug_key)
+def _record_numeric_debug_metrics(
+    *,
+    record_metric: Any,
+    values: dict[str, Any],
+    definitions: tuple[tuple[str, str, str], ...],
+) -> None:
+    for metric_name, debug_key, unit in definitions:
+        value = values.get(debug_key)
         if isinstance(value, (int, float)):
             record_metric(name=metric_name, value=float(value), unit=unit)
 
+
+def _record_ideas_usage_counters(*, record_metric: Any, debug: dict[str, Any]) -> None:
+    usage = debug.get("usage")
+    if not isinstance(usage, dict):
+        return
+    _record_numeric_debug_metrics(
+        record_metric=record_metric,
+        values=usage,
+        definitions=(
+            ("pipeline.trends.pass.ideas.llm_requests_total", "requests", "count"),
+            (
+                "pipeline.trends.pass.ideas.llm_input_tokens_total",
+                "input_tokens",
+                "count",
+            ),
+            (
+                "pipeline.trends.pass.ideas.llm_output_tokens_total",
+                "output_tokens",
+                "count",
+            ),
+        ),
+    )
+
+
+def _record_ideas_context_metrics(*, record_metric: Any, debug: dict[str, Any]) -> None:
+    _record_numeric_debug_metrics(
+        record_metric=record_metric,
+        values=debug,
+        definitions=(
+            ("pipeline.trends.pass.ideas.prompt_chars", "prompt_chars", "chars"),
+            (
+                "pipeline.trends.pass.ideas.snapshot_pack.chars",
+                "trend_snapshot_pack_chars",
+                "chars",
+            ),
+            (
+                "pipeline.trends.pass.ideas.prior_ideas_pack.chars",
+                "prior_ideas_pack_chars",
+                "chars",
+            ),
+        ),
+    )
+
+
+def _record_ideas_normalization_metrics(
+    *, record_metric: Any, debug: dict[str, Any]
+) -> None:
     normalization = debug.get("normalization")
-    if isinstance(normalization, dict):
+    if not isinstance(normalization, dict):
+        return
+    definitions = tuple(
+        (
+            f"pipeline.trends.pass.ideas.quality_gate.{metric_suffix}",
+            debug_key,
+            "count",
+        )
         for metric_suffix, debug_key in (
             ("retained_total", "retained_total"),
             ("dropped_non_item_ref_total", "dropped_non_item_ref_total"),
@@ -706,15 +960,16 @@ def _record_ideas_usage_metrics(*, record_metric: Any, debug: dict[str, Any]) ->
                 "dropped_insufficient_distinct_docs_total",
                 "dropped_insufficient_distinct_docs_total",
             ),
-        ):
-            value = normalization.get(debug_key)
-            if isinstance(value, (int, float)):
-                record_metric(
-                    name=f"pipeline.trends.pass.ideas.quality_gate.{metric_suffix}",
-                    value=float(value),
-                    unit="count",
-                )
+        )
+    )
+    _record_numeric_debug_metrics(
+        record_metric=record_metric,
+        values=normalization,
+        definitions=definitions,
+    )
 
+
+def _record_ideas_cost_metric(*, record_metric: Any, debug: dict[str, Any]) -> None:
     cost_usd = debug.get("estimated_cost_usd")
     if isinstance(cost_usd, (int, float)):
         record_metric(
@@ -728,6 +983,13 @@ def _record_ideas_usage_metrics(*, record_metric: Any, debug: dict[str, Any]) ->
             value=1,
             unit="count",
         )
+
+
+def _record_ideas_usage_metrics(*, record_metric: Any, debug: dict[str, Any]) -> None:
+    _record_ideas_usage_counters(record_metric=record_metric, debug=debug)
+    _record_ideas_context_metrics(record_metric=record_metric, debug=debug)
+    _record_ideas_normalization_metrics(record_metric=record_metric, debug=debug)
+    _record_ideas_cost_metric(record_metric=record_metric, debug=debug)
 
 
 def _record_ideas_tool_metrics(*, record_metric: Any, debug: dict[str, Any]) -> None:
@@ -838,9 +1100,16 @@ def execute_ideas_stage(
         log=context.log,
         record_metric=context.record_metric,
     )
-    if upstream.upstream_empty_corpus:
+    if upstream.upstream_status == PassStatus.SUPPRESSED:
         prior_ideas_pack_md = ""
         prior_ideas_pack_stats: dict[str, Any] = {
+            "status": "skipped_upstream_suppressed",
+            "chars": 0,
+            "retained_entries_total": 0,
+        }
+    elif upstream.upstream_empty_corpus:
+        prior_ideas_pack_md = ""
+        prior_ideas_pack_stats = {
             "status": "skipped_empty_corpus",
             "chars": 0,
             "retained_entries_total": 0,
@@ -857,6 +1126,7 @@ def execute_ideas_stage(
             context=context,
             trend_payload=upstream.trend_payload,
             trend_snapshot_pack_md=upstream.trend_snapshot_pack_md,
+            upstream_status=upstream.upstream_status,
             upstream_empty_corpus=upstream.upstream_empty_corpus,
             prior_ideas_pack_md=prior_ideas_pack_md,
             prior_ideas_pack_stats=prior_ideas_pack_stats,
@@ -968,6 +1238,8 @@ def _run_ideas_pass_definition(request: IdeasPassDefinitionRequest) -> Any:
         upstream_pass_output_id=request.upstream_pass_output_id,
         llm_model=request.context.llm_model,
     )
+    if request.status == PassStatus.SUPPRESSED:
+        debug[SUPPRESSION_PROJECTION_COMPLETE_KEY] = False
     envelope = build_trend_ideas_pass_output(
         run_id=request.context.run_id,
         status=request.status,
@@ -995,7 +1267,7 @@ def _run_ideas_pass_definition(request: IdeasPassDefinitionRequest) -> Any:
         trend_payload=request.trend_payload,
         upstream_pass_output_id=request.upstream_pass_output_id,
     )
-    return run_pass_definition(
+    execution = run_pass_definition(
         repository=request.context.service.repository,
         record_metric=request.context.record_metric,
         definition=PassDefinition[None](
@@ -1017,10 +1289,29 @@ def _run_ideas_pass_definition(request: IdeasPassDefinitionRequest) -> Any:
                 sanitize_error=request.context.service._sanitize_error_message,
                 persisted_metric_name="pipeline.trends.pass.ideas.persisted_total",
             ),
-            should_project=request.status != PassStatus.SUPPRESSED,
             build_projection_specs=_build_projection_specs(projection_context),
         ),
     )
+    if request.status == PassStatus.SUPPRESSED:
+        required_cleanup = ["markdown_cleanup"]
+        if request.context.service.settings.obsidian_vault_path is not None:
+            required_cleanup.append("obsidian_cleanup")
+        failed_cleanup = [
+            name
+            for name in required_cleanup
+            if execution.projection_results.get(name) is None
+        ]
+        if failed_cleanup:
+            raise RuntimeError(
+                "suppressed ideas cleanup failed for: " + ", ".join(failed_cleanup)
+            )
+        pass_output_id = execution.pass_output_id
+        if pass_output_id is None:
+            raise RuntimeError("suppressed ideas cleanup requires a pass output id")
+        request.context.service.repository.mark_suppressed_pass_output_projection_complete(
+            pass_output_id=pass_output_id
+        )
+    return execution
 
 
 def _ideas_note_path(

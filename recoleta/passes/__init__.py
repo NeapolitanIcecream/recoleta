@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from recoleta.passes.base import PassInputRef, PassOutputEnvelope, PassStatus
+from recoleta.passes.base import (
+    SUPPRESSION_PROJECTION_COMPLETE_KEY,
+    PassInputRef,
+    PassOutputEnvelope,
+    PassStatus,
+)
 from recoleta.passes.trend_synthesis import (
     TREND_SYNTHESIS_PASS_KIND,
     TREND_SYNTHESIS_SCHEMA_VERSION,
@@ -24,6 +29,7 @@ __all__ = [
     "PassInputRef",
     "PassOutputEnvelope",
     "PassStatus",
+    "SUPPRESSION_PROJECTION_COMPLETE_KEY",
     "TREND_IDEAS_PASS_KIND",
     "TREND_IDEAS_SCHEMA_VERSION",
     "TREND_SYNTHESIS_PASS_KIND",

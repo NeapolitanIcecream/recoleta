@@ -348,7 +348,10 @@ def _build_runtime() -> tuple[Settings, Repository]:
     return settings, repository
 
 
-def captured_bundle_read_debug(*doc_ids: int) -> dict[str, Any]:
+def captured_bundle_read_debug(
+    *doc_ids: int,
+    chunk_indexes: tuple[int, ...] = (0,),
+) -> dict[str, Any]:
     """Build the complete tool trace required by evidence-integrity tests."""
 
     events: list[dict[str, Any]] = []
@@ -366,7 +369,27 @@ def captured_bundle_read_debug(*doc_ids: int) -> dict[str, Any]:
                     "kind": "tool-return",
                     "tool_name": "get_doc_bundle",
                     "tool_call_id": tool_call_id,
-                    "content": {"bundle": {"doc": {"doc_id": doc_id}}},
+                    "content": {
+                        "bundle": {
+                            "doc": {"doc_id": doc_id},
+                            "summary": {
+                                "chunk_id": doc_id,
+                                "doc_id": doc_id,
+                                "chunk_index": 0,
+                                "text": "Inspected summary.",
+                            },
+                            "content_chunks": [
+                                {
+                                    "chunk_id": doc_id * 1_000 + chunk_index,
+                                    "doc_id": doc_id,
+                                    "chunk_index": chunk_index,
+                                    "text": "Inspected content chunk.",
+                                }
+                                for chunk_index in chunk_indexes
+                                if chunk_index > 0
+                            ],
+                        }
+                    },
                 },
             ]
         )

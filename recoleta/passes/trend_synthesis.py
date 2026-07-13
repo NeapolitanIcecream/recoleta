@@ -18,6 +18,7 @@ class _TrendSynthesisPassOutputRequest:
     period_start: datetime
     period_end: datetime
     payload: TrendPayload
+    status: PassStatus = PassStatus.SUCCEEDED
     diagnostics: dict[str, Any] | None = None
 
 
@@ -35,6 +36,7 @@ def _coerce_trend_synthesis_pass_output_request(
         period_start=values["period_start"],
         period_end=values["period_end"],
         payload=values["payload"],
+        status=PassStatus(values.get("status", PassStatus.SUCCEEDED)),
         diagnostics=values.get("diagnostics"),
     )
 
@@ -56,7 +58,7 @@ def build_trend_synthesis_pass_output(
     return PassOutputEnvelope(
         pass_kind=TREND_SYNTHESIS_PASS_KIND,
         schema_version=TREND_SYNTHESIS_SCHEMA_VERSION,
-        status=PassStatus.SUCCEEDED,
+        status=normalized_request.status,
         granularity=str(normalized_request.granularity or "").strip().lower() or None,
         period_start=normalized_request.period_start.isoformat(),
         period_end=normalized_request.period_end.isoformat(),

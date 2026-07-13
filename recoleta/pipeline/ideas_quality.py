@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from recoleta import trends
+from recoleta.pass_output_selection import (
+    is_suppressed_pass_output,
+    latest_idea_pass_output_states_by_window,
+)
 
 _PRIOR_IDEAS_PACK_MAX_CHARS = 6_000
 _PRIOR_IDEAS_PEER_WINDOW_COUNT = 3
@@ -25,9 +29,7 @@ def _prior_ideas_sections(
 ) -> list[_PriorIdeasSection]:
     normalized_granularity = str(granularity or "").strip().lower()
     sections: list[_PriorIdeasSection] = []
-    lower_granularity = {"week": "day", "month": "week"}.get(
-        normalized_granularity
-    )
+    lower_granularity = {"week": "day", "month": "week"}.get(normalized_granularity)
     if lower_granularity is not None:
         sections.append(
             _PriorIdeasSection(
@@ -73,7 +75,9 @@ def _render_prior_pack(lines: list[str]) -> str:
     return "\n".join(lines).rstrip() + "\n" if lines else ""
 
 
-def _prior_pack_stats(*, sections: list[_PriorIdeasSection], max_chars: int) -> dict[str, Any]:
+def _prior_pack_stats(
+    *, sections: list[_PriorIdeasSection], max_chars: int
+) -> dict[str, Any]:
     return {
         "requested_sections": len(sections),
         "available_sections": 0,
@@ -83,10 +87,106 @@ def _prior_pack_stats(*, sections: list[_PriorIdeasSection], max_chars: int) -> 
         "section_limit_omitted_total": 0,
         "budget_omitted_total": 0,
         "entry_text_truncated_total": 0,
+        "inactive_entries_omitted_total": 0,
+        "suppressed_entries_omitted_total": 0,
         "max_chars": max_chars,
         "chars": 0,
         "truncated": False,
     }
+
+
+def _bounded_prior_rows(
+    *, repository: Any, section: _PriorIdeasSection, stats: dict[str, Any]
+) -> list[dict[str, Any]]:
+    page_size = _PRIOR_IDEAS_SECTION_MAX_ENTRIES + 1
+    offset = 0
+    rows: list[dict[str, Any]] = []
+    while len(rows) < page_size:
+        page = list(
+            repository.list_document_chunk_index_rows_in_period(
+                doc_type="idea",
+                kind="content",
+                granularity=section.granularity,
+                period_start=section.period_start,
+                period_end=section.period_end,
+                limit=page_size,
+                offset=offset,
+            )
+        )
+        if not page:
+            break
+        rows.extend(
+            _exclude_inactive_prior_rows(
+                repository=repository,
+                rows=page,
+                stats=stats,
+            )
+        )
+        if len(page) < page_size:
+            break
+        offset += len(page)
+    omitted = max(0, len(rows) - _PRIOR_IDEAS_SECTION_MAX_ENTRIES)
+    stats["section_limit_omitted_total"] += omitted
+    return list(rows[:_PRIOR_IDEAS_SECTION_MAX_ENTRIES])
+
+
+def _exclude_inactive_prior_rows(
+    *, repository: Any, rows: list[dict[str, Any]], stats: dict[str, Any]
+) -> list[dict[str, Any]]:
+    windows = {
+        doc_id: (
+            str(row.get("granularity") or "").strip().lower() or None,
+            datetime.fromtimestamp(float(row["event_start_ts"]), tz=UTC),
+            datetime.fromtimestamp(float(row["event_end_ts"]), tz=UTC),
+        )
+        for row in rows
+        if (doc_id := _prior_entry_doc_id(row)) > 0
+    }
+    states_by_window = latest_idea_pass_output_states_by_window(
+        repository=repository,
+        windows=windows.values(),
+    )
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        window = windows.get(_prior_entry_doc_id(row))
+        state = states_by_window.get(window) if window is not None else None
+        if state is None or state.active:
+            filtered.append(row)
+            continue
+        stats["inactive_entries_omitted_total"] += 1
+        stats["suppressed_entries_omitted_total"] += int(
+            is_suppressed_pass_output(state.row)
+        )
+    return filtered
+
+
+def _prior_entry_doc_id(row: dict[str, Any]) -> int:
+    try:
+        return max(0, int(row.get("doc_id") or 0))
+    except TypeError, ValueError:
+        return 0
+
+
+def _unique_prior_entries(
+    *,
+    rows: list[dict[str, Any]],
+    seen_entries: set[str],
+    source_doc_ids: set[int],
+    stats: dict[str, Any],
+) -> list[tuple[int, str]]:
+    entries: list[tuple[int, str]] = []
+    for row in rows:
+        compact, text_truncated = _compact_prior_idea_entry(row.get("text"))
+        entry_key = compact.casefold()
+        if not compact or entry_key in seen_entries:
+            continue
+        seen_entries.add(entry_key)
+        stats["entry_text_truncated_total"] += int(text_truncated)
+        doc_id = _prior_entry_doc_id(row)
+        if doc_id > 0:
+            source_doc_ids.add(doc_id)
+        entries.append((doc_id, compact))
+    return entries
 
 
 def _load_prior_section_entries(
@@ -99,35 +199,17 @@ def _load_prior_section_entries(
     source_doc_ids: set[int] = set()
     seen_entries: set[str] = set()
     for section in sections:
-        rows = repository.list_document_chunk_index_rows_in_period(
-            doc_type="idea",
-            kind="content",
-            granularity=section.granularity,
-            period_start=section.period_start,
-            period_end=section.period_end,
-            limit=_PRIOR_IDEAS_SECTION_MAX_ENTRIES + 1,
-            offset=0,
+        rows = _bounded_prior_rows(
+            repository=repository,
+            section=section,
+            stats=stats,
         )
-        if len(rows) > _PRIOR_IDEAS_SECTION_MAX_ENTRIES:
-            stats["section_limit_omitted_total"] += (
-                len(rows) - _PRIOR_IDEAS_SECTION_MAX_ENTRIES
-            )
-            rows = rows[:_PRIOR_IDEAS_SECTION_MAX_ENTRIES]
-        entries: list[tuple[int, str]] = []
-        for row in rows:
-            compact, text_truncated = _compact_prior_idea_entry(row.get("text"))
-            if not compact or compact.casefold() in seen_entries:
-                continue
-            seen_entries.add(compact.casefold())
-            if text_truncated:
-                stats["entry_text_truncated_total"] += 1
-            try:
-                doc_id = int(row.get("doc_id") or 0)
-            except Exception:
-                doc_id = 0
-            if doc_id > 0:
-                source_doc_ids.add(doc_id)
-            entries.append((doc_id, compact))
+        entries = _unique_prior_entries(
+            rows=rows,
+            seen_entries=seen_entries,
+            source_doc_ids=source_doc_ids,
+            stats=stats,
+        )
         if entries:
             stats["available_sections"] += 1
             stats["candidate_entries_total"] += len(entries)

@@ -14,11 +14,48 @@ from recoleta.presentation import (
     build_trend_presentation_v2,
     idea_display_labels,
     presentation_sidecar_path,
+    remove_note_projection_artifacts,
     resolve_presentation_language_code,
     trend_display_labels,
     validate_presentation,
     write_presentation_sidecar,
 )
+
+
+def test_remove_note_projection_artifacts_hides_note_first_and_attempts_all_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    note_path = tmp_path / "Trends" / "day--2026-03-02--trend--7.md"
+    note_path.parent.mkdir(parents=True)
+    note_path.write_text("stale", encoding="utf-8")
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    sidecar_path.write_text("{}", encoding="utf-8")
+    pdf_path = note_path.with_suffix(".pdf")
+    pdf_path.write_bytes(b"stale")
+    debug_dir = note_path.parent / ".pdf-debug" / note_path.stem
+    debug_dir.mkdir(parents=True)
+    (debug_dir / "page.png").write_bytes(b"stale")
+
+    real_unlink = Path.unlink
+    attempted: list[Path] = []
+
+    def _unlink(path: Path, *, missing_ok: bool = False) -> None:
+        attempted.append(path)
+        if path == note_path:
+            raise OSError("simulated note cleanup failure")
+        real_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+
+    with pytest.raises(ExceptionGroup, match="failed to remove projection artifacts"):
+        remove_note_projection_artifacts(note_path=note_path, include_pdf=True)
+
+    assert attempted[0] == note_path
+    assert note_path.exists()
+    assert not sidecar_path.exists()
+    assert not pdf_path.exists()
+    assert not debug_dir.exists()
 
 
 def _idea(*, title: str, content_md: str = "Short idea note.") -> SimpleNamespace:

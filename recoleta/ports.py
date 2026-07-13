@@ -206,6 +206,10 @@ class RepositoryPort(Protocol):
 
     def get_pass_output(self, *, pass_output_id: int) -> PassOutput | None: ...
 
+    def mark_suppressed_pass_output_projection_complete(
+        self, *, pass_output_id: int
+    ) -> PassOutput: ...
+
     def get_latest_pass_output(
         self,
         *,
@@ -567,6 +571,10 @@ class TrendStageRepositoryPort(TrendRepositoryPort, Protocol):
     ) -> PassOutput: ...
 
     def get_pass_output(self, *, pass_output_id: int) -> PassOutput | None: ...
+
+    def mark_suppressed_pass_output_projection_complete(
+        self, *, pass_output_id: int
+    ) -> PassOutput: ...
 
     def get_latest_pass_output(
         self,

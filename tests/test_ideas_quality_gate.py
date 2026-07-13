@@ -36,7 +36,17 @@ def test_ideas_quality_gate_does_not_treat_search_hits_as_read_evidence() -> Non
                         "kind": "tool-return",
                         "tool_name": "get_doc_bundle",
                         "tool_call_id": "read-1",
-                        "content": {"bundle": {"doc": {"doc_id": 11}}},
+                        "content": {
+                            "bundle": {
+                                "doc": {"doc_id": 11},
+                                "summary": {
+                                    "chunk_id": 111,
+                                    "doc_id": 11,
+                                    "chunk_index": 0,
+                                    "text": "Inspected summary.",
+                                },
+                            }
+                        },
                     },
                 ],
             }
@@ -78,4 +88,37 @@ def test_ideas_quality_gate_rejects_existing_but_unread_evidence() -> None:
 
     assert normalized.ideas == []
     assert stats["dropped_unread_ref_total"] == 1
+    assert stats["dropped_insufficient_distinct_docs_total"] == 1
+
+
+def test_ideas_quality_gate_rejects_unread_chunk_indices() -> None:
+    payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Ideas",
+            "granularity": "day",
+            "period_start": "2026-03-09T00:00:00+00:00",
+            "period_end": "2026-03-10T00:00:00+00:00",
+            "summary_md": "Summary",
+            "ideas": [
+                {
+                    "title": "Correct documents with fabricated chunks",
+                    "content_md": "Neither cited chunk was returned by a body-read tool.",
+                    "evidence_refs": [
+                        {"doc_id": 11, "chunk_index": 999},
+                        {"doc_id": 22, "chunk_index": 888},
+                    ],
+                }
+            ],
+        }
+    )
+
+    normalized, stats = normalize_trend_ideas_payload_with_stats(
+        payload,
+        min_distinct_docs=2,
+        allowed_doc_ids={11, 22},
+        read_refs={(11, 0), (22, 0)},
+    )
+
+    assert normalized.ideas == []
+    assert stats["dropped_unread_ref_total"] == 2
     assert stats["dropped_insufficient_distinct_docs_total"] == 1

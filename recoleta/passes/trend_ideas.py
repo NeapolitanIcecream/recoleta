@@ -184,6 +184,7 @@ def normalize_trend_ideas_payload(
     min_distinct_docs: int = 1,
     allowed_doc_ids: set[int] | None = None,
     read_doc_ids: set[int] | None = None,
+    read_refs: set[tuple[int, int]] | None = None,
 ) -> TrendIdeasPayload:
     normalized, _ = normalize_trend_ideas_payload_with_stats(
         payload,
@@ -191,31 +192,32 @@ def normalize_trend_ideas_payload(
         min_distinct_docs=min_distinct_docs,
         allowed_doc_ids=allowed_doc_ids,
         read_doc_ids=read_doc_ids,
+        read_refs=read_refs,
     )
     return normalized
 
 
-def normalize_trend_ideas_payload_with_stats(
-    payload: TrendIdeasPayload,
-    *,
-    max_ideas: int = 3,
-    min_distinct_docs: int = 1,
-    allowed_doc_ids: set[int] | None = None,
-    read_doc_ids: set[int] | None = None,
-) -> tuple[TrendIdeasPayload, dict[str, int]]:
-    normalized_max_ideas = max(0, int(max_ideas or 0))
-    normalized_min_docs = max(1, int(min_distinct_docs or 0))
-    normalized_allowed_doc_ids = (
-        {int(doc_id) for doc_id in allowed_doc_ids if int(doc_id) > 0}
-        if allowed_doc_ids is not None
-        else None
-    )
-    normalized_read_doc_ids = (
-        {int(doc_id) for doc_id in read_doc_ids if int(doc_id) > 0}
-        if read_doc_ids is not None
-        else None
-    )
-    stats = {
+def _positive_doc_ids(doc_ids: set[int] | None) -> set[int] | None:
+    if doc_ids is None:
+        return None
+    return {normalized for doc_id in doc_ids if (normalized := int(doc_id)) > 0}
+
+
+def _positive_refs(
+    refs: set[tuple[int, int]] | None,
+) -> set[tuple[int, int]] | None:
+    if refs is None:
+        return None
+    return {
+        (doc_id, chunk_index)
+        for raw_doc_id, raw_chunk_index in refs
+        if (doc_id := int(raw_doc_id)) > 0
+        and (chunk_index := int(raw_chunk_index)) >= 0
+    }
+
+
+def _ideas_normalization_stats(*, max_ideas: int, min_docs: int) -> dict[str, int]:
+    return {
         "candidates_total": 0,
         "retained_total": 0,
         "dropped_duplicate_title_total": 0,
@@ -225,9 +227,64 @@ def normalize_trend_ideas_payload_with_stats(
         "dropped_duplicate_doc_ref_total": 0,
         "dropped_insufficient_distinct_docs_total": 0,
         "dropped_over_limit_total": 0,
-        "max_ideas": normalized_max_ideas,
-        "min_distinct_docs": normalized_min_docs,
+        "max_ideas": max_ideas,
+        "min_distinct_docs": min_docs,
     }
+
+
+def _clean_idea_evidence_refs(
+    idea: TrendIdea,
+    *,
+    allowed_doc_ids: set[int] | None,
+    read_doc_ids: set[int] | None,
+    read_refs: set[tuple[int, int]] | None,
+    stats: dict[str, int],
+) -> list[TrendIdeaEvidenceRef]:
+    refs = list(idea.evidence_refs or [])
+    seen_doc_ids: set[int] = set()
+    cleaned: list[TrendIdeaEvidenceRef] = []
+    for ref in refs:
+        doc_id = int(ref.doc_id)
+        if allowed_doc_ids is not None and doc_id not in allowed_doc_ids:
+            stats["dropped_non_item_ref_total"] += 1
+            continue
+        ref_key = (doc_id, int(ref.chunk_index))
+        if read_refs is not None and ref_key not in read_refs:
+            stats["dropped_unread_ref_total"] += 1
+            continue
+        if (
+            read_refs is None
+            and read_doc_ids is not None
+            and doc_id not in read_doc_ids
+        ):
+            stats["dropped_unread_ref_total"] += 1
+            continue
+        if doc_id in seen_doc_ids:
+            stats["dropped_duplicate_doc_ref_total"] += 1
+            continue
+        seen_doc_ids.add(doc_id)
+        cleaned.append(ref)
+    return cleaned
+
+
+def normalize_trend_ideas_payload_with_stats(
+    payload: TrendIdeasPayload,
+    *,
+    max_ideas: int = 3,
+    min_distinct_docs: int = 1,
+    allowed_doc_ids: set[int] | None = None,
+    read_doc_ids: set[int] | None = None,
+    read_refs: set[tuple[int, int]] | None = None,
+) -> tuple[TrendIdeasPayload, dict[str, int]]:
+    normalized_max_ideas = max(0, int(max_ideas or 0))
+    normalized_min_docs = max(1, int(min_distinct_docs or 0))
+    normalized_allowed_doc_ids = _positive_doc_ids(allowed_doc_ids)
+    normalized_read_doc_ids = _positive_doc_ids(read_doc_ids)
+    normalized_read_refs = _positive_refs(read_refs)
+    stats = _ideas_normalization_stats(
+        max_ideas=normalized_max_ideas,
+        min_docs=normalized_min_docs,
+    )
     seen_titles: set[str] = set()
     normalized_ideas: list[TrendIdea] = []
     for idea in payload.ideas or []:
@@ -236,30 +293,16 @@ def normalize_trend_ideas_payload_with_stats(
         if not title_key or title_key in seen_titles:
             stats["dropped_duplicate_title_total"] += 1
             continue
-        if not list(idea.evidence_refs or []):
+        if not idea.evidence_refs:
             stats["dropped_no_evidence_total"] += 1
             continue
-        seen_doc_ids: set[int] = set()
-        evidence_refs: list[TrendIdeaEvidenceRef] = []
-        for ref in idea.evidence_refs or []:
-            doc_id = int(ref.doc_id)
-            if (
-                normalized_allowed_doc_ids is not None
-                and doc_id not in normalized_allowed_doc_ids
-            ):
-                stats["dropped_non_item_ref_total"] += 1
-                continue
-            if (
-                normalized_read_doc_ids is not None
-                and doc_id not in normalized_read_doc_ids
-            ):
-                stats["dropped_unread_ref_total"] += 1
-                continue
-            if doc_id in seen_doc_ids:
-                stats["dropped_duplicate_doc_ref_total"] += 1
-                continue
-            seen_doc_ids.add(doc_id)
-            evidence_refs.append(ref)
+        evidence_refs = _clean_idea_evidence_refs(
+            idea,
+            allowed_doc_ids=normalized_allowed_doc_ids,
+            read_doc_ids=normalized_read_doc_ids,
+            read_refs=normalized_read_refs,
+            stats=stats,
+        )
         if len(evidence_refs) < normalized_min_docs:
             stats["dropped_insufficient_distinct_docs_total"] += 1
             continue
@@ -342,9 +385,7 @@ def _snapshot_pack_cluster_entry_lines(*, index: int, cluster: Any) -> list[str]
     return lines
 
 
-def _snapshot_pack_evidence_ref_lines(
-    *, evidence_refs: list[Any]
-) -> list[str]:
+def _snapshot_pack_evidence_ref_lines(*, evidence_refs: list[Any]) -> list[str]:
     lines: list[str] = []
     for rep in evidence_refs:
         try:

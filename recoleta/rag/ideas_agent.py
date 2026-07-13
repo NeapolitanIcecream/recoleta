@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -25,7 +26,7 @@ from recoleta.trends import TrendPayload
 
 _BUNDLE_TITLE_MAX_CHARS = 96
 _BUNDLE_TITLE_DATE_RE = re.compile(
-    r"(?:^|\s)(?:20\d{2}(?:[-/.]\d{1,2}){0,2}|\d{4}-W\d{2})(?:\s|$)",
+    r"(?<!\d)(?:20\d{2}(?:[-/.]\d{1,2}){0,2}|\d{4}-W\d{2})(?!\d)",
     re.IGNORECASE,
 )
 _BUNDLE_TITLE_FORBIDDEN_RE = re.compile(
@@ -37,6 +38,27 @@ _BUNDLE_TITLE_PLACEHOLDER_RE = re.compile(
     r"\b(?:unnormalized|placeholder|untitled|should be replaced|todo|tbd)\b",
     re.IGNORECASE,
 )
+_IDEA_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*")
+_IDEA_COMPACT_SCRIPT_RE = re.compile(
+    "["
+    "\u0e00-\u0eff"  # Thai and Lao
+    "\u1000-\u109f"  # Myanmar
+    "\u1100-\u11ff"  # Hangul Jamo
+    "\u1780-\u17ff"  # Khmer
+    "\u3040-\u30ff"  # Hiragana and Katakana
+    "\u3130-\u318f"  # Hangul compatibility Jamo
+    "\u3400-\u4dbf"  # CJK extension A
+    "\u4e00-\u9fff"  # CJK unified ideographs
+    "\uac00-\ud7af"  # Hangul syllables
+    "\uf900-\ufaff"  # CJK compatibility ideographs
+    "\uff66-\uff9f"  # Halfwidth Katakana
+    "\U00020000-\U000323af"  # CJK extensions B-H
+    "]"
+)
+_IDEA_MAX_SPACED_WORDS = 280
+_IDEA_MAX_DENSE_PROSE_CHARS = 550
+_IDEA_MAX_NON_WHITESPACE_CHARS = 3_200
+_IDEA_MAX_UNBROKEN_CHARS = 1_200
 
 
 class _TrendIdeasBundleTitle(BaseModel):
@@ -97,7 +119,10 @@ def bundle_title_rewrite_reason(
     if _BUNDLE_TITLE_PLACEHOLDER_RE.search(normalized):
         return "placeholder"
     normalized_source_title = _normalize_bundle_title_value(source_title or "")
-    if normalized_source_title and normalized.casefold() == normalized_source_title.casefold():
+    if (
+        normalized_source_title
+        and normalized.casefold() == normalized_source_title.casefold()
+    ):
         return "copied_source_title"
     return None
 
@@ -268,7 +293,8 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " In ordinary prose, separate source facts from your synthesis or inference."
         " End with a cheap, falsifiable first test and an explicit kill threshold: a"
         " measurable outcome that would cause the reader to stop or revise the idea."
-        " Do not invent a threshold that the evidence cannot motivate."
+        " Do not present an editorial cutoff as a result supported by the sources;"
+        " label it as a pilot decision threshold when it is a proposed operating choice."
     )
     base += (
         " Do not use internal rubric labels in public prose. Convert those checks into"
@@ -278,6 +304,14 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Each idea must be a finished short piece."
         " Use ideas[].title for a literal descriptive label, ideas[].content_md for the"
         " prose body, and ideas[].evidence_refs for grounded supporting references."
+    )
+    base += (
+        " Keep each idea compact: normally three short paragraphs and no more than"
+        " about 220 English words or 450 non-whitespace characters for compact-script"
+        " prose such as Chinese, Japanese, or Korean. State the user and job once,"
+        " explain the cross-source inference once, then combine the concrete build,"
+        " first test, and kill threshold. Do not repeat source summaries or restate"
+        " the same rationale under multiple labels."
     )
     base += (
         " summary_md should summarize the set directly."
@@ -331,7 +365,6 @@ def build_trend_ideas_prompt_payload(
     granularity: str,
     period_start: datetime,
     period_end: datetime,
-    trend_payload: TrendPayload,
     trend_snapshot_pack_md: str,
     prior_ideas_pack_md: str | None = None,
     rag_sources: list[dict[str, Any]] | None = None,
@@ -341,8 +374,6 @@ def build_trend_ideas_prompt_payload(
         "granularity": granularity,
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
-        "trend_title": str(trend_payload.title or "").strip(),
-        "trend_topics": list(trend_payload.topics or []),
         "trend_snapshot_pack_md": trend_snapshot_pack_md,
         "notes": _trend_ideas_prompt_notes(),
     }
@@ -362,6 +393,8 @@ def _trend_ideas_prompt_notes() -> list[str]:
         "Use evidence_refs to cite at least two distinct item documents read with get_doc_bundle or read_chunk for each idea; get_doc metadata does not count, and multiple chunks from one document count once.",
         "Treat prior_ideas_pack_md only as a deduplication exclusion list; never cite it as evidence.",
         "Each retained idea needs a specific user and job, a cross-source novelty basis, a falsifiable first test, and an observable kill threshold.",
+        "When a kill threshold is an editorial operating choice rather than a source result, call it a pilot decision threshold.",
+        "Keep each idea to about three short paragraphs: state the user/job and cross-source inference once, then combine the build, first test, and kill threshold without repeating source summaries.",
         "Do not restate the trend summary as the final output.",
         "Do not let task labels or collection labels leak into public prose.",
         "Do not coin new umbrella terms or marketing-style labels.",
@@ -418,6 +451,69 @@ def build_trend_ideas_title_prompt_payload(
     }
 
 
+def _require_distinct_evidence_documents(
+    payload: TrendIdeasPayload,
+) -> TrendIdeasPayload:
+    invalid_ideas: list[str] = []
+    for index, idea in enumerate(payload.ideas):
+        doc_ids = {int(ref.doc_id) for ref in idea.evidence_refs if int(ref.doc_id) > 0}
+        if len(doc_ids) < 2:
+            invalid_ideas.append(f"{index + 1} ({idea.title})")
+    if invalid_ideas:
+        invalid_list = ", ".join(invalid_ideas)
+        raise ModelRetry(
+            "Every emitted idea must include evidence_refs with at least two "
+            "different positive doc_id values. Add or deduplicate the references, "
+            "remove unsupported ideas, or return ideas=[] when the evidence is "
+            f"insufficient. Invalid ideas: {invalid_list}."
+        )
+    oversized_ideas = [
+        f"{index + 1} ({idea.title})"
+        for index, idea in enumerate(payload.ideas)
+        if _idea_content_is_oversized(idea.content_md)
+    ]
+    if oversized_ideas:
+        oversized_list = ", ".join(oversized_ideas)
+        raise ModelRetry(
+            "Each idea must stay within 280 whitespace-delimited words or 550 non-whitespace "
+            "characters for compact-script prose. Every idea also has a 3,200 "
+            "non-whitespace character ceiling and a 1,200 character ceiling for "
+            "any unbroken run. Remove repeated source summaries and merge the "
+            "novelty restatement into the user, build, or test paragraphs. "
+            f"Oversized ideas: {oversized_list}."
+        )
+    return payload
+
+
+def _idea_content_is_oversized(content_md: str) -> bool:
+    normalized = str(content_md or "").strip()
+    runs = normalized.split()
+    compact = "".join(runs)
+    compact_length = len(compact)
+    english_word_count = len(_IDEA_WORD_RE.findall(normalized))
+    spaced_word_count = sum(
+        any(char.isalnum() for char in run) for run in runs
+    )
+    compact_script_count = sum(
+        bool(_IDEA_COMPACT_SCRIPT_RE.fullmatch(char))
+        or unicodedata.category(char) in {"So", "Sk"}
+        for char in compact
+    )
+    dense_prose = bool(
+        compact_script_count >= 300
+        or compact_script_count * 4 >= max(1, compact_length)
+    )
+    return (
+        max(english_word_count, spaced_word_count) > _IDEA_MAX_SPACED_WORDS
+        or compact_length > _IDEA_MAX_NON_WHITESPACE_CHARS
+        or any(len(run) > _IDEA_MAX_UNBROKEN_CHARS for run in runs)
+        or (
+            dense_prose
+            and compact_length > _IDEA_MAX_DENSE_PROSE_CHARS
+        )
+    )
+
+
 def build_trend_ideas_agent(
     *,
     llm_model: str,
@@ -433,6 +529,7 @@ def build_trend_ideas_agent(
         output_retries=4,
         defer_model_check=True,
     )
+    agent.output_validator(_require_distinct_evidence_documents)
 
     @agent.tool
     def list_docs(
@@ -529,29 +626,6 @@ def build_trend_ideas_agent(
             limit=limit,
         )
 
-    @agent.output_validator
-    def require_distinct_evidence_documents(
-        payload: TrendIdeasPayload,
-    ) -> TrendIdeasPayload:
-        invalid_ideas: list[str] = []
-        for index, idea in enumerate(payload.ideas):
-            doc_ids = {
-                int(ref.doc_id)
-                for ref in idea.evidence_refs
-                if int(ref.doc_id) > 0
-            }
-            if len(doc_ids) < 2:
-                invalid_ideas.append(f"{index + 1} ({idea.title})")
-        if invalid_ideas:
-            invalid_list = ", ".join(invalid_ideas)
-            raise ModelRetry(
-                "Every emitted idea must include evidence_refs with at least two "
-                "different positive doc_id values. Add or deduplicate the references, "
-                "remove unsupported ideas, or return ideas=[] when the evidence is "
-                f"insufficient. Invalid ideas: {invalid_list}."
-            )
-        return payload
-
     return agent
 
 
@@ -636,7 +710,6 @@ def generate_trend_ideas_payload(
             granularity=resolved_request.granularity,
             period_start=resolved_request.period_start,
             period_end=resolved_request.period_end,
-            trend_payload=resolved_request.trend_payload,
             trend_snapshot_pack_md=resolved_request.trend_snapshot_pack_md,
             prior_ideas_pack_md=resolved_request.prior_ideas_pack_md,
             rag_sources=resolved_request.rag_sources,
@@ -672,9 +745,7 @@ def generate_trend_ideas_payload(
         "trend_snapshot_pack_chars": len(
             str(resolved_request.trend_snapshot_pack_md or "")
         ),
-        "prior_ideas_pack_chars": len(
-            str(resolved_request.prior_ideas_pack_md or "")
-        ),
+        "prior_ideas_pack_chars": len(str(resolved_request.prior_ideas_pack_md or "")),
         "include_debug": bool(resolved_request.include_debug),
     }
     log.info(

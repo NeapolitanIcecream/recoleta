@@ -381,3 +381,116 @@ def test_ideas_agent_accepts_two_distinct_document_refs_without_retry(
 
     assert [ref.doc_id for ref in result.output.ideas[0].evidence_refs] == [1, 2]
     assert attempts == 1
+
+
+@pytest.mark.parametrize(
+    "oversized_content",
+    (
+        " ".join(["evidence"] * 281),
+        "あ" * 551,
+        "한" * 551,
+        "🧪 " * 551,
+        "中" * 400 + " AI" * 275,
+        " ".join(["исследование"] * 281),
+        "a" * 1_201,
+        "! " * 3_201,
+    ),
+    ids=(
+        "english-words",
+        "japanese-kana",
+        "korean-hangul",
+        "emoji",
+        "mixed-cjk-ascii",
+        "russian-words",
+        "unbroken-ascii",
+        "universal-character-ceiling",
+    ),
+)
+def test_ideas_agent_retries_oversized_idea_before_accepting_compact_prose(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    oversized_content: str,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    _, repository = _build_runtime()
+    agent = build_trend_ideas_agent(llm_model="openai/gpt-4o-mini")
+    attempts = 0
+    retry_messages = ""
+
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal attempts, retry_messages
+        attempts += 1
+        payload = _ideas_payload(evidence_doc_ids=[1, 2])
+        if attempts == 1:
+            payload["ideas"][0]["content_md"] = oversized_content
+        else:
+            retry_messages = repr(messages)
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, payload)])
+
+    with agent.override(model=FunctionModel(model_fn)):
+        result = agent.run_sync(
+            json.dumps({"task": "x"}),
+            deps=_ideas_agent_deps(repository=repository, tmp_path=tmp_path),
+        )
+
+    assert result.output.ideas[0].content_md.startswith("Build an auditable")
+    assert attempts == 2
+    assert "280 whitespace-delimited words" in retry_messages
+
+
+@pytest.mark.parametrize(
+    "content_md",
+    (
+        " ".join(["evidence"] * 280),
+        "あ" * 550,
+        "한" * 550,
+        "🧪 " * 550,
+        " ".join(["исследование"] * 100),
+        " ".join(["تجربة"] * 100),
+        "a" * 1_200,
+        (
+            "Inspect https://example.com/runs/42?q=agent and compare "
+            "`result = score / 100` before changing the pilot threshold."
+        ),
+    ),
+    ids=(
+        "english-word-boundary",
+        "japanese-character-boundary",
+        "korean-character-boundary",
+        "emoji-character-boundary",
+        "russian-spaced-prose",
+        "arabic-spaced-prose",
+        "unbroken-run-boundary",
+        "normal-url-and-inline-code",
+    ),
+)
+def test_ideas_agent_accepts_length_boundaries_and_normal_markup_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    content_md: str,
+) -> None:
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+    _, repository = _build_runtime()
+    agent = build_trend_ideas_agent(llm_model="openai/gpt-4o-mini")
+    attempts = 0
+
+    def model_fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal attempts
+        _ = messages
+        attempts += 1
+        payload = _ideas_payload(evidence_doc_ids=[1, 2])
+        payload["ideas"][0]["content_md"] = content_md
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, payload)])
+
+    with agent.override(model=FunctionModel(model_fn)):
+        result = agent.run_sync(
+            json.dumps({"task": "x"}),
+            deps=_ideas_agent_deps(repository=repository, tmp_path=tmp_path),
+        )
+
+    assert result.output.ideas[0].content_md == content_md.strip()
+    assert attempts == 1

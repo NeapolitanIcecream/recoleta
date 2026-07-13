@@ -29,7 +29,8 @@ def _print_trends_result(
     console.print(
         "[green]trends completed[/green] "
         f"doc_id={result.doc_id} granularity={result.granularity} "
-        f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()}"
+        f"period_start={result.period_start.isoformat()} period_end={result.period_end.isoformat()} "
+        f"artifact_status={getattr(result, 'status', 'succeeded')}"
     )
 
 
@@ -45,6 +46,9 @@ def _serialize_trends_result(result: Any) -> dict[str, Any]:
         "period_start": cli._isoformat_or_none(getattr(result, "period_start", None)),
         "period_end": cli._isoformat_or_none(getattr(result, "period_end", None)),
         "title": str(getattr(result, "title", "") or ""),
+        "artifact_status": str(
+            getattr(result, "status", "succeeded") or "succeeded"
+        ),
     }
     return payload
 

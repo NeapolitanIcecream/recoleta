@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 import re
+import shutil
 from typing import Any
 
 from recoleta.presentation_projectors import project_source_metadata
@@ -305,6 +306,33 @@ def presentation_sidecar_path(*, note_path: Path) -> Path:
     return note_path.with_name(f"{note_path.stem}.presentation.json")
 
 
+def remove_note_projection_artifacts(
+    *, note_path: Path, include_pdf: bool = False
+) -> Path:
+    """Remove a note's discoverable file first, then its derived artifacts."""
+    errors: list[Exception] = []
+    files = [note_path, presentation_sidecar_path(note_path=note_path)]
+    if include_pdf:
+        files.append(note_path.with_suffix(".pdf"))
+    for path in files:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    if include_pdf:
+        debug_dir = note_path.parent / ".pdf-debug" / note_path.stem
+        try:
+            if debug_dir.exists():
+                shutil.rmtree(debug_dir)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    if errors:
+        raise ExceptionGroup(
+            f"failed to remove projection artifacts for {note_path}", errors
+        )
+    return note_path
+
+
 def _validate_required_string(
     value: Any, *, field_path: str, errors: list[str]
 ) -> str | None:
@@ -575,6 +603,7 @@ __all__ = [
     "build_trend_presentation_v2",
     "idea_display_labels",
     "presentation_sidecar_path",
+    "remove_note_projection_artifacts",
     "resolve_presentation_language_code",
     "trend_display_labels",
     "validate_presentation",

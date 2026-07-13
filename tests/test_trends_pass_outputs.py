@@ -10,6 +10,8 @@ from sqlmodel import Session, select
 
 from recoleta.models import Document, DocumentChunk, Metric, PassOutput
 from recoleta.pipeline import PipelineService
+from recoleta.presentation import presentation_sidecar_path
+from recoleta.publish.trend_notes import resolve_trend_note_path
 from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
 
@@ -49,6 +51,33 @@ def _seed_item_document(
         source_content_type="analysis_summary",
     )
     return int(doc.id)
+
+
+def test_trend_outer_field_rebuild_keeps_topics_as_concise_english_tags() -> None:
+    from recoleta.pipeline.trends_stage import _rebuild_trend_outer_fields
+    from recoleta.trends import TrendPayload
+
+    payload = TrendPayload.model_validate(
+        {
+            "title": "旧标题",
+            "granularity": "day",
+            "period_start": "2026-03-02T00:00:00+00:00",
+            "period_end": "2026-03-03T00:00:00+00:00",
+            "overview_md": "旧概览",
+            "topics": [" robotics ", "VLA", "机器人基础模型"],
+            "clusters": [
+                {
+                    "title": "机器人基础模型开始进入真实任务评测阶段",
+                    "content_md": "保留的证据显示，评测正在从单项能力转向完整任务。",
+                    "evidence_refs": [],
+                }
+            ],
+        }
+    )
+
+    _rebuild_trend_outer_fields(payload)
+
+    assert payload.topics == ["robotics", "vla"]
 
 
 def test_trends_persist_canonical_pass_output_before_projection_rewrites(
@@ -128,11 +157,13 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
     )
 
     assert result.doc_id > 0
+    assert result.status == "succeeded"
     assert result.pass_output_id is not None
 
     with Session(repository.engine) as session:
         pass_output = session.get(PassOutput, result.pass_output_id)
         assert pass_output is not None
+        assert pass_output.status == "succeeded"
         canonical_payload = json.loads(pass_output.payload_json)
         assert "doc_id" in str(canonical_payload.get("overview_md") or "")
         diagnostics = json.loads(pass_output.diagnostics_json or "{}")
@@ -186,7 +217,7 @@ def test_trends_never_backfills_evidence_and_limits_single_source_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("PUBLISH_TARGETS", "telegram")
     monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
@@ -210,7 +241,7 @@ def test_trends_never_backfills_evidence_and_limits_single_source_output(
     )
 
     from recoleta.rag import agent as rag_agent
-    from recoleta.trends import TrendPayload
+    from recoleta.trends import TrendPayload, persist_trend_payload
 
     def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
         pstart = kwargs["period_start"]
@@ -249,6 +280,39 @@ def test_trends_never_backfills_evidence_and_limits_single_source_output(
 
     monkeypatch.setattr(repository, "search_chunks_text", _fake_search_chunks_text)
 
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    stale_doc_id = persist_trend_payload(
+        repository=repository,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=TrendPayload(
+            title="Stale published trend",
+            granularity="day",
+            period_start=period_start.isoformat(),
+            period_end=period_end.isoformat(),
+            overview_md="This stale output must disappear after suppression.",
+            topics=["agents"],
+            clusters=[],
+        ),
+    )
+    stale_note = resolve_trend_note_path(
+        note_dir=settings.markdown_output_dir / "Trends",
+        trend_doc_id=stale_doc_id,
+        granularity="day",
+        period_start=period_start,
+    )
+    stale_note.parent.mkdir(parents=True, exist_ok=True)
+    stale_note.write_text("stale trend", encoding="utf-8")
+    stale_sidecar = presentation_sidecar_path(note_path=stale_note)
+    stale_sidecar.write_text("{}", encoding="utf-8")
+    stale_pdf = stale_note.with_suffix(".pdf")
+    stale_pdf.write_bytes(b"stale pdf")
+    stale_pdf_debug = stale_note.parent / ".pdf-debug" / stale_note.stem
+    stale_pdf_debug.mkdir(parents=True)
+    (stale_pdf_debug / "page.png").write_bytes(b"stale debug")
+
     result = service.trends(
         run_id="run-trend-evidence-backfill",
         granularity="day",
@@ -258,15 +322,32 @@ def test_trends_never_backfills_evidence_and_limits_single_source_output(
     )
 
     assert result.doc_id > 0
+    assert result.doc_id == stale_doc_id
+    assert result.status == "suppressed"
     assert result.pass_output_id is not None
 
     with Session(repository.engine) as session:
         pass_output = session.get(PassOutput, result.pass_output_id)
         assert pass_output is not None
+        assert pass_output.status == "suppressed"
         payload = json.loads(pass_output.payload_json)
         assert payload["clusters"] == []
 
+        trend_doc = session.get(Document, result.doc_id)
+        assert trend_doc is not None
+        empty_projection = session.exec(
+            select(DocumentChunk).where(
+                DocumentChunk.doc_id == result.doc_id,
+                DocumentChunk.chunk_index == 1,
+            )
+        ).one()
+        empty_payload = json.loads(empty_projection.text)
+        assert empty_payload["clusters"] == []
+        assert empty_payload["title"] != "Daily Trend"
+        assert result.title == empty_payload["title"]
+
         diagnostics = json.loads(pass_output.diagnostics_json or "{}")
+        assert diagnostics["suppression_projection_complete"] is True
         assert "context_packs" not in diagnostics
         assert "context_pack_stats" in diagnostics
         rep_enforcement = diagnostics["rep_enforcement"]
@@ -281,14 +362,115 @@ def test_trends_never_backfills_evidence_and_limits_single_source_output(
         assert rep_enforcement["read_trace_unavailable_total"] == 1
         assert rep_enforcement["read_trace_complete_total"] == 0
 
-    trend_note = (
-        settings.markdown_output_dir
-        / "Trends"
-        / f"day--2026-03-02--trend--{result.doc_id}.md"
+    trend_notes = list((settings.markdown_output_dir / "Trends").glob("*.md"))
+    assert trend_notes == []
+    assert not stale_sidecar.exists()
+    assert not stale_pdf.exists()
+    assert not stale_pdf_debug.exists()
+
+
+def test_suppressed_trend_does_not_destroy_projection_when_tombstone_persist_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
     )
-    markdown = trend_note.read_text(encoding="utf-8")
-    assert "#### Evidence" not in markdown
-    assert "[Grounding Paper](" not in markdown
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    evidence_doc_id = _seed_item_document(
+        repository=repository,
+        published_at=period_start.replace(hour=1),
+        source_item_id="trend-tombstone-failure-1",
+        title="Tombstone persistence source",
+    )
+
+    from recoleta.rag import agent as rag_agent
+    from recoleta.trends import TrendPayload, persist_trend_payload
+
+    stale_payload = TrendPayload(
+        title="Previously published trend",
+        granularity="day",
+        period_start=period_start.isoformat(),
+        period_end=period_end.isoformat(),
+        overview_md="This projection must survive a failed tombstone write.",
+        topics=["agents"],
+        clusters=[],
+    )
+    stale_doc_id = persist_trend_payload(
+        repository=repository,
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=stale_payload,
+    )
+    stale_note = resolve_trend_note_path(
+        note_dir=settings.markdown_output_dir / "Trends",
+        trend_doc_id=stale_doc_id,
+        granularity="day",
+        period_start=period_start,
+    )
+    stale_note.parent.mkdir(parents=True)
+    stale_note.write_text("stale projection", encoding="utf-8")
+
+    def _fake_generate(**kwargs):  # type: ignore[no-untyped-def]
+        return (
+            TrendPayload.model_validate(
+                {
+                    "title": "Unsupported candidate",
+                    "granularity": "day",
+                    "period_start": kwargs["period_start"].isoformat(),
+                    "period_end": kwargs["period_end"].isoformat(),
+                    "overview_md": "The model claimed a trend without enough evidence.",
+                    "topics": ["agents"],
+                    "clusters": [
+                        {
+                            "title": "Unsupported",
+                            "content_md": "One source cannot establish this trend.",
+                            "evidence_refs": [
+                                {"doc_id": evidence_doc_id, "chunk_index": 0}
+                            ],
+                        }
+                    ],
+                }
+            ),
+            {"tool_calls_total": 0},
+        )
+
+    monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
+    monkeypatch.setattr(
+        repository,
+        "create_pass_output",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("simulated tombstone persistence failure")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="tombstone persistence failure"):
+        service.trends(
+            run_id="run-trend-tombstone-failure",
+            granularity="day",
+            anchor_date=date(2026, 3, 2),
+            llm_model="test/fake-model",
+            analysis_llm_model="test/fake-model",
+        )
+
+    assert stale_note.read_text(encoding="utf-8") == "stale projection"
+    with Session(repository.engine) as session:
+        trend_doc = session.get(Document, stale_doc_id)
+        assert trend_doc is not None
+        assert trend_doc.title == stale_payload.title
+        assert list(session.exec(select(PassOutput))) == []
 
 
 def test_trends_keep_only_distinct_item_sources_read_by_agent(
@@ -345,11 +527,11 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
 
     payload = TrendPayload.model_validate(
         {
-            "title": "Evidence integrity",
+            "title": "Unread source dominates",
             "granularity": "day",
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
-            "overview_md": "Only evidence inspected by the agent can survive.",
+            "overview_md": "Unread source is the defining signal.",
             "topics": ["agents"],
             "clusters": [
                 {
@@ -374,6 +556,14 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
                     "evidence_refs": [
                         {"doc_id": doc_1, "chunk_index": 0},
                         {"doc_id": doc_3, "chunk_index": 0},
+                    ],
+                },
+                {
+                    "title": "Fabricated chunk",
+                    "content_md": "A real document cannot support a chunk the agent did not read.",
+                    "evidence_refs": [
+                        {"doc_id": doc_1, "chunk_index": 999},
+                        {"doc_id": doc_2, "chunk_index": 0},
                     ],
                 },
                 {
@@ -403,7 +593,33 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
             "kind": "tool-return",
             "tool_name": "read_chunk",
             "tool_call_id": "read-1",
-            "content": {"chunk": {"doc_id": doc_1, "chunk_index": 0}},
+            "content": {
+                "chunk": {
+                    "chunk_id": doc_1 * 100,
+                    "doc_id": doc_1,
+                    "chunk_index": 0,
+                    "text": "Inspected summary.",
+                }
+            },
+        },
+        {
+            "kind": "tool-call",
+            "tool_name": "read_chunk",
+            "tool_call_id": "read-1-content",
+            "args": {"doc_id": doc_1, "chunk_index": 1},
+        },
+        {
+            "kind": "tool-return",
+            "tool_name": "read_chunk",
+            "tool_call_id": "read-1-content",
+            "content": {
+                "chunk": {
+                    "chunk_id": doc_1 * 100 + 1,
+                    "doc_id": doc_1,
+                    "chunk_index": 1,
+                    "text": "Inspected content.",
+                }
+            },
         },
         {
             "kind": "tool-call",
@@ -418,7 +634,12 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
             "content": {
                 "bundle": {
                     "doc": {"doc_id": doc_2},
-                    "text": "RAW_TRACE_SENTINEL" * 2000,
+                    "summary": {
+                        "chunk_id": doc_2 * 100,
+                        "doc_id": doc_2,
+                        "chunk_index": 0,
+                        "text": "RAW_TRACE_SENTINEL" * 2000,
+                    },
                 }
             },
         },
@@ -443,17 +664,17 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
     ]
     debug = {
         "usage": {"requests": 1, "input_tokens": 100, "output_tokens": 50},
-        "tool_calls_total": 4,
+        "tool_calls_total": 5,
         "tool_call_breakdown": {
             "get_doc": 1,
             "get_doc_bundle": 2,
-            "read_chunk": 1,
+            "read_chunk": 2,
         },
         "raw_tool_trace": {
             "status": "captured",
             "events": events,
             "events_total": len(events),
-            "tool_calls_total": 4,
+            "tool_calls_total": 5,
             "events_truncated": False,
         },
     }
@@ -480,11 +701,16 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
     assert [ref.doc_id for ref in payload.clusters[0].evidence_refs] == [doc_1, doc_2]
     assert stats["backfilled_total"] == 0
     assert stats["dropped_duplicate_doc_total"] == 1
-    assert stats["dropped_unread_total"] == 1
+    assert stats["dropped_unread_total"] == 2
     assert stats["dropped_non_item_total"] == 1
-    assert stats["dropped_insufficient_support_total"] == 4
+    assert stats["dropped_insufficient_support_total"] == 5
     assert stats["retained_clusters_total"] == 1
     assert stats["read_trace_enforced_total"] == 1
+    assert stats["outer_fields_rebuilt_total"] == 1
+    assert payload.title == "Independent support"
+    assert "Unread source" not in payload.overview_md
+    assert "Two inspected papers support this signal." in payload.overview_md
+    assert payload.topics == ["agents"]
 
     compact_debug = runner._compact_persisted_debug(debug)
     assert compact_debug["evidence_reads"] == {
@@ -494,6 +720,7 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
         "trace_complete": True,
         "item_doc_ids": [doc_1, doc_2],
         "item_docs_total": 2,
+        "item_refs": [[doc_1, 0], [doc_1, 1], [doc_2, 0]],
     }
     compact_json = json.dumps(compact_debug)
     assert "raw_tool_trace" not in compact_debug

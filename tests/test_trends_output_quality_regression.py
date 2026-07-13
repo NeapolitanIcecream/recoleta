@@ -138,7 +138,9 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_evidence_links(
         llm_model="test/fake-model",
         analysis_llm_model="test/fake-model",
     )
-    matches = list((settings.markdown_output_dir / "Trends").glob("day--2026-03-02--trend--*.md"))
+    matches = list(
+        (settings.markdown_output_dir / "Trends").glob("day--2026-03-02--trend--*.md")
+    )
     assert len(matches) == 1
 
     md = matches[0].read_text(encoding="utf-8")
@@ -217,7 +219,10 @@ def test_trends_day_deduplicates_evidence_from_same_doc_across_chunks(
                 }
             ],
         }
-        return TrendPayload.model_validate(payload), captured_bundle_read_debug(doc_id)
+        return TrendPayload.model_validate(payload), captured_bundle_read_debug(
+            doc_id,
+            chunk_indexes=(1, 2),
+        )
 
     monkeypatch.setattr(rag_agent, "generate_trend_payload", _fake_generate)
 
@@ -228,7 +233,9 @@ def test_trends_day_deduplicates_evidence_from_same_doc_across_chunks(
         llm_model="test/fake-model",
         analysis_llm_model="test/fake-model",
     )
-    matches = list((settings.markdown_output_dir / "Trends").glob("day--2026-03-09--trend--*.md"))
+    matches = list(
+        (settings.markdown_output_dir / "Trends").glob("day--2026-03-09--trend--*.md")
+    )
     assert len(matches) == 1
 
     md = matches[0].read_text(encoding="utf-8")

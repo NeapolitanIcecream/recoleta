@@ -191,6 +191,7 @@ def test_inspect_localization_json_reports_storage_coverage(
     assert payload["surfaces"]["items"]["languages"]["zh-CN"] == {
         "stored_total": 1,
         "succeeded_total": 1,
+        "inactive_total": 0,
         "missing_total": 0,
         "orphan_total": 0,
     }
@@ -200,6 +201,91 @@ def test_inspect_localization_json_reports_storage_coverage(
     assert {
         sample["surface"] for sample in payload["issue_samples"]["missing_localized_output"]
     } == {"trends", "ideas"}
+
+
+def test_inspect_localization_ignores_suppressed_windows_for_coverage(
+    configured_env: Path,
+    monkeypatch,
+) -> None:
+    """Regression: suppressed generation windows are not localization gaps or orphans."""
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    _configure_localization_env(monkeypatch, configured_env, db_path)
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    analysis_id, _trend_doc_id, idea_doc_id = _seed_localizable_surfaces(
+        repository=repository
+    )
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    prior_trend = repository.create_pass_output(
+        run_id="localization-audit-trend-succeeded",
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload={},
+    )
+    assert prior_trend.id is not None
+    repository.create_pass_output(
+        run_id="localization-audit-ideas-succeeded",
+        pass_kind="trend_ideas",
+        status="succeeded",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload={},
+        input_refs=[
+            {
+                "ref_kind": "pass_output",
+                "pass_kind": "trend_synthesis",
+                "pass_output_id": prior_trend.id,
+            }
+        ],
+    )
+    repository.create_pass_output(
+        run_id="localization-audit-trend-suppressed",
+        pass_kind="trend_synthesis",
+        status="suppressed",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload={},
+    )
+    repository.upsert_localized_output(
+        source_kind="analysis",
+        source_record_id=analysis_id,
+        language_code="zh-CN",
+        status="succeeded",
+        source_hash="analysis-zh",
+        payload={"summary": "中文摘要。"},
+        diagnostics={},
+    )
+    repository.upsert_localized_output(
+        source_kind="trend_ideas",
+        source_record_id=idea_doc_id,
+        language_code="zh-CN",
+        status="succeeded",
+        source_hash="stale-ideas-zh",
+        payload={"summary": "旧的中文创意摘要。"},
+        diagnostics={},
+    )
+
+    result = runner.invoke(recoleta.cli.app, ["inspect", "localization", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["surfaces"]["trends"]["canonical_total"] == 0
+    assert payload["surfaces"]["ideas"]["canonical_total"] == 0
+    assert payload["surfaces"]["trends"]["languages"]["zh-CN"]["missing_total"] == 0
+    assert payload["surfaces"]["ideas"]["languages"]["zh-CN"]["missing_total"] == 0
+    assert payload["surfaces"]["ideas"]["languages"]["zh-CN"]["orphan_total"] == 0
+    assert payload["surfaces"]["ideas"]["languages"]["zh-CN"]["stored_total"] == 0
+    assert payload["surfaces"]["ideas"]["languages"]["zh-CN"]["inactive_total"] == 1
+    assert payload["storage"]["orphan_total"] == 0
+    assert payload["issue_counts"]["missing_localized_output"] == 0
+    assert payload["issue_counts"]["orphan_localized_output"] == 0
 
 
 def test_inspect_localization_json_warns_when_requested_artifacts_are_missing(

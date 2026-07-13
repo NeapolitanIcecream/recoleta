@@ -189,6 +189,7 @@ def test_trends_cli_emits_json_output_with_billing_summary(
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["status"] == "ok"
+    assert payload["artifact_status"] == "succeeded"
     assert payload["command"] == "trends"
     assert payload["run_id"] == "run-1"
     assert payload["doc_id"] == 1

@@ -157,6 +157,7 @@ class TrendResult:
     period_end: datetime
     title: str
     pass_output_id: int | None = None
+    status: str = "succeeded"
 
 
 @dataclass(slots=True)

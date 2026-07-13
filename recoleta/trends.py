@@ -107,7 +107,9 @@ class TrendPayload(BaseModel):
     topics: list[str] = Field(default_factory=list)
     clusters: list[TrendCluster] = Field(default_factory=list)
 
-    @field_validator("title", "granularity", "period_start", "period_end", "overview_md")
+    @field_validator(
+        "title", "granularity", "period_start", "period_end", "overview_md"
+    )
     @classmethod
     def _validate_required_text(cls, value: str) -> str:
         normalized = str(value or "").strip()
@@ -258,18 +260,6 @@ def _sanitize_inline_text(value: str) -> str:
     return normalized.replace("|", "\\|")
 
 
-def _summary_field_line(
-    sections: dict[str, str],
-    *,
-    field_name: str,
-    max_chars: int,
-) -> str:
-    raw = _sanitize_inline_text(str(sections.get(field_name) or ""))
-    if max_chars > 0:
-        raw = raw[:max_chars]
-    return raw
-
-
 def _extract_markdown_links(value: str, *, limit: int) -> list[str]:
     links: list[str] = []
     seen: set[str] = set()
@@ -346,7 +336,9 @@ def _item_authors_list(item: Any) -> list[str]:
 
 
 def _item_meta_payload(*, item: Any, analysis: Any) -> dict[str, Any]:
-    published_at = getattr(item, "published_at", None) or getattr(item, "created_at", None)
+    published_at = getattr(item, "published_at", None) or getattr(
+        item, "created_at", None
+    )
     published_at_iso: str | None = None
     if isinstance(published_at, datetime):
         published_at_iso = (
@@ -360,8 +352,7 @@ def _item_meta_payload(*, item: Any, analysis: Any) -> dict[str, Any]:
         "title": str(getattr(item, "title", "") or "").strip() or None,
         "authors": _item_authors_list(item),
         "published_at": published_at_iso,
-        "analysis_model": str(getattr(analysis, "model", "") or "").strip()
-        or None,
+        "analysis_model": str(getattr(analysis, "model", "") or "").strip() or None,
         "relevance_score": _analysis_relevance_score(analysis),
         "novelty_score": _analysis_novelty_score(analysis),
     }

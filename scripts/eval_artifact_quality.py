@@ -78,12 +78,8 @@ class _ArtifactUnit:
             "exact_duplicate_refs": self.exact_duplicate_refs,
             "distinct_doc_ids": list(self.distinct_doc_ids),
             "distinct_doc_support_count": len(self.distinct_doc_ids),
-            "same_doc_multi_chunk_doc_ids": list(
-                self.same_doc_multi_chunk_doc_ids
-            ),
-            "same_doc_multi_chunk_extra_refs": (
-                self.same_doc_multi_chunk_extra_refs
-            ),
+            "same_doc_multi_chunk_doc_ids": list(self.same_doc_multi_chunk_doc_ids),
+            "same_doc_multi_chunk_extra_refs": (self.same_doc_multi_chunk_extra_refs),
         }
 
 
@@ -127,7 +123,7 @@ def _read_database(
     if not resolved.is_file():
         raise ValueError(f"database does not exist: {resolved}")
     connection = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
-    connection.row_factory = sqlite3.Row
+    setattr(connection, "row_factory", sqlite3.Row)
     try:
         placeholders = ", ".join("?" for _ in _PASS_KIND_TO_ARTIFACT)
         rows = connection.execute(
@@ -213,7 +209,7 @@ def _coerce_evidence_ref(raw_ref: Any) -> _EvidenceRef | None:
     try:
         doc_id = int(raw_doc_id)
         chunk_index = int(raw_chunk_index)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if doc_id <= 0 or chunk_index < 0:
         return None
@@ -279,16 +275,14 @@ def _build_unit(
         period_start=row.period_start,
         period_end=row.period_end,
         unit_index=unit_index,
-        title=_unit_text(raw_unit, "title", "name")
-        or f"{artifact_kind} {unit_index}",
+        title=_unit_text(raw_unit, "title", "name") or f"{artifact_kind} {unit_index}",
         content=_unit_text(raw_unit, "content_md", "description", "summary"),
         evidence_refs_total=len(refs),
         exact_duplicate_refs=len(refs) - len(unique_ref_pairs),
         distinct_doc_ids=tuple(sorted(chunks_by_doc)),
         same_doc_multi_chunk_doc_ids=same_doc_multi_chunk_doc_ids,
         same_doc_multi_chunk_extra_refs=sum(
-            len(chunks_by_doc[doc_id]) - 1
-            for doc_id in same_doc_multi_chunk_doc_ids
+            len(chunks_by_doc[doc_id]) - 1 for doc_id in same_doc_multi_chunk_doc_ids
         ),
     )
 
@@ -299,7 +293,7 @@ def _parse_artifact_row(
     artifact_kind = _PASS_KIND_TO_ARTIFACT[row.pass_kind]
     try:
         payload = json.loads(row.payload_json)
-    except (TypeError, json.JSONDecodeError):
+    except TypeError, json.JSONDecodeError:
         diagnostics["malformed_payloads"] += 1
         return artifact_kind, False, []
     if not isinstance(payload, dict):
@@ -358,9 +352,7 @@ def _support_summary(units: Sequence[_ArtifactUnit]) -> dict[str, Any]:
             str(count): histogram[count] for count in sorted(histogram)
         },
         "evidence_refs_total": sum(unit.evidence_refs_total for unit in units),
-        "exact_duplicate_refs_total": sum(
-            unit.exact_duplicate_refs for unit in units
-        ),
+        "exact_duplicate_refs_total": sum(unit.exact_duplicate_refs for unit in units),
         "same_doc_multi_chunk_units": multi_chunk_units,
         "same_doc_multi_chunk_unit_ratio": _ratio(multi_chunk_units, total),
         "same_doc_multi_chunk_extra_refs_total": sum(
@@ -401,9 +393,7 @@ def _repeated_support_sets(units: Sequence[_ArtifactUnit]) -> list[dict[str, Any
     )
 
 
-def _lexical_features(
-    text: str, *, shingle_size: int
-) -> set[tuple[str, ...]]:
+def _lexical_features(text: str, *, shingle_size: int) -> set[tuple[str, ...]]:
     normalized = _MARKDOWN_LINK_RE.sub(r"\1", str(text or "")).casefold()
     tokens = _TOKEN_RE.findall(normalized)
     if not tokens:
@@ -422,7 +412,8 @@ def _dice_similarity(left: str, right: str, *, shingle_size: int) -> float:
     if not left_features or not right_features:
         return 0.0
     return round(
-        2 * len(left_features & right_features)
+        2
+        * len(left_features & right_features)
         / (len(left_features) + len(right_features)),
         6,
     )
@@ -446,55 +437,73 @@ def _excerpt(value: str, *, limit: int = 280) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
 
 
+def _parsed_unit_period(
+    unit: _ArtifactUnit,
+) -> tuple[_ArtifactUnit, datetime, datetime] | None:
+    period_start = _parse_datetime(unit.period_start)
+    period_end = _parse_datetime(unit.period_end)
+    if period_start is None or period_end is None:
+        return None
+    return unit, period_start, period_end
+
+
+def _near_duplicate_candidate(
+    *, week_unit: _ArtifactUnit, day_unit: _ArtifactUnit, threshold: float
+) -> dict[str, Any] | None:
+    title_score = _dice_similarity(week_unit.title, day_unit.title, shingle_size=1)
+    content_score = _dice_similarity(
+        week_unit.content,
+        day_unit.content,
+        shingle_size=_LEXICAL_SHINGLE_SIZE,
+    )
+    score = max(title_score, content_score)
+    if score < threshold:
+        return None
+    return {
+        "score": score,
+        "title_score": title_score,
+        "content_score": content_score,
+        "week_unit_id": week_unit.unit_id,
+        "week_title": week_unit.title,
+        "week_content_excerpt": _excerpt(week_unit.content),
+        "week_period_start": week_unit.period_start,
+        "day_unit_id": day_unit.unit_id,
+        "day_title": day_unit.title,
+        "day_content_excerpt": _excerpt(day_unit.content),
+        "day_period_start": day_unit.period_start,
+    }
+
+
+def _units_with_period(
+    units: Sequence[_ArtifactUnit], *, granularity: str
+) -> list[tuple[_ArtifactUnit, datetime, datetime]]:
+    parsed: list[tuple[_ArtifactUnit, datetime, datetime]] = []
+    for unit in units:
+        period = _parsed_unit_period(unit)
+        if unit.granularity == granularity and period is not None:
+            parsed.append(period)
+    return parsed
+
+
 def _weekly_day_near_duplicates(
     units: Sequence[_ArtifactUnit], *, threshold: float
 ) -> tuple[int, list[dict[str, Any]]]:
-    weekly = [unit for unit in units if unit.granularity == "week"]
-    daily = [unit for unit in units if unit.granularity == "day"]
+    weekly = _units_with_period(units, granularity="week")
+    daily = _units_with_period(units, granularity="day")
     pairs_compared = 0
     candidates: list[dict[str, Any]] = []
-    for week_unit in weekly:
-        week_start = _parse_datetime(week_unit.period_start)
-        week_end = _parse_datetime(week_unit.period_end)
-        if week_start is None or week_end is None:
-            continue
-        for day_unit in daily:
-            day_start = _parse_datetime(day_unit.period_start)
-            day_end = _parse_datetime(day_unit.period_end)
-            if (
-                day_start is None
-                or day_end is None
-                or day_start < week_start
-                or day_end > week_end
-            ):
+    for week_unit, week_start, week_end in weekly:
+        for day_unit, day_start, day_end in daily:
+            if day_start < week_start or day_end > week_end:
                 continue
             pairs_compared += 1
-            title_score = _dice_similarity(
-                week_unit.title, day_unit.title, shingle_size=1
+            candidate = _near_duplicate_candidate(
+                week_unit=week_unit,
+                day_unit=day_unit,
+                threshold=threshold,
             )
-            content_score = _dice_similarity(
-                week_unit.content,
-                day_unit.content,
-                shingle_size=_LEXICAL_SHINGLE_SIZE,
-            )
-            score = max(title_score, content_score)
-            if score < threshold:
-                continue
-            candidates.append(
-                {
-                    "score": score,
-                    "title_score": title_score,
-                    "content_score": content_score,
-                    "week_unit_id": week_unit.unit_id,
-                    "week_title": week_unit.title,
-                    "week_content_excerpt": _excerpt(week_unit.content),
-                    "week_period_start": week_unit.period_start,
-                    "day_unit_id": day_unit.unit_id,
-                    "day_title": day_unit.title,
-                    "day_content_excerpt": _excerpt(day_unit.content),
-                    "day_period_start": day_unit.period_start,
-                }
-            )
+            if candidate is not None:
+                candidates.append(candidate)
     candidates.sort(
         key=lambda candidate: (
             -candidate["score"],
@@ -602,9 +611,7 @@ def _aggregate_report(
     return {
         "databases_total": databases_total,
         "groups_total": len(groups),
-        "canonical_pass_outputs": row_diagnostics.get(
-            "canonical_pass_outputs", 0
-        ),
+        "canonical_pass_outputs": row_diagnostics.get("canonical_pass_outputs", 0),
         "artifact_counts": artifact_counts,
         "row_diagnostics": row_diagnostics,
         "trend_support": _support_summary(trend_units),
@@ -615,8 +622,7 @@ def _aggregate_report(
             "unit_ratio": _ratio(repeated_units, all_units_total),
         },
         "weekly_day_near_duplicate_pairs_compared": sum(
-            group.report["weekly_day_near_duplicate_pairs_compared"]
-            for group in groups
+            group.report["weekly_day_near_duplicate_pairs_compared"] for group in groups
         ),
         "weekly_day_near_duplicate_candidates_total": sum(
             len(group.report["weekly_day_near_duplicate_candidates"])
@@ -649,9 +655,7 @@ def evaluate_databases(
                     database=database,
                     scope=scope,
                     rows=records_by_scope.get(scope, []),
-                    diagnostics=diagnostics_by_scope.get(
-                        scope, _empty_diagnostics()
-                    ),
+                    diagnostics=diagnostics_by_scope.get(scope, _empty_diagnostics()),
                     near_duplicate_threshold=threshold,
                 )
             )
@@ -667,9 +671,7 @@ def evaluate_databases(
                 "are filtered before selection and cannot shadow an older terminal row."
             ),
             "status_semantics": {
-                "canonical_terminal_statuses": sorted(
-                    _CANONICAL_TERMINAL_STATUSES
-                ),
+                "canonical_terminal_statuses": sorted(_CANONICAL_TERMINAL_STATUSES),
                 "suppressed_artifact": (
                     "A suppressed row contributes one valid canonical payload and zero "
                     "artifact units, even if its stored units list is unexpectedly non-empty."
