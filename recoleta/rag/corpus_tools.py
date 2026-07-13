@@ -519,6 +519,37 @@ class SearchService:
             chunk_index=0,
         )
         summary_text = str(getattr(summary_chunk, "text", "") or "").strip()
+        try:
+            parsed_summary_sections = normalize_summary_sections(summary_text)
+        except Exception as exc:
+            logger.warning(
+                "Summary section parsing failed doc_id={} error_type={}",
+                normalized_doc_id,
+                type(exc).__name__,
+            )
+            parsed_summary_sections = {}
+        summary_sections = (
+            parsed_summary_sections
+            if isinstance(parsed_summary_sections, dict)
+            and any(str(value or "").strip() for value in parsed_summary_sections.values())
+            else {}
+        )
+        summary = {
+            "chunk_id": (
+                int(getattr(summary_chunk, "id"))
+                if summary_chunk is not None
+                and getattr(summary_chunk, "id", None) is not None
+                else None
+            ),
+            "doc_id": normalized_doc_id,
+            "chunk_index": 0,
+            "kind": str(getattr(summary_chunk, "kind", "") or ""),
+            "source_content_type": str(
+                getattr(summary_chunk, "source_content_type", "") or ""
+            ),
+        }
+        if not summary_sections:
+            summary["text"] = summary_text
         content_chunks = read_doc_content_chunks(
             repository=self.repository,
             doc_id=normalized_doc_id,
@@ -528,20 +559,8 @@ class SearchService:
         return {
             "bundle": {
                 "doc": serialize_document(repository=self.repository, doc=doc),
-                "summary": {
-                    "chunk_id": int(getattr(summary_chunk, "id"))
-                    if summary_chunk is not None
-                    and getattr(summary_chunk, "id", None) is not None
-                    else None,
-                    "doc_id": normalized_doc_id,
-                    "chunk_index": 0,
-                    "kind": str(getattr(summary_chunk, "kind", "") or ""),
-                    "source_content_type": str(
-                        getattr(summary_chunk, "source_content_type", "") or ""
-                    ),
-                    "text": summary_text,
-                },
-                "summary_sections": normalize_summary_sections(summary_text),
+                "summary": summary,
+                "summary_sections": summary_sections,
                 "content_chunks": content_chunks,
             }
         }

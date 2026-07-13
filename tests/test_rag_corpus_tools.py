@@ -271,3 +271,56 @@ def test_doc_id_helpers_respect_active_corpus_bounds(
     assert service.read_chunk(doc_id=int(hidden_window_doc.id), chunk_index=0) == {
         "chunk": None
     }
+
+
+def test_get_doc_bundle_keeps_raw_summary_when_section_parsing_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import recoleta.rag.corpus_tools as corpus_tools
+
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    doc = repository.upsert_document_for_idea(
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        title="Fallback idea",
+    )
+    assert doc.id is not None
+    repository.upsert_document_chunk(
+        doc_id=int(doc.id),
+        chunk_index=0,
+        kind="summary",
+        text_value="Raw summary survives a parser failure.",
+        source_content_type="trend_ideas_summary",
+    )
+    service = SearchService(
+        repository=repository,
+        vector_store=LanceVectorStore(
+            db_dir=tmp_path / "lancedb",
+            table_name="test_doc_bundle_fallback",
+        ),
+        run_id="run-doc-bundle-fallback",
+        period_start=period_start,
+        period_end=period_end,
+        corpus_spec=CorpusSpec.from_rag_sources(
+            [{"doc_type": "idea", "granularity": "day"}]
+        ),
+        embedding_model="test/fake-embedding",
+        embedding_dimensions=None,
+        embedding_batch_max_inputs=8,
+        embedding_batch_max_chars=2000,
+    )
+
+    def _fail_to_parse(_value: str) -> dict[str, str]:
+        raise ValueError("malformed summary")
+
+    monkeypatch.setattr(corpus_tools, "normalize_summary_sections", _fail_to_parse)
+
+    bundle = service.get_doc_bundle(doc_id=int(doc.id))["bundle"]
+
+    assert bundle["summary_sections"] == {}
+    assert bundle["summary"]["text"] == "Raw summary survives a parser failure."
