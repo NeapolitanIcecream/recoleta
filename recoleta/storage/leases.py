@@ -22,7 +22,7 @@ from recoleta.models import (
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCEEDED,
 )
-from recoleta.storage_common import (
+from recoleta.storage.common import (
     WORKSPACE_LEASE_NAME,
     WorkspaceLeaseHeldError,
     WorkspaceLeaseLostError,

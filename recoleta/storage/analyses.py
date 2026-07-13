@@ -15,7 +15,7 @@ from recoleta.models import (
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
 )
-from recoleta.storage_common import _to_json
+from recoleta.storage.common import _to_json
 from recoleta.types import (
     AnalysisResult,
     AnalysisWrite,

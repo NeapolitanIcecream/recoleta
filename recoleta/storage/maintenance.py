@@ -25,7 +25,7 @@ from recoleta.models import (
     RUN_STATUS_SUCCEEDED,
     WorkflowStepReceipt,
 )
-from recoleta.storage_common import (
+from recoleta.storage.common import (
     CURRENT_SCHEMA_VERSION,
     ArtifactPruneResult,
     ChunkCachePruneResult,

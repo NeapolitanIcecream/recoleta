@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from recoleta.models import SourcePullState
 from recoleta.sources import SourcePullStateSnapshot, SourcePullStateUpdate
-from recoleta.storage_common import _from_json_object, _to_json
+from recoleta.storage.common import _from_json_object, _to_json
 from recoleta.types import utc_now
 
 

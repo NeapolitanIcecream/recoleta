@@ -8,7 +8,7 @@ from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from recoleta.models import PassOutput
-from recoleta.storage_common import _to_json
+from recoleta.storage.common import _to_json
 from recoleta.types import sha256_hex
 
 

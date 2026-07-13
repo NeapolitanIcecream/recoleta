@@ -26,7 +26,7 @@ from recoleta.storage.document_query_helpers import (
     normalize_doc_type,
     normalize_limit_offset,
 )
-from recoleta.storage_common import _to_json
+from recoleta.storage.common import _to_json
 from recoleta.types import utc_now
 
 
