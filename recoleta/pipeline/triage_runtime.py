@@ -8,6 +8,7 @@ from loguru import logger
 
 from recoleta.models import ITEM_STATE_ENRICHED
 from recoleta.triage import TriageCandidate
+from recoleta.types import MetricPoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,72 +228,79 @@ def build_triage_candidates(
 
 
 def _record_empty_triage_metrics(*, service: Any, run_id: str) -> None:
-    for name in (
-        "pipeline.triage.candidates_total",
-        "pipeline.triage.scored_total",
-        "pipeline.triage.selected_total",
-        "pipeline.triage.skipped_total",
-        "pipeline.triage.embedding_calls_total",
-        "pipeline.triage.embedding_errors_total",
-        "pipeline.triage.content_fetch_failed_total",
-        "pipeline.triage.failed_total",
-        "pipeline.triage.duration_ms",
-    ):
-        service.repository.record_metric(
-            run_id=run_id,
-            name=name,
-            value=0,
-            unit="ms" if name.endswith("duration_ms") else "count",
-        )
+    service._record_metrics_batch(
+        run_id=run_id,
+        metrics=[
+            MetricPoint(
+                name=name,
+                value=0,
+                unit="ms" if name.endswith("duration_ms") else "count",
+            )
+            for name in (
+                "pipeline.triage.candidates_total",
+                "pipeline.triage.scored_total",
+                "pipeline.triage.selected_total",
+                "pipeline.triage.skipped_total",
+                "pipeline.triage.embedding_calls_total",
+                "pipeline.triage.embedding_errors_total",
+                "pipeline.triage.content_fetch_failed_total",
+                "pipeline.triage.failed_total",
+                "pipeline.triage.duration_ms",
+            )
+        ],
+    )
 
 
 def _record_triage_success_metrics(*, service: Any, run_id: str, stats: Any) -> None:
-    metric_rows = [
-        ("pipeline.triage.candidates_total", stats.candidates_total, "count"),
-        ("pipeline.triage.scored_total", stats.scored_total, "count"),
-        ("pipeline.triage.selected_total", stats.selected_total, "count"),
-        ("pipeline.triage.skipped_total", stats.skipped_total, "count"),
-        (
-            "pipeline.triage.embedding_calls_total",
-            stats.embedding_calls_total,
-            "count",
-        ),
-        (
-            "pipeline.triage.embedding_errors_total",
-            stats.embedding_errors_total,
-            "count",
-        ),
-        ("pipeline.triage.failed_total", 0, "count"),
-        ("pipeline.triage.duration_ms", stats.duration_ms, "ms"),
-    ]
-    for name, value, unit in metric_rows:
-        service.repository.record_metric(
-            run_id=run_id, name=name, value=value, unit=unit
+    metrics = [
+        MetricPoint(name=name, value=value, unit=unit)
+        for name, value, unit in (
+            ("pipeline.triage.candidates_total", stats.candidates_total, "count"),
+            ("pipeline.triage.scored_total", stats.scored_total, "count"),
+            ("pipeline.triage.selected_total", stats.selected_total, "count"),
+            ("pipeline.triage.skipped_total", stats.skipped_total, "count"),
+            (
+                "pipeline.triage.embedding_calls_total",
+                stats.embedding_calls_total,
+                "count",
+            ),
+            (
+                "pipeline.triage.embedding_errors_total",
+                stats.embedding_errors_total,
+                "count",
+            ),
+            ("pipeline.triage.failed_total", 0, "count"),
+            ("pipeline.triage.duration_ms", stats.duration_ms, "ms"),
         )
+    ]
     if stats.embedding_prompt_tokens_total is not None:
-        service.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.triage.embedding_prompt_tokens_total",
-            value=stats.embedding_prompt_tokens_total,
-            unit="count",
+        metrics.append(
+            MetricPoint(
+                name="pipeline.triage.embedding_prompt_tokens_total",
+                value=stats.embedding_prompt_tokens_total,
+                unit="count",
+            )
         )
     if stats.embedding_cost_usd_total is not None:
-        service.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.triage.estimated_cost_usd",
-            value=stats.embedding_cost_usd_total,
-            unit="usd",
+        metrics.append(
+            MetricPoint(
+                name="pipeline.triage.estimated_cost_usd",
+                value=stats.embedding_cost_usd_total,
+                unit="usd",
+            )
         )
     if (
         stats.embedding_cost_missing_total is not None
         and stats.embedding_cost_missing_total > 0
     ):
-        service.repository.record_metric(
-            run_id=run_id,
-            name="pipeline.triage.cost_missing_total",
-            value=stats.embedding_cost_missing_total,
-            unit="count",
+        metrics.append(
+            MetricPoint(
+                name="pipeline.triage.cost_missing_total",
+                value=stats.embedding_cost_missing_total,
+                unit="count",
+            )
         )
+    service._record_metrics_batch(run_id=run_id, metrics=metrics)
 
 
 def _mark_selected_triage_items(*, service: Any, selected: list[Any], log: Any) -> int:
@@ -566,23 +574,21 @@ def _handle_triage_failure(request: TriageFailureRequest) -> None:
             **request.context.service._classify_exception(request.exc),
         },
     )
-    request.context.service.repository.record_metric(
+    request.context.service._record_metrics_batch(
         run_id=request.context.run_id,
-        name="pipeline.triage.failed_total",
-        value=1,
-        unit="count",
-    )
-    request.context.service.repository.record_metric(
-        run_id=request.context.run_id,
-        name="pipeline.triage.duration_ms",
-        value=triage_duration_ms,
-        unit="ms",
-    )
-    request.context.service.repository.record_metric(
-        run_id=request.context.run_id,
-        name="pipeline.triage.candidates_total",
-        value=len(request.triage_candidates),
-        unit="count",
+        metrics=[
+            MetricPoint(name="pipeline.triage.failed_total", value=1, unit="count"),
+            MetricPoint(
+                name="pipeline.triage.duration_ms",
+                value=triage_duration_ms,
+                unit="ms",
+            ),
+            MetricPoint(
+                name="pipeline.triage.candidates_total",
+                value=len(request.triage_candidates),
+                unit="count",
+            ),
+        ],
     )
     fallback_marked_total = _mark_fallback_triage_items(
         service=request.context.service,

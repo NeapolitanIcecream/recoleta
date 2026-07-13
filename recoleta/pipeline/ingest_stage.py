@@ -16,7 +16,7 @@ from rich.progress import (
 )
 
 from recoleta import sources
-from recoleta.types import IngestResult, ItemDraft
+from recoleta.types import IngestResult, ItemDraft, MetricPoint
 
 
 @dataclass(slots=True, frozen=True)
@@ -99,6 +99,10 @@ class IngestStageService(Protocol):
 
     @staticmethod
     def _classify_exception(exc: BaseException) -> dict[str, Any]: ...
+
+    def _record_metrics_batch(
+        self, *, run_id: str, metrics: list[MetricPoint]
+    ) -> int: ...
 
 
 def run_ingest_stage(
@@ -265,50 +269,46 @@ class _IngestStageRunner:
 
     def _record_metrics(self) -> None:
         run_id = self.request.run_id
-        repository = self.service.repository
-        repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.items_total",
-            value=self.result.inserted + self.result.updated + self.result.failed,
-            unit="count",
-        )
-        repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.inserted_total",
-            value=self.result.inserted,
-            unit="count",
-        )
-        repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.updated_total",
-            value=self.result.updated,
-            unit="count",
-        )
-        repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.failed_total",
-            value=self.result.failed,
-            unit="count",
-        )
-        repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.source_failures_total",
-            value=self.source_failures_total,
-            unit="count",
-        )
-        repository.record_metric(
-            run_id=run_id,
-            name="pipeline.ingest.duration_ms",
-            value=int((time.perf_counter() - self.started) * 1000),
-            unit="ms",
-        )
+        metrics = [
+            MetricPoint(
+                name="pipeline.ingest.items_total",
+                value=self.result.inserted + self.result.updated + self.result.failed,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.ingest.inserted_total",
+                value=self.result.inserted,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.ingest.updated_total",
+                value=self.result.updated,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.ingest.failed_total",
+                value=self.result.failed,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.ingest.source_failures_total",
+                value=self.source_failures_total,
+                unit="count",
+            ),
+            MetricPoint(
+                name="pipeline.ingest.duration_ms",
+                value=int((time.perf_counter() - self.started) * 1000),
+                unit="ms",
+            ),
+        ]
         for source_name in sorted(self.source_stats):
-            _record_source_pull_metrics(
-                repository=repository,
-                run_id=run_id,
-                source_name=source_name,
-                bucket=self.source_stats[source_name],
+            metrics.extend(
+                _source_pull_metric_points(
+                    source_name=source_name,
+                    bucket=self.source_stats[source_name],
+                )
             )
+        self.service._record_metrics_batch(run_id=run_id, metrics=metrics)
 
 
 class _SourcePullRunner:
@@ -462,9 +462,7 @@ class _SourcePullRunner:
             pool_db_path=pool_db_path,
             pool_maturity_lag_days=int(pool_settings.maturity_lag_days),
             pool_readiness_gate=str(pool_settings.readiness_gate),
-            pool_allow_immature_windows=bool(
-                pool_settings.allow_immature_windows
-            ),
+            pool_allow_immature_windows=bool(pool_settings.allow_immature_windows),
         )
         return (
             "arxiv",
@@ -673,13 +671,11 @@ def _merge_published_at_bucket(
             bucket["newest_published_at_unix"] = candidate_newest
 
 
-def _record_source_pull_metrics(
+def _source_pull_metric_points(
     *,
-    repository: Any,
-    run_id: str,
     source_name: str,
     bucket: dict[str, int],
-) -> None:
+) -> list[MetricPoint]:
     metric_names = (
         ("drafts_total", "count"),
         ("pull_failed_total", "count"),
@@ -698,46 +694,25 @@ def _record_source_pull_metrics(
         ("pool_window_immature_allowed_total", "count"),
         ("pool_window_analysis_ready_total", "count"),
     )
-    for key, unit in metric_names:
-        repository.record_metric(
-            run_id=run_id,
+    metrics = [
+        MetricPoint(
             name=f"pipeline.ingest.source.{source_name}.{key}",
             value=int(bucket.get(key) or 0),
             unit=unit,
         )
-    _record_source_published_at_metric(
-        repository=repository,
-        run_id=run_id,
-        source_name=source_name,
-        bucket=bucket,
-        key="oldest_published_at_unix",
-    )
-    _record_source_published_at_metric(
-        repository=repository,
-        run_id=run_id,
-        source_name=source_name,
-        bucket=bucket,
-        key="newest_published_at_unix",
-    )
-
-
-def _record_source_published_at_metric(
-    *,
-    repository: Any,
-    run_id: str,
-    source_name: str,
-    bucket: dict[str, int],
-    key: str,
-) -> None:
-    value = int(bucket.get(key) or 0)
-    if value <= 0:
-        return
-    repository.record_metric(
-        run_id=run_id,
-        name=f"pipeline.ingest.source.{source_name}.{key}",
-        value=value,
-        unit="unix",
-    )
+        for key, unit in metric_names
+    ]
+    for key in ("oldest_published_at_unix", "newest_published_at_unix"):
+        value = int(bucket.get(key) or 0)
+        if value > 0:
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.ingest.source.{source_name}.{key}",
+                    value=value,
+                    unit="unix",
+                )
+            )
+    return metrics
 
 
 def _safe_source_metric_key(value: str) -> bool:

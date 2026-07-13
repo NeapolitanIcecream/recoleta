@@ -18,6 +18,7 @@ from rich.progress import (
 )
 
 from recoleta.pipeline.ingest_stage import RebalanceItemsRequest
+from recoleta.types import MetricPoint
 
 _ARXIV_HTML_DOCUMENT_FALLBACK_REASON_BUCKETS = (
     "http_404",
@@ -135,6 +136,10 @@ class EnrichStageService(Protocol):
         candidate_counts: dict[str, int],
         deferred_counts: dict[str, int],
     ) -> None: ...
+
+    def _record_metrics_batch(
+        self, *, run_id: str, metrics: list[MetricPoint]
+    ) -> int: ...
 
     def _record_debug_artifact(
         self,
@@ -737,195 +742,201 @@ class _EnrichStats:
         self.html_document_db_write_ms_sum += int(diag.get("db_write_ms") or 0)
 
     def record_metrics(self, *, run_id: str, sql_diag: Any, started: float) -> None:
-        repository = self.service.repository
-        self._record_summary_metrics(
-            repository=repository,
-            run_id=run_id,
-            sql_diag=sql_diag,
-            started=started,
-        )
-        self._record_html_document_metrics(repository=repository, run_id=run_id)
+        metrics = self._summary_metric_points(sql_diag=sql_diag, started=started)
+        metrics.extend(self._html_document_metric_points())
         for source_name in sorted(self.source_stats):
-            self._record_source_metrics(
-                repository=repository,
-                run_id=run_id,
-                source_name=source_name,
-                source_bucket=self.source_stats[source_name],
+            metrics.extend(
+                self._source_metric_points(
+                    source_name=source_name,
+                    source_bucket=self.source_stats[source_name],
+                )
             )
+        self.service._record_metrics_batch(run_id=run_id, metrics=metrics)
 
-    def _record_summary_metrics(
+    def _summary_metric_points(
         self,
         *,
-        repository: Any,
-        run_id: str,
         sql_diag: Any,
         started: float,
-    ) -> None:
-        for metric_name, value, unit in (
-            ("pipeline.enrich.processed_total", self.processed, "count"),
-            ("pipeline.enrich.skipped_total", self.skipped, "count"),
-            ("pipeline.enrich.failed_total", self.failed, "count"),
-            ("pipeline.enrich.item_duration_ms_total", self.duration_ms_total, "ms"),
-            (
-                "pipeline.enrich.parallel.html_maintext.items_total",
-                self.parallel_html_maintext_items_total,
-                "count",
-            ),
-            (
-                "pipeline.enrich.parallel.html_maintext.max_workers",
-                self.parallel_html_maintext_max_workers,
-                "count",
-            ),
-            (
-                "pipeline.enrich.duration_ms",
-                int((time.perf_counter() - started) * 1000),
-                "ms",
-            ),
-            ("pipeline.enrich.db.sql_queries_total", sql_diag.queries_total, "count"),
-            ("pipeline.enrich.db.sql_commits_total", sql_diag.commits_total, "count"),
-        ):
-            repository.record_metric(
-                run_id=run_id,
-                name=metric_name,
-                value=value,
-                unit=unit,
+    ) -> list[MetricPoint]:
+        metrics = [
+            MetricPoint(name=metric_name, value=value, unit=unit)
+            for metric_name, value, unit in (
+                ("pipeline.enrich.processed_total", self.processed, "count"),
+                ("pipeline.enrich.skipped_total", self.skipped, "count"),
+                ("pipeline.enrich.failed_total", self.failed, "count"),
+                (
+                    "pipeline.enrich.item_duration_ms_total",
+                    self.duration_ms_total,
+                    "ms",
+                ),
+                (
+                    "pipeline.enrich.parallel.html_maintext.items_total",
+                    self.parallel_html_maintext_items_total,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.parallel.html_maintext.max_workers",
+                    self.parallel_html_maintext_max_workers,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.duration_ms",
+                    int((time.perf_counter() - started) * 1000),
+                    "ms",
+                ),
+                (
+                    "pipeline.enrich.db.sql_queries_total",
+                    sql_diag.queries_total,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.db.sql_commits_total",
+                    sql_diag.commits_total,
+                    "count",
+                ),
             )
+        ]
         for method in ("pdf_text", "latex_source", "html_document"):
-            repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.enrich.arxiv.method_selected.{method}_total",
-                value=self.arxiv_items_by_method.get(method, 0),
-                unit="count",
+            metrics.extend(
+                [
+                    MetricPoint(
+                        name=f"pipeline.enrich.arxiv.method_selected.{method}_total",
+                        value=self.arxiv_items_by_method.get(method, 0),
+                        unit="count",
+                    ),
+                    MetricPoint(
+                        name=f"pipeline.enrich.arxiv.method_failed.{method}_total",
+                        value=self.arxiv_failed_by_method.get(method, 0),
+                        unit="count",
+                    ),
+                ]
             )
-            repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.enrich.arxiv.method_failed.{method}_total",
-                value=self.arxiv_failed_by_method.get(method, 0),
-                unit="count",
-            )
+        return metrics
 
-    def _record_html_document_metrics(self, *, repository: Any, run_id: str) -> None:
-        for metric_name, value, unit in (
-            (
-                "pipeline.enrich.arxiv.html_document.items_total",
-                self.html_document_items_total,
-                "count",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.fetch_ms_sum",
-                self.html_document_fetch_ms_sum,
-                "ms",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.cleanup_ms_sum",
-                self.html_document_cleanup_ms_sum,
-                "ms",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.pandoc_ms_sum",
-                self.html_document_pandoc_ms_sum,
-                "ms",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.pandoc_failed_total",
-                self.html_document_pandoc_failed_total,
-                "count",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.pandoc_warning_items_total",
-                self.html_document_pandoc_warning_items_total,
-                "count",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum",
-                self.html_document_pandoc_warning_count_sum,
-                "count",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.pandoc_warning_tex_math_convert_failed_sum",
-                self.html_document_pandoc_warning_tex_math_convert_failed_sum,
-                "count",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum",
-                self.html_document_pandoc_math_replaced_sum,
-                "count",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.fallback_to_pdf_total",
-                self.html_document_fallback_to_pdf_total,
-                "count",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.db_read_ms_sum",
-                self.html_document_db_read_ms_sum,
-                "ms",
-            ),
-            (
-                "pipeline.enrich.arxiv.html_document.db_write_ms_sum",
-                self.html_document_db_write_ms_sum,
-                "ms",
-            ),
-        ):
-            repository.record_metric(
-                run_id=run_id,
-                name=metric_name,
-                value=value,
-                unit=unit,
+    def _html_document_metric_points(self) -> list[MetricPoint]:
+        metrics = [
+            MetricPoint(name=metric_name, value=value, unit=unit)
+            for metric_name, value, unit in (
+                (
+                    "pipeline.enrich.arxiv.html_document.items_total",
+                    self.html_document_items_total,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.fetch_ms_sum",
+                    self.html_document_fetch_ms_sum,
+                    "ms",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.cleanup_ms_sum",
+                    self.html_document_cleanup_ms_sum,
+                    "ms",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.pandoc_ms_sum",
+                    self.html_document_pandoc_ms_sum,
+                    "ms",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.pandoc_failed_total",
+                    self.html_document_pandoc_failed_total,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.pandoc_warning_items_total",
+                    self.html_document_pandoc_warning_items_total,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.pandoc_warning_count_sum",
+                    self.html_document_pandoc_warning_count_sum,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.pandoc_warning_tex_math_convert_failed_sum",
+                    self.html_document_pandoc_warning_tex_math_convert_failed_sum,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.pandoc_math_replaced_sum",
+                    self.html_document_pandoc_math_replaced_sum,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.fallback_to_pdf_total",
+                    self.html_document_fallback_to_pdf_total,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.db_read_ms_sum",
+                    self.html_document_db_read_ms_sum,
+                    "ms",
+                ),
+                (
+                    "pipeline.enrich.arxiv.html_document.db_write_ms_sum",
+                    self.html_document_db_write_ms_sum,
+                    "ms",
+                ),
             )
+        ]
         for bucket, count in self.html_document_fallback_reason_totals.items():
-            repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.enrich.arxiv.html_document.fallback_to_pdf_reason.{bucket}_total",
-                value=count,
-                unit="count",
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.enrich.arxiv.html_document.fallback_to_pdf_reason.{bucket}_total",
+                    value=count,
+                    unit="count",
+                )
             )
+        return metrics
 
-    def _record_source_metrics(
+    def _source_metric_points(
         self,
         *,
-        repository: Any,
-        run_id: str,
         source_name: str,
         source_bucket: dict[str, Any],
-    ) -> None:
-        for metric_name, unit in (
-            ("processed_total", "count"),
-            ("skipped_total", "count"),
-            ("failed_total", "count"),
-            ("item_duration_ms_total", "ms"),
-            ("fetch_ms_sum", "ms"),
-            ("extract_ms_sum", "ms"),
-            ("db_read_ms_sum", "ms"),
-            ("db_write_ms_sum", "ms"),
-            ("input_bytes_sum", "bytes"),
-            ("content_chars_sum", "chars"),
-            ("short_content_total", "count"),
-        ):
-            repository.record_metric(
-                run_id=run_id,
+    ) -> list[MetricPoint]:
+        metrics = [
+            MetricPoint(
                 name=f"pipeline.enrich.source.{source_name}.{metric_name}",
                 value=int(source_bucket.get(metric_name) or 0),
                 unit=unit,
             )
+            for metric_name, unit in (
+                ("processed_total", "count"),
+                ("skipped_total", "count"),
+                ("failed_total", "count"),
+                ("item_duration_ms_total", "ms"),
+                ("fetch_ms_sum", "ms"),
+                ("extract_ms_sum", "ms"),
+                ("db_read_ms_sum", "ms"),
+                ("db_write_ms_sum", "ms"),
+                ("input_bytes_sum", "bytes"),
+                ("content_chars_sum", "chars"),
+                ("short_content_total", "count"),
+            )
+        ]
         for content_type, count in sorted(
             cast(dict[str, int], source_bucket["content_types"]).items()
         ):
-            repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.enrich.source.{source_name}.content_type.{content_type}_total",
-                value=count,
-                unit="count",
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.enrich.source.{source_name}.content_type.{content_type}_total",
+                    value=count,
+                    unit="count",
+                )
             )
         for pdf_backend, count in sorted(
             cast(dict[str, int], source_bucket["pdf_backends"]).items()
         ):
-            repository.record_metric(
-                run_id=run_id,
-                name=f"pipeline.enrich.source.{source_name}.pdf_backend.{pdf_backend}_total",
-                value=count,
-                unit="count",
+            metrics.append(
+                MetricPoint(
+                    name=f"pipeline.enrich.source.{source_name}.pdf_backend.{pdf_backend}_total",
+                    value=count,
+                    unit="count",
+                )
             )
+        return metrics
 
 
 class _EnrichStageRunner:
@@ -1135,6 +1146,7 @@ class _EnrichStageRunner:
                 continue
             serial_items.append(item)
         return arxiv_parallel_items, html_parallel_items, serial_items
+
     def _process_one(self, *, client: httpx.Client, item: Any) -> dict[str, Any]:
         raw_item_id = getattr(item, "id", None)
         source = str(getattr(item, "source", "") or "").strip().lower()
