@@ -142,6 +142,14 @@ def test_trends_persist_canonical_pass_output_before_projection_rewrites(
         assert freshness["components"]["llm_model"] == "test/trends-stage-model"
         assert freshness["components"]["analysis_model"] == "test/fake-model"
         assert freshness["key"]
+        upstream_sources = freshness["components"]["upstream_sources"]
+        assert upstream_sources["key"]
+        assert upstream_sources["documents_total"] == 1
+        assert upstream_sources["chunks_total"] > 0
+        assert upstream_sources["source_scopes"] == [
+            {"doc_type": "item", "granularity": None}
+        ]
+        assert "chunks" not in upstream_sources
 
         trend_doc = session.exec(
             select(Document).where(Document.doc_type == "trend")

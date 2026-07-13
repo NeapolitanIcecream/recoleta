@@ -26,7 +26,10 @@ from recoleta.pipeline.pass_runner import (
     run_pass_definition,
 )
 from recoleta.passes import TREND_SYNTHESIS_PASS_KIND, build_trend_synthesis_pass_output
-from recoleta.workflow_freshness import build_trend_synthesis_freshness
+from recoleta.workflow_freshness import (
+    build_trend_synthesis_freshness,
+    workflow_freshness_diagnostics_view,
+)
 from recoleta.ports import TrendStageRepositoryPort
 from recoleta.publish import (
     build_telegram_trend_document_caption,
@@ -2065,14 +2068,16 @@ class _TrendStageRunner:
         rep_enforcement.setdefault("backfilled_total", 0)
         rep_enforcement.setdefault("failed_clusters_total", 0)
         trend_synthesis_diagnostics: dict[str, Any] = {
-            "workflow_freshness": build_trend_synthesis_freshness(
-                settings=self.service.settings,
-                granularity=state.normalized_granularity,
-                period_start=state.period_start,
-                period_end=state.period_end,
-                llm_model=state.model,
-                analysis_model=state.analysis_model,
-                repository=self.service.repository,
+            "workflow_freshness": workflow_freshness_diagnostics_view(
+                build_trend_synthesis_freshness(
+                    settings=self.service.settings,
+                    granularity=state.normalized_granularity,
+                    period_start=state.period_start,
+                    period_end=state.period_end,
+                    llm_model=state.model,
+                    analysis_model=state.analysis_model,
+                    repository=self.service.repository,
+                )
             ),
             "context_pack_stats": {
                 "overview_pack_chars": len(str(generation.overview_pack_md or "")),
