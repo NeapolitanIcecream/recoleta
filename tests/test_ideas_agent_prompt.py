@@ -7,6 +7,7 @@ from recoleta.rag.ideas_agent import (
     _TrendIdeasBundleTitle,
     _build_trend_ideas_instructions,
     _build_trend_ideas_title_instructions,
+    bundle_title_rewrite_reason,
     build_trend_ideas_prompt_payload,
     build_trend_ideas_title_prompt_payload,
 )
@@ -130,6 +131,14 @@ def test_bundle_title_validation_unwraps_nested_json_string() -> None:
     )
 
     assert payload.title == "Robotics Control Evaluation Stack"
+
+
+def test_bundle_title_quality_gate_only_rewrites_invalid_titles() -> None:
+    assert bundle_title_rewrite_reason("Verification-first agent rollout") is None
+    assert bundle_title_rewrite_reason("Ideas: why now?") == "punctuation"
+    assert bundle_title_rewrite_reason(
+        "Unnormalized title that should be replaced"
+    ) == "placeholder"
 
 
 def test_normalize_trend_ideas_payload_caps_to_three_unique_grounded_ideas() -> None:

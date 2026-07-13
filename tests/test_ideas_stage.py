@@ -436,6 +436,84 @@ def test_ideas_stage_generates_bundle_title_from_normalized_retained_ideas(
     ]
 
 
+def test_ideas_stage_reuses_valid_primary_title_without_second_model_call(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("PUBLISH_TARGETS", "markdown")
+    monkeypatch.setenv("MARKDOWN_OUTPUT_DIR", str(tmp_path / "md"))
+    monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
+    monkeypatch.setenv("LLM_MODEL", "test/fake-model")
+    monkeypatch.setenv("RAG_LANCEDB_DIR", str(tmp_path / "lancedb"))
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    period_start = datetime(2026, 3, 2, tzinfo=UTC)
+    period_end = datetime(2026, 3, 3, tzinfo=UTC)
+    evidence_doc_id = _seed_item_document(
+        repository=repository,
+        published_at=period_start + (period_end - period_start) / 2,
+    )
+    _persist_trend_synthesis_pass_output(
+        repository=repository,
+        run_id="run-trend-upstream-valid-title",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=_trend_payload(
+            period_start=period_start,
+            period_end=period_end,
+            evidence_doc_id=evidence_doc_id,
+        ),
+    )
+    from recoleta.rag import ideas_agent
+
+    payload = _ideas_payload(
+        period_start=period_start,
+        period_end=period_end,
+        evidence_doc_id=evidence_doc_id,
+    ).model_copy(update={"title": "Verification-first agent rollout"})
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_payload",
+        lambda **_kwargs: (
+            payload,
+            {
+                "usage": {"requests": 3, "input_tokens": 100, "output_tokens": 20},
+                "estimated_cost_usd": 0.01,
+                "prompt_chars": 500,
+                "tool_calls_total": 0,
+                "tool_call_breakdown": {},
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        ideas_agent,
+        "generate_trend_ideas_bundle_title",
+        lambda **_kwargs: pytest.fail("valid primary title must not be rewritten"),
+    )
+
+    result = service.ideas(
+        run_id="run-ideas-valid-primary-title",
+        granularity="day",
+        anchor_date=date(2026, 3, 2),
+    )
+
+    assert result.title == "Verification-first agent rollout"
+    assert result.pass_output_id is not None
+    with Session(repository.engine) as session:
+        row = session.exec(
+            select(PassOutput).where(PassOutput.id == result.pass_output_id)
+        ).one()
+        diagnostics = json.loads(row.diagnostics_json or "{}")
+    assert diagnostics["usage"]["requests"] == 3
+    assert diagnostics["bundle_title"]["quality_gate"] == "reused_primary"
+
+
 def test_ideas_stage_falls_back_to_primary_title_when_bundle_title_generation_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

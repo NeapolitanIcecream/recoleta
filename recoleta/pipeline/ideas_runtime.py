@@ -392,6 +392,20 @@ def _finalize_ideas_bundle_title(
     output_language: str | None,
 ) -> tuple[TrendIdeasPayload, dict[str, Any]]:
     title = str(normalized_payload.title or "").strip()
+    rewrite_reason = ideas_agent.bundle_title_rewrite_reason(title)
+    if rewrite_reason is None:
+        return (
+            normalized_payload,
+            _merge_ideas_debug(
+                base=normalized_debug,
+                extra={
+                    "quality_gate": "reused_primary",
+                    "usage": {"requests": 0, "input_tokens": 0, "output_tokens": 0},
+                    "estimated_cost_usd": 0.0,
+                    "prompt_chars": 0,
+                },
+            ),
+        )
     title_debug: dict[str, Any] = {}
     try:
         title, title_debug = ideas_agent.generate_trend_ideas_bundle_title(
@@ -401,12 +415,15 @@ def _finalize_ideas_bundle_title(
             output_language=output_language,
             llm_connection=request.context.service._llm_connection,
         )
+        title_debug["quality_gate"] = "rewritten"
+        title_debug["rewrite_reason"] = rewrite_reason
     except Exception as exc:
         title_debug = _bundle_title_fallback_debug(
             request=request,
             title=title,
             exc=exc,
         )
+        title_debug["rewrite_reason"] = rewrite_reason
     return (
         normalized_payload.model_copy(update={"title": title}),
         _merge_ideas_debug(base=normalized_debug, extra=title_debug),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -21,6 +22,21 @@ from recoleta.rag.agent_runtime import _extract_raw_tool_trace
 from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.trends import TrendPayload
+
+_BUNDLE_TITLE_MAX_CHARS = 96
+_BUNDLE_TITLE_DATE_RE = re.compile(
+    r"(?:^|\s)(?:20\d{2}(?:[-/.]\d{1,2}){0,2}|\d{4}-W\d{2})(?:\s|$)",
+    re.IGNORECASE,
+)
+_BUNDLE_TITLE_FORBIDDEN_RE = re.compile(
+    r"\b(?:idea|ideas|notes?|evidence[- ]grounded|trend snapshot|opportunit(?:y|ies)|why now)\b"
+    r"|(?:创意|想法|趋势快照|为什么现在)",
+    re.IGNORECASE,
+)
+_BUNDLE_TITLE_PLACEHOLDER_RE = re.compile(
+    r"\b(?:unnormalized|placeholder|untitled|should be replaced|todo|tbd)\b",
+    re.IGNORECASE,
+)
 
 
 class _TrendIdeasBundleTitle(BaseModel):
@@ -57,6 +73,28 @@ def _normalize_bundle_title_value(value: str) -> str:
             continue
         return normalized
     return normalized
+
+
+def bundle_title_rewrite_reason(value: str) -> str | None:
+    """Return a bounded reason when a generated bundle title needs repair."""
+
+    raw = str(value or "")
+    normalized = _normalize_bundle_title_value(raw)
+    if not normalized:
+        return "empty"
+    if "\n" in raw or "\r" in raw:
+        return "multiline"
+    if len(normalized) > _BUNDLE_TITLE_MAX_CHARS:
+        return "too_long"
+    if any(token in normalized for token in (":", "：", "?", "？")):
+        return "punctuation"
+    if _BUNDLE_TITLE_DATE_RE.search(normalized):
+        return "date"
+    if _BUNDLE_TITLE_FORBIDDEN_RE.search(normalized):
+        return "generic_label"
+    if _BUNDLE_TITLE_PLACEHOLDER_RE.search(normalized):
+        return "placeholder"
+    return None
 
 
 @dataclass(slots=True)
@@ -635,6 +673,7 @@ __all__ = [
     "build_trend_ideas_title_prompt_payload",
     "build_trend_ideas_agent",
     "build_trend_ideas_prompt_payload",
+    "bundle_title_rewrite_reason",
     "generate_trend_ideas_bundle_title",
     "generate_trend_ideas_payload",
 ]
