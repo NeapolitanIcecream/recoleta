@@ -7,8 +7,10 @@ import time
 from typing import Any, cast
 
 from loguru import logger
+from sqlalchemy import select as sa_select
 from sqlalchemy import text
-from sqlmodel import Session, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlmodel import Session
 
 from recoleta.models import Document, DocumentChunk
 from recoleta.types import sha256_hex, utc_now
@@ -82,7 +84,7 @@ class GenerateTrendRequest:
 class _TargetRowsForPairsRequest:
     trends_module: Any
     pairs: list[tuple[Any, Any]]
-    docs_by_item_id: dict[int, Any]
+    doc_ids_by_item_id: dict[int, int]
     texts_by_item_id: dict[int, dict[str, str | None]]
     content_types: list[str]
     content_chunk_chars: int
@@ -104,11 +106,20 @@ class _TargetRowsForPairRequest:
     trends_module: Any
     item: Any
     analysis: Any
-    docs_by_item_id: dict[int, Any]
+    doc_ids_by_item_id: dict[int, int]
     texts_by_item_id: dict[int, dict[str, str | None]]
     content_types: list[str]
     content_chunk_chars: int
     max_content_chunks_per_item: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ExistingChunk:
+    id: int
+    doc_id: int
+    chunk_index: int
+    kind: str
+    text_hash: str
 
 
 def coerce_semantic_search_request(
@@ -274,53 +285,64 @@ def _item_ids_from_pairs(pairs: list[tuple[Any, Any]]) -> list[int]:
     ]
 
 
-def _existing_docs_by_item_id(*, session: Any, item_ids: list[int]) -> dict[int, Any]:
-    existing_docs = list(
-        session.exec(
-            select(Document).where(
-                Document.doc_type == "item",
-                cast(Any, Document.item_id).in_(item_ids),
-            )
-        )
-    )
-    docs_by_item_id: dict[int, Any] = {}
-    for doc in existing_docs:
-        raw_item_id = getattr(doc, "item_id", None)
-        if raw_item_id is not None and int(raw_item_id) > 0:
-            docs_by_item_id[int(raw_item_id)] = doc
-    return docs_by_item_id
-
-
 def _upsert_item_documents(
     *,
     session: Any,
     pairs: list[tuple[Any, Any]],
-    docs_by_item_id: dict[int, Any],
-) -> int:
+) -> tuple[dict[int, int], int]:
+    table = cast(Any, Document).__table__
+    now = utc_now()
+    rows: list[dict[str, Any]] = []
     docs_upserted = 0
     for item, _analysis in pairs:
         item_id = _item_id_value(item)
         if item_id <= 0:
             continue
-        existing = docs_by_item_id.get(item_id)
-        if existing is None:
-            existing = Document(
-                doc_type="item",
-                item_id=item_id,
-                source=None,
-                canonical_url=None,
-                title=None,
-                published_at=None,
-            )
-            _apply_item_document_fields(existing, item=item)
-            session.add(existing)
-            docs_by_item_id[item_id] = existing
-        else:
-            _apply_item_document_fields(existing, item=item)
-            existing.updated_at = utc_now()
-            session.add(existing)
+        rows.append(
+            {
+                "doc_type": "item",
+                "item_id": item_id,
+                "source": str(getattr(item, "source", "") or "").strip() or None,
+                "canonical_url": (
+                    str(getattr(item, "canonical_url", "") or "").strip() or None
+                ),
+                "title": str(getattr(item, "title", "") or "").strip() or None,
+                "published_at": _item_event_at(item),
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
         docs_upserted += 1
-    return docs_upserted
+    if not rows:
+        return {}, 0
+
+    insert_statement = sqlite_insert(table)
+    session.connection().execute(
+        insert_statement.on_conflict_do_update(
+            index_elements=[table.c.doc_type, table.c.item_id],
+            set_={
+                "source": insert_statement.excluded.source,
+                "canonical_url": insert_statement.excluded.canonical_url,
+                "title": insert_statement.excluded.title,
+                "published_at": insert_statement.excluded.published_at,
+                "updated_at": insert_statement.excluded.updated_at,
+            },
+        ),
+        rows,
+    )
+    item_ids = list(dict.fromkeys(int(row["item_id"]) for row in rows))
+    result = session.connection().execute(
+        sa_select(table.c.id, table.c.item_id).where(
+            table.c.doc_type == "item",
+            table.c.item_id.in_(item_ids),
+        )
+    )
+    doc_ids_by_item_id = {
+        int(item_id): int(doc_id)
+        for doc_id, item_id in result
+        if doc_id is not None and item_id is not None
+    }
+    return doc_ids_by_item_id, docs_upserted
 
 
 def _item_id_value(item: Any) -> int:
@@ -332,50 +354,53 @@ def _item_event_at(item: Any) -> Any:
     return getattr(item, "published_at", None) or getattr(item, "created_at", None)
 
 
-def _apply_item_document_fields(existing: Any, *, item: Any) -> None:
-    existing.source = str(getattr(item, "source", "") or "").strip() or None
-    existing.canonical_url = (
-        str(getattr(item, "canonical_url", "") or "").strip() or None
-    )
-    existing.title = str(getattr(item, "title", "") or "").strip() or None
-    existing.published_at = _item_event_at(item)
-
-
 def _existing_chunks_by_key(
     *, session: Any, doc_ids: list[int]
-) -> tuple[list[Any], dict[tuple[int, int], Any]]:
-    existing_chunks = (
-        list(
-            session.exec(
-                select(DocumentChunk).where(
-                    cast(Any, DocumentChunk.doc_id).in_(doc_ids),
-                    cast(Any, DocumentChunk.kind).in_(["summary", "content", "meta"]),
-                )
-            )
+) -> tuple[list[_ExistingChunk], dict[tuple[int, int], _ExistingChunk]]:
+    table = cast(Any, DocumentChunk).__table__
+    if not doc_ids:
+        return [], {}
+    rows = session.connection().execute(
+        sa_select(
+            table.c.id,
+            table.c.doc_id,
+            table.c.chunk_index,
+            table.c.kind,
+            table.c.text_hash,
+        ).where(
+            table.c.doc_id.in_(doc_ids),
+            table.c.kind.in_(["summary", "content", "meta"]),
         )
-        if doc_ids
-        else []
     )
-    existing_chunks_by_key: dict[tuple[int, int], Any] = {}
-    for chunk in existing_chunks:
-        existing_chunks_by_key[
-            (int(getattr(chunk, "doc_id")), int(getattr(chunk, "chunk_index")))
-        ] = chunk
+    existing_chunks = [
+        _ExistingChunk(
+            id=int(chunk_id),
+            doc_id=int(doc_id),
+            chunk_index=int(chunk_index),
+            kind=str(kind),
+            text_hash=str(text_hash or ""),
+        )
+        for chunk_id, doc_id, chunk_index, kind, text_hash in rows
+        if chunk_id is not None and doc_id is not None and chunk_index is not None
+    ]
+    existing_chunks_by_key = {
+        (chunk.doc_id, chunk.chunk_index): chunk for chunk in existing_chunks
+    }
     return existing_chunks, existing_chunks_by_key
 
 
 def _resolved_pair_doc_id(
     *,
     item: Any,
-    docs_by_item_id: dict[int, Any],
+    doc_ids_by_item_id: dict[int, int],
 ) -> int | None:
     raw_item_id = getattr(item, "id", None)
     if raw_item_id is None:
         return None
-    doc = docs_by_item_id.get(int(raw_item_id))
-    if doc is None or getattr(doc, "id", None) is None:
+    doc_id = doc_ids_by_item_id.get(int(raw_item_id))
+    if doc_id is None:
         return None
-    return int(getattr(doc, "id"))
+    return int(doc_id)
 
 
 def _target_rows_for_pairs(
@@ -391,7 +416,7 @@ def _target_rows_for_pairs(
                 trends_module=request.trends_module,
                 item=item,
                 analysis=analysis,
-                docs_by_item_id=request.docs_by_item_id,
+                doc_ids_by_item_id=request.doc_ids_by_item_id,
                 texts_by_item_id=request.texts_by_item_id,
                 content_types=request.content_types,
                 content_chunk_chars=request.content_chunk_chars,
@@ -500,7 +525,7 @@ def _target_rows_for_pair(
 ) -> tuple[int, dict[tuple[int, int], dict[str, Any]], int | None, int] | None:
     doc_id = _resolved_pair_doc_id(
         item=request.item,
-        docs_by_item_id=request.docs_by_item_id,
+        doc_ids_by_item_id=request.doc_ids_by_item_id,
     )
     if doc_id is None:
         return None
@@ -526,61 +551,30 @@ def _target_rows_for_pair(
 
 def _changed_chunks(
     *,
-    session: Any,
-    existing_chunks_by_key: dict[tuple[int, int], Any],
+    existing_chunks_by_key: dict[tuple[int, int], _ExistingChunk],
     target_rows: dict[tuple[int, int], dict[str, Any]],
-) -> list[Any]:
-    changed_chunks: list[Any] = []
+) -> list[dict[str, Any]]:
+    changed_chunks: list[dict[str, Any]] = []
     for (doc_id, chunk_index), payload in target_rows.items():
         existing = existing_chunks_by_key.get((doc_id, chunk_index))
-        if existing is None:
-            chunk = DocumentChunk(
-                doc_id=doc_id,
-                chunk_index=chunk_index,
-                kind=str(payload["kind"]),
-                text=str(payload["text"]),
-                start_char=payload["start_char"],
-                end_char=payload["end_char"],
-                text_hash=str(payload["text_hash"]),
-                source_content_type=(
-                    str(payload["source_content_type"]).strip()
-                    if payload.get("source_content_type")
-                    else None
-                ),
-            )
-            session.add(chunk)
-            changed_chunks.append(chunk)
+        if existing is not None and existing.text_hash == str(payload["text_hash"]):
             continue
-        if str(getattr(existing, "text_hash", "") or "") == str(payload["text_hash"]):
-            continue
-        existing.kind = str(payload["kind"])
-        existing.text = str(payload["text"])
-        existing.start_char = payload["start_char"]
-        existing.end_char = payload["end_char"]
-        existing.text_hash = str(payload["text_hash"])
-        existing.source_content_type = (
-            str(payload["source_content_type"]).strip()
-            if payload.get("source_content_type")
-            else None
-        )
-        session.add(existing)
-        changed_chunks.append(existing)
+        changed_chunks.append(payload)
     return changed_chunks
 
 
 def _stale_content_chunks(
     *,
-    existing_chunks: list[Any],
+    existing_chunks: list[_ExistingChunk],
     content_cutoffs: dict[int, int | None],
-) -> list[Any]:
-    stale_chunks: list[Any] = []
+) -> list[_ExistingChunk]:
+    stale_chunks: list[_ExistingChunk] = []
     for chunk in existing_chunks:
-        if str(getattr(chunk, "kind", "") or "").strip().lower() != "content":
+        if chunk.kind.strip().lower() != "content":
             continue
-        doc_id = int(getattr(chunk, "doc_id"))
-        max_written_index = content_cutoffs.get(doc_id)
+        max_written_index = content_cutoffs.get(chunk.doc_id)
         threshold = 1 if max_written_index is None else max_written_index + 1
-        if int(getattr(chunk, "chunk_index")) >= threshold:
+        if chunk.chunk_index >= threshold:
             stale_chunks.append(chunk)
     return stale_chunks
 
@@ -588,44 +582,100 @@ def _stale_content_chunks(
 def _sync_chunk_indexes(
     *,
     session: Any,
-    changed_chunks: list[Any],
-    stale_chunks: list[Any],
+    changed_chunks: list[dict[str, Any]],
+    stale_chunks: list[_ExistingChunk],
 ) -> None:
-    session.flush()
     conn = session.connection()
-    changed_fts_rows = _changed_fts_rows(changed_chunks)
+    _upsert_changed_chunks(conn=conn, changed_chunks=changed_chunks)
+    changed_chunk_ids = _chunk_ids_by_key(
+        conn=conn,
+        changed_keys=[
+            (int(chunk["doc_id"]), int(chunk["chunk_index"]))
+            for chunk in changed_chunks
+        ],
+    )
+    changed_fts_rows = _changed_fts_rows(
+        changed_chunks=changed_chunks,
+        chunk_ids_by_key=changed_chunk_ids,
+    )
     _replace_changed_chunk_fts_rows(conn=conn, changed_fts_rows=changed_fts_rows)
     stale_ids = _stale_chunk_ids(stale_chunks)
     _delete_stale_chunk_side_tables(conn=conn, stale_ids=stale_ids)
-    _delete_stale_chunks(session=session, stale_chunks=stale_chunks)
+    _delete_stale_chunks(conn=conn, stale_ids=stale_ids)
 
 
-def _changed_fts_rows(changed_chunks: list[Any]) -> list[dict[str, Any]]:
+def _upsert_changed_chunks(*, conn: Any, changed_chunks: list[dict[str, Any]]) -> None:
+    if not changed_chunks:
+        return
+    table = cast(Any, DocumentChunk).__table__
+    now = utc_now()
+    rows = [dict(chunk, created_at=now) for chunk in changed_chunks]
+    insert_statement = sqlite_insert(table)
+    conn.execute(
+        insert_statement.on_conflict_do_update(
+            index_elements=[table.c.doc_id, table.c.chunk_index],
+            set_={
+                "kind": insert_statement.excluded.kind,
+                "text": insert_statement.excluded.text,
+                "start_char": insert_statement.excluded.start_char,
+                "end_char": insert_statement.excluded.end_char,
+                "text_hash": insert_statement.excluded.text_hash,
+                "source_content_type": insert_statement.excluded.source_content_type,
+            },
+        ),
+        rows,
+    )
+
+
+def _chunk_ids_by_key(
+    *, conn: Any, changed_keys: list[tuple[int, int]]
+) -> dict[tuple[int, int], int]:
+    if not changed_keys:
+        return {}
+    table = cast(Any, DocumentChunk).__table__
+    doc_ids = list(dict.fromkeys(doc_id for doc_id, _chunk_index in changed_keys))
+    changed_key_set = set(changed_keys)
+    rows = conn.execute(
+        sa_select(table.c.id, table.c.doc_id, table.c.chunk_index).where(
+            table.c.doc_id.in_(doc_ids)
+        )
+    )
+    return {
+        (int(doc_id), int(chunk_index)): int(chunk_id)
+        for chunk_id, doc_id, chunk_index in rows
+        if chunk_id is not None
+        and doc_id is not None
+        and chunk_index is not None
+        and (int(doc_id), int(chunk_index)) in changed_key_set
+    }
+
+
+def _changed_fts_rows(
+    *,
+    changed_chunks: list[dict[str, Any]],
+    chunk_ids_by_key: dict[tuple[int, int], int],
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for chunk in changed_chunks:
-        raw_chunk_id = getattr(chunk, "id", None)
-        if raw_chunk_id is None:
-            continue
-        try:
-            chunk_id = int(raw_chunk_id)
-        except Exception:
-            continue
-        if chunk_id <= 0 or _chunk_is_meta(chunk):
+        doc_id = int(chunk["doc_id"])
+        chunk_index = int(chunk["chunk_index"])
+        chunk_id = chunk_ids_by_key.get((doc_id, chunk_index))
+        if chunk_id is None or _chunk_is_meta(chunk):
             continue
         rows.append(
             {
                 "rowid": chunk_id,
-                "text": str(getattr(chunk, "text")),
-                "doc_id": int(getattr(chunk, "doc_id")),
-                "chunk_index": int(getattr(chunk, "chunk_index")),
-                "kind": str(getattr(chunk, "kind")),
+                "text": str(chunk["text"]),
+                "doc_id": doc_id,
+                "chunk_index": chunk_index,
+                "kind": str(chunk["kind"]),
             }
         )
     return rows
 
 
-def _chunk_is_meta(chunk: Any) -> bool:
-    return str(getattr(chunk, "kind", "") or "").strip().lower() == "meta"
+def _chunk_is_meta(chunk: dict[str, Any]) -> bool:
+    return str(chunk.get("kind") or "").strip().lower() == "meta"
 
 
 def _replace_changed_chunk_fts_rows(
@@ -648,19 +698,8 @@ def _replace_changed_chunk_fts_rows(
     )
 
 
-def _stale_chunk_ids(stale_chunks: list[Any]) -> list[int]:
-    stale_ids: list[int] = []
-    for chunk in stale_chunks:
-        raw_chunk_id = getattr(chunk, "id", None)
-        if raw_chunk_id is None:
-            continue
-        try:
-            chunk_id = int(raw_chunk_id)
-        except Exception:
-            continue
-        if chunk_id > 0:
-            stale_ids.append(chunk_id)
-    return stale_ids
+def _stale_chunk_ids(stale_chunks: list[_ExistingChunk]) -> list[int]:
+    return [chunk.id for chunk in stale_chunks if chunk.id > 0]
 
 
 def _delete_stale_chunk_side_tables(*, conn: Any, stale_ids: list[int]) -> None:
@@ -676,9 +715,13 @@ def _delete_stale_chunk_side_tables(*, conn: Any, stale_ids: list[int]) -> None:
     )
 
 
-def _delete_stale_chunks(*, session: Any, stale_chunks: list[Any]) -> None:
-    for chunk in stale_chunks:
-        session.delete(chunk)
+def _delete_stale_chunks(*, conn: Any, stale_ids: list[int]) -> None:
+    if not stale_ids:
+        return
+    conn.execute(
+        text("DELETE FROM document_chunks WHERE id = :chunk_id"),
+        [{"chunk_id": chunk_id} for chunk_id in stale_ids],
+    )
 
 
 def index_items_as_documents_batched_impl(
@@ -705,23 +748,11 @@ def index_items_as_documents_batched_impl(
         content_types=content_types,
     )
     with Session(repository.engine) as session:
-        docs_by_item_id = _existing_docs_by_item_id(
-            session=session,
-            item_ids=item_ids,
-        )
-        docs_upserted = _upsert_item_documents(
+        doc_ids_by_item_id, docs_upserted = _upsert_item_documents(
             session=session,
             pairs=pairs,
-            docs_by_item_id=docs_by_item_id,
         )
-        session.flush()
-        doc_ids = [
-            int(raw_doc_id)
-            for raw_doc_id in (
-                getattr(doc, "id", None) for doc in docs_by_item_id.values()
-            )
-            if raw_doc_id is not None and int(raw_doc_id) > 0
-        ]
+        doc_ids = list(doc_ids_by_item_id.values())
         existing_chunks, existing_chunks_by_key = _existing_chunks_by_key(
             session=session,
             doc_ids=doc_ids,
@@ -730,7 +761,7 @@ def index_items_as_documents_batched_impl(
             request=_TargetRowsForPairsRequest(
                 trends_module=trends_module,
                 pairs=pairs,
-                docs_by_item_id=docs_by_item_id,
+                doc_ids_by_item_id=doc_ids_by_item_id,
                 texts_by_item_id=texts_by_item_id,
                 content_types=content_types,
                 content_chunk_chars=content_chunk_chars,
@@ -738,7 +769,6 @@ def index_items_as_documents_batched_impl(
             )
         )
         changed_chunks = _changed_chunks(
-            session=session,
             existing_chunks_by_key=existing_chunks_by_key,
             target_rows=target_rows,
         )
