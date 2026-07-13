@@ -27,6 +27,7 @@ def test_ideas_instructions_require_finished_prose_without_public_worksheet_fiel
     assert "Each idea must be a finished short piece." in instructions
     assert "two independent item documents" in instructions
     assert "Multiple chunks from one document still count as one source." in instructions
+    assert "A get_doc call returns metadata only" in instructions
     assert "Direct adoption or productization of one paper is not enough." in instructions
     assert "explicit kill threshold" in instructions
     assert "separate source facts from your synthesis or inference" in instructions
@@ -85,7 +86,7 @@ def test_ideas_prompt_payload_reinforces_reader_facing_contract() -> None:
     notes = payload["notes"]
     assert "Use idea ordering to express priority; do not emit best-bet or alternate labels." in notes
     assert (
-        "Use evidence_refs to cite at least two distinct item documents actually read for each idea; multiple chunks from one document count once."
+        "Use evidence_refs to cite at least two distinct item documents read with get_doc_bundle or read_chunk for each idea; get_doc metadata does not count, and multiple chunks from one document count once."
         in notes
     )
     assert "Return finished short prose in ideas[].content_md instead of labeled method fields." in notes

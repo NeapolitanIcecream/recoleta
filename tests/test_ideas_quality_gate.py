@@ -4,11 +4,11 @@ from recoleta.passes.trend_ideas import (
     TrendIdeasPayload,
     normalize_trend_ideas_payload_with_stats,
 )
-from recoleta.pipeline.ideas_quality import successful_read_doc_ids
+from recoleta.rag.evidence_reads import successful_evidence_read_doc_ids
 
 
 def test_ideas_quality_gate_does_not_treat_search_hits_as_read_evidence() -> None:
-    read_doc_ids, trace_stats = successful_read_doc_ids(
+    read_doc_ids, trace_stats = successful_evidence_read_doc_ids(
         debug={
             "raw_tool_trace": {
                 "status": "captured",
@@ -45,6 +45,7 @@ def test_ideas_quality_gate_does_not_treat_search_hits_as_read_evidence() -> Non
 
     assert read_doc_ids == {11}
     assert trace_stats["trace_status"] == "captured"
+    assert trace_stats["trace_complete"] is True
 
 
 def test_ideas_quality_gate_rejects_existing_but_unread_evidence() -> None:

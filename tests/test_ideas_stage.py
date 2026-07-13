@@ -396,6 +396,7 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
             "policy": "two_distinct_read_item_documents",
             "trace_status": "captured",
             "trace_events_truncated": False,
+            "trace_complete": True,
             "read_doc_ids": sorted(evidence_doc_ids),
             "read_doc_ids_total": 2,
         }

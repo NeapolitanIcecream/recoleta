@@ -35,6 +35,7 @@ from recoleta.publish import (
     write_markdown_trend_note,
     write_obsidian_trend_note,
 )
+from recoleta.rag.evidence_reads import successful_evidence_read_doc_ids
 from recoleta.trend_materialize import (
     MaterializedTrendNotePayload,
     materialize_trend_note_payload,
@@ -1827,9 +1828,7 @@ class _TrendStageRunner:
             ),
         )
         active_item_doc_ids = self._active_item_doc_ids(state=state)
-        read_item_doc_ids = self._read_item_doc_ids_from_debug(debug)
-        trace_status, trace_truncated = self._raw_tool_trace_metadata(debug)
-        enforce_read_trace = read_item_doc_ids is not None
+        read_item_doc_ids, trace_stats = successful_evidence_read_doc_ids(debug=debug)
         single_source_mode = len(active_item_doc_ids) == 1
         effective_min = 1 if single_source_mode else configured_min
         doc_type_cache: dict[int, str | None] = {}
@@ -1848,11 +1847,18 @@ class _TrendStageRunner:
             "item_corpus_docs_total": len(active_item_doc_ids),
             "configured_min_distinct_docs": configured_min,
             "effective_min_distinct_docs": effective_min,
-            "read_trace_captured_total": 1 if trace_status == "captured" else 0,
-            "read_trace_enforced_total": 1 if enforce_read_trace else 0,
-            "read_trace_unavailable_total": 0 if enforce_read_trace else 1,
-            "read_trace_truncated_total": 1 if trace_truncated else 0,
-            "read_item_docs_total": len(read_item_doc_ids or set()),
+            "read_trace_captured_total": (
+                1 if trace_stats["trace_status"] == "captured" else 0
+            ),
+            "read_trace_complete_total": 1 if trace_stats["trace_complete"] else 0,
+            "read_trace_enforced_total": 1,
+            "read_trace_unavailable_total": (
+                0 if trace_stats["trace_complete"] else 1
+            ),
+            "read_trace_truncated_total": (
+                1 if trace_stats["trace_events_truncated"] else 0
+            ),
+            "read_item_docs_total": len(read_item_doc_ids),
             "single_source_mode_total": 1 if single_source_mode else 0,
         }
         retained_clusters: list[Any] = []
@@ -1900,106 +1906,6 @@ class _TrendStageRunner:
                 doc_ids.add(doc_id)
         return doc_ids
 
-    @staticmethod
-    def _raw_tool_trace_metadata(
-        debug: dict[str, Any] | None,
-    ) -> tuple[str, bool]:
-        if not isinstance(debug, dict):
-            return "missing", False
-        trace = debug.get("raw_tool_trace")
-        if not isinstance(trace, dict):
-            return "missing", False
-        status = str(trace.get("status") or "unknown").strip().lower() or "unknown"
-        return status, bool(trace.get("events_truncated"))
-
-    @classmethod
-    def _read_item_doc_ids_from_debug(
-        cls,
-        debug: dict[str, Any] | None,
-    ) -> set[int] | None:
-        if not isinstance(debug, dict):
-            return None
-        trace = debug.get("raw_tool_trace")
-        if not isinstance(trace, dict):
-            return None
-        if str(trace.get("status") or "").strip().lower() != "captured":
-            return None
-        if bool(trace.get("events_truncated")):
-            return None
-        events = trace.get("events")
-        if not isinstance(events, list):
-            return None
-        calls: dict[str, tuple[str, int]] = {}
-        doc_ids: set[int] = set()
-        for event in events:
-            if not isinstance(event, dict):
-                continue
-            tool_name = str(event.get("tool_name") or "").strip()
-            if tool_name not in {
-                "get_doc_bundle",
-                "read_chunk",
-            }:
-                continue
-            tool_call_id = str(event.get("tool_call_id") or "").strip()
-            if not tool_call_id:
-                continue
-            kind = str(event.get("kind") or "").strip()
-            if kind == "tool-call":
-                args = cls._tool_trace_mapping(event.get("args"))
-                if args is None:
-                    continue
-                try:
-                    doc_id = int(args.get("doc_id") or 0)
-                except Exception:
-                    continue
-                if doc_id > 0:
-                    calls[tool_call_id] = (tool_name, doc_id)
-                continue
-            if kind != "tool-return":
-                continue
-            call = calls.get(tool_call_id)
-            if call is None or call[0] != tool_name:
-                continue
-            returned_doc_id = cls._returned_read_doc_id(
-                tool_name=tool_name,
-                content=event.get("content"),
-            )
-            if returned_doc_id is not None and returned_doc_id == call[1]:
-                doc_ids.add(returned_doc_id)
-        return doc_ids
-
-    @staticmethod
-    def _tool_trace_mapping(value: Any) -> dict[str, Any] | None:
-        if isinstance(value, dict):
-            return value
-        if not isinstance(value, (str, bytes)):
-            return None
-        try:
-            parsed = orjson.loads(value)
-        except Exception:
-            return None
-        return parsed if isinstance(parsed, dict) else None
-
-    @classmethod
-    def _returned_read_doc_id(cls, *, tool_name: str, content: Any) -> int | None:
-        mapping = cls._tool_trace_mapping(content)
-        if mapping is None:
-            return None
-        if tool_name == "get_doc_bundle":
-            bundle = mapping.get("bundle")
-            nested = bundle.get("doc") if isinstance(bundle, dict) else None
-        elif tool_name == "read_chunk":
-            nested = mapping.get("chunk")
-        else:
-            return None
-        if not isinstance(nested, dict):
-            return None
-        try:
-            doc_id = int(nested.get("doc_id") or 0)
-        except Exception:
-            return None
-        return doc_id if doc_id > 0 else None
-
     def _mark_single_source_signal(self, cluster: Any) -> None:
         title = str(getattr(cluster, "title", "") or "").strip()
         normalized_title = title.casefold()
@@ -2022,7 +1928,7 @@ class _TrendStageRunner:
         *,
         cluster: Any,
         active_item_doc_ids: set[int],
-        read_item_doc_ids: set[int] | None,
+        read_item_doc_ids: set[int],
         doc_type_cache: dict[int, str | None],
         max_refs: int,
     ) -> tuple[list[Any], dict[str, int]]:
@@ -2053,7 +1959,7 @@ class _TrendStageRunner:
                 )
                 stats[key] += 1
                 continue
-            if read_item_doc_ids is not None and doc_id_int not in read_item_doc_ids:
+            if doc_id_int not in read_item_doc_ids:
                 stats["dropped_unread_total"] += 1
                 continue
             if doc_id_int in seen_doc_ids:
@@ -2138,14 +2044,12 @@ class _TrendStageRunner:
                 for key, value in tool_breakdown.items()
                 if isinstance(value, (int, float))
             }
-        read_doc_ids = self._read_item_doc_ids_from_debug(debug)
-        trace_status, trace_truncated = self._raw_tool_trace_metadata(debug)
+        read_doc_ids, trace_stats = successful_evidence_read_doc_ids(debug=debug)
         compact["evidence_reads"] = {
-            "trace_enforced": read_doc_ids is not None,
-            "trace_status": trace_status,
-            "trace_events_truncated": trace_truncated,
-            "item_doc_ids": sorted(read_doc_ids or set()),
-            "item_docs_total": len(read_doc_ids or set()),
+            "trace_enforced": True,
+            **trace_stats,
+            "item_doc_ids": sorted(read_doc_ids),
+            "item_docs_total": len(read_doc_ids),
         }
         return compact
 

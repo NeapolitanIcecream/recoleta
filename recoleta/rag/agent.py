@@ -73,7 +73,8 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " Start with search_hybrid when you need to discover themes quickly, "
-        "then use get_doc_bundle to inspect promising evidence bundles before falling back to get_doc or read_chunk."
+        "then use get_doc_bundle or read_chunk to inspect promising evidence. "
+        "Use get_doc only for metadata; it does not count as reading evidence."
     )
     base += (
         " When available, use trend documents (doc_type=trend) only to discover synthesis candidates and higher-level themes. "

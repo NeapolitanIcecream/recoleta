@@ -42,6 +42,7 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert (
         "drill into the underlying item documents with get_doc_bundle" in instructions
     )
+    assert "Use get_doc only for metadata" in instructions
     assert "cite only item documents that you actually inspected" in instructions
     assert "Do not use negative parallelism" in instructions
     assert "Avoid false suspense" in instructions

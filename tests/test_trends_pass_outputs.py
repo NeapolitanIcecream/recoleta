@@ -256,26 +256,22 @@ def test_trends_never_backfills_evidence_and_limits_single_source_output(
         pass_output = session.get(PassOutput, result.pass_output_id)
         assert pass_output is not None
         payload = json.loads(pass_output.payload_json)
-        cluster = payload["clusters"][0]
-        assert len(payload["clusters"]) == 1
-        assert cluster["title"].startswith("单源信号：")
-        evidence_refs = cluster["evidence_refs"]
-        assert len(evidence_refs) == 1
-        assert evidence_refs[0]["doc_id"] == evidence_doc_id
-        assert evidence_refs[0]["chunk_index"] == 0
+        assert payload["clusters"] == []
 
         diagnostics = json.loads(pass_output.diagnostics_json or "{}")
         assert "context_packs" not in diagnostics
         assert "context_pack_stats" in diagnostics
         rep_enforcement = diagnostics["rep_enforcement"]
         assert rep_enforcement["backfilled_total"] == 0
-        assert rep_enforcement["failed_clusters_total"] == 2
-        assert rep_enforcement["dropped_insufficient_support_total"] == 1
-        assert rep_enforcement["dropped_single_source_excess_total"] == 1
+        assert rep_enforcement["failed_clusters_total"] == 3
+        assert rep_enforcement["dropped_insufficient_support_total"] == 3
+        assert rep_enforcement["dropped_unread_total"] == 2
+        assert rep_enforcement["dropped_single_source_excess_total"] == 0
         assert rep_enforcement["single_source_mode_total"] == 1
-        assert rep_enforcement["retained_clusters_total"] == 1
-        assert rep_enforcement["read_trace_enforced_total"] == 0
+        assert rep_enforcement["retained_clusters_total"] == 0
+        assert rep_enforcement["read_trace_enforced_total"] == 1
         assert rep_enforcement["read_trace_unavailable_total"] == 1
+        assert rep_enforcement["read_trace_complete_total"] == 0
 
     trend_note = (
         settings.markdown_output_dir
@@ -283,8 +279,8 @@ def test_trends_never_backfills_evidence_and_limits_single_source_output(
         / f"day--2026-03-02--trend--{result.doc_id}.md"
     )
     markdown = trend_note.read_text(encoding="utf-8")
-    assert "#### Evidence" in markdown
-    assert "[Grounding Paper](" in markdown
+    assert "#### Evidence" not in markdown
+    assert "[Grounding Paper](" not in markdown
 
 
 def test_trends_keep_only_distinct_item_sources_read_by_agent(
@@ -487,6 +483,7 @@ def test_trends_keep_only_distinct_item_sources_read_by_agent(
         "trace_enforced": True,
         "trace_status": "captured",
         "trace_events_truncated": False,
+        "trace_complete": True,
         "item_doc_ids": [doc_1, doc_2],
         "item_docs_total": 2,
     }

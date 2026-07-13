@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-import json
 from typing import Any
 
 from recoleta import trends
@@ -11,7 +10,6 @@ _PRIOR_IDEAS_PACK_MAX_CHARS = 6_000
 _PRIOR_IDEAS_PEER_WINDOW_COUNT = 3
 _PRIOR_IDEAS_SECTION_MAX_ENTRIES = 12
 _PRIOR_IDEA_ENTRY_MAX_CHARS = 420
-_EVIDENCE_READ_TOOLS = {"get_doc", "get_doc_bundle", "read_chunk"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,97 +210,6 @@ def build_prior_ideas_pack_md(
     return pack_md, stats
 
 
-def _mapping_value(value: Any) -> dict[str, Any] | None:
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = json.loads(value)
-    except Exception:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def _returned_read_doc_id(*, tool_name: str, content: Any) -> int | None:
-    mapping = _mapping_value(content)
-    if mapping is None:
-        return None
-    nested: Any
-    if tool_name == "get_doc":
-        nested = mapping.get("doc")
-    elif tool_name == "get_doc_bundle":
-        bundle = mapping.get("bundle")
-        nested = bundle.get("doc") if isinstance(bundle, dict) else None
-    elif tool_name == "read_chunk":
-        nested = mapping.get("chunk")
-    else:
-        return None
-    if not isinstance(nested, dict):
-        return None
-    try:
-        doc_id = int(nested.get("doc_id") or 0)
-    except Exception:
-        return None
-    return doc_id if doc_id > 0 else None
-
-
-def successful_read_doc_ids(
-    *, debug: dict[str, Any]
-) -> tuple[set[int], dict[str, Any]]:
-    """Return documents from completed explicit read calls, excluding search hits."""
-
-    trace = debug.get("raw_tool_trace")
-    if not isinstance(trace, dict):
-        return set(), {
-            "trace_status": "unavailable",
-            "trace_events_truncated": False,
-        }
-    trace_status = str(trace.get("status") or "unavailable").strip().lower()
-    events = trace.get("events")
-    if trace_status != "captured" or not isinstance(events, list):
-        return set(), {
-            "trace_status": trace_status or "unavailable",
-            "trace_events_truncated": bool(trace.get("events_truncated")),
-        }
-
-    calls: dict[str, tuple[str, int]] = {}
-    read_doc_ids: set[int] = set()
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        tool_name = str(event.get("tool_name") or "").strip()
-        tool_call_id = str(event.get("tool_call_id") or "").strip()
-        if tool_name not in _EVIDENCE_READ_TOOLS or not tool_call_id:
-            continue
-        if str(event.get("kind") or "") == "tool-call":
-            args = _mapping_value(event.get("args"))
-            if args is None:
-                continue
-            try:
-                doc_id = int(args.get("doc_id") or 0)
-            except Exception:
-                continue
-            if doc_id > 0:
-                calls[tool_call_id] = (tool_name, doc_id)
-            continue
-        if str(event.get("kind") or "") != "tool-return":
-            continue
-        call = calls.get(tool_call_id)
-        if call is None or call[0] != tool_name:
-            continue
-        returned_doc_id = _returned_read_doc_id(
-            tool_name=tool_name,
-            content=event.get("content"),
-        )
-        if returned_doc_id is not None and returned_doc_id == call[1]:
-            read_doc_ids.add(returned_doc_id)
-    return read_doc_ids, {
-        "trace_status": trace_status,
-        "trace_events_truncated": bool(trace.get("events_truncated")),
-    }
-
-
 def item_document_ids(*, repository: Any, doc_ids: set[int]) -> set[int]:
     item_doc_ids: set[int] = set()
     for doc_id in sorted(doc_ids):
@@ -315,5 +222,4 @@ def item_document_ids(*, repository: Any, doc_ids: set[int]) -> set[int]:
 __all__ = [
     "build_prior_ideas_pack_md",
     "item_document_ids",
-    "successful_read_doc_ids",
 ]

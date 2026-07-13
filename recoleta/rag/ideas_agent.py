@@ -220,7 +220,8 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " Every emitted idea must cite at least two distinct item doc_id values that"
-        " you actually inspected with get_doc, get_doc_bundle, or read_chunk."
+        " you actually inspected with get_doc_bundle or read_chunk. A get_doc call"
+        " returns metadata only and does not count as reading evidence."
         " Multiple chunks from one document still count as one source. Search results"
         " and trend documents may guide discovery but do not count as evidence."
     )
@@ -350,7 +351,7 @@ def _trend_ideas_prompt_notes() -> list[str]:
         "Use idea ordering to express priority; do not emit best-bet or alternate labels.",
         "During analysis, decide what concrete build, test, or workflow change the piece covers, who would care first, what new evidence supports it, and what cheap check would validate it.",
         "Name the concrete operational pain or adoption blocker directly instead of using generic platform language.",
-        "Use evidence_refs to cite at least two distinct item documents actually read for each idea; multiple chunks from one document count once.",
+        "Use evidence_refs to cite at least two distinct item documents read with get_doc_bundle or read_chunk for each idea; get_doc metadata does not count, and multiple chunks from one document count once.",
         "Treat prior_ideas_pack_md only as a deduplication exclusion list; never cite it as evidence.",
         "Each retained idea needs a specific user and job, a cross-source novelty basis, a falsifiable first test, and an observable kill threshold.",
         "Do not restate the trend summary as the final output.",

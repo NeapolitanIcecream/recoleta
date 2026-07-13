@@ -18,7 +18,6 @@ from recoleta.idea_projection import (
 from recoleta.pipeline.ideas_quality import (
     build_prior_ideas_pack_md,
     item_document_ids,
-    successful_read_doc_ids,
 )
 from recoleta.pipeline.metrics import metric_token
 from recoleta.pipeline.pass_runner import (
@@ -27,6 +26,7 @@ from recoleta.pipeline.pass_runner import (
     ProjectionSpec,
     run_pass_definition,
 )
+from recoleta.rag.evidence_reads import successful_evidence_read_doc_ids
 from recoleta.passes import (
     PassInputRef,
     PassStatus,
@@ -330,7 +330,9 @@ def _primary_ideas_payload(
         llm_connection=request.context.service._llm_connection,
     )
     normalized_debug = debug if isinstance(debug, dict) else {}
-    read_doc_ids, trace_stats = successful_read_doc_ids(debug=normalized_debug)
+    read_doc_ids, trace_stats = successful_evidence_read_doc_ids(
+        debug=normalized_debug
+    )
     item_doc_ids = item_document_ids(
         repository=request.context.service.repository,
         doc_ids={
