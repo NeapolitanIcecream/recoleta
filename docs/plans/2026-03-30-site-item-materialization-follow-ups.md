@@ -2,8 +2,8 @@
 
 Date: 2026-03-30
 
-Status: linked-only item export landed for `site build` and `site stage`; the
-retention and archive follow-ups below are intentionally deferred
+Status: linked-only item export and static archive pagination landed; the
+retention follow-ups below remain deferred
 
 ## What Landed
 
@@ -47,21 +47,15 @@ That is not yet catastrophic in absolute size, but it is already the dominant
 source of file-count and output-size growth. The linked-only default addresses
 that waste directly.
 
-## Deferred Issues
+## Follow-up Issues
 
-### 1. Trend archive pagination or month-level sharding
+### 1. Trend archive pagination (resolved 2026-07-14)
 
-The current archive page is still one long page.
-
-This is a usability concern, especially once the trend history grows across many
-months and multiple localized or fleet outputs. It is not the main driver of
-site size today, so it stays deferred behind the linked-only item export fix.
-
-Recommended follow-up:
-
-- split archive output by month or paginate the archive surface
-- keep stable canonical links for individual trend detail pages
-- keep the home page and trends index focused on recent history only
+Site export now paginates the archive at 24 rows per page while keeping
+`archive.html` as the canonical first page. Trend, idea, topic-index, and topic
+entity collections use the same build-time static pagination model with bounded
+page sizes. Individual detail URLs remain unchanged, and the home page remains a
+bounded recent-history preview.
 
 ### 2. Layered retention for `documents`, `document_chunks`, and site output
 
@@ -127,12 +121,12 @@ Recommended follow-up:
 Without that lineage graph, TTL can only be time-window-based, not
 reference-aware.
 
-## Why These Remain Deferred
+## Why Retention Work Remains Deferred
 
 - The linked-only export change removes the clearest current waste with a small,
   low-risk code change.
-- Pagination and retention policy both need a product decision, not just a
-  mechanical refactor.
+- The remaining retention policy needs a product decision, not just a mechanical
+  refactor.
 - Reference-aware TTL would be unsafe to implement before trend lineage is
   explicit in canonical pass state.
 - None of the deferred items should silently mutate or delete canonical history
