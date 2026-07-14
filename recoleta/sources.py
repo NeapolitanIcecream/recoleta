@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, TypedDict, Unpack
 
 import arxiv  # noqa: F401
 import httpx
@@ -125,6 +125,47 @@ class HNPullRequest:
     max_total_items: int | None = None
     pull_state_lookup: PullStateLookup | None = None
     include_stats: bool = False
+
+
+class _CommonPullRequestKwargs(TypedDict, total=False):
+    period_start: datetime | None
+    period_end: datetime | None
+    pull_state_lookup: PullStateLookup | None
+    include_stats: bool
+
+
+class _HFDailyPapersPullRequestKwargs(_CommonPullRequestKwargs, total=False):
+    max_items: int
+
+
+class _ArxivPullRequestKwargs(_CommonPullRequestKwargs, total=False):
+    queries: list[str]
+    max_results_per_run: int
+    max_total_items: int | None
+    mode: str
+    pool_db_path: Path | None
+    pool_maturity_lag_days: int
+    pool_readiness_gate: str
+    pool_allow_immature_windows: bool
+
+
+class _OpenReviewPullRequestKwargs(_CommonPullRequestKwargs, total=False):
+    venues: list[str]
+    max_results_per_venue: int
+    max_total_items: int | None
+
+
+class _FeedPullRequestKwargs(_CommonPullRequestKwargs, total=False):
+    feed_urls: list[str]
+    source: str
+    max_items_per_feed: int
+    max_total_items: int | None
+
+
+class _HNPullRequestKwargs(_CommonPullRequestKwargs, total=False):
+    feed_urls: list[str]
+    max_items_per_feed: int
+    max_total_items: int | None
 
 
 def _should_retry_httpx(exc: BaseException) -> bool:
@@ -311,11 +352,13 @@ def _paper_info_to_draft(
 
 def fetch_hf_daily_papers_drafts(
     *,
-    request: HFDailyPapersPullRequest,
+    request: HFDailyPapersPullRequest | None = None,
+    **legacy_kwargs: Unpack[_HFDailyPapersPullRequestKwargs],
 ) -> list[ItemDraft] | SourcePullResult:
+    normalized_request = request or HFDailyPapersPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_hf_daily_papers
 
-    return pull_hf_daily_papers(request)
+    return pull_hf_daily_papers(normalized_request)
 
 
 def _format_arxiv_datetime(value: datetime) -> str:
@@ -340,36 +383,44 @@ def _arxiv_query_with_period(
 
 def fetch_arxiv_drafts(
     *,
-    request: ArxivPullRequest,
+    request: ArxivPullRequest | None = None,
     pool_backend: Any | None = None,
+    **legacy_kwargs: Unpack[_ArxivPullRequestKwargs],
 ) -> list[ItemDraft] | SourcePullResult:
+    normalized_request = request or ArxivPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_arxiv_drafts
 
-    return pull_arxiv_drafts(request, pool_backend=pool_backend)
+    return pull_arxiv_drafts(normalized_request, pool_backend=pool_backend)
 
 
 def fetch_openreview_drafts(
     *,
-    request: OpenReviewPullRequest,
+    request: OpenReviewPullRequest | None = None,
+    **legacy_kwargs: Unpack[_OpenReviewPullRequestKwargs],
 ) -> list[ItemDraft] | SourcePullResult:
+    normalized_request = request or OpenReviewPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_openreview_drafts
 
-    return pull_openreview_drafts(request)
+    return pull_openreview_drafts(normalized_request)
 
 
 def fetch_rss_drafts(
     *,
-    request: FeedPullRequest,
+    request: FeedPullRequest | None = None,
+    **legacy_kwargs: Unpack[_FeedPullRequestKwargs],
 ) -> list[ItemDraft] | SourcePullResult:
+    normalized_request = request or FeedPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_rss_drafts
 
-    return pull_rss_drafts(request)
+    return pull_rss_drafts(normalized_request)
 
 
 def fetch_hn_drafts(
     *,
-    request: HNPullRequest,
+    request: HNPullRequest | None = None,
+    **legacy_kwargs: Unpack[_HNPullRequestKwargs],
 ) -> list[ItemDraft] | SourcePullResult:
+    normalized_request = request or HNPullRequest(**legacy_kwargs)
     from recoleta.source_pullers import pull_hn_drafts
 
-    return pull_hn_drafts(request)
+    return pull_hn_drafts(normalized_request)

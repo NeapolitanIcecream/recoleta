@@ -29,6 +29,81 @@ from recoleta.sources import (
 )
 
 
+def test_source_fetchers_preserve_legacy_keyword_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.source_pullers as source_pullers
+
+    captured: dict[str, object] = {}
+
+    def _capture(name: str, request: object) -> list[object]:
+        captured[name] = request
+        return []
+
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_hf_daily_papers",
+        lambda request: _capture("hf", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_arxiv_drafts",
+        lambda request, *, pool_backend=None: _capture("arxiv", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_openreview_drafts",
+        lambda request: _capture("openreview", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_rss_drafts",
+        lambda request: _capture("rss", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_hn_drafts",
+        lambda request: _capture("hn", request),
+    )
+
+    fetch_hf_daily_papers_drafts(max_items=3)
+    fetch_arxiv_drafts(queries=["cat:cs.AI"], max_results_per_run=4)
+    fetch_openreview_drafts(
+        venues=["ICLR.cc/2026/Conference"],
+        max_results_per_venue=5,
+    )
+    fetch_rss_drafts(
+        feed_urls=["https://example.com/feed.xml"],
+        source="rss",
+        max_items_per_feed=6,
+    )
+    fetch_hn_drafts(
+        feed_urls=["https://news.ycombinator.com/rss"],
+        max_items_per_feed=7,
+    )
+
+    assert captured == {
+        "hf": HFDailyPapersPullRequest(max_items=3),
+        "arxiv": ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=4,
+        ),
+        "openreview": OpenReviewPullRequest(
+            venues=["ICLR.cc/2026/Conference"],
+            max_results_per_venue=5,
+        ),
+        "rss": FeedPullRequest(
+            feed_urls=["https://example.com/feed.xml"],
+            source="rss",
+            max_items_per_feed=6,
+        ),
+        "hn": HNPullRequest(
+            feed_urls=["https://news.ycombinator.com/rss"],
+            max_items_per_feed=7,
+        ),
+    }
+
+
 def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(
     respx_mock: respx.Router,
 ) -> None:
