@@ -2,6 +2,8 @@
   "files": {
     "archive": "archive.html",
     "idea_pages": [
+      "ideas/embodied-ai--day--2026-07-13--ideas.html",
+      "ideas/software-intelligence--day--2026-07-13--ideas.html",
       "ideas/embodied-ai--week--2026-W28--ideas.html",
       "ideas/software-intelligence--week--2026-W28--ideas.html",
       "ideas/software-intelligence--day--2026-07-12--ideas.html",
@@ -229,6 +231,20 @@
     "ideas_index": "ideas/index.html",
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-13--long-term-memory-cortex-for-agents-that-maintains-tensions.html",
+      "items/software-intelligence--2026-07-13--show-hn-context-warp-drive-deterministic-zero-llm-context-compaction.html",
+      "items/embodied-ai--2026-07-13--a-minimalist-retargeting-guided-reinforcement-learning-recipe-for-dexterous-manipulation.html",
+      "items/embodied-ai--2026-07-13--xiaomi-robotics-u0-unified-embodied-synthesis-with-world-foundation-model.html",
+      "items/embodied-ai--2026-07-13--see-like-a-robot-robot-centric-pointmaps-for-vision-language-action-models.html",
+      "items/embodied-ai--2026-07-13--wala-learning-executable-latent-actions-from-action-labeled-demonstrations-and-action-free-videos.html",
+      "items/software-intelligence--2026-07-13--terrarepair-a-tool-grounded-llm-agent-for-infrastructure-as-code-repair.html",
+      "items/software-intelligence--2026-07-13--understanding-the-impact-of-ai-code-assistants-on-security-api-usage-an-empirical-study.html",
+      "items/software-intelligence--2026-07-13--flowark-boosting-agentic-data-flow-analysis-for-android-apps-via-context-aware-knowledge-reuse.html",
+      "items/embodied-ai--2026-07-13--towards-predictive-aligned-and-scalable-robot-learning.html",
+      "items/embodied-ai--2026-07-13--pix2act-image-space-manipulation-policies-with-equivariant-augmentation.html",
+      "items/software-intelligence--2026-07-13--know-before-fix-qa-driven-repository-knowledge-acquisition-for-software-issue-resolution.html",
+      "items/software-intelligence--2026-07-13--agentcheck-a-reproduce-intervene-mitigate-workbench-for-llm-agents-over-mcp.html",
+      "items/software-intelligence--2026-07-13--retrieval-oriented-code-representations-in-agentic-bug-localization.html",
       "items/software-intelligence--2026-07-12--onedev-ai-coding-agents-as-teammates-in-issues-pull-requests-and-ci.html",
       "items/software-intelligence--2026-07-12--the-cost-of-ai-assisted-development-cognitive-fatigue.html",
       "items/software-intelligence--2026-07-12--grok-4-5-and-gpt5-6-beat-anthropic-for-finding-security-vulnerabilities-in-prs.html",
@@ -1637,7 +1653,10 @@
       "topics/cross-robot-transfer.html",
       "topics/dai-li-an-quan.html",
       "topics/dai-li-ji-neng.html",
+      "topics/dai-li-ji-yi.html",
       "topics/dai-li-ke-guan-ce-xing.html",
+      "topics/dai-li-ping-gu.html",
+      "topics/dai-ma-cang-ku-shang-xia-wen.html",
       "topics/dai-ma-zhi-neng-ti.html",
       "topics/dart.html",
       "topics/data-annotation.html",
@@ -2089,6 +2108,8 @@
     ],
     "topics_index": "topics/index.html",
     "trend_pages": [
+      "trends/embodied-ai--day--2026-07-13--trend--861.html",
+      "trends/software-intelligence--day--2026-07-13--trend--1896.html",
       "trends/embodied-ai--week--2026-W28--trend--851.html",
       "trends/software-intelligence--week--2026-W28--trend--1872.html",
       "trends/software-intelligence--day--2026-07-12--trend--1870.html",
@@ -2315,11 +2336,11 @@
     ],
     "trends_index": "trends/index.html"
   },
-  "ideas_total": 223,
+  "ideas_total": 225,
   "item_export_scope": "linked",
-  "items_available_total": 7226,
-  "items_total": 1245,
-  "items_unreferenced_total": 5981,
-  "topics_total": 608,
-  "trends_total": 223
+  "items_available_total": 7278,
+  "items_total": 1259,
+  "items_unreferenced_total": 6019,
+  "topics_total": 611,
+  "trends_total": 225
 }
