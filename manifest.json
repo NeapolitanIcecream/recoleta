@@ -2,9 +2,33 @@
   "default_language_code": "en",
   "files": {
     "archive": "archive.html",
+    "archive_pages": [
+      "archive.html",
+      "archive/page/2/index.html",
+      "archive/page/3/index.html",
+      "archive/page/4/index.html",
+      "archive/page/5/index.html",
+      "archive/page/6/index.html",
+      "archive/page/7/index.html",
+      "archive/page/8/index.html",
+      "archive/page/9/index.html",
+      "archive/page/10/index.html"
+    ],
     "by_language": {
       "en": {
         "archive": "archive.html",
+        "archive_pages": [
+          "archive.html",
+          "archive/page/2/index.html",
+          "archive/page/3/index.html",
+          "archive/page/4/index.html",
+          "archive/page/5/index.html",
+          "archive/page/6/index.html",
+          "archive/page/7/index.html",
+          "archive/page/8/index.html",
+          "archive/page/9/index.html",
+          "archive/page/10/index.html"
+        ],
         "idea_pages": [
           "ideas/embodied-ai--day--2026-07-13--ideas.html",
           "ideas/software-intelligence--day--2026-07-13--ideas.html",
@@ -233,6 +257,27 @@
           "ideas/software-intelligence--day--2026-03-30--ideas.html"
         ],
         "ideas_index": "ideas/index.html",
+        "ideas_index_pages": [
+          "ideas/index.html",
+          "ideas/page/2/index.html",
+          "ideas/page/3/index.html",
+          "ideas/page/4/index.html",
+          "ideas/page/5/index.html",
+          "ideas/page/6/index.html",
+          "ideas/page/7/index.html",
+          "ideas/page/8/index.html",
+          "ideas/page/9/index.html",
+          "ideas/page/10/index.html",
+          "ideas/page/11/index.html",
+          "ideas/page/12/index.html",
+          "ideas/page/13/index.html",
+          "ideas/page/14/index.html",
+          "ideas/page/15/index.html",
+          "ideas/page/16/index.html",
+          "ideas/page/17/index.html",
+          "ideas/page/18/index.html",
+          "ideas/page/19/index.html"
+        ],
         "index": "index.html",
         "item_pages": [
           "items/software-intelligence--2026-07-13--long-term-memory-cortex-for-agents-that-maintains-tensions.html",
@@ -1497,6 +1542,1732 @@
         ],
         "nojekyll": ".nojekyll",
         "stylesheet": "assets/site.css",
+        "topic_collection_pages": {
+          "3d-gaussian-splatting": [
+            "topics/3d-gaussian-splatting.html"
+          ],
+          "3d-generation": [
+            "topics/3d-generation.html"
+          ],
+          "3d-geometry": [
+            "topics/3d-geometry.html"
+          ],
+          "3d-grounding": [
+            "topics/3d-grounding.html"
+          ],
+          "3d-manipulation": [
+            "topics/3d-manipulation.html"
+          ],
+          "3d-perception": [
+            "topics/3d-perception.html"
+          ],
+          "3d-planning": [
+            "topics/3d-planning.html"
+          ],
+          "action-control": [
+            "topics/action-control.html"
+          ],
+          "action-representation": [
+            "topics/action-representation.html"
+          ],
+          "action-representations": [
+            "topics/action-representations.html"
+          ],
+          "active-perception": [
+            "topics/active-perception.html"
+          ],
+          "adaptation": [
+            "topics/adaptation.html"
+          ],
+          "adaptive-control": [
+            "topics/adaptive-control.html"
+          ],
+          "adk": [
+            "topics/adk.html"
+          ],
+          "adversarial-reliability": [
+            "topics/adversarial-reliability.html"
+          ],
+          "adversarial-robustness": [
+            "topics/adversarial-robustness.html"
+          ],
+          "affordance-grounding": [
+            "topics/affordance-grounding.html"
+          ],
+          "affordance-learning": [
+            "topics/affordance-learning.html"
+          ],
+          "agent-benchmarks": [
+            "topics/agent-benchmarks.html"
+          ],
+          "agent-context": [
+            "topics/agent-context.html"
+          ],
+          "agent-control": [
+            "topics/agent-control.html"
+          ],
+          "agent-development-kit": [
+            "topics/agent-development-kit.html"
+          ],
+          "agent-evaluation": [
+            "topics/agent-evaluation.html",
+            "topics/agent-evaluation/page/2/index.html",
+            "topics/agent-evaluation/page/3/index.html",
+            "topics/agent-evaluation/page/4/index.html"
+          ],
+          "agent-governance": [
+            "topics/agent-governance.html",
+            "topics/agent-governance/page/2/index.html"
+          ],
+          "agent-guardrails": [
+            "topics/agent-guardrails.html"
+          ],
+          "agent-harness": [
+            "topics/agent-harness.html"
+          ],
+          "agent-harnesses": [
+            "topics/agent-harnesses.html",
+            "topics/agent-harnesses/page/2/index.html"
+          ],
+          "agent-identity": [
+            "topics/agent-identity.html"
+          ],
+          "agent-infrastructure": [
+            "topics/agent-infrastructure.html"
+          ],
+          "agent-memory": [
+            "topics/agent-memory.html",
+            "topics/agent-memory/page/2/index.html"
+          ],
+          "agent-monitoring": [
+            "topics/agent-monitoring.html"
+          ],
+          "agent-observability": [
+            "topics/agent-observability.html"
+          ],
+          "agent-operations": [
+            "topics/agent-operations.html"
+          ],
+          "agent-ops": [
+            "topics/agent-ops.html"
+          ],
+          "agent-optimization": [
+            "topics/agent-optimization.html"
+          ],
+          "agent-orchestration": [
+            "topics/agent-orchestration.html"
+          ],
+          "agent-reliability": [
+            "topics/agent-reliability.html"
+          ],
+          "agent-runtime": [
+            "topics/agent-runtime.html"
+          ],
+          "agent-runtime-control": [
+            "topics/agent-runtime-control.html"
+          ],
+          "agent-runtimes": [
+            "topics/agent-runtimes.html"
+          ],
+          "agent-safety": [
+            "topics/agent-safety.html",
+            "topics/agent-safety/page/2/index.html"
+          ],
+          "agent-security": [
+            "topics/agent-security.html",
+            "topics/agent-security/page/2/index.html",
+            "topics/agent-security/page/3/index.html"
+          ],
+          "agent-skills": [
+            "topics/agent-skills.html"
+          ],
+          "agent-systems": [
+            "topics/agent-systems.html"
+          ],
+          "agent-testing": [
+            "topics/agent-testing.html"
+          ],
+          "agent-tooling": [
+            "topics/agent-tooling.html"
+          ],
+          "agent-tracing": [
+            "topics/agent-tracing.html"
+          ],
+          "agent-trust": [
+            "topics/agent-trust.html"
+          ],
+          "agent-workspaces": [
+            "topics/agent-workspaces.html"
+          ],
+          "agentic-code-review": [
+            "topics/agentic-code-review.html"
+          ],
+          "agentic-coding": [
+            "topics/agentic-coding.html"
+          ],
+          "agentic-desktops": [
+            "topics/agentic-desktops.html"
+          ],
+          "agentic-software-engineering": [
+            "topics/agentic-software-engineering.html"
+          ],
+          "ai-agents": [
+            "topics/ai-agents.html"
+          ],
+          "ai-code-quality": [
+            "topics/ai-code-quality.html"
+          ],
+          "ai-code-review": [
+            "topics/ai-code-review.html"
+          ],
+          "ai-coding-agents": [
+            "topics/ai-coding-agents.html",
+            "topics/ai-coding-agents/page/2/index.html"
+          ],
+          "ai-control": [
+            "topics/ai-control.html"
+          ],
+          "ai-cost-control": [
+            "topics/ai-cost-control.html"
+          ],
+          "ai-cost-governance": [
+            "topics/ai-cost-governance.html"
+          ],
+          "ai-cost-tracking": [
+            "topics/ai-cost-tracking.html"
+          ],
+          "ai-education": [
+            "topics/ai-education.html"
+          ],
+          "ai-generated-software": [
+            "topics/ai-generated-software.html"
+          ],
+          "ai-governance": [
+            "topics/ai-governance.html"
+          ],
+          "ai-operations": [
+            "topics/ai-operations.html"
+          ],
+          "ai-personalization": [
+            "topics/ai-personalization.html"
+          ],
+          "ai-product-due-diligence": [
+            "topics/ai-product-due-diligence.html"
+          ],
+          "ai-ready-docs": [
+            "topics/ai-ready-docs.html"
+          ],
+          "ai-reliability": [
+            "topics/ai-reliability.html"
+          ],
+          "ai-safety": [
+            "topics/ai-safety.html"
+          ],
+          "ai-security": [
+            "topics/ai-security.html"
+          ],
+          "ai-ux": [
+            "topics/ai-ux.html"
+          ],
+          "ai-workflow": [
+            "topics/ai-workflow.html"
+          ],
+          "antigravity": [
+            "topics/antigravity.html"
+          ],
+          "api-testing": [
+            "topics/api-testing.html"
+          ],
+          "architecture-boundaries": [
+            "topics/architecture-boundaries.html"
+          ],
+          "articulation": [
+            "topics/articulation.html"
+          ],
+          "autonomous-driving": [
+            "topics/autonomous-driving.html"
+          ],
+          "autonomous-driving-safety": [
+            "topics/autonomous-driving-safety.html"
+          ],
+          "autonomy-governance": [
+            "topics/autonomy-governance.html"
+          ],
+          "behavior-cloning": [
+            "topics/behavior-cloning.html"
+          ],
+          "benchmark-auditing": [
+            "topics/benchmark-auditing.html"
+          ],
+          "benchmark-contamination": [
+            "topics/benchmark-contamination.html"
+          ],
+          "benchmark-security": [
+            "topics/benchmark-security.html"
+          ],
+          "benchmarking": [
+            "topics/benchmarking.html"
+          ],
+          "benchmarks": [
+            "topics/benchmarks.html",
+            "topics/benchmarks/page/2/index.html",
+            "topics/benchmarks/page/3/index.html"
+          ],
+          "blockchain-state": [
+            "topics/blockchain-state.html"
+          ],
+          "browser-testing": [
+            "topics/browser-testing.html"
+          ],
+          "browser-tooling": [
+            "topics/browser-tooling.html"
+          ],
+          "bug-localization": [
+            "topics/bug-localization.html"
+          ],
+          "bug-reports": [
+            "topics/bug-reports.html"
+          ],
+          "bug-validation": [
+            "topics/bug-validation.html"
+          ],
+          "c-to-rust-migration": [
+            "topics/c-to-rust-migration.html"
+          ],
+          "cad-automation": [
+            "topics/cad-automation.html"
+          ],
+          "claude-code": [
+            "topics/claude-code.html"
+          ],
+          "coarse-to-fine-control": [
+            "topics/coarse-to-fine-control.html"
+          ],
+          "code-agents": [
+            "topics/code-agents.html"
+          ],
+          "code-benchmarks": [
+            "topics/code-benchmarks.html"
+          ],
+          "code-editing": [
+            "topics/code-editing.html"
+          ],
+          "code-evaluation": [
+            "topics/code-evaluation.html"
+          ],
+          "code-generation": [
+            "topics/code-generation.html",
+            "topics/code-generation/page/2/index.html"
+          ],
+          "code-generation-benchmarks": [
+            "topics/code-generation-benchmarks.html"
+          ],
+          "code-llm-evaluation": [
+            "topics/code-llm-evaluation.html"
+          ],
+          "code-model-calibration": [
+            "topics/code-model-calibration.html"
+          ],
+          "code-quality": [
+            "topics/code-quality.html"
+          ],
+          "code-repair": [
+            "topics/code-repair.html"
+          ],
+          "code-review": [
+            "topics/code-review.html"
+          ],
+          "code-review-automation": [
+            "topics/code-review-automation.html"
+          ],
+          "code-safety": [
+            "topics/code-safety.html"
+          ],
+          "code-search": [
+            "topics/code-search.html"
+          ],
+          "code-security": [
+            "topics/code-security.html"
+          ],
+          "code-translation": [
+            "topics/code-translation.html"
+          ],
+          "code-uncertainty": [
+            "topics/code-uncertainty.html"
+          ],
+          "coding-agents": [
+            "topics/coding-agents.html",
+            "topics/coding-agents/page/2/index.html",
+            "topics/coding-agents/page/3/index.html",
+            "topics/coding-agents/page/4/index.html",
+            "topics/coding-agents/page/5/index.html",
+            "topics/coding-agents/page/6/index.html",
+            "topics/coding-agents/page/7/index.html",
+            "topics/coding-agents/page/8/index.html",
+            "topics/coding-agents/page/9/index.html",
+            "topics/coding-agents/page/10/index.html",
+            "topics/coding-agents/page/11/index.html",
+            "topics/coding-agents/page/12/index.html",
+            "topics/coding-agents/page/13/index.html",
+            "topics/coding-agents/page/14/index.html",
+            "topics/coding-agents/page/15/index.html",
+            "topics/coding-agents/page/16/index.html"
+          ],
+          "coding-benchmarks": [
+            "topics/coding-benchmarks.html"
+          ],
+          "coding-llms": [
+            "topics/coding-llms.html"
+          ],
+          "coding-productivity": [
+            "topics/coding-productivity.html"
+          ],
+          "community-events": [
+            "topics/community-events.html"
+          ],
+          "competitive-programming": [
+            "topics/competitive-programming.html"
+          ],
+          "compiler-feedback": [
+            "topics/compiler-feedback.html"
+          ],
+          "compiler-tuning": [
+            "topics/compiler-tuning.html"
+          ],
+          "contact-control": [
+            "topics/contact-control.html"
+          ],
+          "contact-rich-control": [
+            "topics/contact-rich-control.html"
+          ],
+          "contact-rich-manipulation": [
+            "topics/contact-rich-manipulation.html"
+          ],
+          "contact-rich-robotics": [
+            "topics/contact-rich-robotics.html"
+          ],
+          "context-compression": [
+            "topics/context-compression.html"
+          ],
+          "context-control": [
+            "topics/context-control.html"
+          ],
+          "context-engineering": [
+            "topics/context-engineering.html"
+          ],
+          "context-management": [
+            "topics/context-management.html"
+          ],
+          "context-pruning": [
+            "topics/context-pruning.html"
+          ],
+          "context-recovery": [
+            "topics/context-recovery.html"
+          ],
+          "continual-learning": [
+            "topics/continual-learning.html"
+          ],
+          "control": [
+            "topics/control.html"
+          ],
+          "cost-control": [
+            "topics/cost-control.html"
+          ],
+          "cost-governance": [
+            "topics/cost-governance.html"
+          ],
+          "credential-security": [
+            "topics/credential-security.html"
+          ],
+          "cross-embodiment": [
+            "topics/cross-embodiment.html"
+          ],
+          "cross-embodiment-learning": [
+            "topics/cross-embodiment-learning.html"
+          ],
+          "cross-platform-development": [
+            "topics/cross-platform-development.html"
+          ],
+          "cross-platform-frameworks": [
+            "topics/cross-platform-frameworks.html"
+          ],
+          "cross-platform-mobile": [
+            "topics/cross-platform-mobile.html"
+          ],
+          "cross-robot-transfer": [
+            "topics/cross-robot-transfer.html"
+          ],
+          "dart": [
+            "topics/dart.html"
+          ],
+          "data-annotation": [
+            "topics/data-annotation.html"
+          ],
+          "data-efficiency": [
+            "topics/data-efficiency.html"
+          ],
+          "data-generation": [
+            "topics/data-generation.html"
+          ],
+          "data-poisoning": [
+            "topics/data-poisoning.html"
+          ],
+          "data-privacy": [
+            "topics/data-privacy.html"
+          ],
+          "database-correctness": [
+            "topics/database-correctness.html"
+          ],
+          "deformable-objects": [
+            "topics/deformable-objects.html"
+          ],
+          "dependency-risk": [
+            "topics/dependency-risk.html"
+          ],
+          "deployment-adaptation": [
+            "topics/deployment-adaptation.html"
+          ],
+          "deployment-systems": [
+            "topics/deployment-systems.html"
+          ],
+          "desktop-automation": [
+            "topics/desktop-automation.html"
+          ],
+          "desktop-support": [
+            "topics/desktop-support.html"
+          ],
+          "deterministic-validation": [
+            "topics/deterministic-validation.html"
+          ],
+          "developer-docs": [
+            "topics/developer-docs.html"
+          ],
+          "developer-learning": [
+            "topics/developer-learning.html"
+          ],
+          "developer-productivity": [
+            "topics/developer-productivity.html"
+          ],
+          "developer-relations": [
+            "topics/developer-relations.html"
+          ],
+          "developer-skills": [
+            "topics/developer-skills.html"
+          ],
+          "developer-tooling": [
+            "topics/developer-tooling.html"
+          ],
+          "developer-tools": [
+            "topics/developer-tools.html"
+          ],
+          "developer-workflows": [
+            "topics/developer-workflows.html"
+          ],
+          "device-sandboxes": [
+            "topics/device-sandboxes.html"
+          ],
+          "devops-safety": [
+            "topics/devops-safety.html"
+          ],
+          "dexterous-benchmarks": [
+            "topics/dexterous-benchmarks.html"
+          ],
+          "dexterous-control": [
+            "topics/dexterous-control.html"
+          ],
+          "dexterous-grasping": [
+            "topics/dexterous-grasping.html"
+          ],
+          "dexterous-hands": [
+            "topics/dexterous-hands.html"
+          ],
+          "dexterous-manipulation": [
+            "topics/dexterous-manipulation.html",
+            "topics/dexterous-manipulation/page/2/index.html"
+          ],
+          "dexterous-robotics": [
+            "topics/dexterous-robotics.html"
+          ],
+          "distributed-inference": [
+            "topics/distributed-inference.html"
+          ],
+          "documentation-sites": [
+            "topics/documentation-sites.html"
+          ],
+          "domain-modeling": [
+            "topics/domain-modeling.html"
+          ],
+          "driving-world-models": [
+            "topics/driving-world-models.html"
+          ],
+          "edge-deployment": [
+            "topics/edge-deployment.html"
+          ],
+          "edge-safety": [
+            "topics/edge-safety.html"
+          ],
+          "efficient-inference": [
+            "topics/efficient-inference.html"
+          ],
+          "embodied-ai": [
+            "topics/embodied-ai.html",
+            "topics/embodied-ai/page/2/index.html",
+            "topics/embodied-ai/page/3/index.html"
+          ],
+          "embodied-control": [
+            "topics/embodied-control.html"
+          ],
+          "embodied-datasets": [
+            "topics/embodied-datasets.html"
+          ],
+          "engineering-discipline": [
+            "topics/engineering-discipline.html"
+          ],
+          "engineering-judgment": [
+            "topics/engineering-judgment.html"
+          ],
+          "engineering-roi": [
+            "topics/engineering-roi.html"
+          ],
+          "enterprise-adoption": [
+            "topics/enterprise-adoption.html"
+          ],
+          "enterprise-ai": [
+            "topics/enterprise-ai.html"
+          ],
+          "enterprise-ai-adoption": [
+            "topics/enterprise-ai-adoption.html"
+          ],
+          "enterprise-apps": [
+            "topics/enterprise-apps.html"
+          ],
+          "enterprise-benchmarks": [
+            "topics/enterprise-benchmarks.html"
+          ],
+          "enterprise-software-engineering": [
+            "topics/enterprise-software-engineering.html"
+          ],
+          "error-recovery": [
+            "topics/error-recovery.html"
+          ],
+          "evaluation": [
+            "topics/evaluation.html",
+            "topics/evaluation/page/2/index.html",
+            "topics/evaluation/page/3/index.html"
+          ],
+          "evaluation-integrity": [
+            "topics/evaluation-integrity.html"
+          ],
+          "event-cameras": [
+            "topics/event-cameras.html"
+          ],
+          "executable-evaluation": [
+            "topics/executable-evaluation.html"
+          ],
+          "executable-feedback": [
+            "topics/executable-feedback.html"
+          ],
+          "executable-verification": [
+            "topics/executable-verification.html"
+          ],
+          "execution": [
+            "topics/execution.html"
+          ],
+          "execution-based-validation": [
+            "topics/execution-based-validation.html"
+          ],
+          "execution-feedback": [
+            "topics/execution-feedback.html"
+          ],
+          "execution-verification": [
+            "topics/execution-verification.html"
+          ],
+          "extended-reality": [
+            "topics/extended-reality.html"
+          ],
+          "failure-recovery": [
+            "topics/failure-recovery.html"
+          ],
+          "fault-localization": [
+            "topics/fault-localization.html"
+          ],
+          "federated-learning": [
+            "topics/federated-learning.html"
+          ],
+          "fine-tuning-retention": [
+            "topics/fine-tuning-retention.html"
+          ],
+          "firebase-functions": [
+            "topics/firebase-functions.html"
+          ],
+          "flutter": [
+            "topics/flutter.html"
+          ],
+          "formal-methods": [
+            "topics/formal-methods.html"
+          ],
+          "formal-specifications": [
+            "topics/formal-specifications.html"
+          ],
+          "formal-verification": [
+            "topics/formal-verification.html",
+            "topics/formal-verification/page/2/index.html"
+          ],
+          "framework-roadmap": [
+            "topics/framework-roadmap.html"
+          ],
+          "frontend-generation": [
+            "topics/frontend-generation.html"
+          ],
+          "fuzzing": [
+            "topics/fuzzing.html"
+          ],
+          "generalization": [
+            "topics/generalization.html"
+          ],
+          "generative-ui": [
+            "topics/generative-ui.html"
+          ],
+          "generative-video": [
+            "topics/generative-video.html"
+          ],
+          "genui": [
+            "topics/genui.html"
+          ],
+          "geometry": [
+            "topics/geometry.html"
+          ],
+          "geometry-grounding": [
+            "topics/geometry-grounding.html"
+          ],
+          "github-adoption": [
+            "topics/github-adoption.html"
+          ],
+          "goal-conditioning": [
+            "topics/goal-conditioning.html"
+          ],
+          "google-cloud-next": [
+            "topics/google-cloud-next.html"
+          ],
+          "governance": [
+            "topics/governance.html"
+          ],
+          "gpu-kernels": [
+            "topics/gpu-kernels.html"
+          ],
+          "gpu-optimization": [
+            "topics/gpu-optimization.html"
+          ],
+          "gpu-serving": [
+            "topics/gpu-serving.html"
+          ],
+          "graph-world-models": [
+            "topics/graph-world-models.html"
+          ],
+          "grounding": [
+            "topics/grounding.html"
+          ],
+          "gui-code": [
+            "topics/gui-code.html"
+          ],
+          "hardware-agents": [
+            "topics/hardware-agents.html"
+          ],
+          "hardware-design": [
+            "topics/hardware-design.html"
+          ],
+          "harness-repair": [
+            "topics/harness-repair.html"
+          ],
+          "hierarchical-control": [
+            "topics/hierarchical-control.html"
+          ],
+          "hot-fixes": [
+            "topics/hot-fixes.html"
+          ],
+          "human-demonstrations": [
+            "topics/human-demonstrations.html"
+          ],
+          "human-in-the-loop": [
+            "topics/human-in-the-loop.html"
+          ],
+          "human-oversight": [
+            "topics/human-oversight.html"
+          ],
+          "human-video-data": [
+            "topics/human-video-data.html"
+          ],
+          "humanoid-control": [
+            "topics/humanoid-control.html"
+          ],
+          "humanoid-locomotion": [
+            "topics/humanoid-locomotion.html"
+          ],
+          "humanoid-manipulation": [
+            "topics/humanoid-manipulation.html"
+          ],
+          "humanoid-robots": [
+            "topics/humanoid-robots.html"
+          ],
+          "humanoids": [
+            "topics/humanoids.html"
+          ],
+          "identity-and-access-control": [
+            "topics/identity-and-access-control.html"
+          ],
+          "imitation-learning": [
+            "topics/imitation-learning.html"
+          ],
+          "inference-cost": [
+            "topics/inference-cost.html"
+          ],
+          "inference-efficiency": [
+            "topics/inference-efficiency.html"
+          ],
+          "inference-latency": [
+            "topics/inference-latency.html"
+          ],
+          "inference-time-action-selection": [
+            "topics/inference-time-action-selection.html"
+          ],
+          "interactive-benchmarks": [
+            "topics/interactive-benchmarks.html"
+          ],
+          "interactive-code-generation": [
+            "topics/interactive-code-generation.html"
+          ],
+          "interpretability": [
+            "topics/interpretability.html"
+          ],
+          "jaspr": [
+            "topics/jaspr.html"
+          ],
+          "kotlin-multiplatform": [
+            "topics/kotlin-multiplatform.html"
+          ],
+          "latency": [
+            "topics/latency.html"
+          ],
+          "latent-actions": [
+            "topics/latent-actions.html"
+          ],
+          "latent-reasoning": [
+            "topics/latent-reasoning.html"
+          ],
+          "legacy-modernization": [
+            "topics/legacy-modernization.html"
+          ],
+          "llm-agents": [
+            "topics/llm-agents.html"
+          ],
+          "llm-assisted-software": [
+            "topics/llm-assisted-software.html"
+          ],
+          "llm-budgets": [
+            "topics/llm-budgets.html"
+          ],
+          "llm-coding": [
+            "topics/llm-coding.html"
+          ],
+          "llm-inference": [
+            "topics/llm-inference.html"
+          ],
+          "llm-infrastructure": [
+            "topics/llm-infrastructure.html"
+          ],
+          "llm-operations": [
+            "topics/llm-operations.html"
+          ],
+          "llm-safety": [
+            "topics/llm-safety.html"
+          ],
+          "llm-security": [
+            "topics/llm-security.html"
+          ],
+          "llm-serving": [
+            "topics/llm-serving.html"
+          ],
+          "llm-software-engineering": [
+            "topics/llm-software-engineering.html"
+          ],
+          "llm-supply-chain": [
+            "topics/llm-supply-chain.html"
+          ],
+          "llm-testing": [
+            "topics/llm-testing.html"
+          ],
+          "llm-training": [
+            "topics/llm-training.html"
+          ],
+          "local-ai": [
+            "topics/local-ai.html"
+          ],
+          "local-code-models": [
+            "topics/local-code-models.html"
+          ],
+          "local-inference": [
+            "topics/local-inference.html"
+          ],
+          "local-observability": [
+            "topics/local-observability.html"
+          ],
+          "local-search": [
+            "topics/local-search.html"
+          ],
+          "long-horizon-coding": [
+            "topics/long-horizon-coding.html"
+          ],
+          "long-horizon-control": [
+            "topics/long-horizon-control.html"
+          ],
+          "long-horizon-evaluation": [
+            "topics/long-horizon-evaluation.html"
+          ],
+          "long-horizon-manipulation": [
+            "topics/long-horizon-manipulation.html",
+            "topics/long-horizon-manipulation/page/2/index.html"
+          ],
+          "long-horizon-memory": [
+            "topics/long-horizon-memory.html"
+          ],
+          "long-horizon-planning": [
+            "topics/long-horizon-planning.html"
+          ],
+          "long-horizon-robotics": [
+            "topics/long-horizon-robotics.html"
+          ],
+          "low-data-post-training": [
+            "topics/low-data-post-training.html"
+          ],
+          "maintainability": [
+            "topics/maintainability.html"
+          ],
+          "maintenance-cost": [
+            "topics/maintenance-cost.html"
+          ],
+          "manipulation": [
+            "topics/manipulation.html",
+            "topics/manipulation/page/2/index.html"
+          ],
+          "mcp": [
+            "topics/mcp.html"
+          ],
+          "mcp-governance": [
+            "topics/mcp-governance.html"
+          ],
+          "mcp-security": [
+            "topics/mcp-security.html"
+          ],
+          "mcp-tools": [
+            "topics/mcp-tools.html"
+          ],
+          "medical-robotics": [
+            "topics/medical-robotics.html"
+          ],
+          "memory": [
+            "topics/memory.html"
+          ],
+          "model-based-rl": [
+            "topics/model-based-rl.html"
+          ],
+          "model-compression": [
+            "topics/model-compression.html"
+          ],
+          "model-efficiency": [
+            "topics/model-efficiency.html"
+          ],
+          "model-ownership": [
+            "topics/model-ownership.html"
+          ],
+          "model-predictive-control": [
+            "topics/model-predictive-control.html"
+          ],
+          "model-release-safety": [
+            "topics/model-release-safety.html"
+          ],
+          "model-routing": [
+            "topics/model-routing.html"
+          ],
+          "monitoring": [
+            "topics/monitoring.html"
+          ],
+          "mtls": [
+            "topics/mtls.html"
+          ],
+          "multi-agent-orchestration": [
+            "topics/multi-agent-orchestration.html"
+          ],
+          "multi-agent-systems": [
+            "topics/multi-agent-systems.html"
+          ],
+          "multi-agent-workflows": [
+            "topics/multi-agent-workflows.html"
+          ],
+          "multi-robot-collaboration": [
+            "topics/multi-robot-collaboration.html"
+          ],
+          "multimodal-models": [
+            "topics/multimodal-models.html"
+          ],
+          "multimodal-retrieval": [
+            "topics/multimodal-retrieval.html"
+          ],
+          "multimodal-sensing": [
+            "topics/multimodal-sensing.html"
+          ],
+          "native-ui": [
+            "topics/native-ui.html"
+          ],
+          "navigation": [
+            "topics/navigation.html"
+          ],
+          "oauth": [
+            "topics/oauth.html"
+          ],
+          "object-centric-learning": [
+            "topics/object-centric-learning.html"
+          ],
+          "observability": [
+            "topics/observability.html"
+          ],
+          "occlusion": [
+            "topics/occlusion.html"
+          ],
+          "online-adaptation": [
+            "topics/online-adaptation.html"
+          ],
+          "online-rl": [
+            "topics/online-rl.html"
+          ],
+          "ood-generalization": [
+            "topics/ood-generalization.html"
+          ],
+          "ood-robustness": [
+            "topics/ood-robustness.html"
+          ],
+          "open-ended-coding": [
+            "topics/open-ended-coding.html"
+          ],
+          "open-source-policy": [
+            "topics/open-source-policy.html"
+          ],
+          "open-source-software": [
+            "topics/open-source-software.html"
+          ],
+          "open-weights": [
+            "topics/open-weights.html"
+          ],
+          "partial-hydration": [
+            "topics/partial-hydration.html"
+          ],
+          "performance-engineering": [
+            "topics/performance-engineering.html"
+          ],
+          "photorealistic-simulation": [
+            "topics/photorealistic-simulation.html"
+          ],
+          "planning-security": [
+            "topics/planning-security.html"
+          ],
+          "policy-adaptation": [
+            "topics/policy-adaptation.html"
+          ],
+          "policy-evaluation": [
+            "topics/policy-evaluation.html"
+          ],
+          "procedural-memory": [
+            "topics/procedural-memory.html"
+          ],
+          "product-roadmap": [
+            "topics/product-roadmap.html"
+          ],
+          "production-automation": [
+            "topics/production-automation.html"
+          ],
+          "program-analysis": [
+            "topics/program-analysis.html"
+          ],
+          "program-generation": [
+            "topics/program-generation.html"
+          ],
+          "program-repair": [
+            "topics/program-repair.html",
+            "topics/program-repair/page/2/index.html"
+          ],
+          "program-synthesis": [
+            "topics/program-synthesis.html"
+          ],
+          "prompt-injection": [
+            "topics/prompt-injection.html"
+          ],
+          "provenance": [
+            "topics/provenance.html"
+          ],
+          "pull-requests": [
+            "topics/pull-requests.html"
+          ],
+          "quadrotor-navigation": [
+            "topics/quadrotor-navigation.html"
+          ],
+          "quantization": [
+            "topics/quantization.html"
+          ],
+          "quantum-software": [
+            "topics/quantum-software.html"
+          ],
+          "rag": [
+            "topics/rag.html"
+          ],
+          "rails": [
+            "topics/rails.html"
+          ],
+          "ran-automation": [
+            "topics/ran-automation.html"
+          ],
+          "ratchets": [
+            "topics/ratchets.html"
+          ],
+          "real-robot-evaluation": [
+            "topics/real-robot-evaluation.html"
+          ],
+          "real-time-control": [
+            "topics/real-time-control.html"
+          ],
+          "real-world-evaluation": [
+            "topics/real-world-evaluation.html"
+          ],
+          "reasoning": [
+            "topics/reasoning.html"
+          ],
+          "recommender-systems": [
+            "topics/recommender-systems.html"
+          ],
+          "recursive-self-improvement": [
+            "topics/recursive-self-improvement.html"
+          ],
+          "refactoring-correctness": [
+            "topics/refactoring-correctness.html"
+          ],
+          "regex": [
+            "topics/regex.html"
+          ],
+          "reinforcement-learning": [
+            "topics/reinforcement-learning.html",
+            "topics/reinforcement-learning/page/2/index.html"
+          ],
+          "release-engineering": [
+            "topics/release-engineering.html"
+          ],
+          "repo-generation": [
+            "topics/repo-generation.html"
+          ],
+          "repo-level-codegen": [
+            "topics/repo-level-codegen.html"
+          ],
+          "repo-level-generation": [
+            "topics/repo-level-generation.html"
+          ],
+          "repo-scale-evaluation": [
+            "topics/repo-scale-evaluation.html"
+          ],
+          "repositories": [
+            "topics/repositories.html"
+          ],
+          "repository-automation": [
+            "topics/repository-automation.html"
+          ],
+          "repository-benchmarks": [
+            "topics/repository-benchmarks.html"
+          ],
+          "repository-context": [
+            "topics/repository-context.html"
+          ],
+          "repository-engineering": [
+            "topics/repository-engineering.html"
+          ],
+          "repository-evaluation": [
+            "topics/repository-evaluation.html"
+          ],
+          "repository-execution": [
+            "topics/repository-execution.html"
+          ],
+          "repository-exploration": [
+            "topics/repository-exploration.html"
+          ],
+          "repository-level-generation": [
+            "topics/repository-level-generation.html"
+          ],
+          "repository-mining": [
+            "topics/repository-mining.html"
+          ],
+          "repository-reasoning": [
+            "topics/repository-reasoning.html"
+          ],
+          "repository-repair": [
+            "topics/repository-repair.html"
+          ],
+          "repository-scale-generation": [
+            "topics/repository-scale-generation.html"
+          ],
+          "repository-verification": [
+            "topics/repository-verification.html"
+          ],
+          "repository-workflows": [
+            "topics/repository-workflows.html"
+          ],
+          "reproducibility": [
+            "topics/reproducibility.html"
+          ],
+          "requirement-alignment": [
+            "topics/requirement-alignment.html"
+          ],
+          "requirements-engineering": [
+            "topics/requirements-engineering.html"
+          ],
+          "research-automation": [
+            "topics/research-automation.html"
+          ],
+          "retrieval": [
+            "topics/retrieval.html"
+          ],
+          "reusable-skills": [
+            "topics/reusable-skills.html"
+          ],
+          "reward-hacking": [
+            "topics/reward-hacking.html"
+          ],
+          "reward-models": [
+            "topics/reward-models.html"
+          ],
+          "robot-adaptation": [
+            "topics/robot-adaptation.html"
+          ],
+          "robot-benchmarks": [
+            "topics/robot-benchmarks.html"
+          ],
+          "robot-control": [
+            "topics/robot-control.html"
+          ],
+          "robot-data": [
+            "topics/robot-data.html"
+          ],
+          "robot-data-collection": [
+            "topics/robot-data-collection.html"
+          ],
+          "robot-deployment": [
+            "topics/robot-deployment.html"
+          ],
+          "robot-evaluation": [
+            "topics/robot-evaluation.html"
+          ],
+          "robot-learning": [
+            "topics/robot-learning.html",
+            "topics/robot-learning/page/2/index.html",
+            "topics/robot-learning/page/3/index.html"
+          ],
+          "robot-manipulation": [
+            "topics/robot-manipulation.html",
+            "topics/robot-manipulation/page/2/index.html",
+            "topics/robot-manipulation/page/3/index.html",
+            "topics/robot-manipulation/page/4/index.html"
+          ],
+          "robot-planning": [
+            "topics/robot-planning.html"
+          ],
+          "robot-policy-safety": [
+            "topics/robot-policy-safety.html"
+          ],
+          "robot-safety": [
+            "topics/robot-safety.html",
+            "topics/robot-safety/page/2/index.html"
+          ],
+          "robot-security": [
+            "topics/robot-security.html"
+          ],
+          "robot-serving": [
+            "topics/robot-serving.html"
+          ],
+          "robot-vla": [
+            "topics/robot-vla.html"
+          ],
+          "robot-world-models": [
+            "topics/robot-world-models.html"
+          ],
+          "robotic-manipulation": [
+            "topics/robotic-manipulation.html"
+          ],
+          "robotics": [
+            "topics/robotics.html",
+            "topics/robotics/page/2/index.html",
+            "topics/robotics/page/3/index.html",
+            "topics/robotics/page/4/index.html",
+            "topics/robotics/page/5/index.html",
+            "topics/robotics/page/6/index.html",
+            "topics/robotics/page/7/index.html",
+            "topics/robotics/page/8/index.html",
+            "topics/robotics/page/9/index.html"
+          ],
+          "robotics-evaluation": [
+            "topics/robotics-evaluation.html"
+          ],
+          "robustness": [
+            "topics/robustness.html"
+          ],
+          "runtime-control": [
+            "topics/runtime-control.html"
+          ],
+          "runtime-debugging": [
+            "topics/runtime-debugging.html"
+          ],
+          "runtime-diagnosis": [
+            "topics/runtime-diagnosis.html"
+          ],
+          "runtime-enforcement": [
+            "topics/runtime-enforcement.html"
+          ],
+          "runtime-governance": [
+            "topics/runtime-governance.html"
+          ],
+          "runtime-security": [
+            "topics/runtime-security.html"
+          ],
+          "runtime-systems": [
+            "topics/runtime-systems.html"
+          ],
+          "runtime-traces": [
+            "topics/runtime-traces.html"
+          ],
+          "runtime-verification": [
+            "topics/runtime-verification.html"
+          ],
+          "safety": [
+            "topics/safety.html",
+            "topics/safety/page/2/index.html"
+          ],
+          "safety-evaluation": [
+            "topics/safety-evaluation.html"
+          ],
+          "sample-efficiency": [
+            "topics/sample-efficiency.html"
+          ],
+          "sandbox-infrastructure": [
+            "topics/sandbox-infrastructure.html"
+          ],
+          "sandbox-security": [
+            "topics/sandbox-security.html"
+          ],
+          "scientific-software": [
+            "topics/scientific-software.html"
+          ],
+          "secure-code": [
+            "topics/secure-code.html"
+          ],
+          "secure-code-generation": [
+            "topics/secure-code-generation.html"
+          ],
+          "security": [
+            "topics/security.html"
+          ],
+          "security-agents": [
+            "topics/security-agents.html"
+          ],
+          "security-analysis": [
+            "topics/security-analysis.html"
+          ],
+          "security-benchmarks": [
+            "topics/security-benchmarks.html"
+          ],
+          "security-evaluation": [
+            "topics/security-evaluation.html"
+          ],
+          "security-repair": [
+            "topics/security-repair.html"
+          ],
+          "security-review": [
+            "topics/security-review.html"
+          ],
+          "security-testing": [
+            "topics/security-testing.html"
+          ],
+          "self-evolving-agents": [
+            "topics/self-evolving-agents.html"
+          ],
+          "semantic-grounding": [
+            "topics/semantic-grounding.html"
+          ],
+          "service-recommendation": [
+            "topics/service-recommendation.html"
+          ],
+          "shared-autonomy": [
+            "topics/shared-autonomy.html"
+          ],
+          "shared-business-logic": [
+            "topics/shared-business-logic.html"
+          ],
+          "sim-real-correlation": [
+            "topics/sim-real-correlation.html"
+          ],
+          "sim-to-real": [
+            "topics/sim-to-real.html",
+            "topics/sim-to-real/page/2/index.html"
+          ],
+          "sim2real": [
+            "topics/sim2real.html"
+          ],
+          "simulation": [
+            "topics/simulation.html"
+          ],
+          "simulation-augmentation": [
+            "topics/simulation-augmentation.html"
+          ],
+          "simulation-evaluation": [
+            "topics/simulation-evaluation.html"
+          ],
+          "slot-placement": [
+            "topics/slot-placement.html"
+          ],
+          "small-language-models": [
+            "topics/small-language-models.html"
+          ],
+          "smart-contracts": [
+            "topics/smart-contracts.html"
+          ],
+          "social-navigation": [
+            "topics/social-navigation.html"
+          ],
+          "software-agents": [
+            "topics/software-agents.html"
+          ],
+          "software-analysis": [
+            "topics/software-analysis.html"
+          ],
+          "software-architecture": [
+            "topics/software-architecture.html"
+          ],
+          "software-assurance": [
+            "topics/software-assurance.html"
+          ],
+          "software-benchmarks": [
+            "topics/software-benchmarks.html"
+          ],
+          "software-economics": [
+            "topics/software-economics.html"
+          ],
+          "software-engineering": [
+            "topics/software-engineering.html",
+            "topics/software-engineering/page/2/index.html",
+            "topics/software-engineering/page/3/index.html",
+            "topics/software-engineering/page/4/index.html",
+            "topics/software-engineering/page/5/index.html"
+          ],
+          "software-engineering-agents": [
+            "topics/software-engineering-agents.html"
+          ],
+          "software-engineering-ai": [
+            "topics/software-engineering-ai.html"
+          ],
+          "software-engineering-benchmarks": [
+            "topics/software-engineering-benchmarks.html",
+            "topics/software-engineering-benchmarks/page/2/index.html"
+          ],
+          "software-engineering-evaluation": [
+            "topics/software-engineering-evaluation.html"
+          ],
+          "software-evaluation": [
+            "topics/software-evaluation.html"
+          ],
+          "software-factories": [
+            "topics/software-factories.html"
+          ],
+          "software-maintenance": [
+            "topics/software-maintenance.html"
+          ],
+          "software-quality": [
+            "topics/software-quality.html"
+          ],
+          "software-repair": [
+            "topics/software-repair.html"
+          ],
+          "software-security": [
+            "topics/software-security.html"
+          ],
+          "software-supply-chain-security": [
+            "topics/software-supply-chain-security.html"
+          ],
+          "software-testing": [
+            "topics/software-testing.html",
+            "topics/software-testing/page/2/index.html"
+          ],
+          "software-verification": [
+            "topics/software-verification.html",
+            "topics/software-verification/page/2/index.html"
+          ],
+          "spatial-attention": [
+            "topics/spatial-attention.html"
+          ],
+          "spatial-grounding": [
+            "topics/spatial-grounding.html"
+          ],
+          "spatial-memory": [
+            "topics/spatial-memory.html"
+          ],
+          "spatial-modeling": [
+            "topics/spatial-modeling.html"
+          ],
+          "spatial-reasoning": [
+            "topics/spatial-reasoning.html"
+          ],
+          "static-analysis": [
+            "topics/static-analysis.html"
+          ],
+          "steerability": [
+            "topics/steerability.html"
+          ],
+          "structured-output": [
+            "topics/structured-output.html"
+          ],
+          "supply-chain-risk": [
+            "topics/supply-chain-risk.html"
+          ],
+          "surgical-ai": [
+            "topics/surgical-ai.html"
+          ],
+          "synthetic-data": [
+            "topics/synthetic-data.html"
+          ],
+          "synthetic-robot-data": [
+            "topics/synthetic-robot-data.html"
+          ],
+          "sysml": [
+            "topics/sysml.html"
+          ],
+          "systems-code": [
+            "topics/systems-code.html"
+          ],
+          "systems-optimization": [
+            "topics/systems-optimization.html"
+          ],
+          "tactile-control": [
+            "topics/tactile-control.html"
+          ],
+          "tactile-manipulation": [
+            "topics/tactile-manipulation.html"
+          ],
+          "tactile-pretraining": [
+            "topics/tactile-pretraining.html"
+          ],
+          "tactile-sensing": [
+            "topics/tactile-sensing.html",
+            "topics/tactile-sensing/page/2/index.html"
+          ],
+          "task-memory": [
+            "topics/task-memory.html"
+          ],
+          "teleoperation": [
+            "topics/teleoperation.html"
+          ],
+          "temporal-memory": [
+            "topics/temporal-memory.html"
+          ],
+          "temporal-modeling": [
+            "topics/temporal-modeling.html"
+          ],
+          "terminal-agents": [
+            "topics/terminal-agents.html"
+          ],
+          "terminal-ui": [
+            "topics/terminal-ui.html"
+          ],
+          "test-evolution": [
+            "topics/test-evolution.html"
+          ],
+          "test-generation": [
+            "topics/test-generation.html"
+          ],
+          "test-migration": [
+            "topics/test-migration.html"
+          ],
+          "test-oracles": [
+            "topics/test-oracles.html"
+          ],
+          "test-structure": [
+            "topics/test-structure.html"
+          ],
+          "test-time-adaptation": [
+            "topics/test-time-adaptation.html"
+          ],
+          "test-time-compute": [
+            "topics/test-time-compute.html"
+          ],
+          "test-time-control": [
+            "topics/test-time-control.html"
+          ],
+          "test-time-rl": [
+            "topics/test-time-rl.html"
+          ],
+          "test-time-scaling": [
+            "topics/test-time-scaling.html"
+          ],
+          "testing": [
+            "topics/testing.html"
+          ],
+          "text-to-sql": [
+            "topics/text-to-sql.html"
+          ],
+          "token-cost": [
+            "topics/token-cost.html"
+          ],
+          "token-costs": [
+            "topics/token-costs.html"
+          ],
+          "token-efficiency": [
+            "topics/token-efficiency.html"
+          ],
+          "tool-calling": [
+            "topics/tool-calling.html"
+          ],
+          "tool-provenance": [
+            "topics/tool-provenance.html"
+          ],
+          "tool-reliability": [
+            "topics/tool-reliability.html"
+          ],
+          "tool-use": [
+            "topics/tool-use.html"
+          ],
+          "tool-use-evaluation": [
+            "topics/tool-use-evaluation.html"
+          ],
+          "trace-based-training": [
+            "topics/trace-based-training.html"
+          ],
+          "traceability": [
+            "topics/traceability.html"
+          ],
+          "training-data": [
+            "topics/training-data.html"
+          ],
+          "trajectory-diagnostics": [
+            "topics/trajectory-diagnostics.html"
+          ],
+          "trajectory-training": [
+            "topics/trajectory-training.html"
+          ],
+          "uav-navigation": [
+            "topics/uav-navigation.html"
+          ],
+          "uav-tracking": [
+            "topics/uav-tracking.html"
+          ],
+          "verification": [
+            "topics/verification.html",
+            "topics/verification/page/2/index.html"
+          ],
+          "video-evaluation": [
+            "topics/video-evaluation.html"
+          ],
+          "video-planning": [
+            "topics/video-planning.html"
+          ],
+          "vision-language-action": [
+            "topics/vision-language-action.html",
+            "topics/vision-language-action/page/2/index.html",
+            "topics/vision-language-action/page/3/index.html",
+            "topics/vision-language-action/page/4/index.html",
+            "topics/vision-language-action/page/5/index.html",
+            "topics/vision-language-action/page/6/index.html",
+            "topics/vision-language-action/page/7/index.html",
+            "topics/vision-language-action/page/8/index.html"
+          ],
+          "vision-language-action-models": [
+            "topics/vision-language-action-models.html",
+            "topics/vision-language-action-models/page/2/index.html",
+            "topics/vision-language-action-models/page/3/index.html",
+            "topics/vision-language-action-models/page/4/index.html"
+          ],
+          "vision-language-action-policies": [
+            "topics/vision-language-action-policies.html"
+          ],
+          "vision-language-navigation": [
+            "topics/vision-language-navigation.html"
+          ],
+          "vision-to-code-grounding": [
+            "topics/vision-to-code-grounding.html"
+          ],
+          "visual-foresight": [
+            "topics/visual-foresight.html"
+          ],
+          "visual-reinforcement-learning": [
+            "topics/visual-reinforcement-learning.html"
+          ],
+          "vla": [
+            "topics/vla.html",
+            "topics/vla/page/2/index.html"
+          ],
+          "vla-finetuning": [
+            "topics/vla-finetuning.html"
+          ],
+          "vla-models": [
+            "topics/vla-models.html"
+          ],
+          "vla-policies": [
+            "topics/vla-policies.html"
+          ],
+          "vla-reliability": [
+            "topics/vla-reliability.html"
+          ],
+          "vla-robustness": [
+            "topics/vla-robustness.html"
+          ],
+          "vla-safety": [
+            "topics/vla-safety.html"
+          ],
+          "vulnerability-repair": [
+            "topics/vulnerability-repair.html"
+          ],
+          "web-infrastructure": [
+            "topics/web-infrastructure.html"
+          ],
+          "web-reuse": [
+            "topics/web-reuse.html"
+          ],
+          "webassembly": [
+            "topics/webassembly.html"
+          ],
+          "workflow-automation": [
+            "topics/workflow-automation.html"
+          ],
+          "workflow-evaluation": [
+            "topics/workflow-evaluation.html"
+          ],
+          "workflow-reliability": [
+            "topics/workflow-reliability.html"
+          ],
+          "workflow-security": [
+            "topics/workflow-security.html"
+          ],
+          "world-action-models": [
+            "topics/world-action-models.html"
+          ],
+          "world-model-safety": [
+            "topics/world-model-safety.html"
+          ],
+          "world-models": [
+            "topics/world-models.html",
+            "topics/world-models/page/2/index.html",
+            "topics/world-models/page/3/index.html",
+            "topics/world-models/page/4/index.html",
+            "topics/world-models/page/5/index.html",
+            "topics/world-models/page/6/index.html",
+            "topics/world-models/page/7/index.html",
+            "topics/world-models/page/8/index.html",
+            "topics/world-models/page/9/index.html",
+            "topics/world-models/page/10/index.html"
+          ],
+          "zero-shot-vision": [
+            "topics/zero-shot-vision.html"
+          ]
+        },
         "topic_pages": [
           "topics/3d-gaussian-splatting.html",
           "topics/3d-generation.html",
@@ -2047,6 +3818,31 @@
           "topics/zero-shot-vision.html"
         ],
         "topics_index": "topics/index.html",
+        "topics_index_pages": [
+          "topics/index.html",
+          "topics/page/2/index.html",
+          "topics/page/3/index.html",
+          "topics/page/4/index.html",
+          "topics/page/5/index.html",
+          "topics/page/6/index.html",
+          "topics/page/7/index.html",
+          "topics/page/8/index.html",
+          "topics/page/9/index.html",
+          "topics/page/10/index.html",
+          "topics/page/11/index.html",
+          "topics/page/12/index.html",
+          "topics/page/13/index.html",
+          "topics/page/14/index.html",
+          "topics/page/15/index.html",
+          "topics/page/16/index.html",
+          "topics/page/17/index.html",
+          "topics/page/18/index.html",
+          "topics/page/19/index.html",
+          "topics/page/20/index.html",
+          "topics/page/21/index.html",
+          "topics/page/22/index.html",
+          "topics/page/23/index.html"
+        ],
         "trend_pages": [
           "trends/embodied-ai--day--2026-07-13--trend--861.html",
           "trends/software-intelligence--day--2026-07-13--trend--1896.html",
@@ -2274,10 +4070,43 @@
           "trends/embodied-ai--day--2026-03-30--trend--9.html",
           "trends/software-intelligence--day--2026-03-30--trend--20.html"
         ],
-        "trends_index": "trends/index.html"
+        "trends_index": "trends/index.html",
+        "trends_index_pages": [
+          "trends/index.html",
+          "trends/page/2/index.html",
+          "trends/page/3/index.html",
+          "trends/page/4/index.html",
+          "trends/page/5/index.html",
+          "trends/page/6/index.html",
+          "trends/page/7/index.html",
+          "trends/page/8/index.html",
+          "trends/page/9/index.html",
+          "trends/page/10/index.html",
+          "trends/page/11/index.html",
+          "trends/page/12/index.html",
+          "trends/page/13/index.html",
+          "trends/page/14/index.html",
+          "trends/page/15/index.html",
+          "trends/page/16/index.html",
+          "trends/page/17/index.html",
+          "trends/page/18/index.html",
+          "trends/page/19/index.html"
+        ]
       },
       "zh-cn": {
         "archive": "archive.html",
+        "archive_pages": [
+          "archive.html",
+          "archive/page/2/index.html",
+          "archive/page/3/index.html",
+          "archive/page/4/index.html",
+          "archive/page/5/index.html",
+          "archive/page/6/index.html",
+          "archive/page/7/index.html",
+          "archive/page/8/index.html",
+          "archive/page/9/index.html",
+          "archive/page/10/index.html"
+        ],
         "idea_pages": [
           "ideas/embodied-ai--day--2026-07-13--ideas.html",
           "ideas/software-intelligence--day--2026-07-13--ideas.html",
@@ -2506,6 +4335,27 @@
           "ideas/software-intelligence--day--2026-03-30--ideas.html"
         ],
         "ideas_index": "ideas/index.html",
+        "ideas_index_pages": [
+          "ideas/index.html",
+          "ideas/page/2/index.html",
+          "ideas/page/3/index.html",
+          "ideas/page/4/index.html",
+          "ideas/page/5/index.html",
+          "ideas/page/6/index.html",
+          "ideas/page/7/index.html",
+          "ideas/page/8/index.html",
+          "ideas/page/9/index.html",
+          "ideas/page/10/index.html",
+          "ideas/page/11/index.html",
+          "ideas/page/12/index.html",
+          "ideas/page/13/index.html",
+          "ideas/page/14/index.html",
+          "ideas/page/15/index.html",
+          "ideas/page/16/index.html",
+          "ideas/page/17/index.html",
+          "ideas/page/18/index.html",
+          "ideas/page/19/index.html"
+        ],
         "index": "index.html",
         "item_pages": [
           "items/software-intelligence--2026-07-13--long-term-memory-cortex-for-agents-that-maintains-tensions.html",
@@ -3770,6 +5620,1924 @@
         ],
         "nojekyll": ".nojekyll",
         "stylesheet": "assets/site.css",
+        "topic_collection_pages": {
+          "3d-cao-zuo": [
+            "topics/3d-cao-zuo.html"
+          ],
+          "3d-ding-wei": [
+            "topics/3d-ding-wei.html"
+          ],
+          "3d-gaussian-splatting": [
+            "topics/3d-gaussian-splatting.html"
+          ],
+          "3d-generation": [
+            "topics/3d-generation.html"
+          ],
+          "3d-geometry": [
+            "topics/3d-geometry.html"
+          ],
+          "3d-grounding": [
+            "topics/3d-grounding.html"
+          ],
+          "3d-manipulation": [
+            "topics/3d-manipulation.html"
+          ],
+          "3d-perception": [
+            "topics/3d-perception.html"
+          ],
+          "3d-planning": [
+            "topics/3d-planning.html"
+          ],
+          "action-control": [
+            "topics/action-control.html"
+          ],
+          "action-representation": [
+            "topics/action-representation.html"
+          ],
+          "action-representations": [
+            "topics/action-representations.html"
+          ],
+          "active-perception": [
+            "topics/active-perception.html"
+          ],
+          "adaptation": [
+            "topics/adaptation.html"
+          ],
+          "adaptive-control": [
+            "topics/adaptive-control.html"
+          ],
+          "adk": [
+            "topics/adk.html"
+          ],
+          "adversarial-reliability": [
+            "topics/adversarial-reliability.html"
+          ],
+          "adversarial-robustness": [
+            "topics/adversarial-robustness.html"
+          ],
+          "affordance-grounding": [
+            "topics/affordance-grounding.html"
+          ],
+          "affordance-learning": [
+            "topics/affordance-learning.html"
+          ],
+          "agent-benchmarks": [
+            "topics/agent-benchmarks.html"
+          ],
+          "agent-context": [
+            "topics/agent-context.html"
+          ],
+          "agent-control": [
+            "topics/agent-control.html"
+          ],
+          "agent-development-kit": [
+            "topics/agent-development-kit.html"
+          ],
+          "agent-evaluation": [
+            "topics/agent-evaluation.html",
+            "topics/agent-evaluation/page/2/index.html",
+            "topics/agent-evaluation/page/3/index.html",
+            "topics/agent-evaluation/page/4/index.html"
+          ],
+          "agent-governance": [
+            "topics/agent-governance.html",
+            "topics/agent-governance/page/2/index.html"
+          ],
+          "agent-guardrails": [
+            "topics/agent-guardrails.html"
+          ],
+          "agent-harness": [
+            "topics/agent-harness.html"
+          ],
+          "agent-harnesses": [
+            "topics/agent-harnesses.html",
+            "topics/agent-harnesses/page/2/index.html"
+          ],
+          "agent-identity": [
+            "topics/agent-identity.html"
+          ],
+          "agent-infrastructure": [
+            "topics/agent-infrastructure.html"
+          ],
+          "agent-ji-yi": [
+            "topics/agent-ji-yi.html"
+          ],
+          "agent-memory": [
+            "topics/agent-memory.html",
+            "topics/agent-memory/page/2/index.html"
+          ],
+          "agent-monitoring": [
+            "topics/agent-monitoring.html"
+          ],
+          "agent-observability": [
+            "topics/agent-observability.html"
+          ],
+          "agent-operations": [
+            "topics/agent-operations.html"
+          ],
+          "agent-ops": [
+            "topics/agent-ops.html"
+          ],
+          "agent-optimization": [
+            "topics/agent-optimization.html"
+          ],
+          "agent-orchestration": [
+            "topics/agent-orchestration.html"
+          ],
+          "agent-reliability": [
+            "topics/agent-reliability.html"
+          ],
+          "agent-runtime": [
+            "topics/agent-runtime.html"
+          ],
+          "agent-runtime-control": [
+            "topics/agent-runtime-control.html"
+          ],
+          "agent-runtimes": [
+            "topics/agent-runtimes.html"
+          ],
+          "agent-safety": [
+            "topics/agent-safety.html",
+            "topics/agent-safety/page/2/index.html"
+          ],
+          "agent-security": [
+            "topics/agent-security.html",
+            "topics/agent-security/page/2/index.html",
+            "topics/agent-security/page/3/index.html"
+          ],
+          "agent-skills": [
+            "topics/agent-skills.html"
+          ],
+          "agent-systems": [
+            "topics/agent-systems.html"
+          ],
+          "agent-testing": [
+            "topics/agent-testing.html"
+          ],
+          "agent-tooling": [
+            "topics/agent-tooling.html"
+          ],
+          "agent-tracing": [
+            "topics/agent-tracing.html"
+          ],
+          "agent-trust": [
+            "topics/agent-trust.html"
+          ],
+          "agent-workspaces": [
+            "topics/agent-workspaces.html"
+          ],
+          "agent-zhi-li": [
+            "topics/agent-zhi-li.html"
+          ],
+          "agentic-code-review": [
+            "topics/agentic-code-review.html"
+          ],
+          "agentic-coding": [
+            "topics/agentic-coding.html"
+          ],
+          "agentic-desktops": [
+            "topics/agentic-desktops.html"
+          ],
+          "agentic-software-engineering": [
+            "topics/agentic-software-engineering.html"
+          ],
+          "ai-agents": [
+            "topics/ai-agents.html"
+          ],
+          "ai-bian-cheng-zhi-neng-ti": [
+            "topics/ai-bian-cheng-zhi-neng-ti.html"
+          ],
+          "ai-bian-ma-dai-li": [
+            "topics/ai-bian-ma-dai-li.html"
+          ],
+          "ai-code-quality": [
+            "topics/ai-code-quality.html"
+          ],
+          "ai-code-review": [
+            "topics/ai-code-review.html"
+          ],
+          "ai-coding-agents": [
+            "topics/ai-coding-agents.html",
+            "topics/ai-coding-agents/page/2/index.html"
+          ],
+          "ai-control": [
+            "topics/ai-control.html"
+          ],
+          "ai-cost-control": [
+            "topics/ai-cost-control.html"
+          ],
+          "ai-cost-governance": [
+            "topics/ai-cost-governance.html"
+          ],
+          "ai-cost-tracking": [
+            "topics/ai-cost-tracking.html"
+          ],
+          "ai-dai-ma-shen-cha": [
+            "topics/ai-dai-ma-shen-cha.html"
+          ],
+          "ai-education": [
+            "topics/ai-education.html"
+          ],
+          "ai-generated-software": [
+            "topics/ai-generated-software.html"
+          ],
+          "ai-governance": [
+            "topics/ai-governance.html"
+          ],
+          "ai-operations": [
+            "topics/ai-operations.html"
+          ],
+          "ai-personalization": [
+            "topics/ai-personalization.html"
+          ],
+          "ai-product-due-diligence": [
+            "topics/ai-product-due-diligence.html"
+          ],
+          "ai-ready-docs": [
+            "topics/ai-ready-docs.html"
+          ],
+          "ai-reliability": [
+            "topics/ai-reliability.html"
+          ],
+          "ai-safety": [
+            "topics/ai-safety.html"
+          ],
+          "ai-security": [
+            "topics/ai-security.html"
+          ],
+          "ai-ux": [
+            "topics/ai-ux.html"
+          ],
+          "ai-workflow": [
+            "topics/ai-workflow.html"
+          ],
+          "antigravity": [
+            "topics/antigravity.html"
+          ],
+          "api-testing": [
+            "topics/api-testing.html"
+          ],
+          "architecture-boundaries": [
+            "topics/architecture-boundaries.html"
+          ],
+          "articulation": [
+            "topics/articulation.html"
+          ],
+          "autonomous-driving": [
+            "topics/autonomous-driving.html"
+          ],
+          "autonomous-driving-safety": [
+            "topics/autonomous-driving-safety.html"
+          ],
+          "autonomy-governance": [
+            "topics/autonomy-governance.html"
+          ],
+          "behavior-cloning": [
+            "topics/behavior-cloning.html"
+          ],
+          "benchmark-auditing": [
+            "topics/benchmark-auditing.html"
+          ],
+          "benchmark-contamination": [
+            "topics/benchmark-contamination.html"
+          ],
+          "benchmark-security": [
+            "topics/benchmark-security.html"
+          ],
+          "benchmarking": [
+            "topics/benchmarking.html"
+          ],
+          "benchmarks": [
+            "topics/benchmarks.html",
+            "topics/benchmarks/page/2/index.html",
+            "topics/benchmarks/page/3/index.html"
+          ],
+          "bian-ma-agent": [
+            "topics/bian-ma-agent.html"
+          ],
+          "bian-ma-dai-li": [
+            "topics/bian-ma-dai-li.html"
+          ],
+          "bian-ma-zhi-neng-ti": [
+            "topics/bian-ma-zhi-neng-ti.html"
+          ],
+          "blockchain-state": [
+            "topics/blockchain-state.html"
+          ],
+          "browser-testing": [
+            "topics/browser-testing.html"
+          ],
+          "browser-tooling": [
+            "topics/browser-tooling.html"
+          ],
+          "bug-localization": [
+            "topics/bug-localization.html"
+          ],
+          "bug-reports": [
+            "topics/bug-reports.html"
+          ],
+          "bug-validation": [
+            "topics/bug-validation.html"
+          ],
+          "c-to-rust-migration": [
+            "topics/c-to-rust-migration.html"
+          ],
+          "cad-automation": [
+            "topics/cad-automation.html"
+          ],
+          "ce-lue-gua-ying": [
+            "topics/ce-lue-gua-ying.html"
+          ],
+          "ce-shi-sheng-cheng": [
+            "topics/ce-shi-sheng-cheng.html"
+          ],
+          "ce-shi-yu-yan-ji": [
+            "topics/ce-shi-yu-yan-ji.html"
+          ],
+          "cheng-ben-kong-zhi": [
+            "topics/cheng-ben-kong-zhi.html"
+          ],
+          "cheng-xu-xiu-fu": [
+            "topics/cheng-xu-xiu-fu.html"
+          ],
+          "claude-code": [
+            "topics/claude-code.html"
+          ],
+          "coarse-to-fine-control": [
+            "topics/coarse-to-fine-control.html"
+          ],
+          "code-agents": [
+            "topics/code-agents.html"
+          ],
+          "code-benchmarks": [
+            "topics/code-benchmarks.html"
+          ],
+          "code-editing": [
+            "topics/code-editing.html"
+          ],
+          "code-evaluation": [
+            "topics/code-evaluation.html"
+          ],
+          "code-generation": [
+            "topics/code-generation.html",
+            "topics/code-generation/page/2/index.html"
+          ],
+          "code-generation-benchmarks": [
+            "topics/code-generation-benchmarks.html"
+          ],
+          "code-llm-evaluation": [
+            "topics/code-llm-evaluation.html"
+          ],
+          "code-model-calibration": [
+            "topics/code-model-calibration.html"
+          ],
+          "code-quality": [
+            "topics/code-quality.html"
+          ],
+          "code-repair": [
+            "topics/code-repair.html"
+          ],
+          "code-review": [
+            "topics/code-review.html"
+          ],
+          "code-review-automation": [
+            "topics/code-review-automation.html"
+          ],
+          "code-safety": [
+            "topics/code-safety.html"
+          ],
+          "code-search": [
+            "topics/code-search.html"
+          ],
+          "code-security": [
+            "topics/code-security.html"
+          ],
+          "code-translation": [
+            "topics/code-translation.html"
+          ],
+          "code-uncertainty": [
+            "topics/code-uncertainty.html"
+          ],
+          "coding-agents": [
+            "topics/coding-agents.html",
+            "topics/coding-agents/page/2/index.html",
+            "topics/coding-agents/page/3/index.html",
+            "topics/coding-agents/page/4/index.html",
+            "topics/coding-agents/page/5/index.html",
+            "topics/coding-agents/page/6/index.html",
+            "topics/coding-agents/page/7/index.html",
+            "topics/coding-agents/page/8/index.html",
+            "topics/coding-agents/page/9/index.html",
+            "topics/coding-agents/page/10/index.html",
+            "topics/coding-agents/page/11/index.html",
+            "topics/coding-agents/page/12/index.html",
+            "topics/coding-agents/page/13/index.html",
+            "topics/coding-agents/page/14/index.html",
+            "topics/coding-agents/page/15/index.html",
+            "topics/coding-agents/page/16/index.html"
+          ],
+          "coding-benchmarks": [
+            "topics/coding-benchmarks.html"
+          ],
+          "coding-llms": [
+            "topics/coding-llms.html"
+          ],
+          "coding-productivity": [
+            "topics/coding-productivity.html"
+          ],
+          "community-events": [
+            "topics/community-events.html"
+          ],
+          "competitive-programming": [
+            "topics/competitive-programming.html"
+          ],
+          "compiler-feedback": [
+            "topics/compiler-feedback.html"
+          ],
+          "compiler-tuning": [
+            "topics/compiler-tuning.html"
+          ],
+          "contact-control": [
+            "topics/contact-control.html"
+          ],
+          "contact-rich-control": [
+            "topics/contact-rich-control.html"
+          ],
+          "contact-rich-manipulation": [
+            "topics/contact-rich-manipulation.html"
+          ],
+          "contact-rich-robotics": [
+            "topics/contact-rich-robotics.html"
+          ],
+          "context-compression": [
+            "topics/context-compression.html"
+          ],
+          "context-control": [
+            "topics/context-control.html"
+          ],
+          "context-engineering": [
+            "topics/context-engineering.html"
+          ],
+          "context-management": [
+            "topics/context-management.html"
+          ],
+          "context-pruning": [
+            "topics/context-pruning.html"
+          ],
+          "context-recovery": [
+            "topics/context-recovery.html"
+          ],
+          "continual-learning": [
+            "topics/continual-learning.html"
+          ],
+          "control": [
+            "topics/control.html"
+          ],
+          "cost-control": [
+            "topics/cost-control.html"
+          ],
+          "cost-governance": [
+            "topics/cost-governance.html"
+          ],
+          "credential-security": [
+            "topics/credential-security.html"
+          ],
+          "cross-embodiment": [
+            "topics/cross-embodiment.html"
+          ],
+          "cross-embodiment-learning": [
+            "topics/cross-embodiment-learning.html"
+          ],
+          "cross-platform-development": [
+            "topics/cross-platform-development.html"
+          ],
+          "cross-platform-frameworks": [
+            "topics/cross-platform-frameworks.html"
+          ],
+          "cross-platform-mobile": [
+            "topics/cross-platform-mobile.html"
+          ],
+          "cross-robot-transfer": [
+            "topics/cross-robot-transfer.html"
+          ],
+          "dai-li-an-quan": [
+            "topics/dai-li-an-quan.html"
+          ],
+          "dai-li-ji-neng": [
+            "topics/dai-li-ji-neng.html"
+          ],
+          "dai-li-ji-yi": [
+            "topics/dai-li-ji-yi.html"
+          ],
+          "dai-li-ke-guan-ce-xing": [
+            "topics/dai-li-ke-guan-ce-xing.html"
+          ],
+          "dai-li-ping-gu": [
+            "topics/dai-li-ping-gu.html"
+          ],
+          "dai-ma-cang-ku-shang-xia-wen": [
+            "topics/dai-ma-cang-ku-shang-xia-wen.html"
+          ],
+          "dai-ma-zhi-neng-ti": [
+            "topics/dai-ma-zhi-neng-ti.html"
+          ],
+          "dart": [
+            "topics/dart.html"
+          ],
+          "data-annotation": [
+            "topics/data-annotation.html"
+          ],
+          "data-efficiency": [
+            "topics/data-efficiency.html"
+          ],
+          "data-generation": [
+            "topics/data-generation.html"
+          ],
+          "data-poisoning": [
+            "topics/data-poisoning.html"
+          ],
+          "data-privacy": [
+            "topics/data-privacy.html"
+          ],
+          "database-correctness": [
+            "topics/database-correctness.html"
+          ],
+          "deformable-objects": [
+            "topics/deformable-objects.html"
+          ],
+          "dependency-risk": [
+            "topics/dependency-risk.html"
+          ],
+          "deployment-adaptation": [
+            "topics/deployment-adaptation.html"
+          ],
+          "deployment-systems": [
+            "topics/deployment-systems.html"
+          ],
+          "desktop-automation": [
+            "topics/desktop-automation.html"
+          ],
+          "desktop-support": [
+            "topics/desktop-support.html"
+          ],
+          "deterministic-validation": [
+            "topics/deterministic-validation.html"
+          ],
+          "developer-docs": [
+            "topics/developer-docs.html"
+          ],
+          "developer-learning": [
+            "topics/developer-learning.html"
+          ],
+          "developer-productivity": [
+            "topics/developer-productivity.html"
+          ],
+          "developer-relations": [
+            "topics/developer-relations.html"
+          ],
+          "developer-skills": [
+            "topics/developer-skills.html"
+          ],
+          "developer-tooling": [
+            "topics/developer-tooling.html"
+          ],
+          "developer-tools": [
+            "topics/developer-tools.html"
+          ],
+          "developer-workflows": [
+            "topics/developer-workflows.html"
+          ],
+          "device-sandboxes": [
+            "topics/device-sandboxes.html"
+          ],
+          "devops-an-quan": [
+            "topics/devops-an-quan.html"
+          ],
+          "devops-safety": [
+            "topics/devops-safety.html"
+          ],
+          "dexterous-benchmarks": [
+            "topics/dexterous-benchmarks.html"
+          ],
+          "dexterous-control": [
+            "topics/dexterous-control.html"
+          ],
+          "dexterous-grasping": [
+            "topics/dexterous-grasping.html"
+          ],
+          "dexterous-hands": [
+            "topics/dexterous-hands.html"
+          ],
+          "dexterous-manipulation": [
+            "topics/dexterous-manipulation.html",
+            "topics/dexterous-manipulation/page/2/index.html"
+          ],
+          "dexterous-robotics": [
+            "topics/dexterous-robotics.html"
+          ],
+          "distributed-inference": [
+            "topics/distributed-inference.html"
+          ],
+          "documentation-sites": [
+            "topics/documentation-sites.html"
+          ],
+          "domain-modeling": [
+            "topics/domain-modeling.html"
+          ],
+          "driving-world-models": [
+            "topics/driving-world-models.html"
+          ],
+          "edge-deployment": [
+            "topics/edge-deployment.html"
+          ],
+          "edge-safety": [
+            "topics/edge-safety.html"
+          ],
+          "efficient-inference": [
+            "topics/efficient-inference.html"
+          ],
+          "embodied-ai": [
+            "topics/embodied-ai.html",
+            "topics/embodied-ai/page/2/index.html",
+            "topics/embodied-ai/page/3/index.html"
+          ],
+          "embodied-control": [
+            "topics/embodied-control.html"
+          ],
+          "embodied-datasets": [
+            "topics/embodied-datasets.html"
+          ],
+          "engineering-discipline": [
+            "topics/engineering-discipline.html"
+          ],
+          "engineering-judgment": [
+            "topics/engineering-judgment.html"
+          ],
+          "engineering-roi": [
+            "topics/engineering-roi.html"
+          ],
+          "enterprise-adoption": [
+            "topics/enterprise-adoption.html"
+          ],
+          "enterprise-ai": [
+            "topics/enterprise-ai.html"
+          ],
+          "enterprise-ai-adoption": [
+            "topics/enterprise-ai-adoption.html"
+          ],
+          "enterprise-apps": [
+            "topics/enterprise-apps.html"
+          ],
+          "enterprise-benchmarks": [
+            "topics/enterprise-benchmarks.html"
+          ],
+          "enterprise-software-engineering": [
+            "topics/enterprise-software-engineering.html"
+          ],
+          "error-recovery": [
+            "topics/error-recovery.html"
+          ],
+          "evaluation": [
+            "topics/evaluation.html",
+            "topics/evaluation/page/2/index.html",
+            "topics/evaluation/page/3/index.html"
+          ],
+          "evaluation-integrity": [
+            "topics/evaluation-integrity.html"
+          ],
+          "event-cameras": [
+            "topics/event-cameras.html"
+          ],
+          "executable-evaluation": [
+            "topics/executable-evaluation.html"
+          ],
+          "executable-feedback": [
+            "topics/executable-feedback.html"
+          ],
+          "executable-verification": [
+            "topics/executable-verification.html"
+          ],
+          "execution": [
+            "topics/execution.html"
+          ],
+          "execution-based-validation": [
+            "topics/execution-based-validation.html"
+          ],
+          "execution-feedback": [
+            "topics/execution-feedback.html"
+          ],
+          "execution-verification": [
+            "topics/execution-verification.html"
+          ],
+          "extended-reality": [
+            "topics/extended-reality.html"
+          ],
+          "failure-recovery": [
+            "topics/failure-recovery.html"
+          ],
+          "fault-localization": [
+            "topics/fault-localization.html"
+          ],
+          "federated-learning": [
+            "topics/federated-learning.html"
+          ],
+          "fine-tuning-retention": [
+            "topics/fine-tuning-retention.html"
+          ],
+          "firebase-functions": [
+            "topics/firebase-functions.html"
+          ],
+          "flutter": [
+            "topics/flutter.html"
+          ],
+          "formal-methods": [
+            "topics/formal-methods.html"
+          ],
+          "formal-specifications": [
+            "topics/formal-specifications.html"
+          ],
+          "formal-verification": [
+            "topics/formal-verification.html",
+            "topics/formal-verification/page/2/index.html"
+          ],
+          "framework-roadmap": [
+            "topics/framework-roadmap.html"
+          ],
+          "frontend-generation": [
+            "topics/frontend-generation.html"
+          ],
+          "fuzzing": [
+            "topics/fuzzing.html"
+          ],
+          "gao-xiao-tui-li": [
+            "topics/gao-xiao-tui-li.html"
+          ],
+          "generalization": [
+            "topics/generalization.html"
+          ],
+          "generative-ui": [
+            "topics/generative-ui.html"
+          ],
+          "generative-video": [
+            "topics/generative-video.html"
+          ],
+          "genui": [
+            "topics/genui.html"
+          ],
+          "geometry": [
+            "topics/geometry.html"
+          ],
+          "geometry-grounding": [
+            "topics/geometry-grounding.html"
+          ],
+          "github-adoption": [
+            "topics/github-adoption.html"
+          ],
+          "goal-conditioning": [
+            "topics/goal-conditioning.html"
+          ],
+          "gong-ju-shi-yong": [
+            "topics/gong-ju-shi-yong.html"
+          ],
+          "google-cloud-next": [
+            "topics/google-cloud-next.html"
+          ],
+          "governance": [
+            "topics/governance.html"
+          ],
+          "gpu-kernels": [
+            "topics/gpu-kernels.html"
+          ],
+          "gpu-optimization": [
+            "topics/gpu-optimization.html"
+          ],
+          "gpu-serving": [
+            "topics/gpu-serving.html"
+          ],
+          "graph-world-models": [
+            "topics/graph-world-models.html"
+          ],
+          "grounding": [
+            "topics/grounding.html"
+          ],
+          "gui-code": [
+            "topics/gui-code.html"
+          ],
+          "guo-cheng-ji-yi": [
+            "topics/guo-cheng-ji-yi.html"
+          ],
+          "hardware-agents": [
+            "topics/hardware-agents.html"
+          ],
+          "hardware-design": [
+            "topics/hardware-design.html"
+          ],
+          "harness-repair": [
+            "topics/harness-repair.html"
+          ],
+          "hierarchical-control": [
+            "topics/hierarchical-control.html"
+          ],
+          "hot-fixes": [
+            "topics/hot-fixes.html"
+          ],
+          "human-demonstrations": [
+            "topics/human-demonstrations.html"
+          ],
+          "human-in-the-loop": [
+            "topics/human-in-the-loop.html"
+          ],
+          "human-oversight": [
+            "topics/human-oversight.html"
+          ],
+          "human-video-data": [
+            "topics/human-video-data.html"
+          ],
+          "humanoid-control": [
+            "topics/humanoid-control.html"
+          ],
+          "humanoid-locomotion": [
+            "topics/humanoid-locomotion.html"
+          ],
+          "humanoid-manipulation": [
+            "topics/humanoid-manipulation.html"
+          ],
+          "humanoid-robots": [
+            "topics/humanoid-robots.html"
+          ],
+          "humanoids": [
+            "topics/humanoids.html"
+          ],
+          "identity-and-access-control": [
+            "topics/identity-and-access-control.html"
+          ],
+          "imitation-learning": [
+            "topics/imitation-learning.html"
+          ],
+          "inference-cost": [
+            "topics/inference-cost.html"
+          ],
+          "inference-efficiency": [
+            "topics/inference-efficiency.html"
+          ],
+          "inference-latency": [
+            "topics/inference-latency.html"
+          ],
+          "inference-time-action-selection": [
+            "topics/inference-time-action-selection.html"
+          ],
+          "interactive-benchmarks": [
+            "topics/interactive-benchmarks.html"
+          ],
+          "interactive-code-generation": [
+            "topics/interactive-code-generation.html"
+          ],
+          "interpretability": [
+            "topics/interpretability.html"
+          ],
+          "jaspr": [
+            "topics/jaspr.html"
+          ],
+          "ji-qi-ren-cao-zuo": [
+            "topics/ji-qi-ren-cao-zuo.html"
+          ],
+          "ji-qi-ren-gui-hua": [
+            "topics/ji-qi-ren-gui-hua.html"
+          ],
+          "ji-qi-ren-xue": [
+            "topics/ji-qi-ren-xue.html"
+          ],
+          "ju-shen-ai": [
+            "topics/ju-shen-ai.html"
+          ],
+          "ke-zhi-xing-fan-kui": [
+            "topics/ke-zhi-xing-fan-kui.html"
+          ],
+          "ke-zhi-xing-ping-gu": [
+            "topics/ke-zhi-xing-ping-gu.html"
+          ],
+          "kong-jian-ji-yi": [
+            "topics/kong-jian-ji-yi.html"
+          ],
+          "kotlin-multiplatform": [
+            "topics/kotlin-multiplatform.html"
+          ],
+          "kua-ping-tai-kai-fa": [
+            "topics/kua-ping-tai-kai-fa.html"
+          ],
+          "latency": [
+            "topics/latency.html"
+          ],
+          "latent-actions": [
+            "topics/latent-actions.html"
+          ],
+          "latent-reasoning": [
+            "topics/latent-reasoning.html"
+          ],
+          "legacy-modernization": [
+            "topics/legacy-modernization.html"
+          ],
+          "ling-qiao-cao-zuo": [
+            "topics/ling-qiao-cao-zuo.html"
+          ],
+          "ling-qiao-cao-zuo-ji-zhun": [
+            "topics/ling-qiao-cao-zuo-ji-zhun.html"
+          ],
+          "llm-agents": [
+            "topics/llm-agents.html"
+          ],
+          "llm-assisted-software": [
+            "topics/llm-assisted-software.html"
+          ],
+          "llm-budgets": [
+            "topics/llm-budgets.html"
+          ],
+          "llm-coding": [
+            "topics/llm-coding.html"
+          ],
+          "llm-inference": [
+            "topics/llm-inference.html"
+          ],
+          "llm-infrastructure": [
+            "topics/llm-infrastructure.html"
+          ],
+          "llm-operations": [
+            "topics/llm-operations.html"
+          ],
+          "llm-safety": [
+            "topics/llm-safety.html"
+          ],
+          "llm-security": [
+            "topics/llm-security.html"
+          ],
+          "llm-serving": [
+            "topics/llm-serving.html"
+          ],
+          "llm-software-engineering": [
+            "topics/llm-software-engineering.html"
+          ],
+          "llm-supply-chain": [
+            "topics/llm-supply-chain.html"
+          ],
+          "llm-testing": [
+            "topics/llm-testing.html"
+          ],
+          "llm-training": [
+            "topics/llm-training.html"
+          ],
+          "llm-yun-wei": [
+            "topics/llm-yun-wei.html"
+          ],
+          "llm-zhi-neng-ti": [
+            "topics/llm-zhi-neng-ti.html"
+          ],
+          "local-ai": [
+            "topics/local-ai.html"
+          ],
+          "local-code-models": [
+            "topics/local-code-models.html"
+          ],
+          "local-inference": [
+            "topics/local-inference.html"
+          ],
+          "local-observability": [
+            "topics/local-observability.html"
+          ],
+          "local-search": [
+            "topics/local-search.html"
+          ],
+          "long-horizon-coding": [
+            "topics/long-horizon-coding.html"
+          ],
+          "long-horizon-control": [
+            "topics/long-horizon-control.html"
+          ],
+          "long-horizon-evaluation": [
+            "topics/long-horizon-evaluation.html"
+          ],
+          "long-horizon-manipulation": [
+            "topics/long-horizon-manipulation.html",
+            "topics/long-horizon-manipulation/page/2/index.html"
+          ],
+          "long-horizon-memory": [
+            "topics/long-horizon-memory.html"
+          ],
+          "long-horizon-planning": [
+            "topics/long-horizon-planning.html"
+          ],
+          "long-horizon-robotics": [
+            "topics/long-horizon-robotics.html"
+          ],
+          "low-data-post-training": [
+            "topics/low-data-post-training.html"
+          ],
+          "maintainability": [
+            "topics/maintainability.html"
+          ],
+          "maintenance-cost": [
+            "topics/maintenance-cost.html"
+          ],
+          "manipulation": [
+            "topics/manipulation.html",
+            "topics/manipulation/page/2/index.html"
+          ],
+          "mcp": [
+            "topics/mcp.html"
+          ],
+          "mcp-governance": [
+            "topics/mcp-governance.html"
+          ],
+          "mcp-security": [
+            "topics/mcp-security.html"
+          ],
+          "mcp-tools": [
+            "topics/mcp-tools.html"
+          ],
+          "medical-robotics": [
+            "topics/medical-robotics.html"
+          ],
+          "memory": [
+            "topics/memory.html"
+          ],
+          "mo-fang-xue-xi": [
+            "topics/mo-fang-xue-xi.html"
+          ],
+          "mo-xing-lu-you": [
+            "topics/mo-xing-lu-you.html"
+          ],
+          "model-based-rl": [
+            "topics/model-based-rl.html"
+          ],
+          "model-compression": [
+            "topics/model-compression.html"
+          ],
+          "model-efficiency": [
+            "topics/model-efficiency.html"
+          ],
+          "model-ownership": [
+            "topics/model-ownership.html"
+          ],
+          "model-predictive-control": [
+            "topics/model-predictive-control.html"
+          ],
+          "model-release-safety": [
+            "topics/model-release-safety.html"
+          ],
+          "model-routing": [
+            "topics/model-routing.html"
+          ],
+          "monitoring": [
+            "topics/monitoring.html"
+          ],
+          "mtls": [
+            "topics/mtls.html"
+          ],
+          "multi-agent-orchestration": [
+            "topics/multi-agent-orchestration.html"
+          ],
+          "multi-agent-systems": [
+            "topics/multi-agent-systems.html"
+          ],
+          "multi-agent-workflows": [
+            "topics/multi-agent-workflows.html"
+          ],
+          "multi-robot-collaboration": [
+            "topics/multi-robot-collaboration.html"
+          ],
+          "multimodal-models": [
+            "topics/multimodal-models.html"
+          ],
+          "multimodal-retrieval": [
+            "topics/multimodal-retrieval.html"
+          ],
+          "multimodal-sensing": [
+            "topics/multimodal-sensing.html"
+          ],
+          "native-ui": [
+            "topics/native-ui.html"
+          ],
+          "navigation": [
+            "topics/navigation.html"
+          ],
+          "oauth": [
+            "topics/oauth.html"
+          ],
+          "object-centric-learning": [
+            "topics/object-centric-learning.html"
+          ],
+          "observability": [
+            "topics/observability.html"
+          ],
+          "occlusion": [
+            "topics/occlusion.html"
+          ],
+          "online-adaptation": [
+            "topics/online-adaptation.html"
+          ],
+          "online-rl": [
+            "topics/online-rl.html"
+          ],
+          "ood-generalization": [
+            "topics/ood-generalization.html"
+          ],
+          "ood-robustness": [
+            "topics/ood-robustness.html"
+          ],
+          "open-ended-coding": [
+            "topics/open-ended-coding.html"
+          ],
+          "open-source-policy": [
+            "topics/open-source-policy.html"
+          ],
+          "open-source-software": [
+            "topics/open-source-software.html"
+          ],
+          "open-weights": [
+            "topics/open-weights.html"
+          ],
+          "partial-hydration": [
+            "topics/partial-hydration.html"
+          ],
+          "performance-engineering": [
+            "topics/performance-engineering.html"
+          ],
+          "photorealistic-simulation": [
+            "topics/photorealistic-simulation.html"
+          ],
+          "planning-security": [
+            "topics/planning-security.html"
+          ],
+          "policy-adaptation": [
+            "topics/policy-adaptation.html"
+          ],
+          "policy-evaluation": [
+            "topics/policy-evaluation.html"
+          ],
+          "procedural-memory": [
+            "topics/procedural-memory.html"
+          ],
+          "product-roadmap": [
+            "topics/product-roadmap.html"
+          ],
+          "production-automation": [
+            "topics/production-automation.html"
+          ],
+          "program-analysis": [
+            "topics/program-analysis.html"
+          ],
+          "program-generation": [
+            "topics/program-generation.html"
+          ],
+          "program-repair": [
+            "topics/program-repair.html",
+            "topics/program-repair/page/2/index.html"
+          ],
+          "program-synthesis": [
+            "topics/program-synthesis.html"
+          ],
+          "prompt-injection": [
+            "topics/prompt-injection.html"
+          ],
+          "provenance": [
+            "topics/provenance.html"
+          ],
+          "pull-requests": [
+            "topics/pull-requests.html"
+          ],
+          "qi-ye-ai-cai-yong": [
+            "topics/qi-ye-ai-cai-yong.html"
+          ],
+          "qi-ye-ji-zhun": [
+            "topics/qi-ye-ji-zhun.html"
+          ],
+          "quadrotor-navigation": [
+            "topics/quadrotor-navigation.html"
+          ],
+          "quantization": [
+            "topics/quantization.html"
+          ],
+          "quantum-software": [
+            "topics/quantum-software.html"
+          ],
+          "rag": [
+            "topics/rag.html"
+          ],
+          "rails": [
+            "topics/rails.html"
+          ],
+          "ran-automation": [
+            "topics/ran-automation.html"
+          ],
+          "ratchets": [
+            "topics/ratchets.html"
+          ],
+          "real-robot-evaluation": [
+            "topics/real-robot-evaluation.html"
+          ],
+          "real-time-control": [
+            "topics/real-time-control.html"
+          ],
+          "real-world-evaluation": [
+            "topics/real-world-evaluation.html"
+          ],
+          "reasoning": [
+            "topics/reasoning.html"
+          ],
+          "recommender-systems": [
+            "topics/recommender-systems.html"
+          ],
+          "recursive-self-improvement": [
+            "topics/recursive-self-improvement.html"
+          ],
+          "refactoring-correctness": [
+            "topics/refactoring-correctness.html"
+          ],
+          "regex": [
+            "topics/regex.html"
+          ],
+          "reinforcement-learning": [
+            "topics/reinforcement-learning.html",
+            "topics/reinforcement-learning/page/2/index.html"
+          ],
+          "release-engineering": [
+            "topics/release-engineering.html"
+          ],
+          "repo-generation": [
+            "topics/repo-generation.html"
+          ],
+          "repo-level-codegen": [
+            "topics/repo-level-codegen.html"
+          ],
+          "repo-level-generation": [
+            "topics/repo-level-generation.html"
+          ],
+          "repo-scale-evaluation": [
+            "topics/repo-scale-evaluation.html"
+          ],
+          "repositories": [
+            "topics/repositories.html"
+          ],
+          "repository-automation": [
+            "topics/repository-automation.html"
+          ],
+          "repository-benchmarks": [
+            "topics/repository-benchmarks.html"
+          ],
+          "repository-context": [
+            "topics/repository-context.html"
+          ],
+          "repository-engineering": [
+            "topics/repository-engineering.html"
+          ],
+          "repository-evaluation": [
+            "topics/repository-evaluation.html"
+          ],
+          "repository-execution": [
+            "topics/repository-execution.html"
+          ],
+          "repository-exploration": [
+            "topics/repository-exploration.html"
+          ],
+          "repository-level-generation": [
+            "topics/repository-level-generation.html"
+          ],
+          "repository-mining": [
+            "topics/repository-mining.html"
+          ],
+          "repository-reasoning": [
+            "topics/repository-reasoning.html"
+          ],
+          "repository-repair": [
+            "topics/repository-repair.html"
+          ],
+          "repository-scale-generation": [
+            "topics/repository-scale-generation.html"
+          ],
+          "repository-verification": [
+            "topics/repository-verification.html"
+          ],
+          "repository-workflows": [
+            "topics/repository-workflows.html"
+          ],
+          "reproducibility": [
+            "topics/reproducibility.html"
+          ],
+          "requirement-alignment": [
+            "topics/requirement-alignment.html"
+          ],
+          "requirements-engineering": [
+            "topics/requirements-engineering.html"
+          ],
+          "research-automation": [
+            "topics/research-automation.html"
+          ],
+          "retrieval": [
+            "topics/retrieval.html"
+          ],
+          "reusable-skills": [
+            "topics/reusable-skills.html"
+          ],
+          "reward-hacking": [
+            "topics/reward-hacking.html"
+          ],
+          "reward-models": [
+            "topics/reward-models.html"
+          ],
+          "robot-adaptation": [
+            "topics/robot-adaptation.html"
+          ],
+          "robot-benchmarks": [
+            "topics/robot-benchmarks.html"
+          ],
+          "robot-control": [
+            "topics/robot-control.html"
+          ],
+          "robot-data": [
+            "topics/robot-data.html"
+          ],
+          "robot-data-collection": [
+            "topics/robot-data-collection.html"
+          ],
+          "robot-deployment": [
+            "topics/robot-deployment.html"
+          ],
+          "robot-evaluation": [
+            "topics/robot-evaluation.html"
+          ],
+          "robot-learning": [
+            "topics/robot-learning.html",
+            "topics/robot-learning/page/2/index.html",
+            "topics/robot-learning/page/3/index.html"
+          ],
+          "robot-manipulation": [
+            "topics/robot-manipulation.html",
+            "topics/robot-manipulation/page/2/index.html",
+            "topics/robot-manipulation/page/3/index.html",
+            "topics/robot-manipulation/page/4/index.html"
+          ],
+          "robot-planning": [
+            "topics/robot-planning.html"
+          ],
+          "robot-policy-safety": [
+            "topics/robot-policy-safety.html"
+          ],
+          "robot-safety": [
+            "topics/robot-safety.html",
+            "topics/robot-safety/page/2/index.html"
+          ],
+          "robot-security": [
+            "topics/robot-security.html"
+          ],
+          "robot-serving": [
+            "topics/robot-serving.html"
+          ],
+          "robot-vla": [
+            "topics/robot-vla.html"
+          ],
+          "robot-world-models": [
+            "topics/robot-world-models.html"
+          ],
+          "robotic-manipulation": [
+            "topics/robotic-manipulation.html"
+          ],
+          "robotics": [
+            "topics/robotics.html",
+            "topics/robotics/page/2/index.html",
+            "topics/robotics/page/3/index.html",
+            "topics/robotics/page/4/index.html",
+            "topics/robotics/page/5/index.html",
+            "topics/robotics/page/6/index.html",
+            "topics/robotics/page/7/index.html",
+            "topics/robotics/page/8/index.html",
+            "topics/robotics/page/9/index.html"
+          ],
+          "robotics-evaluation": [
+            "topics/robotics-evaluation.html"
+          ],
+          "robustness": [
+            "topics/robustness.html"
+          ],
+          "ruan-jian-an-quan": [
+            "topics/ruan-jian-an-quan.html"
+          ],
+          "ruan-jian-gong-cheng": [
+            "topics/ruan-jian-gong-cheng.html"
+          ],
+          "ruan-jian-gong-cheng-ai": [
+            "topics/ruan-jian-gong-cheng-ai.html"
+          ],
+          "ruan-jian-gong-cheng-ji-zhun": [
+            "topics/ruan-jian-gong-cheng-ji-zhun.html"
+          ],
+          "ruan-jian-gong-cheng-ji-zhun-ce-shi": [
+            "topics/ruan-jian-gong-cheng-ji-zhun-ce-shi.html"
+          ],
+          "ruan-jian-gong-cheng-ping-gu": [
+            "topics/ruan-jian-gong-cheng-ping-gu.html"
+          ],
+          "ruan-jian-gong-cheng-zhi-neng-ti": [
+            "topics/ruan-jian-gong-cheng-zhi-neng-ti.html"
+          ],
+          "runtime-control": [
+            "topics/runtime-control.html"
+          ],
+          "runtime-debugging": [
+            "topics/runtime-debugging.html"
+          ],
+          "runtime-diagnosis": [
+            "topics/runtime-diagnosis.html"
+          ],
+          "runtime-enforcement": [
+            "topics/runtime-enforcement.html"
+          ],
+          "runtime-governance": [
+            "topics/runtime-governance.html"
+          ],
+          "runtime-security": [
+            "topics/runtime-security.html"
+          ],
+          "runtime-systems": [
+            "topics/runtime-systems.html"
+          ],
+          "runtime-traces": [
+            "topics/runtime-traces.html"
+          ],
+          "runtime-verification": [
+            "topics/runtime-verification.html"
+          ],
+          "safety": [
+            "topics/safety.html",
+            "topics/safety/page/2/index.html"
+          ],
+          "safety-evaluation": [
+            "topics/safety-evaluation.html"
+          ],
+          "sample-efficiency": [
+            "topics/sample-efficiency.html"
+          ],
+          "sandbox-infrastructure": [
+            "topics/sandbox-infrastructure.html"
+          ],
+          "sandbox-security": [
+            "topics/sandbox-security.html"
+          ],
+          "scientific-software": [
+            "topics/scientific-software.html"
+          ],
+          "secure-code": [
+            "topics/secure-code.html"
+          ],
+          "secure-code-generation": [
+            "topics/secure-code-generation.html"
+          ],
+          "security": [
+            "topics/security.html"
+          ],
+          "security-agents": [
+            "topics/security-agents.html"
+          ],
+          "security-analysis": [
+            "topics/security-analysis.html"
+          ],
+          "security-benchmarks": [
+            "topics/security-benchmarks.html"
+          ],
+          "security-evaluation": [
+            "topics/security-evaluation.html"
+          ],
+          "security-repair": [
+            "topics/security-repair.html"
+          ],
+          "security-review": [
+            "topics/security-review.html"
+          ],
+          "security-testing": [
+            "topics/security-testing.html"
+          ],
+          "self-evolving-agents": [
+            "topics/self-evolving-agents.html"
+          ],
+          "semantic-grounding": [
+            "topics/semantic-grounding.html"
+          ],
+          "service-recommendation": [
+            "topics/service-recommendation.html"
+          ],
+          "shang-xia-wen-hui-fu": [
+            "topics/shang-xia-wen-hui-fu.html"
+          ],
+          "shared-autonomy": [
+            "topics/shared-autonomy.html"
+          ],
+          "shared-business-logic": [
+            "topics/shared-business-logic.html"
+          ],
+          "shen-fen-yu-fang-wen-kong-zhi": [
+            "topics/shen-fen-yu-fang-wen-kong-zhi.html"
+          ],
+          "shi-jian-ji-yi": [
+            "topics/shi-jian-ji-yi.html"
+          ],
+          "shi-jie-mo-xing": [
+            "topics/shi-jie-mo-xing.html"
+          ],
+          "shi-jue-yu-yan-dong-zuo": [
+            "topics/shi-jue-yu-yan-dong-zuo.html"
+          ],
+          "shi-jue-yu-yan-dong-zuo-mo-xing": [
+            "topics/shi-jue-yu-yan-dong-zuo-mo-xing.html"
+          ],
+          "sim-real-correlation": [
+            "topics/sim-real-correlation.html"
+          ],
+          "sim-to-real": [
+            "topics/sim-to-real.html",
+            "topics/sim-to-real/page/2/index.html"
+          ],
+          "sim2real": [
+            "topics/sim2real.html"
+          ],
+          "simulation": [
+            "topics/simulation.html"
+          ],
+          "simulation-augmentation": [
+            "topics/simulation-augmentation.html"
+          ],
+          "simulation-evaluation": [
+            "topics/simulation-evaluation.html"
+          ],
+          "slot-placement": [
+            "topics/slot-placement.html"
+          ],
+          "small-language-models": [
+            "topics/small-language-models.html"
+          ],
+          "smart-contracts": [
+            "topics/smart-contracts.html"
+          ],
+          "social-navigation": [
+            "topics/social-navigation.html"
+          ],
+          "software-agents": [
+            "topics/software-agents.html"
+          ],
+          "software-analysis": [
+            "topics/software-analysis.html"
+          ],
+          "software-architecture": [
+            "topics/software-architecture.html"
+          ],
+          "software-assurance": [
+            "topics/software-assurance.html"
+          ],
+          "software-benchmarks": [
+            "topics/software-benchmarks.html"
+          ],
+          "software-economics": [
+            "topics/software-economics.html"
+          ],
+          "software-engineering": [
+            "topics/software-engineering.html",
+            "topics/software-engineering/page/2/index.html",
+            "topics/software-engineering/page/3/index.html",
+            "topics/software-engineering/page/4/index.html",
+            "topics/software-engineering/page/5/index.html"
+          ],
+          "software-engineering-agents": [
+            "topics/software-engineering-agents.html"
+          ],
+          "software-engineering-ai": [
+            "topics/software-engineering-ai.html"
+          ],
+          "software-engineering-benchmarks": [
+            "topics/software-engineering-benchmarks.html",
+            "topics/software-engineering-benchmarks/page/2/index.html"
+          ],
+          "software-engineering-evaluation": [
+            "topics/software-engineering-evaluation.html"
+          ],
+          "software-evaluation": [
+            "topics/software-evaluation.html"
+          ],
+          "software-factories": [
+            "topics/software-factories.html"
+          ],
+          "software-maintenance": [
+            "topics/software-maintenance.html"
+          ],
+          "software-quality": [
+            "topics/software-quality.html"
+          ],
+          "software-repair": [
+            "topics/software-repair.html"
+          ],
+          "software-security": [
+            "topics/software-security.html"
+          ],
+          "software-supply-chain-security": [
+            "topics/software-supply-chain-security.html"
+          ],
+          "software-testing": [
+            "topics/software-testing.html",
+            "topics/software-testing/page/2/index.html"
+          ],
+          "software-verification": [
+            "topics/software-verification.html",
+            "topics/software-verification/page/2/index.html"
+          ],
+          "spatial-attention": [
+            "topics/spatial-attention.html"
+          ],
+          "spatial-grounding": [
+            "topics/spatial-grounding.html"
+          ],
+          "spatial-memory": [
+            "topics/spatial-memory.html"
+          ],
+          "spatial-modeling": [
+            "topics/spatial-modeling.html"
+          ],
+          "spatial-reasoning": [
+            "topics/spatial-reasoning.html"
+          ],
+          "static-analysis": [
+            "topics/static-analysis.html"
+          ],
+          "steerability": [
+            "topics/steerability.html"
+          ],
+          "structured-output": [
+            "topics/structured-output.html"
+          ],
+          "supply-chain-risk": [
+            "topics/supply-chain-risk.html"
+          ],
+          "surgical-ai": [
+            "topics/surgical-ai.html"
+          ],
+          "synthetic-data": [
+            "topics/synthetic-data.html"
+          ],
+          "synthetic-robot-data": [
+            "topics/synthetic-robot-data.html"
+          ],
+          "sysml": [
+            "topics/sysml.html"
+          ],
+          "systems-code": [
+            "topics/systems-code.html"
+          ],
+          "systems-optimization": [
+            "topics/systems-optimization.html"
+          ],
+          "tactile-control": [
+            "topics/tactile-control.html"
+          ],
+          "tactile-manipulation": [
+            "topics/tactile-manipulation.html"
+          ],
+          "tactile-pretraining": [
+            "topics/tactile-pretraining.html"
+          ],
+          "tactile-sensing": [
+            "topics/tactile-sensing.html",
+            "topics/tactile-sensing/page/2/index.html"
+          ],
+          "task-memory": [
+            "topics/task-memory.html"
+          ],
+          "teleoperation": [
+            "topics/teleoperation.html"
+          ],
+          "temporal-memory": [
+            "topics/temporal-memory.html"
+          ],
+          "temporal-modeling": [
+            "topics/temporal-modeling.html"
+          ],
+          "terminal-agents": [
+            "topics/terminal-agents.html"
+          ],
+          "terminal-ui": [
+            "topics/terminal-ui.html"
+          ],
+          "test-evolution": [
+            "topics/test-evolution.html"
+          ],
+          "test-generation": [
+            "topics/test-generation.html"
+          ],
+          "test-migration": [
+            "topics/test-migration.html"
+          ],
+          "test-oracles": [
+            "topics/test-oracles.html"
+          ],
+          "test-structure": [
+            "topics/test-structure.html"
+          ],
+          "test-time-adaptation": [
+            "topics/test-time-adaptation.html"
+          ],
+          "test-time-compute": [
+            "topics/test-time-compute.html"
+          ],
+          "test-time-control": [
+            "topics/test-time-control.html"
+          ],
+          "test-time-rl": [
+            "topics/test-time-rl.html"
+          ],
+          "test-time-scaling": [
+            "topics/test-time-scaling.html"
+          ],
+          "testing": [
+            "topics/testing.html"
+          ],
+          "text-to-sql": [
+            "topics/text-to-sql.html"
+          ],
+          "token-cost": [
+            "topics/token-cost.html"
+          ],
+          "token-costs": [
+            "topics/token-costs.html"
+          ],
+          "token-efficiency": [
+            "topics/token-efficiency.html"
+          ],
+          "tool-calling": [
+            "topics/tool-calling.html"
+          ],
+          "tool-provenance": [
+            "topics/tool-provenance.html"
+          ],
+          "tool-reliability": [
+            "topics/tool-reliability.html"
+          ],
+          "tool-use": [
+            "topics/tool-use.html"
+          ],
+          "tool-use-evaluation": [
+            "topics/tool-use-evaluation.html"
+          ],
+          "trace-based-training": [
+            "topics/trace-based-training.html"
+          ],
+          "traceability": [
+            "topics/traceability.html"
+          ],
+          "training-data": [
+            "topics/training-data.html"
+          ],
+          "trajectory-diagnostics": [
+            "topics/trajectory-diagnostics.html"
+          ],
+          "trajectory-training": [
+            "topics/trajectory-training.html"
+          ],
+          "uav-navigation": [
+            "topics/uav-navigation.html"
+          ],
+          "uav-tracking": [
+            "topics/uav-tracking.html"
+          ],
+          "verification": [
+            "topics/verification.html",
+            "topics/verification/page/2/index.html"
+          ],
+          "video-evaluation": [
+            "topics/video-evaluation.html"
+          ],
+          "video-planning": [
+            "topics/video-planning.html"
+          ],
+          "vision-language-action": [
+            "topics/vision-language-action.html",
+            "topics/vision-language-action/page/2/index.html",
+            "topics/vision-language-action/page/3/index.html",
+            "topics/vision-language-action/page/4/index.html",
+            "topics/vision-language-action/page/5/index.html",
+            "topics/vision-language-action/page/6/index.html",
+            "topics/vision-language-action/page/7/index.html",
+            "topics/vision-language-action/page/8/index.html"
+          ],
+          "vision-language-action-models": [
+            "topics/vision-language-action-models.html",
+            "topics/vision-language-action-models/page/2/index.html",
+            "topics/vision-language-action-models/page/3/index.html",
+            "topics/vision-language-action-models/page/4/index.html"
+          ],
+          "vision-language-action-policies": [
+            "topics/vision-language-action-policies.html"
+          ],
+          "vision-language-navigation": [
+            "topics/vision-language-navigation.html"
+          ],
+          "vision-to-code-grounding": [
+            "topics/vision-to-code-grounding.html"
+          ],
+          "visual-foresight": [
+            "topics/visual-foresight.html"
+          ],
+          "visual-reinforcement-learning": [
+            "topics/visual-reinforcement-learning.html"
+          ],
+          "vla": [
+            "topics/vla.html",
+            "topics/vla/page/2/index.html"
+          ],
+          "vla-finetuning": [
+            "topics/vla-finetuning.html"
+          ],
+          "vla-models": [
+            "topics/vla-models.html"
+          ],
+          "vla-policies": [
+            "topics/vla-policies.html"
+          ],
+          "vla-reliability": [
+            "topics/vla-reliability.html"
+          ],
+          "vla-robustness": [
+            "topics/vla-robustness.html"
+          ],
+          "vla-safety": [
+            "topics/vla-safety.html"
+          ],
+          "vulnerability-repair": [
+            "topics/vulnerability-repair.html"
+          ],
+          "web-infrastructure": [
+            "topics/web-infrastructure.html"
+          ],
+          "web-reuse": [
+            "topics/web-reuse.html"
+          ],
+          "webassembly": [
+            "topics/webassembly.html"
+          ],
+          "workflow-automation": [
+            "topics/workflow-automation.html"
+          ],
+          "workflow-evaluation": [
+            "topics/workflow-evaluation.html"
+          ],
+          "workflow-reliability": [
+            "topics/workflow-reliability.html"
+          ],
+          "workflow-security": [
+            "topics/workflow-security.html"
+          ],
+          "world-action-models": [
+            "topics/world-action-models.html"
+          ],
+          "world-model-safety": [
+            "topics/world-model-safety.html"
+          ],
+          "world-models": [
+            "topics/world-models.html",
+            "topics/world-models/page/2/index.html",
+            "topics/world-models/page/3/index.html",
+            "topics/world-models/page/4/index.html",
+            "topics/world-models/page/5/index.html",
+            "topics/world-models/page/6/index.html",
+            "topics/world-models/page/7/index.html",
+            "topics/world-models/page/8/index.html",
+            "topics/world-models/page/9/index.html",
+            "topics/world-models/page/10/index.html"
+          ],
+          "xiao-yu-yan-mo-xing": [
+            "topics/xiao-yu-yan-mo-xing.html"
+          ],
+          "xing-shi-hua-fang-fa": [
+            "topics/xing-shi-hua-fang-fa.html"
+          ],
+          "xing-shi-hua-yan-zheng": [
+            "topics/xing-shi-hua-yan-zheng.html"
+          ],
+          "yun-xing-shi-gui-ji": [
+            "topics/yun-xing-shi-gui-ji.html"
+          ],
+          "yun-xing-shi-zhi-xing": [
+            "topics/yun-xing-shi-zhi-xing.html"
+          ],
+          "zero-shot-vision": [
+            "topics/zero-shot-vision.html"
+          ],
+          "zhen-shi-shi-jie-ping-gu": [
+            "topics/zhen-shi-shi-jie-ping-gu.html"
+          ],
+          "zhi-neng-ti-an-quan": [
+            "topics/zhi-neng-ti-an-quan.html"
+          ],
+          "zhi-neng-ti-ping-gu": [
+            "topics/zhi-neng-ti-ping-gu.html"
+          ],
+          "zhi-neng-ti-yun-xing-kuang-jia": [
+            "topics/zhi-neng-ti-yun-xing-kuang-jia.html"
+          ]
+        },
         "topic_pages": [
           "topics/3d-cao-zuo.html",
           "topics/3d-ding-wei.html",
@@ -4384,6 +8152,34 @@
           "topics/zhi-neng-ti-yun-xing-kuang-jia.html"
         ],
         "topics_index": "topics/index.html",
+        "topics_index_pages": [
+          "topics/index.html",
+          "topics/page/2/index.html",
+          "topics/page/3/index.html",
+          "topics/page/4/index.html",
+          "topics/page/5/index.html",
+          "topics/page/6/index.html",
+          "topics/page/7/index.html",
+          "topics/page/8/index.html",
+          "topics/page/9/index.html",
+          "topics/page/10/index.html",
+          "topics/page/11/index.html",
+          "topics/page/12/index.html",
+          "topics/page/13/index.html",
+          "topics/page/14/index.html",
+          "topics/page/15/index.html",
+          "topics/page/16/index.html",
+          "topics/page/17/index.html",
+          "topics/page/18/index.html",
+          "topics/page/19/index.html",
+          "topics/page/20/index.html",
+          "topics/page/21/index.html",
+          "topics/page/22/index.html",
+          "topics/page/23/index.html",
+          "topics/page/24/index.html",
+          "topics/page/25/index.html",
+          "topics/page/26/index.html"
+        ],
         "trend_pages": [
           "trends/embodied-ai--day--2026-07-13--trend--861.html",
           "trends/software-intelligence--day--2026-07-13--trend--1896.html",
@@ -4611,7 +8407,28 @@
           "trends/embodied-ai--day--2026-03-30--trend--9.html",
           "trends/software-intelligence--day--2026-03-30--trend--20.html"
         ],
-        "trends_index": "trends/index.html"
+        "trends_index": "trends/index.html",
+        "trends_index_pages": [
+          "trends/index.html",
+          "trends/page/2/index.html",
+          "trends/page/3/index.html",
+          "trends/page/4/index.html",
+          "trends/page/5/index.html",
+          "trends/page/6/index.html",
+          "trends/page/7/index.html",
+          "trends/page/8/index.html",
+          "trends/page/9/index.html",
+          "trends/page/10/index.html",
+          "trends/page/11/index.html",
+          "trends/page/12/index.html",
+          "trends/page/13/index.html",
+          "trends/page/14/index.html",
+          "trends/page/15/index.html",
+          "trends/page/16/index.html",
+          "trends/page/17/index.html",
+          "trends/page/18/index.html",
+          "trends/page/19/index.html"
+        ]
       }
     },
     "idea_pages": [
@@ -4842,6 +8659,27 @@
       "ideas/software-intelligence--day--2026-03-30--ideas.html"
     ],
     "ideas_index": "ideas/index.html",
+    "ideas_index_pages": [
+      "ideas/index.html",
+      "ideas/page/2/index.html",
+      "ideas/page/3/index.html",
+      "ideas/page/4/index.html",
+      "ideas/page/5/index.html",
+      "ideas/page/6/index.html",
+      "ideas/page/7/index.html",
+      "ideas/page/8/index.html",
+      "ideas/page/9/index.html",
+      "ideas/page/10/index.html",
+      "ideas/page/11/index.html",
+      "ideas/page/12/index.html",
+      "ideas/page/13/index.html",
+      "ideas/page/14/index.html",
+      "ideas/page/15/index.html",
+      "ideas/page/16/index.html",
+      "ideas/page/17/index.html",
+      "ideas/page/18/index.html",
+      "ideas/page/19/index.html"
+    ],
     "index": "index.html",
     "item_pages": [
       "items/software-intelligence--2026-07-13--long-term-memory-cortex-for-agents-that-maintains-tensions.html",
@@ -6114,6 +9952,1732 @@
     },
     "nojekyll": ".nojekyll",
     "stylesheet": "assets/site.css",
+    "topic_collection_pages": {
+      "3d-gaussian-splatting": [
+        "topics/3d-gaussian-splatting.html"
+      ],
+      "3d-generation": [
+        "topics/3d-generation.html"
+      ],
+      "3d-geometry": [
+        "topics/3d-geometry.html"
+      ],
+      "3d-grounding": [
+        "topics/3d-grounding.html"
+      ],
+      "3d-manipulation": [
+        "topics/3d-manipulation.html"
+      ],
+      "3d-perception": [
+        "topics/3d-perception.html"
+      ],
+      "3d-planning": [
+        "topics/3d-planning.html"
+      ],
+      "action-control": [
+        "topics/action-control.html"
+      ],
+      "action-representation": [
+        "topics/action-representation.html"
+      ],
+      "action-representations": [
+        "topics/action-representations.html"
+      ],
+      "active-perception": [
+        "topics/active-perception.html"
+      ],
+      "adaptation": [
+        "topics/adaptation.html"
+      ],
+      "adaptive-control": [
+        "topics/adaptive-control.html"
+      ],
+      "adk": [
+        "topics/adk.html"
+      ],
+      "adversarial-reliability": [
+        "topics/adversarial-reliability.html"
+      ],
+      "adversarial-robustness": [
+        "topics/adversarial-robustness.html"
+      ],
+      "affordance-grounding": [
+        "topics/affordance-grounding.html"
+      ],
+      "affordance-learning": [
+        "topics/affordance-learning.html"
+      ],
+      "agent-benchmarks": [
+        "topics/agent-benchmarks.html"
+      ],
+      "agent-context": [
+        "topics/agent-context.html"
+      ],
+      "agent-control": [
+        "topics/agent-control.html"
+      ],
+      "agent-development-kit": [
+        "topics/agent-development-kit.html"
+      ],
+      "agent-evaluation": [
+        "topics/agent-evaluation.html",
+        "topics/agent-evaluation/page/2/index.html",
+        "topics/agent-evaluation/page/3/index.html",
+        "topics/agent-evaluation/page/4/index.html"
+      ],
+      "agent-governance": [
+        "topics/agent-governance.html",
+        "topics/agent-governance/page/2/index.html"
+      ],
+      "agent-guardrails": [
+        "topics/agent-guardrails.html"
+      ],
+      "agent-harness": [
+        "topics/agent-harness.html"
+      ],
+      "agent-harnesses": [
+        "topics/agent-harnesses.html",
+        "topics/agent-harnesses/page/2/index.html"
+      ],
+      "agent-identity": [
+        "topics/agent-identity.html"
+      ],
+      "agent-infrastructure": [
+        "topics/agent-infrastructure.html"
+      ],
+      "agent-memory": [
+        "topics/agent-memory.html",
+        "topics/agent-memory/page/2/index.html"
+      ],
+      "agent-monitoring": [
+        "topics/agent-monitoring.html"
+      ],
+      "agent-observability": [
+        "topics/agent-observability.html"
+      ],
+      "agent-operations": [
+        "topics/agent-operations.html"
+      ],
+      "agent-ops": [
+        "topics/agent-ops.html"
+      ],
+      "agent-optimization": [
+        "topics/agent-optimization.html"
+      ],
+      "agent-orchestration": [
+        "topics/agent-orchestration.html"
+      ],
+      "agent-reliability": [
+        "topics/agent-reliability.html"
+      ],
+      "agent-runtime": [
+        "topics/agent-runtime.html"
+      ],
+      "agent-runtime-control": [
+        "topics/agent-runtime-control.html"
+      ],
+      "agent-runtimes": [
+        "topics/agent-runtimes.html"
+      ],
+      "agent-safety": [
+        "topics/agent-safety.html",
+        "topics/agent-safety/page/2/index.html"
+      ],
+      "agent-security": [
+        "topics/agent-security.html",
+        "topics/agent-security/page/2/index.html",
+        "topics/agent-security/page/3/index.html"
+      ],
+      "agent-skills": [
+        "topics/agent-skills.html"
+      ],
+      "agent-systems": [
+        "topics/agent-systems.html"
+      ],
+      "agent-testing": [
+        "topics/agent-testing.html"
+      ],
+      "agent-tooling": [
+        "topics/agent-tooling.html"
+      ],
+      "agent-tracing": [
+        "topics/agent-tracing.html"
+      ],
+      "agent-trust": [
+        "topics/agent-trust.html"
+      ],
+      "agent-workspaces": [
+        "topics/agent-workspaces.html"
+      ],
+      "agentic-code-review": [
+        "topics/agentic-code-review.html"
+      ],
+      "agentic-coding": [
+        "topics/agentic-coding.html"
+      ],
+      "agentic-desktops": [
+        "topics/agentic-desktops.html"
+      ],
+      "agentic-software-engineering": [
+        "topics/agentic-software-engineering.html"
+      ],
+      "ai-agents": [
+        "topics/ai-agents.html"
+      ],
+      "ai-code-quality": [
+        "topics/ai-code-quality.html"
+      ],
+      "ai-code-review": [
+        "topics/ai-code-review.html"
+      ],
+      "ai-coding-agents": [
+        "topics/ai-coding-agents.html",
+        "topics/ai-coding-agents/page/2/index.html"
+      ],
+      "ai-control": [
+        "topics/ai-control.html"
+      ],
+      "ai-cost-control": [
+        "topics/ai-cost-control.html"
+      ],
+      "ai-cost-governance": [
+        "topics/ai-cost-governance.html"
+      ],
+      "ai-cost-tracking": [
+        "topics/ai-cost-tracking.html"
+      ],
+      "ai-education": [
+        "topics/ai-education.html"
+      ],
+      "ai-generated-software": [
+        "topics/ai-generated-software.html"
+      ],
+      "ai-governance": [
+        "topics/ai-governance.html"
+      ],
+      "ai-operations": [
+        "topics/ai-operations.html"
+      ],
+      "ai-personalization": [
+        "topics/ai-personalization.html"
+      ],
+      "ai-product-due-diligence": [
+        "topics/ai-product-due-diligence.html"
+      ],
+      "ai-ready-docs": [
+        "topics/ai-ready-docs.html"
+      ],
+      "ai-reliability": [
+        "topics/ai-reliability.html"
+      ],
+      "ai-safety": [
+        "topics/ai-safety.html"
+      ],
+      "ai-security": [
+        "topics/ai-security.html"
+      ],
+      "ai-ux": [
+        "topics/ai-ux.html"
+      ],
+      "ai-workflow": [
+        "topics/ai-workflow.html"
+      ],
+      "antigravity": [
+        "topics/antigravity.html"
+      ],
+      "api-testing": [
+        "topics/api-testing.html"
+      ],
+      "architecture-boundaries": [
+        "topics/architecture-boundaries.html"
+      ],
+      "articulation": [
+        "topics/articulation.html"
+      ],
+      "autonomous-driving": [
+        "topics/autonomous-driving.html"
+      ],
+      "autonomous-driving-safety": [
+        "topics/autonomous-driving-safety.html"
+      ],
+      "autonomy-governance": [
+        "topics/autonomy-governance.html"
+      ],
+      "behavior-cloning": [
+        "topics/behavior-cloning.html"
+      ],
+      "benchmark-auditing": [
+        "topics/benchmark-auditing.html"
+      ],
+      "benchmark-contamination": [
+        "topics/benchmark-contamination.html"
+      ],
+      "benchmark-security": [
+        "topics/benchmark-security.html"
+      ],
+      "benchmarking": [
+        "topics/benchmarking.html"
+      ],
+      "benchmarks": [
+        "topics/benchmarks.html",
+        "topics/benchmarks/page/2/index.html",
+        "topics/benchmarks/page/3/index.html"
+      ],
+      "blockchain-state": [
+        "topics/blockchain-state.html"
+      ],
+      "browser-testing": [
+        "topics/browser-testing.html"
+      ],
+      "browser-tooling": [
+        "topics/browser-tooling.html"
+      ],
+      "bug-localization": [
+        "topics/bug-localization.html"
+      ],
+      "bug-reports": [
+        "topics/bug-reports.html"
+      ],
+      "bug-validation": [
+        "topics/bug-validation.html"
+      ],
+      "c-to-rust-migration": [
+        "topics/c-to-rust-migration.html"
+      ],
+      "cad-automation": [
+        "topics/cad-automation.html"
+      ],
+      "claude-code": [
+        "topics/claude-code.html"
+      ],
+      "coarse-to-fine-control": [
+        "topics/coarse-to-fine-control.html"
+      ],
+      "code-agents": [
+        "topics/code-agents.html"
+      ],
+      "code-benchmarks": [
+        "topics/code-benchmarks.html"
+      ],
+      "code-editing": [
+        "topics/code-editing.html"
+      ],
+      "code-evaluation": [
+        "topics/code-evaluation.html"
+      ],
+      "code-generation": [
+        "topics/code-generation.html",
+        "topics/code-generation/page/2/index.html"
+      ],
+      "code-generation-benchmarks": [
+        "topics/code-generation-benchmarks.html"
+      ],
+      "code-llm-evaluation": [
+        "topics/code-llm-evaluation.html"
+      ],
+      "code-model-calibration": [
+        "topics/code-model-calibration.html"
+      ],
+      "code-quality": [
+        "topics/code-quality.html"
+      ],
+      "code-repair": [
+        "topics/code-repair.html"
+      ],
+      "code-review": [
+        "topics/code-review.html"
+      ],
+      "code-review-automation": [
+        "topics/code-review-automation.html"
+      ],
+      "code-safety": [
+        "topics/code-safety.html"
+      ],
+      "code-search": [
+        "topics/code-search.html"
+      ],
+      "code-security": [
+        "topics/code-security.html"
+      ],
+      "code-translation": [
+        "topics/code-translation.html"
+      ],
+      "code-uncertainty": [
+        "topics/code-uncertainty.html"
+      ],
+      "coding-agents": [
+        "topics/coding-agents.html",
+        "topics/coding-agents/page/2/index.html",
+        "topics/coding-agents/page/3/index.html",
+        "topics/coding-agents/page/4/index.html",
+        "topics/coding-agents/page/5/index.html",
+        "topics/coding-agents/page/6/index.html",
+        "topics/coding-agents/page/7/index.html",
+        "topics/coding-agents/page/8/index.html",
+        "topics/coding-agents/page/9/index.html",
+        "topics/coding-agents/page/10/index.html",
+        "topics/coding-agents/page/11/index.html",
+        "topics/coding-agents/page/12/index.html",
+        "topics/coding-agents/page/13/index.html",
+        "topics/coding-agents/page/14/index.html",
+        "topics/coding-agents/page/15/index.html",
+        "topics/coding-agents/page/16/index.html"
+      ],
+      "coding-benchmarks": [
+        "topics/coding-benchmarks.html"
+      ],
+      "coding-llms": [
+        "topics/coding-llms.html"
+      ],
+      "coding-productivity": [
+        "topics/coding-productivity.html"
+      ],
+      "community-events": [
+        "topics/community-events.html"
+      ],
+      "competitive-programming": [
+        "topics/competitive-programming.html"
+      ],
+      "compiler-feedback": [
+        "topics/compiler-feedback.html"
+      ],
+      "compiler-tuning": [
+        "topics/compiler-tuning.html"
+      ],
+      "contact-control": [
+        "topics/contact-control.html"
+      ],
+      "contact-rich-control": [
+        "topics/contact-rich-control.html"
+      ],
+      "contact-rich-manipulation": [
+        "topics/contact-rich-manipulation.html"
+      ],
+      "contact-rich-robotics": [
+        "topics/contact-rich-robotics.html"
+      ],
+      "context-compression": [
+        "topics/context-compression.html"
+      ],
+      "context-control": [
+        "topics/context-control.html"
+      ],
+      "context-engineering": [
+        "topics/context-engineering.html"
+      ],
+      "context-management": [
+        "topics/context-management.html"
+      ],
+      "context-pruning": [
+        "topics/context-pruning.html"
+      ],
+      "context-recovery": [
+        "topics/context-recovery.html"
+      ],
+      "continual-learning": [
+        "topics/continual-learning.html"
+      ],
+      "control": [
+        "topics/control.html"
+      ],
+      "cost-control": [
+        "topics/cost-control.html"
+      ],
+      "cost-governance": [
+        "topics/cost-governance.html"
+      ],
+      "credential-security": [
+        "topics/credential-security.html"
+      ],
+      "cross-embodiment": [
+        "topics/cross-embodiment.html"
+      ],
+      "cross-embodiment-learning": [
+        "topics/cross-embodiment-learning.html"
+      ],
+      "cross-platform-development": [
+        "topics/cross-platform-development.html"
+      ],
+      "cross-platform-frameworks": [
+        "topics/cross-platform-frameworks.html"
+      ],
+      "cross-platform-mobile": [
+        "topics/cross-platform-mobile.html"
+      ],
+      "cross-robot-transfer": [
+        "topics/cross-robot-transfer.html"
+      ],
+      "dart": [
+        "topics/dart.html"
+      ],
+      "data-annotation": [
+        "topics/data-annotation.html"
+      ],
+      "data-efficiency": [
+        "topics/data-efficiency.html"
+      ],
+      "data-generation": [
+        "topics/data-generation.html"
+      ],
+      "data-poisoning": [
+        "topics/data-poisoning.html"
+      ],
+      "data-privacy": [
+        "topics/data-privacy.html"
+      ],
+      "database-correctness": [
+        "topics/database-correctness.html"
+      ],
+      "deformable-objects": [
+        "topics/deformable-objects.html"
+      ],
+      "dependency-risk": [
+        "topics/dependency-risk.html"
+      ],
+      "deployment-adaptation": [
+        "topics/deployment-adaptation.html"
+      ],
+      "deployment-systems": [
+        "topics/deployment-systems.html"
+      ],
+      "desktop-automation": [
+        "topics/desktop-automation.html"
+      ],
+      "desktop-support": [
+        "topics/desktop-support.html"
+      ],
+      "deterministic-validation": [
+        "topics/deterministic-validation.html"
+      ],
+      "developer-docs": [
+        "topics/developer-docs.html"
+      ],
+      "developer-learning": [
+        "topics/developer-learning.html"
+      ],
+      "developer-productivity": [
+        "topics/developer-productivity.html"
+      ],
+      "developer-relations": [
+        "topics/developer-relations.html"
+      ],
+      "developer-skills": [
+        "topics/developer-skills.html"
+      ],
+      "developer-tooling": [
+        "topics/developer-tooling.html"
+      ],
+      "developer-tools": [
+        "topics/developer-tools.html"
+      ],
+      "developer-workflows": [
+        "topics/developer-workflows.html"
+      ],
+      "device-sandboxes": [
+        "topics/device-sandboxes.html"
+      ],
+      "devops-safety": [
+        "topics/devops-safety.html"
+      ],
+      "dexterous-benchmarks": [
+        "topics/dexterous-benchmarks.html"
+      ],
+      "dexterous-control": [
+        "topics/dexterous-control.html"
+      ],
+      "dexterous-grasping": [
+        "topics/dexterous-grasping.html"
+      ],
+      "dexterous-hands": [
+        "topics/dexterous-hands.html"
+      ],
+      "dexterous-manipulation": [
+        "topics/dexterous-manipulation.html",
+        "topics/dexterous-manipulation/page/2/index.html"
+      ],
+      "dexterous-robotics": [
+        "topics/dexterous-robotics.html"
+      ],
+      "distributed-inference": [
+        "topics/distributed-inference.html"
+      ],
+      "documentation-sites": [
+        "topics/documentation-sites.html"
+      ],
+      "domain-modeling": [
+        "topics/domain-modeling.html"
+      ],
+      "driving-world-models": [
+        "topics/driving-world-models.html"
+      ],
+      "edge-deployment": [
+        "topics/edge-deployment.html"
+      ],
+      "edge-safety": [
+        "topics/edge-safety.html"
+      ],
+      "efficient-inference": [
+        "topics/efficient-inference.html"
+      ],
+      "embodied-ai": [
+        "topics/embodied-ai.html",
+        "topics/embodied-ai/page/2/index.html",
+        "topics/embodied-ai/page/3/index.html"
+      ],
+      "embodied-control": [
+        "topics/embodied-control.html"
+      ],
+      "embodied-datasets": [
+        "topics/embodied-datasets.html"
+      ],
+      "engineering-discipline": [
+        "topics/engineering-discipline.html"
+      ],
+      "engineering-judgment": [
+        "topics/engineering-judgment.html"
+      ],
+      "engineering-roi": [
+        "topics/engineering-roi.html"
+      ],
+      "enterprise-adoption": [
+        "topics/enterprise-adoption.html"
+      ],
+      "enterprise-ai": [
+        "topics/enterprise-ai.html"
+      ],
+      "enterprise-ai-adoption": [
+        "topics/enterprise-ai-adoption.html"
+      ],
+      "enterprise-apps": [
+        "topics/enterprise-apps.html"
+      ],
+      "enterprise-benchmarks": [
+        "topics/enterprise-benchmarks.html"
+      ],
+      "enterprise-software-engineering": [
+        "topics/enterprise-software-engineering.html"
+      ],
+      "error-recovery": [
+        "topics/error-recovery.html"
+      ],
+      "evaluation": [
+        "topics/evaluation.html",
+        "topics/evaluation/page/2/index.html",
+        "topics/evaluation/page/3/index.html"
+      ],
+      "evaluation-integrity": [
+        "topics/evaluation-integrity.html"
+      ],
+      "event-cameras": [
+        "topics/event-cameras.html"
+      ],
+      "executable-evaluation": [
+        "topics/executable-evaluation.html"
+      ],
+      "executable-feedback": [
+        "topics/executable-feedback.html"
+      ],
+      "executable-verification": [
+        "topics/executable-verification.html"
+      ],
+      "execution": [
+        "topics/execution.html"
+      ],
+      "execution-based-validation": [
+        "topics/execution-based-validation.html"
+      ],
+      "execution-feedback": [
+        "topics/execution-feedback.html"
+      ],
+      "execution-verification": [
+        "topics/execution-verification.html"
+      ],
+      "extended-reality": [
+        "topics/extended-reality.html"
+      ],
+      "failure-recovery": [
+        "topics/failure-recovery.html"
+      ],
+      "fault-localization": [
+        "topics/fault-localization.html"
+      ],
+      "federated-learning": [
+        "topics/federated-learning.html"
+      ],
+      "fine-tuning-retention": [
+        "topics/fine-tuning-retention.html"
+      ],
+      "firebase-functions": [
+        "topics/firebase-functions.html"
+      ],
+      "flutter": [
+        "topics/flutter.html"
+      ],
+      "formal-methods": [
+        "topics/formal-methods.html"
+      ],
+      "formal-specifications": [
+        "topics/formal-specifications.html"
+      ],
+      "formal-verification": [
+        "topics/formal-verification.html",
+        "topics/formal-verification/page/2/index.html"
+      ],
+      "framework-roadmap": [
+        "topics/framework-roadmap.html"
+      ],
+      "frontend-generation": [
+        "topics/frontend-generation.html"
+      ],
+      "fuzzing": [
+        "topics/fuzzing.html"
+      ],
+      "generalization": [
+        "topics/generalization.html"
+      ],
+      "generative-ui": [
+        "topics/generative-ui.html"
+      ],
+      "generative-video": [
+        "topics/generative-video.html"
+      ],
+      "genui": [
+        "topics/genui.html"
+      ],
+      "geometry": [
+        "topics/geometry.html"
+      ],
+      "geometry-grounding": [
+        "topics/geometry-grounding.html"
+      ],
+      "github-adoption": [
+        "topics/github-adoption.html"
+      ],
+      "goal-conditioning": [
+        "topics/goal-conditioning.html"
+      ],
+      "google-cloud-next": [
+        "topics/google-cloud-next.html"
+      ],
+      "governance": [
+        "topics/governance.html"
+      ],
+      "gpu-kernels": [
+        "topics/gpu-kernels.html"
+      ],
+      "gpu-optimization": [
+        "topics/gpu-optimization.html"
+      ],
+      "gpu-serving": [
+        "topics/gpu-serving.html"
+      ],
+      "graph-world-models": [
+        "topics/graph-world-models.html"
+      ],
+      "grounding": [
+        "topics/grounding.html"
+      ],
+      "gui-code": [
+        "topics/gui-code.html"
+      ],
+      "hardware-agents": [
+        "topics/hardware-agents.html"
+      ],
+      "hardware-design": [
+        "topics/hardware-design.html"
+      ],
+      "harness-repair": [
+        "topics/harness-repair.html"
+      ],
+      "hierarchical-control": [
+        "topics/hierarchical-control.html"
+      ],
+      "hot-fixes": [
+        "topics/hot-fixes.html"
+      ],
+      "human-demonstrations": [
+        "topics/human-demonstrations.html"
+      ],
+      "human-in-the-loop": [
+        "topics/human-in-the-loop.html"
+      ],
+      "human-oversight": [
+        "topics/human-oversight.html"
+      ],
+      "human-video-data": [
+        "topics/human-video-data.html"
+      ],
+      "humanoid-control": [
+        "topics/humanoid-control.html"
+      ],
+      "humanoid-locomotion": [
+        "topics/humanoid-locomotion.html"
+      ],
+      "humanoid-manipulation": [
+        "topics/humanoid-manipulation.html"
+      ],
+      "humanoid-robots": [
+        "topics/humanoid-robots.html"
+      ],
+      "humanoids": [
+        "topics/humanoids.html"
+      ],
+      "identity-and-access-control": [
+        "topics/identity-and-access-control.html"
+      ],
+      "imitation-learning": [
+        "topics/imitation-learning.html"
+      ],
+      "inference-cost": [
+        "topics/inference-cost.html"
+      ],
+      "inference-efficiency": [
+        "topics/inference-efficiency.html"
+      ],
+      "inference-latency": [
+        "topics/inference-latency.html"
+      ],
+      "inference-time-action-selection": [
+        "topics/inference-time-action-selection.html"
+      ],
+      "interactive-benchmarks": [
+        "topics/interactive-benchmarks.html"
+      ],
+      "interactive-code-generation": [
+        "topics/interactive-code-generation.html"
+      ],
+      "interpretability": [
+        "topics/interpretability.html"
+      ],
+      "jaspr": [
+        "topics/jaspr.html"
+      ],
+      "kotlin-multiplatform": [
+        "topics/kotlin-multiplatform.html"
+      ],
+      "latency": [
+        "topics/latency.html"
+      ],
+      "latent-actions": [
+        "topics/latent-actions.html"
+      ],
+      "latent-reasoning": [
+        "topics/latent-reasoning.html"
+      ],
+      "legacy-modernization": [
+        "topics/legacy-modernization.html"
+      ],
+      "llm-agents": [
+        "topics/llm-agents.html"
+      ],
+      "llm-assisted-software": [
+        "topics/llm-assisted-software.html"
+      ],
+      "llm-budgets": [
+        "topics/llm-budgets.html"
+      ],
+      "llm-coding": [
+        "topics/llm-coding.html"
+      ],
+      "llm-inference": [
+        "topics/llm-inference.html"
+      ],
+      "llm-infrastructure": [
+        "topics/llm-infrastructure.html"
+      ],
+      "llm-operations": [
+        "topics/llm-operations.html"
+      ],
+      "llm-safety": [
+        "topics/llm-safety.html"
+      ],
+      "llm-security": [
+        "topics/llm-security.html"
+      ],
+      "llm-serving": [
+        "topics/llm-serving.html"
+      ],
+      "llm-software-engineering": [
+        "topics/llm-software-engineering.html"
+      ],
+      "llm-supply-chain": [
+        "topics/llm-supply-chain.html"
+      ],
+      "llm-testing": [
+        "topics/llm-testing.html"
+      ],
+      "llm-training": [
+        "topics/llm-training.html"
+      ],
+      "local-ai": [
+        "topics/local-ai.html"
+      ],
+      "local-code-models": [
+        "topics/local-code-models.html"
+      ],
+      "local-inference": [
+        "topics/local-inference.html"
+      ],
+      "local-observability": [
+        "topics/local-observability.html"
+      ],
+      "local-search": [
+        "topics/local-search.html"
+      ],
+      "long-horizon-coding": [
+        "topics/long-horizon-coding.html"
+      ],
+      "long-horizon-control": [
+        "topics/long-horizon-control.html"
+      ],
+      "long-horizon-evaluation": [
+        "topics/long-horizon-evaluation.html"
+      ],
+      "long-horizon-manipulation": [
+        "topics/long-horizon-manipulation.html",
+        "topics/long-horizon-manipulation/page/2/index.html"
+      ],
+      "long-horizon-memory": [
+        "topics/long-horizon-memory.html"
+      ],
+      "long-horizon-planning": [
+        "topics/long-horizon-planning.html"
+      ],
+      "long-horizon-robotics": [
+        "topics/long-horizon-robotics.html"
+      ],
+      "low-data-post-training": [
+        "topics/low-data-post-training.html"
+      ],
+      "maintainability": [
+        "topics/maintainability.html"
+      ],
+      "maintenance-cost": [
+        "topics/maintenance-cost.html"
+      ],
+      "manipulation": [
+        "topics/manipulation.html",
+        "topics/manipulation/page/2/index.html"
+      ],
+      "mcp": [
+        "topics/mcp.html"
+      ],
+      "mcp-governance": [
+        "topics/mcp-governance.html"
+      ],
+      "mcp-security": [
+        "topics/mcp-security.html"
+      ],
+      "mcp-tools": [
+        "topics/mcp-tools.html"
+      ],
+      "medical-robotics": [
+        "topics/medical-robotics.html"
+      ],
+      "memory": [
+        "topics/memory.html"
+      ],
+      "model-based-rl": [
+        "topics/model-based-rl.html"
+      ],
+      "model-compression": [
+        "topics/model-compression.html"
+      ],
+      "model-efficiency": [
+        "topics/model-efficiency.html"
+      ],
+      "model-ownership": [
+        "topics/model-ownership.html"
+      ],
+      "model-predictive-control": [
+        "topics/model-predictive-control.html"
+      ],
+      "model-release-safety": [
+        "topics/model-release-safety.html"
+      ],
+      "model-routing": [
+        "topics/model-routing.html"
+      ],
+      "monitoring": [
+        "topics/monitoring.html"
+      ],
+      "mtls": [
+        "topics/mtls.html"
+      ],
+      "multi-agent-orchestration": [
+        "topics/multi-agent-orchestration.html"
+      ],
+      "multi-agent-systems": [
+        "topics/multi-agent-systems.html"
+      ],
+      "multi-agent-workflows": [
+        "topics/multi-agent-workflows.html"
+      ],
+      "multi-robot-collaboration": [
+        "topics/multi-robot-collaboration.html"
+      ],
+      "multimodal-models": [
+        "topics/multimodal-models.html"
+      ],
+      "multimodal-retrieval": [
+        "topics/multimodal-retrieval.html"
+      ],
+      "multimodal-sensing": [
+        "topics/multimodal-sensing.html"
+      ],
+      "native-ui": [
+        "topics/native-ui.html"
+      ],
+      "navigation": [
+        "topics/navigation.html"
+      ],
+      "oauth": [
+        "topics/oauth.html"
+      ],
+      "object-centric-learning": [
+        "topics/object-centric-learning.html"
+      ],
+      "observability": [
+        "topics/observability.html"
+      ],
+      "occlusion": [
+        "topics/occlusion.html"
+      ],
+      "online-adaptation": [
+        "topics/online-adaptation.html"
+      ],
+      "online-rl": [
+        "topics/online-rl.html"
+      ],
+      "ood-generalization": [
+        "topics/ood-generalization.html"
+      ],
+      "ood-robustness": [
+        "topics/ood-robustness.html"
+      ],
+      "open-ended-coding": [
+        "topics/open-ended-coding.html"
+      ],
+      "open-source-policy": [
+        "topics/open-source-policy.html"
+      ],
+      "open-source-software": [
+        "topics/open-source-software.html"
+      ],
+      "open-weights": [
+        "topics/open-weights.html"
+      ],
+      "partial-hydration": [
+        "topics/partial-hydration.html"
+      ],
+      "performance-engineering": [
+        "topics/performance-engineering.html"
+      ],
+      "photorealistic-simulation": [
+        "topics/photorealistic-simulation.html"
+      ],
+      "planning-security": [
+        "topics/planning-security.html"
+      ],
+      "policy-adaptation": [
+        "topics/policy-adaptation.html"
+      ],
+      "policy-evaluation": [
+        "topics/policy-evaluation.html"
+      ],
+      "procedural-memory": [
+        "topics/procedural-memory.html"
+      ],
+      "product-roadmap": [
+        "topics/product-roadmap.html"
+      ],
+      "production-automation": [
+        "topics/production-automation.html"
+      ],
+      "program-analysis": [
+        "topics/program-analysis.html"
+      ],
+      "program-generation": [
+        "topics/program-generation.html"
+      ],
+      "program-repair": [
+        "topics/program-repair.html",
+        "topics/program-repair/page/2/index.html"
+      ],
+      "program-synthesis": [
+        "topics/program-synthesis.html"
+      ],
+      "prompt-injection": [
+        "topics/prompt-injection.html"
+      ],
+      "provenance": [
+        "topics/provenance.html"
+      ],
+      "pull-requests": [
+        "topics/pull-requests.html"
+      ],
+      "quadrotor-navigation": [
+        "topics/quadrotor-navigation.html"
+      ],
+      "quantization": [
+        "topics/quantization.html"
+      ],
+      "quantum-software": [
+        "topics/quantum-software.html"
+      ],
+      "rag": [
+        "topics/rag.html"
+      ],
+      "rails": [
+        "topics/rails.html"
+      ],
+      "ran-automation": [
+        "topics/ran-automation.html"
+      ],
+      "ratchets": [
+        "topics/ratchets.html"
+      ],
+      "real-robot-evaluation": [
+        "topics/real-robot-evaluation.html"
+      ],
+      "real-time-control": [
+        "topics/real-time-control.html"
+      ],
+      "real-world-evaluation": [
+        "topics/real-world-evaluation.html"
+      ],
+      "reasoning": [
+        "topics/reasoning.html"
+      ],
+      "recommender-systems": [
+        "topics/recommender-systems.html"
+      ],
+      "recursive-self-improvement": [
+        "topics/recursive-self-improvement.html"
+      ],
+      "refactoring-correctness": [
+        "topics/refactoring-correctness.html"
+      ],
+      "regex": [
+        "topics/regex.html"
+      ],
+      "reinforcement-learning": [
+        "topics/reinforcement-learning.html",
+        "topics/reinforcement-learning/page/2/index.html"
+      ],
+      "release-engineering": [
+        "topics/release-engineering.html"
+      ],
+      "repo-generation": [
+        "topics/repo-generation.html"
+      ],
+      "repo-level-codegen": [
+        "topics/repo-level-codegen.html"
+      ],
+      "repo-level-generation": [
+        "topics/repo-level-generation.html"
+      ],
+      "repo-scale-evaluation": [
+        "topics/repo-scale-evaluation.html"
+      ],
+      "repositories": [
+        "topics/repositories.html"
+      ],
+      "repository-automation": [
+        "topics/repository-automation.html"
+      ],
+      "repository-benchmarks": [
+        "topics/repository-benchmarks.html"
+      ],
+      "repository-context": [
+        "topics/repository-context.html"
+      ],
+      "repository-engineering": [
+        "topics/repository-engineering.html"
+      ],
+      "repository-evaluation": [
+        "topics/repository-evaluation.html"
+      ],
+      "repository-execution": [
+        "topics/repository-execution.html"
+      ],
+      "repository-exploration": [
+        "topics/repository-exploration.html"
+      ],
+      "repository-level-generation": [
+        "topics/repository-level-generation.html"
+      ],
+      "repository-mining": [
+        "topics/repository-mining.html"
+      ],
+      "repository-reasoning": [
+        "topics/repository-reasoning.html"
+      ],
+      "repository-repair": [
+        "topics/repository-repair.html"
+      ],
+      "repository-scale-generation": [
+        "topics/repository-scale-generation.html"
+      ],
+      "repository-verification": [
+        "topics/repository-verification.html"
+      ],
+      "repository-workflows": [
+        "topics/repository-workflows.html"
+      ],
+      "reproducibility": [
+        "topics/reproducibility.html"
+      ],
+      "requirement-alignment": [
+        "topics/requirement-alignment.html"
+      ],
+      "requirements-engineering": [
+        "topics/requirements-engineering.html"
+      ],
+      "research-automation": [
+        "topics/research-automation.html"
+      ],
+      "retrieval": [
+        "topics/retrieval.html"
+      ],
+      "reusable-skills": [
+        "topics/reusable-skills.html"
+      ],
+      "reward-hacking": [
+        "topics/reward-hacking.html"
+      ],
+      "reward-models": [
+        "topics/reward-models.html"
+      ],
+      "robot-adaptation": [
+        "topics/robot-adaptation.html"
+      ],
+      "robot-benchmarks": [
+        "topics/robot-benchmarks.html"
+      ],
+      "robot-control": [
+        "topics/robot-control.html"
+      ],
+      "robot-data": [
+        "topics/robot-data.html"
+      ],
+      "robot-data-collection": [
+        "topics/robot-data-collection.html"
+      ],
+      "robot-deployment": [
+        "topics/robot-deployment.html"
+      ],
+      "robot-evaluation": [
+        "topics/robot-evaluation.html"
+      ],
+      "robot-learning": [
+        "topics/robot-learning.html",
+        "topics/robot-learning/page/2/index.html",
+        "topics/robot-learning/page/3/index.html"
+      ],
+      "robot-manipulation": [
+        "topics/robot-manipulation.html",
+        "topics/robot-manipulation/page/2/index.html",
+        "topics/robot-manipulation/page/3/index.html",
+        "topics/robot-manipulation/page/4/index.html"
+      ],
+      "robot-planning": [
+        "topics/robot-planning.html"
+      ],
+      "robot-policy-safety": [
+        "topics/robot-policy-safety.html"
+      ],
+      "robot-safety": [
+        "topics/robot-safety.html",
+        "topics/robot-safety/page/2/index.html"
+      ],
+      "robot-security": [
+        "topics/robot-security.html"
+      ],
+      "robot-serving": [
+        "topics/robot-serving.html"
+      ],
+      "robot-vla": [
+        "topics/robot-vla.html"
+      ],
+      "robot-world-models": [
+        "topics/robot-world-models.html"
+      ],
+      "robotic-manipulation": [
+        "topics/robotic-manipulation.html"
+      ],
+      "robotics": [
+        "topics/robotics.html",
+        "topics/robotics/page/2/index.html",
+        "topics/robotics/page/3/index.html",
+        "topics/robotics/page/4/index.html",
+        "topics/robotics/page/5/index.html",
+        "topics/robotics/page/6/index.html",
+        "topics/robotics/page/7/index.html",
+        "topics/robotics/page/8/index.html",
+        "topics/robotics/page/9/index.html"
+      ],
+      "robotics-evaluation": [
+        "topics/robotics-evaluation.html"
+      ],
+      "robustness": [
+        "topics/robustness.html"
+      ],
+      "runtime-control": [
+        "topics/runtime-control.html"
+      ],
+      "runtime-debugging": [
+        "topics/runtime-debugging.html"
+      ],
+      "runtime-diagnosis": [
+        "topics/runtime-diagnosis.html"
+      ],
+      "runtime-enforcement": [
+        "topics/runtime-enforcement.html"
+      ],
+      "runtime-governance": [
+        "topics/runtime-governance.html"
+      ],
+      "runtime-security": [
+        "topics/runtime-security.html"
+      ],
+      "runtime-systems": [
+        "topics/runtime-systems.html"
+      ],
+      "runtime-traces": [
+        "topics/runtime-traces.html"
+      ],
+      "runtime-verification": [
+        "topics/runtime-verification.html"
+      ],
+      "safety": [
+        "topics/safety.html",
+        "topics/safety/page/2/index.html"
+      ],
+      "safety-evaluation": [
+        "topics/safety-evaluation.html"
+      ],
+      "sample-efficiency": [
+        "topics/sample-efficiency.html"
+      ],
+      "sandbox-infrastructure": [
+        "topics/sandbox-infrastructure.html"
+      ],
+      "sandbox-security": [
+        "topics/sandbox-security.html"
+      ],
+      "scientific-software": [
+        "topics/scientific-software.html"
+      ],
+      "secure-code": [
+        "topics/secure-code.html"
+      ],
+      "secure-code-generation": [
+        "topics/secure-code-generation.html"
+      ],
+      "security": [
+        "topics/security.html"
+      ],
+      "security-agents": [
+        "topics/security-agents.html"
+      ],
+      "security-analysis": [
+        "topics/security-analysis.html"
+      ],
+      "security-benchmarks": [
+        "topics/security-benchmarks.html"
+      ],
+      "security-evaluation": [
+        "topics/security-evaluation.html"
+      ],
+      "security-repair": [
+        "topics/security-repair.html"
+      ],
+      "security-review": [
+        "topics/security-review.html"
+      ],
+      "security-testing": [
+        "topics/security-testing.html"
+      ],
+      "self-evolving-agents": [
+        "topics/self-evolving-agents.html"
+      ],
+      "semantic-grounding": [
+        "topics/semantic-grounding.html"
+      ],
+      "service-recommendation": [
+        "topics/service-recommendation.html"
+      ],
+      "shared-autonomy": [
+        "topics/shared-autonomy.html"
+      ],
+      "shared-business-logic": [
+        "topics/shared-business-logic.html"
+      ],
+      "sim-real-correlation": [
+        "topics/sim-real-correlation.html"
+      ],
+      "sim-to-real": [
+        "topics/sim-to-real.html",
+        "topics/sim-to-real/page/2/index.html"
+      ],
+      "sim2real": [
+        "topics/sim2real.html"
+      ],
+      "simulation": [
+        "topics/simulation.html"
+      ],
+      "simulation-augmentation": [
+        "topics/simulation-augmentation.html"
+      ],
+      "simulation-evaluation": [
+        "topics/simulation-evaluation.html"
+      ],
+      "slot-placement": [
+        "topics/slot-placement.html"
+      ],
+      "small-language-models": [
+        "topics/small-language-models.html"
+      ],
+      "smart-contracts": [
+        "topics/smart-contracts.html"
+      ],
+      "social-navigation": [
+        "topics/social-navigation.html"
+      ],
+      "software-agents": [
+        "topics/software-agents.html"
+      ],
+      "software-analysis": [
+        "topics/software-analysis.html"
+      ],
+      "software-architecture": [
+        "topics/software-architecture.html"
+      ],
+      "software-assurance": [
+        "topics/software-assurance.html"
+      ],
+      "software-benchmarks": [
+        "topics/software-benchmarks.html"
+      ],
+      "software-economics": [
+        "topics/software-economics.html"
+      ],
+      "software-engineering": [
+        "topics/software-engineering.html",
+        "topics/software-engineering/page/2/index.html",
+        "topics/software-engineering/page/3/index.html",
+        "topics/software-engineering/page/4/index.html",
+        "topics/software-engineering/page/5/index.html"
+      ],
+      "software-engineering-agents": [
+        "topics/software-engineering-agents.html"
+      ],
+      "software-engineering-ai": [
+        "topics/software-engineering-ai.html"
+      ],
+      "software-engineering-benchmarks": [
+        "topics/software-engineering-benchmarks.html",
+        "topics/software-engineering-benchmarks/page/2/index.html"
+      ],
+      "software-engineering-evaluation": [
+        "topics/software-engineering-evaluation.html"
+      ],
+      "software-evaluation": [
+        "topics/software-evaluation.html"
+      ],
+      "software-factories": [
+        "topics/software-factories.html"
+      ],
+      "software-maintenance": [
+        "topics/software-maintenance.html"
+      ],
+      "software-quality": [
+        "topics/software-quality.html"
+      ],
+      "software-repair": [
+        "topics/software-repair.html"
+      ],
+      "software-security": [
+        "topics/software-security.html"
+      ],
+      "software-supply-chain-security": [
+        "topics/software-supply-chain-security.html"
+      ],
+      "software-testing": [
+        "topics/software-testing.html",
+        "topics/software-testing/page/2/index.html"
+      ],
+      "software-verification": [
+        "topics/software-verification.html",
+        "topics/software-verification/page/2/index.html"
+      ],
+      "spatial-attention": [
+        "topics/spatial-attention.html"
+      ],
+      "spatial-grounding": [
+        "topics/spatial-grounding.html"
+      ],
+      "spatial-memory": [
+        "topics/spatial-memory.html"
+      ],
+      "spatial-modeling": [
+        "topics/spatial-modeling.html"
+      ],
+      "spatial-reasoning": [
+        "topics/spatial-reasoning.html"
+      ],
+      "static-analysis": [
+        "topics/static-analysis.html"
+      ],
+      "steerability": [
+        "topics/steerability.html"
+      ],
+      "structured-output": [
+        "topics/structured-output.html"
+      ],
+      "supply-chain-risk": [
+        "topics/supply-chain-risk.html"
+      ],
+      "surgical-ai": [
+        "topics/surgical-ai.html"
+      ],
+      "synthetic-data": [
+        "topics/synthetic-data.html"
+      ],
+      "synthetic-robot-data": [
+        "topics/synthetic-robot-data.html"
+      ],
+      "sysml": [
+        "topics/sysml.html"
+      ],
+      "systems-code": [
+        "topics/systems-code.html"
+      ],
+      "systems-optimization": [
+        "topics/systems-optimization.html"
+      ],
+      "tactile-control": [
+        "topics/tactile-control.html"
+      ],
+      "tactile-manipulation": [
+        "topics/tactile-manipulation.html"
+      ],
+      "tactile-pretraining": [
+        "topics/tactile-pretraining.html"
+      ],
+      "tactile-sensing": [
+        "topics/tactile-sensing.html",
+        "topics/tactile-sensing/page/2/index.html"
+      ],
+      "task-memory": [
+        "topics/task-memory.html"
+      ],
+      "teleoperation": [
+        "topics/teleoperation.html"
+      ],
+      "temporal-memory": [
+        "topics/temporal-memory.html"
+      ],
+      "temporal-modeling": [
+        "topics/temporal-modeling.html"
+      ],
+      "terminal-agents": [
+        "topics/terminal-agents.html"
+      ],
+      "terminal-ui": [
+        "topics/terminal-ui.html"
+      ],
+      "test-evolution": [
+        "topics/test-evolution.html"
+      ],
+      "test-generation": [
+        "topics/test-generation.html"
+      ],
+      "test-migration": [
+        "topics/test-migration.html"
+      ],
+      "test-oracles": [
+        "topics/test-oracles.html"
+      ],
+      "test-structure": [
+        "topics/test-structure.html"
+      ],
+      "test-time-adaptation": [
+        "topics/test-time-adaptation.html"
+      ],
+      "test-time-compute": [
+        "topics/test-time-compute.html"
+      ],
+      "test-time-control": [
+        "topics/test-time-control.html"
+      ],
+      "test-time-rl": [
+        "topics/test-time-rl.html"
+      ],
+      "test-time-scaling": [
+        "topics/test-time-scaling.html"
+      ],
+      "testing": [
+        "topics/testing.html"
+      ],
+      "text-to-sql": [
+        "topics/text-to-sql.html"
+      ],
+      "token-cost": [
+        "topics/token-cost.html"
+      ],
+      "token-costs": [
+        "topics/token-costs.html"
+      ],
+      "token-efficiency": [
+        "topics/token-efficiency.html"
+      ],
+      "tool-calling": [
+        "topics/tool-calling.html"
+      ],
+      "tool-provenance": [
+        "topics/tool-provenance.html"
+      ],
+      "tool-reliability": [
+        "topics/tool-reliability.html"
+      ],
+      "tool-use": [
+        "topics/tool-use.html"
+      ],
+      "tool-use-evaluation": [
+        "topics/tool-use-evaluation.html"
+      ],
+      "trace-based-training": [
+        "topics/trace-based-training.html"
+      ],
+      "traceability": [
+        "topics/traceability.html"
+      ],
+      "training-data": [
+        "topics/training-data.html"
+      ],
+      "trajectory-diagnostics": [
+        "topics/trajectory-diagnostics.html"
+      ],
+      "trajectory-training": [
+        "topics/trajectory-training.html"
+      ],
+      "uav-navigation": [
+        "topics/uav-navigation.html"
+      ],
+      "uav-tracking": [
+        "topics/uav-tracking.html"
+      ],
+      "verification": [
+        "topics/verification.html",
+        "topics/verification/page/2/index.html"
+      ],
+      "video-evaluation": [
+        "topics/video-evaluation.html"
+      ],
+      "video-planning": [
+        "topics/video-planning.html"
+      ],
+      "vision-language-action": [
+        "topics/vision-language-action.html",
+        "topics/vision-language-action/page/2/index.html",
+        "topics/vision-language-action/page/3/index.html",
+        "topics/vision-language-action/page/4/index.html",
+        "topics/vision-language-action/page/5/index.html",
+        "topics/vision-language-action/page/6/index.html",
+        "topics/vision-language-action/page/7/index.html",
+        "topics/vision-language-action/page/8/index.html"
+      ],
+      "vision-language-action-models": [
+        "topics/vision-language-action-models.html",
+        "topics/vision-language-action-models/page/2/index.html",
+        "topics/vision-language-action-models/page/3/index.html",
+        "topics/vision-language-action-models/page/4/index.html"
+      ],
+      "vision-language-action-policies": [
+        "topics/vision-language-action-policies.html"
+      ],
+      "vision-language-navigation": [
+        "topics/vision-language-navigation.html"
+      ],
+      "vision-to-code-grounding": [
+        "topics/vision-to-code-grounding.html"
+      ],
+      "visual-foresight": [
+        "topics/visual-foresight.html"
+      ],
+      "visual-reinforcement-learning": [
+        "topics/visual-reinforcement-learning.html"
+      ],
+      "vla": [
+        "topics/vla.html",
+        "topics/vla/page/2/index.html"
+      ],
+      "vla-finetuning": [
+        "topics/vla-finetuning.html"
+      ],
+      "vla-models": [
+        "topics/vla-models.html"
+      ],
+      "vla-policies": [
+        "topics/vla-policies.html"
+      ],
+      "vla-reliability": [
+        "topics/vla-reliability.html"
+      ],
+      "vla-robustness": [
+        "topics/vla-robustness.html"
+      ],
+      "vla-safety": [
+        "topics/vla-safety.html"
+      ],
+      "vulnerability-repair": [
+        "topics/vulnerability-repair.html"
+      ],
+      "web-infrastructure": [
+        "topics/web-infrastructure.html"
+      ],
+      "web-reuse": [
+        "topics/web-reuse.html"
+      ],
+      "webassembly": [
+        "topics/webassembly.html"
+      ],
+      "workflow-automation": [
+        "topics/workflow-automation.html"
+      ],
+      "workflow-evaluation": [
+        "topics/workflow-evaluation.html"
+      ],
+      "workflow-reliability": [
+        "topics/workflow-reliability.html"
+      ],
+      "workflow-security": [
+        "topics/workflow-security.html"
+      ],
+      "world-action-models": [
+        "topics/world-action-models.html"
+      ],
+      "world-model-safety": [
+        "topics/world-model-safety.html"
+      ],
+      "world-models": [
+        "topics/world-models.html",
+        "topics/world-models/page/2/index.html",
+        "topics/world-models/page/3/index.html",
+        "topics/world-models/page/4/index.html",
+        "topics/world-models/page/5/index.html",
+        "topics/world-models/page/6/index.html",
+        "topics/world-models/page/7/index.html",
+        "topics/world-models/page/8/index.html",
+        "topics/world-models/page/9/index.html",
+        "topics/world-models/page/10/index.html"
+      ],
+      "zero-shot-vision": [
+        "topics/zero-shot-vision.html"
+      ]
+    },
     "topic_pages": [
       "topics/3d-gaussian-splatting.html",
       "topics/3d-generation.html",
@@ -6664,6 +12228,31 @@
       "topics/zero-shot-vision.html"
     ],
     "topics_index": "topics/index.html",
+    "topics_index_pages": [
+      "topics/index.html",
+      "topics/page/2/index.html",
+      "topics/page/3/index.html",
+      "topics/page/4/index.html",
+      "topics/page/5/index.html",
+      "topics/page/6/index.html",
+      "topics/page/7/index.html",
+      "topics/page/8/index.html",
+      "topics/page/9/index.html",
+      "topics/page/10/index.html",
+      "topics/page/11/index.html",
+      "topics/page/12/index.html",
+      "topics/page/13/index.html",
+      "topics/page/14/index.html",
+      "topics/page/15/index.html",
+      "topics/page/16/index.html",
+      "topics/page/17/index.html",
+      "topics/page/18/index.html",
+      "topics/page/19/index.html",
+      "topics/page/20/index.html",
+      "topics/page/21/index.html",
+      "topics/page/22/index.html",
+      "topics/page/23/index.html"
+    ],
     "trend_pages": [
       "trends/embodied-ai--day--2026-07-13--trend--861.html",
       "trends/software-intelligence--day--2026-07-13--trend--1896.html",
@@ -6891,7 +12480,28 @@
       "trends/embodied-ai--day--2026-03-30--trend--9.html",
       "trends/software-intelligence--day--2026-03-30--trend--20.html"
     ],
-    "trends_index": "trends/index.html"
+    "trends_index": "trends/index.html",
+    "trends_index_pages": [
+      "trends/index.html",
+      "trends/page/2/index.html",
+      "trends/page/3/index.html",
+      "trends/page/4/index.html",
+      "trends/page/5/index.html",
+      "trends/page/6/index.html",
+      "trends/page/7/index.html",
+      "trends/page/8/index.html",
+      "trends/page/9/index.html",
+      "trends/page/10/index.html",
+      "trends/page/11/index.html",
+      "trends/page/12/index.html",
+      "trends/page/13/index.html",
+      "trends/page/14/index.html",
+      "trends/page/15/index.html",
+      "trends/page/16/index.html",
+      "trends/page/17/index.html",
+      "trends/page/18/index.html",
+      "trends/page/19/index.html"
+    ]
   },
   "ideas_total": 225,
   "item_export_scope": "linked",
@@ -6906,6 +12516,11 @@
     "en",
     "zh-cn"
   ],
+  "pagination": {
+    "card_page_size": 12,
+    "dense_page_size": 24,
+    "topic_column_page_size": 6
+  },
   "topics_total": 547,
   "trends_total": 225
 }

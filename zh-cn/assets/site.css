@@ -424,6 +424,7 @@ iframe {
 .action-link:focus-visible,
 .topic-pill-link:focus-visible,
 .pager-card:focus-visible,
+.pagination-link:focus-visible,
 .breadcrumbs a:focus-visible,
 .language-switcher-link:focus-visible {
   opacity: 1;
@@ -814,6 +815,75 @@ iframe {
   font-size: 18px;
   line-height: 1.32;
 }
+.collection-pagination {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.pagination-center,
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pagination-pages {
+  gap: 6px;
+}
+.pagination-link,
+.pagination-ellipsis,
+.pagination-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.pagination-link {
+  border: 1px solid rgba(29, 103, 194, 0.14);
+  background: rgba(248, 251, 255, 0.88);
+  color: #225693;
+}
+.pagination-link:hover {
+  border-color: rgba(29, 103, 194, 0.28);
+  background: var(--accent-soft);
+}
+.pagination-link.is-current {
+  border-color: #1d67c2;
+  background: #1d67c2;
+  color: #ffffff;
+}
+.pagination-link.is-disabled {
+  border-color: rgba(17, 41, 71, 0.08);
+  background: rgba(255, 255, 255, 0.46);
+  color: #93a2b2;
+}
+.pagination-direction {
+  min-width: 96px;
+}
+.pagination-previous {
+  justify-self: start;
+}
+.pagination-next {
+  justify-self: end;
+}
+.pagination-ellipsis {
+  min-width: 28px;
+  padding: 0 4px;
+  color: var(--muted);
+}
+.pagination-status {
+  display: none;
+  color: #425a74;
+  white-space: nowrap;
+}
 .timeline-list,
 .archive-list {
   display: grid;
@@ -1009,6 +1079,23 @@ iframe {
   .timeline-item,
   .archive-item {
     flex-direction: column;
+  }
+  .collection-pagination {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 8px;
+  }
+  .pagination-pages {
+    display: none;
+  }
+  .pagination-status {
+    display: inline-flex;
+    min-height: 44px;
+    padding: 0 4px;
+  }
+  .pagination-direction {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 12px;
   }
 }
 .language-switcher {
