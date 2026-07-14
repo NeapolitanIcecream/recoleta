@@ -4,7 +4,7 @@
 
 分支：`codex/recoleta-high-roi-refactor`
 
-实现范围：基于 `094b7248` 的 25 个实现提交；本报告作为第 26 个提交收口。
+实现范围：从 `094b7248` 开始的完整实现与 GitHub review 修复；提交记录见“Git 管理”。
 
 ## 结论
 
@@ -14,7 +14,7 @@
 
 改造后，冻结样本中的 Trend 人工质量分从 54/80 提升到 69/80，Idea 从 123/180 提升到 151/180。Idea 的独立多来源支持从 2/15 提升到 12/12，同文档多 chunk 伪装成多来源的情况从 15 个降为 0。Trend 的独立多来源占比从 13/18 提升到 13/14，剩余 1 个被明确限制为单来源信号。全历史词法近重复代理从 5/252 降为 1/252。
 
-最终验证为 902 个测试通过，Ruff 通过，Pyright 0 错误，覆盖率 78%，CLI smoke test 通过，Cremona 无新增或恶化项。独立封顶审查最后没有 P1/P2 阻塞项。
+最终验证为 903 个测试通过，Ruff 通过，Pyright 0 错误，覆盖率 78%，CLI smoke test 通过，Cremona 无新增或恶化项。独立封顶审查最后没有 P1/P2 阻塞项。
 
 ## 目标和指标
 
@@ -126,7 +126,7 @@ Ideas 的 36,193 Token 包含必要的标题修复调用；主生成阶段通过
 ### 冗余和过度设计收敛
 
 - 删除未使用的兼容 facade，保留真正使用的公开入口。
-- 用显式类型化 source pull request 取代松散动态输入。
+- pipeline 内部使用显式类型化 source pull request；公开 `fetch_*_drafts` 包装器继续接受既有关键字参数，避免破坏外部脚本。
 - 移除 pipeline 动态 module proxy。
 - 将 analyze content selection 和批量持久化从大型编排方法中抽离。
 - 批量 upsert 文档、批量加载内容、批量写分析和 metrics，消除逐条事务。
@@ -161,6 +161,9 @@ EvoGens 将 Idea 生成建模为群体搜索，强调探索和避免语义收敛
 uv run coverage run -m pytest -q
 902 passed, 247 warnings in 50.17s
 
+uv run pytest -q  # GitHub review compatibility fix 后
+903 passed, 247 warnings in 47.47s
+
 uv run coverage json -o coverage.json
 TOTAL 33167 statements, 6040 missed, 9232 branches, 2054 partial, 78%
 
@@ -194,13 +197,14 @@ uv run python scripts/eval_artifact_quality.py \
 
 ## Git 管理
 
-分支从 `094b7248` 开始，以 25 个实现提交逐步落地，再用本报告提交收口。提交按可独立验证的主题组织，主要阶段包括：
+分支从 `094b7248` 开始，以 25 个实现提交逐步落地，再用本报告收口。GitHub review 随后发现公开 source fetch 关键字调用被内部类型化重构误删；`5a01eb00` 恢复全部五类 fetcher 的兼容入口，并增加统一回归测试。提交按可独立验证的主题组织，主要阶段包括：
 
 - 重试、GC 和批量 metrics：`7ecff955`、`34cdca51`、`6fed5e57`。
 - 冗余边界和 analyze 批处理：`08108843`、`6091cc9d`、`0a4e1548`、`7090bf49`、`5e9ad411`。
 - 质量 evaluator 和证据门禁：`42c3ba56`、`f018b9f2`、`038214b9`、`1490257f`。
 - Token 和代表证据：`cd305f61`、`699ad2a3`、`51c4f414`、`b3431356`。
 - canonical/suppression/currentness 综合收口：`1e9cb056`。
+- GitHub review API 兼容修复：`5a01eb00`。
 
 没有推送远端或创建 PR，因为任务没有授权这两项外部状态变更。
 
