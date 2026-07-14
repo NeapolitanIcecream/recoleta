@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import html
@@ -623,6 +624,86 @@ def _write_detail_pages(
     return topic_collection_pages
 
 
+def _relative_site_paths(*, output_dir: Path, paths: Iterable[Path]) -> list[str]:
+    return [str(path.relative_to(output_dir)) for path in paths]
+
+
+def _relative_document_page_paths(
+    *,
+    output_dir: Path,
+    documents: Iterable[TrendSiteDocument | IdeaSiteDocument | ItemSiteDocument],
+) -> list[str]:
+    return _relative_site_paths(
+        output_dir=output_dir,
+        paths=(document.page_path for document in documents),
+    )
+
+
+def _topic_collection_manifest_paths(
+    *,
+    output_dir: Path,
+    topic_collection_pages: dict[str, tuple[Path, ...]],
+) -> dict[str, list[str]]:
+    return {
+        slug: _relative_site_paths(output_dir=output_dir, paths=paths)
+        for slug, paths in topic_collection_pages.items()
+    }
+
+
+def _single_language_export_files_manifest(
+    *,
+    artifacts: SingleLanguageSiteExportArtifacts,
+    index_pages: SiteIndexPageArtifacts,
+    topic_collection_pages: dict[str, tuple[Path, ...]],
+) -> dict[str, Any]:
+    output_dir = artifacts.resolved_output_dir
+    return {
+        "index": "index.html",
+        "archive": "archive.html",
+        "nojekyll": ".nojekyll",
+        "trends_index": "trends/index.html",
+        "ideas_index": "ideas/index.html",
+        "topics_index": "topics/index.html",
+        "stylesheet": "assets/site.css",
+        "trends_index_pages": _relative_site_paths(
+            output_dir=output_dir,
+            paths=index_pages.trends_index_pages,
+        ),
+        "ideas_index_pages": _relative_site_paths(
+            output_dir=output_dir,
+            paths=index_pages.ideas_index_pages,
+        ),
+        "topics_index_pages": _relative_site_paths(
+            output_dir=output_dir,
+            paths=index_pages.topics_index_pages,
+        ),
+        "archive_pages": _relative_site_paths(
+            output_dir=output_dir,
+            paths=index_pages.archive_pages,
+        ),
+        "topic_collection_pages": _topic_collection_manifest_paths(
+            output_dir=output_dir,
+            topic_collection_pages=topic_collection_pages,
+        ),
+        "trend_pages": _relative_document_page_paths(
+            output_dir=output_dir,
+            documents=artifacts.documents,
+        ),
+        "idea_pages": _relative_document_page_paths(
+            output_dir=output_dir,
+            documents=artifacts.idea_documents,
+        ),
+        "item_pages": _relative_document_page_paths(
+            output_dir=output_dir,
+            documents=artifacts.item_documents,
+        ),
+        "topic_pages": _relative_site_paths(
+            output_dir=output_dir,
+            paths=artifacts.topic_pages.values(),
+        ),
+    }
+
+
 def _single_language_export_manifest(
     *,
     artifacts: SingleLanguageSiteExportArtifacts,
@@ -664,50 +745,11 @@ def _single_language_export_manifest(
             "dense_page_size": SITE_DENSE_PAGE_SIZE,
             "topic_column_page_size": SITE_TOPIC_COLUMN_PAGE_SIZE,
         },
-        "files": {
-            "index": "index.html",
-            "archive": "archive.html",
-            "nojekyll": ".nojekyll",
-            "trends_index": "trends/index.html",
-            "ideas_index": "ideas/index.html",
-            "topics_index": "topics/index.html",
-            "stylesheet": "assets/site.css",
-            "trends_index_pages": [
-                str(path.relative_to(output_dir))
-                for path in index_pages.trends_index_pages
-            ],
-            "ideas_index_pages": [
-                str(path.relative_to(output_dir))
-                for path in index_pages.ideas_index_pages
-            ],
-            "topics_index_pages": [
-                str(path.relative_to(output_dir))
-                for path in index_pages.topics_index_pages
-            ],
-            "archive_pages": [
-                str(path.relative_to(output_dir)) for path in index_pages.archive_pages
-            ],
-            "topic_collection_pages": {
-                slug: [str(path.relative_to(output_dir)) for path in paths]
-                for slug, paths in topic_collection_pages.items()
-            },
-            "trend_pages": [
-                str(document.page_path.relative_to(output_dir))
-                for document in artifacts.documents
-            ],
-            "idea_pages": [
-                str(document.page_path.relative_to(output_dir))
-                for document in artifacts.idea_documents
-            ],
-            "item_pages": [
-                str(document.page_path.relative_to(output_dir))
-                for document in artifacts.item_documents
-            ],
-            "topic_pages": [
-                str(path.relative_to(output_dir))
-                for path in artifacts.topic_pages.values()
-            ],
-        },
+        "files": _single_language_export_files_manifest(
+            artifacts=artifacts,
+            index_pages=index_pages,
+            topic_collection_pages=topic_collection_pages,
+        ),
     }
 
 
